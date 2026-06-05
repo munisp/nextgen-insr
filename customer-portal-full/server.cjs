@@ -1905,6 +1905,9 @@ const ROUTE_HANDLERS = {
       // Publish event
       publishEvent('insureportal.claims', { type: 'claim.created', entityId: String(r.id), claimNumber: claimNum, amount: input.amount, fraudScore, routedTo });
 
+      // Real-time WebSocket notification
+      if (typeof wsBroadcast === 'function') wsBroadcast('claims.created', { claimId: r.id, claimNumber: claimNum, amount: input.amount, fraudScore, routedTo, status: 'Submitted' });
+
       return { success: true, claimId: r.id, claimNumber: claimNum, fraudScore, routedTo, status: 'Submitted' };
     });
   },
@@ -1931,6 +1934,7 @@ const ROUTE_HANDLERS = {
       }
 
       publishEvent('insureportal.claims', { type: 'claim.updated', entityId: String(input.id), oldStatus: claim.status, newStatus: input.status });
+      if (typeof wsBroadcast === 'function') wsBroadcast('claims.updated', { claimId: input.id, previousStatus: claim.status, newStatus: input.status });
       return { success: true, id: input.id, previousStatus: claim.status, newStatus: input.status };
     });
   },
@@ -3836,6 +3840,13 @@ app.all('/api/trpc/*', async (req, res) => {
 // Static files
 app.use(express.static(DIST));
 
+// WebSocket stats endpoint (wss created after server.listen, uses dynamic lookup)
+app.get('/ws/stats', (req, res) => {
+  const wssRef = app.locals._wss;
+  const wsClientsRef = app.locals._wsClients;
+  res.json({ connections: wssRef ? wssRef.clients.size : 0, authenticatedUsers: wsClientsRef ? wsClientsRef.size : 0, uptime: process.uptime(), wsEnabled: true });
+});
+
 // SPA fallback
 app.get('*', (req, res) => {
   res.sendFile(path.join(DIST, 'index.html'));
@@ -3848,10 +3859,81 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// WEBSOCKET SERVER (real-time updates for claims, payments, notifications)
+// ═══════════════════════════════════════════════════════════════════════
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ server, path: '/ws' });
+const wsClients = new Map(); // userId → Set<WebSocket>
+
+wss.on('connection', (ws, req) => {
+  let userId = null;
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data);
+      if (msg.type === 'auth' && msg.token) {
+        try {
+          const decoded = verifyAccessToken(msg.token);
+          userId = decoded.sub || decoded.userId;
+          if (!wsClients.has(userId)) wsClients.set(userId, new Set());
+          wsClients.get(userId).add(ws);
+          ws.send(JSON.stringify({ type: 'auth_ok', userId, connectedAt: new Date().toISOString() }));
+          logger.info('WebSocket authenticated', { userId });
+        } catch { ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid token' })); }
+      }
+      if (msg.type === 'ping') ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+      if (msg.type === 'subscribe' && msg.channels) {
+        ws.channels = new Set(msg.channels);
+        ws.send(JSON.stringify({ type: 'subscribed', channels: msg.channels }));
+      }
+    } catch { ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' })); }
+  });
+
+  ws.on('close', () => {
+    if (userId && wsClients.has(userId)) {
+      wsClients.get(userId).delete(ws);
+      if (wsClients.get(userId).size === 0) wsClients.delete(userId);
+    }
+  });
+});
+
+// Heartbeat interval to detect broken connections
+const wsHeartbeat = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', () => clearInterval(wsHeartbeat));
+
+// Broadcast to specific user(s) or channels
+function wsBroadcast(event, data, targetUserId = null) {
+  const payload = JSON.stringify({ type: 'event', event, data, timestamp: new Date().toISOString() });
+  if (targetUserId && wsClients.has(targetUserId)) {
+    wsClients.get(targetUserId).forEach((ws) => { if (ws.readyState === WebSocket.OPEN) ws.send(payload); });
+  } else {
+    wss.clients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN && (!ws.channels || ws.channels.has(event.split('.')[0]))) ws.send(payload);
+    });
+  }
+}
+
+// Expose broadcast and references for use in route handlers
+app.locals.wsBroadcast = wsBroadcast;
+app.locals._wss = wss;
+app.locals._wsClients = wsClients;
+
+// ═══════════════════════════════════════════════════════════════════════
 // GRACEFUL SHUTDOWN
 // ═══════════════════════════════════════════════════════════════════════
 function gracefulShutdown(signal) {
   logger.info('Graceful shutdown initiated', { signal });
+  clearInterval(wsHeartbeat);
+  wss.clients.forEach((ws) => ws.close(1001, 'Server shutting down'));
   server.close(async () => {
     logger.info('HTTP server closed');
     try { if (kafkaProducer) { await kafkaProducer.disconnect(); logger.info('Kafka producer disconnected'); } } catch (e) { /* ignore */ }
