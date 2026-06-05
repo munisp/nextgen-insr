@@ -3752,7 +3752,7 @@ app.all('/api/trpc/*', async (req, res) => {
   if (!batch && routes.length === 1) {
     let input = {};
     if (req.method === 'POST' && req.body) {
-      input = req.body || {};
+      input = req.body?.json || req.body || {};
     } else if (req.query.input) {
       try { input = JSON.parse(req.query.input); } catch (e) {}
     }
