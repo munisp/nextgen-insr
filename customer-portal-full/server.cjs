@@ -1879,7 +1879,7 @@ const ROUTE_HANDLERS = {
 
     return await withTransaction(async (client) => {
       // Verify policy exists and is active
-      const { rows: [policy] } = await client.query('SELECT id, type, "sumAssured", status FROM policies WHERE id=$1', [input.policyId]);
+      const { rows: [policy] } = await client.query('SELECT id, "userId", type, "sumAssured", status FROM policies WHERE id=$1', [input.policyId]);
       if (!policy) return { success: false, error: 'Policy not found' };
       if (policy.status !== 'Active') return { success: false, error: `Policy is ${policy.status}, not Active` };
       if (input.amount > (policy.sumAssured || Infinity)) return { success: false, error: `Claim amount exceeds sum assured (₦${policy.sumAssured})` };
@@ -1894,9 +1894,9 @@ const ROUTE_HANDLERS = {
       const routedTo = input.amount > 1000000 ? 'senior_adjuster' : input.amount > 500000 ? 'standard_adjuster' : fraudScore > 50 ? 'fraud_investigation' : 'auto_triage';
 
       const { rows: [r] } = await client.query(
-        `INSERT INTO claims ("policyId", "claimNumber", amount, description, status, "incidentDate", "fraudScore", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, 'Submitted', $5, $6, NOW(), NOW()) RETURNING *`,
-        [input.policyId, claimNum, input.amount, input.description, input.incidentDate ? new Date(input.incidentDate) : new Date(), fraudScore]);
+        `INSERT INTO claims ("userId", "policyId", "claimNumber", amount, description, status, "incidentDate", "fraudScore", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, 'Submitted', $6, $7, NOW(), NOW()) RETURNING *`,
+        [policy.userId, input.policyId, claimNum, input.amount, input.description, input.incidentDate ? new Date(input.incidentDate) : new Date(), fraudScore]);
 
       // Record in audit trail
       await client.query(`INSERT INTO audit_trail (action, "entityType", "entityId", "newValues", "createdAt") VALUES ('claims.create', 'claims', $1, $2, NOW())`,
