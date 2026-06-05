@@ -44,6 +44,11 @@ jobs:
         working-directory: customer-portal-full
         run: npm install --legacy-peer-deps
 
+      - name: Initialize database
+        env:
+          PGPASSWORD: test_password
+        run: psql -h localhost -U ngapp -d ngapp -f customer-portal-full/ci-init.sql
+
       - name: Start server
         working-directory: customer-portal-full
         env:
