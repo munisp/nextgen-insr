@@ -868,7 +868,7 @@ const ROUTE_HANDLERS = {
     const recs = await q('SELECT id, "feedbackType" as type, subject as title, message as description FROM customer_feedback WHERE "feedbackType"=\'coverage_recommendation\' ORDER BY "createdAt" DESC');
     return recs.length > 0 ? recs : [{ id: 1, type: 'coverage', title: 'Add comprehensive motor coverage', description: 'Based on your risk profile, upgrading to comprehensive coverage could save you in claims' }];
   },
-  'premium.calculate': async (input) => calculatePremium(input),
+  'premium.calculate': async (input) => { validate(input, { policyType: { required: true, type: 'string' }, sumAssured: { required: true, type: 'number', min: 1 } }); return calculatePremium(input); },
 
   // ─── Insurance Score ───
   'insuranceScore.get': async () => {
@@ -1712,7 +1712,7 @@ const ROUTE_HANDLERS = {
   },
   'application.get': (input) => q1('SELECT * FROM insurance_applications WHERE id=$1', [input.id || 1]),
   'application.list': (input) => { const p = paginate('SELECT id, "userId", "productType", status, "createdAt" FROM insurance_applications ORDER BY "createdAt" DESC', input); return q(p.sql); },
-  'application.update': async (input) => { return {success:true,applicationId:input?.id||'APP-'+Date.now(),status:'updated'}; },
+  'application.update': async (input) => { validate(input, { id: { required: true } }); return {success:true,applicationId:input?.id||'APP-'+Date.now(),status:'updated'}; },
 
   // Audit Trail
   'auditTrail.list': () => q('SELECT id, action, "entityType", "entityId", "userId", details, "createdAt" FROM audit_trail ORDER BY "createdAt" DESC LIMIT 100'),
@@ -1747,13 +1747,13 @@ const ROUTE_HANDLERS = {
     return { success: true, claimId: r.id, claimNumber: r.claimNumber || claimNum };
   },
   'claims.update': async (input) => {
-    if (input.id) {
-      await q('UPDATE claims SET status=$1, "updatedAt"=NOW() WHERE id=$2', [input.status || 'Under Review', input.id]);
-    }
+    validate(input, { id: { required: true, type: 'number', min: 1 }, status: { type: 'string', oneOf: ['Submitted', 'Under Review', 'Approved', 'Rejected', 'Paid'] } });
+    await q('UPDATE claims SET status=$1, "updatedAt"=NOW() WHERE id=$2', [input.status || 'Under Review', input.id]);
     return { success: true, id: input.id };
   },
   'claims.delete': async (input) => {
-    if (input.id) await q('UPDATE claims SET "deletedAt"=NOW(), "updatedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]);
+    validate(input, { id: { required: true, type: 'number', min: 1 } });
+    await q('UPDATE claims SET "deletedAt"=NOW(), "updatedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]);
     return { success: true };
   },
   'claimsEvidence.list': () => q('SELECT id, "userId", "claimId", "evidenceType", "fileName", "fileUrl", description, status FROM claim_evidence ORDER BY "createdAt" DESC'),
@@ -1788,9 +1788,10 @@ const ROUTE_HANDLERS = {
   'disasterRecovery.test': async () => { const id='DR-'+Date.now(); await q('UPDATE disaster_recovery_config SET last_test_date=CURRENT_DATE, last_test_result=\'passed\', updated_at=NOW()'); return {success:true, testId:id, result:'passed', duration:'3m 42s', failoversSimulated:await q1('SELECT COUNT(*) as c FROM disaster_recovery_config').then(r=>Number(r?.c)||3)}; },
 
   // Documents mutations
-  'documents.upload': async (input) => { return {success:true,documentId:'DOC-'+Date.now(),url:'/api/documents/'+Date.now()+'.pdf'}; },
+  'documents.upload': async (input) => { validate(input, { documentType: { type: 'string' } }); return {success:true,documentId:'DOC-'+Date.now(),url:'/api/documents/'+Date.now()+'.pdf'}; },
   'documents.delete': async (input) => {
-    if (input.id) await q('UPDATE documents SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]);
+    validate(input, { id: { required: true, type: 'number', min: 1 } });
+    await q('UPDATE documents SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]);
     return { success: true };
   },
 
@@ -1820,11 +1821,12 @@ const ROUTE_HANDLERS = {
   'embeddedDistribution.revenue': async () => { const r = await q1('SELECT COALESCE(SUM(monthly_revenue),0) as total, COUNT(*) as partners FROM embedded_partners WHERE status=\'active\''); return {totalRevenue:Number(r?.total)||0,activePartners:Number(r?.partners)||0}; },
 
   // Embedded Insurance
-  'embedded.activate': async (input) => { return {success:true,partnerId:input?.partnerId,status:'active'}; },
-  'embedded.create': async (input) => { return {success:true,partnerId:'EMB-'+Date.now(),name:input?.name}; },
+  'embedded.activate': async (input) => { validate(input, { partnerId: { required: true, type: 'string' } }); return {success:true,partnerId:input?.partnerId,status:'active'}; },
+  'embedded.create': async (input) => { validate(input, { name: { required: true, type: 'string', minLength: 1 } }); return {success:true,partnerId:'EMB-'+Date.now(),name:input?.name}; },
 
   // Emergency
   'emergency.create': async (input) => {
+    validate(input, { type: { required: true, type: 'string' }, description: { required: true, type: 'string', minLength: 5 } });
     const r = await q1(`INSERT INTO emergency_incidents (id, "userId", "incidentType", description, status, "createdAt")
       VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM emergency_incidents), 1, $1, $2, 'active', NOW()) RETURNING *`,
       [input.type || 'accident', input.description || 'Emergency reported'], { id: 1 });
@@ -1839,6 +1841,7 @@ const ROUTE_HANDLERS = {
 
   // Feedback
   'feedback.submit': async (input) => {
+    validate(input, { rating: { required: true, type: 'number', min: 1, max: 5 }, comment: { type: 'string', maxLength: 2000 } });
     const r = await q1(`INSERT INTO customer_feedback (id, "userId", "feedbackType", rating, comment, status, "createdAt")
       VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM customer_feedback), 1, $1, $2, $3, 'submitted', NOW()) RETURNING *`,
       [input.type || 'general', input.rating || 5, input.comment || ''], { id: 1 });
@@ -1884,7 +1887,7 @@ const ROUTE_HANDLERS = {
 
   // Health
   'health.data': async () => { const user = await q1('SELECT id FROM users WHERE id=1'); const policies = await q1('SELECT COUNT(*) as c FROM policies WHERE type=\'Health\' AND status=\'Active\' AND "userId"=1'); return {bmi:24.5, bloodPressure:'120/80', cholesterol:190, lastCheckup:new Date(Date.now()-45*86400000).toISOString().slice(0,10), nextCheckup:new Date(Date.now()+180*86400000).toISOString().slice(0,10), riskLevel:'low', hasHealthPolicy:Number(policies?.c)>0}; },
-  'health.submit': async (input) => { return {success:true,recordId:'HLT-'+Date.now()}; },
+  'health.submit': async (input) => { validate(input, { type: { type: 'string' } }); return {success:true,recordId:'HLT-'+Date.now()}; },
 
   // Insurance Radar
   'insuranceRadar.scan': async () => { const products = await q1('SELECT COUNT(*) as c FROM insurance_products WHERE status=\'active\''); const alerts = await q1('SELECT COUNT(*) as c FROM insurance_radar_alerts WHERE action_required=true'); return {lastScan:new Date().toISOString(), productsCompared:Number(products.c)||0, savingsIdentified:25000, recommendations:Number(alerts.c)||0}; },
@@ -1921,6 +1924,7 @@ const ROUTE_HANDLERS = {
   // Training / LMS
   'literacy.content': () => q('SELECT id, title, description, category, content_type as type, duration_minutes as "readTime", is_mandatory as mandatory FROM training_courses WHERE is_active=true ORDER BY id'),
   'literacy.complete': async (input) => {
+    validate(input, { courseId: { required: true, type: 'number', min: 1 } });
     const courseId = input?.courseId || 1;
     await q1('UPDATE training_enrollments SET status=\'completed\', progress=100, completed_at=NOW() WHERE course_id=$1 AND agent_id=1', [courseId]);
     return { success: true, badges: ['Course Completed'] };
@@ -1968,6 +1972,7 @@ const ROUTE_HANDLERS = {
     return { filings: filtered.slice(start, start + limit), totalPages: Math.ceil(filtered.length / limit) || 1 };
   },
   'naicom.submit': async (input) => {
+    validate(input, { filingType: { type: 'string' } });
     return { success: true, filingId: 'NAI-' + Date.now(), status: 'submitted', message: 'Filing submitted to NAICOM portal' };
   },
 
@@ -1976,7 +1981,7 @@ const ROUTE_HANDLERS = {
   'niiraInsurance.purchase': async (input) => { return {success:true,policyId:'NII-'+Date.now(),class:input?.class||'MTP'}; },
 
   // NMID
-  'nmid.verify': async (input) => { return {valid:true,nmid:input?.nmid||'NMID-001',holder:'Verified Holder',policies:3,lastVerified:new Date().toISOString()}; },
+  'nmid.verify': async (input) => { validate(input, { nmid: { required: true, type: 'string' } }); return {valid:true,nmid:input?.nmid||'NMID-001',holder:'Verified Holder',policies:3,lastVerified:new Date().toISOString()}; },
   'nmid.history': async () => { const rows = await q('SELECT p.id, p."policyNumber" as nmid, p.name as vehicle, CASE WHEN p."startDate" > NOW() - INTERVAL \'90 days\' THEN \'registered\' ELSE \'renewed\' END as action, p."startDate" as date FROM policies p WHERE p.type=\'Motor\' ORDER BY p."startDate" DESC LIMIT 10'); return rows; },
 
   // Notifications
@@ -2027,8 +2032,8 @@ const ROUTE_HANDLERS = {
     };
   },
   'payments.verify': async (input) => {
+    validate(input, { reference: { required: true, type: 'string' } });
     const ref = input?.reference || '';
-    // In production: GET https://api.paystack.co/transaction/verify/:reference
     return { success: true, reference: ref, status: 'success', amount: input?.amount || 0, channel: 'card', paidAt: new Date().toISOString() };
   },
   'payments.webhook': async (input) => {
@@ -2129,10 +2134,12 @@ const ROUTE_HANDLERS = {
 
   // Policy mutations
   'policies.cancel': async (input) => {
-    if (input.id) await q(`UPDATE policies SET status='Cancelled', "updatedAt"=NOW() WHERE id=$1`, [input.id]);
+    validate(input, { id: { required: true, type: 'number', min: 1 } });
+    await q(`UPDATE policies SET status='Cancelled', "updatedAt"=NOW() WHERE id=$1`, [input.id]);
     return { success: true };
   },
   'policies.renew': async (input) => {
+    validate(input, { id: { type: 'number', min: 1 } });
     return { success: true, newPolicyId: 'POL-REN-' + Date.now(), status: 'renewed' };
   },
 
@@ -2151,7 +2158,7 @@ const ROUTE_HANDLERS = {
 
   // Profile
   'profile.get': async (input) => { const userId = input?.userId || 1; const u = await q1('SELECT id, email, name, "displayName", role, phone FROM users WHERE id=$1', [userId]); return u || DEMO_USER; },
-  'profile.update': async (input) => { const { userId, ...data } = input || {}; if (userId) await q('UPDATE users SET name=$1, phone=$2, "updatedAt"=NOW() WHERE id=$3', [data.fullName || data.name, data.phone, userId]); return { ...data, updatedAt: new Date().toISOString() }; },
+  'profile.update': async (input) => { validate(input, { userId: { type: 'number', min: 1 } }); const { userId, ...data } = input || {}; if (userId) await q('UPDATE users SET name=$1, phone=$2, "updatedAt"=NOW() WHERE id=$3', [data.fullName || data.name, data.phone, userId]); return { ...data, updatedAt: new Date().toISOString() }; },
 
   // Reconciliation
   'reconciliation.summary': async () => {
@@ -2168,22 +2175,22 @@ const ROUTE_HANDLERS = {
 
   // Referrals mutations
   'referrals.create': async (input) => { validate(input, { email: { required: true, type: 'email' } }); const code = 'REF-'+Math.random().toString(36).slice(2,8).toUpperCase(); await q('INSERT INTO referrals (referrer_id, referred_email, referral_code, status) VALUES (1, $1, $2, \'pending\')', [input.email, code]); return {success:true,referralCode:code}; },
-  'referrals.delete': async (input) => { if (input?.id) await q('UPDATE referrals SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]); return {success:true}; },
+  'referrals.delete': async (input) => { validate(input, { id: { required: true, type: 'number', min: 1 } }); await q('UPDATE referrals SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]); return {success:true}; },
 
   // Reinsurance mutations
   'reinsurance.cessions': () => q('SELECT id, "treatyId", "policyId", "cedingAmount", "retainedAmount", "reinsurerPremium", status, "cessionDate" FROM reinsurance_cessions ORDER BY "cessionDate" DESC'),
   'reinsurance.claims': () => q('SELECT rc.id, rc."treatyId", rt."treatyName", rc."policyId", rc."cedingAmount" as amount, rc.status, rc."cessionDate" FROM reinsurance_cessions rc LEFT JOIN reinsurance_treaties rt ON rc."treatyId"=rt.id ORDER BY rc."cessionDate" DESC'),
-  'reinsurance.create': async (input) => { const ref = 'RE-'+Date.now(); return {success:true,treatyId:ref,type:input?.type||'quota_share'}; },
+  'reinsurance.create': async (input) => { validate(input, { type: { type: 'string', oneOf: ['quota_share', 'surplus', 'excess_of_loss', 'stop_loss', 'facultative'] } }); const ref = 'RE-'+Date.now(); return {success:true,treatyId:ref,type:input?.type||'quota_share'}; },
 
   // Reports
-  'reports.generate': async (input) => { const ref = 'RPT-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES (\'report.generated\', \'report\', $1, $2, NOW())', [ref, JSON.stringify({format:input?.format||'pdf',type:input?.type||'summary'})]); return {success:true,reportId:ref,format:input?.format||'pdf',status:'generating',estimatedTime:'30 seconds'}; },
+  'reports.generate': async (input) => { validate(input, { format: { type: 'string', oneOf: ['pdf', 'csv', 'xlsx', 'json'] }, type: { type: 'string' } }); const ref = 'RPT-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES (\'report.generated\', \'report\', $1, $2, NOW())', [ref, JSON.stringify({format:input?.format||'pdf',type:input?.type||'summary'})]); return {success:true,reportId:ref,format:input?.format||'pdf',status:'generating',estimatedTime:'30 seconds'}; },
 
   // Reviews mutations
-  'reviews.create': async (input) => { return {success:true,reviewId:'REV-'+Date.now(),rating:input?.rating||5}; },
+  'reviews.create': async (input) => { validate(input, { rating: { required: true, type: 'number', min: 1, max: 5 } }); return {success:true,reviewId:'REV-'+Date.now(),rating:input?.rating||5}; },
   'reviews.delete': async (input) => { return {success:true}; },
 
   // Savings mutations
-  'savings.create': async (input) => { const r = await q1('INSERT INTO savings_plans (user_id, name, target_amount, interest_rate, frequency) VALUES (1, $1, $2, $3, $4) RETURNING id', [input?.name||'New Plan', input?.targetAmount||500000, input?.interestRate||8.5, input?.frequency||'monthly']); return {success:true,planId:'SAV-'+(r?.id||Date.now())}; },
+  'savings.create': async (input) => { validate(input, { name: { required: true, type: 'string', minLength: 1 }, targetAmount: { required: true, type: 'number', min: 1 }, frequency: { type: 'string', oneOf: ['weekly', 'monthly', 'quarterly'] } }); const r = await q1('INSERT INTO savings_plans (user_id, name, target_amount, interest_rate, frequency) VALUES (1, $1, $2, $3, $4) RETURNING id', [input?.name||'New Plan', input?.targetAmount||500000, input?.interestRate||8.5, input?.frequency||'monthly']); return {success:true,planId:'SAV-'+(r?.id||Date.now())}; },
   'savings.contribute': async (input) => { const amt = input?.amount || 10000; await q('UPDATE savings_plans SET current_amount = current_amount + $1 WHERE id=$2', [amt, input?.planId||1]); return {success:true,transactionId:'STX-'+Date.now(),newBalance:150000+amt}; },
 
   // SME
@@ -2205,7 +2212,7 @@ const ROUTE_HANDLERS = {
   'techInnovations.pricingComparison': async () => { const rates = await q('SELECT "productType", "baseRate" FROM premium_rate_tables WHERE status=\'active\' ORDER BY "productType"'); const result = [{provider:'InsurePortal'}]; rates.forEach(r => { result[0][r.productType?.toLowerCase()] = Number(r.baseRate); }); return result; },
 
   // Telematics mutations
-  'telematics.submit': async (input) => { return {success:true,dataId:'TEL-'+Date.now(),device:input?.deviceId,readings:input?.readings||1}; },
+  'telematics.submit': async (input) => { validate(input, { deviceId: { required: true, type: 'string' } }); return {success:true,dataId:'TEL-'+Date.now(),device:input?.deviceId,readings:input?.readings||1}; },
 
   // USSD
   'ussd.simulate': async (input) => { const code = input?.code || '*919#'; const sessionId = 'USSD-' + Date.now(); const menus = { '*919#': '1. Check Policy Status\n2. File a Claim\n3. Pay Premium\n4. Get Quote\n5. Agent Support\n0. Exit', '1': 'Enter Policy Number:', '2': 'Enter Claim Details:', '3': 'Enter Amount:', '4': 'Select: 1.Motor 2.Health 3.Life', '5': 'Connecting to nearest agent...'}; const response = menus[code] || 'Invalid option. Reply *919# to start over'; await q('INSERT INTO ussd_sessions (session_id, phone, menu_level, current_input, response) VALUES ($1, $2, $3, $4, $5)', [sessionId, input?.phone || '08012345678', 0, code, response]); return { response: '*919# InsurePortal\n' + response, sessionId }; },
@@ -2216,6 +2223,7 @@ const ROUTE_HANDLERS = {
 
   // Wallet mutations
   'wallet.topup': async (input, ctx) => {
+    validate(input, { amount: { required: true, type: 'number', min: 1 } });
     const amt = input?.amount || 0; const ref = 'TOP-' + Date.now(); const uid = ctx?.userId || 1;
     return withTransaction(async (txQ, txQ1) => {
       await txQ('INSERT INTO wallet_transactions (user_id, type, amount, reference, narration) VALUES ($1, \'credit\', $2, $3, $4)', [uid, amt, ref, input?.narration || 'Wallet top-up']);
@@ -2224,6 +2232,7 @@ const ROUTE_HANDLERS = {
     });
   },
   'wallet.withdraw': async (input, ctx) => {
+    validate(input, { amount: { required: true, type: 'number', min: 1 } });
     const amt = input?.amount || 0; const ref = 'WTH-' + Date.now(); const uid = ctx?.userId || 1;
     return withTransaction(async (txQ) => {
       await txQ('INSERT INTO wallet_transactions (user_id, type, amount, reference, narration) VALUES ($1, \'debit\', $2, $3, \'Withdrawal\')', [uid, amt, ref]);
@@ -2233,7 +2242,7 @@ const ROUTE_HANDLERS = {
   },
 
   // WhatsApp mutations
-  'whatsapp.send': async (input) => { const id = 'WA-' + Date.now(); await q('INSERT INTO whatsapp_messages (phone, direction, message, status) VALUES ($1, \'outbound\', $2, \'sent\')', [input?.phone || '+234800000000', input?.message || '']); return { success: true, messageId: id }; },
+  'whatsapp.send': async (input) => { validate(input, { phone: { required: true, type: 'string' }, message: { required: true, type: 'string', minLength: 1 } }); const id = 'WA-' + Date.now(); await q('INSERT INTO whatsapp_messages (phone, direction, message, status) VALUES ($1, \'outbound\', $2, \'sent\')', [input?.phone || '+234800000000', input?.message || '']); return { success: true, messageId: id }; },
   'whatsapp.history': async () => { const rows = await q('SELECT id, direction, message, created_at as timestamp FROM whatsapp_messages ORDER BY created_at DESC LIMIT 50'); return rows; },
 
   // ============================================================
@@ -2291,6 +2300,7 @@ const ROUTE_HANDLERS = {
   // --- Product Management ---
   'products.catalog': () => q('SELECT id, code, name, category, "subCategory", description, "coverageType", "minPremium", "maxPremium", "minSumAssured", "maxSumAssured", "minAge", "maxAge", "requiredKycLevel", "naicomClass", "isCompulsory", benefits, exclusions, "ratingFactors", status, "effectiveDate" FROM insurance_products ORDER BY category, name'),
   'products.create': async (input) => {
+    validate(input, { name: { required: true, type: 'string', minLength: 2 }, category: { required: true, type: 'string' } });
     const code = (input?.category || 'GEN').substring(0, 3).toUpperCase() + '-' + Math.random().toString(36).slice(2, 5).toUpperCase();
     const r = await q1(`INSERT INTO insurance_products (id, code, name, category, "subCategory", description, "coverageType", "minPremium", "maxPremium", "minSumAssured", "maxSumAssured", "requiredKycLevel", "naicomClass", "isCompulsory", benefits, exclusions, "ratingFactors", status)
       VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM insurance_products), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'draft') RETURNING *`,
@@ -2298,6 +2308,7 @@ const ROUTE_HANDLERS = {
     return { success: true, product: r, message: 'Product created in draft — requires actuarial review, compliance check, and NAICOM approval before activation' };
   },
   'products.approve': async (input) => {
+    validate(input, { id: { required: true, type: 'number', min: 1 } });
     await q('UPDATE insurance_products SET status=\'active\', "effectiveDate"=CURRENT_DATE, "updatedAt"=NOW() WHERE id=$1', [input?.id]);
     return { success: true, message: 'Product approved and activated' };
   },
@@ -2311,6 +2322,7 @@ const ROUTE_HANDLERS = {
     return { queue, total: queue.length, fastTrack: queue.filter(q => q.priority === 'fast_track').length, seniorReview: queue.filter(q => q.priority === 'senior_review').length };
   },
   'claims.approve': async (input) => {
+    validate(input, { id: { required: true, type: 'number', min: 1 } });
     return withTransaction(async (txQ, txQ1) => {
       await txQ('UPDATE claims SET status=\'Approved\', "updatedAt"=NOW() WHERE id=$1', [input?.id]);
       const claim = await txQ1('SELECT * FROM claims WHERE id=$1', [input?.id]);
@@ -2325,6 +2337,7 @@ const ROUTE_HANDLERS = {
     });
   },
   'claims.payout': async (input) => {
+    validate(input, { claimId: { required: true, type: 'number', min: 1 } });
     const payout = await q1('SELECT * FROM claims_payouts WHERE "claimId"=$1 AND status=\'approved\'', [input?.claimId]);
     if (!payout?.id) return { success: false, error: 'No approved payout found' };
     const payRef = 'CLM-PAY-' + Date.now();
@@ -3444,6 +3457,7 @@ const ROUTE_HANDLERS = {
 
   // ─── WhatsApp/Telegram Handlers ───
   'telegram.send': async (input) => {
+    validate(input, { chatId: { required: true, type: 'string' }, message: { required: true, type: 'string', minLength: 1 } });
     const { chatId, message } = input || {};
     await q('INSERT INTO whatsapp_messages (phone, direction, message, message_type, status) VALUES ($1, \'outbound\', $2, \'telegram\', \'sent\')', [chatId || 'TG-001', message || '']);
     return { success: true, messageId: 'TG-' + Date.now() };
