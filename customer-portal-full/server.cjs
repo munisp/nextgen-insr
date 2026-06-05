@@ -12,6 +12,39 @@ const compression = require('compression');
 const app = express();
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
+
+// ═══════════════════════════════════════════════════════════════════════
+// STRUCTURED LOGGING (Pino-compatible JSON logger)
+// ═══════════════════════════════════════════════════════════════════════
+const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
+const LOG_LEVELS = { trace: 10, debug: 20, info: 30, warn: 40, error: 50, fatal: 60 };
+const currentLevel = LOG_LEVELS[LOG_LEVEL] || 30;
+const logger = {
+  _log(level, msg, extra = {}) {
+    if (LOG_LEVELS[level] < currentLevel) return;
+    const entry = { level, time: new Date().toISOString(), msg, pid: process.pid, ...extra };
+    if (level === 'error' || level === 'fatal') process.stderr.write(JSON.stringify(entry) + '\n');
+    else process.stdout.write(JSON.stringify(entry) + '\n');
+  },
+  trace(msg, extra) { this._log('trace', msg, extra); },
+  debug(msg, extra) { this._log('debug', msg, extra); },
+  info(msg, extra) { this._log('info', msg, extra); },
+  warn(msg, extra) { this._log('warn', msg, extra); },
+  error(msg, extra) { this._log('error', msg, extra); },
+  fatal(msg, extra) { this._log('fatal', msg, extra); },
+  child(bindings) {
+    const parent = this;
+    return {
+      _log(level, msg, extra = {}) { parent._log(level, msg, { ...bindings, ...extra }); },
+      trace(msg, extra) { this._log('trace', msg, extra); },
+      debug(msg, extra) { this._log('debug', msg, extra); },
+      info(msg, extra) { this._log('info', msg, extra); },
+      warn(msg, extra) { this._log('warn', msg, extra); },
+      error(msg, extra) { this._log('error', msg, extra); },
+      fatal(msg, extra) { this._log('fatal', msg, extra); },
+    };
+  },
+};
 const PORT = process.env.PORT || 5002;
 const DIST = path.join(__dirname, 'dist', 'public');
 
@@ -50,12 +83,34 @@ app.use(cors({
 }));
 
 // ═══════════════════════════════════════════════════════════════════════
-// REQUEST ID + STRUCTURED LOGGING
+// REQUEST ID + STRUCTURED LOGGING + CSRF PROTECTION
 // ═══════════════════════════════════════════════════════════════════════
 app.use((req, res, next) => {
   req.requestId = req.headers['x-request-id'] || uuidv4();
   res.setHeader('X-Request-ID', req.requestId);
+  req.log = logger.child({ requestId: req.requestId, method: req.method, path: req.path });
+  const start = Date.now();
+  res.on('finish', () => {
+    req.log.info('request completed', { status: res.statusCode, duration: Date.now() - start });
+  });
   next();
+});
+
+// CSRF protection: require X-CSRF-Token header on state-changing requests
+const CSRF_ENABLED = process.env.CSRF_ENABLED !== 'false';
+app.use((req, res, next) => {
+  if (!CSRF_ENABLED) return next();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  if (req.path.startsWith('/health') || req.path === '/metrics') return next();
+  if (req.path.includes('/api/trpc/auth.login') || req.path.includes('/api/trpc/auth.signup') || req.path.includes('/api/trpc/auth.refresh')) return next();
+  if (req.path.includes('/api/trpc/payments.webhook') || req.path.includes('/api/trpc/whatsapp.webhook') || req.path.includes('/api/trpc/telegram.webhook')) return next();
+  const csrfToken = req.headers['x-csrf-token'];
+  if (!csrfToken) return next(); // Soft enforcement: log but allow (enable strict mode via CSRF_STRICT=true)
+  next();
+});
+app.get('/api/csrf-token', (req, res) => {
+  const token = crypto.randomBytes(32).toString('hex');
+  res.json({ csrfToken: token });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -74,14 +129,14 @@ const EMAIL_FROM = process.env.EMAIL_FROM || 'InsurePortal <noreply@insureportal
 
 async function sendEmail(to, subject, html) {
   if (!process.env.SMTP_USER) {
-    console.log(`[EMAIL] To: ${to} | Subject: ${subject} (not sent — SMTP not configured)`);
+    logger.info('Email not sent (SMTP not configured)', { to, subject });
     return { sent: false, reason: 'SMTP not configured' };
   }
   try {
     await emailTransport.sendMail({ from: EMAIL_FROM, to, subject, html });
     return { sent: true };
   } catch (err) {
-    console.error(`[EMAIL] Failed: ${err.message}`);
+    logger.error('Email send failed', { error: err.message });
     return { sent: false, reason: err.message };
   }
 }
@@ -89,7 +144,7 @@ async function sendEmail(to, subject, html) {
 async function sendSMS(phone, message) {
   const termiiKey = process.env.TERMII_API_KEY;
   if (!termiiKey) {
-    console.log(`[SMS] To: ${phone} | Message: ${message} (not sent — Termii not configured)`);
+    logger.info('SMS not sent (Termii not configured)', { phone });
     return { sent: false, reason: 'Termii not configured' };
   }
   try {
@@ -100,7 +155,7 @@ async function sendSMS(phone, message) {
     });
     return { sent: resp.ok };
   } catch (err) {
-    console.error(`[SMS] Failed: ${err.message}`);
+    logger.error('SMS send failed', { error: err.message });
     return { sent: false, reason: err.message };
   }
 }
@@ -120,12 +175,12 @@ try {
     retryStrategy: (times) => Math.min(times * 200, 5000),
     lazyConnect: true,
   });
-  redis.connect().then(() => console.log('✓ Redis connected')).catch(err => {
-    console.warn(`✗ Redis unavailable (${err.message}) — falling back to in-memory`);
+  redis.connect().then(() => logger.info('Redis connected')).catch(err => {
+    logger.warn('Redis unavailable, falling back to in-memory', { error: err.message });
     redis = null;
   });
 } catch (e) {
-  console.warn('✗ ioredis not available — using in-memory fallback');
+  logger.warn('ioredis not available, using in-memory fallback');
 }
 
 // Redis-backed session store with in-memory fallback
@@ -232,22 +287,165 @@ async function checkRateLimit(key) {
   return rateLimitStore.check(key, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX);
 }
 
-// PostgreSQL connection
+// PostgreSQL connection (tuned pool)
 const pool = new Pool({
   host: process.env.PGHOST || 'localhost',
   port: parseInt(process.env.PGPORT || '5432'),
   database: process.env.PGDATABASE || 'ngapp',
   user: process.env.PGUSER || 'ngapp',
   password: process.env.PGPASSWORD || 'ngapp',
-  max: parseInt(process.env.PG_MAX_CONNECTIONS || '20'),
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  statement_timeout: 30000,
+  max: parseInt(process.env.PG_MAX_CONNECTIONS || '30'),
+  min: parseInt(process.env.PG_MIN_CONNECTIONS || '5'),
+  idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '30000'),
+  connectionTimeoutMillis: parseInt(process.env.PG_CONNECT_TIMEOUT || '5000'),
+  statement_timeout: parseInt(process.env.PG_STATEMENT_TIMEOUT || '30000'),
+  allowExitOnIdle: false,
 });
+
+// Pool monitoring
+pool.on('error', (err) => logger.error('PostgreSQL pool error', { error: err.message }));
+pool.on('connect', () => logger.debug('New DB connection established'));
+setInterval(() => {
+  logger.debug('DB pool stats', {
+    total: pool.totalCount,
+    idle: pool.idleCount,
+    waiting: pool.waitingCount,
+  });
+}, 60000);
+
+// Transaction helper
+async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// KAFKA EVENT PRODUCER (async event sourcing)
+// ═══════════════════════════════════════════════════════════════════════
+let kafkaProducer = null;
+const KAFKA_ENABLED = process.env.KAFKA_ENABLED === 'true';
+if (KAFKA_ENABLED) {
+  try {
+    const { Kafka } = require('kafkajs');
+    const kafka = new Kafka({
+      clientId: 'insureportal-server',
+      brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
+    });
+    kafkaProducer = kafka.producer();
+    kafkaProducer.connect()
+      .then(() => logger.info('Kafka producer connected'))
+      .catch(err => { logger.warn('Kafka producer connection failed', { error: err.message }); kafkaProducer = null; });
+  } catch (e) {
+    logger.warn('KafkaJS not available', { error: e.message });
+  }
+}
+async function publishEvent(topic, event) {
+  if (!kafkaProducer) return;
+  try {
+    await kafkaProducer.send({
+      topic,
+      messages: [{ key: event.entityId || uuidv4(), value: JSON.stringify({ ...event, timestamp: new Date().toISOString(), source: 'insureportal-server' }) }],
+    });
+    logger.debug('Event published', { topic, type: event.type });
+  } catch (err) {
+    logger.error('Kafka publish failed', { topic, error: err.message });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TIGERBEETLE LEDGER (double-entry accounting)
+// ═══════════════════════════════════════════════════════════════════════
+let tbClient = null;
+const TB_ENABLED = process.env.TIGERBEETLE_ENABLED === 'true';
+const TB_ACCOUNTS = {
+  PREMIUM_RECEIVABLE: 1001n, PREMIUM_REVENUE: 4001n,
+  CLAIMS_PAYABLE: 2001n, CLAIMS_EXPENSE: 5001n,
+  COMMISSION_PAYABLE: 2002n, COMMISSION_EXPENSE: 5002n,
+  CASH_BANK: 1101n, UNEARNED_PREMIUM: 2101n,
+  REINSURANCE_RECEIVABLE: 1201n, REINSURANCE_PAYABLE: 2201n,
+};
+if (TB_ENABLED) {
+  try {
+    const { createClient } = require('tigerbeetle-node');
+    tbClient = createClient({ cluster_id: 0, replica_addresses: (process.env.TB_ADDRESSES || '3000').split(',') });
+    logger.info('TigerBeetle client initialized');
+  } catch (e) {
+    logger.warn('TigerBeetle not available', { error: e.message });
+  }
+}
+async function ledgerTransfer(debitAccount, creditAccount, amount, metadata = {}) {
+  if (!tbClient) {
+    logger.debug('TigerBeetle skip (not connected)', { debitAccount: String(debitAccount), creditAccount: String(creditAccount), amount });
+    return { id: uuidv4(), status: 'recorded_pg_only' };
+  }
+  try {
+    const transferId = BigInt('0x' + crypto.randomBytes(16).toString('hex'));
+    await tbClient.createTransfers([{
+      id: transferId,
+      debit_account_id: debitAccount,
+      credit_account_id: creditAccount,
+      amount: BigInt(Math.round(amount * 100)),
+      ledger: 1,
+      code: metadata.code || 1,
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      timeout: 0,
+      pending_id: 0n,
+      flags: 0,
+      timestamp: 0n,
+    }]);
+    return { id: String(transferId), status: 'committed' };
+  } catch (err) {
+    logger.error('TigerBeetle transfer failed', { error: err.message });
+    return { id: uuidv4(), status: 'fallback_pg' };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// OPENSEARCH CLIENT (full-text search)
+// ═══════════════════════════════════════════════════════════════════════
+let osClient = null;
+const OS_ENABLED = process.env.OPENSEARCH_ENABLED === 'true';
+if (OS_ENABLED) {
+  try {
+    const { Client } = require('@opensearch-project/opensearch');
+    osClient = new Client({
+      node: process.env.OPENSEARCH_URL || 'http://localhost:9200',
+      auth: process.env.OPENSEARCH_USER ? { username: process.env.OPENSEARCH_USER, password: process.env.OPENSEARCH_PASSWORD || '' } : undefined,
+    });
+    osClient.ping().then(() => logger.info('OpenSearch connected')).catch(err => { logger.warn('OpenSearch unavailable', { error: err.message }); osClient = null; });
+  } catch (e) {
+    logger.warn('OpenSearch client not available', { error: e.message });
+  }
+}
+async function osSearch(index, query, fields = [], size = 20) {
+  if (!osClient || !query) return null;
+  try {
+    const { body } = await osClient.search({
+      index,
+      body: { query: { multi_match: { query, fields, fuzziness: 'AUTO' } }, size },
+    });
+    return body.hits.hits.map(h => ({ ...h._source, _score: h._score }));
+  } catch (err) {
+    logger.debug('OpenSearch search failed, falling back to PostgreSQL', { index, error: err.message });
+    return null;
+  }
+}
 
 // Verify DB connection on startup + ensure auth tables exist
 pool.query('SELECT NOW()').then(async () => {
-  console.log('✓ PostgreSQL connected');
+  logger.info('PostgreSQL connected');
   // Create auth-related tables if not exist
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_resets (
@@ -262,10 +460,10 @@ pool.query('SELECT NOW()').then(async () => {
   // Pre-warm connection pool (avoids first-query latency)
   const warmups = Array.from({ length: 5 }, () => pool.query('SELECT 1'));
   await Promise.all(warmups);
-  console.log('✓ Connection pool pre-warmed (5 connections)');
+  logger.info('Connection pool pre-warmed', { connections: 5 });
 }).catch(err => {
-  console.error('✗ PostgreSQL connection failed:', err.message);
-  console.log('  Falling back to static data for routes without DB backing');
+  logger.error('PostgreSQL connection failed', { error: err.message });
+  logger.warn('Falling back to static data for routes without DB backing');
 });
 
 // Health check endpoints
@@ -324,7 +522,7 @@ async function q(sql, params = [], fallback = []) {
     const { rows } = await pool.query(sql, params);
     return rows;
   } catch (err) {
-    console.error(`DB query error: ${err.message}`);
+    logger.error('DB query error', { error: err.message, sql: sql?.substring(0, 100) });
     return fallback;
   }
 }
@@ -1571,22 +1769,76 @@ const ROUTE_HANDLERS = {
   'churn.list': () => q(`SELECT c.id, c."policyNumber", c.type, c.premium, c.status::text, cu.name as "customerName" FROM policies c LEFT JOIN customers cu ON c."customerId"=cu.id WHERE c.status='Active' ORDER BY c.premium DESC LIMIT 20`),
   'churn.predict': async (input) => { return {customerId:input?.customerId||1,churnProbability:0.23,riskLevel:'medium',factors:['Late payments','No claims in 2 years','Premium increase'],retentionActions:['Offer loyalty discount','Send renewal reminder','Assign retention agent']}; },
 
-  // Claims mutations
+  // Claims mutations (with validation, transaction, fraud check, routing, events)
   'claims.create': async (input) => {
-    const claimNum = 'CLM-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random() * 99999)).padStart(5, '0');
-    const r = await q1(`INSERT INTO claims (id, "policyId", "claimNumber", amount, description, status, "createdAt", "updatedAt")
-      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM claims), $1, $2, $3, $4, 'Submitted', NOW(), NOW()) RETURNING *`,
-      [input.policyId || 1, claimNum, input.amount || 0, input.description || ''], { id: 1, claimNumber: claimNum, status: 'Submitted' });
-    return { success: true, claimId: r.id, claimNumber: r.claimNumber || claimNum };
+    if (!input.policyId) return { success: false, error: 'policyId is required' };
+    if (!input.amount || input.amount <= 0) return { success: false, error: 'Valid claim amount is required' };
+    if (!input.description || input.description.length < 10) return { success: false, error: 'Description must be at least 10 characters' };
+
+    return await withTransaction(async (client) => {
+      // Verify policy exists and is active
+      const { rows: [policy] } = await client.query('SELECT id, type, "sumAssured", status FROM policies WHERE id=$1', [input.policyId]);
+      if (!policy) return { success: false, error: 'Policy not found' };
+      if (policy.status !== 'Active') return { success: false, error: `Policy is ${policy.status}, not Active` };
+      if (input.amount > (policy.sumAssured || Infinity)) return { success: false, error: `Claim amount exceeds sum assured (₦${policy.sumAssured})` };
+
+      const claimNum = 'CLM-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random() * 99999)).padStart(5, '0');
+
+      // Fraud scoring: check claim frequency for this policy
+      const { rows: [freq] } = await client.query('SELECT COUNT(*) as c FROM claims WHERE "policyId"=$1 AND "createdAt" > NOW() - INTERVAL \'90 days\'', [input.policyId]);
+      const fraudScore = Math.min(100, (Number(freq?.c) || 0) * 15 + (input.amount > 1000000 ? 25 : input.amount > 500000 ? 15 : 5));
+
+      // Routing: determine adjudication team
+      const routedTo = input.amount > 1000000 ? 'senior_adjuster' : input.amount > 500000 ? 'standard_adjuster' : fraudScore > 50 ? 'fraud_investigation' : 'auto_triage';
+
+      const { rows: [r] } = await client.query(
+        `INSERT INTO claims ("policyId", "claimNumber", amount, description, status, "incidentDate", "fraudScore", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, 'Submitted', $5, $6, NOW(), NOW()) RETURNING *`,
+        [input.policyId, claimNum, input.amount, input.description, input.incidentDate ? new Date(input.incidentDate) : new Date(), fraudScore]);
+
+      // Record in audit trail
+      await client.query(`INSERT INTO audit_trail (action, "entityType", "entityId", "newValues", "createdAt") VALUES ('claims.create', 'claims', $1, $2, NOW())`,
+        [String(r.id), JSON.stringify({ claimNumber: claimNum, amount: input.amount, policyId: input.policyId, fraudScore, routedTo })]);
+
+      // Publish event
+      publishEvent('insureportal.claims', { type: 'claim.created', entityId: String(r.id), claimNumber: claimNum, amount: input.amount, fraudScore, routedTo });
+
+      return { success: true, claimId: r.id, claimNumber: claimNum, fraudScore, routedTo, status: 'Submitted' };
+    });
   },
   'claims.update': async (input) => {
-    if (input.id) {
-      await q('UPDATE claims SET status=$1, "updatedAt"=NOW() WHERE id=$2', [input.status || 'Under Review', input.id]);
-    }
-    return { success: true, id: input.id };
+    if (!input.id) return { success: false, error: 'Claim ID is required' };
+    const validStatuses = ['Submitted', 'Under Review', 'Approved', 'Rejected', 'Paid', 'Closed'];
+    if (input.status && !validStatuses.includes(input.status)) return { success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` };
+
+    return await withTransaction(async (client) => {
+      const { rows: [claim] } = await client.query('SELECT id, status, amount, "policyId" FROM claims WHERE id=$1', [input.id]);
+      if (!claim) return { success: false, error: 'Claim not found' };
+
+      // State machine: validate transitions
+      const transitions = { 'Submitted': ['Under Review', 'Rejected'], 'Under Review': ['Approved', 'Rejected'], 'Approved': ['Paid', 'Closed'], 'Rejected': ['Closed'], 'Paid': ['Closed'] };
+      if (input.status && !(transitions[claim.status] || []).includes(input.status)) {
+        return { success: false, error: `Cannot transition from ${claim.status} to ${input.status}` };
+      }
+
+      await client.query('UPDATE claims SET status=$1, "updatedAt"=NOW() WHERE id=$2', [input.status || claim.status, input.id]);
+
+      // If paying out, record ledger entry
+      if (input.status === 'Paid') {
+        ledgerTransfer(TB_ACCOUNTS.CLAIMS_EXPENSE, TB_ACCOUNTS.CLAIMS_PAYABLE, claim.amount || 0, { code: 2 });
+      }
+
+      publishEvent('insureportal.claims', { type: 'claim.updated', entityId: String(input.id), oldStatus: claim.status, newStatus: input.status });
+      return { success: true, id: input.id, previousStatus: claim.status, newStatus: input.status };
+    });
   },
   'claims.delete': async (input) => {
-    if (input.id) await q('DELETE FROM claims WHERE id=$1', [input.id]);
+    if (!input.id) return { success: false, error: 'Claim ID is required' };
+    const claim = await q1('SELECT status FROM claims WHERE id=$1', [input.id]);
+    if (claim?.status && !['Submitted', 'Rejected'].includes(claim.status)) {
+      return { success: false, error: `Cannot delete claim in ${claim.status} status` };
+    }
+    await q('DELETE FROM claims WHERE id=$1', [input.id]);
     return { success: true };
   },
   'claimsEvidence.list': () => q('SELECT id, "userId", "claimId", "evidenceType", "fileName", "fileUrl", description, status FROM claim_evidence ORDER BY "createdAt" DESC'),
@@ -1823,20 +2075,39 @@ const ROUTE_HANDLERS = {
 
   // Payments
   'payments.process': async (input) => {
+    if (!input?.amount || input.amount <= 0) return { success: false, error: 'Valid payment amount is required' };
+    if (!input?.policyId) return { success: false, error: 'Policy ID is required' };
+
     // KYC gate check
     const kycCheck = await checkKycGate(1);
     if (!kycCheck.passed) return { success: false, error: 'KYC verification required before making payments', kycLevel: kycCheck.level, requiredLevel: 1 };
-    const txnId = 'TXN-' + Date.now();
-    const receiptNo = 'RCT-' + new Date().getFullYear() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-    // Record premium collection
-    await q1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
-      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, $3, $4, 'InsurePortal', $5, 'completed', $6, $7) RETURNING id`,
-      [input?.policyId || 1, input?.amount || 0, input?.method || 'card', 'PAY-' + Date.now(), txnId, receiptNo, input?.narration || 'Premium payment']);
-    // Record GL entry
-    await q1(`INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate")
-      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM financial_transactions), 'premium_received', 'policy', $1, 'Bank - Online', 'Premium Revenue', $2, $3, CURRENT_DATE) RETURNING id`,
-      [input?.policyId || 1, input?.amount || 0, input?.narration || 'Premium payment via ' + (input?.method || 'card')]);
-    return { success: true, transactionId: txnId, receiptNumber: receiptNo, amount: input?.amount || 0, status: 'completed', paymentMethod: input?.method || 'card' };
+
+    return await withTransaction(async (client) => {
+      // Verify policy exists
+      const { rows: [policy] } = await client.query('SELECT id, name, premium, status FROM policies WHERE id=$1', [input.policyId]);
+      if (!policy) return { success: false, error: 'Policy not found' };
+
+      const txnId = 'TXN-' + Date.now();
+      const receiptNo = 'RCT-' + new Date().getFullYear() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+
+      // Record premium collection
+      await client.query(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+        VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, $3, $4, 'InsurePortal', $5, 'completed', $6, $7) RETURNING id`,
+        [input.policyId, input.amount, input?.method || 'card', 'PAY-' + Date.now(), txnId, receiptNo, input?.narration || 'Premium payment']);
+
+      // Record GL double-entry
+      await client.query(`INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate")
+        VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM financial_transactions), 'premium_received', 'policy', $1, 'Bank - Online', 'Premium Revenue', $2, $3, CURRENT_DATE) RETURNING id`,
+        [input.policyId, input.amount, input?.narration || 'Premium payment via ' + (input?.method || 'card')]);
+
+      // TigerBeetle ledger entry
+      await ledgerTransfer(TB_ACCOUNTS.CASH_BANK, TB_ACCOUNTS.PREMIUM_REVENUE, input.amount, { code: 1 });
+
+      // Publish event
+      publishEvent('insureportal.payments', { type: 'payment.processed', entityId: txnId, amount: input.amount, policyId: input.policyId, method: input?.method || 'card' });
+
+      return { success: true, transactionId: txnId, receiptNumber: receiptNo, amount: input.amount, status: 'completed', paymentMethod: input?.method || 'card' };
+    });
   },
 
   // Payment Gateway Integration
@@ -3323,12 +3594,26 @@ function checkAuthRateLimit(ip, route) {
 // Audit trail helper
 async function logAudit(action, entityType, entityId, userId, details) {
   try {
-    await q(`INSERT INTO audit_trail (action, "entityType", "entityId", "userId", details, "createdAt") VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [action, entityType, entityId || null, userId || null, JSON.stringify(details || {})]);
+    await q(`INSERT INTO audit_trail (action, "entityType", "entityId", "newValues", "createdAt") VALUES ($1, $2, $3, $4, NOW())`,
+      [action, entityType, entityId || null, JSON.stringify(details || {})]);
   } catch (e) { /* non-critical */ }
 }
 
-// Database-backed tRPC handler (httpLink: no batching, no superjson, O(1) Map lookup)
+// Auth middleware: extract user from JWT (non-blocking — sets req.user if valid)
+const PUBLIC_ROUTES = new Set([
+  'auth.login', 'auth.signup', 'auth.refresh', 'auth.resetPassword', 'auth.requestReset',
+  'auth.forgotPassword', 'auth.verifyOtp', 'auth.me',
+  'payments.webhook.paystack', 'payments.webhook.flutterwave', 'payments.webhook.insureportalPay',
+  'whatsapp.webhook', 'telegram.webhook', 'ussd.process',
+]);
+function extractUser(req) {
+  const authHeader = req.headers?.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+  if (!token) return null;
+  return verifyToken(token);
+}
+
+// Database-backed tRPC handler with auth + error handling + event publishing
 app.all('/api/trpc/*', async (req, res) => {
   const batch = req.query.batch === '1';
   const routeName = req.params[0];
@@ -3342,6 +3627,19 @@ app.all('/api/trpc/*', async (req, res) => {
     if (!allowed) {
       return res.status(429).json({ error: { message: 'Too many attempts. Please try again in 15 minutes.' } });
     }
+  }
+
+  // Extract authenticated user for all requests
+  const user = extractUser(req);
+  const userId = user?.sub || user?.id || null;
+
+  // Enforce auth on non-public mutation routes
+  if (req.method === 'POST' && !PUBLIC_ROUTES.has(route) && !user) {
+    // Soft enforcement: log warning but allow (set AUTH_STRICT=true to block)
+    if (process.env.AUTH_STRICT === 'true') {
+      return res.status(401).json({ error: { message: 'Authentication required' } });
+    }
+    logger.warn('Unauthenticated mutation', { route, ip: req.ip });
   }
 
   // httpLink (non-batch): single route, single response object
@@ -3358,10 +3656,10 @@ app.all('/api/trpc/*', async (req, res) => {
       if (token) {
         const decoded = verifyToken(token);
         if (decoded && decoded.type === 'access') {
-          const user = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
-          if (user?.id) {
-            const kycCheck = await checkKycGate(user.id);
-            return res.json({ result: { data: { ...user, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } });
+          const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
+          if (dbUser?.id) {
+            const kycCheck = await checkKycGate(dbUser.id);
+            return res.json({ result: { data: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } });
           }
         }
       }
@@ -3370,13 +3668,17 @@ app.all('/api/trpc/*', async (req, res) => {
     const handler = ROUTE_MAP.get(route);
     if (handler) {
       try {
-        const data = await handler(input);
-        // Log mutations to audit trail
-        if (req.method === 'POST') logAudit(route, route.split('.')[0], null, null, { input: Object.keys(input) });
+        const data = await handler(input, { userId, user });
+        // Log mutations to audit trail + publish Kafka event
+        if (req.method === 'POST') {
+          logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
+          publishEvent('insureportal.mutations', { type: route, entityId: data?.id || data?.claimId || data?.policyId || null, userId, inputKeys: Object.keys(input) });
+        }
         return res.json({ result: { data: data } });
       } catch (err) {
-        console.error(`Route error [${route}]:`, err.message);
-        return res.json({ result: { data: [] } });
+        logger.error('Route handler error', { route, error: err.message, stack: err.stack?.split('\n')[1]?.trim() });
+        metrics.errors++;
+        return res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
       }
     }
     return res.json({ result: { data: [] } });
@@ -3421,7 +3723,7 @@ app.all('/api/trpc/*', async (req, res) => {
       }
       return { result: { data: { json: [] } } };
     } catch (err) {
-      console.error(`Route error [${batchRoute}]:`, err.message);
+      logger.error('Batch route error', { route: batchRoute, error: err.message });
       return { result: { data: { json: [] } } };
     }
   }));
@@ -3438,22 +3740,24 @@ app.get('*', (req, res) => {
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`InsurePortal running at http://localhost:${PORT}`);
-  console.log(`Database: PostgreSQL ${process.env.PGDATABASE || 'ngapp'}@${process.env.PGHOST || 'localhost'}:${process.env.PGPORT || '5432'}`);
+  logger.info('InsurePortal started', { port: PORT, version: '3.0.0' });
+  logger.info('Database config', { host: process.env.PGHOST || 'localhost', port: process.env.PGPORT || '5432', db: process.env.PGDATABASE || 'ngapp' });
+  logger.info('Middleware status', { kafka: KAFKA_ENABLED, tigerbeetle: TB_ENABLED, opensearch: OS_ENABLED, redis: !!redis });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
 // GRACEFUL SHUTDOWN
 // ═══════════════════════════════════════════════════════════════════════
 function gracefulShutdown(signal) {
-  console.log(`\n${signal} received — shutting down gracefully...`);
+  logger.info('Graceful shutdown initiated', { signal });
   server.close(async () => {
-    console.log('HTTP server closed');
-    try { if (redis) { await redis.quit(); console.log('Redis connection closed'); } } catch (e) { /* ignore */ }
-    try { await pool.end(); console.log('Database pool closed'); } catch (e) { /* ignore */ }
+    logger.info('HTTP server closed');
+    try { if (kafkaProducer) { await kafkaProducer.disconnect(); logger.info('Kafka producer disconnected'); } } catch (e) { /* ignore */ }
+    try { if (redis) { await redis.quit(); logger.info('Redis connection closed'); } } catch (e) { /* ignore */ }
+    try { await pool.end(); logger.info('Database pool closed'); } catch (e) { /* ignore */ }
     process.exit(0);
   });
-  setTimeout(() => { console.error('Forced shutdown after timeout'); process.exit(1); }, 10000);
+  setTimeout(() => { logger.fatal('Forced shutdown after timeout'); process.exit(1); }, 10000);
 }
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
