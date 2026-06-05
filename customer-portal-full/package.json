@@ -1,6 +1,19 @@
 {
   "name": "customer-portal-full",
-  "version": "1.0.0",
+  "version": "3.0.0",
+  "scripts": {
+    "start": "node server.cjs",
+    "dev": "node server.cjs",
+    "build": "vite build",
+    "test": "node tests/unit.test.js && node tests/integration.test.js",
+    "test:unit": "node tests/unit.test.js",
+    "test:integration": "node tests/integration.test.js",
+    "test:e2e": "npx playwright test",
+    "lint": "prettier --check client/src/**/*.tsx",
+    "format": "prettier --write client/src/**/*.tsx",
+    "typecheck": "tsc --noEmit",
+    "db:backup": "bash scripts/backup.sh"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
     "@aws-sdk/s3-request-presigner": "^3.693.0",

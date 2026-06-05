@@ -9,6 +9,73 @@ const helmet = require('helmet');
 const nodemailer = require('nodemailer');
 function uuidv4() { return crypto.randomUUID(); }
 
+// ═══════════════════════════════════════════════════════════════════════
+// CIRCUIT BREAKER — protects external service calls from cascading failures
+// ═══════════════════════════════════════════════════════════════════════
+class CircuitBreaker {
+  constructor(name, { threshold = 5, resetTimeout = 30000, halfOpenMax = 2 } = {}) {
+    this.name = name;
+    this.state = 'CLOSED'; // CLOSED | OPEN | HALF_OPEN
+    this.failures = 0;
+    this.successes = 0;
+    this.threshold = threshold;
+    this.resetTimeout = resetTimeout;
+    this.halfOpenMax = halfOpenMax;
+    this.nextAttempt = 0;
+    this.lastError = null;
+  }
+  async call(fn) {
+    if (this.state === 'OPEN') {
+      if (Date.now() < this.nextAttempt) {
+        throw new Error(`Circuit breaker ${this.name} is OPEN — ${this.lastError?.message || 'service unavailable'}`);
+      }
+      this.state = 'HALF_OPEN';
+      this.successes = 0;
+    }
+    try {
+      const result = await fn();
+      if (this.state === 'HALF_OPEN') {
+        this.successes++;
+        if (this.successes >= this.halfOpenMax) { this.state = 'CLOSED'; this.failures = 0; log('info', `Circuit breaker ${this.name} CLOSED`, { successes: this.successes }); }
+      } else { this.failures = 0; }
+      return result;
+    } catch (err) {
+      this.failures++;
+      this.lastError = err;
+      if (this.failures >= this.threshold || this.state === 'HALF_OPEN') {
+        this.state = 'OPEN';
+        this.nextAttempt = Date.now() + this.resetTimeout;
+        log('warn', `Circuit breaker ${this.name} OPEN`, { failures: this.failures, resetIn: this.resetTimeout });
+      }
+      throw err;
+    }
+  }
+  getStatus() { return { name: this.name, state: this.state, failures: this.failures, lastError: this.lastError?.message || null }; }
+}
+
+const breakers = {
+  kafka: new CircuitBreaker('kafka', { threshold: 3, resetTimeout: 60000 }),
+  tigerbeetle: new CircuitBreaker('tigerbeetle', { threshold: 3, resetTimeout: 60000 }),
+  opensearch: new CircuitBreaker('opensearch', { threshold: 3, resetTimeout: 30000 }),
+  mlInference: new CircuitBreaker('ml-inference', { threshold: 5, resetTimeout: 15000 }),
+  smtp: new CircuitBreaker('smtp', { threshold: 3, resetTimeout: 120000 }),
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// TOKEN BLACKLIST — invalidated tokens (logout, password change)
+// ═══════════════════════════════════════════════════════════════════════
+const tokenBlacklist = new Set();
+const tokenBlacklistRedisPrefix = 'bl:';
+async function blacklistToken(token) {
+  tokenBlacklist.add(token);
+  if (redis) { try { await redis.setex(`${tokenBlacklistRedisPrefix}${token}`, 900, '1'); } catch (e) { /* fallback to in-memory */ } }
+}
+async function isTokenBlacklisted(token) {
+  if (tokenBlacklist.has(token)) return true;
+  if (redis) { try { return await redis.exists(`${tokenBlacklistRedisPrefix}${token}`) === 1; } catch (e) { return false; } }
+  return false;
+}
+
 // Structured JSON logger
 function log(level, message, meta = {}) {
   const entry = { ts: new Date().toISOString(), level, msg: message, ...meta };
@@ -81,18 +148,22 @@ const emailTransport = nodemailer.createTransport({
 });
 const EMAIL_FROM = process.env.EMAIL_FROM || 'InsurePortal <noreply@insureportal.ng>';
 
-async function sendEmail(to, subject, html) {
+async function sendEmail(to, subject, html, retries = 3) {
   if (!process.env.SMTP_USER) {
     log('info', 'Email skipped — SMTP not configured', { to, subject });
     return { sent: false, reason: 'SMTP not configured' };
   }
-  try {
-    await emailTransport.sendMail({ from: EMAIL_FROM, to, subject, html });
-    return { sent: true };
-  } catch (err) {
-    log('error', 'Email send failed', { to, subject, error: err.message });
-    return { sent: false, reason: err.message };
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await breakers.smtp.call(() => emailTransport.sendMail({ from: EMAIL_FROM, to, subject, html }));
+      log('info', 'Email sent', { to, subject, attempt });
+      return { sent: true };
+    } catch (err) {
+      log('error', 'Email send failed', { to, subject, error: err.message, attempt, retries });
+      if (attempt < retries) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
+    }
   }
+  return { sent: false, reason: 'Max retries exceeded' };
 }
 
 async function sendSMS(phone, message) {
@@ -129,6 +200,8 @@ try {
     retryStrategy: (times) => Math.min(times * 200, 5000),
     lazyConnect: true,
   });
+  redis.on('error', (err) => { log('error', 'Redis error', { error: err.message }); });
+  redis.on('reconnecting', (times) => { log('info', 'Redis reconnecting', { attempt: times }); });
   redis.connect().then(() => log('info', 'Redis connected')).catch(err => {
     log('warn', 'Redis unavailable — falling back to in-memory', { error: err.message });
     redis = null;
@@ -290,7 +363,7 @@ pool.query('SELECT NOW()').then(async () => {
 });
 
 // Health check endpoints
-app.get('/health', (req, res) => res.json({ status: 'healthy', uptime: Math.floor(process.uptime()), version: '2.2.0' }));
+app.get('/health', (req, res) => res.json({ status: 'healthy', uptime: Math.floor(process.uptime()), version: '3.0.0' }));
 app.get('/health/ready', async (req, res) => {
   const checks = { database: 'disconnected', redis: 'disconnected' };
   let ready = true;
@@ -298,6 +371,11 @@ app.get('/health/ready', async (req, res) => {
   try { if (redis) { await redis.ping(); checks.redis = 'connected'; } else { checks.redis = 'fallback (in-memory)'; } } catch (e) { checks.redis = 'disconnected'; }
   const status = ready ? 'ready' : 'not_ready';
   res.status(ready ? 200 : 503).json({ status, ...checks, uptime: Math.floor(process.uptime()) });
+});
+
+// Circuit breaker status endpoint
+app.get('/health/circuits', (req, res) => {
+  res.json({ circuits: Object.values(breakers).map(b => b.getStatus()) });
 });
 app.get('/metrics', (req, res) => {
   const uptime = (Date.now() - metrics.startTime) / 1000;
@@ -339,15 +417,25 @@ function computeTOTP(secret) {
   return { current: generateCode(currentCounter), previous: generateCode(currentCounter - 1) };
 }
 
-// Helper: run query safely, return fallback on error
+// Helper: run query safely with retry for transient errors, return fallback on error
+const TRANSIENT_DB_ERRORS = new Set(['ECONNRESET', 'EPIPE', '57P01', '57P03', '08006', '08003', 'Connection terminated']);
 async function q(sql, params = [], fallback = []) {
-  try {
-    const { rows } = await pool.query(sql, params);
-    return rows;
-  } catch (err) {
-    log('error', 'DB query error', { error: err.message, sql: sql.slice(0, 80) });
-    return fallback;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const { rows } = await pool.query(sql, params);
+      return rows;
+    } catch (err) {
+      const isTransient = TRANSIENT_DB_ERRORS.has(err.code) || TRANSIENT_DB_ERRORS.has(err.message);
+      if (isTransient && attempt < 3) {
+        log('warn', 'DB transient error, retrying', { error: err.message, code: err.code, attempt, sql: sql.slice(0, 60) });
+        await new Promise(r => setTimeout(r, attempt * 200));
+        continue;
+      }
+      log('error', 'DB query error', { error: err.message, code: err.code, sql: sql.slice(0, 80), attempt });
+      return fallback;
+    }
   }
+  return fallback;
 }
 
 // Helper: first row or fallback
@@ -1482,7 +1570,7 @@ const ROUTE_HANDLERS = {
   'auth.logout': async (input) => {
     const authHeader = input?._headers?.authorization;
     const token = input?.token || (authHeader ? authHeader.replace('Bearer ', '') : null);
-    if (token) await sessionStore.del(token);
+    if (token) { await sessionStore.del(token); await blacklistToken(token); }
     return { success: true, message: 'Logged out successfully' };
   },
   'auth.resetPassword': async (input) => {
@@ -3408,7 +3496,9 @@ app.get('/api/auth/login', (req, res) => {
   const returnTo = req.query.returnTo || '/dashboard';
   res.redirect(returnTo);
 });
-app.get('/api/auth/logout', (req, res) => {
+app.get('/api/auth/logout', async (req, res) => {
+  const authHeader = req.headers?.authorization;
+  if (authHeader?.startsWith('Bearer ')) { await blacklistToken(authHeader.replace('Bearer ', '')); }
   res.redirect('/');
 });
 
@@ -3426,7 +3516,7 @@ async function logAudit(action, entityType, entityId, userId, details) {
   try {
     await q(`INSERT INTO audit_trail (action, "entityType", "entityId", "userId", details, "createdAt") VALUES ($1, $2, $3, $4, $5, NOW())`,
       [action, entityType, entityId || null, userId || null, JSON.stringify(details || {})]);
-  } catch (e) { /* non-critical */ }
+  } catch (e) { log('warn', 'Audit log write failed', { action, entityType, error: e.message }); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -3442,7 +3532,9 @@ const PUBLIC_ROUTES = new Set([
 function extractUser(req) {
   const authHeader = req.headers?.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  return verifyToken(authHeader.replace('Bearer ', ''));
+  const token = authHeader.replace('Bearer ', '');
+  if (tokenBlacklist.has(token)) return null;
+  return verifyToken(token);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -3497,7 +3589,7 @@ app.all('/api/trpc/*', async (req, res) => {
     if (req.method === 'POST' && req.body) {
       input = req.body?.json || req.body || {};
     } else if (req.query.input) {
-      try { const parsed = JSON.parse(req.query.input); input = parsed?.json || parsed || {}; } catch (e) {}
+      try { const parsed = JSON.parse(req.query.input); input = parsed?.json || parsed || {}; } catch (e) { log('warn', 'Input parse error', { route, error: e.message }); }
     }
     input = sanitizeInput(input);
 
@@ -3556,7 +3648,7 @@ app.all('/api/trpc/*', async (req, res) => {
     try {
       parsedInput = typeof inputRaw === 'string' ? JSON.parse(inputRaw) : inputRaw;
       keys = Object.keys(parsedInput);
-    } catch (e) {}
+    } catch (e) { log('warn', 'Batch input parse error', { error: e.message }); }
   }
 
   const results = await Promise.all(keys.map(async (key, i) => {
