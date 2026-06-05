@@ -993,7 +993,7 @@ const ROUTE_HANDLERS = {
   'renewal.upcoming': () => q(`SELECT id, "policyNumber", type, "expiryDate", premium FROM policies WHERE "expiryDate" BETWEEN NOW() AND NOW() + INTERVAL '90 days' ORDER BY "expiryDate"`),
 
   // ─── Claims ───
-  'claims.list': () => q('SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt" as "filedDate", c.description FROM claims c LEFT JOIN policies p ON c."policyId"=p.id ORDER BY c."createdAt" DESC'),
+  'claims.list': () => q('SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt", c."createdAt" as "filedDate", c.description FROM claims c LEFT JOIN policies p ON c."policyId"=p.id ORDER BY c."createdAt" DESC'),
   'claims.getById': () => q1('SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt" as "filedDate", c.description FROM claims c LEFT JOIN policies p ON c."policyId"=p.id ORDER BY c."createdAt" DESC LIMIT 1'),
   'claims.timeline': () => q('SELECT id, action as event, "createdAt" as date, "newValues" as details FROM audit_trail WHERE "entityType"=\'claim\' ORDER BY "createdAt" DESC LIMIT 20'),
   'claims.evidence': () => q('SELECT id, "claimId", "evidenceType" as type, "fileName" as filename, "createdAt" as "uploadDate" FROM claim_evidence ORDER BY "createdAt" DESC'),
@@ -1015,7 +1015,7 @@ const ROUTE_HANDLERS = {
   'emergency.services': () => q('SELECT id, "incidentType" as name, CASE WHEN status=\'active\' THEN true ELSE false END as available FROM emergency_incidents ORDER BY "createdAt" DESC'),
 
   // ─── Payments ───
-  'payments.list': () => q('SELECT id, amount, "lastSyncAt" as date, "erpDocType" as type, "syncStatus"::text as status, "erpDocId" as reference FROM erpnext_transactions ORDER BY "createdAt" DESC'),
+  'payments.list': () => q('SELECT id, amount, status::text, "dueDate", "paidDate", "paymentMethod", "transactionRef" as reference, "createdAt" FROM payments ORDER BY "createdAt" DESC'),
   'payments.methods': async () => { const rows = await q('SELECT DISTINCT gateway as type, metadata->>\'channel\' as channel FROM payment_transactions WHERE status=\'success\' LIMIT 10'); return rows.length ? rows : [{type:'card',name:'Debit/Credit Card',enabled:true},{type:'bank_transfer',name:'Bank Transfer',enabled:true},{type:'ussd',name:'USSD (*919#)',enabled:true},{type:'wallet',name:'InsurePortal Wallet',enabled:true}]; },
 
   // ─── Savings ───
