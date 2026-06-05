@@ -457,6 +457,17 @@ pool.query('SELECT NOW()').then(async () => {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpSecret" VARCHAR(64);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpEnabled" BOOLEAN DEFAULT false;
   `).catch(() => {});
+  // Add referential integrity constraints (idempotent — ignores if already exist)
+  const fkConstraints = [
+    'ALTER TABLE claims ADD CONSTRAINT claims_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
+    'ALTER TABLE claims ADD CONSTRAINT claims_policyId_fk FOREIGN KEY ("policyId") REFERENCES policies(id) ON DELETE CASCADE',
+    'ALTER TABLE payments ADD CONSTRAINT payments_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
+    'ALTER TABLE payments ADD CONSTRAINT payments_policyId_fk FOREIGN KEY ("policyId") REFERENCES policies(id) ON DELETE CASCADE',
+    'ALTER TABLE policies ADD CONSTRAINT policies_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
+    'ALTER TABLE claim_evidence ADD CONSTRAINT claim_evidence_claimId_fk FOREIGN KEY ("claimId") REFERENCES claims(id) ON DELETE CASCADE',
+    'ALTER TABLE kyc_profiles ADD CONSTRAINT kyc_profiles_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
+  ];
+  for (const sql of fkConstraints) { await pool.query(sql).catch(() => {}); }
   // Pre-warm connection pool (avoids first-query latency)
   const warmups = Array.from({ length: 5 }, () => pool.query('SELECT 1'));
   await Promise.all(warmups);
