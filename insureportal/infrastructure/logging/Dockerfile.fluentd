@@ -1,5 +1,0 @@
-FROM fluent/fluentd:v1.17-1
-USER root
-RUN gem install fluent-plugin-opensearch fluent-plugin-kubernetes_metadata_filter
-USER fluent
-COPY fluentd.conf /fluentd/etc/fluent.conf

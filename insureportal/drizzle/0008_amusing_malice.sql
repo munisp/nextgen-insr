@@ -1,1 +1,0 @@
-ALTER TABLE "devices" ADD COLUMN "deviceToken" varchar(64);

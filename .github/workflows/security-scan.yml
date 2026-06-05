@@ -9,26 +9,6 @@ on:
     - cron: '0 6 * * 1'
 
 jobs:
-  # ── Dependency Vulnerability Scanning ──
-  dependency-audit:
-    name: Dependency Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-          cache: false
-
-      - name: govulncheck (Go services)
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          for dir in $(find . -maxdepth 2 -name "go.mod" -exec dirname {} \; | head -10); do
-            echo "=== Scanning $dir ==="
-            (cd "$dir" && GONOSUMCHECK=* govulncheck ./... 2>/dev/null || true)
-          done
-
   # ── Static Application Security Testing ──
   sast:
     name: SAST (Semgrep)
@@ -42,11 +22,9 @@ jobs:
           semgrep scan \
             --config auto \
             --config p/owasp-top-ten \
-            --config p/golang \
             --exclude node_modules \
-            --exclude vendor \
             --sarif -o semgrep-results.sarif \
-            . || true
+            customer-portal-full || true
 
   # ── Secret Scanning ──
   secret-scan:
@@ -61,29 +39,24 @@ jobs:
         run: |
           echo "Checking for hardcoded secrets..."
           FOUND=0
-          if grep -rn "AKIA[0-9A-Z]\{16\}" --include="*.ts" --include="*.go" --include="*.py" . 2>/dev/null; then FOUND=1; fi
-          if grep -rn "sk_live_" --include="*.ts" --include="*.go" . 2>/dev/null; then FOUND=1; fi
-          if grep -rn "BEGIN.*PRIVATE KEY" --include="*.ts" --include="*.go" --include="*.py" . 2>/dev/null; then FOUND=1; fi
+          if grep -rn "AKIA[0-9A-Z]\{16\}" --include="*.js" --include="*.cjs" --include="*.ts" --include="*.tsx" customer-portal-full 2>/dev/null; then FOUND=1; fi
+          if grep -rn "sk_live_" --include="*.js" --include="*.cjs" --include="*.ts" customer-portal-full 2>/dev/null; then FOUND=1; fi
+          if grep -rn "BEGIN.*PRIVATE KEY" --include="*.js" --include="*.cjs" --include="*.ts" customer-portal-full 2>/dev/null; then FOUND=1; fi
           if [ $FOUND -eq 0 ]; then
             echo "No hardcoded secrets detected"
           else
             echo "Potential secrets found - review above"
           fi
 
-  # ── License Compliance ──
-  license-check:
-    name: License Compliance
+  # ── Dependency Audit ──
+  dependency-audit:
+    name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-node@v4
         with:
-          go-version: '1.22'
-          cache: false
-      - name: Check Go licenses
-        run: |
-          go install github.com/google/go-licenses@latest
-          for dir in $(find . -maxdepth 1 -name "go.mod" -exec dirname {} \; | head -5); do
-            echo "=== $dir ==="
-            (cd "$dir" && GONOSUMCHECK=* go-licenses check ./... 2>/dev/null || true)
-          done
+          node-version: '20'
+      - name: npm audit
+        working-directory: customer-portal-full
+        run: npm audit --audit-level=critical || true

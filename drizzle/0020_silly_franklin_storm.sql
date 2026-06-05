@@ -1,1 +1,0 @@
-ALTER TABLE "agent_push_subscriptions" ADD COLUMN "lastAlertedAt" timestamp;
