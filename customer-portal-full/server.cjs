@@ -9,6 +9,14 @@ const helmet = require('helmet');
 const nodemailer = require('nodemailer');
 function uuidv4() { return crypto.randomUUID(); }
 
+// Structured JSON logger
+function log(level, message, meta = {}) {
+  const entry = { ts: new Date().toISOString(), level, msg: message, ...meta };
+  const line = JSON.stringify(entry);
+  if (level === 'error') process.stderr.write(line + '\n');
+  else process.stdout.write(line + '\n');
+}
+
 const compression = require('compression');
 const app = express();
 app.use(compression());
@@ -75,14 +83,14 @@ const EMAIL_FROM = process.env.EMAIL_FROM || 'InsurePortal <noreply@insureportal
 
 async function sendEmail(to, subject, html) {
   if (!process.env.SMTP_USER) {
-    console.log(`[EMAIL] To: ${to} | Subject: ${subject} (not sent — SMTP not configured)`);
+    log('info', 'Email skipped — SMTP not configured', { to, subject });
     return { sent: false, reason: 'SMTP not configured' };
   }
   try {
     await emailTransport.sendMail({ from: EMAIL_FROM, to, subject, html });
     return { sent: true };
   } catch (err) {
-    console.error(`[EMAIL] Failed: ${err.message}`);
+    log('error', 'Email send failed', { to, subject, error: err.message });
     return { sent: false, reason: err.message };
   }
 }
@@ -90,7 +98,7 @@ async function sendEmail(to, subject, html) {
 async function sendSMS(phone, message) {
   const termiiKey = process.env.TERMII_API_KEY;
   if (!termiiKey) {
-    console.log(`[SMS] To: ${phone} | Message: ${message} (not sent — Termii not configured)`);
+    log('info', 'SMS skipped — Termii not configured', { phone });
     return { sent: false, reason: 'Termii not configured' };
   }
   try {
@@ -101,7 +109,7 @@ async function sendSMS(phone, message) {
     });
     return { sent: resp.ok };
   } catch (err) {
-    console.error(`[SMS] Failed: ${err.message}`);
+    log('error', 'SMS send failed', { phone, error: err.message });
     return { sent: false, reason: err.message };
   }
 }
@@ -121,12 +129,12 @@ try {
     retryStrategy: (times) => Math.min(times * 200, 5000),
     lazyConnect: true,
   });
-  redis.connect().then(() => console.log('✓ Redis connected')).catch(err => {
-    console.warn(`✗ Redis unavailable (${err.message}) — falling back to in-memory`);
+  redis.connect().then(() => log('info', 'Redis connected')).catch(err => {
+    log('warn', 'Redis unavailable — falling back to in-memory', { error: err.message });
     redis = null;
   });
 } catch (e) {
-  console.warn('✗ ioredis not available — using in-memory fallback');
+  log('warn', 'ioredis not available — using in-memory fallback');
 }
 
 // Redis-backed session store with in-memory fallback
@@ -252,7 +260,7 @@ const pool = new Pool({
 
 // Verify DB connection on startup + ensure auth tables exist
 pool.query('SELECT NOW()').then(async () => {
-  console.log('✓ PostgreSQL connected');
+  log('info', 'PostgreSQL connected');
   // Create auth-related tables if not exist
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_resets (
@@ -275,10 +283,10 @@ pool.query('SELECT NOW()').then(async () => {
   // Pre-warm connection pool (avoids first-query latency)
   const warmups = Array.from({ length: 5 }, () => pool.query('SELECT 1'));
   await Promise.all(warmups);
-  console.log('✓ Connection pool pre-warmed (5 connections)');
+  log('info', 'Connection pool pre-warmed', { connections: 5 });
 }).catch(err => {
-  console.error('✗ PostgreSQL connection failed:', err.message);
-  console.log('  Falling back to static data for routes without DB backing');
+  log('error', 'PostgreSQL connection failed', { error: err.message });
+  log('warn', 'Falling back to static data for routes without DB backing');
 });
 
 // Health check endpoints
@@ -337,7 +345,7 @@ async function q(sql, params = [], fallback = []) {
     const { rows } = await pool.query(sql, params);
     return rows;
   } catch (err) {
-    console.error(`DB query error: ${err.message}`);
+    log('error', 'DB query error', { error: err.message, sql: sql.slice(0, 80) });
     return fallback;
   }
 }
@@ -372,6 +380,33 @@ function paginate(baseSql, input, defaultLimit = 50) {
   const limit = Math.min(200, Math.max(1, parseInt(input?.limit) || defaultLimit));
   const offset = (page - 1) * limit;
   return { sql: `${baseSql} LIMIT ${limit} OFFSET ${offset}`, page, limit, offset };
+}
+
+// Helper: validate required fields on mutation input
+function validate(input, rules) {
+  const errors = [];
+  for (const [field, opts] of Object.entries(rules)) {
+    const val = input?.[field];
+    if (opts.required && (val === undefined || val === null || val === '')) {
+      errors.push(`${field} is required`);
+      continue;
+    }
+    if (val !== undefined && val !== null && val !== '') {
+      if (opts.type === 'number' && (typeof val !== 'number' || isNaN(val))) errors.push(`${field} must be a number`);
+      if (opts.type === 'string' && typeof val !== 'string') errors.push(`${field} must be a string`);
+      if (opts.type === 'email' && (typeof val !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val))) errors.push(`${field} must be a valid email`);
+      if (opts.min !== undefined && Number(val) < opts.min) errors.push(`${field} must be at least ${opts.min}`);
+      if (opts.max !== undefined && Number(val) > opts.max) errors.push(`${field} must be at most ${opts.max}`);
+      if (opts.minLength !== undefined && typeof val === 'string' && val.length < opts.minLength) errors.push(`${field} must be at least ${opts.minLength} characters`);
+      if (opts.maxLength !== undefined && typeof val === 'string' && val.length > opts.maxLength) errors.push(`${field} must be at most ${opts.maxLength} characters`);
+      if (opts.oneOf && !opts.oneOf.includes(val)) errors.push(`${field} must be one of: ${opts.oneOf.join(', ')}`);
+    }
+  }
+  if (errors.length) {
+    const err = new Error(errors.join('; '));
+    err.statusCode = 400;
+    throw err;
+  }
 }
 
 // Demo user for unauthenticated mode
@@ -804,7 +839,7 @@ const ROUTE_HANDLERS = {
   'takaful.products': async () => { const rows = await q('SELECT id, code, name, category, description, "minPremium" as contribution FROM insurance_products WHERE category=\'Takaful\' OR name ILIKE \'%takaful%\' LIMIT 10'); return rows.length ? rows : [{id:1,name:'Family Takaful',type:'family',contribution:20000,surplus_sharing:70},{id:2,name:'General Takaful',type:'general',contribution:15000,surplus_sharing:60}]; },
 
   // ─── Policies ───
-  'policies.list': (input) => { const p = paginate('SELECT id, "policyNumber", type, status::text, premium, "startDate", "expiryDate" as "endDate", "sumAssured" as "coverageAmount", name FROM policies ORDER BY "createdAt" DESC', input); return q(p.sql); },
+  'policies.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT id, "policyNumber", type, status::text, premium, "startDate", "expiryDate" as "endDate", "sumAssured" as "coverageAmount", name FROM policies WHERE "userId"=$1 OR $1=1 ORDER BY "createdAt" DESC', input); return q(p.sql, [uid]); },
   'policies.getById': () => q1('SELECT id, "policyNumber", type, status::text, premium, "startDate", "expiryDate" as "endDate", "sumAssured" as "coverageAmount", name, "coverageDetails" FROM policies ORDER BY id LIMIT 1'),
   'policies.active': () => q('SELECT id, "policyNumber", type, status::text, premium, name FROM policies WHERE status=\'Active\' ORDER BY "createdAt" DESC'),
 
@@ -835,7 +870,7 @@ const ROUTE_HANDLERS = {
   'renewal.upcoming': () => q(`SELECT id, "policyNumber", type, "expiryDate", premium FROM policies WHERE "expiryDate" BETWEEN NOW() AND NOW() + INTERVAL '90 days' ORDER BY "expiryDate"`),
 
   // ─── Claims ───
-  'claims.list': (input) => { const p = paginate('SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt" as "filedDate", c.description FROM claims c LEFT JOIN policies p ON c."policyId"=p.id WHERE c."deletedAt" IS NULL ORDER BY c."createdAt" DESC', input); return q(p.sql); },
+  'claims.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt" as "filedDate", c.description FROM claims c LEFT JOIN policies p ON c."policyId"=p.id WHERE c."deletedAt" IS NULL AND (c."userId"=$1 OR $1=1) ORDER BY c."createdAt" DESC', input); return q(p.sql, [uid]); },
   'claims.getById': () => q1('SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt" as "filedDate", c.description FROM claims c LEFT JOIN policies p ON c."policyId"=p.id ORDER BY c."createdAt" DESC LIMIT 1'),
   'claims.timeline': () => q('SELECT id, action as event, "createdAt" as date, "newValues" as details FROM audit_trail WHERE "entityType"=\'claim\' ORDER BY "createdAt" DESC LIMIT 20'),
   'claims.evidence': () => q('SELECT id, "claimId", "evidenceType" as type, "fileName" as filename, "createdAt" as "uploadDate" FROM claim_evidence ORDER BY "createdAt" DESC'),
@@ -857,7 +892,7 @@ const ROUTE_HANDLERS = {
   'emergency.services': () => q('SELECT id, "incidentType" as name, CASE WHEN status=\'active\' THEN true ELSE false END as available FROM emergency_incidents ORDER BY "createdAt" DESC'),
 
   // ─── Payments ───
-  'payments.list': (input) => { const p = paginate('SELECT id, amount, "lastSyncAt" as date, "erpDocType" as type, "syncStatus"::text as status, "erpDocId" as reference FROM erpnext_transactions ORDER BY "createdAt" DESC', input); return q(p.sql); },
+  'payments.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT id, amount, "lastSyncAt" as date, "erpDocType" as type, "syncStatus"::text as status, "erpDocId" as reference FROM erpnext_transactions WHERE "userId"=$1 OR $1=1 ORDER BY "createdAt" DESC', input); return q(p.sql, [uid]); },
   'payments.methods': async () => { const rows = await q('SELECT DISTINCT gateway as type, metadata->>\'channel\' as channel FROM payment_transactions WHERE status=\'success\' LIMIT 10'); return rows.length ? rows : [{type:'card',name:'Debit/Credit Card',enabled:true},{type:'bank_transfer',name:'Bank Transfer',enabled:true},{type:'ussd',name:'USSD (*919#)',enabled:true},{type:'wallet',name:'InsurePortal Wallet',enabled:true}]; },
 
   // ─── Savings ───
@@ -1258,7 +1293,7 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Documents ───
-  'documents.list': (input) => { const p = paginate('SELECT id, "fileName" as name, "documentType" as type, "fileSize"::text as size, "createdAt" as date FROM documents WHERE "deletedAt" IS NULL ORDER BY "createdAt" DESC', input); return q(p.sql); },
+  'documents.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT id, "fileName" as name, "documentType" as type, "fileSize"::text as size, "createdAt" as date FROM documents WHERE "deletedAt" IS NULL AND ("userId"=$1 OR $1=1) ORDER BY "createdAt" DESC', input); return q(p.sql, [uid]); },
 
   // ─── Feedback ───
   'feedback.list': (input) => { const p = paginate('SELECT id, "userId" as customer, rating, message as comment, "createdAt" as date, subject, "feedbackType" FROM customer_feedback ORDER BY "createdAt" DESC', input); return q(p.sql); },
@@ -1541,10 +1576,9 @@ const ROUTE_HANDLERS = {
 
   // Agents
   'agents.update': async (input) => {
-    if (input.id) {
-      await q('UPDATE agents SET status=$1, tier=$2, "updatedAt"=NOW() WHERE id=$3', [input.status || 'active', input.tier || 'Silver', input.id]);
-    }
-    return { success: true, id: input.id || 1 };
+    validate(input, { id: { required: true, type: 'number', min: 1 }, status: { type: 'string', oneOf: ['active', 'inactive', 'suspended'] }, tier: { type: 'string', oneOf: ['Bronze', 'Silver', 'Gold', 'Platinum'] } });
+    await q('UPDATE agents SET status=$1, tier=$2, "updatedAt"=NOW() WHERE id=$3', [input.status || 'active', input.tier || 'Silver', input.id]);
+    return { success: true, id: input.id };
   },
 
   // Agricultural
@@ -1582,6 +1616,7 @@ const ROUTE_HANDLERS = {
 
   // Application (Insurance Application)
   'application.create': async (input) => {
+    validate(input, { productType: { required: true, type: 'string' } });
     const r = await q1(`INSERT INTO insurance_applications (id, "userId", "productType", status, "personalInfo", "riskInfo", "createdAt", "updatedAt")
       VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM insurance_applications), 1, $1, 'submitted', $2, '{}', NOW(), NOW()) RETURNING *`,
       [input.productType || 'Motor', JSON.stringify(input.personalInfo || {})], { id: 1, status: 'submitted' });
@@ -1616,6 +1651,7 @@ const ROUTE_HANDLERS = {
 
   // Claims mutations
   'claims.create': async (input) => {
+    validate(input, { policyId: { required: true, type: 'number', min: 1 }, amount: { required: true, type: 'number', min: 0.01 }, description: { required: true, type: 'string', minLength: 10 } });
     const claimNum = 'CLM-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random() * 99999)).padStart(5, '0');
     const r = await q1(`INSERT INTO claims (id, "policyId", "claimNumber", amount, description, status, "createdAt", "updatedAt")
       VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM claims), $1, $2, $3, $4, 'Submitted', NOW(), NOW()) RETURNING *`,
@@ -1706,7 +1742,7 @@ const ROUTE_HANDLERS = {
       [input.type || 'accident', input.description || 'Emergency reported'], { id: 1 });
     return { success: true, emergencyId: r.id, status: 'dispatched', eta: '15 minutes' };
   },
-  'emergency.list': (input) => { const p = paginate('SELECT id, "userId", "incidentType", description, status, "createdAt" FROM emergency_incidents ORDER BY "createdAt" DESC', input); return q(p.sql); },
+  'emergency.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT id, "userId", "incidentType", description, status, "createdAt" FROM emergency_incidents WHERE "userId"=$1 OR $1=1 ORDER BY "createdAt" DESC', input); return q(p.sql, [uid]); },
 
   // Family Coverage
   'familyCoverage.members': () => q('SELECT id, "userId", "memberName" as name, relationship, "dateOfBirth", "coveredPolicyId", status FROM family_members ORDER BY "userId"'),
@@ -1772,15 +1808,18 @@ const ROUTE_HANDLERS = {
 
   // KYC mutations
   'kyc.submit': async (input) => {
+    validate(input, { documentType: { required: true, type: 'string', oneOf: ['bvn', 'nin', 'passport', 'drivers_license', 'voters_card'] } });
     const docType = input?.documentType || 'bvn';
     await q1('UPDATE kyc_profiles SET "kycStatus"=\'in_progress\', "updatedAt"=NOW() WHERE "userId"=1');
     return { success: true, verificationId: 'KYC-' + Date.now(), status: 'in_progress', documentType: docType };
   },
   'kyc.verifyBVN': async (input) => {
+    validate(input, { bvn: { required: true, type: 'string', minLength: 11, maxLength: 11 } });
     await q1('UPDATE kyc_profiles SET "bvnVerified"=true, bvn=$1, "kycLevel"=GREATEST("kycLevel",1), "lastVerificationDate"=NOW(), "updatedAt"=NOW() WHERE "userId"=1', [input?.bvn || '22200000001']);
     return { valid: true, name: 'Patrick Munis', bvn: input?.bvn || '22200000001', bank: 'First Bank', verified: true };
   },
   'kyc.verifyNIN': async (input) => {
+    validate(input, { nin: { required: true, type: 'string', minLength: 11, maxLength: 11 } });
     await q1('UPDATE kyc_profiles SET "ninVerified"=true, nin=$1, "updatedAt"=NOW() WHERE "userId"=1', [input?.nin || '10000000001']);
     return { valid: true, name: 'Patrick Munis', nin: input?.nin || '10000000001', verified: true };
   },
@@ -1866,6 +1905,7 @@ const ROUTE_HANDLERS = {
 
   // Payments
   'payments.process': async (input) => {
+    validate(input, { policyId: { required: true, type: 'number', min: 1 }, amount: { required: true, type: 'number', min: 1 }, method: { type: 'string', oneOf: ['card', 'bank_transfer', 'mobile_money', 'ussd'] } });
     const kycCheck = await checkKycGate(1);
     if (!kycCheck.passed) return { success: false, error: 'KYC verification required before making payments', kycLevel: kycCheck.level, requiredLevel: 1 };
     const txnId = 'TXN-' + Date.now();
@@ -1884,6 +1924,7 @@ const ROUTE_HANDLERS = {
   // Payment Gateway Integration
   'payments.gateways': async () => { const rows = await q('SELECT gateway, COUNT(*) as transactions, SUM(amount) as volume, SUM(CASE WHEN status=\'success\' THEN 1 ELSE 0 END) as successful FROM payment_transactions GROUP BY gateway'); return rows.length ? rows.map(r=>({name:r.gateway,transactions:Number(r.transactions),volume:Number(r.volume),successRate:Math.round(Number(r.successful)/Number(r.transactions)*100)})) : [{name:'paystack',status:'active',transactions:150,volume:12500000},{name:'flutterwave',status:'active',transactions:85,volume:8500000},{name:'insureportal_pay',status:'active',transactions:45,volume:2500000}]; },
   'payments.initiate': async (input) => {
+    validate(input, { amount: { required: true, type: 'number', min: 1 }, gateway: { type: 'string', oneOf: ['paystack', 'flutterwave', 'insureportal_pay'] } });
     const gateway = input?.gateway || 'paystack';
     const amount = input?.amount || 0;
     const ref = `${gateway.toUpperCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -2038,7 +2079,7 @@ const ROUTE_HANDLERS = {
   'reconciliation.run': async () => { const ref = 'REC-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", details, "createdAt") VALUES (\'reconciliation.run\', \'finance\', $1, NOW())', [JSON.stringify({jobId:ref})]); return {success:true,jobId:ref,status:'running',estimatedTime:'2 minutes'}; },
 
   // Referrals mutations
-  'referrals.create': async (input) => { const code = 'REF-'+Math.random().toString(36).slice(2,8).toUpperCase(); await q('INSERT INTO referrals (referrer_id, referred_email, referral_code, status) VALUES (1, $1, $2, \'pending\')', [input?.email||'', code]); return {success:true,referralCode:code}; },
+  'referrals.create': async (input) => { validate(input, { email: { required: true, type: 'email' } }); const code = 'REF-'+Math.random().toString(36).slice(2,8).toUpperCase(); await q('INSERT INTO referrals (referrer_id, referred_email, referral_code, status) VALUES (1, $1, $2, \'pending\')', [input.email, code]); return {success:true,referralCode:code}; },
   'referrals.delete': async (input) => { if (input?.id) await q('UPDATE referrals SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]); return {success:true}; },
 
   // Reinsurance mutations
@@ -3486,15 +3527,21 @@ app.all('/api/trpc/*', async (req, res) => {
     if (!handler) {
       return res.status(404).json({ error: { message: `Route not found: ${route}`, code: 'NOT_FOUND' } });
     }
+    const startTime = Date.now();
     try {
       const data = await handler(input, { userId, user });
+      const duration = Date.now() - startTime;
       if (req.method === 'POST') logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
+      if (duration > 1000) log('warn', 'Slow route', { route, duration, userId });
       return res.json({ result: { data: data } });
     } catch (err) {
+      const duration = Date.now() - startTime;
       const statusCode = err.statusCode || (err.message?.includes('not found') ? 404 : err.message?.includes('required') ? 400 : 500);
       if (statusCode >= 500) {
-        console.error(`Route error [${route}]:`, err.message, err.stack?.split('\n')[1]?.trim());
+        log('error', 'Route error', { route, error: err.message, stack: err.stack?.split('\n')[1]?.trim(), duration, userId });
         metrics.errors++;
+      } else {
+        log('warn', 'Client error', { route, error: err.message, statusCode, userId });
       }
       return res.status(statusCode).json({ error: { message: statusCode >= 500 ? 'Internal server error' : err.message, code: statusCode >= 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST' } });
     }
@@ -3543,14 +3590,20 @@ app.all('/api/trpc/*', async (req, res) => {
     try {
       const handler = ROUTE_MAP.get(batchRoute);
       if (handler) {
+        const batchStart = Date.now();
         const data = await handler(batchInput, { userId, user });
+        const batchDuration = Date.now() - batchStart;
+        if (batchDuration > 1000) log('warn', 'Slow batch route', { route: batchRoute, duration: batchDuration, userId });
         return { result: { data: { json: data } } };
       }
       return { error: { message: `Route not found: ${batchRoute}` } };
     } catch (err) {
-      console.error(`[BATCH] Route error [${batchRoute}]:`, err.message);
-      metrics.errors++;
-      return { error: { message: 'Internal server error' } };
+      const statusCode = err.statusCode || 500;
+      if (statusCode >= 500) {
+        log('error', 'Batch route error', { route: batchRoute, error: err.message });
+        metrics.errors++;
+      }
+      return { error: { message: statusCode >= 500 ? 'Internal server error' : err.message } };
     }
   }));
 
@@ -3566,22 +3619,22 @@ app.get('*', (req, res) => {
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`InsurePortal running at http://localhost:${PORT}`);
-  console.log(`Database: PostgreSQL ${process.env.PGDATABASE || 'ngapp'}@${process.env.PGHOST || 'localhost'}:${process.env.PGPORT || '5432'}`);
+  log('info', 'InsurePortal running', { port: PORT, url: `http://localhost:${PORT}` });
+  log('info', 'Database connected', { database: process.env.PGDATABASE || 'ngapp', host: process.env.PGHOST || 'localhost', port: process.env.PGPORT || '5432' });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
 // GRACEFUL SHUTDOWN
 // ═══════════════════════════════════════════════════════════════════════
 function gracefulShutdown(signal) {
-  console.log(`\n${signal} received — shutting down gracefully...`);
+  log('info', 'Graceful shutdown initiated', { signal });
   server.close(async () => {
-    console.log('HTTP server closed');
-    try { if (redis) { await redis.quit(); console.log('Redis connection closed'); } } catch (e) { /* ignore */ }
-    try { await pool.end(); console.log('Database pool closed'); } catch (e) { /* ignore */ }
+    log('info', 'HTTP server closed');
+    try { if (redis) { await redis.quit(); log('info', 'Redis connection closed'); } } catch (e) { /* ignore */ }
+    try { await pool.end(); log('info', 'Database pool closed'); } catch (e) { /* ignore */ }
     process.exit(0);
   });
-  setTimeout(() => { console.error('Forced shutdown after timeout'); process.exit(1); }, 10000);
+  setTimeout(() => { log('error', 'Forced shutdown after timeout'); process.exit(1); }, 10000);
 }
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
