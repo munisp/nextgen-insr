@@ -3837,6 +3837,57 @@ app.all('/api/trpc/*', async (req, res) => {
   res.json(results);
 });
 
+// ═══════════════════════════════════════════════════════════════════════
+// API DOCUMENTATION (auto-generated from tRPC routes)
+// ═══════════════════════════════════════════════════════════════════════
+app.get('/api/docs', (req, res) => {
+  const routeNames = Object.keys(ROUTE_HANDLERS);
+  const domains = {};
+  for (const name of routeNames) {
+    const [domain] = name.split('.');
+    if (!domains[domain]) domains[domain] = [];
+    domains[domain].push(name);
+  }
+  const spec = {
+    openapi: '3.1.0',
+    info: { title: 'InsurePortal API', version: '3.0.0', description: 'Unified insurance platform API — tRPC over HTTP' },
+    servers: [{ url: `http://localhost:${PORT}`, description: 'Development' }],
+    paths: {},
+    tags: Object.keys(domains).sort().map((d) => ({ name: d, description: `${domains[d].length} routes` })),
+  };
+  for (const name of Object.keys(ROUTE_HANDLERS)) {
+    const [domain, action] = name.split('.');
+    const isMutation = ['create', 'update', 'delete', 'upload', 'submit', 'initiate', 'process', 'send', 'calculate', 'generate'].some((a) => (action || '').startsWith(a));
+    const method = isMutation ? 'post' : 'get';
+    const path = `/api/trpc/${name}`;
+    spec.paths[path] = { [method]: { tags: [domain], operationId: name, summary: name, parameters: method === 'get' ? [{ name: 'input', in: 'query', schema: { type: 'string' }, description: 'JSON-encoded input' }] : [],
+      requestBody: method === 'post' ? { content: { 'application/json': { schema: { type: 'object' } } } } : undefined,
+      responses: { '200': { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { result: { type: 'object' } } } } } } },
+    }};
+  }
+  res.json(spec);
+});
+
+app.get('/api/docs/ui', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>InsurePortal API Docs</title>
+<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+</head><body><div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>SwaggerUIBundle({url:'/api/docs',dom_id:'#swagger-ui',deepLinking:true,presets:[SwaggerUIBundle.presets.apis]})</script>
+</body></html>`);
+});
+
+app.get('/api/routes', (req, res) => {
+  const routeNames = Object.keys(ROUTE_HANDLERS);
+  const domains = {};
+  for (const name of routeNames) {
+    const [domain] = name.split('.');
+    if (!domains[domain]) domains[domain] = [];
+    domains[domain].push(name);
+  }
+  res.json({ total: routeNames.length, domains: Object.keys(domains).length, routes: domains });
+});
+
 // Static files
 app.use(express.static(DIST));
 
