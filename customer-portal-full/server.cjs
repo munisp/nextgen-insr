@@ -3926,7 +3926,8 @@ wss.on('connection', (ws, req) => {
       const msg = JSON.parse(data);
       if (msg.type === 'auth' && msg.token) {
         try {
-          const decoded = verifyAccessToken(msg.token);
+          const decoded = verifyToken(msg.token);
+          if (!decoded) throw new Error('Invalid token');
           userId = decoded.sub || decoded.userId;
           if (!wsClients.has(userId)) wsClients.set(userId, new Set());
           wsClients.get(userId).add(ws);
