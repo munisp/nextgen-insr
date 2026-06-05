@@ -688,16 +688,20 @@ app.use((req, res, next) => {
 });
 // Tenant management endpoints
 app.get('/api/tenants', async (req, res) => {
-  const tenants = await q('SELECT id, name, domain, status, "createdAt" FROM tenants ORDER BY name');
+  const tenants = await q('SELECT id, slug, name, country, currency, status, domain, "contactEmail", "contactPhone", "createdAt" FROM tenants ORDER BY name');
   res.json(tenants);
 });
 app.post('/api/tenants', async (req, res) => {
-  const { id, name, domain, settings } = req.body || {};
-  if (!id || !name) return res.status(400).json({ error: 'id and name required' });
+  const { name, domain, country, currency, contactEmail, contactPhone, settings } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').substring(0, 64);
   try {
     const { rows } = await pool.query(
-      `INSERT INTO tenants (id, name, domain, settings) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name=$2, domain=$3, settings=$4 RETURNING *`,
-      [id, name, domain || null, JSON.stringify(settings || {})]
+      `INSERT INTO tenants (slug, name, country, currency, domain, "contactEmail", "contactPhone", settings)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (slug) DO UPDATE SET name=$2, domain=$5, "contactEmail"=$6, "contactPhone"=$7, settings=$8
+       RETURNING *`,
+      [slug, name, country || 'NGA', currency || 'NGN', domain || null, contactEmail || null, contactPhone || null, JSON.stringify(settings || {})]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -757,7 +761,7 @@ pool.query('SELECT NOW()').then(async () => {
     );
     ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpSecret" VARCHAR(64);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpEnabled" BOOLEAN DEFAULT false;
-  `).catch(() => {});
+  `).catch(e => log.warn('migration', { step: 'otp_codes_table', error: e.message }));
   // Ensure file_uploads table exists
   await pool.query(`
     CREATE TABLE IF NOT EXISTS file_uploads (
@@ -775,12 +779,12 @@ pool.query('SELECT NOW()').then(async () => {
       url TEXT,
       "createdAt" TIMESTAMP DEFAULT NOW()
     )
-  `).catch(() => {});
+  `).catch(e => log.warn('migration', { step: 'file_uploads_table', error: e.message }));
   // Ensure tenants table has insurance columns
   await pool.query(`
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
     ALTER TABLE tenants ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}';
-  `).catch(() => {});
+  `).catch(e => log.warn('migration', { step: 'tenants_columns', error: e.message }));
   // Add referential integrity constraints (idempotent — ignores if already exist)
   const fkConstraints = [
     'ALTER TABLE claims ADD CONSTRAINT claims_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
@@ -791,7 +795,7 @@ pool.query('SELECT NOW()').then(async () => {
     'ALTER TABLE claim_evidence ADD CONSTRAINT claim_evidence_claimId_fk FOREIGN KEY ("claimId") REFERENCES claims(id) ON DELETE CASCADE',
     'ALTER TABLE kyc_profiles ADD CONSTRAINT kyc_profiles_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
   ];
-  for (const sql of fkConstraints) { await pool.query(sql).catch(() => {}); }
+  for (const sql of fkConstraints) { await pool.query(sql).catch(() => { /* constraint already exists */ }); }
   // Pre-warm connection pool (avoids first-query latency)
   const warmups = Array.from({ length: 5 }, () => pool.query('SELECT 1'));
   await Promise.all(warmups);
@@ -1350,7 +1354,7 @@ const ROUTE_HANDLERS = {
   'agricultural.underwriting': async () => { const rules = await q('SELECT id, name, factor, weight, description FROM agricultural_underwriting_rules ORDER BY weight DESC'); return {rules, riskFactors:['drought','flood','pest_infestation','low_yield','hail']}; },
 
   // ─── Takaful ───
-  'takaful.products': async () => { const rows = await q('SELECT id, code, name, category, description, "minPremium" as contribution FROM insurance_products WHERE category=\'Takaful\' OR name ILIKE \'%takaful%\' LIMIT 10'); return rows.length ? rows : [{id:1,name:'Family Takaful',type:'family',contribution:20000,surplus_sharing:70},{id:2,name:'General Takaful',type:'general',contribution:15000,surplus_sharing:60}]; },
+  'takaful.products': async () => q('SELECT id, code, name, category, description, "minPremium" as contribution FROM insurance_products WHERE category=\'Takaful\' OR name ILIKE \'%takaful%\' LIMIT 10'),
 
   // ─── Policies ───
   'policies.list': () => q('SELECT id, "policyNumber", type, status::text, premium, "startDate", "expiryDate" as "endDate", "sumAssured" as "coverageAmount", name FROM policies ORDER BY "createdAt" DESC'),
@@ -1401,12 +1405,12 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Emergency ───
-  'emergency.contacts': async () => { const rows = await q('SELECT id, contact_name as name, phone, location, type FROM emergency_incidents ORDER BY id LIMIT 5'); return rows.length ? rows : [{id:1,name:'InsurePortal Emergency',phone:'+234-800-INSURE',type:'general'},{id:2,name:'Claims Hotline',phone:'+234-801-CLAIMS',type:'claims'},{id:3,name:'Road Rescue',phone:'+234-802-RESCUE',type:'motor'}]; },
+  'emergency.contacts': async () => q('SELECT id, contact_name as name, phone, location, type FROM emergency_incidents ORDER BY id LIMIT 5'),
   'emergency.services': () => q('SELECT id, "incidentType" as name, CASE WHEN status=\'active\' THEN true ELSE false END as available FROM emergency_incidents ORDER BY "createdAt" DESC'),
 
   // ─── Payments ───
   'payments.list': () => q('SELECT id, amount, status::text, "dueDate", "paidDate", "paymentMethod", "transactionRef" as reference, "createdAt" FROM payments ORDER BY "createdAt" DESC'),
-  'payments.methods': async () => { const rows = await q('SELECT DISTINCT gateway as type, metadata->>\'channel\' as channel FROM payment_transactions WHERE status=\'success\' LIMIT 10'); return rows.length ? rows : [{type:'card',name:'Debit/Credit Card',enabled:true},{type:'bank_transfer',name:'Bank Transfer',enabled:true},{type:'ussd',name:'USSD (*919#)',enabled:true},{type:'wallet',name:'InsurePortal Wallet',enabled:true}]; },
+  'payments.methods': async () => q('SELECT DISTINCT gateway as type, metadata->>\'channel\' as channel FROM payment_transactions WHERE status=\'success\' LIMIT 10'),
 
   // ─── Savings ───
   'savings.balance': async () => { const r = await q1('SELECT COALESCE(SUM(current_amount),0) as total, COALESCE(SUM(current_amount * interest_rate / 100),0) as returns FROM savings_plans WHERE status=\'active\''); return { totalSavings: Number(r?.total) || 0, investmentReturns: Number(r?.returns) || 0 }; },
@@ -1484,8 +1488,8 @@ const ROUTE_HANDLERS = {
   'blockchain.auditTrail': () => q('SELECT id, action, "entityType", "entityId", "newValues" as details, "createdAt" FROM audit_trail ORDER BY "createdAt" DESC'),
 
   // ─── Rewards & Loyalty ───
-  'rewards.balance': async () => { const r = await q1('SELECT COALESCE(SUM(points),0) as points FROM loyalty_rewards WHERE customer_id=1'); return {points:Number(r?.points)||15000,tier:'Gold',nextTier:'Platinum',pointsToNext:5000}; },
-  'rewards.history': async () => { const rows = await q('SELECT id, description as activity, points, created_at as date FROM loyalty_rewards WHERE customer_id=1 ORDER BY created_at DESC LIMIT 10'); return rows.length ? rows : [{id:1,activity:'Premium payment',points:500,date:'2026-05-15'},{id:2,activity:'Referral bonus',points:1000,date:'2026-05-10'}]; },
+  'rewards.balance': async () => { const r = await q1('SELECT points, tier, "totalEarned", "totalRedeemed" FROM loyalty_points WHERE "userId"=1'); const points = Number(r?.points)||0; const tier = r?.tier||'Bronze'; const nextTier = tier==='Platinum'?'Platinum':tier==='Gold'?'Platinum':tier==='Silver'?'Gold':'Silver'; return {points,tier,nextTier,pointsToNext: tier==='Bronze'?5000-points:tier==='Silver'?10000-points:tier==='Gold'?20000-points:0}; },
+  'rewards.history': async () => q('SELECT id, description as activity, points, "createdAt" as date, "transactionType" as type FROM loyalty_transactions WHERE "userId"=1 ORDER BY "createdAt" DESC LIMIT 10'),
   'rewards.achievements': async () => { const rows = await q('SELECT a.id, a.name, a.description, a.points_reward as "pointsReward", ua.earned_at as date, ua.progress, ua.target FROM achievements a LEFT JOIN user_achievements ua ON a.id=ua.achievement_id AND ua.user_id=1 ORDER BY a.id'); return rows.map(r=>({...r, earned: r.date !== null})); },
   'loyalty.program': async () => {
     const referrals = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM("rewardAmount"),0) as earned FROM referrals WHERE "referrerId"=1');
@@ -1496,7 +1500,7 @@ const ROUTE_HANDLERS = {
     return { tier, points, benefits, totalEarned: Number(referrals.earned) || 0 };
   },
   'loyalty.tiers': () => q('SELECT id, name, min_points as "minPoints", discount_pct as "discountPct", benefits, color, icon FROM loyalty_tiers ORDER BY min_points ASC'),
-  'loyalty.rewards': async () => { const rows = await q('SELECT id, customer_id, points, tier, description FROM loyalty_rewards ORDER BY created_at DESC LIMIT 20'); return rows; },
+  'loyalty.rewards': async () => q('SELECT lp.id, lp."userId" as customer_id, lp.points, lp.tier, lt.description FROM loyalty_points lp LEFT JOIN loyalty_transactions lt ON lp."userId"=lt."userId" ORDER BY lp."updatedAt" DESC LIMIT 20'),
 
   // ─── Referrals ───
   'referral.stats': async () => {
@@ -1624,7 +1628,7 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Radar ───
-  'radar.insights': async () => { const rows = await q('SELECT id, title, description, type FROM notifications ORDER BY "createdAt" DESC LIMIT 5'); return rows.length ? rows : [{id:1,type:'market',title:'Motor premium rates increasing',description:'Average rates up 8% YoY'},{id:2,type:'regulatory',title:'NAICOM circular on digital policies',description:'New requirements effective Q3 2026'}]; },
+  'radar.insights': async () => q('SELECT id, title, description, type FROM notifications ORDER BY "createdAt" DESC LIMIT 5'),
 
   // ─── Policy Approval ───
   'approval.queue': () => q('SELECT id, "applicationId", "productType" as type, status, "createdAt" FROM insurance_applications WHERE status NOT IN (\'approved\',\'complete\') ORDER BY "createdAt" DESC'),
@@ -2179,7 +2183,7 @@ const ROUTE_HANDLERS = {
   'batch.run': async (input) => { return {jobId:'batch-'+Date.now(),status:'running',type:input?.type||'renewal',estimatedCompletion:'5 minutes'}; },
 
   // Broker API
-  'brokerApi.keys': async () => { const rows = await q('SELECT id, name, key, status, "createdAt" as created, "lastUsedAt" as "lastUsed" FROM broker_api_keys ORDER BY "createdAt" DESC LIMIT 10'); return rows.length ? rows : [{id:1,name:'Production',key:'pk_live_****1234',status:'active',created:'2026-01-15'},{id:2,name:'Test',key:'pk_test_****5678',status:'active',created:'2026-03-01'}]; },
+  'brokerApi.keys': async () => q('SELECT id, name, key, status, "createdAt" as created, "lastUsedAt" as "lastUsed" FROM broker_api_keys ORDER BY "createdAt" DESC LIMIT 10'),
   'brokerApi.create': async (input) => { const key = 'pk_live_'+Math.random().toString(36).slice(2,18); await q('INSERT INTO broker_api_keys (name, key, status, "createdAt") VALUES ($1, $2, \'active\', NOW())', [input?.name||'New Key', key]); return {id:Date.now(),name:input?.name||'New Key',key,status:'active'}; },
   'brokerApi.revoke': async (input) => { if (input?.id) await q('UPDATE broker_api_keys SET status=\'revoked\' WHERE id=$1', [input.id]); return {success:true}; },
 
@@ -4105,7 +4109,7 @@ app.all('/api/trpc/*', async (req, res) => {
         // Cache read results
         if (cacheTtl && data) {
           const cacheKey = `${route}:${JSON.stringify(input)}`;
-          cacheStore.set(cacheKey, data, cacheTtl).catch(() => {});
+          cacheStore.set(cacheKey, data, cacheTtl).catch(e => log.warn('cache_set_failed', { key: cacheKey, error: e.message }));
           res.setHeader('X-Cache', 'MISS');
         }
         // Log mutations to audit trail + publish Kafka event + invalidate cache
@@ -4114,7 +4118,7 @@ app.all('/api/trpc/*', async (req, res) => {
           publishEvent('insureportal.mutations', { type: route, entityId: data?.id || data?.claimId || data?.policyId || null, userId, inputKeys: Object.keys(input) });
           // Invalidate related caches on mutation
           const domain = route.split('.')[0];
-          cacheStore.invalidate(`${domain}.*`).catch(() => {});
+          cacheStore.invalidate(`${domain}.*`).catch(e => log.warn('cache_invalidate_failed', { domain, error: e.message }));
         }
         return res.json({ result: { data: data } });
       } catch (err) {
@@ -4123,6 +4127,7 @@ app.all('/api/trpc/*', async (req, res) => {
         return res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
       }
     }
+    logger.warn('Route not found', { route });
     return res.json({ result: { data: [] } });
   }
 
