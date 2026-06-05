@@ -42,7 +42,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: customer-portal-full
-        run: npm ci
+        run: npm install --legacy-peer-deps
 
       - name: Start server
         working-directory: customer-portal-full
