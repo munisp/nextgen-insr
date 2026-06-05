@@ -379,7 +379,11 @@ function paginate(baseSql, input, defaultLimit = 50) {
   const page = Math.max(1, parseInt(input?.page) || 1);
   const limit = Math.min(200, Math.max(1, parseInt(input?.limit) || defaultLimit));
   const offset = (page - 1) * limit;
-  return { sql: `${baseSql} LIMIT ${limit} OFFSET ${offset}`, page, limit, offset };
+  // Add id tiebreaker to ORDER BY for deterministic pagination
+  const sql = baseSql.includes('ORDER BY') && !baseSql.includes('ORDER BY id')
+    ? baseSql.replace(/(ORDER BY [^)]+?)(\s*$)/, '$1, id$2')
+    : baseSql;
+  return { sql: `${sql} LIMIT ${limit} OFFSET ${offset}`, page, limit, offset };
 }
 
 // Helper: validate required fields on mutation input
@@ -765,7 +769,7 @@ const ROUTE_HANDLERS = {
     };
   },
   'dashboard.recentClaims': () => q(`SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt" as date FROM claims c LEFT JOIN policies p ON c."policyId"=p.id ORDER BY c."createdAt" DESC LIMIT 10`),
-  'dashboard.notifications': () => q('SELECT id, type, title, message, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 AND "isRead"=false ORDER BY "createdAt" DESC LIMIT 5'),
+  'dashboard.notifications': (input, ctx) => { const uid = ctx?.userId || 1; return q('SELECT id, type, title, message, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=$1 AND "isRead"=false ORDER BY "createdAt" DESC LIMIT 5', [uid]); },
   'dashboard.activity': () => q('SELECT id, action, "entityType", "entityId", "createdAt" FROM audit_trail ORDER BY "createdAt" DESC LIMIT 10'),
 
   // ─── Products & Marketplace ───
@@ -897,7 +901,7 @@ const ROUTE_HANDLERS = {
 
   // ─── Savings ───
   'savings.balance': async () => { const r = await q1('SELECT COALESCE(SUM(current_amount),0) as total, COALESCE(SUM(current_amount * interest_rate / 100),0) as returns FROM savings_plans WHERE status=\'active\''); return { totalSavings: Number(r?.total) || 0, investmentReturns: Number(r?.returns) || 0 }; },
-  'savings.plans': async () => { const rows = await q('SELECT id, name, target_amount as "targetAmount", current_amount as "currentAmount", interest_rate as "interestRate", frequency, status FROM savings_plans WHERE user_id=1 ORDER BY created_at DESC'); return rows; },
+  'savings.plans': async (input, ctx) => { const uid = ctx?.userId || 1; const rows = await q('SELECT id, name, target_amount as "targetAmount", current_amount as "currentAmount", interest_rate as "interestRate", frequency, status FROM savings_plans WHERE user_id=$1 ORDER BY created_at DESC', [uid]); return rows; },
 
   // ─── Financial ───
   'financial.score': async () => {
@@ -939,14 +943,15 @@ const ROUTE_HANDLERS = {
 
   // ─── Credit Score ───
   'credit.score': async () => { const r = await q1('SELECT score, factors FROM credit_score_history ORDER BY created_at DESC LIMIT 1'); return { score: r?.score || 720, maxScore: 850, factors: r?.factors || ['Payment History','Credit Utilization','Account Age'] }; },
-  'telco.creditScore': async () => { const r = await q1('SELECT score, provider, factors, tier, last_updated as "lastUpdated" FROM telco_credit_scores WHERE customer_id=1 ORDER BY last_updated DESC LIMIT 1'); return r || {score:0, provider:'Unknown', factors:[], tier:'None'}; },
-  'telcoCreditScoring.score': async () => { const r = await q1('SELECT score, tier, factors as recommendations, last_updated as "lastUpdated" FROM telco_credit_scores WHERE customer_id=1 ORDER BY last_updated DESC LIMIT 1'); return {score:r?.score||0, maxScore:850, tier:r?.tier||'None', recommendations:r?.recommendations||[], lastUpdated:r?.lastUpdated}; },
+  'telco.creditScore': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT score, provider, factors, tier, last_updated as "lastUpdated" FROM telco_credit_scores WHERE customer_id=$1 ORDER BY last_updated DESC LIMIT 1', [uid]); return r || {score:0, provider:'Unknown', factors:[], tier:'None'}; },
+  'telcoCreditScoring.score': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT score, tier, factors as recommendations, last_updated as "lastUpdated" FROM telco_credit_scores WHERE customer_id=$1 ORDER BY last_updated DESC LIMIT 1', [uid]); return {score:r?.score||0, maxScore:850, tier:r?.tier||'None', recommendations:r?.recommendations||[], lastUpdated:r?.lastUpdated}; },
 
   // ─── KYC ───
-  'kyc.status': async () => {
-    const profile = await q1('SELECT * FROM kyc_profiles WHERE "userId"=1');
+  'kyc.status': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const profile = await q1('SELECT * FROM kyc_profiles WHERE "userId"=$1', [uid]);
     if (!profile?.id) return { status: 'Not Started', level: 0, documents: [] };
-    const docs = await q('SELECT * FROM kyc_documents WHERE user_id=1 ORDER BY created_at DESC', [], []);
+    const docs = await q('SELECT * FROM kyc_documents WHERE user_id=$1 ORDER BY created_at DESC', [uid], []);
     return {
       status: profile.kycStatus === 'verified' ? 'Verified' : profile.kycStatus === 'in_progress' ? 'In Progress' : 'Pending',
       level: profile.kycLevel || 0,
@@ -971,11 +976,12 @@ const ROUTE_HANDLERS = {
   'blockchain.auditTrail': () => q('SELECT id, action, "entityType", "entityId", "newValues" as details, "createdAt" FROM audit_trail ORDER BY "createdAt" DESC'),
 
   // ─── Rewards & Loyalty ───
-  'rewards.balance': async () => { const r = await q1('SELECT COALESCE(SUM(points),0) as points FROM loyalty_rewards WHERE customer_id=1'); return {points:Number(r?.points)||15000,tier:'Gold',nextTier:'Platinum',pointsToNext:5000}; },
-  'rewards.history': async () => { const rows = await q('SELECT id, description as activity, points, created_at as date FROM loyalty_rewards WHERE customer_id=1 ORDER BY created_at DESC LIMIT 10'); return rows.length ? rows : [{id:1,activity:'Premium payment',points:500,date:'2026-05-15'},{id:2,activity:'Referral bonus',points:1000,date:'2026-05-10'}]; },
-  'rewards.achievements': async () => { const rows = await q('SELECT a.id, a.name, a.description, a.points_reward as "pointsReward", ua.earned_at as date, ua.progress, ua.target FROM achievements a LEFT JOIN user_achievements ua ON a.id=ua.achievement_id AND ua.user_id=1 ORDER BY a.id'); return rows.map(r=>({...r, earned: r.date !== null})); },
-  'loyalty.program': async () => {
-    const referrals = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM("rewardAmount"),0) as earned FROM referrals WHERE "referrerId"=1');
+  'rewards.balance': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT COALESCE(SUM(points),0) as points FROM loyalty_rewards WHERE customer_id=$1', [uid]); return {points:Number(r?.points)||15000,tier:'Gold',nextTier:'Platinum',pointsToNext:5000}; },
+  'rewards.history': async (input, ctx) => { const uid = ctx?.userId || 1; const rows = await q('SELECT id, description as activity, points, created_at as date FROM loyalty_rewards WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 10', [uid]); return rows.length ? rows : [{id:1,activity:'Premium payment',points:500,date:'2026-05-15'},{id:2,activity:'Referral bonus',points:1000,date:'2026-05-10'}]; },
+  'rewards.achievements': async (input, ctx) => { const uid = ctx?.userId || 1; const rows = await q('SELECT a.id, a.name, a.description, a.points_reward as "pointsReward", ua.earned_at as date, ua.progress, ua.target FROM achievements a LEFT JOIN user_achievements ua ON a.id=ua.achievement_id AND ua.user_id=$1 ORDER BY a.id', [uid]); return rows.map(r=>({...r, earned: r.date !== null})); },
+  'loyalty.program': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const referrals = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM("rewardAmount"),0) as earned FROM referrals WHERE "referrerId"=$1', [uid]);
     const policies = await q1('SELECT COUNT(*) as total FROM policies WHERE status=\'Active\'');
     const points = (Number(referrals.completed) || 0) * 1000 + (Number(policies.total) || 0) * 2000;
     const tier = points >= 20000 ? 'Platinum' : points >= 10000 ? 'Gold' : points >= 5000 ? 'Silver' : 'Bronze';
@@ -986,11 +992,12 @@ const ROUTE_HANDLERS = {
   'loyalty.rewards': async () => { const rows = await q('SELECT id, customer_id, points, tier, description FROM loyalty_rewards ORDER BY created_at DESC LIMIT 20'); return rows; },
 
   // ─── Referrals ───
-  'referral.stats': async () => {
-    const r = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM(CASE WHEN status=\'Pending\' THEN "rewardAmount" ELSE 0 END),0) as pending FROM referrals WHERE "referrerId"=1');
+  'referral.stats': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const r = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM(CASE WHEN status=\'Pending\' THEN "rewardAmount" ELSE 0 END),0) as pending FROM referrals WHERE "referrerId"=$1', [uid]);
     return { totalReferrals: Number(r.total) || 0, successfulReferrals: Number(r.completed) || 0, pendingRewards: Number(r.pending) || 0 };
   },
-  'referral.code': async () => { const existing = await q1('SELECT referral_code FROM referrals WHERE referrer_id=1 LIMIT 1'); return existing?.referral_code || 'INSURE-'+Math.random().toString(36).slice(2,8).toUpperCase(); },
+  'referral.code': async (input, ctx) => { const uid = ctx?.userId || 1; const existing = await q1('SELECT referral_code FROM referrals WHERE referrer_id=$1 LIMIT 1', [uid]); return existing?.referral_code || 'INSURE-'+Math.random().toString(36).slice(2,8).toUpperCase(); },
   'referral.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT r.id, r."referredEmail" as email, r.status::text, r."rewardAmount" as reward, r."createdAt" as date FROM referrals r WHERE r."referrerId"=$1 AND r."deletedAt" IS NULL ORDER BY r."createdAt" DESC', input); return q(p.sql, [uid]); },
   'referrals.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT r.id, r."referredEmail" as email, r.status::text, r."rewardAmount" as reward, r."createdAt" as date FROM referrals r WHERE r."referrerId"=$1 AND r."deletedAt" IS NULL ORDER BY r."createdAt" DESC', input); return q(p.sql, [uid]); },
 
@@ -1002,8 +1009,8 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Communication ───
-  'communication.messages': () => q('SELECT id, title as subject, message as body, type as category, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 ORDER BY "createdAt" DESC'),
-  'communication.preferences': async () => { const r = await q1('SELECT email_enabled as email, sms_enabled as sms, push_enabled as push, whatsapp_enabled as whatsapp, telegram_enabled as telegram, frequency, language FROM communication_preferences WHERE user_id=1'); return r || {email:true, sms:true, push:true, whatsapp:false, telegram:false, frequency:'immediate', language:'en'}; },
+  'communication.messages': (input, ctx) => { const uid = ctx?.userId || 1; return q('SELECT id, title as subject, message as body, type as category, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=$1 ORDER BY "createdAt" DESC', [uid]); },
+  'communication.preferences': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT email_enabled as email, sms_enabled as sms, push_enabled as push, whatsapp_enabled as whatsapp, telegram_enabled as telegram, frequency, language FROM communication_preferences WHERE user_id=$1', [uid]); return r || {email:true, sms:true, push:true, whatsapp:false, telegram:false, frequency:'immediate', language:'en'}; },
   'whatsapp.status': async () => { const count = await q1('SELECT COUNT(*) as c FROM whatsapp_messages'); return {connected:true,phone:'+234-803-XXX-XXXX',messageCount:Number(count?.c)||0}; },
   'whatsapp.messages': async () => { const rows = await q('SELECT id, direction, message, status, created_at as timestamp FROM whatsapp_messages ORDER BY created_at DESC LIMIT 20'); return rows; },
 
@@ -1015,12 +1022,13 @@ const ROUTE_HANDLERS = {
 
   // ─── AI ───
   'ai.history': async () => { const rows = await q('SELECT id, message as query, message as response, created_at FROM chat_messages ORDER BY created_at DESC LIMIT 20'); return rows; },
-  'ai.suggestions': async () => {
-    const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=1');
+  'ai.suggestions': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=$1', [uid]);
     const types = policies.map(p => p.type);
     const suggestions = [];
     if (!types.includes('Health')) suggestions.push({id:1, type:'coverage_gap', message:'You have no health insurance. Consider our Basic Health Shield plan.', priority:'high'});
-    const expiring = await q1('SELECT COUNT(*) as c FROM policies WHERE "expiryDate" BETWEEN NOW() AND NOW() + INTERVAL \'30 days\' AND "userId"=1');
+    const expiring = await q1('SELECT COUNT(*) as c FROM policies WHERE "expiryDate" BETWEEN NOW() AND NOW() + INTERVAL \'30 days\' AND "userId"=$1', [uid]);
     if (Number(expiring.c) > 0) suggestions.push({id:2, type:'renewal', message:`Your policy expires in 30 days. Renew now for a 10% loyalty discount.`, priority:'medium'});
     if (types.length >= 2) suggestions.push({id:3, type:'savings', message:'You could save ₦15,000/year by bundling your policies.', priority:'low'});
     if (types.length < 3) suggestions.push({id:4, type:'coverage_gap', message:'Add property coverage for comprehensive protection.', priority:'medium'});
@@ -1187,7 +1195,7 @@ const ROUTE_HANDLERS = {
   'groupLife.schemes': () => q(`SELECT id, name, premium, type, status, "startDate", "expiryDate" as "endDate" FROM policies WHERE type='Group_Life' ORDER BY id`),
 
   // ─── PFA ───
-  'pfa.status': async () => { const r = await q1('SELECT provider, rsa_pin as "rsaPin", total_contributions as "totalContributions", account_balance as "accountBalance", employer_contribution as "employerContribution", employee_contribution as "employeeContribution", last_sync as "lastSync", status FROM pfa_integration WHERE user_id=1'); return r ? {integrated:true, ...r} : {integrated:false, provider:null}; },
+  'pfa.status': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT provider, rsa_pin as "rsaPin", total_contributions as "totalContributions", account_balance as "accountBalance", employer_contribution as "employerContribution", employee_contribution as "employeeContribution", last_sync as "lastSync", status FROM pfa_integration WHERE user_id=$1', [uid]); return r ? {integrated:true, ...r} : {integrated:false, provider:null}; },
 
   // ─── InsureTech ───
   'insureTech.innovations': () => q('SELECT id, name, description, category, status, adoption_pct as adoption, launch_date as "launchDate", technology_stack as "techStack" FROM insuretech_innovations ORDER BY adoption_pct DESC'),
@@ -1279,11 +1287,12 @@ const ROUTE_HANDLERS = {
   'batch.jobs': async () => { const rows = await q('SELECT id, batch_reference as ref, source_type as type, total_records as total, matched_count as matched, status, created_at FROM reconciliation_batches ORDER BY created_at DESC LIMIT 10'); return rows; },
 
   // ─── Customer 360 ───
-  'customer360.profile': async () => {
-    const user = await q1('SELECT id, name, email FROM users WHERE id=1');
-    const policyCnt = await q1('SELECT COUNT(*) as cnt FROM policies WHERE "userId"=1');
-    const claimsCnt = await q1('SELECT COUNT(*) as cnt FROM claims WHERE "userId"=1');
-    const premium = await q1('SELECT COALESCE(SUM(premium),0) as total FROM policies WHERE "userId"=1');
+  'customer360.profile': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const user = await q1('SELECT id, name, email FROM users WHERE id=$1', [uid]);
+    const policyCnt = await q1('SELECT COUNT(*) as cnt FROM policies WHERE "userId"=$1', [uid]);
+    const claimsCnt = await q1('SELECT COUNT(*) as cnt FROM claims WHERE "userId"=$1', [uid]);
+    const premium = await q1('SELECT COALESCE(SUM(premium),0) as total FROM policies WHERE "userId"=$1', [uid]);
     return {
       id: user.id, name: user.name, email: user.email,
       policies: Number(policyCnt.cnt), claims: Number(claimsCnt.cnt),
@@ -1780,7 +1789,7 @@ const ROUTE_HANDLERS = {
       ],
     };
   },
-  'financialWellness.recommendations': async () => { const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=1'); const types = policies.map(p=>p.type); const recs = []; if (!types.includes('Health')) recs.push({id:1,type:'coverage_gap',title:'Health Insurance Gap',description:'You have no active health policy. Consider Basic Health Shield.',priority:'high',potentialSavings:50000}); if (types.length >= 2) recs.push({id:2,type:'premium_optimization',title:'Bundle Discount Available',description:'Combine policies for up to 15% discount.',priority:'medium',potentialSavings:15000}); recs.push({id:3,type:'emergency_fund',title:'Build Emergency Reserve',description:'Target 6 months of premium payments in savings.',priority:'low',potentialSavings:0}); return recs; },
+  'financialWellness.recommendations': async (input, ctx) => { const uid = ctx?.userId || 1; const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=$1', [uid]); const types = policies.map(p=>p.type); const recs = []; if (!types.includes('Health')) recs.push({id:1,type:'coverage_gap',title:'Health Insurance Gap',description:'You have no active health policy. Consider Basic Health Shield.',priority:'high',potentialSavings:50000}); if (types.length >= 2) recs.push({id:2,type:'premium_optimization',title:'Bundle Discount Available',description:'Combine policies for up to 15% discount.',priority:'medium',potentialSavings:15000}); recs.push({id:3,type:'emergency_fund',title:'Build Emergency Reserve',description:'Target 6 months of premium payments in savings.',priority:'low',potentialSavings:0}); return recs; },
 
   // Fraud Network
   'fraudNetwork.analyze': async (input) => { return {networkId:'FN-'+Date.now(),nodes:12,edges:18,clusters:3,riskScore:45,flaggedEntities:[{id:1,type:'individual',name:'Suspicious Actor',connections:5,riskLevel:'high'}]}; },
@@ -1795,7 +1804,7 @@ const ROUTE_HANDLERS = {
   'groupLife.enroll': async (input) => { return {success:true,enrollmentId:'GL-'+Date.now(),members:input?.members||1}; },
 
   // Health
-  'health.data': async () => { const user = await q1('SELECT id FROM users WHERE id=1'); const policies = await q1('SELECT COUNT(*) as c FROM policies WHERE type=\'Health\' AND status=\'Active\' AND "userId"=1'); return {bmi:24.5, bloodPressure:'120/80', cholesterol:190, lastCheckup:new Date(Date.now()-45*86400000).toISOString().slice(0,10), nextCheckup:new Date(Date.now()+180*86400000).toISOString().slice(0,10), riskLevel:'low', hasHealthPolicy:Number(policies?.c)>0}; },
+  'health.data': async (input, ctx) => { const uid = ctx?.userId || 1; const user = await q1('SELECT id FROM users WHERE id=$1', [uid]); const policies = await q1('SELECT COUNT(*) as c FROM policies WHERE type=\'Health\' AND status=\'Active\' AND "userId"=$1', [uid]); return {bmi:24.5, bloodPressure:'120/80', cholesterol:190, lastCheckup:new Date(Date.now()-45*86400000).toISOString().slice(0,10), nextCheckup:new Date(Date.now()+180*86400000).toISOString().slice(0,10), riskLevel:'low', hasHealthPolicy:Number(policies?.c)>0}; },
   'health.submit': async (input) => { return {success:true,recordId:'HLT-'+Date.now()}; },
 
   // Insurance Radar
@@ -1807,44 +1816,51 @@ const ROUTE_HANDLERS = {
   'knowledgeGraph.query': async (input) => { return {results:[{entity:input?.query||'insurance',type:'concept',relatedEntities:['underwriting','premium','claims'],relevance:0.95}]}; },
 
   // KYC mutations
-  'kyc.submit': async (input) => {
+  'kyc.submit': async (input, ctx) => {
     validate(input, { documentType: { required: true, type: 'string', oneOf: ['bvn', 'nin', 'passport', 'drivers_license', 'voters_card'] } });
     const docType = input?.documentType || 'bvn';
-    await q1('UPDATE kyc_profiles SET "kycStatus"=\'in_progress\', "updatedAt"=NOW() WHERE "userId"=1');
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "kycStatus"=\'in_progress\', "updatedAt"=NOW() WHERE "userId"=$1', [uid]);
     return { success: true, verificationId: 'KYC-' + Date.now(), status: 'in_progress', documentType: docType };
   },
-  'kyc.verifyBVN': async (input) => {
+  'kyc.verifyBVN': async (input, ctx) => {
     validate(input, { bvn: { required: true, type: 'string', minLength: 11, maxLength: 11 } });
-    await q1('UPDATE kyc_profiles SET "bvnVerified"=true, bvn=$1, "kycLevel"=GREATEST("kycLevel",1), "lastVerificationDate"=NOW(), "updatedAt"=NOW() WHERE "userId"=1', [input?.bvn || '22200000001']);
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "bvnVerified"=true, bvn=$1, "kycLevel"=GREATEST("kycLevel",1), "lastVerificationDate"=NOW(), "updatedAt"=NOW() WHERE "userId"=$2', [input?.bvn || '22200000001', uid]);
     return { valid: true, name: 'Patrick Munis', bvn: input?.bvn || '22200000001', bank: 'First Bank', verified: true };
   },
-  'kyc.verifyNIN': async (input) => {
+  'kyc.verifyNIN': async (input, ctx) => {
     validate(input, { nin: { required: true, type: 'string', minLength: 11, maxLength: 11 } });
-    await q1('UPDATE kyc_profiles SET "ninVerified"=true, nin=$1, "updatedAt"=NOW() WHERE "userId"=1', [input?.nin || '10000000001']);
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "ninVerified"=true, nin=$1, "updatedAt"=NOW() WHERE "userId"=$2', [input?.nin || '10000000001', uid]);
     return { valid: true, name: 'Patrick Munis', nin: input?.nin || '10000000001', verified: true };
   },
-  'kyc.verifyPhone': async (input) => {
-    await q1('UPDATE kyc_profiles SET "phoneVerified"=true, "updatedAt"=NOW() WHERE "userId"=1');
+  'kyc.verifyPhone': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "phoneVerified"=true, "updatedAt"=NOW() WHERE "userId"=$1', [uid]);
     return { valid: true, carrier: 'MTN Nigeria', verified: true };
   },
-  'kyc.gate': async () => checkKycGate(1),
+  'kyc.gate': async (input, ctx) => checkKycGate(ctx?.userId || 1),
   'kyc.serviceHealth': async () => { const total = await q1('SELECT COUNT(*) as c FROM kyc_profiles'); const verified = await q1('SELECT COUNT(*) as c FROM kyc_profiles WHERE "kycStatus"=\'verified\''); return {bvnService:{status:'operational',latency:120,verified:Number(verified?.c)||0}, ninService:{status:'operational',latency:200}, facialMatch:{status:'operational',latency:350}, documentOcr:{status:'operational',latency:450}, overallHealth:'healthy', totalProfiles:Number(total?.c)||0}; },
 
   // Training / LMS
   'literacy.content': () => q('SELECT id, title, description, category, content_type as type, duration_minutes as "readTime", is_mandatory as mandatory FROM training_courses WHERE is_active=true ORDER BY id'),
-  'literacy.complete': async (input) => {
+  'literacy.complete': async (input, ctx) => {
     const courseId = input?.courseId || 1;
-    await q1('UPDATE training_enrollments SET status=\'completed\', progress=100, completed_at=NOW() WHERE course_id=$1 AND agent_id=1', [courseId]);
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE training_enrollments SET status=\'completed\', progress=100, completed_at=NOW() WHERE course_id=$1 AND agent_id=$2', [courseId, uid]);
     return { success: true, badges: ['Course Completed'] };
   },
-  'literacy.progress': async () => {
+  'literacy.progress': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
     const total = await q1('SELECT COUNT(*) as c FROM training_courses WHERE is_active=true');
-    const completed = await q1('SELECT COUNT(*) as c FROM training_enrollments WHERE agent_id=1 AND status=\'completed\'');
+    const completed = await q1('SELECT COUNT(*) as c FROM training_enrollments WHERE agent_id=$1 AND status=\'completed\'', [uid]);
     return { completed: Number(completed.c) || 0, total: Number(total.c) || 0, streak: 5 };
   },
-  'training.courses': () => q('SELECT tc.id, tc.title, tc.description, tc.category, tc.content_type, tc.duration_minutes, tc.passing_score, tc.is_mandatory, COALESCE(te.status, \'not_enrolled\') as "enrollStatus", COALESCE(te.progress, 0) as progress, te.score FROM training_courses tc LEFT JOIN training_enrollments te ON tc.id=te.course_id AND te.agent_id=1 WHERE tc.is_active=true ORDER BY tc.is_mandatory DESC, tc.id'),
-  'training.enroll': async (input) => {
-    const r = await q1('INSERT INTO training_enrollments (id, course_id, agent_id, status, progress, started_at) VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM training_enrollments), $1, 1, \'in_progress\', 0, NOW()) RETURNING id', [input?.courseId]);
+  'training.courses': (input, ctx) => { const uid = ctx?.userId || 1; return q('SELECT tc.id, tc.title, tc.description, tc.category, tc.content_type, tc.duration_minutes, tc.passing_score, tc.is_mandatory, COALESCE(te.status, \'not_enrolled\') as "enrollStatus", COALESCE(te.progress, 0) as progress, te.score FROM training_courses tc LEFT JOIN training_enrollments te ON tc.id=te.course_id AND te.agent_id=$1 WHERE tc.is_active=true ORDER BY tc.is_mandatory DESC, tc.id', [uid]); },
+  'training.enroll': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const r = await q1('INSERT INTO training_enrollments (id, course_id, agent_id, status, progress, started_at) VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM training_enrollments), $1, $2, \'in_progress\', 0, NOW()) RETURNING id', [input?.courseId, uid]);
     return { success: true, enrollmentId: r?.id };
   },
 
@@ -1897,16 +1913,17 @@ const ROUTE_HANDLERS = {
   'notifications.markRead': async (input) => { await q('UPDATE notifications SET "isRead"=true, "readAt"=NOW() WHERE id=$1', [input?.id]); return { success: true }; },
 
   // Onboarding
-  'onboarding.status': async () => { const user = await q1('SELECT id, name, email FROM users WHERE id=1'); const kyc = await q1('SELECT "kycLevel", "kycStatus" FROM kyc_profiles WHERE "userId"=1'); const policy = await q1('SELECT COUNT(*) as c FROM policies WHERE "userId"=1'); const steps = []; if(user) steps.push('profile'); if(kyc?.kycStatus==='verified') steps.push('kyc'); if(Number(policy?.c)>0) steps.push('firstPolicy'); return {completed: steps.length >= 3, steps, currentStep: steps.length < 3 ? ['profile','kyc','firstPolicy'][steps.length] : null, completionPercentage: Math.round(steps.length/3*100)}; },
+  'onboarding.status': async (input, ctx) => { const uid = ctx?.userId || 1; const user = await q1('SELECT id, name, email FROM users WHERE id=$1', [uid]); const kyc = await q1('SELECT "kycLevel", "kycStatus" FROM kyc_profiles WHERE "userId"=$1', [uid]); const policy = await q1('SELECT COUNT(*) as c FROM policies WHERE "userId"=$1', [uid]); const steps = []; if(user) steps.push('profile'); if(kyc?.kycStatus==='verified') steps.push('kyc'); if(Number(policy?.c)>0) steps.push('firstPolicy'); return {completed: steps.length >= 3, steps, currentStep: steps.length < 3 ? ['profile','kyc','firstPolicy'][steps.length] : null, completionPercentage: Math.round(steps.length/3*100)}; },
   'onboarding.complete': async () => { return {success:true}; },
 
   // Parametric mutations
   'parametric.claim': async (input) => { const ref = 'PAR-CLM-'+Date.now(); return {success:true,claimId:ref,autoApproved:true,payout:input?.amount||75000,triggerEvent:input?.event||'rainfall_deficit',processingTime:'instant'}; },
 
   // Payments
-  'payments.process': async (input) => {
+  'payments.process': async (input, ctx) => {
     validate(input, { policyId: { required: true, type: 'number', min: 1 }, amount: { required: true, type: 'number', min: 1 }, method: { type: 'string', oneOf: ['card', 'bank_transfer', 'mobile_money', 'ussd'] } });
-    const kycCheck = await checkKycGate(1);
+    const uid = ctx?.userId || 1;
+    const kycCheck = await checkKycGate(uid);
     if (!kycCheck.passed) return { success: false, error: 'KYC verification required before making payments', kycLevel: kycCheck.level, requiredLevel: 1 };
     const txnId = 'TXN-' + Date.now();
     const receiptNo = 'RCT-' + new Date().getFullYear() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -2036,7 +2053,7 @@ const ROUTE_HANDLERS = {
   },
 
   // PFA Integration
-  'pfa.annuities': () => q('SELECT id, provider, annuity_type as type, monthly_payout as "monthlyPayout", start_date as "startDate", lump_sum as "lumpSum", status FROM pfa_annuities WHERE user_id=1 ORDER BY start_date'),
+  'pfa.annuities': (input, ctx) => { const uid = ctx?.userId || 1; return q('SELECT id, provider, annuity_type as type, monthly_payout as "monthlyPayout", start_date as "startDate", lump_sum as "lumpSum", status FROM pfa_annuities WHERE user_id=$1 ORDER BY start_date', [uid]); },
   'pfa.quote': async (input) => { const contribution = input?.monthlyContribution || 50000; return {monthlyContribution:contribution,projectedBalance:contribution*12*20*1.08,estimatedMonthlyPension:contribution*0.6,retirementAge:60,provider:'ARM Pension'}; },
 
   // Policy mutations
@@ -2350,8 +2367,9 @@ const ROUTE_HANDLERS = {
   },
 
   // --- KYB (Business verification) ---
-  'kyb.status': async () => {
-    const profile = await q1('SELECT * FROM kyb_profiles WHERE "userId"=1', [], {});
+  'kyb.status': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const profile = await q1('SELECT * FROM kyb_profiles WHERE "userId"=$1', [uid], {});
     if (!profile?.id) return { status: 'not_applicable', message: 'No business profile found' };
     return { status: profile.kybStatus, level: profile.kybLevel, companyName: profile.companyName, rcNumber: profile.rcNumber, tinNumber: profile.tinNumber, businessType: profile.businessType, cacVerified: profile.cacVerified, tinVerified: profile.tinVerified, directorVerified: profile.directorVerified, financialStatements: profile.financialStatements };
   },
