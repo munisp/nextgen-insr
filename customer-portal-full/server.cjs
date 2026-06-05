@@ -49,6 +49,59 @@ const PORT = process.env.PORT || 5002;
 const DIST = path.join(__dirname, 'dist', 'public');
 
 // ═══════════════════════════════════════════════════════════════════════
+// ML INFERENCE CLIENT (calls trained PyTorch models via inference API)
+// ═══════════════════════════════════════════════════════════════════════
+const ML_INFERENCE_URL = process.env.ML_INFERENCE_URL || ''; // e.g. http://localhost:8100
+const ML_TIMEOUT = 5000; // 5s timeout — fallback to rules if slow
+
+async function mlPredict(model, features) {
+  if (!ML_INFERENCE_URL) return null;
+  const http = require('http');
+  const url = `${ML_INFERENCE_URL}/predict/${model}`;
+  return new Promise((resolve) => {
+    const data = JSON.stringify(features);
+    const parsed = new URL(url);
+    const req = http.request({ hostname: parsed.hostname, port: parsed.port, path: parsed.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }, timeout: ML_TIMEOUT }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.write(data);
+    req.end();
+  });
+}
+
+async function mlFraudScore(claimAmount, policyAgeDays = 365, claimFreq = 0, premiumPaid = 50000, sumAssured = 1000000) {
+  const result = await mlPredict('fraud', {
+    claim_amount: claimAmount, policy_age_days: policyAgeDays, claim_frequency_12m: claimFreq,
+    days_since_inception: policyAgeDays, premium_paid: premiumPaid, sum_assured: sumAssured,
+    claim_to_premium_ratio: claimAmount / Math.max(premiumPaid, 1),
+  });
+  if (result && typeof result.confidence === 'number') {
+    return { score: Math.round(result.confidence * 100), label: result.label, source: 'ml_model', model: 'fraud_detection_v2' };
+  }
+  return null;
+}
+
+async function mlChurnPredict(tenureMonths = 24, numPolicies = 1, monthlyPremium = 15000) {
+  const result = await mlPredict('churn', { tenure_months: tenureMonths, num_policies: numPolicies, monthly_premium: monthlyPremium });
+  if (result && typeof result.confidence === 'number') {
+    return { churnRisk: result.confidence, label: result.label, source: 'ml_model', model: 'churn_prediction_v2' };
+  }
+  return null;
+}
+
+async function mlAnomalyDetect(amount, hourOfDay = 12) {
+  const result = await mlPredict('anomaly', { transaction_amount: amount, hour_of_day: hourOfDay, avg_transaction_amount_30d: amount });
+  if (result && typeof result.confidence === 'number') {
+    return { isAnomaly: result.prediction === 1, confidence: result.confidence, source: 'ml_model', model: 'anomaly_detection_v2' };
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // JWT CONFIGURATION (RS256 with HMAC fallback)
 // ═══════════════════════════════════════════════════════════════════════
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
@@ -771,7 +824,17 @@ async function adjudicateClaim(claimData) {
   if (policyAge < 30) { fraudScore += 25; checks.push({ rule: 'New Policy Check', result: 'FLAG', detail: `Policy only ${policyAge} days old` }); }
   else { checks.push({ rule: 'New Policy Check', result: 'PASS', detail: `Policy ${policyAge} days old` }); }
 
-  checks.push({ rule: 'Fraud Score', result: fraudScore > 50 ? 'FLAG' : 'PASS', detail: `Score: ${fraudScore}/100` });
+  // ML Model Enhancement: overlay trained model score when ML service available
+  const mlResult = await mlFraudScore(claimAmount, policyAge, Number(dupes?.cnt) || 0, Number(policy?.premium) || 50000, Number(policy?.sumAssured) || 1000000);
+  let fraudSource = 'rule_engine';
+  if (mlResult) {
+    const blended = Math.round(fraudScore * 0.4 + mlResult.score * 0.6);
+    checks.push({ rule: 'ML Fraud Model', result: mlResult.score > 50 ? 'FLAG' : 'PASS', detail: `ML score: ${mlResult.score}/100, label: ${mlResult.label}, model: ${mlResult.model}` });
+    fraudScore = blended;
+    fraudSource = 'blended_ml_rules';
+  }
+
+  checks.push({ rule: 'Fraud Score', result: fraudScore > 50 ? 'FLAG' : 'PASS', detail: `Score: ${fraudScore}/100 (source: ${fraudSource})` });
   if (fraudScore > 50) { decision = 'investigation'; priority = 'high'; }
 
   // Rule 6: Auto-approve threshold (NAICOM fast-track for claims < ₦500K with low fraud)
@@ -1725,7 +1788,35 @@ const ROUTE_HANDLERS = {
   'ai.advisor': async (input) => { const query = input?.message || input?.query || ''; return {response:'Based on your profile and coverage, I recommend: ' + (query.includes('claim') ? 'Filing your claim online for fastest processing (avg 3 days).' : query.includes('premium') ? 'Our motor comprehensive plan at ₦45,000/year offers the best value.' : 'Reviewing your coverage annually to ensure adequate protection.'),suggestions:['Compare plans','File a claim','Talk to agent']}; },
   'ai.chat': async (input) => { return {response:'I can help you with policy inquiries, claims status, premium calculations, and coverage recommendations. What would you like to know?',sessionId:'AI-'+Date.now()}; },
   'ai.getHistory': () => q('SELECT id, message as query, message as response, created_at as date FROM chat_messages ORDER BY created_at DESC LIMIT 50'),
-  'aiClaims.process': async (input) => { const claimId = input?.claimId || 'CLM-'+Date.now(); return {claimId,recommendation:'approve',confidence:0.87,fraudScore:15,estimatedPayout:input?.amount||250000,processingTime:'2.3s'}; },
+  'ai.mlStatus': async () => {
+    const available = !!ML_INFERENCE_URL;
+    if (!available) return { connected: false, url: null, models: [], message: 'Set ML_INFERENCE_URL to enable model inference (e.g. http://localhost:8100)' };
+    const health = await mlPredict('../health', {}).catch(() => null);
+    return { connected: !!health, url: ML_INFERENCE_URL, models: health?.models_loaded || ['fraud_detection', 'claims_adjudication', 'churn_prediction', 'anomaly_detection'], device: health?.device || 'cpu' };
+  },
+  'ai.modelMetrics': async () => {
+    const fs = require('fs');
+    const models = ['fraud_detection', 'claims_adjudication', 'churn_prediction', 'anomaly_detection'];
+    const metrics = [];
+    for (const m of models) {
+      const p = path.join(__dirname, '..', 'ai-ml-platform', 'model_registry', m, 'v2', 'metrics.json');
+      try { const data = JSON.parse(fs.readFileSync(p, 'utf8')); metrics.push({ model: m, version: 'v2', accuracy: data.accuracy, f1_score: data.f1_score, auc_roc: data.auc_roc, epochs: data.epochs }); }
+      catch { metrics.push({ model: m, version: 'v2', accuracy: null, error: 'metrics not found' }); }
+    }
+    return metrics;
+  },
+  'aiClaims.process': async (input) => {
+    const claimId = input?.claimId || 'CLM-'+Date.now();
+    const start = Date.now();
+    const mlFraud = await mlFraudScore(input?.amount || 250000);
+    const mlChurn = await mlChurnPredict();
+    const mlAnomaly = await mlAnomalyDetect(input?.amount || 250000);
+    const fraudScore = mlFraud ? mlFraud.score : Math.min(100, ((input?.amount || 0) > 1000000 ? 25 : (input?.amount || 0) > 500000 ? 15 : 5));
+    const recommendation = fraudScore > 50 ? 'investigate' : fraudScore > 30 ? 'manual_review' : 'approve';
+    return { claimId, recommendation, confidence: mlFraud ? mlFraud.score / 100 : 0.87, fraudScore, estimatedPayout: input?.amount || 250000,
+      processingTime: `${Date.now() - start}ms`, mlModelsUsed: mlFraud ? ['fraud_detection_v2', 'churn_prediction_v2', 'anomaly_detection_v2'] : [],
+      churnRisk: mlChurn?.churnRisk || null, anomalyDetected: mlAnomaly?.isAnomaly || false, source: mlFraud ? 'ml_inference' : 'rule_engine' };
+  },
   'aiClaims.results': () => q('SELECT c.id, c."claimNumber", c.amount, c."fraudScore", c.status::text FROM claims c ORDER BY c."createdAt" DESC LIMIT 20'),
 
   // Analytics
