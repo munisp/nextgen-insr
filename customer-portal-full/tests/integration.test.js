@@ -12,9 +12,12 @@ let testResults = [];
 let passCount = 0;
 let failCount = 0;
 
+let authToken = null;
+
 async function request(method, path, body) {
   const url = new URL(path, BASE);
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (authToken) opts.headers['Authorization'] = `Bearer ${authToken}`;
   if (body) opts.body = JSON.stringify(body);
   const resp = await fetch(url, opts);
   const text = await resp.text();
@@ -24,11 +27,11 @@ async function request(method, path, body) {
 
 async function trpcQuery(route, input = {}) {
   const encoded = encodeURIComponent(JSON.stringify({ json: input }));
-  return request('GET', `/trpc/${route}?input=${encoded}`);
+  return request('GET', `/api/trpc/${route}?input=${encoded}`);
 }
 
 async function trpcMutate(route, input = {}) {
-  return request('POST', `/trpc/${route}`, { json: input });
+  return request('POST', `/api/trpc/${route}`, { json: input });
 }
 
 function test(name, fn) {
@@ -87,16 +90,17 @@ const tests = [
 
   // 6. Auth - login with valid credentials
   test('Auth: login with valid demo credentials', async () => {
-    const resp = await trpcMutate('auth.login', { email: 'demo@insureportal.ng', password: 'Demo123!' });
+    const resp = await trpcMutate('auth.login', { email: 'demo@insureportal.ng', password: 'demo123' });
     const data = resp.data?.result?.data?.json || resp.data?.result?.data;
-    assert.ok(data?.token || data?.id, 'Should return token or user data');
+    assert.ok(data?.accessToken || data?.token || data?.id, 'Should return token or user data');
+    authToken = data?.accessToken || data?.token || null;
   }),
 
   // 7. Auth - login with invalid credentials
   test('Auth: reject invalid credentials', async () => {
     const resp = await trpcMutate('auth.login', { email: 'bad@test.com', password: 'wrong' });
     const data = resp.data?.result?.data?.json || resp.data?.result?.data;
-    assert.ok(data?.error, 'Should return error for invalid credentials');
+    assert.ok(data?.error || resp.data?.error, 'Should return error for invalid credentials');
   }),
 
   // 8. Auth - signup
@@ -130,7 +134,7 @@ const tests = [
 
   // 12. Premium calculator
   test('Premium calculator reads admin rate tables', async () => {
-    const resp = await trpcQuery('products.calculatePremium', { product: 'Motor Comprehensive', sumAssured: 5000000, age: 35 });
+    const resp = await trpcQuery('premium.calculate', { product: 'Motor Comprehensive', sumAssured: 5000000, age: 35 });
     const data = resp.data?.result?.data?.json || resp.data?.result?.data;
     assert.ok(data?.premium || data?.baseRate !== undefined, 'Should calculate premium');
   }),
@@ -158,7 +162,7 @@ const tests = [
 
   // 16. Insurance score
   test('Insurance score from DB (not hardcoded 780)', async () => {
-    const resp = await trpcQuery('insurance.score', { userId: 1 });
+    const resp = await trpcQuery('insuranceScore.get');
     const data = resp.data?.result?.data?.json || resp.data?.result?.data;
     assert.ok(data?.score !== undefined || data?.overallScore !== undefined, 'Should return score');
     if (data?.score) assert.notStrictEqual(data.score, 780, 'Should not be hardcoded 780');

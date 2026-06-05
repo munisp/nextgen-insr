@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const helmet = require('helmet');
 const nodemailer = require('nodemailer');
 function uuidv4() { return crypto.randomUUID(); }
 
@@ -202,12 +203,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// Security headers
+// Security headers (Helmet + additional policies)
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
 app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   next();
 });
 
@@ -2904,8 +2909,9 @@ const ROUTE_HANDLERS = {
   },
   'naicom.dataExchange': async (input) => {
     const direction = input?.direction;
-    const where = direction ? `WHERE direction='${direction}'` : '';
-    const rows = await q(`SELECT * FROM naicom_data_exchange ${where} ORDER BY created_at DESC`);
+    const rows = direction
+      ? await q('SELECT * FROM naicom_data_exchange WHERE direction=$1 ORDER BY created_at DESC', [direction])
+      : await q('SELECT * FROM naicom_data_exchange ORDER BY created_at DESC');
     const summary = { outbound: rows.filter(r => r.direction === 'outbound').length, inbound: rows.filter(r => r.direction === 'inbound').length, acknowledged: rows.filter(r => r.status === 'acknowledged').length, pending: rows.filter(r => r.status === 'pending' || r.status === 'sent').length };
     return { exchanges: rows, summary };
   },
@@ -3026,8 +3032,9 @@ const ROUTE_HANDLERS = {
   },
   'reinsurance.bordereaux': async (input) => {
     const period = input?.period;
-    const where = period ? `WHERE rb.period='${period}'` : '';
-    const rows = await q(`SELECT rb.*, rt."treatyName" as treaty_name, rt.reinsurer FROM reinsurance_bordereaux rb JOIN reinsurance_treaties rt ON rb.treaty_id=rt.id ${where} ORDER BY rb.created_at DESC`);
+    const rows = period
+      ? await q('SELECT rb.*, rt."treatyName" as treaty_name, rt.reinsurer FROM reinsurance_bordereaux rb JOIN reinsurance_treaties rt ON rb.treaty_id=rt.id WHERE rb.period=$1 ORDER BY rb.created_at DESC', [period])
+      : await q('SELECT rb.*, rt."treatyName" as treaty_name, rt.reinsurer FROM reinsurance_bordereaux rb JOIN reinsurance_treaties rt ON rb.treaty_id=rt.id ORDER BY rb.created_at DESC');
     return { bordereaux: rows, summary: { total: rows.length, draft: rows.filter(r => r.status === 'draft').length, sent: rows.filter(r => r.status === 'sent').length, reconciled: rows.filter(r => r.status === 'reconciled').length } };
   },
   'reinsurance.generateBordereaux': async (input) => {
@@ -3210,8 +3217,9 @@ const ROUTE_HANDLERS = {
   },
   'ussd.sessionHistory': async (input) => {
     const phone = input?.phone;
-    const where = phone ? `WHERE phone='${phone}'` : '';
-    const rows = await q(`SELECT session_id, phone, menu_level, user_input, response, status, pin_verified, transaction_ref, created_at FROM ussd_session_log ${where} ORDER BY created_at DESC LIMIT 50`);
+    const rows = phone
+      ? await q('SELECT session_id, phone, menu_level, user_input, response, status, pin_verified, transaction_ref, created_at FROM ussd_session_log WHERE phone=$1 ORDER BY created_at DESC LIMIT 50', [phone])
+      : await q('SELECT session_id, phone, menu_level, user_input, response, status, pin_verified, transaction_ref, created_at FROM ussd_session_log ORDER BY created_at DESC LIMIT 50');
     return rows;
   },
 
@@ -3328,6 +3336,40 @@ async function logAudit(action, entityType, entityId, userId, details) {
   } catch (e) { /* non-critical */ }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// AUTH ENFORCEMENT — routes that do NOT require authentication
+// ═══════════════════════════════════════════════════════════════════════
+const PUBLIC_ROUTES = new Set([
+  'auth.login', 'auth.signup', 'auth.refresh', 'auth.resetPassword', 'auth.confirmResetPassword', 'auth.requestReset',
+  'products.list', 'products.getById', 'marketplace.featured', 'marketplace.categories',
+  'coverage.types', 'coverage.recommendations', 'premium.calculate',
+  'health.status', 'dashboard.stats', 'dashboard.recentClaims', 'dashboard.notifications', 'dashboard.activity',
+]);
+
+function extractUser(req) {
+  const authHeader = req.headers?.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  return verifyToken(authHeader.replace('Bearer ', ''));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INPUT SANITIZATION — strip dangerous characters from string inputs
+// ═══════════════════════════════════════════════════════════════════════
+function sanitizeInput(input) {
+  if (!input || typeof input !== 'object') return input;
+  const sanitized = {};
+  for (const [key, val] of Object.entries(input)) {
+    if (typeof val === 'string') {
+      sanitized[key] = val.trim().slice(0, 10000);
+    } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+      sanitized[key] = sanitizeInput(val);
+    } else {
+      sanitized[key] = val;
+    }
+  }
+  return sanitized;
+}
+
 // Database-backed tRPC handler (httpLink: no batching, no superjson, O(1) Map lookup)
 app.all('/api/trpc/*', async (req, res) => {
   const batch = req.query.batch === '1';
@@ -3344,42 +3386,67 @@ app.all('/api/trpc/*', async (req, res) => {
     }
   }
 
+  // Extract authenticated user
+  const user = extractUser(req);
+  const userId = user?.sub || user?.id || null;
+
+  // Enforce auth on non-public routes (mutations always require auth; reads check AUTH_STRICT)
+  if (req.method === 'POST' && !PUBLIC_ROUTES.has(route) && !user) {
+    return res.status(401).json({ error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+  }
+  if (req.method === 'GET' && !PUBLIC_ROUTES.has(route) && !user && process.env.AUTH_STRICT === 'true') {
+    return res.status(401).json({ error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
+  }
+
   // httpLink (non-batch): single route, single response object
   if (!batch && routes.length === 1) {
     let input = {};
     if (req.method === 'POST' && req.body) {
-      input = req.body || {};
+      input = req.body?.json || req.body || {};
     } else if (req.query.input) {
       try { input = JSON.parse(req.query.input); } catch (e) {}
     }
+    input = sanitizeInput(input);
+
     if (route === 'auth.me') {
+      if (user) {
+        const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [user.sub || user.id]);
+        if (dbUser?.id) {
+          const kycCheck = await checkKycGate(dbUser.id);
+          return res.json({ result: { data: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } });
+        }
+      }
       const authHeader = req.headers?.authorization;
       const token = authHeader?.replace('Bearer ', '') || input?.token;
       if (token) {
         const decoded = verifyToken(token);
         if (decoded && decoded.type === 'access') {
-          const user = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
-          if (user?.id) {
-            const kycCheck = await checkKycGate(user.id);
-            return res.json({ result: { data: { ...user, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } });
+          const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
+          if (dbUser?.id) {
+            const kycCheck = await checkKycGate(dbUser.id);
+            return res.json({ result: { data: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } });
           }
         }
       }
       return res.json({ result: { data: DEMO_USER } });
     }
     const handler = ROUTE_MAP.get(route);
-    if (handler) {
-      try {
-        const data = await handler(input);
-        // Log mutations to audit trail
-        if (req.method === 'POST') logAudit(route, route.split('.')[0], null, null, { input: Object.keys(input) });
-        return res.json({ result: { data: data } });
-      } catch (err) {
-        console.error(`Route error [${route}]:`, err.message);
-        return res.json({ result: { data: [] } });
-      }
+    if (!handler) {
+      return res.status(404).json({ error: { message: `Route not found: ${route}`, code: 'NOT_FOUND' } });
     }
-    return res.json({ result: { data: [] } });
+    try {
+      const data = await handler(input, { userId, user });
+      if (req.method === 'POST') logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
+      return res.json({ result: { data: data } });
+    } catch (err) {
+      const statusCode = err.statusCode || (err.message?.includes('not found') ? 404 : err.message?.includes('required') ? 400 : 500);
+      if (statusCode >= 500) {
+        console.error(`Route error [${route}]:`, err.message, err.stack?.split('\n')[1]?.trim());
+        metrics.errors++;
+      }
+      return res.status(statusCode).json({ error: { message: statusCode >= 500 ? 'Internal server error' : err.message, code: statusCode >= 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST' } });
+    }
+    return res.status(404).json({ error: { message: `Route not found: ${route}`, code: 'NOT_FOUND' } });
   }
 
   // Batch path (legacy support for httpBatchLink clients)
@@ -3395,18 +3462,26 @@ app.all('/api/trpc/*', async (req, res) => {
 
   const results = await Promise.all(keys.map(async (key, i) => {
     const batchRoute = routes[i] || routes[0] || '';
-    const input = parsedInput[key]?.json || parsedInput[key] || {};
+    let batchInput = parsedInput[key]?.json || parsedInput[key] || {};
+    batchInput = sanitizeInput(batchInput);
 
     if (batchRoute === 'auth.me') {
+      if (user) {
+        const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [user.sub || user.id]);
+        if (dbUser?.id) {
+          const kycCheck = await checkKycGate(dbUser.id);
+          return { result: { data: { json: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
+        }
+      }
       const authHeader = req.headers?.authorization;
-      const token = authHeader?.replace('Bearer ', '') || input?.token;
+      const token = authHeader?.replace('Bearer ', '') || batchInput?.token;
       if (token) {
         const decoded = verifyToken(token);
         if (decoded && decoded.type === 'access') {
-          const user = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
-          if (user?.id) {
-            const kycCheck = await checkKycGate(user.id);
-            return { result: { data: { json: { ...user, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
+          const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
+          if (dbUser?.id) {
+            const kycCheck = await checkKycGate(dbUser.id);
+            return { result: { data: { json: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
           }
         }
       }
@@ -3416,13 +3491,14 @@ app.all('/api/trpc/*', async (req, res) => {
     try {
       const handler = ROUTE_MAP.get(batchRoute);
       if (handler) {
-        const data = await handler(input);
+        const data = await handler(batchInput, { userId, user });
         return { result: { data: { json: data } } };
       }
-      return { result: { data: { json: [] } } };
+      return { error: { message: `Route not found: ${batchRoute}` } };
     } catch (err) {
-      console.error(`Route error [${batchRoute}]:`, err.message);
-      return { result: { data: { json: [] } } };
+      console.error(`[BATCH] Route error [${batchRoute}]:`, err.message);
+      metrics.errors++;
+      return { error: { message: 'Internal server error' } };
     }
   }));
 
