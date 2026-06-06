@@ -1,18 +1,18 @@
-# Docker Compose — v3 Full Stack (all 20+ services + middleware)
+# Docker Compose — v3 Full Stack (17 services + 7 middleware)
 version: "3.9"
 
 services:
-  # ─── Middleware ────────────────────────────────────────────────────
+  # --- Middleware ---
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: insureportal
-      POSTGRES_USER: insureportal
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insureportal}
+      POSTGRES_DB: ngapp
+      POSTGRES_USER: ngapp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ngapp}
     ports: ["5432:5432"]
     volumes: ["pg_data:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U insureportal"]
+      test: ["CMD-SHELL", "pg_isready -U ngapp"]
       interval: 5s
 
   redis:
@@ -32,14 +32,22 @@ services:
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
     volumes: ["kafka_data:/bitnami/kafka"]
 
+  kafka-rest:
+    image: confluentinc/cp-kafka-rest:7.5.3
+    ports: ["8082:8082"]
+    environment:
+      KAFKA_REST_HOST_NAME: kafka-rest
+      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on: [kafka]
+
   temporal:
     image: temporalio/auto-setup:latest
     ports: ["7233:7233"]
     environment:
       DB: postgresql
       DB_PORT: 5432
-      POSTGRES_USER: insureportal
-      POSTGRES_PWD: ${POSTGRES_PASSWORD:-insureportal}
+      POSTGRES_USER: ngapp
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-ngapp}
       POSTGRES_SEEDS: postgres
     depends_on: [postgres]
 
@@ -59,136 +67,166 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_PASSWORD:-admin}
     ports: ["8080:8080"]
 
-  apisix:
-    image: apache/apisix:3.8.0-debian
-    ports: ["9080:9080", "9443:9443"]
-    volumes:
-      - ./apisix/config.yaml:/usr/local/apisix/conf/config.yaml
-
-  # ─── Go Services ───────────────────────────────────────────────────
+  # --- Python Services ---
   ai-advisor:
     build: ../../services/python/ai-advisor
     ports: ["8110:8110"]
     environment:
       PORT: "8110"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
-      KAFKA_BROKERS: kafka:9092
+    depends_on: [postgres, kafka-rest, redis]
 
   fraud-network-graph:
     build: ../../services/python/fraud-network-graph
     ports: ["8111:8111"]
     environment:
       PORT: "8111"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
-      KAFKA_BROKERS: kafka:9092
-
-  micro-moment-insurance:
-    build: ../../services/go/micro-moment-insurance
-    ports: ["8112:8112"]
-    environment:
-      PORT: "8112"
-      DATABASE_URL: postgres://insureportal:insureportal@postgres:5432/insureportal
-      REDIS_URL: redis://redis:6379
-      KAFKA_BROKERS: kafka:9092
-
-  did-identity:
-    build: ../../services/rust/did-identity
-    ports: ["8113:8113"]
-    environment:
-      PORT: "8113"
-      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
 
   health-wearables:
     build: ../../services/python/health-wearables
     ports: ["8114:8114"]
     environment:
       PORT: "8114"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
-      KAFKA_BROKERS: kafka:9092
-
-  smart-contract-settlement:
-    build: ../../services/go/smart-contract-settlement
-    ports: ["8115:8115"]
-    environment:
-      PORT: "8115"
-      KAFKA_BROKERS: kafka:9092
-
-  agent-superapp-bff:
-    build: ../../services/go/agent-superapp-bff
-    ports: ["8116:8116"]
-    environment:
-      PORT: "8116"
-      DATABASE_URL: postgres://insureportal:insureportal@postgres:5432/insureportal
-      REDIS_URL: redis://redis:6379
-
-  multi-country:
-    build: ../../services/go/multi-country
-    ports: ["8117:8117"]
-    environment:
-      PORT: "8117"
-
-  data-mesh-router:
-    build: ../../services/go/data-mesh-router
-    ports: ["8118:8118"]
-    environment:
-      PORT: "8118"
-      OPENSEARCH_URL: http://opensearch:9200
+    depends_on: [postgres, redis]
 
   digital-twin:
     build: ../../services/python/digital-twin
     ports: ["8119:8119"]
     environment:
       PORT: "8119"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
       REDIS_URL: redis://redis:6379
-
-  nhia-integration:
-    build: ../../services/go/nhia-integration
-    ports: ["8120:8120"]
-    environment:
-      PORT: "8120"
-      KAFKA_BROKERS: kafka:9092
-
-  compliance-calendar:
-    build: ../../services/go/compliance-calendar
-    ports: ["8121:8121"]
-    environment:
-      PORT: "8121"
-      TEMPORAL_ADDRESS: temporal:7233
+    depends_on: [postgres, redis]
 
   policy-summarizer:
     build: ../../services/python/policy-summarizer
     ports: ["8122:8122"]
     environment:
       PORT: "8122"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
       REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
 
-  smart-contract-oracle:
-    build: ../../services/rust/smart-contract-oracle
-    ports: ["8123:8123"]
+  # --- Go Services ---
+  micro-moment-insurance:
+    build: ../../services/go/micro-moment-insurance
+    ports: ["8112:8112"]
     environment:
-      PORT: "8123"
+      PORT: "8112"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
+    depends_on: [postgres, kafka-rest, redis]
 
-  whatsapp-claims-bot:
-    build: ../../services/typescript/whatsapp-claims-bot
-    ports: ["8124:8124"]
+  smart-contract-settlement:
+    build: ../../services/go/smart-contract-settlement
+    ports: ["8115:8115"]
     environment:
-      PORT: "8124"
+      PORT: "8115"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
+    depends_on: [postgres, kafka-rest]
+
+  agent-superapp-bff:
+    build: ../../services/go/agent-superapp-bff
+    ports: ["8116:8116"]
+    environment:
+      PORT: "8116"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
       REDIS_URL: redis://redis:6379
+    depends_on: [postgres, kafka-rest, redis]
+
+  multi-country:
+    build: ../../services/go/multi-country
+    ports: ["8117:8117"]
+    environment:
+      PORT: "8117"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+    depends_on: [postgres]
+
+  data-mesh-router:
+    build: ../../services/go/data-mesh-router
+    ports: ["8118:8118"]
+    environment:
+      PORT: "8118"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      OPENSEARCH_URL: http://opensearch:9200
+    depends_on: [postgres, opensearch]
+
+  nhia-integration:
+    build: ../../services/go/nhia-integration
+    ports: ["8120:8120"]
+    environment:
+      PORT: "8120"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
+    depends_on: [postgres, kafka-rest]
+
+  compliance-calendar:
+    build: ../../services/go/compliance-calendar
+    ports: ["8121:8121"]
+    environment:
+      PORT: "8121"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+    depends_on: [postgres]
 
   graphql-federation:
     build: ../../services/go/graphql-federation
     ports: ["8125:8125"]
     environment:
       PORT: "8125"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
       REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
 
   carbon-credit-insurance:
     build: ../../services/go/carbon-credit-insurance
     ports: ["8126:8126"]
     environment:
       PORT: "8126"
-      KAFKA_BROKERS: kafka:9092
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
+    depends_on: [postgres, kafka-rest]
+
+  # --- Rust Services ---
+  did-identity:
+    build: ../../services/rust/did-identity
+    ports: ["8113:8113"]
+    environment:
+      PORT: "8113"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
+
+  smart-contract-oracle:
+    build: ../../services/rust/smart-contract-oracle
+    ports: ["8123:8123"]
+    environment:
+      PORT: "8123"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, redis]
+
+  # --- TypeScript Services ---
+  whatsapp-claims-bot:
+    build: ../../services/typescript/whatsapp-claims-bot
+    ports: ["8124:8124"]
+    environment:
+      PORT: "8124"
+      DATABASE_URL: postgresql://ngapp:ngapp@postgres:5432/ngapp
+      KAFKA_REST_URL: http://kafka-rest:8082
+      REDIS_URL: redis://redis:6379
+    depends_on: [postgres, kafka-rest, redis]
 
 volumes:
   pg_data:

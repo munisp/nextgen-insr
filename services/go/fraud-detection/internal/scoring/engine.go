@@ -44,7 +44,9 @@ func (e *Engine) ScoreClaim(ctx context.Context, claimID int64) (*FraudScore, er
 	// Check cache first
 	cached, err := e.cache.GetClaimScore(ctx, claimID)
 	if err == nil && cached != nil {
-		return cached, nil
+		if fs, ok := cached.(*FraudScore); ok {
+			return fs, nil
+		}
 	}
 
 	// Fetch claim details

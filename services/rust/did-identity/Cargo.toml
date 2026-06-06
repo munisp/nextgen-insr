@@ -1,6 +1,6 @@
 [package]
 name = "did-identity"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
@@ -12,7 +12,10 @@ tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
-ed25519-dalek = "2"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 base64 = "0.21"
 log = "0.4"
 env_logger = "0.10"
+rand = "0.8"
+tokio-postgres = "0.7"
+hex = "0.4"

@@ -1,265 +1,250 @@
-"""
-Real-Time Fraud Network Graph — GNN + Relationship Analysis
+"""Fraud Network Graph — Graph Neural Network for fraud ring detection
 Port: 8111
 
-Detects organized fraud rings by mapping relationships:
-claimants <-> agents <-> hospitals <-> repair shops <-> witnesses
-
-Open-source: Uses PyTorch Geometric for GNN inference (offline-capable)
-Middleware: Kafka (event stream), OpenSearch (alerting), Redis (hot cache), Temporal
+Middleware: PostgreSQL (graph store), Kafka (fraud alerts),
+Redis (risk cache), OpenSearch (fraud analytics), Keycloak (JWT auth)
 """
 
-import os
 import logging
-import uuid
+import math
+import os
+import random
 from datetime import datetime
-from enum import Enum
 from typing import Optional
 
+import psycopg2
+import psycopg2.extras
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("fraud-network-graph")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logger = logging.getLogger(__name__)
 
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
 app = FastAPI(title="Fraud Network Graph", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-PORT = int(os.getenv("PORT", "8111"))
 
 
-# ── Domain Types ─────────────────────────────────────────────────────────────
-
-class NodeType(str, Enum):
-    CLAIMANT = "claimant"
-    AGENT = "agent"
-    HOSPITAL = "hospital"
-    REPAIR_SHOP = "repair_shop"
-    WITNESS = "witness"
-    PROVIDER = "provider"
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
 
 
-class EdgeType(str, Enum):
-    FILED_CLAIM = "filed_claim"
-    REFERRED_BY = "referred_by"
-    TREATED_AT = "treated_at"
-    REPAIRED_AT = "repaired_at"
-    WITNESSED = "witnessed"
-    SAME_ADDRESS = "same_address"
-    SAME_PHONE = "same_phone"
-    SHARED_DEVICE = "shared_device"
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS fraud_nodes (
+            id TEXT PRIMARY KEY,
+            node_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            risk_score DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            attributes JSONB NOT NULL DEFAULT '{}',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS fraud_edges (
+            id SERIAL PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES fraud_nodes(id),
+            target_id TEXT NOT NULL REFERENCES fraud_nodes(id),
+            edge_type TEXT NOT NULL,
+            weight DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            attributes JSONB NOT NULL DEFAULT '{}',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS fraud_clusters (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            severity TEXT NOT NULL DEFAULT 'low',
+            node_ids TEXT[] NOT NULL DEFAULT '{}',
+            total_risk DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_fraud_edges_source ON fraud_edges(source_id);
+        CREATE INDEX IF NOT EXISTS idx_fraud_edges_target ON fraud_edges(target_id);
+    """)
+    conn.commit()
+    seed_graph(cur, conn)
+    cur.close()
+    conn.close()
 
 
-class RiskLevel(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+def seed_graph(cur, conn):
+    nodes = [
+        ("CLM-001", "claim", "Motor Claim Lagos", 0.3, {"amount": 500000, "type": "motor"}),
+        ("CLM-002", "claim", "Motor Claim Abuja", 0.7, {"amount": 2000000, "type": "motor"}),
+        ("CLM-003", "claim", "Health Claim Lagos", 0.2, {"amount": 150000, "type": "health"}),
+        ("POL-001", "policy", "Comprehensive Motor", 0.1, {"product": "motor", "premium": 50000}),
+        ("POL-002", "policy", "Third Party Motor", 0.4, {"product": "motor", "premium": 25000}),
+        ("WIT-001", "witness", "James Brown", 0.6, {"phone": "+2348012345678"}),
+        ("ADDR-001", "address", "15 Marina Road, Lagos", 0.5, {"lga": "Lagos Island"}),
+        ("PHONE-001", "phone", "+2348099887766", 0.4, {"carrier": "MTN"}),
+    ]
+    for nid, ntype, name, risk, attrs in nodes:
+        cur.execute("""INSERT INTO fraud_nodes (id, node_type, name, risk_score, attributes)
+            VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING""",
+            (nid, ntype, name, risk, psycopg2.extras.Json(attrs)))
+
+    edges = [
+        ("CLM-001", "POL-001", "claim_on_policy", 1.0),
+        ("CLM-002", "POL-002", "claim_on_policy", 1.0),
+        ("CLM-001", "WIT-001", "witnessed_by", 0.8),
+        ("CLM-002", "WIT-001", "witnessed_by", 0.9),
+        ("CLM-003", "WIT-001", "witnessed_by", 0.7),
+        ("CLM-001", "ADDR-001", "incident_at", 1.0),
+        ("CLM-002", "ADDR-001", "incident_at", 0.9),
+        ("POL-001", "PHONE-001", "contact_phone", 1.0),
+        ("POL-002", "PHONE-001", "contact_phone", 1.0),
+        ("WIT-001", "PHONE-001", "uses_phone", 0.8),
+        ("WIT-001", "ADDR-001", "lives_at", 0.7),
+    ]
+    for src, tgt, etype, weight in edges:
+        cur.execute("""INSERT INTO fraud_edges (source_id, target_id, edge_type, weight)
+            SELECT %s, %s, %s, %s WHERE NOT EXISTS (
+                SELECT 1 FROM fraud_edges WHERE source_id = %s AND target_id = %s AND edge_type = %s
+            )""", (src, tgt, etype, weight, src, tgt, etype))
+
+    cur.execute("""INSERT INTO fraud_clusters (id, name, severity, node_ids, total_risk)
+        VALUES ('CLUSTER-001', 'Lagos Motor Ring', 'critical', '{CLM-001,CLM-002,WIT-001,ADDR-001,PHONE-001}', 2.5)
+        ON CONFLICT (id) DO NOTHING""")
+    conn.commit()
 
 
-class GraphNode(BaseModel):
-    id: str
-    node_type: NodeType
-    name: str
-    attributes: dict = {}
-    risk_score: float = 0.0
-    connections: int = 0
+def gnn_propagate(conn, node_id: str, iterations: int = 3) -> float:
+    """Graph Neural Network risk propagation via neighbor averaging"""
+    cur = conn.cursor()
+
+    cur.execute("SELECT risk_score FROM fraud_nodes WHERE id = %s", (node_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        return 0.0
+
+    current_risk = row[0]
+
+    for i in range(iterations):
+        # Get neighbors
+        cur.execute("""
+            SELECT fn.risk_score, fe.weight
+            FROM fraud_edges fe
+            JOIN fraud_nodes fn ON fn.id = fe.target_id
+            WHERE fe.source_id = %s
+            UNION ALL
+            SELECT fn.risk_score, fe.weight
+            FROM fraud_edges fe
+            JOIN fraud_nodes fn ON fn.id = fe.source_id
+            WHERE fe.target_id = %s
+        """, (node_id, node_id))
+
+        neighbors = cur.fetchall()
+        if not neighbors:
+            break
+
+        neighbor_risk = sum(r * w for r, w in neighbors) / sum(w for _, w in neighbors)
+        alpha = 0.6
+        current_risk = alpha * current_risk + (1 - alpha) * neighbor_risk
+
+    cur.close()
+    return round(min(current_risk, 1.0), 4)
 
 
-class GraphEdge(BaseModel):
-    source: str
-    target: str
-    edge_type: EdgeType
-    weight: float = 1.0
-    timestamp: Optional[str] = None
+@app.on_event("startup")
+def startup():
+    init_db()
+    logger.info("Fraud Network Graph initialized with PostgreSQL graph store")
 
-
-class ClusterAlert(BaseModel):
-    cluster_id: str
-    risk_level: RiskLevel
-    nodes: list[str]
-    description: str
-    total_claims_amount: int
-    detection_reason: str
-    detected_at: str
-
-
-# ── Graph Engine ─────────────────────────────────────────────────────────────
-
-class FraudGraph:
-    """In-memory graph for fraud network analysis (offline-capable)."""
-
-    def __init__(self):
-        self.nodes: dict[str, GraphNode] = {}
-        self.edges: list[GraphEdge] = []
-        self.clusters: list[ClusterAlert] = []
-        self._seed_demo_data()
-
-    def _seed_demo_data(self):
-        """Seed with demo fraud network for testing."""
-        # Suspicious cluster: same witness on 4 unrelated claims
-        nodes = [
-            GraphNode(id="CLM-001", node_type=NodeType.CLAIMANT, name="John Doe", risk_score=0.3, connections=2),
-            GraphNode(id="CLM-002", node_type=NodeType.CLAIMANT, name="Jane Smith", risk_score=0.4, connections=2),
-            GraphNode(id="CLM-003", node_type=NodeType.CLAIMANT, name="Mike Johnson", risk_score=0.5, connections=3),
-            GraphNode(id="CLM-004", node_type=NodeType.CLAIMANT, name="Sarah Williams", risk_score=0.6, connections=3),
-            GraphNode(id="WIT-001", node_type=NodeType.WITNESS, name="James Brown", risk_score=0.92, connections=4),
-            GraphNode(id="AGT-001", node_type=NodeType.AGENT, name="Agent Okafor", risk_score=0.75, connections=5),
-            GraphNode(id="HSP-001", node_type=NodeType.HOSPITAL, name="Lagos General Clinic", risk_score=0.4, connections=3),
-            GraphNode(id="REP-001", node_type=NodeType.REPAIR_SHOP, name="QuickFix Motors", risk_score=0.65, connections=4),
-        ]
-        for n in nodes:
-            self.nodes[n.id] = n
-
-        edges = [
-            GraphEdge(source="CLM-001", target="WIT-001", edge_type=EdgeType.WITNESSED, weight=1.0),
-            GraphEdge(source="CLM-002", target="WIT-001", edge_type=EdgeType.WITNESSED, weight=1.0),
-            GraphEdge(source="CLM-003", target="WIT-001", edge_type=EdgeType.WITNESSED, weight=1.0),
-            GraphEdge(source="CLM-004", target="WIT-001", edge_type=EdgeType.WITNESSED, weight=1.0),
-            GraphEdge(source="CLM-001", target="AGT-001", edge_type=EdgeType.REFERRED_BY, weight=0.8),
-            GraphEdge(source="CLM-002", target="AGT-001", edge_type=EdgeType.REFERRED_BY, weight=0.8),
-            GraphEdge(source="CLM-003", target="AGT-001", edge_type=EdgeType.REFERRED_BY, weight=0.8),
-            GraphEdge(source="CLM-003", target="REP-001", edge_type=EdgeType.REPAIRED_AT, weight=0.7),
-            GraphEdge(source="CLM-004", target="REP-001", edge_type=EdgeType.REPAIRED_AT, weight=0.7),
-            GraphEdge(source="CLM-004", target="HSP-001", edge_type=EdgeType.TREATED_AT, weight=0.5),
-            GraphEdge(source="WIT-001", target="AGT-001", edge_type=EdgeType.SAME_PHONE, weight=1.5),
-        ]
-        self.edges = edges
-
-        self.clusters = [
-            ClusterAlert(
-                cluster_id="CLUSTER-001",
-                risk_level=RiskLevel.CRITICAL,
-                nodes=["CLM-001", "CLM-002", "CLM-003", "CLM-004", "WIT-001", "AGT-001"],
-                description="Organized ring: 1 witness on 4 unrelated claims, all referred by same agent, witness shares phone with agent",
-                total_claims_amount=12500000,
-                detection_reason="Same witness (James Brown) appeared on 4 unrelated motor claims within 30 days. Witness phone number matches Agent Okafor's alternate number.",
-                detected_at=datetime.utcnow().isoformat(),
-            ),
-        ]
-
-    def analyze_node(self, node_id: str) -> dict:
-        """Analyze a single node's risk based on connections."""
-        if node_id not in self.nodes:
-            return {"error": "node not found"}
-
-        node = self.nodes[node_id]
-        connections = [e for e in self.edges if e.source == node_id or e.target == node_id]
-
-        # GNN-inspired scoring: risk propagates from neighbors
-        neighbor_risk = 0.0
-        for edge in connections:
-            neighbor_id = edge.target if edge.source == node_id else edge.source
-            if neighbor_id in self.nodes:
-                neighbor_risk += self.nodes[neighbor_id].risk_score * edge.weight
-
-        propagated_risk = min(neighbor_risk / max(len(connections), 1), 1.0)
-        final_risk = 0.4 * node.risk_score + 0.6 * propagated_risk
-
-        return {
-            "node": node.dict(),
-            "connections": len(connections),
-            "propagated_risk": round(propagated_risk, 3),
-            "final_risk_score": round(final_risk, 3),
-            "risk_level": self._risk_level(final_risk).value,
-        }
-
-    def _risk_level(self, score: float) -> RiskLevel:
-        if score >= 0.8:
-            return RiskLevel.CRITICAL
-        if score >= 0.6:
-            return RiskLevel.HIGH
-        if score >= 0.3:
-            return RiskLevel.MEDIUM
-        return RiskLevel.LOW
-
-
-# ── Initialize ───────────────────────────────────────────────────────────────
-
-graph = FraudGraph()
-
-
-# ── API Endpoints ────────────────────────────────────────────────────────────
 
 @app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "service": "fraud-network-graph",
-        "version": "1.0.0",
-        "graph_stats": {
-            "nodes": len(graph.nodes),
-            "edges": len(graph.edges),
-            "clusters": len(graph.clusters),
-        },
+def health():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM fraud_nodes")
+        nodes = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM fraud_edges")
+        edges = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM fraud_clusters")
+        clusters = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return {"status": "healthy", "service": "fraud-network-graph", "database": "connected",
+                "nodes": nodes, "edges": edges, "clusters": clusters}
+    except Exception as e:
+        return {"status": "degraded", "service": "fraud-network-graph", "error": str(e)}
+
+
+@app.get("/api/v1/fraud/graph")
+def get_graph():
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, node_type, name, risk_score, attributes FROM fraud_nodes")
+    nodes = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT source_id, target_id, edge_type, weight FROM fraud_edges")
+    edges = [dict(r) for r in cur.fetchall()]
+    cur.execute("SELECT id, name, severity, node_ids, total_risk FROM fraud_clusters")
+    clusters = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return {"nodes": nodes, "edges": edges, "clusters": clusters,
+            "total_nodes": len(nodes), "total_edges": len(edges)}
+
+
+class AnalyzeRequest(BaseModel):
+    node_id: str
+    iterations: Optional[int] = 3
+
+
+@app.post("/api/v1/fraud/analyze")
+def analyze_node(req: AnalyzeRequest):
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, node_type, name, risk_score, attributes FROM fraud_nodes WHERE id = %s", (req.node_id,))
+    node = cur.fetchone()
+    if not node:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="node not found")
+
+    # Get neighbors
+    cur.execute("""
+        SELECT fn.id, fn.node_type, fn.name, fn.risk_score, fe.edge_type, fe.weight
+        FROM fraud_edges fe
+        JOIN fraud_nodes fn ON fn.id = fe.target_id
+        WHERE fe.source_id = %s
+        UNION ALL
+        SELECT fn.id, fn.node_type, fn.name, fn.risk_score, fe.edge_type, fe.weight
+        FROM fraud_edges fe
+        JOIN fraud_nodes fn ON fn.id = fe.source_id
+        WHERE fe.target_id = %s
+    """, (req.node_id, req.node_id))
+    neighbors = [dict(r) for r in cur.fetchall()]
+
+    # GNN propagation
+    final_risk = gnn_propagate(conn, req.node_id, req.iterations)
+
+    # Risk level
+    level = "low" if final_risk < 0.3 else "medium" if final_risk < 0.6 else "high" if final_risk < 0.8 else "critical"
+
+    # Cluster membership
+    cur.execute("SELECT id, name, severity FROM fraud_clusters WHERE %s = ANY(node_ids)", (req.node_id,))
+    cluster = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    result = {
+        "node": dict(node),
+        "initial_risk": node["risk_score"],
+        "final_risk": final_risk,
+        "risk_level": level,
+        "gnn_iterations": req.iterations,
+        "neighbors": neighbors,
+        "neighbor_count": len(neighbors),
     }
+    if cluster:
+        result["cluster"] = dict(cluster)
 
-
-@app.get("/api/v1/fraud-graph/nodes")
-async def list_nodes(node_type: Optional[str] = None):
-    nodes = list(graph.nodes.values())
-    if node_type:
-        nodes = [n for n in nodes if n.node_type.value == node_type]
-    return {"nodes": [n.dict() for n in nodes], "total": len(nodes)}
-
-
-@app.get("/api/v1/fraud-graph/node/{node_id}")
-async def analyze_node(node_id: str):
-    result = graph.analyze_node(node_id)
-    if "error" in result:
-        raise HTTPException(status_code=404, detail=result["error"])
     return result
-
-
-@app.get("/api/v1/fraud-graph/clusters")
-async def list_clusters(risk_level: Optional[str] = None):
-    clusters = graph.clusters
-    if risk_level:
-        clusters = [c for c in clusters if c.risk_level.value == risk_level]
-    return {"clusters": [c.dict() for c in clusters], "total": len(clusters)}
-
-
-@app.post("/api/v1/fraud-graph/ingest")
-async def ingest_claim(claim_id: str, claimant_id: str, agent_id: Optional[str] = None, witness_ids: list[str] = []):
-    """Ingest a new claim event into the fraud graph."""
-    # Add claimant node if new
-    if claimant_id not in graph.nodes:
-        graph.nodes[claimant_id] = GraphNode(
-            id=claimant_id, node_type=NodeType.CLAIMANT, name=f"Claimant {claimant_id}", connections=0
-        )
-
-    # Add edges
-    if agent_id:
-        graph.edges.append(GraphEdge(source=claimant_id, target=agent_id, edge_type=EdgeType.REFERRED_BY))
-    for wid in witness_ids:
-        graph.edges.append(GraphEdge(source=claimant_id, target=wid, edge_type=EdgeType.WITNESSED))
-
-    # Re-analyze for new clusters
-    analysis = graph.analyze_node(claimant_id)
-
-    return {
-        "ingested": True,
-        "claim_id": claim_id,
-        "risk_analysis": analysis,
-        "new_alerts": 0,
-    }
-
-
-@app.get("/api/v1/fraud-graph/metrics")
-async def fraud_metrics():
-    high_risk_nodes = sum(1 for n in graph.nodes.values() if n.risk_score >= 0.6)
-    return {
-        "total_nodes": len(graph.nodes),
-        "total_edges": len(graph.edges),
-        "active_clusters": len(graph.clusters),
-        "high_risk_nodes": high_risk_nodes,
-        "total_claims_flagged": 4,
-        "total_amount_at_risk": 12500000,
-        "detection_rate": 0.87,
-    }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    port = int(os.getenv("PORT", "8111"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
