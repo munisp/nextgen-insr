@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -63,7 +64,7 @@ func main() {
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "healthy", "database": db != nil, "service": "agent-network-platform", "version": "1.0.0",
+			"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "agent-network-platform", "version": "1.0.0",
 			"uptime": time.Since(startTime).String(),
 		})
 	})

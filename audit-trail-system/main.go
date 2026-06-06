@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -91,7 +92,7 @@ func main() {
 	r.Use(middleware.Logger, middleware.Recoverer)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "audit-trail-system"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "audit-trail-system"})
 	})
 	r.Route("/api/v1/audit", func(r chi.Router) {
 		r.Get("/", queryAudit)

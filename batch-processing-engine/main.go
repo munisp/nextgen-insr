@@ -36,7 +36,7 @@ var (
 )
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "batch-processing-engine"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "batch-processing-engine"})
 }
 
 func handleCreateBatch(w http.ResponseWriter, r *http.Request) {

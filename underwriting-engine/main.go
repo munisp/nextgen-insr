@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"encoding/json"
 	"log"
 	"math"
@@ -88,7 +89,7 @@ func calculatePremium(req QuoteRequest) QuoteResponse {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "underwriting-engine"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "underwriting-engine"})
 }
 
 func handleQuote(w http.ResponseWriter, r *http.Request) {

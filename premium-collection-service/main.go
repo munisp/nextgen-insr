@@ -23,7 +23,7 @@ import (
 // - Agent Cash Collection: 0% fee, manual reconciliation
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "premium-collection-service"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "premium-collection-service"})
 }
 
 func handleCollect(w http.ResponseWriter, r *http.Request) {

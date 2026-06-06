@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -48,7 +49,7 @@ func isValidTransition(from, to PolicyState) bool {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "policy-lifecycle-service"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "policy-lifecycle-service"})
 }
 
 func handleTransition(w http.ResponseWriter, r *http.Request) {

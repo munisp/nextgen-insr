@@ -116,7 +116,7 @@ func main() {
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "ab-testing-framework", "version": "1.0.0"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "ab-testing-framework", "version": "1.0.0"})
 }
 
 func listExperiments(w http.ResponseWriter, r *http.Request) {

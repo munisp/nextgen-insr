@@ -258,7 +258,7 @@ type gateway struct {
 func (g *gateway) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "healthy", "database": db != nil,
+		"status": "healthy", "database": fmt.Sprintf("%v", db != nil),
 		"service":  "54link-api-gateway",
 		"version":  "2.0.0",
 		"uptime":   time.Since(g.startTime).String(),

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -80,7 +81,7 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "enhanced-kyc-kyb"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "enhanced-kyc-kyb"})
 	})
 	r.Post("/api/v1/kyc/verify", verifyKYC)
 	r.Post("/api/v1/kyb/verify", verifyKYB)

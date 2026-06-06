@@ -318,7 +318,7 @@ func (b *OpenAppSecKafkaBridge) processCommand(data []byte) {
 
 func (b *OpenAppSecKafkaBridge) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil)})
 }
 
 func (b *OpenAppSecKafkaBridge) handleMetrics(w http.ResponseWriter, r *http.Request) {

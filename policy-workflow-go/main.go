@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -78,7 +79,7 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "policy-workflow-go"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "policy-workflow-go"})
 	})
 	r.Post("/api/v1/workflow/transition", transitionPolicy)
 	r.Get("/api/v1/workflow/valid-transitions/{state}", getValidTransitions)

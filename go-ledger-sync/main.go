@@ -439,7 +439,7 @@ func signatureVerifyHandler(w http.ResponseWriter, r *http.Request) {
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, map[string]interface{}{
-		"status": "healthy", "database": db != nil,
+		"status": "healthy", "database": fmt.Sprintf("%v", db != nil),
 		"service":        "pos-ledger-sync",
 		"version":        "1.0.0",
 		"uptime_seconds": int64(time.Since(state.startTime).Seconds()),
