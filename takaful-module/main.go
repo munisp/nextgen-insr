@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"bytes"
 	"encoding/json"
 	"log"
@@ -17,6 +18,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Takaful Module — Shariah-compliant insurance operations
@@ -177,8 +180,36 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Println("PostgreSQL connected")
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS takaful_funds (id TEXT PRIMARY KEY, fund_name TEXT NOT NULL, fund_type TEXT, total_contributions NUMERIC(15,2) DEFAULT 0, total_claims NUMERIC(15,2) DEFAULT 0, surplus NUMERIC(15,2) DEFAULT 0, wakala_fee_rate NUMERIC(5,4), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
 func main() {
 	initKafka()
+	initDB()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

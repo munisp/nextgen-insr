@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Communication Service
@@ -41,7 +44,13 @@ type DeliveryResult struct {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "communication-service"})
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "communication-service", "database": dbStatus})
 }
 
 func handleSend(w http.ResponseWriter, r *http.Request) {
@@ -269,8 +278,36 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Println("PostgreSQL connected")
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, recipient TEXT NOT NULL, channel TEXT NOT NULL, subject TEXT, body TEXT, status TEXT DEFAULT 'queued', sent_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
 func main() {
 	initKafka()
+	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", metricsHandler)
 	mux.HandleFunc("/health", handleHealth)

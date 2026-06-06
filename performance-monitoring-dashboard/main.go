@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"bytes"
 	"encoding/json"
 	"log"
@@ -18,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Performance Monitoring Dashboard — real-time system and business metrics
@@ -177,8 +180,36 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Println("PostgreSQL connected")
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS performance_metrics (id TEXT PRIMARY KEY, service_name TEXT NOT NULL, metric_name TEXT, metric_value NUMERIC(15,4), unit TEXT, tags JSONB, recorded_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
 func main() {
 	initKafka()
+	initDB()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

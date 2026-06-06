@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Premium Collection Service
@@ -27,7 +30,13 @@ import (
 // - Agent Cash Collection: 0% fee, manual reconciliation
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "premium-collection-service"})
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "premium-collection-service", "database": dbStatus})
 }
 
 func handleCollect(w http.ResponseWriter, r *http.Request) {
@@ -213,8 +222,36 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Println("PostgreSQL connected")
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS premium_collections (id TEXT PRIMARY KEY, policy_id TEXT NOT NULL, amount NUMERIC(15,2), currency TEXT DEFAULT 'NGN', payment_method TEXT, reference TEXT, status TEXT DEFAULT 'pending', collected_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
 func main() {
 	initKafka()
+	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/v1/collect", handleCollect)

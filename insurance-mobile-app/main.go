@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"bytes"
 	"encoding/json"
 	"log"
@@ -16,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Insurance Mobile App Backend — API for mobile clients (iOS/Android/Flutter)
@@ -175,8 +178,36 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Println("PostgreSQL connected")
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS mobile_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, device_type TEXT, os_version TEXT, app_version TEXT, push_token TEXT, last_active TIMESTAMPTZ DEFAULT NOW(), created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
 func main() {
 	initKafka()
+	initDB()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
