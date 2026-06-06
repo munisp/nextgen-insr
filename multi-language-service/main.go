@@ -209,6 +209,7 @@ func main() {
 		if !ok { t = translations["en"] }
 		json.NewEncoder(w).Encode(map[string]interface{}{"language": lang, "translations": t})
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8137" }
 	log.Printf("Multi-Language Service starting on :%s", port)

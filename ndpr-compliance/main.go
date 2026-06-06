@@ -235,6 +235,7 @@ func main() {
 	r.Get("/api/v1/dsar/{id}", getDSARStatus)
 	r.Post("/api/v1/breach/report", reportBreach)
 	r.Get("/api/v1/audit/annual", annualAudit)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8126" }

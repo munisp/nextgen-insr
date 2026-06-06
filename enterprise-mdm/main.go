@@ -185,6 +185,7 @@ func main() {
 	r.Get("/api/v1/golden-records", listGoldenRecords)
 	r.Post("/api/v1/deduplicate", findDuplicates)
 	r.Get("/api/v1/quality-score", dataQualityScore)
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8095" }
 	log.Printf("Enterprise MDM starting on :%s", port)

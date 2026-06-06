@@ -187,6 +187,7 @@ func main() {
 	r.Post("/api/v1/calculate", calculateInstallments)
 	r.Post("/api/v1/apply", applyForFinancing)
 	r.Get("/api/v1/schedule/{id}", paymentSchedule)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8130" }

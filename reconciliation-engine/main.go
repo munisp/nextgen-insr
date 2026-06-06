@@ -202,6 +202,7 @@ func main() {
 		r.Post("/run", runReconciliation)
 		r.Get("/summary", getSummary)
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8104" }
 	log.Printf("Reconciliation Engine starting on :%s", port)

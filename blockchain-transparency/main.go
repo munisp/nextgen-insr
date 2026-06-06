@@ -186,6 +186,7 @@ func main() {
 	r.Post("/api/v1/record", recordOnChain)
 	r.Get("/api/v1/verify/{hash}", verifyRecord)
 	r.Get("/api/v1/contracts", listContracts)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8135" }

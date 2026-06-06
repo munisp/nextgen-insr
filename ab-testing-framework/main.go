@@ -219,6 +219,7 @@ func main() {
 		r.Post("/{id}/record", recordConversion)
 		r.Get("/{id}/results", getResults)
 	})
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8100" }

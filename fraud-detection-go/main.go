@@ -247,6 +247,7 @@ func main() {
 	r.Post("/api/v1/score", scoreTransaction)
 	r.Get("/api/v1/rules", getRules)
 	r.Get("/api/v1/stats", getStats)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8109" }

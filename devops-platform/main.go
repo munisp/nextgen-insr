@@ -186,6 +186,7 @@ func main() {
 	r.Get("/api/v1/deployments", listDeployments)
 	r.Post("/api/v1/deploy", triggerDeploy)
 	r.Get("/api/v1/infrastructure", infraStatus)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8136" }

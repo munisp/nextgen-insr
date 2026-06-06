@@ -203,6 +203,7 @@ func main() {
 	r.Post("/api/v1/validate-nuban", validateNUBAN)
 	r.Post("/api/v1/name-enquiry", nameEnquiry)
 	r.Post("/api/v1/transfer", initiateTransfer)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8108" }

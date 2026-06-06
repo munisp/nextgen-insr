@@ -187,6 +187,7 @@ func main() {
 	r.Post("/api/v1/failover", triggerFailover)
 	r.Get("/api/v1/drills", drillHistory)
 	r.Get("/api/v1/rto-rpo", rtoRpoStatus)
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8090" }
 	log.Printf("Disaster Recovery Module starting on :%s", port)

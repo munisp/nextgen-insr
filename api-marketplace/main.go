@@ -232,6 +232,7 @@ func main() {
 	r.Get("/api/v1/catalog", apiCatalog)
 	r.Post("/api/v1/subscribe", subscribe)
 	r.Get("/api/v1/usage/{apiKey}", getUsage)
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8098" }
 	log.Printf("API Marketplace starting on :%s", port)

@@ -192,6 +192,7 @@ func main() {
 	r.Post("/api/v1/sync", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"synced": true, "timestamp": time.Now().Format(time.RFC3339), "pending_transactions": 0})
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8113" }
 	log.Printf("Insurance Mobile App Backend starting on :%s", port)

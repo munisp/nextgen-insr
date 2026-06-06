@@ -232,6 +232,7 @@ func main() {
 	r.Get("/api/v1/solvency", solvencyStatus)
 	r.Post("/api/v1/incident/report", reportIncident)
 	r.Get("/api/v1/capital", capitalAdequacy)
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8091" }
 	log.Printf("NAICOM Compliance Module starting on :%s", port)

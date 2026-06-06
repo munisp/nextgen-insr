@@ -402,6 +402,7 @@ func main() {
 	http.HandleFunc("/api/nmid/verify", service.HandleVerify)
 	http.HandleFunc("/api/nmid/register", service.HandleRegister)
 	http.HandleFunc("/health", service.HandleHealth)
+	http.HandleFunc("/metrics", prodMetricsHandler)
 	
 	port := getEnv("PORT", "8080")
 	log.Printf("NMID Integration Service starting on port %s", port)

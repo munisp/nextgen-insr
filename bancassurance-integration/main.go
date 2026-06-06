@@ -484,6 +484,7 @@ func main() {
 	http.HandleFunc("/api/bancassurance/offer", service.HandleGenerateOffer)
 	http.HandleFunc("/api/bancassurance/loan-protection", service.HandleCreateLoanProtection)
 	http.HandleFunc("/health", service.HandleHealth)
+	http.HandleFunc("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {

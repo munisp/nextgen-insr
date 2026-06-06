@@ -515,6 +515,7 @@ func main() {
 	http.HandleFunc("/api/pfa/validate-rsa", service.HandleValidateRSA)
 	http.HandleFunc("/api/pfa/group-life-premium", service.HandleGroupLifePremium)
 	http.HandleFunc("/health", service.HandleHealth)
+	http.HandleFunc("/metrics", prodMetricsHandler)
 	
 	port := os.Getenv("PORT")
 	if port == "" {

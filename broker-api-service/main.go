@@ -237,6 +237,7 @@ func main() {
 		r.Get("/{id}/commission", calculateCommission)
 		r.Post("/{id}/validate-license", validateLicense)
 	})
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8102" }

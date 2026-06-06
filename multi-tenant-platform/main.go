@@ -187,6 +187,7 @@ func main() {
 	r.Get("/api/v1/tenants", listTenants)
 	r.Post("/api/v1/tenants", createTenant)
 	r.Get("/api/v1/tenants/{id}/config", getTenantConfig)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8133" }

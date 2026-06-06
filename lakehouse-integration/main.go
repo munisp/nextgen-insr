@@ -184,6 +184,7 @@ func main() {
 			"uptime_seconds": int(time.Since(startTime).Seconds()), "ready": true,
 		})
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8115" }
 	log.Printf("lakehouse-integration starting on :%s", port)

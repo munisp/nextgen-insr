@@ -187,6 +187,7 @@ func main() {
 	r.Post("/api/v1/feedback", submitFeedback)
 	r.Get("/api/v1/feedback/summary", feedbackSummary)
 	r.Get("/api/v1/nps", npsScore)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8112" }

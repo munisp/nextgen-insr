@@ -278,6 +278,7 @@ func main() {
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/v1/adjudicate", handleAdjudicate)
 	mux.HandleFunc("/api/v1/metrics", handleMetrics)
+	mux.HandleFunc("/metrics", prodMetricsHandler)
 
 	port := ":8091"
 	log.Printf("Claims Adjudication Engine starting on %s", port)

@@ -196,6 +196,7 @@ func main() {
 	})
 	r.Post("/api/v1/workflow/transition", transitionPolicy)
 	r.Get("/api/v1/workflow/valid-transitions/{state}", getValidTransitions)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8106" }

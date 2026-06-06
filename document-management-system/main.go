@@ -237,6 +237,7 @@ func main() {
 		r.Get("/{id}", getDocument)
 		r.Get("/{id}/versions", getVersions)
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8111" }
 	log.Printf("Document Management System starting on :%s", port)

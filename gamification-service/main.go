@@ -233,6 +233,7 @@ func main() {
 	r.Post("/api/v1/points/award", awardPoints)
 	r.Get("/api/v1/leaderboard", getLeaderboard)
 	r.Get("/api/v1/badges/{userId}", getUserBadges)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8125" }

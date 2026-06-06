@@ -187,6 +187,7 @@ func main() {
 	r.Post("/api/v1/telemetry", ingestTelemetry)
 	r.Get("/api/v1/score/{policyId}", getDrivingScore)
 	r.Get("/api/v1/premium/{policyId}", calculatePremium)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8129" }

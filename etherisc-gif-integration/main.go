@@ -189,6 +189,7 @@ func main() {
 			},
 		})
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8099" }
 	log.Printf("Etherisc GIF Integration starting on :%s", port)

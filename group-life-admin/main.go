@@ -510,6 +510,7 @@ func main() {
 	http.HandleFunc("/api/group-life/premium", service.HandleCalculatePremium)
 	http.HandleFunc("/api/group-life/renewal-quote", service.HandleRenewalQuote)
 	http.HandleFunc("/health", service.HandleHealth)
+	http.HandleFunc("/metrics", prodMetricsHandler)
 	
 	port := os.Getenv("PORT")
 	if port == "" {

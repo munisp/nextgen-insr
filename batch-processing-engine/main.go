@@ -284,6 +284,7 @@ func main() {
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/v1/batch", handleCreateBatch)
 	mux.HandleFunc("/api/v1/batch/status", handleGetBatch)
+	mux.HandleFunc("/metrics", prodMetricsHandler)
 	
 	port := ":8092"
 	log.Printf("Batch Processing Engine starting on %s", port)

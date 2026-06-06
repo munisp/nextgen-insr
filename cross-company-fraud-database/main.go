@@ -178,6 +178,7 @@ func main() {
 	r.Get("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"service": "cross-company-fraud-database", "uptime": time.Since(startTime).String(), "ready": true})
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8110" }
 	log.Printf("cross-company-fraud-database starting on :%s", port)

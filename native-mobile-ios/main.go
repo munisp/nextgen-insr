@@ -193,6 +193,7 @@ func main() {
 			"operational": true, "last_heartbeat": time.Now().Format(time.RFC3339),
 		})
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8120" }
 	log.Printf("native-mobile-ios starting on :%s", port)

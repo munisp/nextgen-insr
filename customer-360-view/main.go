@@ -200,6 +200,7 @@ func main() {
 	r.Get("/api/v1/customers/{id}/360", getCustomer360)
 	r.Get("/api/v1/customers/{id}/cross-sell", getCrossSell)
 	r.Get("/api/v1/segments", getSegments)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8103" }

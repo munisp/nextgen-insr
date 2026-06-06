@@ -233,6 +233,7 @@ func main() {
 	r.Post("/api/v1/payout", initiatePayout)
 	r.Get("/api/v1/payout/{id}/status", payoutStatus)
 	r.Get("/api/v1/float", floatStatus)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8123" }

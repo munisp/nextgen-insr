@@ -234,6 +234,7 @@ func main() {
 	r.Post("/api/v1/send", sendNotification)
 	r.Get("/api/v1/templates", listTemplates)
 	r.Get("/api/v1/delivery-stats", deliveryStats)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8122" }

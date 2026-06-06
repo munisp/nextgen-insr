@@ -276,6 +276,7 @@ func main() {
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/v1/send", handleSend)
 	mux.HandleFunc("/api/v1/templates", handleTemplates)
+	mux.HandleFunc("/metrics", prodMetricsHandler)
 	
 	port := ":8093"
 	log.Printf("Communication Service starting on %s", port)

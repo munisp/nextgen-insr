@@ -186,6 +186,7 @@ func main() {
 	})
 	r.Post("/api/v1/verify", verifyIdentity)
 	r.Get("/api/v1/countries", supportedCountries)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8131" }

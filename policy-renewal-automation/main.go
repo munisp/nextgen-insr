@@ -188,6 +188,7 @@ func main() {
 	r.Get("/api/v1/renewals/upcoming", upcomingRenewals)
 	r.Post("/api/v1/renewals/calculate", calculateRenewalPremium)
 	r.Post("/api/v1/renewals/process", processRenewal)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8105" }

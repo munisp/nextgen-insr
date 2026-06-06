@@ -232,6 +232,7 @@ func main() {
 	r.Get("/api/v1/agent/{id}/dashboard", agentDashboard)
 	r.Post("/api/v1/agent/{id}/checkin", agentCheckin)
 	r.Get("/api/v1/agent/{id}/commission", agentCommission)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8134" }

@@ -245,6 +245,7 @@ func main() {
 	r.Post("/api/v1/kyc/verify", verifyKYC)
 	r.Post("/api/v1/kyb/verify", verifyKYB)
 	r.Get("/api/v1/kyc/{id}/status", kycStatus)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8121" }

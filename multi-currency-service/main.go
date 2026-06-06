@@ -191,6 +191,7 @@ func main() {
 	})
 	r.Get("/api/v1/rates", getRates)
 	r.Post("/api/v1/convert", convertCurrency)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8132" }

@@ -187,6 +187,7 @@ func main() {
 	r.Post("/api/v1/session", handleUSSD)
 	r.Get("/api/v1/menu", getMenu)
 	r.Get("/api/v1/stats", ussdStats)
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8092" }
 	log.Printf("USSD Gateway starting on :%s", port)

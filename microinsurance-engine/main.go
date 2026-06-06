@@ -250,6 +250,7 @@ func main() {
 	r.Post("/api/v1/enroll", enroll)
 	r.Post("/api/v1/claim", fileClaim)
 	r.Get("/api/v1/stats", getStats)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8124" }

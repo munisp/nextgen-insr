@@ -212,6 +212,7 @@ func main() {
 		r.Get("/verify", verifyChain)
 		r.Get("/report/quarterly", quarterlyReport)
 	})
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8101" }
