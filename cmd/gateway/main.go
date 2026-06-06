@@ -44,6 +44,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"golang.org/x/time/rate"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 // ── Service registry ──────────────────────────────────────────────────────────
@@ -255,7 +258,7 @@ type gateway struct {
 func (g *gateway) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":   "healthy",
+		"status": "healthy", "database": db != nil,
 		"service":  "54link-api-gateway",
 		"version":  "2.0.0",
 		"uptime":   time.Since(g.startTime).String(),
@@ -270,7 +273,48 @@ func (g *gateway) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for cmd")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS cmd (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	gw := &gateway{startTime: time.Now(), services: serviceRegistry}
 	transport := buildMtlsTransport()
 	limiter := newRateLimiterStore()

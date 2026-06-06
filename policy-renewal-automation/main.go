@@ -9,6 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 // Policy Renewal Automation — automated policy renewal with dynamic pricing
@@ -21,11 +24,52 @@ import (
 // - Lapse: After grace period → policy terminated, new application required
 // - Communication: SMS at -30d, -14d, -7d, -3d, -1d, 0d, +7d, +14d, +30d
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for policy_renewal_automation")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS policy_renewal_automation (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "policy-renewal-automation"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "policy-renewal-automation"})
 	})
 	r.Get("/api/v1/renewals/upcoming", upcomingRenewals)
 	r.Post("/api/v1/renewals/calculate", calculateRenewalPremium)

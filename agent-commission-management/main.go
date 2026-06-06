@@ -6,6 +6,10 @@ import (
 	"math"
 	"net/http"
 	"time"
+	"database/sql"
+	"os"
+
+	_ "github.com/lib/pq"
 )
 
 // Agent Commission Management Service
@@ -42,7 +46,7 @@ func calculateCommission(premium float64, product string, tier string) float64 {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "agent-commission-management"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "agent-commission-management"})
 }
 
 func handleCalculate(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +80,48 @@ func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for agent_commission_management")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_commission_management (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/v1/calculate", handleCalculate)

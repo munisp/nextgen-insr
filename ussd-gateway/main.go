@@ -8,6 +8,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 // USSD Gateway — session-based USSD menu system for insurance services
@@ -19,11 +22,52 @@ import (
 // - Operations: Check policy, file claim, pay premium, agent locator
 // - Available 24/7, supports all 36 states + FCT
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for ussd_gateway")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS ussd_gateway (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "ussd-gateway"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": db != nil, "service": "ussd-gateway"})
 	})
 	r.Post("/api/v1/session", handleUSSD)
 	r.Get("/api/v1/menu", getMenu)

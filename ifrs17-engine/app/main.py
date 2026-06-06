@@ -1,5 +1,49 @@
 """IFRS 17 Engine — Insurance contract measurement and reporting.
 
+
+import os
+import psycopg2
+import psycopg2.extras
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ── Database Connection ──────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+_db_conn = None
+
+def get_db():
+    global _db_conn
+    if _db_conn is None or _db_conn.closed:
+        try:
+            _db_conn = psycopg2.connect(DATABASE_URL)
+            _db_conn.autocommit = True
+            logger.info(f"Connected to PostgreSQL for {svc_name}")
+        except Exception as e:
+            logger.warning(f"Database connection failed: {e} (running in degraded mode)")
+            return None
+    return _db_conn
+
+def init_db():
+    conn = get_db()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {svc_name} (
+                        id SERIAL PRIMARY KEY,
+                        data JSONB NOT NULL DEFAULT '{{}}',
+                        status VARCHAR(50) DEFAULT 'active',
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW(),
+                        tenant_id INTEGER DEFAULT 1
+                    )
+                """)
+            logger.info(f"Table {svc_name} initialized")
+        except Exception as e:
+            logger.warning(f"Table creation failed: {e}")
+
+
 Business Rules:
 - Measurement models: BBA (Building Block Approach), PAA (Premium Allocation Approach)
 - CSM calculation: Present value of future cash flows - risk adjustment
@@ -68,3 +112,8 @@ if app:
             ],
             "measurement_model": "BBA", "risk_confidence": "75th percentile",
         }
+
+
+@app.on_event("startup")
+async def startup():
+    init_db()

@@ -26,6 +26,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 // ── Data Structures ──────────────────────────────────────────────────────────
@@ -436,7 +439,7 @@ func signatureVerifyHandler(w http.ResponseWriter, r *http.Request) {
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, map[string]interface{}{
-		"status":         "healthy",
+		"status": "healthy", "database": db != nil,
 		"service":        "pos-ledger-sync",
 		"version":        "1.0.0",
 		"uptime_seconds": int64(time.Since(state.startTime).Seconds()),
@@ -525,7 +528,48 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for go_ledger_sync")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS go_ledger_sync (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	port := os.Getenv("GO_LEDGER_PORT")
 	if port == "" {
 		port = "9200"
