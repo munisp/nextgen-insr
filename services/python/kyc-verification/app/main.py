@@ -23,15 +23,12 @@ Integrations:
 import os
 import json
 import logging
-import hashlib
-import time
 import uuid
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional
-from dataclasses import dataclass, asdict
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Header, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 

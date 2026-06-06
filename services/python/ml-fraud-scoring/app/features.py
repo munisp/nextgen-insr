@@ -1,7 +1,7 @@
 """Feature extraction pipeline for fraud detection model."""
 
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 class FeatureExtractor:

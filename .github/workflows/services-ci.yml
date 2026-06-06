@@ -30,7 +30,7 @@ jobs:
       - name: Build ${{ matrix.service }}
         run: |
           cd services/go/${{ matrix.service }}
-          go build ./cmd/...
+          go build -o /tmp/${{ matrix.service }} ./cmd/main.go
       - name: Vet
         run: |
           cd services/go/${{ matrix.service }}

@@ -20,14 +20,12 @@ Integrations:
 """
 
 import os
-import json
 import logging
 import uuid
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -314,7 +312,7 @@ def _make_decision(req: AdjudicationRequest, rules: dict, fraud_score: float):
 
     # Over threshold but low fraud → partial or manual
     if fraud_score < 0.5:
-        reasons.append(f"Amount exceeds auto-approve threshold, requires manual review")
+        reasons.append("Amount exceeds auto-approve threshold, requires manual review")
         return AdjudicationDecision.MANUAL_REVIEW, reasons, 0
 
     # Default: manual review
