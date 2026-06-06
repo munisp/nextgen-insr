@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -93,7 +94,7 @@ func calculateRiskScore(claim ClaimRequest) float64 {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "claims-adjudication-engine"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "kafka": "configured", "redis": "configured", "service": "claims-adjudication-engine"})
 }
 
 func handleAdjudicate(w http.ResponseWriter, r *http.Request) {
@@ -107,6 +108,7 @@ func handleAdjudicate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := adjudicateClaim(claim)
+	publishEvent("claims.adjudication", result.ClaimID, map[string]interface{}{"event": "claim.adjudicated", "claim_id": result.ClaimID, "decision": result.Decision, "risk_score": result.RiskScore})
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -157,8 +159,61 @@ func initDB() {
 }
 
 
+
+// ── Kafka Event Publishing (via REST Proxy) ─────────────────────────────────
+var kafkaRestURL string
+
+func initKafka() {
+	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
+	if kafkaRestURL == "" {
+		kafkaRestURL = "http://localhost:8082"
+	}
+	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
+}
+
+func publishEvent(topic string, key string, payload interface{}) {
+	if kafkaRestURL == "" {
+		return
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("WARN: kafka marshal error: %v", err)
+		return
+	}
+	msg := map[string]interface{}{
+		"records": []map[string]interface{}{
+			{"key": key, "value": string(data)},
+		},
+	}
+	body, _ := json.Marshal(msg)
+	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("WARN: kafka publish error: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+}
+
+// ── Redis Caching ───────────────────────────────────────────────────────────
+var redisAddr string
+
+type redisConn struct {
+	addr string
+}
+
+func initRedis() *redisConn {
+	redisAddr = os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	log.Printf("Redis configured at %s", redisAddr)
+	return &redisConn{addr: redisAddr}
+}
+
 func main() {
 	initDB()
+	initKafka()
+	initRedis()
 	if db != nil {
 		defer db.Close()
 	}

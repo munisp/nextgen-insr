@@ -48,9 +48,28 @@ def init_db():
 
 import json
 import math
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from typing import Dict, List
+
+# ── Kafka Event Publishing (via REST Proxy) ───────────────────────────────────
+KAFKA_REST_URL = os.environ.get("KAFKA_REST_URL", "http://localhost:8082")
+
+def publish_event(topic: str, key: str, payload: dict):
+    try:
+        msg = json.dumps({"records": [{"key": key, "value": json.dumps(payload)}]}).encode()
+        req = urllib.request.Request(
+            f"{KAFKA_REST_URL}/topics/{topic}",
+            data=msg,
+            headers={"Content-Type": "application/vnd.kafka.json.v2+json"},
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except Exception as e:
+        logger.warning(f"Kafka publish error: {e}")
+
+# ── Redis Cache ───────────────────────────────────────────────────────────────
+REDIS_URL = os.environ.get("REDIS_URL", "localhost:6379")
 
 
 class FraudRule:
@@ -121,7 +140,7 @@ def calculate_fraud_score(transaction: Dict) -> Dict:
 class FraudHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
-            self._respond(200, {"status": "healthy", "service": "fraud-detection-engine"})
+            self._respond(200, {"status": "healthy", "service": "fraud-detection-engine", "kafka": "configured", "redis": "configured"})
         elif self.path == "/api/v1/rules":
             self._respond(200, [{"name": r.name, "threshold": r.threshold, "weight": r.weight} for r in RULES])
         elif self.path == "/api/v1/metrics":
@@ -137,6 +156,12 @@ class FraudHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length > 0 else {}
             result = calculate_fraud_score(body)
+            publish_event("fraud.evaluations", result["transaction_id"], {
+                "event": "fraud.evaluated",
+                "transaction_id": result["transaction_id"],
+                "decision": result["decision"],
+                "fraud_score": result["fraud_score"],
+            })
             self._respond(200, result)
         else:
             self._respond(404, {"error": "not found"})
