@@ -442,6 +442,11 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 		premium = product.MaxPremium
 	}
 
+	triggerType := req.TriggerType
+	if triggerType == "" {
+		triggerType = "manual"
+	}
+
 	policy := &Policy{
 		ID:          s.idGen.Next(),
 		ProductID:   req.ProductID,
@@ -449,9 +454,10 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 		Status:      "active",
 		Premium:     premium,
 		Coverage:    product.MaxCoverage,
-		TriggerType: req.TriggerType,
+		TriggerType: triggerType,
 		ActivatedAt: now,
 		ExpiresAt:   expiresAt,
+		Metadata:    "{}",
 	}
 
 	if err := s.store.CreatePolicy(r.Context(), policy); err != nil {
