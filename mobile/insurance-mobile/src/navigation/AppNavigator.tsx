@@ -21,6 +21,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { ComplianceScreen } from '../screens/ComplianceScreen';
 import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import { SupportScreen } from '../screens/SupportScreen';
+import GeospatialMapScreen from '../screens/GeospatialMapScreen';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 import { View } from 'react-native';
 
@@ -103,6 +104,7 @@ export function AppNavigator() {
           <Stack.Screen name="AgentLocator" component={AgentLocatorScreen} />
           <Stack.Screen name="Emergency" component={EmergencyScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
+          <Stack.Screen name="GeospatialMap" component={GeospatialMapScreen} />
         </>
       ) : (
         <Stack.Screen name="Auth" component={AuthStack} />
