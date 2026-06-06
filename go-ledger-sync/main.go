@@ -647,7 +647,7 @@ func main() {
 	mux.HandleFunc("/stats", statsHandler)
 
 	log.Printf("[pos-ledger-sync] Starting Go sidecar on port %s", port)
-	srv := &http.Server{Addr: ":"+port, Handler: corsMiddleware(mux), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	srv := &http.Server{Addr: ":"+port, Handler: tracingMiddleware(corsMiddleware(mux)), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

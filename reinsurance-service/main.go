@@ -160,7 +160,7 @@ func main() {
 	log.Printf("Reinsurance Service starting on %s", port)
 	srv := &http.Server{
 		Addr:         port,
-		Handler:      corsMiddleware(mux),
+		Handler:      tracingMiddleware(corsMiddleware(mux)),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
