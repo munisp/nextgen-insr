@@ -283,16 +283,48 @@ app.use((req, res, next) => {
   next();
 });
 
-// Security headers (Helmet + additional policies)
+// Security headers (Helmet + CSP + additional policies)
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      connectSrc: ["'self'", 'https://api.paystack.co', 'https://api.flutterwave.com', 'wss:'],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
-  hsts: { maxAge: 31536000, includeSubDomains: true },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   frameguard: { action: 'deny' },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+// CSRF protection for state-changing mutations
+const CSRF_EXEMPT_PATHS = ['/api/trpc', '/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/health'];
+function generateCsrfToken(sessionId) {
+  return crypto.createHmac('sha256', JWT_SECRET).update(sessionId + ':csrf').digest('hex');
+}
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  if (CSRF_EXEMPT_PATHS.some(p => req.path.startsWith(p))) return next();
+  const csrfHeader = req.headers['x-csrf-token'];
+  if (csrfHeader) {
+    const sessionId = req.headers['authorization']?.replace('Bearer ', '') || 'anon';
+    const expected = generateCsrfToken(sessionId);
+    if (csrfHeader !== expected) {
+      return res.status(403).json({ error: 'Invalid CSRF token', code: 'CSRF_INVALID' });
+    }
+  }
   next();
 });
 
@@ -352,7 +384,8 @@ async function checkRateLimit(key, res) {
   return allowed;
 }
 
-// PostgreSQL connection
+// PostgreSQL connection (SSL in production)
+const pgSsl = process.env.PG_SSL === 'true' ? { rejectUnauthorized: process.env.PG_SSL_REJECT_UNAUTHORIZED !== 'false' } : false;
 const pool = new Pool({
   host: process.env.PGHOST || 'localhost',
   port: parseInt(process.env.PGPORT || '5432'),
@@ -363,6 +396,7 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
   statement_timeout: 30000,
+  ssl: pgSsl,
 });
 
 // Verify DB connection on startup + ensure auth tables exist
@@ -1771,12 +1805,18 @@ const ROUTE_HANDLERS = {
   'churn.predict': async (input) => { return {customerId:input?.customerId||1,churnProbability:0.23,riskLevel:'medium',factors:['Late payments','No claims in 2 years','Premium increase'],retentionActions:['Offer loyalty discount','Send renewal reminder','Assign retention agent']}; },
 
   // Claims mutations
-  'claims.create': async (input) => {
+  'claims.create': async (input, ctx) => {
     validate(input, { policyId: { required: true, type: 'number', min: 1 }, amount: { required: true, type: 'number', min: 0.01 }, description: { required: true, type: 'string', minLength: 10 } });
+    const uid = ctx?.userId || 1;
+    const kycCheck = await checkKycGate(uid);
+    if (!kycCheck.passed) {
+      return { error: 'KYC verification required before filing claims', code: 'KYC_REQUIRED', kycStatus: kycCheck.kycStatus, remainingSteps: kycCheck.remainingSteps };
+    }
     const claimNum = 'CLM-' + new Date().getFullYear() + '-' + String(Math.floor(Math.random() * 99999)).padStart(5, '0');
-    const r = await q1(`INSERT INTO claims (id, "policyId", "claimNumber", amount, description, status, "createdAt", "updatedAt")
-      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM claims), $1, $2, $3, $4, 'Submitted', NOW(), NOW()) RETURNING *`,
-      [input.policyId || 1, claimNum, input.amount || 0, input.description || ''], { id: 1, claimNumber: claimNum, status: 'Submitted' });
+    const r = await q1(`INSERT INTO claims (id, "policyId", "userId", "claimNumber", amount, description, status, "createdAt", "updatedAt")
+      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM claims), $1, $2, $3, $4, $5, 'Submitted', NOW(), NOW()) RETURNING *`,
+      [input.policyId || 1, uid, claimNum, input.amount || 0, input.description || ''], { id: 1, claimNumber: claimNum, status: 'Submitted' });
+    await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES ($1, $2, $3, $4, NOW())', ['claims.create', 'claim', r.id, JSON.stringify({ userId: uid, amount: input.amount, policyId: input.policyId })]);
     return { success: true, claimId: r.id, claimNumber: r.claimNumber || claimNum };
   },
   'claims.update': async (input) => {
@@ -1930,28 +1970,45 @@ const ROUTE_HANDLERS = {
   'knowledgeGraph.entities': () => q('SELECT id, entity_name as name, entity_type as type, properties, related_to as connections FROM knowledge_entities ORDER BY id'),
   'knowledgeGraph.query': async (input) => { return {results:[{entity:input?.query||'insurance',type:'concept',relatedEntities:['underwriting','premium','claims'],relevance:0.95}]}; },
 
-  // KYC mutations
-  'kyc.submit': async (input) => {
+  // KYC mutations — user-scoped (uses ctx.userId)
+  'kyc.submit': async (input, ctx) => {
     validate(input, { documentType: { required: true, type: 'string', oneOf: ['bvn', 'nin', 'passport', 'drivers_license', 'voters_card'] } });
     const docType = input?.documentType || 'bvn';
-    await q1('UPDATE kyc_profiles SET "kycStatus"=\'in_progress\', "updatedAt"=NOW() WHERE "userId"=1');
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "kycStatus"=\'in_progress\', "updatedAt"=NOW() WHERE "userId"=$1', [uid]);
+    await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES ($1, $2, $3, $4, NOW())', ['kyc.submit', 'kyc', uid, JSON.stringify({ documentType: docType, userId: uid })]);
     return { success: true, verificationId: 'KYC-' + Date.now(), status: 'in_progress', documentType: docType };
   },
-  'kyc.verifyBVN': async (input) => {
+  'kyc.verifyBVN': async (input, ctx) => {
     validate(input, { bvn: { required: true, type: 'string', minLength: 11, maxLength: 11 } });
-    await q1('UPDATE kyc_profiles SET "bvnVerified"=true, bvn=$1, "kycLevel"=GREATEST("kycLevel",1), "lastVerificationDate"=NOW(), "updatedAt"=NOW() WHERE "userId"=1', [input?.bvn || '22200000001']);
-    return { valid: true, name: 'Patrick Munis', bvn: input?.bvn || '22200000001', bank: 'First Bank', verified: true };
+    const uid = ctx?.userId || 1;
+    const bvnHash = crypto.createHash('sha256').update(input.bvn).digest('hex');
+    await q1('UPDATE kyc_profiles SET "bvnVerified"=true, bvn=$1, "kycLevel"=GREATEST("kycLevel",1), "lastVerificationDate"=NOW(), "updatedAt"=NOW() WHERE "userId"=$2', [bvnHash, uid]);
+    await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES ($1, $2, $3, $4, NOW())', ['kyc.verifyBVN', 'kyc', uid, JSON.stringify({ bvnPrefix: input.bvn.substring(0, 4) + '***', userId: uid })]);
+    return { valid: true, bvnVerified: true, tier: 1, verified: true };
   },
-  'kyc.verifyNIN': async (input) => {
+  'kyc.verifyNIN': async (input, ctx) => {
     validate(input, { nin: { required: true, type: 'string', minLength: 11, maxLength: 11 } });
-    await q1('UPDATE kyc_profiles SET "ninVerified"=true, nin=$1, "updatedAt"=NOW() WHERE "userId"=1', [input?.nin || '10000000001']);
-    return { valid: true, name: 'Patrick Munis', nin: input?.nin || '10000000001', verified: true };
+    const uid = ctx?.userId || 1;
+    const ninHash = crypto.createHash('sha256').update(input.nin).digest('hex');
+    await q1('UPDATE kyc_profiles SET "ninVerified"=true, nin=$1, "updatedAt"=NOW() WHERE "userId"=$2', [ninHash, uid]);
+    await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES ($1, $2, $3, $4, NOW())', ['kyc.verifyNIN', 'kyc', uid, JSON.stringify({ ninPrefix: input.nin.substring(0, 4) + '***', userId: uid })]);
+    return { valid: true, ninVerified: true, verified: true };
   },
-  'kyc.verifyPhone': async (input) => {
-    await q1('UPDATE kyc_profiles SET "phoneVerified"=true, "updatedAt"=NOW() WHERE "userId"=1');
+  'kyc.verifyPhone': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "phoneVerified"=true, "updatedAt"=NOW() WHERE "userId"=$1', [uid]);
     return { valid: true, carrier: 'MTN Nigeria', verified: true };
   },
-  'kyc.gate': async () => checkKycGate(1),
+  'kyc.gate': async (input, ctx) => checkKycGate(ctx?.userId || 1),
+  'kyc.checkExpiry': async () => {
+    const expired = await q('SELECT "userId", "kycLevel", "nextReviewDate" FROM kyc_profiles WHERE "nextReviewDate" < NOW() AND "kycStatus"=\'verified\'');
+    for (const row of expired) {
+      await q('UPDATE kyc_profiles SET "kycStatus"=\'expired\', "updatedAt"=NOW() WHERE "userId"=$1', [row.userId]);
+      await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES ($1, $2, $3, $4, NOW())', ['kyc.expired', 'kyc', row.userId, JSON.stringify({ previousLevel: row.kycLevel })]);
+    }
+    return { expired: expired.length, checked: true };
+  },
   'kyc.serviceHealth': async () => { const total = await q1('SELECT COUNT(*) as c FROM kyc_profiles'); const verified = await q1('SELECT COUNT(*) as c FROM kyc_profiles WHERE "kycStatus"=\'verified\''); return {bvnService:{status:'operational',latency:120,verified:Number(verified?.c)||0}, ninService:{status:'operational',latency:200}, facialMatch:{status:'operational',latency:350}, documentOcr:{status:'operational',latency:450}, overallHealth:'healthy', totalProfiles:Number(total?.c)||0}; },
 
   // Training / LMS
@@ -2258,6 +2315,16 @@ const ROUTE_HANDLERS = {
   'wallet.topup': async (input, ctx) => {
     validate(input, { amount: { required: true, type: 'number', min: 1 } });
     const amt = input?.amount || 0; const ref = 'TOP-' + Date.now(); const uid = ctx?.userId || 1;
+    const kycCheck = await checkKycGate(uid);
+    if (!kycCheck.passed) {
+      return { error: 'KYC verification required before wallet top-up', code: 'KYC_REQUIRED', kycStatus: kycCheck.kycStatus, remainingSteps: kycCheck.remainingSteps };
+    }
+    if (kycCheck.level < 2 && amt > 300000) {
+      return { error: 'Tier 2 KYC required for amounts above ₦300,000', code: 'KYC_TIER_INSUFFICIENT', currentTier: kycCheck.level, requiredTier: 2, limit: 300000 };
+    }
+    if (kycCheck.level < 3 && amt > 5000000) {
+      return { error: 'Tier 3 KYC required for amounts above ₦5,000,000', code: 'KYC_TIER_INSUFFICIENT', currentTier: kycCheck.level, requiredTier: 3, limit: 5000000 };
+    }
     return withTransaction(async (txQ, txQ1) => {
       await txQ('INSERT INTO wallet_transactions (user_id, type, amount, reference, narration) VALUES ($1, \'credit\', $2, $3, $4)', [uid, amt, ref, input?.narration || 'Wallet top-up']);
       const w = await txQ1('UPDATE wallets SET balance = balance + $1 WHERE user_id=$2 RETURNING balance', [amt, uid]);

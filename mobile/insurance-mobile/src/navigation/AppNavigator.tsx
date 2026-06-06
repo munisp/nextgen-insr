@@ -13,6 +13,14 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { AgentLocatorScreen } from '../screens/AgentLocatorScreen';
 import { EmergencyScreen } from '../screens/EmergencyScreen';
+import { KYCVerificationScreen } from '../screens/KYCVerificationScreen';
+import { NotificationsScreen } from '../screens/NotificationsScreen';
+import { DigitalWalletScreen } from '../screens/DigitalWalletScreen';
+import { ProductBrowserScreen } from '../screens/ProductBrowserScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { ComplianceScreen } from '../screens/ComplianceScreen';
+import { AnalyticsScreen } from '../screens/AnalyticsScreen';
+import { SupportScreen } from '../screens/SupportScreen';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 import { View } from 'react-native';
 
@@ -24,6 +32,7 @@ function PoliciesStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="PoliciesList" component={PoliciesScreen} />
       <Stack.Screen name="PolicyDetail" component={PolicyDetailScreen} />
+      <Stack.Screen name="ProductBrowser" component={ProductBrowserScreen} />
     </Stack.Navigator>
   );
 }
@@ -34,6 +43,20 @@ function ClaimsStack() {
       <Stack.Screen name="ClaimsList" component={ClaimsScreen} />
       <Stack.Screen name="FileClaim" component={FileClaimScreen} />
       <Stack.Screen name="ClaimDetail" component={ClaimDetailScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function ProfileStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="KYCVerification" component={KYCVerificationScreen} />
+      <Stack.Screen name="DigitalWallet" component={DigitalWalletScreen} />
+      <Stack.Screen name="Analytics" component={AnalyticsScreen} />
+      <Stack.Screen name="Compliance" component={ComplianceScreen} />
+      <Stack.Screen name="Support" component={SupportScreen} />
     </Stack.Navigator>
   );
 }
@@ -55,7 +78,7 @@ function MainTabs() {
         <Tab.Screen name="Policies" component={PoliciesStack} options={{ tabBarLabel: 'Policies' }} />
         <Tab.Screen name="Claims" component={ClaimsStack} options={{ tabBarLabel: 'Claims' }} />
         <Tab.Screen name="Payments" component={PaymentsScreen} options={{ tabBarLabel: 'Pay' }} />
-        <Tab.Screen name="Profile" component={ProfileScreen} options={{ tabBarLabel: 'Profile' }} />
+        <Tab.Screen name="Profile" component={ProfileStack} options={{ tabBarLabel: 'More' }} />
       </Tab.Navigator>
     </View>
   );
@@ -79,6 +102,7 @@ export function AppNavigator() {
           <Stack.Screen name="Main" component={MainTabs} />
           <Stack.Screen name="AgentLocator" component={AgentLocatorScreen} />
           <Stack.Screen name="Emergency" component={EmergencyScreen} />
+          <Stack.Screen name="Notifications" component={NotificationsScreen} />
         </>
       ) : (
         <Stack.Screen name="Auth" component={AuthStack} />
