@@ -310,11 +310,18 @@ func (s *BancassuranceService) HandleCreateLoanProtection(w http.ResponseWriter,
 }
 
 func (s *BancassuranceService) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "bancassurance-integration",
 		"timestamp": time.Now(),
+		"database":  dbStatus,
 		"features": []string{
 			"bank_partner_management",
 			"customer_offer_generation",

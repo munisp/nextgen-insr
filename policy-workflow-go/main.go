@@ -223,7 +223,13 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "policy-workflow-go"})
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "policy-workflow-go", "database": dbStatus})
 	})
 	r.Post("/api/v1/workflow/transition", transitionPolicy)
 	r.Get("/api/v1/workflow/valid-transitions/{state}", getValidTransitions)

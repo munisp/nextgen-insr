@@ -258,7 +258,13 @@ func main() {
 	r.Use(metricsMiddleware)
 	r.Get("/metrics", metricsHandler)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "api-marketplace"})
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "api-marketplace", "database": dbStatus})
 	})
 	r.Get("/api/v1/catalog", apiCatalog)
 	r.Post("/api/v1/subscribe", subscribe)

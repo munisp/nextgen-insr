@@ -213,7 +213,13 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "customer-feedback-loop"})
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "customer-feedback-loop", "database": dbStatus})
 	})
 	r.Post("/api/v1/feedback", submitFeedback)
 	r.Get("/api/v1/feedback/summary", feedbackSummary)

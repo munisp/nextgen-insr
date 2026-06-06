@@ -207,8 +207,15 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "healthy", "service": "multi-country-regulatory", "version": "1.0.0",
+			"database": dbStatus,
 			"uptime": time.Since(startTime).String(),
 		})
 	})

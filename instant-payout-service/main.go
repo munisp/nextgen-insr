@@ -259,7 +259,13 @@ func main() {
 	r.Use(metricsMiddleware)
 	r.Get("/metrics", metricsHandler)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "instant-payout-service"})
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "instant-payout-service", "database": dbStatus})
 	})
 	r.Post("/api/v1/payout", initiatePayout)
 	r.Get("/api/v1/payout/{id}/status", payoutStatus)

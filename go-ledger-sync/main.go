@@ -81,6 +81,7 @@ type HealthCheck struct {
 
 type AggregatedHealth struct {
 	Overall    string        `json:"overall"`
+	Database   string        `json:"database"`
 	Services   []HealthCheck `json:"services"`
 	Timestamp  int64         `json:"timestamp"`
 	UptimeSec  int64         `json:"uptime_seconds"`
@@ -377,6 +378,12 @@ func lifecycleHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func healthAggregatorHandler(w http.ResponseWriter, r *http.Request) {
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
 	state.healthCheckCount.Add(1)
 	services := []struct {
 		name string
@@ -413,6 +420,7 @@ func healthAggregatorHandler(w http.ResponseWriter, r *http.Request) {
 
 	jsonResponse(w, AggregatedHealth{
 		Overall:   overall,
+		Database:  dbStatus,
 		Services:  checks,
 		Timestamp: time.Now().UnixMilli(),
 		UptimeSec: int64(time.Since(state.startTime).Seconds()),

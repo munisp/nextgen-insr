@@ -260,7 +260,13 @@ func main() {
 	r.Use(metricsMiddleware)
 	r.Get("/metrics", metricsHandler)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "broker-api-service"})
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "broker-api-service", "database": dbStatus})
 	})
 	r.Route("/api/v1/brokers", func(r chi.Router) {
 		r.Get("/", listBrokers)

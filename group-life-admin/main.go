@@ -338,11 +338,18 @@ func (s *GroupLifeService) HandleRenewalQuote(w http.ResponseWriter, r *http.Req
 }
 
 func (s *GroupLifeService) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "group-life-admin",
 		"timestamp": time.Now(),
+		"database":  dbStatus,
 		"features": []string{
 			"scheme_management",
 			"member_enrollment",

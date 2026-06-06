@@ -235,7 +235,13 @@ func main() {
 	r.Use(middleware.Logger, middleware.Recoverer)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "audit-trail-system"})
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "audit-trail-system", "database": dbStatus})
 	})
 	r.Route("/api/v1/audit", func(r chi.Router) {
 		r.Get("/", queryAudit)

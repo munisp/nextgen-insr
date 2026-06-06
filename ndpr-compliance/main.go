@@ -259,7 +259,13 @@ func main() {
 	r.Use(metricsMiddleware)
 	r.Get("/metrics", metricsHandler)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "ndpr-compliance"})
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "ndpr-compliance", "database": dbStatus})
 	})
 	r.Post("/api/v1/consent", recordConsent)
 	r.Post("/api/v1/dsar", submitDSAR)

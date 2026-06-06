@@ -310,11 +310,18 @@ func (s *ReinsuranceService) HandleCalculateRecovery(w http.ResponseWriter, r *h
 }
 
 func (s *ReinsuranceService) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "reinsurance-management",
 		"timestamp": time.Now(),
+		"database":  dbStatus,
 		"features": []string{
 			"treaty_management",
 			"facultative_placement",

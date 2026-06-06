@@ -234,11 +234,18 @@ func (s *NMIDService) HandleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *NMIDService) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "nmid-integration",
 		"timestamp": time.Now(),
+		"database":  dbStatus,
 	})
 }
 

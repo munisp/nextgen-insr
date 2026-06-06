@@ -283,7 +283,13 @@ func main() {
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "ab-testing-framework", "version": "1.0.0"})
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "ab-testing-framework", "database": dbStatus, "version": "1.0.0"})
 }
 
 func listExperiments(w http.ResponseWriter, r *http.Request) {
