@@ -1,0 +1,54 @@
+openapi: '3.0.3'
+info:
+  title: Multi Currency Service
+  description: Multi-Currency Service — FX conversion for cross-border insurance operations Supported: NGN, USD, GBP, EUR, GHS, KES, ZAR, XOF Business Rules:
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: multi-currency-service
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/rates:
+    get:
+      summary: Get rates
+      responses:
+        '200':
+          description: Successful get rates
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/convert:
+    post:
+      summary: Convert currency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful convert currency
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

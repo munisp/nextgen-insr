@@ -1,0 +1,74 @@
+openapi: '3.0.3'
+info:
+  title: Naicom Compliance Module
+  description: NAICOM Compliance Module — automated regulatory reporting and monitoring Business Rules: - Quarterly returns: Financial statements, solvency ratio, claims statistics
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: naicom-compliance-module
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/returns/quarterly:
+    get:
+      summary: Quarterly returns
+      responses:
+        '200':
+          description: Successful quarterly returns
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/solvency:
+    get:
+      summary: Solvency status
+      responses:
+        '200':
+          description: Successful solvency status
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/incident/report:
+    post:
+      summary: Report incident
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful report incident
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/capital:
+    get:
+      summary: Capital adequacy
+      responses:
+        '200':
+          description: Successful capital adequacy
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

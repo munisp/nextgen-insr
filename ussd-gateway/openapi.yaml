@@ -1,0 +1,64 @@
+openapi: '3.0.3'
+info:
+  title: Ussd Gateway
+  description: USSD Gateway — session-based USSD menu system for insurance services Business Rules: - Short code: *384*xxx# (NAICOM approved)
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: ussd-gateway
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/session:
+    post:
+      summary: u s s d
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful u s s d
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/menu:
+    get:
+      summary: Get menu
+      responses:
+        '200':
+          description: Successful get menu
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/stats:
+    get:
+      summary: Ussd stats
+      responses:
+        '200':
+          description: Successful ussd stats
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

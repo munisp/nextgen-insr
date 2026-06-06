@@ -1,0 +1,136 @@
+openapi: '3.0.3'
+info:
+  title: Go Ledger Sync
+  description: pos-ledger-sync — Go sidecar for 54Link POS Shell Provides: 1. TigerBeetle ledger sync (double-entry accounting)
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: go-ledger-sync
+                  database:
+                    type: string
+                    example: 'true'
+  /transfer:
+    get:
+      summary: Transfer handler
+      responses:
+        '200':
+          description: Successful transfer handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /transfer/batch:
+    get:
+      summary: Batch transfer handler
+      responses:
+        '200':
+          description: Successful batch transfer handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /balance:
+    get:
+      summary: Balance handler
+      responses:
+        '200':
+          description: Successful balance handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /balances:
+    get:
+      summary: All balances handler
+      responses:
+        '200':
+          description: Successful all balances handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /ledger/query:
+    get:
+      summary: Ledger query handler
+      responses:
+        '200':
+          description: Successful ledger query handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /settlement/create:
+    get:
+      summary: Settlement handler
+      responses:
+        '200':
+          description: Successful settlement handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /reconcile:
+    get:
+      summary: Reconcile handler
+      responses:
+        '200':
+          description: Successful reconcile handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /lifecycle:
+    get:
+      summary: Lifecycle handler
+      responses:
+        '200':
+          description: Successful lifecycle handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /health/aggregate:
+    get:
+      summary: Health aggregator handler
+      responses:
+        '200':
+          description: Successful health aggregator handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /signature/verify:
+    get:
+      summary: Signature verify handler
+      responses:
+        '200':
+          description: Successful signature verify handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /stats:
+    get:
+      summary: Stats handler
+      responses:
+        '200':
+          description: Successful stats handler
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

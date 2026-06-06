@@ -1,0 +1,88 @@
+openapi: '3.0.3'
+info:
+  title: Mobile Money Service
+  description: Mobile Money Service — integration with Nigerian mobile money operators Operators: OPay, PalmPay, Paga, Moniepoint, Kuda Business Rules:
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: mobile-money-service
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/collect:
+    post:
+      summary: Collect premium
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful collect premium
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/disburse:
+    post:
+      summary: Disburse to claim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful disburse to claim
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/operators:
+    get:
+      summary: List operators
+      responses:
+        '200':
+          description: Successful list operators
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/balance/{walletId}:
+    get:
+      summary: Wallet balance
+      parameters:
+        - name: walletId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful wallet balance
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

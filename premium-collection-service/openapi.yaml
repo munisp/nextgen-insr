@@ -1,0 +1,46 @@
+openapi: '3.0.3'
+info:
+  title: Premium Collection Service
+  description: Premium Collection Service Manages premium payments across multiple channels: bank transfer, card, mobile money, USSD, agent cash Integrates with: TigerBeetle (ledger), Mojaloop (mobile money), Kafka, Postgres
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: premium-collection-service
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/collect:
+    get:
+      summary: collect
+      responses:
+        '200':
+          description: Successful collect
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/reconcile:
+    get:
+      summary: reconcile
+      responses:
+        '200':
+          description: Successful reconcile
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

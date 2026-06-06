@@ -1,0 +1,76 @@
+openapi: '3.0.3'
+info:
+  title: Usage Based Insurance
+  description: Usage-Based Insurance — telematics and IoT-driven dynamic pricing Business Rules: - Data sources: Vehicle telematics (OBD-II), mobile app (driving behavior), IoT sensors
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: usage-based-insurance
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/telemetry:
+    post:
+      summary: Ingest telemetry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful ingest telemetry
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/score/{policyId}:
+    get:
+      summary: Get driving score
+      parameters:
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get driving score
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/premium/{policyId}:
+    get:
+      summary: Calculate premium
+      parameters:
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful calculate premium
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

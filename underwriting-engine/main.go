@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
 	"math"
 	"net/http"
+	"os"
 )
 
 // Underwriting Engine
@@ -102,7 +104,41 @@ func handleQuote(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+var kafkaRestURL string
+
+func initKafka() {
+	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
+	if kafkaRestURL == "" {
+		kafkaRestURL = "http://localhost:8082"
+	}
+	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
+}
+
+func publishEvent(topic string, key string, payload interface{}) {
+	if kafkaRestURL == "" {
+		return
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("WARN: kafka marshal error: %v", err)
+		return
+	}
+	msg := map[string]interface{}{
+		"records": []map[string]interface{}{
+			{"key": key, "value": string(data)},
+		},
+	}
+	body, _ := json.Marshal(msg)
+	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("WARN: kafka publish error: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+}
+
 func main() {
+	initKafka()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/v1/quote", handleQuote)

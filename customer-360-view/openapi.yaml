@@ -1,0 +1,68 @@
+openapi: '3.0.3'
+info:
+  title: Customer 360 View
+  description: Customer 360 View — unified customer profile aggregating all touchpoints Business Rules: - Data sources: KYC, transactions, claims, policies, interactions, social
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: customer-360-view
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/customers/{id}/360:
+    get:
+      summary: Get customer360
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get customer360
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/customers/{id}/cross-sell:
+    get:
+      summary: Get cross sell
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get cross sell
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/segments:
+    get:
+      summary: Get segments
+      responses:
+        '200':
+          description: Successful get segments
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

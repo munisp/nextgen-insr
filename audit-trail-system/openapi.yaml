@@ -1,0 +1,56 @@
+openapi: '3.0.3'
+info:
+  title: Audit Trail System
+  description: Audit Trail System — immutable event log for regulatory compliance Business Rules: - All state changes must be logged within 100ms
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: audit-trail-system
+                  database:
+                    type: string
+                    example: 'true'
+  /:
+    get:
+      summary: Query audit
+      responses:
+        '200':
+          description: Successful query audit
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /verify:
+    get:
+      summary: Verify chain
+      responses:
+        '200':
+          description: Successful verify chain
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /report/quarterly:
+    get:
+      summary: Quarterly report
+      responses:
+        '200':
+          description: Successful quarterly report
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

@@ -1,0 +1,46 @@
+openapi: '3.0.3'
+info:
+  title: Native Mobile Ios
+  description: native-mobile-ios — production microservice for InsurePortal platform Integrates with: Kafka, Redis, Postgres
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: native-mobile-ios
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/info:
+    get:
+      summary: Func
+      responses:
+        '200':
+          description: Successful func
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/status:
+    get:
+      summary: Func
+      responses:
+        '200':
+          description: Successful func
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

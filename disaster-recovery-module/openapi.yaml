@@ -1,0 +1,74 @@
+openapi: '3.0.3'
+info:
+  title: Disaster Recovery Module
+  description: Disaster Recovery Module — RTO/RPO automation with failover orchestration Business Rules: - RTO target: < 4 hours (NAICOM requirement)
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: disaster-recovery-module
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/status:
+    get:
+      summary: Dr status
+      responses:
+        '200':
+          description: Successful dr status
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/failover:
+    post:
+      summary: Trigger failover
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful trigger failover
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/drills:
+    get:
+      summary: Drill history
+      responses:
+        '200':
+          description: Successful drill history
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/rto-rpo:
+    get:
+      summary: Rto rpo status
+      responses:
+        '200':
+          description: Successful rto rpo status
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

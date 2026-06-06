@@ -1,0 +1,56 @@
+openapi: '3.0.3'
+info:
+  title: Pfa Integration
+  description: PFAService handles Pension Fund Administrator integration PFAPartner represents a PFA partner RSAHolder represents a Retirement Savings Account holder
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: pfa-integration
+                  database:
+                    type: string
+                    example: 'true'
+  /api/pfa/annuity-quote:
+    get:
+      summary: Service
+      responses:
+        '200':
+          description: Successful service
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/pfa/validate-rsa:
+    get:
+      summary: Service
+      responses:
+        '200':
+          description: Successful service
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/pfa/group-life-premium:
+    get:
+      summary: Service
+      responses:
+        '200':
+          description: Successful service
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

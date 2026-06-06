@@ -1,0 +1,64 @@
+openapi: '3.0.3'
+info:
+  title: Customer Feedback Loop
+  description: Customer Feedback Loop — NPS, CSAT, and CES collection and analysis Business Rules: - NPS survey: After claim settlement, policy issuance, service interaction
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: customer-feedback-loop
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/feedback:
+    post:
+      summary: Submit feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful submit feedback
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/feedback/summary:
+    get:
+      summary: Feedback summary
+      responses:
+        '200':
+          description: Successful feedback summary
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/nps:
+    get:
+      summary: Nps score
+      responses:
+        '200':
+          description: Successful nps score
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

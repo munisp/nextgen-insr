@@ -1,0 +1,64 @@
+openapi: '3.0.3'
+info:
+  title: Notification Service
+  description: Notification Service — multi-channel notification delivery Channels: SMS (Termii), Email (SendGrid), Push (FCM/APNS), WhatsApp, In-App Business Rules:
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: notification-service
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/send:
+    post:
+      summary: Send notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful send notification
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/templates:
+    get:
+      summary: List templates
+      responses:
+        '200':
+          description: Successful list templates
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/delivery-stats:
+    get:
+      summary: Delivery stats
+      responses:
+        '200':
+          description: Successful delivery stats
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

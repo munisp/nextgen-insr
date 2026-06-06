@@ -1,0 +1,86 @@
+openapi: '3.0.3'
+info:
+  title: Document Management System
+  description: Document Management System — policy documents, claims evidence, KYC documents Business Rules: - Supported formats: PDF, JPEG, PNG, DOCX (max 25MB per file)
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: document-management-system
+                  database:
+                    type: string
+                    example: 'true'
+  /:
+    get:
+      summary: List documents
+      responses:
+        '200':
+          description: Successful list documents
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /upload:
+    post:
+      summary: Upload document
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful upload document
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /{id}:
+    get:
+      summary: Get document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get document
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /{id}/versions:
+    get:
+      summary: Get versions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get versions
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

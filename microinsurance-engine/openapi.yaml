@@ -1,0 +1,82 @@
+openapi: '3.0.3'
+info:
+  title: Microinsurance Engine
+  description: Microinsurance Engine — affordable insurance products for low-income Nigerians Business Rules: - Premium range: ₦100 - ₦5,000/month
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: microinsurance-engine
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/products:
+    get:
+      summary: List products
+      responses:
+        '200':
+          description: Successful list products
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/enroll:
+    post:
+      summary: Enroll
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful enroll
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/claim:
+    post:
+      summary: File claim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful file claim
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/stats:
+    get:
+      summary: Get stats
+      responses:
+        '200':
+          description: Successful get stats
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

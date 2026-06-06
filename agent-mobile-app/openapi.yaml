@@ -1,0 +1,82 @@
+openapi: '3.0.3'
+info:
+  title: Agent Mobile App
+  description: Agent Mobile App Backend — API for insurance agent field operations Business Rules: - Agent onboarding: Background check + NAICOM registration required
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: agent-mobile-app
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/agent/{id}/dashboard:
+    get:
+      summary: Agent dashboard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful agent dashboard
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/agent/{id}/checkin:
+    post:
+      summary: Agent checkin
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful agent checkin
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/agent/{id}/commission:
+    get:
+      summary: Agent commission
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful agent commission
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

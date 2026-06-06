@@ -1,0 +1,46 @@
+openapi: '3.0.3'
+info:
+  title: Agent Commission Management
+  description: Agent Commission Management Service Calculates, tracks, and pays agent commissions based on tiered structures. Integrates with: TigerBeetle (payments), Kafka, Postgres, Redis
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: agent-commission-management
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/calculate:
+    get:
+      summary: calculate
+      responses:
+        '200':
+          description: Successful calculate
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/payout-summary:
+    get:
+      summary: payout summary
+      responses:
+        '200':
+          description: Successful payout summary
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

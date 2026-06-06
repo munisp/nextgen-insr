@@ -1,0 +1,52 @@
+openapi: '3.0.3'
+info:
+  title: Multi Tenant Platform
+  description: Multi-Tenant Platform — white-label insurance platform for multiple insurers Business Rules: - Tenant isolation: Separate schemas per tenant, shared infrastructure
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: multi-tenant-platform
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/tenants:
+    get:
+      summary: List tenants
+      responses:
+        '200':
+          description: Successful list tenants
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/tenants/{id}/config:
+    get:
+      summary: Get tenant config
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get tenant config
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

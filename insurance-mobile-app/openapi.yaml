@@ -1,0 +1,54 @@
+openapi: '3.0.3'
+info:
+  title: Insurance Mobile App
+  description: Insurance Mobile App Backend — API for mobile clients (iOS/Android/Flutter) Business Rules: - JWT auth with biometric fallback (fingerprint/face)
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: insurance-mobile-app
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/app/config:
+    get:
+      summary: Func
+      responses:
+        '200':
+          description: Successful func
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/sync:
+    post:
+      summary: Func
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful func
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

@@ -1,0 +1,64 @@
+openapi: '3.0.3'
+info:
+  title: Devops Platform
+  description: DevOps Platform — CI/CD, infrastructure management, deployment orchestration Business Rules: - Deployment strategy: Blue/green with canary validation
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: devops-platform
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/deployments:
+    get:
+      summary: List deployments
+      responses:
+        '200':
+          description: Successful list deployments
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/deploy:
+    post:
+      summary: Trigger deploy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful trigger deploy
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/infrastructure:
+    get:
+      summary: Infra status
+      responses:
+        '200':
+          description: Successful infra status
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

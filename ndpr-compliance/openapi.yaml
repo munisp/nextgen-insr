@@ -1,0 +1,106 @@
+openapi: '3.0.3'
+info:
+  title: Ndpr Compliance
+  description: NDPR Compliance — Nigeria Data Protection Regulation implementation Business Rules: - Consent management: Explicit opt-in for each data processing purpose
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: ndpr-compliance
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/consent:
+    post:
+      summary: Record consent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful record consent
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/dsar:
+    post:
+      summary: Submit d s a r
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful submit d s a r
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/dsar/{id}:
+    get:
+      summary: Get d s a r status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get d s a r status
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/breach/report:
+    post:
+      summary: Report breach
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful report breach
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/audit/annual:
+    get:
+      summary: Annual audit
+      responses:
+        '200':
+          description: Successful annual audit
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

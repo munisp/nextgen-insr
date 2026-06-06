@@ -1,0 +1,46 @@
+openapi: '3.0.3'
+info:
+  title: Batch Processing Engine
+  description: Batch Processing Engine Handles large-scale async operations: bulk payments, mass notifications, batch KYC reviews, commission payouts, policy renewals.
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: batch-processing-engine
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/batch:
+    get:
+      summary: create batch
+      responses:
+        '200':
+          description: Successful create batch
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/batch/status:
+    get:
+      summary: get batch
+      responses:
+        '200':
+          description: Successful get batch
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

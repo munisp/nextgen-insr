@@ -1,0 +1,116 @@
+openapi: '3.0.3'
+info:
+  title: Ab Testing Framework
+  description: A/B Testing Framework — manages experiments, traffic allocation, and statistical analysis Business Rules: - Minimum sample size: 1000 users per variant for statistical significance
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: ab-testing-framework
+                  database:
+                    type: string
+                    example: 'true'
+  /:
+    get:
+      summary: List experiments
+      responses:
+        '200':
+          description: Successful list experiments
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /{id}:
+    get:
+      summary: Get experiment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get experiment
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /{id}/assign:
+    post:
+      summary: Assign user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful assign user
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /{id}/record:
+    post:
+      summary: Record conversion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful record conversion
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /{id}/results:
+    get:
+      summary: Get results
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful get results
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error

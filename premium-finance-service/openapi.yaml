@@ -1,0 +1,78 @@
+openapi: '3.0.3'
+info:
+  title: Premium Finance Service
+  description: Premium Finance Service — installment premium payment and credit assessment Business Rules: - Installment options: 3, 6, 9, 12 months
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: premium-finance-service
+                  database:
+                    type: string
+                    example: 'true'
+  /api/v1/calculate:
+    post:
+      summary: Calculate installments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful calculate installments
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/apply:
+    post:
+      summary: Apply for financing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful apply for financing
+        '201':
+          description: Resource created
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+  /api/v1/schedule/{id}:
+    get:
+      summary: Payment schedule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful payment schedule
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
