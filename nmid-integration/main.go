@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+		"os/signal"
+	"syscall"
 )
 
 // NMIDClient handles integration with Nigerian Motor Insurance Database
@@ -240,6 +242,20 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	service := NewNMIDService()
 	
@@ -250,7 +266,14 @@ func main() {
 	port := getEnv("PORT", "8080")
 	log.Printf("NMID Integration Service starting on port %s", port)
 	
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	srv := &http.Server{Addr: ":"+port, Handler: corsMiddleware(http.DefaultServeMux), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down gracefully...")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
+	log.Println("Server stopped")
 }
