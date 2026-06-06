@@ -1601,9 +1601,8 @@ const ROUTE_HANDLERS = {
     sendEmail(email, 'Welcome to InsurePortal', `<h2>Welcome ${fullName}!</h2><p>Your account has been created. Please complete KYC verification to access all features.</p><p>Steps: BVN, NIN, Phone, Address, ID Document, Facial Match</p>`);
     return { ...sessionUser, token: accessToken, refreshToken, requiresKyc: true, kycRemainingSteps: ['bvn', 'nin', 'phone', 'address', 'id_document', 'facial_match'] };
   },
-  'auth.logout': async (input) => {
-    const authHeader = input?._headers?.authorization;
-    const token = input?.token || (authHeader ? authHeader.replace('Bearer ', '') : null);
+  'auth.logout': async (input, ctx) => {
+    const token = ctx?.token || input?.token || null;
     if (token) { await sessionStore.del(token); await blacklistToken(token); }
     return { success: true, message: 'Logged out successfully' };
   },
@@ -3669,7 +3668,8 @@ app.all('/api/trpc/*', async (req, res) => {
     }
     const startTime = Date.now();
     try {
-      const data = await handler(input, { userId, user });
+      const rawToken = req.headers?.authorization?.replace('Bearer ', '') || null;
+      const data = await handler(input, { userId, user, token: rawToken, req });
       const duration = Date.now() - startTime;
       if (req.method === 'POST') logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
       if (duration > 1000) log('warn', 'Slow route', { route, duration, userId });
@@ -3731,7 +3731,8 @@ app.all('/api/trpc/*', async (req, res) => {
       const handler = ROUTE_MAP.get(batchRoute);
       if (handler) {
         const batchStart = Date.now();
-        const data = await handler(batchInput, { userId, user });
+        const batchToken = req.headers?.authorization?.replace('Bearer ', '') || null;
+        const data = await handler(batchInput, { userId, user, token: batchToken, req });
         const batchDuration = Date.now() - batchStart;
         if (batchDuration > 1000) log('warn', 'Slow batch route', { route: batchRoute, duration: batchDuration, userId });
         return { result: { data: { json: data } } };
