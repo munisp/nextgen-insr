@@ -18,7 +18,7 @@ def get_db():
         try:
             _db_conn = psycopg2.connect(DATABASE_URL)
             _db_conn.autocommit = True
-            logger.info(f"Connected to PostgreSQL for {svc_name}")
+            logger.info(f"Connected to PostgreSQL for data_lakehouse")
         except Exception as e:
             logger.warning(f"Database connection failed: {e} (running in degraded mode)")
             return None
@@ -29,26 +29,19 @@ def init_db():
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {svc_name} (
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS data_lakehouse (
                         id SERIAL PRIMARY KEY,
-                        data JSONB NOT NULL DEFAULT '{{}}',
+                        data JSONB NOT NULL DEFAULT '{}',
                         status VARCHAR(50) DEFAULT 'active',
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW(),
                         tenant_id INTEGER DEFAULT 1
                     )
                 """)
-            logger.info(f"Table {svc_name} initialized")
+            logger.info(f"Table data_lakehouse initialized")
         except Exception as e:
             logger.warning(f"Table creation failed: {e}")
-
-
-app = FastAPI(
-    title="Data Lakehouse",
-    description="Unified data lakehouse for insurance analytics, reporting, and ML pipelines",
-    version="1.0.0",
-)
 
 
 @app.get("/api/v1/lakehouse/datasets")

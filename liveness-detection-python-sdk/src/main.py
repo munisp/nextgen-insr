@@ -1,5 +1,6 @@
 """Liveness Detection Python SDK — facial verification for KYC compliance.
 
+"""
 
 import os
 import psycopg2
@@ -18,7 +19,7 @@ def get_db():
         try:
             _db_conn = psycopg2.connect(DATABASE_URL)
             _db_conn.autocommit = True
-            logger.info(f"Connected to PostgreSQL for {svc_name}")
+            logger.info(f"Connected to PostgreSQL for liveness_detection_python_sdk")
         except Exception as e:
             logger.warning(f"Database connection failed: {e} (running in degraded mode)")
             return None
@@ -29,29 +30,21 @@ def init_db():
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {svc_name} (
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS liveness_detection_python_sdk (
                         id SERIAL PRIMARY KEY,
-                        data JSONB NOT NULL DEFAULT '{{}}',
+                        data JSONB NOT NULL DEFAULT '{}',
                         status VARCHAR(50) DEFAULT 'active',
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW(),
                         tenant_id INTEGER DEFAULT 1
                     )
                 """)
-            logger.info(f"Table {svc_name} initialized")
+            logger.info(f"Table liveness_detection_python_sdk initialized")
         except Exception as e:
             logger.warning(f"Table creation failed: {e}")
 
 
-Business Rules:
-- Detection methods: Blink detection, head movement, texture analysis
-- Confidence threshold: > 0.85 for pass, 0.6-0.85 for retry, < 0.6 for fail
-- Max attempts: 3 per session
-- Session timeout: 120 seconds
-- Anti-spoofing: Detects printed photos, screen replay, masks
-- NDPR: No biometric data stored — only pass/fail result + confidence score
-"""
 from fastapi import FastAPI
 from pydantic import BaseModel
 from datetime import datetime

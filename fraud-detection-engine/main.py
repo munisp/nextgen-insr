@@ -2,6 +2,7 @@
 Fraud Detection Engine (Python)
 
 
+"""
 import os
 import psycopg2
 import psycopg2.extras
@@ -19,7 +20,7 @@ def get_db():
         try:
             _db_conn = psycopg2.connect(DATABASE_URL)
             _db_conn.autocommit = True
-            logger.info(f"Connected to PostgreSQL for {svc_name}")
+            logger.info(f"Connected to PostgreSQL for fraud_detection_engine")
         except Exception as e:
             logger.warning(f"Database connection failed: {e} (running in degraded mode)")
             return None
@@ -30,31 +31,20 @@ def init_db():
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {svc_name} (
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS fraud_detection_engine (
                         id SERIAL PRIMARY KEY,
-                        data JSONB NOT NULL DEFAULT '{{}}',
+                        data JSONB NOT NULL DEFAULT '{}',
                         status VARCHAR(50) DEFAULT 'active',
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW(),
                         tenant_id INTEGER DEFAULT 1
                     )
                 """)
-            logger.info(f"Table {svc_name} initialized")
+            logger.info(f"Table fraud_detection_engine initialized")
         except Exception as e:
             logger.warning(f"Table creation failed: {e}")
 
-
-ML-powered fraud detection for insurance transactions.
-Integrates with: Kafka (streaming), Redis (velocity cache), OpenSearch (pattern storage), Postgres
-
-Detection Models:
-- Velocity Analysis: Flag accounts with >20 transactions/hour
-- Amount Anomaly: Detect outliers beyond 3σ of historical mean
-- Device Fingerprinting: Flag new devices on high-value transactions
-- Network Analysis: Detect fraud rings via graph analysis
-- Behavioral Scoring: LSTM model for sequence anomalies
-"""
 
 import json
 import math

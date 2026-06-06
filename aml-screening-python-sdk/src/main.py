@@ -1,5 +1,6 @@
 """AML Screening Python SDK — PEP/sanctions list screening for Nigerian insurance.
 
+"""
 
 import os
 import psycopg2
@@ -18,7 +19,7 @@ def get_db():
         try:
             _db_conn = psycopg2.connect(DATABASE_URL)
             _db_conn.autocommit = True
-            logger.info(f"Connected to PostgreSQL for {svc_name}")
+            logger.info(f"Connected to PostgreSQL for aml_screening_python_sdk")
         except Exception as e:
             logger.warning(f"Database connection failed: {e} (running in degraded mode)")
             return None
@@ -29,30 +30,21 @@ def init_db():
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {svc_name} (
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS aml_screening_python_sdk (
                         id SERIAL PRIMARY KEY,
-                        data JSONB NOT NULL DEFAULT '{{}}',
+                        data JSONB NOT NULL DEFAULT '{}',
                         status VARCHAR(50) DEFAULT 'active',
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW(),
                         tenant_id INTEGER DEFAULT 1
                     )
                 """)
-            logger.info(f"Table {svc_name} initialized")
+            logger.info(f"Table aml_screening_python_sdk initialized")
         except Exception as e:
             logger.warning(f"Table creation failed: {e}")
 
 
-Business Rules:
-- Screening sources: OFAC SDN, UN Sanctions, EFCC Watch List, CBN BVN blacklist
-- Match threshold: Fuzzy name match > 85% similarity = flag for review
-- Auto-clear: Score < 50% = no match, pass through
-- Enhanced Due Diligence: Score 50-85% = EDD required
-- Block: Score > 85% = immediate block + STR filing
-- Re-screening: All customers re-screened quarterly
-- Response SLA: < 500ms for real-time, < 5min for batch
-"""
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from difflib import SequenceMatcher

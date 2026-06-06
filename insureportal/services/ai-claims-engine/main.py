@@ -25,7 +25,7 @@ def get_db():
         try:
             _db_conn = psycopg2.connect(DATABASE_URL)
             _db_conn.autocommit = True
-            logger.info(f"Connected to PostgreSQL for {svc_name}")
+            logger.info(f"Connected to PostgreSQL for ai_claims_engine")
         except Exception as e:
             logger.warning(f"Database connection failed: {e} (running in degraded mode)")
             return None
@@ -36,27 +36,19 @@ def init_db():
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {svc_name} (
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS ai_claims_engine (
                         id SERIAL PRIMARY KEY,
-                        data JSONB NOT NULL DEFAULT '{{}}',
+                        data JSONB NOT NULL DEFAULT '{}',
                         status VARCHAR(50) DEFAULT 'active',
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW(),
                         tenant_id INTEGER DEFAULT 1
                     )
                 """)
-            logger.info(f"Table {svc_name} initialized")
+            logger.info(f"Table ai_claims_engine initialized")
         except Exception as e:
             logger.warning(f"Table creation failed: {e}")
-
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("ai-claims-engine")
-
-PORT = int(os.getenv("PORT", "8090"))
-KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "localhost:9092")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 
 class ClaimDecision(str, Enum):

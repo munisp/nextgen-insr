@@ -1,5 +1,6 @@
 """MLOps Governance — model registry, drift monitoring, and explainability.
 
+"""
 
 import os
 import psycopg2
@@ -18,7 +19,7 @@ def get_db():
         try:
             _db_conn = psycopg2.connect(DATABASE_URL)
             _db_conn.autocommit = True
-            logger.info(f"Connected to PostgreSQL for {svc_name}")
+            logger.info(f"Connected to PostgreSQL for mlops_governance")
         except Exception as e:
             logger.warning(f"Database connection failed: {e} (running in degraded mode)")
             return None
@@ -29,30 +30,21 @@ def init_db():
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {svc_name} (
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS mlops_governance (
                         id SERIAL PRIMARY KEY,
-                        data JSONB NOT NULL DEFAULT '{{}}',
+                        data JSONB NOT NULL DEFAULT '{}',
                         status VARCHAR(50) DEFAULT 'active',
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW(),
                         tenant_id INTEGER DEFAULT 1
                     )
                 """)
-            logger.info(f"Table {svc_name} initialized")
+            logger.info(f"Table mlops_governance initialized")
         except Exception as e:
             logger.warning(f"Table creation failed: {e}")
 
 
-Business Rules:
-- Model registry: Version control for all ML models (fraud, risk, pricing)
-- Drift detection: Statistical tests (KS, PSI) on input features and predictions
-- Alert: PSI > 0.2 = significant drift, requires retraining
-- Explainability: SHAP values for all model decisions (regulatory requirement)
-- A/B testing: Shadow mode for new models, champion-challenger pattern
-- Approval: Data science lead approval before production deployment
-- Audit: Full model lineage — training data, hyperparameters, performance metrics
-"""
 from datetime import datetime
 
 try:
