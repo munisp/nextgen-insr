@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const nodemailer = require('nodemailer');
 function uuidv4() { return crypto.randomUUID(); }
 
@@ -84,9 +85,7 @@ function log(level, message, meta = {}) {
   else process.stdout.write(line + '\n');
 }
 
-const compression = require('compression');
 const app = express();
-app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 const PORT = process.env.PORT || 5002;
 const DIST = path.join(__dirname, 'dist', 'public');
@@ -297,6 +296,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Response compression (Brotli/gzip)
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+}));
+
 // Health check endpoints registered after pool init (see below)
 
 // Rate limiting (Redis-backed with in-memory fallback)
@@ -314,8 +323,33 @@ function checkRateLimitMemory(key) {
   return true;
 }
 
-async function checkRateLimit(key) {
-  return rateLimitStore.check(key, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX);
+async function checkRateLimit(key, res) {
+  const now = Date.now();
+  if (redis) {
+    const rKey = `rl:${key}`;
+    const pipe = redis.pipeline();
+    pipe.zremrangebyscore(rKey, 0, now - RATE_LIMIT_WINDOW);
+    pipe.zadd(rKey, now, `${now}:${Math.random()}`);
+    pipe.zcard(rKey);
+    pipe.pexpire(rKey, RATE_LIMIT_WINDOW);
+    const results = await pipe.exec();
+    const count = results[2][1];
+    const remaining = Math.max(0, RATE_LIMIT_MAX - count);
+    const resetAt = Math.ceil((now + RATE_LIMIT_WINDOW) / 1000);
+    if (res) {
+      res.setHeader('X-RateLimit-Limit', RATE_LIMIT_MAX);
+      res.setHeader('X-RateLimit-Remaining', remaining);
+      res.setHeader('X-RateLimit-Reset', resetAt);
+    }
+    return count <= RATE_LIMIT_MAX;
+  }
+  const allowed = checkRateLimitMemory(key);
+  if (res) {
+    res.setHeader('X-RateLimit-Limit', RATE_LIMIT_MAX);
+    res.setHeader('X-RateLimit-Remaining', allowed ? RATE_LIMIT_MAX - 1 : 0);
+    res.setHeader('X-RateLimit-Reset', Math.ceil((now + RATE_LIMIT_WINDOW) / 1000));
+  }
+  return allowed;
 }
 
 // PostgreSQL connection
@@ -3579,7 +3613,7 @@ app.all('/api/trpc/*', async (req, res) => {
   const route = routes[0] || '';
   if (route.startsWith('auth.')) {
     const ip = req.ip || req.connection.remoteAddress;
-    const allowed = await checkRateLimit(`${ip}:${route}`);
+    const allowed = await checkRateLimit(`${ip}:${route}`, res);
     if (!allowed) {
       return res.status(429).json({ error: { message: 'Too many attempts. Please try again in 15 minutes.' } });
     }
