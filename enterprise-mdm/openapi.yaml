@@ -1,0 +1,39 @@
+openapi: 3.0.3
+info:
+  title: Enterprise MDM
+  description: Master Data Management — golden records, deduplication, data quality
+    scoring
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/golden-records:
+    get:
+      summary: List golden records
+      responses:
+        '200':
+          description: Master records with quality scores
+  /api/v1/deduplicate:
+    post:
+      summary: Find duplicate records
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - entity_type
+      responses:
+        '200':
+          description: Duplicate groups with confidence scores
+  /api/v1/quality-score:
+    get:
+      summary: Get data quality score
+      responses:
+        '200':
+          description: Overall data quality metrics

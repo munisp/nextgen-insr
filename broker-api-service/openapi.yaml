@@ -1,0 +1,56 @@
+openapi: 3.0.3
+info:
+  title: Broker API Service
+  description: Insurance broker management — registration, licensing, commission calculation
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/brokers:
+    get:
+      summary: List registered brokers
+      responses:
+        '200':
+          description: Broker list with license status
+    post:
+      summary: Register new broker
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              - license_number
+      responses:
+        '201':
+          description: Broker registered
+  /api/v1/brokers/{id}/commission:
+    get:
+      summary: Calculate broker commission
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Commission breakdown
+  /api/v1/brokers/{id}/validate-license:
+    post:
+      summary: Validate broker license with NAICOM
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: License validation result

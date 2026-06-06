@@ -1,0 +1,57 @@
+openapi: 3.0.3
+info:
+  title: Document Management System
+  description: Insurance document storage, versioning, and compliance tracking
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/documents:
+    get:
+      summary: List documents
+      responses:
+        '200':
+          description: Document list with metadata
+    post:
+      summary: Upload document
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              - type
+              - content
+      responses:
+        '201':
+          description: Document uploaded
+  /api/v1/documents/{id}:
+    get:
+      summary: Get document
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Document details and download URL
+  /api/v1/documents/{id}/versions:
+    get:
+      summary: Get document versions
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Version history

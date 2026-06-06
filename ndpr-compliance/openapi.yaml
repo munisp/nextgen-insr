@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: NDPR Compliance
+  description: Nigeria Data Protection Regulation compliance — consent management,
+    data subject requests
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/consent:
+    post:
+      summary: Record data consent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - customer_id
+              - purpose
+              - granted
+      responses:
+        '201':
+          description: Consent recorded
+  /api/v1/dsar:
+    post:
+      summary: Submit Data Subject Access Request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - customer_id
+              - request_type
+      responses:
+        '201':
+          description: DSAR submitted
+  /api/v1/compliance/report:
+    get:
+      summary: Get NDPR compliance report
+      responses:
+        '200':
+          description: Compliance status and audit log

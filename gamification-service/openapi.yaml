@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: Gamification Service
+  description: Insurance engagement gamification — points, badges, leaderboards, challenges
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/points/{userId}:
+    get:
+      summary: Get user points
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Points balance and history
+  /api/v1/badges/{userId}:
+    get:
+      summary: Get user badges
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Earned badges and progress
+  /api/v1/leaderboard:
+    get:
+      summary: Get leaderboard
+      responses:
+        '200':
+          description: Top users by points

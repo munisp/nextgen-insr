@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -75,6 +76,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 func newRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
+	r.Use(tracingMiddleware)
+	r.Use(rateLimitMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -97,6 +100,63 @@ func newRouter() *chi.Mux {
 	return r
 }
 
+func tracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+		}
+		w.Header().Set("X-Request-ID", requestID)
+		start := time.Now()
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
+	})
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+var (
+	rateLimitMu    sync.Mutex
+	rateLimitStore = make(map[string][]time.Time)
+)
+
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = fwd
+		}
+		rateLimitMu.Lock()
+		now := time.Now()
+		window := now.Add(-1 * time.Minute)
+		var recent []time.Time
+		for _, t := range rateLimitStore[ip] {
+			if t.After(window) {
+				recent = append(recent, t)
+			}
+		}
+		if len(recent) >= 100 {
+			rateLimitMu.Unlock()
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
+			return
+		}
+		recent = append(recent, now)
+		rateLimitStore[ip] = recent
+		rateLimitMu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initDB()
 	if db != nil {
@@ -106,7 +166,7 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" { port = "8120" }
 	log.Printf("strategic-implementations starting on :%s", port)
-	srv := &http.Server{Addr: ":"+port, Handler: corsMiddleware(r), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	srv := &http.Server{Addr: ":"+port, Handler: tracingMiddleware(corsMiddleware(r)), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

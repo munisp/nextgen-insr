@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: Disaster Recovery Module
+  description: DR planning, failover management, and RTO/RPO monitoring
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/status:
+    get:
+      summary: Get DR status
+      responses:
+        '200':
+          description: Current disaster recovery readiness
+  /api/v1/failover:
+    post:
+      summary: Trigger failover
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - target_region
+      responses:
+        '200':
+          description: Failover initiated
+  /api/v1/drills:
+    get:
+      summary: Get DR drill history
+      responses:
+        '200':
+          description: Past drill results and metrics
+  /api/v1/rto-rpo:
+    get:
+      summary: Get RTO/RPO status
+      responses:
+        '200':
+          description: Current RTO and RPO metrics vs targets

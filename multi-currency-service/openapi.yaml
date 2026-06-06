@@ -1,0 +1,35 @@
+openapi: 3.0.3
+info:
+  title: Multi-Currency Service
+  description: Currency conversion and multi-currency policy management for pan-African
+    operations
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/convert:
+    post:
+      summary: Convert currency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - from
+              - to
+              - amount
+      responses:
+        '200':
+          description: Converted amount with exchange rate
+  /api/v1/rates:
+    get:
+      summary: Get exchange rates
+      responses:
+        '200':
+          description: Current exchange rates for supported currencies

@@ -1,0 +1,56 @@
+openapi: 3.0.3
+info:
+  title: Enhanced KYC/KYB
+  description: Know Your Customer and Know Your Business verification with BVN/NIN
+    integration
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/kyc/verify:
+    post:
+      summary: Verify customer identity (KYC)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - customer_id
+              - bvn
+              - document_type
+      responses:
+        '200':
+          description: KYC verification result with tier assignment
+  /api/v1/kyb/verify:
+    post:
+      summary: Verify business entity (KYB)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - business_id
+              - rc_number
+      responses:
+        '200':
+          description: KYB verification result
+  /api/v1/kyc/{id}/status:
+    get:
+      summary: Get KYC verification status
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Current KYC status and tier
