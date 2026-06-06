@@ -1,0 +1,141 @@
+# Chaos Engineering — Litmus Chaos Experiments
+# Validates circuit breakers, resilience, and fault tolerance
+
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: pod-kill-payment-gateway
+  namespace: insureportal
+spec:
+  definition:
+    scope: Namespaced
+    permissions: []
+    image: litmuschaos/go-runner:latest
+    args:
+      - -c
+      - ./experiments -name pod-delete
+    command:
+      - /bin/bash
+    env:
+      - name: TARGET_CONTAINER
+        value: payment-gateway
+      - name: TOTAL_CHAOS_DURATION
+        value: "30"
+      - name: CHAOS_INTERVAL
+        value: "10"
+      - name: FORCE
+        value: "false"
+
+---
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: network-latency-injection
+  namespace: insureportal
+spec:
+  definition:
+    scope: Namespaced
+    image: litmuschaos/go-runner:latest
+    args:
+      - -c
+      - ./experiments -name pod-network-latency
+    command:
+      - /bin/bash
+    env:
+      - name: TARGET_CONTAINER
+        value: ai-advisor
+      - name: NETWORK_INTERFACE
+        value: eth0
+      - name: NETWORK_LATENCY
+        value: "2000"  # 2s latency injection
+      - name: TOTAL_CHAOS_DURATION
+        value: "60"
+
+---
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: kafka-broker-failure
+  namespace: insureportal
+spec:
+  definition:
+    scope: Namespaced
+    image: litmuschaos/go-runner:latest
+    args:
+      - -c
+      - ./experiments -name pod-delete
+    command:
+      - /bin/bash
+    env:
+      - name: TARGET_CONTAINER
+        value: kafka
+      - name: TOTAL_CHAOS_DURATION
+        value: "60"
+      - name: CHAOS_INTERVAL
+        value: "30"
+
+---
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: redis-connection-loss
+  namespace: insureportal
+spec:
+  definition:
+    scope: Namespaced
+    image: litmuschaos/go-runner:latest
+    args:
+      - -c
+      - ./experiments -name pod-network-loss
+    command:
+      - /bin/bash
+    env:
+      - name: TARGET_CONTAINER
+        value: redis
+      - name: NETWORK_PACKET_LOSS_PERCENTAGE
+        value: "100"
+      - name: TOTAL_CHAOS_DURATION
+        value: "30"
+
+---
+# Resilience scoring after chaos
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: insureportal-resilience-test
+  namespace: insureportal
+spec:
+  engineState: active
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-kill-payment-gateway
+      spec:
+        probe:
+          - name: payment-gateway-health
+            type: httpProbe
+            httpProbe/inputs:
+              url: http://payment-gateway:8100/health
+              method:
+                get:
+                  criteria: "=="
+                  responseCode: "200"
+            mode: Continuous
+            runProperties:
+              probeTimeout: 5
+              interval: 2
+              retry: 3
+    - name: network-latency-injection
+      spec:
+        probe:
+          - name: ai-advisor-response-time
+            type: httpProbe
+            httpProbe/inputs:
+              url: http://ai-advisor:8110/health
+              method:
+                get:
+                  criteria: "=="
+                  responseCode: "200"
+            mode: Continuous
+            runProperties:
+              probeTimeout: 10
+              interval: 5
