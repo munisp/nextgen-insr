@@ -69,11 +69,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func main() {
-	initDB()
-	if db != nil {
-		defer db.Close()
-	}
+func newRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
@@ -83,6 +79,15 @@ func main() {
 	r.Get("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"service": "erpnext-integration-service", "uptime": time.Since(startTime).String(), "ready": true})
 	})
+	return r
+}
+
+func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
+	r := newRouter()
 	port := os.Getenv("PORT")
 	if port == "" { port = "8110" }
 	log.Printf("erpnext-integration-service starting on :%s", port)

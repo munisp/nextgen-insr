@@ -70,11 +70,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func main() {
-	initDB()
-	if db != nil {
-		defer db.Close()
-	}
+func newRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
@@ -99,6 +95,15 @@ func main() {
 			"output": fmt.Sprintf("Script %s executed successfully", body.Script),
 		})
 	})
+	return r
+}
+
+func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
+	r := newRouter()
 	port := os.Getenv("PORT")
 	if port == "" { port = "8114" }
 	log.Printf("Scripts Runner starting on :%s", port)

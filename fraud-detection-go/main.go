@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"encoding/json"
 	"log"
@@ -93,13 +94,72 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func tracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+		}
+		w.Header().Set("X-Request-ID", requestID)
+		start := time.Now()
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
+	})
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+var kafkaRestURL string
+
+func initKafka() {
+	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
+	if kafkaRestURL == "" {
+		kafkaRestURL = "http://localhost:8082"
+	}
+	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
+}
+
+func publishEvent(topic string, key string, payload interface{}) {
+	if kafkaRestURL == "" {
+		return
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("WARN: kafka marshal error: %v", err)
+		return
+	}
+	msg := map[string]interface{}{
+		"records": []map[string]interface{}{
+			{"key": key, "value": string(data)},
+		},
+	}
+	body, _ := json.Marshal(msg)
+	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("WARN: kafka publish error: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+}
+
 func main() {
 	initDB()
+	initKafka()
 	if db != nil {
 		defer db.Close()
 	}
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
+	r.Use(tracingMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "fraud-detection-go"})

@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: Premium Collection Service
+  version: 1.0.0
+  description: Premium collection, reconciliation, and payment tracking
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/collect:
+    post:
+      summary: Collect a premium payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [policy_id, amount, method]
+              properties:
+                policy_id: { type: string }
+                amount: { type: number }
+                method: { type: string, enum: [bank_transfer, card, mobile_money, ussd] }
+                reference: { type: string }
+      responses:
+        '200':
+          description: Collection result
+  /api/v1/reconcile:
+    post:
+      summary: Reconcile payments for a date
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date]
+              properties:
+                date: { type: string, format: date }
+      responses:
+        '200':
+          description: Reconciliation result

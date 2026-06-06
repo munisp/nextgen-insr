@@ -236,7 +236,7 @@ export default function PartnerOnboarding() {
             <div className="mx-auto w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
               <Check className="h-8 w-8 text-green-500" />
             </div>
-            <CardTitle className="text-2xl">Welcome to RemitFlow!</CardTitle>
+            <CardTitle className="text-2xl">Welcome to InsurePortal!</CardTitle>
             <CardDescription>
               Your white-label remittance platform is now live. You can manage
               your instance from the Tenant Admin Dashboard.
@@ -263,7 +263,7 @@ export default function PartnerOnboarding() {
           <div className="flex items-center gap-3">
             <Globe className="h-6 w-6 text-primary" />
             <span className="font-bold text-lg">
-              RemitFlow Partner Onboarding
+              InsurePortal Partner Onboarding
             </span>
           </div>
           <Badge variant="outline">Step {step} of 5</Badge>
@@ -562,7 +562,7 @@ export default function PartnerOnboarding() {
                     className="px-6 py-3 text-center text-xs opacity-50"
                     style={{ backgroundColor: secondaryColor }}
                   >
-                    Powered by RemitFlow &middot; {brandName}
+                    Powered by InsurePortal &middot; {brandName}
                   </div>
                 </div>
               </div>
@@ -859,7 +859,7 @@ export default function PartnerOnboarding() {
                     className="px-6 py-3 text-center text-xs opacity-40"
                     style={{ backgroundColor: secondaryColor }}
                   >
-                    Powered by RemitFlow Platform
+                    Powered by InsurePortal Platform
                   </div>
                 </div>
               </div>

@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: Pan-African eKYC Service
+  version: 1.0.0
+  description: Multi-country identity verification (BVN, NIN, Ghana Card, etc.)
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/countries:
+    get:
+      summary: List supported countries and ID types
+      responses:
+        '200':
+          description: Country list with supported document types
+  /api/v1/verify:
+    post:
+      summary: Verify an identity document
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [country, id_type, id_number]
+              properties:
+                country: { type: string, description: ISO 3166-1 alpha-2 }
+                id_type: { type: string, enum: [bvn, nin, voters_card, passport, ghana_card] }
+                id_number: { type: string }
+                full_name: { type: string }
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified: { type: boolean }
+                  match_score: { type: number }
+                  source: { type: string }

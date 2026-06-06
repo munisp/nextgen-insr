@@ -76,11 +76,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func main() {
-	initDB()
-	if db != nil {
-		defer db.Close()
-	}
+func newRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
@@ -97,6 +93,15 @@ func main() {
 	r.Post("/api/v1/sync", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"synced": true, "timestamp": time.Now().Format(time.RFC3339), "pending_transactions": 0})
 	})
+	return r
+}
+
+func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
+	r := newRouter()
 	port := os.Getenv("PORT")
 	if port == "" { port = "8113" }
 	log.Printf("Insurance Mobile App Backend starting on :%s", port)

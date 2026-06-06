@@ -75,11 +75,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func main() {
-	initDB()
-	if db != nil {
-		defer db.Close()
-	}
+func newRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
@@ -94,6 +90,15 @@ func main() {
 			},
 		})
 	})
+	return r
+}
+
+func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
+	r := newRouter()
 	port := os.Getenv("PORT")
 	if port == "" { port = "8099" }
 	log.Printf("Etherisc GIF Integration starting on :%s", port)

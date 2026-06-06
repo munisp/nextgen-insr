@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: Policy Lifecycle Service
+  version: 1.0.0
+  description: End-to-end policy lifecycle management
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/policies:
+    get:
+      summary: List policies
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, active, expired, cancelled] }
+      responses:
+        '200':
+          description: Policy list
+    post:
+      summary: Create a new policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, product_type, sum_assured]
+              properties:
+                customer_id: { type: string }
+                product_type: { type: string }
+                sum_assured: { type: number }
+                start_date: { type: string, format: date }
+      responses:
+        '201':
+          description: Policy created
+  /api/v1/policies/{id}/renew:
+    post:
+      summary: Renew a policy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Policy renewed

@@ -72,11 +72,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func main() {
-	initDB()
-	if db != nil {
-		defer db.Close()
-	}
+func newRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
@@ -98,6 +94,15 @@ func main() {
 			"operational": true, "last_heartbeat": time.Now().Format(time.RFC3339),
 		})
 	})
+	return r
+}
+
+func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
+	r := newRouter()
 	port := os.Getenv("PORT")
 	if port == "" { port = "8120" }
 	log.Printf("native-mobile-ios starting on :%s", port)

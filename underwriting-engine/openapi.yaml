@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: Underwriting Engine
+  version: 1.0.0
+  description: Insurance policy underwriting with risk assessment
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/quote:
+    post:
+      summary: Generate underwriting quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [applicant_age, product_type, sum_assured]
+              properties:
+                applicant_age: { type: integer }
+                product_type: { type: string }
+                sum_assured: { type: number }
+                health_status: { type: string }
+                occupation_risk: { type: string }
+      responses:
+        '200':
+          description: Underwriting quote
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  premium: { type: number }
+                  risk_class: { type: string }
+                  conditions: { type: array, items: { type: string } }
+  /api/v1/risk-factors:
+    get:
+      summary: List risk factors
+      responses:
+        '200':
+          description: Available risk factors and weightings

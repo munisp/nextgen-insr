@@ -1,0 +1,51 @@
+openapi: 3.0.3
+info:
+  title: Fraud Detection Service
+  version: 1.0.0
+  description: Real-time transaction fraud scoring with rule-based detection
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/score:
+    post:
+      summary: Score a transaction for fraud
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, merchant]
+              properties:
+                amount: { type: number }
+                merchant: { type: string }
+                device_id: { type: string }
+                location: { type: string }
+                transaction_count: { type: integer }
+      responses:
+        '200':
+          description: Fraud score result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fraud_score: { type: number }
+                  decision: { type: string, enum: [allow, monitor, review, block] }
+                  triggered_rules: { type: array, items: { type: string } }
+  /api/v1/rules:
+    get:
+      summary: List fraud detection rules
+      responses:
+        '200':
+          description: Active fraud rules
+  /api/v1/stats:
+    get:
+      summary: Fraud detection statistics
+      responses:
+        '200':
+          description: Detection metrics
