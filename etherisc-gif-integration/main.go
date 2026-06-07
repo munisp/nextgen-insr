@@ -84,7 +84,7 @@ func prodTracingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
+		log.Printf(`{"level":"debug","msg":"request","method":"%s","path":"%s","status":%d,"duration":"%s","request_id":"%s"}`, r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
 	})
 }
 
@@ -177,6 +177,22 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
+// Panic recovery middleware - catches panics and returns 500
+func prodRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+
 var db *sql.DB
 
 func initDB() {
@@ -197,11 +213,30 @@ func initDB() {
 		log.Printf("WARN: database ping failed: %v", err)
 		return
 	}
-	log.Println("PostgreSQL connected")
+	log.Printf(`{"level":"info","msg":"database connected","service":"etherisc-gif-integration","driver":"postgresql"}`)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS gif_policies (id TEXT PRIMARY KEY, gif_policy_id TEXT, product_type TEXT, premium NUMERIC(15,2), sum_assured NUMERIC(15,2), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`)
 	if err != nil {
 		log.Printf("WARN: table creation failed: %v", err)
 	}
+}
+
+
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {
@@ -218,6 +253,8 @@ func main() {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "etherisc-gif-integration", "database": dbStatus})
 	})
+	r.Get("/ready", handleReady)
+	r.Get("/live", handleLive)
 	r.Get("/api/v1/products", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"products": []map[string]interface{}{
@@ -230,7 +267,7 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" { port = "8099" }
 	log.Printf("Etherisc GIF Integration starting on :%s", port)
-	handler := prodMetricsMiddleware(prodTracingMiddleware(prodCorsMiddleware(prodRateLimitMiddleware(r))))
+	handler := prodRecoveryMiddleware(prodMetricsMiddleware(prodTracingMiddleware(prodCorsMiddleware(prodRateLimitMiddleware(r)))))
 	srv := &http.Server{
 		Addr:         ":"+port,
 		Handler:      handler,
@@ -248,11 +285,11 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down gracefully...")
+	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"etherisc-gif-integration"}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
-	log.Println("Server stopped")
+	log.Printf(`{"level":"info","msg":"server stopped","service":"etherisc-gif-integration"}`)
 }

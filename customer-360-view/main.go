@@ -100,7 +100,7 @@ func prodTracingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
+		log.Printf(`{"level":"debug","msg":"request","method":"%s","path":"%s","status":%d,"duration":"%s","request_id":"%s"}`, r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
 	})
 }
 
@@ -193,6 +193,22 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
+// Panic recovery middleware - catches panics and returns 500
+func prodRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+
 var db *sql.DB
 
 func initDB() {
@@ -213,11 +229,30 @@ func initDB() {
 		log.Printf("WARN: database ping failed: %v", err)
 		return
 	}
-	log.Println("PostgreSQL connected")
+	log.Printf(`{"level":"info","msg":"database connected","service":"customer-360-view","driver":"postgresql"}`)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS customer_profiles (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL UNIQUE, full_name TEXT, email TEXT, phone TEXT, risk_tier TEXT, lifetime_value NUMERIC(15,2), policies_count INT DEFAULT 0, claims_count INT DEFAULT 0, updated_at TIMESTAMPTZ DEFAULT NOW())`)
 	if err != nil {
 		log.Printf("WARN: table creation failed: %v", err)
 	}
+}
+
+
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {
@@ -234,6 +269,8 @@ func main() {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "customer-360-view", "database": dbStatus})
 	})
+	r.Get("/ready", handleReady)
+	r.Get("/live", handleLive)
 	r.Get("/api/v1/customers/{id}/360", getCustomer360)
 	r.Get("/api/v1/customers/{id}/cross-sell", getCrossSell)
 	r.Get("/api/v1/segments", getSegments)
@@ -242,7 +279,7 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" { port = "8103" }
 	log.Printf("Customer 360 View starting on :%s", port)
-	handler := prodMetricsMiddleware(prodTracingMiddleware(prodCorsMiddleware(prodRateLimitMiddleware(r))))
+	handler := prodRecoveryMiddleware(prodMetricsMiddleware(prodTracingMiddleware(prodCorsMiddleware(prodRateLimitMiddleware(r)))))
 	srv := &http.Server{
 		Addr:         ":"+port,
 		Handler:      handler,
@@ -260,13 +297,13 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down gracefully...")
+	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"customer-360-view"}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
-	log.Println("Server stopped")
+	log.Printf(`{"level":"info","msg":"server stopped","service":"customer-360-view"}`)
 }
 
 func getCustomer360(w http.ResponseWriter, r *http.Request) {
