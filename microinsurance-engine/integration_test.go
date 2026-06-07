@@ -52,7 +52,7 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	testDB.Exec("DELETE FROM microinsurance_policies WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO microinsurance_policies (id, \"userId\", \"productName\", premium, coverage, status) VALUES (99901, 1, 'crop-basic', 500.00, 50000.00, 'active')")
+	_, err := testDB.Exec("INSERT INTO microinsurance_policies (id, \"userId\", \"productId\", \"productName\", premium, coverage, duration, status) VALUES (99901, 2, 'CROP-BASIC-001', 'crop-basic', 500.00, 50000.00, 30, 'Active')")
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}

@@ -49,26 +49,26 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	defer testDB.Close()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM claims WHERE id >= 99900")
+	testDB.Exec("DELETE FROM claims WHERE \"claimNumber\" = 'INT-TEST-99901'")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO claims (id, \"userId\", \"policyId\", amount, description, \"tenantId\") VALUES (99901, 1, 1, 25000.00, 'Integration test claim', 'test-tenant')")
+	_, err := testDB.Exec("INSERT INTO claims (\"userId\", \"policyId\", \"claimNumber\", amount, \"incidentDate\", description) VALUES (2, 1, 'INT-TEST-99901', 25000.00, NOW(), 'Integration test claim')")
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
 
 	// Query it back
-	var id int
-	err = testDB.QueryRow("SELECT id FROM claims WHERE id = $1", 99901).Scan(&id)
+	var claimNum string
+	err = testDB.QueryRow("SELECT \"claimNumber\" FROM claims WHERE \"claimNumber\" = $1", "INT-TEST-99901").Scan(&claimNum)
 	if err != nil {
 		t.Fatalf("Failed to query test record: %v", err)
 	}
-	if id != 99901 {
-		t.Fatalf("Expected id=99901, got %d", id)
+	if claimNum != "INT-TEST-99901" {
+		t.Fatalf("Expected claimNumber=INT-TEST-99901, got %s", claimNum)
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM claims WHERE id >= 99900")
+	testDB.Exec("DELETE FROM claims WHERE \"claimNumber\" = 'INT-TEST-99901'")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {

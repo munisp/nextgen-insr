@@ -52,7 +52,7 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	testDB.Exec("DELETE FROM underwriting_rules WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO underwriting_rules (id, \"productType\", \"ruleName\", \"ruleType\", priority, \"isActive\") VALUES (99901, 'health', 'test-rule', 'threshold', 1, true)")
+	_, err := testDB.Exec("INSERT INTO underwriting_rules (id, \"productType\", \"ruleName\", \"ruleType\", priority, \"isActive\") VALUES (99901, 'health', 'test-rule', 'eligibility', 1, true)")
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
