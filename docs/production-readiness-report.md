@@ -247,7 +247,6 @@ The React Native and Flutter mobile apps exist in the platform monorepo (`/home/
 | Middleware Integration Audit   | `docs/middleware-integration-audit.md` | All 10 middleware components                             |
 | KYC/KYB Audit                  | `docs/kyc-audit.md`                    | Full KYC flow with compliance notes                      |
 | Redundancy Audit               | `docs/redundancy-audit.md`             | Failover and resilience patterns                         |
-| TigerBeetle Sidecar Deployment | `docs/tb-sidecar-deployment.md`        | Offline-sync verification guide                          |
 | mTLS Microservices             | `docs/mtls-microservices.md`           | CA hierarchy, cert rotation, per-service config          |
 | golang-migrate                 | `docs/golang-migrate.md`               | Migration files, CI/CD integration, dirty-state recovery |
 | Production Readiness Report    | `docs/production-readiness-report.md`  | This document                                            |

@@ -217,14 +217,6 @@ describe("Seed data", () => {
 
 // ── 8. Go, Rust, Python sidecars exist ─────────────────────────────────────
 describe("Sidecar services", () => {
-  it("Go TigerBeetle sidecar exists", () => {
-    expect(
-      fs.existsSync(
-        path.join(PROJECT, "tb-commission-sidecar/cmd/sidecar/main.go")
-      )
-    ).toBe(true);
-  });
-
   it("Rust Fluvio producer sidecar exists", () => {
     expect(
       fs.existsSync(path.join(PROJECT, "fluvio-producer/src/main.rs"))

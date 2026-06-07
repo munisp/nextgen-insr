@@ -295,7 +295,6 @@ const TaxCollectionPage = lazy(() => import("./pages/TaxCollectionPage"));
 const PensionCollectionPage = lazy(
   () => import("./pages/PensionCollectionPage")
 );
-const RemittancePage = lazy(() => import("./pages/RemittancePage"));
 const QdrantVectorSearchPage = lazy(
   () => import("./pages/QdrantVectorSearchPage")
 );
@@ -432,7 +431,6 @@ const LoyaltyProgramPage = lazy(() => import("./pages/LoyaltyProgramPage"));
 const FraudCaseManagementPage = lazy(
   () => import("./pages/FraudCaseManagementPage")
 );
-const TerminalFleetPage = lazy(() => import("./pages/TerminalFleetPage"));
 const FinancialReconciliationPage = lazy(
   () => import("./pages/FinancialReconciliationPage")
 );
@@ -534,7 +532,6 @@ const CustomerWalletSystem = lazy(() => import("./pages/CustomerWalletSystem"));
 const MerchantAnalyticsDash = lazy(
   () => import("./pages/MerchantAnalyticsDash")
 );
-const POSFirmwareOTA = lazy(() => import("./pages/POSFirmwareOTA"));
 const TransactionReceiptGenerator = lazy(
   () => import("./pages/TransactionReceiptGenerator")
 );
@@ -642,9 +639,6 @@ const TransactionGraphAnalyzer = lazy(
 );
 const PlatformRevenueOptimizer = lazy(
   () => import("./pages/PlatformRevenueOptimizer")
-);
-const CrossBorderRemittanceHub = lazy(
-  () => import("./pages/CrossBorderRemittanceHub")
 );
 const OperationalCommandBridge = lazy(
   () => import("./pages/OperationalCommandBridge")
@@ -1443,7 +1437,6 @@ function AuthenticatedApp() {
         <Route path="/account-opening" component={AccountOpeningPage} />
         <Route path="/tax-collection" component={TaxCollectionPage} />
         <Route path="/pension-collection" component={PensionCollectionPage} />
-        <Route path="/remittance" component={RemittancePage} />
         {/* Sprint 29: AI/ML/DL/GNN Integrations */}
         <Route
           path="/qdrant-vector-search"
@@ -1575,7 +1568,6 @@ function AuthenticatedApp() {
           path="/fraud-case-management"
           component={FraudCaseManagementPage}
         />
-        <Route path="/terminal-fleet" component={TerminalFleetPage} />
         <Route
           path="/financial-reconciliation"
           component={FinancialReconciliationPage}
@@ -1715,7 +1707,6 @@ function AuthenticatedApp() {
           path="/merchant-analytics-dash"
           component={MerchantAnalyticsDash}
         />
-        <Route path="/pos-firmware-ota" component={POSFirmwareOTA} />
         <Route
           path="/transaction-receipt-generator"
           component={TransactionReceiptGenerator}
@@ -1826,10 +1817,6 @@ function AuthenticatedApp() {
         <Route path="/agent-micro-insurance" component={AgentMicroInsurance} />
         <Route path="/transaction-graph" component={TransactionGraphAnalyzer} />
         <Route path="/revenue-optimizer" component={PlatformRevenueOptimizer} />
-        <Route
-          path="/cross-border-remittance"
-          component={CrossBorderRemittanceHub}
-        />
         <Route
           path="/operational-command-bridge"
           component={OperationalCommandBridge}
