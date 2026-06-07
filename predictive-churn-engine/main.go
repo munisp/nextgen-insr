@@ -1,0 +1,155 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"math"
+	"net/http"
+	"os"
+	"time"
+
+	_ "github.com/lib/pq"
+)
+
+// Predictive Churn Prevention Engine
+// ML model predicting policy lapse 30 days before renewal.
+// Triggers automated retention campaigns (SMS, agent outreach, discounts).
+
+var db *sql.DB
+
+type PolicyHolder struct {
+	ID              string  `json:"id"`
+	PolicyID        string  `json:"policy_id"`
+	PremiumAmount   float64 `json:"premium_amount"`
+	DaysTillRenewal int     `json:"days_till_renewal"`
+	PaymentHistory  int     `json:"payment_history_score"` // 0-100
+	ClaimHistory    int     `json:"claim_count"`
+	EngagementScore int     `json:"engagement_score"` // 0-100
+	TenureMonths    int     `json:"tenure_months"`
+}
+
+type ChurnPrediction struct {
+	PolicyID        string  `json:"policy_id"`
+	ChurnProb       float64 `json:"churn_probability"`
+	RiskLevel       string  `json:"risk_level"`
+	RetentionAction string  `json:"retention_action"`
+	DiscountOffer   float64 `json:"discount_offer_pct"`
+	Channel         string  `json:"channel"`
+	Priority        int     `json:"priority"`
+}
+
+func predictChurn(ph PolicyHolder) ChurnPrediction {
+	// Logistic regression: payment history, engagement, tenure, claims
+	features := map[string]float64{
+		"payment":    float64(ph.PaymentHistory) / 100,
+		"engagement": float64(ph.EngagementScore) / 100,
+		"tenure":     math.Min(float64(ph.TenureMonths)/60, 1),
+		"claims":     math.Min(float64(ph.ClaimHistory)/5, 1),
+		"days":       math.Max(1-float64(ph.DaysTillRenewal)/90, 0),
+	}
+	weights := map[string]float64{
+		"payment": -0.4, "engagement": -0.3, "tenure": -0.2, "claims": 0.15, "days": 0.25,
+	}
+	z := 0.3 // bias toward churn
+	for k, v := range features {
+		z += v * weights[k]
+	}
+	churnProb := 1 / (1 + math.Exp(-z*3))
+
+	pred := ChurnPrediction{PolicyID: ph.PolicyID, ChurnProb: churnProb}
+
+	switch {
+	case churnProb >= 0.7:
+		pred.RiskLevel = "high"
+		pred.RetentionAction = "agent_outreach"
+		pred.DiscountOffer = 15
+		pred.Channel = "phone_call"
+		pred.Priority = 1
+	case churnProb >= 0.4:
+		pred.RiskLevel = "medium"
+		pred.RetentionAction = "sms_campaign"
+		pred.DiscountOffer = 10
+		pred.Channel = "sms"
+		pred.Priority = 2
+	default:
+		pred.RiskLevel = "low"
+		pred.RetentionAction = "email_reminder"
+		pred.DiscountOffer = 0
+		pred.Channel = "email"
+		pred.Priority = 3
+	}
+	return pred
+}
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" { dsn = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable" }
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil { log.Printf(`{"level":"warn","msg":"db failed","error":"%s"}`, err); return }
+	db.SetMaxOpenConns(25); db.SetMaxIdleConns(5); db.SetConnMaxLifetime(5 * time.Minute)
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS churn_predictions (
+		id SERIAL PRIMARY KEY, policy_id TEXT, churn_prob REAL, risk_level TEXT,
+		retention_action TEXT, discount_pct REAL, channel TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+	)`)
+	log.Printf(`{"level":"info","msg":"database connected","service":"predictive-churn-engine"}`)
+}
+
+func handlePredict(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var ph PolicyHolder
+	if err := json.NewDecoder(r.Body).Decode(&ph); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusBadRequest); return
+	}
+	pred := predictChurn(ph)
+	if db != nil {
+		_, _ = db.Exec(`INSERT INTO churn_predictions (policy_id, churn_prob, risk_level, retention_action, discount_pct, channel)
+			VALUES ($1,$2,$3,$4,$5,$6)`, pred.PolicyID, pred.ChurnProb, pred.RiskLevel, pred.RetentionAction, pred.DiscountOffer, pred.Channel)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pred)
+}
+
+func handleBatchPredict(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var holders []PolicyHolder
+	if err := json.NewDecoder(r.Body).Decode(&holders); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusBadRequest); return
+	}
+	results := make([]ChurnPrediction, len(holders))
+	for i, ph := range holders {
+		results[i] = predictChurn(ph)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	dbStatus := "disconnected"
+	if db != nil { if err := db.Ping(); err == nil { dbStatus = "connected" } }
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "predictive-churn-engine", "database": dbStatus})
+}
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	if db == nil { w.WriteHeader(503); json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"}); return }
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+func handleLive(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "alive"}) }
+
+func main() {
+	initDB()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
+	mux.HandleFunc("/api/v1/predict", handlePredict)
+	mux.HandleFunc("/api/v1/batch-predict", handleBatchPredict)
+	port := ":8124"
+	log.Printf(`{"level":"info","msg":"Predictive Churn Engine starting","port":"%s"}`, port)
+	log.Fatal(http.ListenAndServe(port, mux))
+}

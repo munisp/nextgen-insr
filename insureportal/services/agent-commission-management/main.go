@@ -5,7 +5,9 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"strconv"
 	"time"
+	"fmt"
 )
 
 // Agent Commission Management Service
@@ -74,6 +76,41 @@ func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
 		"total_payable": 12500000, "agents_due": 342, "avg_payout": 36549,
 		"top_earner": 285000, "pending_approval": 15,
 	})
+}
+
+
+// validateQueryParam validates and sanitizes a query parameter.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	val := r.URL.Query().Get(key)
+	if len(val) > maxLen {
+		return "", fmt.Errorf("parameter %q exceeds max length %d", key, maxLen)
+	}
+	return val, nil
+}
+
+// validateRequiredParam validates a required query parameter.
+func validateRequiredParam(r *http.Request, key string, maxLen int) (string, error) {
+	val, err := validateQueryParam(r, key, maxLen)
+	if err != nil {
+		return "", err
+	}
+	if val == "" {
+		return "", fmt.Errorf("parameter %q is required", key)
+	}
+	return val, nil
+}
+
+// validateIntParam validates and converts an integer query parameter.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	val := r.URL.Query().Get(key)
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %q must be a valid integer", key)
+	}
+	return n, nil
 }
 
 func main() {

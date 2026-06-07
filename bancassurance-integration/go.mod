@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/lib/pq v1.12.3
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )

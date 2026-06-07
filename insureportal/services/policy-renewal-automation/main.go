@@ -5,10 +5,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"fmt"
 )
 
 // Policy Renewal Automation — automated policy renewal with dynamic pricing
@@ -20,6 +22,41 @@ import (
 // - Grace period: 30 days after expiry (coverage reduced to 50%)
 // - Lapse: After grace period → policy terminated, new application required
 // - Communication: SMS at -30d, -14d, -7d, -3d, -1d, 0d, +7d, +14d, +30d
+
+
+// validateQueryParam validates and sanitizes a query parameter.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	val := r.URL.Query().Get(key)
+	if len(val) > maxLen {
+		return "", fmt.Errorf("parameter %q exceeds max length %d", key, maxLen)
+	}
+	return val, nil
+}
+
+// validateRequiredParam validates a required query parameter.
+func validateRequiredParam(r *http.Request, key string, maxLen int) (string, error) {
+	val, err := validateQueryParam(r, key, maxLen)
+	if err != nil {
+		return "", err
+	}
+	if val == "" {
+		return "", fmt.Errorf("parameter %q is required", key)
+	}
+	return val, nil
+}
+
+// validateIntParam validates and converts an integer query parameter.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	val := r.URL.Query().Get(key)
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %q must be a valid integer", key)
+	}
+	return n, nil
+}
 
 func main() {
 	r := chi.NewRouter()

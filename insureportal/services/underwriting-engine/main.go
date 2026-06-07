@@ -5,6 +5,8 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"strconv"
+	"fmt"
 )
 
 // Underwriting Engine
@@ -100,6 +102,41 @@ func handleQuote(w http.ResponseWriter, r *http.Request) {
 	result := calculatePremium(req)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+
+// validateQueryParam validates and sanitizes a query parameter.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	val := r.URL.Query().Get(key)
+	if len(val) > maxLen {
+		return "", fmt.Errorf("parameter %q exceeds max length %d", key, maxLen)
+	}
+	return val, nil
+}
+
+// validateRequiredParam validates a required query parameter.
+func validateRequiredParam(r *http.Request, key string, maxLen int) (string, error) {
+	val, err := validateQueryParam(r, key, maxLen)
+	if err != nil {
+		return "", err
+	}
+	if val == "" {
+		return "", fmt.Errorf("parameter %q is required", key)
+	}
+	return val, nil
+}
+
+// validateIntParam validates and converts an integer query parameter.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	val := r.URL.Query().Get(key)
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %q must be a valid integer", key)
+	}
+	return n, nil
 }
 
 func main() {

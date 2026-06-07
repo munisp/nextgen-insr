@@ -1,0 +1,24 @@
+openapi: "3.0.3"
+info:
+  title: Parametric Insurance Engine
+  version: "1.0.0"
+  description: Auto-payout insurance triggered by measurable events (weather, flights, earthquakes)
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service healthy
+  /api/v1/evaluate:
+    post:
+      summary: Evaluate an event against a parametric policy
+      responses:
+        "200":
+          description: Payout evaluation result
+  /api/v1/simulate:
+    get:
+      summary: Simulate parametric events across policy types
+      responses:
+        "200":
+          description: Simulation results

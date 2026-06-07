@@ -18,6 +18,7 @@ import (
 	"github.com/54link/tb-sidecar/internal/api"
 	"github.com/54link/tb-sidecar/internal/ledger"
 	"github.com/54link/tb-sidecar/internal/sync"
+	"sync"
 )
 
 func main() {
