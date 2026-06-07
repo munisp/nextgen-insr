@@ -343,6 +343,54 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
+
+// Circuit breaker for external API calls
+type circuitBreaker struct {
+	maxFailures int
+	failures    int
+	state       string // "closed", "open", "half-open"
+	lastFailure time.Time
+	timeout     time.Duration
+	mu          sync.Mutex
+}
+
+var externalAPIBreaker = &circuitBreaker{
+	maxFailures: 5,
+	state:       "closed",
+	timeout:     30 * time.Second,
+}
+
+func (cb *circuitBreaker) execute(fn func() error) error {
+	cb.mu.Lock()
+	if cb.state == "open" {
+		if time.Since(cb.lastFailure) > cb.timeout {
+			cb.state = "half-open"
+		} else {
+			cb.mu.Unlock()
+			log.Printf(`{"level":"warn","msg":"circuit breaker open","failures":%d}`, cb.failures)
+			return fmt.Errorf("circuit breaker open: too many failures")
+		}
+	}
+	cb.mu.Unlock()
+
+	err := fn()
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	if err != nil {
+		cb.failures++
+		cb.lastFailure = time.Now()
+		if cb.failures >= cb.maxFailures {
+			cb.state = "open"
+			log.Printf(`{"level":"error","msg":"circuit breaker tripped","failures":%d}`, cb.failures)
+		}
+		return err
+	}
+	cb.failures = 0
+	cb.state = "closed"
+	return nil
+}
+
 func main() {
 	initKafka()
 	initDB()
