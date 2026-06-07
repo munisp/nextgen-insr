@@ -190,12 +190,6 @@ INSERT INTO shareable_links (id, entity_type, entity_id, token, expires_at, crea
 ('seed-sl-3', 'referral', 'REF-001', 'tok_ghi789', NOW() + INTERVAL '90 days', NOW())
 ON CONFLICT (id) DO NOTHING;
 
--- storefront_ads
-INSERT INTO storefront_ads (id, title, product_type, target_audience, status, created_at) VALUES
-('seed-sa-1', 'Motor Insurance - 20% Off', 'motor', 'new_drivers', 'active', NOW()),
-('seed-sa-2', 'Family Health Plan', 'health', 'families', 'active', NOW()),
-('seed-sa-3', 'Crop Insurance - Rainy Season', 'agriculture', 'farmers', 'scheduled', NOW())
-ON CONFLICT (id) DO NOTHING;
 
 -- takaful_module
 INSERT INTO takaful_module (id, product_name, contribution_amount, surplus_share, status, created_at) VALUES
@@ -258,12 +252,6 @@ INSERT INTO shareable_links (id, slug, type, status, "agentId", amount, currency
 (90003, 'invoice-003', 'invoice', 'expired', 3, 25000.00, 'NGN', 'Invoice link')
 ON CONFLICT (id) DO NOTHING;
 
--- storefront_ads (integer agentId, enum status)
-INSERT INTO storefront_ads (id, title, body, "agentId", status, impressions, clicks, budget, spent) VALUES
-(90001, 'Motor Insurance - 20% Off', 'Get comprehensive motor coverage', 1, 'active', 1500, 120, 50000.00, 15000.00),
-(90002, 'Family Health Plan', 'Protect your family', 2, 'active', 2200, 180, 75000.00, 32000.00),
-(90003, 'Crop Insurance', 'Shield your harvest', 3, 'paused', 800, 45, 30000.00, 8000.00)
-ON CONFLICT (id) DO NOTHING;
 
 -- vat_records (integer agentId, enum rateType)
 INSERT INTO vat_records (id, "transactionId", "agentId", "taxableAmount", "vatAmount", "vatRate", "rateType", period) VALUES
