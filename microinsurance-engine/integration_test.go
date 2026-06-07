@@ -49,26 +49,26 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	defer testDB.Close()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM microinsurance_policies WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM microinsurance_policies WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO microinsurance_policies (id, product_name, premium, coverage_amount, status, created_at) VALUES ('int-test-micro-1', 'crop-basic', 500.00, 50000.00, 'active', NOW())")
+	_, err := testDB.Exec("INSERT INTO microinsurance_policies (id, \"userId\", \"productName\", premium, coverage, status) VALUES (99901, 1, 'crop-basic', 500.00, 50000.00, 'active')")
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
 
 	// Query it back
-	var id string
-	err = testDB.QueryRow("SELECT id FROM microinsurance_policies WHERE id = $1", "int-test-microinsurance-1").Scan(&id)
+	var id int
+	err = testDB.QueryRow("SELECT id FROM microinsurance_policies WHERE id = $1", 99901).Scan(&id)
 	if err != nil {
 		t.Fatalf("Failed to query test record: %v", err)
 	}
-	if id == "" {
-		t.Fatal("Expected non-empty id")
+	if id != 99901 {
+		t.Fatalf("Expected id=99901, got %d", id)
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM microinsurance_policies WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM microinsurance_policies WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {

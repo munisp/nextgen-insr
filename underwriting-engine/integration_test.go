@@ -35,12 +35,12 @@ func TestIntegration_DBConnection(t *testing.T) {
 
 	// Verify table exists
 	var exists bool
-	err := testDB.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1)", "underwriting").Scan(&exists)
+	err := testDB.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1)", "underwriting_rules").Scan(&exists)
 	if err != nil {
 		t.Fatalf("Failed to check table existence: %v", err)
 	}
 	if !exists {
-		t.Fatalf("Table underwriting does not exist")
+		t.Fatalf("Table underwriting_rules does not exist")
 	}
 }
 
@@ -49,26 +49,26 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	defer testDB.Close()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM underwriting WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM underwriting_rules WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO underwriting (id, policy_id, applicant_id, risk_score, decision, created_at) VALUES ('int-test-uw-1', 'POL-UW-001', 'APP-001', 45.5, 'approved', NOW())")
+	_, err := testDB.Exec("INSERT INTO underwriting_rules (id, \"productType\", \"ruleName\", \"ruleType\", priority, \"isActive\") VALUES (99901, 'health', 'test-rule', 'threshold', 1, true)")
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
 
 	// Query it back
-	var id string
-	err = testDB.QueryRow("SELECT id FROM underwriting WHERE id = $1", "int-test-underwriting-1").Scan(&id)
+	var id int
+	err = testDB.QueryRow("SELECT id FROM underwriting_rules WHERE id = $1", 99901).Scan(&id)
 	if err != nil {
 		t.Fatalf("Failed to query test record: %v", err)
 	}
-	if id == "" {
-		t.Fatal("Expected non-empty id")
+	if id != 99901 {
+		t.Fatalf("Expected id=99901, got %d", id)
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM underwriting WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM underwriting_rules WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {

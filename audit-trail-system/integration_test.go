@@ -49,26 +49,26 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	defer testDB.Close()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM audit_trail_system WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM audit_trail_system WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO audit_trail_system (id, action, entity_type, entity_id, user_id, created_at) VALUES ('int-test-audit-1', 'CREATE', 'policy', 'POL-001', 'USR-001', NOW())")
+	_, err := testDB.Exec(`INSERT INTO audit_trail_system (id, data, status, created_at, updated_at, tenant_id) VALUES (99901, '{"action":"CREATE","entity":"policy"}'::jsonb, 'active', NOW(), NOW(), 1)`)
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
 
 	// Query it back
-	var id string
-	err = testDB.QueryRow("SELECT id FROM audit_trail_system WHERE id = $1", "int-test-audit-1").Scan(&id)
+	var id int
+	err = testDB.QueryRow("SELECT id FROM audit_trail_system WHERE id = $1", 99901).Scan(&id)
 	if err != nil {
 		t.Fatalf("Failed to query test record: %v", err)
 	}
-	if id == "" {
-		t.Fatal("Expected non-empty id")
+	if id != 99901 {
+		t.Fatalf("Expected id=99901, got %d", id)
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM audit_trail_system WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM audit_trail_system WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {

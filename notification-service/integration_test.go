@@ -49,26 +49,26 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	defer testDB.Close()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM notification_service WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM notification_service WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO notification_service (id, recipient, channel, message, status, created_at) VALUES ('int-test-notif-1', 'user@test.com', 'email', 'Test notification', 'pending', NOW())")
+	_, err := testDB.Exec(`INSERT INTO notification_service (id, data, status, created_at, updated_at, tenant_id) VALUES (99901, '{"channel":"email","recipient":"test@test.com"}'::jsonb, 'pending', NOW(), NOW(), 1)`)
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
 
 	// Query it back
-	var id string
-	err = testDB.QueryRow("SELECT id FROM notification_service WHERE id = $1", "int-test-notification-1").Scan(&id)
+	var id int
+	err = testDB.QueryRow("SELECT id FROM notification_service WHERE id = $1", 99901).Scan(&id)
 	if err != nil {
 		t.Fatalf("Failed to query test record: %v", err)
 	}
-	if id == "" {
-		t.Fatal("Expected non-empty id")
+	if id != 99901 {
+		t.Fatalf("Expected id=99901, got %d", id)
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM notification_service WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM notification_service WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {

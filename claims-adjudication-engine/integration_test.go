@@ -49,26 +49,26 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	defer testDB.Close()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM claims WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM claims WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO claims (id, policy_id, claimant_id, amount, claim_type, status) VALUES ('int-test-claim-1', 'POL-001', 'CLM-001', 25000.00, 'health', 'submitted')")
+	_, err := testDB.Exec("INSERT INTO claims (id, \"userId\", \"policyId\", amount, description, \"tenantId\") VALUES (99901, 1, 1, 25000.00, 'Integration test claim', 'test-tenant')")
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
 
 	// Query it back
-	var id string
-	err = testDB.QueryRow("SELECT id FROM claims WHERE id = $1", "int-test-claims-1").Scan(&id)
+	var id int
+	err = testDB.QueryRow("SELECT id FROM claims WHERE id = $1", 99901).Scan(&id)
 	if err != nil {
 		t.Fatalf("Failed to query test record: %v", err)
 	}
-	if id == "" {
-		t.Fatal("Expected non-empty id")
+	if id != 99901 {
+		t.Fatalf("Expected id=99901, got %d", id)
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM claims WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM claims WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {

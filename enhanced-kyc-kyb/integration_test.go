@@ -49,26 +49,26 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	defer testDB.Close()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM enhanced_kyc_kyb WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM enhanced_kyc_kyb WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO enhanced_kyc_kyb (id, applicant_id, document_type, verification_status, created_at) VALUES ('int-test-kyc-1', 'APP-KYC-001', 'national_id', 'pending', NOW())")
+	_, err := testDB.Exec(`INSERT INTO enhanced_kyc_kyb (id, data, status, created_at, updated_at, tenant_id) VALUES (99901, '{"applicant":"KYC-001","type":"national_id"}'::jsonb, 'pending', NOW(), NOW(), 1)`)
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
 
 	// Query it back
-	var id string
-	err = testDB.QueryRow("SELECT id FROM enhanced_kyc_kyb WHERE id = $1", "int-test-enhanced-1").Scan(&id)
+	var id int
+	err = testDB.QueryRow("SELECT id FROM enhanced_kyc_kyb WHERE id = $1", 99901).Scan(&id)
 	if err != nil {
 		t.Fatalf("Failed to query test record: %v", err)
 	}
-	if id == "" {
-		t.Fatal("Expected non-empty id")
+	if id != 99901 {
+		t.Fatalf("Expected id=99901, got %d", id)
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM enhanced_kyc_kyb WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM enhanced_kyc_kyb WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {

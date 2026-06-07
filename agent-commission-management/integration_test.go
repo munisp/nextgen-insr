@@ -35,12 +35,12 @@ func TestIntegration_DBConnection(t *testing.T) {
 
 	// Verify table exists
 	var exists bool
-	err := testDB.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1)", "agent_commission_management").Scan(&exists)
+	err := testDB.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1)", "agent_commissions").Scan(&exists)
 	if err != nil {
 		t.Fatalf("Failed to check table existence: %v", err)
 	}
 	if !exists {
-		t.Fatalf("Table agent_commission_management does not exist")
+		t.Fatalf("Table agent_commissions does not exist")
 	}
 }
 
@@ -49,26 +49,26 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	defer testDB.Close()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM agent_commission_management WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM agent_commissions WHERE id >= 99900")
 
 	// Insert test record
-	_, err := testDB.Exec("INSERT INTO agent_commission_management (id, agent_id, amount, commission_type, status, created_at) VALUES ('int-test-comm-1', 'AGT-001', 1500.00, 'sales', 'pending', NOW())")
+	_, err := testDB.Exec("INSERT INTO agent_commissions (id, \"agentId\", \"commissionAmount\", \"commissionRate\", status) VALUES (99901, 1, 1500.00, 0.05, 'pending')")
 	if err != nil {
 		t.Fatalf("Failed to insert test record: %v", err)
 	}
 
 	// Query it back
-	var id string
-	err = testDB.QueryRow("SELECT id FROM agent_commission_management WHERE id = $1", "int-test-agent-1").Scan(&id)
+	var id int
+	err = testDB.QueryRow("SELECT id FROM agent_commissions WHERE id = $1", 99901).Scan(&id)
 	if err != nil {
 		t.Fatalf("Failed to query test record: %v", err)
 	}
-	if id == "" {
-		t.Fatal("Expected non-empty id")
+	if id != 99901 {
+		t.Fatalf("Expected id=99901, got %d", id)
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM agent_commission_management WHERE id LIKE 'int-test-%'")
+	testDB.Exec("DELETE FROM agent_commissions WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {
