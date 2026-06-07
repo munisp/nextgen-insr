@@ -1,9 +1,9 @@
 /**
- * Internationalization (i18n) Framework — 54Link Agency Banking Platform
+ * Internationalization (i18n) Framework — InsurePortal Agency Banking Platform
  *
  * Supports 6 languages for Nigerian agent banking:
  * - English (en) — Default
- * - French (fr) — West African remittance corridors
+ * - French (fr) — West African insurance markets
  * - Nigerian Pidgin English (pcm) — Most widely spoken lingua franca
  * - Hausa (ha) — Northern Nigeria
  * - Yoruba (yo) — Southwest Nigeria
@@ -759,14 +759,14 @@ let currentLocale: Locale = "en";
 export function setLocale(locale: Locale): void {
   currentLocale = locale;
   if (typeof window !== "undefined") {
-    localStorage.setItem("54link_locale", locale);
+    localStorage.setItem("insureportal_locale", locale);
     document.documentElement.lang = locale;
   }
 }
 
 export function getLocale(): Locale {
   if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("54link_locale") as Locale | null;
+    const stored = localStorage.getItem("insureportal_locale") as Locale | null;
     if (stored && translations[stored]) return stored;
   }
   return currentLocale;

@@ -10,7 +10,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 import { GdprConsentBanner } from "./components/GdprConsentBanner";
 import AgentLogin from "./pages/AgentLogin";
-import POSShell from "./pages/POSShell";
+import PlatformShell from "./pages/PlatformShell";
 import GlobalSearch from "./components/GlobalSearch";
 import { LiveChatWidget } from "./components/LiveChatWidget";
 import { ProactiveHelp } from "./components/ProactiveHelp";
@@ -1267,7 +1267,7 @@ function AuthenticatedApp() {
       <Switch>
         {/* Core POS routes */}
         <Route path="/hub" component={PlatformHub} />
-        <Route path="/" component={POSShell} />
+        <Route path="/" component={PlatformShell} />
         <Route path="/admin/fraud" component={FraudDashboard} />
         <Route path="/admin/analytics" component={AnalyticsDashboard} />
         <Route path="/admin" component={AdminPanel} />
@@ -2115,8 +2115,8 @@ function AuthenticatedApp() {
           component={AlertNotificationPreferences}
         />
         <Route path="/network-heatmap" component={NetworkQualityHeatmap} />
-        {/* Fallback — POSShell handles named screens */}
-        <Route path="/:screen" component={POSShell} />
+        {/* Fallback — PlatformShell handles named screens */}
+        <Route path="/:screen" component={PlatformShell} />
       </Switch>
     </Suspense>
   );

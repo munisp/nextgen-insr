@@ -2,7 +2,7 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: 'pos54link-production'
+    cluster: 'posinsureportal-production'
     region: 'ng-west'
 
 # ── Alert manager ─────────────────────────────────────────────────────────────
@@ -25,10 +25,10 @@ rule_files:
 
 # ── Scrape configs ────────────────────────────────────────────────────────────
 scrape_configs:
-  # POS Shell application
-  - job_name: 'pos-shell-app'
+  # InsurePortal Platform application
+  - job_name: 'platform-shell-app'
     static_configs:
-      - targets: ['pos-shell-app:3000']
+      - targets: ['platform-shell-app:3000']
     metrics_path: '/api/metrics'
     scrape_interval: 15s
 

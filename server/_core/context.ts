@@ -25,7 +25,7 @@ if (
   !isDev &&
   !isTest &&
   (!process.env.JWT_SECRET ||
-    process.env.JWT_SECRET === "pos54link-secret-change-in-production")
+    process.env.JWT_SECRET === "posinsureportal-secret-change-in-production")
 ) {
   console.error(
     "[SECURITY] FATAL: JWT_SECRET is not set or is using the default value. Set a strong secret in production."
@@ -57,7 +57,7 @@ function createDevFallbackUser(session: {
     id: 1,
     keycloakSub: session.sub,
     name: session.name || "Dev Admin",
-    email: session.email || "admin@54link.dev",
+    email: session.email || "admin@insureportal.dev",
     role: (session.role as "admin" | "user") || "admin",
     loginMethod: "keycloak",
     lastSignedIn: new Date(),
@@ -99,7 +99,7 @@ export async function createContext(
       user = createDevFallbackUser({
         sub: "dev-preview-user",
         name: "Dev Admin",
-        email: "admin@54link.dev",
+        email: "admin@insureportal.dev",
         role: "admin",
       });
     }

@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: pos-shell-demo
+  name: platform-shell-demo
   namespace: production
   labels:
-    app: pos-shell-demo
+    app: platform-shell-demo
     version: v1
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: pos-shell-demo
+      app: platform-shell-demo
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -19,21 +19,21 @@ spec:
   template:
     metadata:
       labels:
-        app: pos-shell-demo
+        app: platform-shell-demo
         version: v1
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "3000"
         prometheus.io/path: "/api/health/metrics"
     spec:
-      serviceAccountName: pos-shell-demo
+      serviceAccountName: platform-shell-demo
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
       containers:
         - name: app
-          image: registry.54link.com/pos-shell-demo:latest
+          image: registry.insureportal.com/platform-shell-demo:latest
           ports:
             - containerPort: 3000
               protocol: TCP
@@ -43,17 +43,17 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: pos-shell-demo-secrets
+                  name: platform-shell-demo-secrets
                   key: database-url
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: pos-shell-demo-secrets
+                  name: platform-shell-demo-secrets
                   key: jwt-secret
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: pos-shell-demo-secrets
+                  name: platform-shell-demo-secrets
                   key: stripe-secret-key
           resources:
             requests:
@@ -91,11 +91,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: pos-shell-demo
+  name: platform-shell-demo
   namespace: production
 spec:
   selector:
-    app: pos-shell-demo
+    app: platform-shell-demo
   ports:
     - port: 80
       targetPort: 3000
@@ -105,13 +105,13 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: pos-shell-demo
+  name: platform-shell-demo
   namespace: production
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: pos-shell-demo
+    name: platform-shell-demo
   minReplicas: 3
   maxReplicas: 10
   metrics:
@@ -131,7 +131,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: pos-shell-demo
+  name: platform-shell-demo
   namespace: production
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -140,33 +140,33 @@ metadata:
 spec:
   tls:
     - hosts:
-        - app.54link.com
-      secretName: pos-shell-demo-tls
+        - app.insureportal.com
+      secretName: platform-shell-demo-tls
   rules:
-    - host: app.54link.com
+    - host: app.insureportal.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: pos-shell-demo
+                name: platform-shell-demo
                 port:
                   number: 80
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: pos-shell-demo
+  name: platform-shell-demo
   namespace: production
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: pos-shell-demo
+  name: platform-shell-demo
   namespace: production
 spec:
   minAvailable: 2
   selector:
     matchLabels:
-      app: pos-shell-demo
+      app: platform-shell-demo

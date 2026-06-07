@@ -1,6 +1,6 @@
 /**
  * API Client Additions for 12 New Mobile Parity Screens
- * Merge these methods into POS54LinkAPIClient class in APIClient.ts
+ * Merge these methods into POSInsurePortalAPIClient class in APIClient.ts
  */
 
 // ── Agent Performance ──────────────────────────────────────────────────────────

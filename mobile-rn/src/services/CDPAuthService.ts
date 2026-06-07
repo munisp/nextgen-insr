@@ -2,7 +2,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Common storage for RN
 
 // --- Configuration ---
-const API_BASE_URL = 'https://api.54link.io/cdp/v1';
+const API_BASE_URL = 'https://api.insureportal.io/cdp/v1';
 const AUTH_TOKEN_KEY = '@CdpAuth:Token';
 const REFRESH_TOKEN_KEY = '@CdpAuth:RefreshToken';
 
@@ -345,7 +345,7 @@ export class CdpAuthService {
 // Example flow:
 async function handleLogin() {
   // 1. Send OTP
-  const sendResult = await cdpAuthService.sendOtp('agent@54link.io');
+  const sendResult = await cdpAuthService.sendOtp('agent@insureportal.io');
   if (!sendResult.success) {
     console.error('Send OTP failed:', sendResult.message);
     return;
@@ -353,7 +353,7 @@ async function handleLogin() {
   console.log('OTP sent successfully.');
 
   // 2. Verify OTP (assuming user enters '123456')
-  const verifyResult = await cdpAuthService.verifyOtp('agent@54link.io', '123456');
+  const verifyResult = await cdpAuthService.verifyOtp('agent@insureportal.io', '123456');
   if (!verifyResult.success) {
     console.error('Verify OTP failed:', verifyResult.message);
     return;

@@ -21,7 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // import Biometrics from 'react-native-biometrics';
 
 // --- Configuration & Constants ---
-const API_BASE_URL = 'https://kyc.54link.io/api/v1';
+const API_BASE_URL = 'https://kyc.insureportal.io/api/v1';
 const PAYSTACK_PUBLIC_KEY = 'pk_test_xxxxxxxxxxxxxxxxxxxx';
 const FLUTTERWAVE_PUBLIC_KEY = 'FLW_PUBK_TEST-xxxxxxxxxxxxxxxxxxxx';
 

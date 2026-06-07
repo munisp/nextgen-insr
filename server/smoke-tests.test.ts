@@ -1,5 +1,5 @@
 /**
- * 54Link POS Shell — Comprehensive Smoke Tests
+ * InsurePortal InsurePortal Platform — Comprehensive Smoke Tests
  * Covers: Settlement Engine, Dispute Resolution, Commission Engine
  * Tests: DB queries, business rules, lifecycle workflows, CRUD operations
  */

@@ -2,7 +2,7 @@
 /**
  * Kafka Event Bus Integration
  *
- * Provides a KafkaJS producer and consumer for the 54Link platform.
+ * Provides a KafkaJS producer and consumer for the InsurePortal platform.
  * All transaction, fraud, settlement, and SIM failover events are published
  * to Kafka topics for downstream processing.
  *
@@ -14,7 +14,7 @@
  *
  * Configuration:
  *   KAFKA_BROKERS   — comma-separated broker list (default: localhost:9092)
- *   KAFKA_CLIENT_ID — client identifier (default: pos-shell-demo)
+ *   KAFKA_CLIENT_ID — client identifier (default: platform-shell-demo)
  *   KAFKA_ENABLED   — set to "false" to disable (default: true)
  *
  * When KAFKA_ENABLED=false or brokers are unreachable, all publish calls
@@ -29,7 +29,7 @@ const KAFKA_ENABLED = process.env.KAFKA_ENABLED !== "false";
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS ?? "localhost:9092")
   .split(",")
   .map(b => b.trim());
-const KAFKA_CLIENT_ID = process.env.KAFKA_CLIENT_ID ?? "pos-shell-demo";
+const KAFKA_CLIENT_ID = process.env.KAFKA_CLIENT_ID ?? "platform-shell-demo";
 
 // ─── Topic definitions ────────────────────────────────────────────────────────
 

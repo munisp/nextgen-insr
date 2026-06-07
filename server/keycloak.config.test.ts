@@ -42,17 +42,17 @@ describe("Keycloak config — default values (no env vars set)", () => {
     });
   });
 
-  it("defaults realm to '54link'", () => {
+  it("defaults realm to 'insureportal'", () => {
     withEnv({ KEYCLOAK_REALM: undefined }, () => {
-      const realm = process.env.KEYCLOAK_REALM ?? "54link";
-      expect(realm).toBe("54link");
+      const realm = process.env.KEYCLOAK_REALM ?? "insureportal";
+      expect(realm).toBe("insureportal");
     });
   });
 
-  it("defaults clientId to 'pos-shell'", () => {
+  it("defaults clientId to 'platform-shell'", () => {
     withEnv({ KEYCLOAK_CLIENT_ID: undefined }, () => {
-      const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "pos-shell";
-      expect(clientId).toBe("pos-shell");
+      const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "platform-shell";
+      expect(clientId).toBe("platform-shell");
     });
   });
 
@@ -66,64 +66,64 @@ describe("Keycloak config — default values (no env vars set)", () => {
 
 describe("Keycloak config — env var overrides", () => {
   it("picks up KEYCLOAK_URL when set", () => {
-    withEnv({ KEYCLOAK_URL: "https://auth.54link.io" }, () => {
+    withEnv({ KEYCLOAK_URL: "https://auth.insureportal.io" }, () => {
       const url = process.env.KEYCLOAK_URL ?? "";
-      expect(url).toBe("https://auth.54link.io");
+      expect(url).toBe("https://auth.insureportal.io");
     });
   });
 
   it("picks up custom realm", () => {
     withEnv({ KEYCLOAK_REALM: "production" }, () => {
-      const realm = process.env.KEYCLOAK_REALM ?? "54link";
+      const realm = process.env.KEYCLOAK_REALM ?? "insureportal";
       expect(realm).toBe("production");
     });
   });
 
   it("picks up custom clientId", () => {
-    withEnv({ KEYCLOAK_CLIENT_ID: "pos-shell-prod" }, () => {
-      const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "pos-shell";
-      expect(clientId).toBe("pos-shell-prod");
+    withEnv({ KEYCLOAK_CLIENT_ID: "platform-shell-prod" }, () => {
+      const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "platform-shell";
+      expect(clientId).toBe("platform-shell-prod");
     });
   });
 });
 
 describe("Keycloak OIDC endpoint URL construction", () => {
-  const BASE = "https://auth.54link.io";
-  const REALM = "54link";
+  const BASE = "https://auth.insureportal.io";
+  const REALM = "insureportal";
 
   function issuerUrl(url: string, realm: string) {
     return `${url}/realms/${realm}`;
   }
 
   it("builds correct issuer URL", () => {
-    expect(issuerUrl(BASE, REALM)).toBe("https://auth.54link.io/realms/54link");
+    expect(issuerUrl(BASE, REALM)).toBe("https://auth.insureportal.io/realms/insureportal");
   });
 
   it("builds correct authorization endpoint", () => {
     const endpoint = `${issuerUrl(BASE, REALM)}/protocol/openid-connect/auth`;
     expect(endpoint).toBe(
-      "https://auth.54link.io/realms/54link/protocol/openid-connect/auth"
+      "https://auth.insureportal.io/realms/insureportal/protocol/openid-connect/auth"
     );
   });
 
   it("builds correct token endpoint", () => {
     const endpoint = `${issuerUrl(BASE, REALM)}/protocol/openid-connect/token`;
     expect(endpoint).toBe(
-      "https://auth.54link.io/realms/54link/protocol/openid-connect/token"
+      "https://auth.insureportal.io/realms/insureportal/protocol/openid-connect/token"
     );
   });
 
   it("builds correct JWKS URI", () => {
     const endpoint = `${issuerUrl(BASE, REALM)}/protocol/openid-connect/certs`;
     expect(endpoint).toBe(
-      "https://auth.54link.io/realms/54link/protocol/openid-connect/certs"
+      "https://auth.insureportal.io/realms/insureportal/protocol/openid-connect/certs"
     );
   });
 
   it("builds correct end-session endpoint", () => {
     const endpoint = `${issuerUrl(BASE, REALM)}/protocol/openid-connect/logout`;
     expect(endpoint).toBe(
-      "https://auth.54link.io/realms/54link/protocol/openid-connect/logout"
+      "https://auth.insureportal.io/realms/insureportal/protocol/openid-connect/logout"
     );
   });
 });
@@ -131,10 +131,10 @@ describe("Keycloak OIDC endpoint URL construction", () => {
 describe("Keycloak — buildAuthorizationUrl", () => {
   it("produces a valid URL with required OAuth2 params", () => {
     const base =
-      "https://auth.54link.io/realms/54link/protocol/openid-connect/auth";
+      "https://auth.insureportal.io/realms/insureportal/protocol/openid-connect/auth";
     const params = new URLSearchParams({
-      client_id: "pos-shell",
-      redirect_uri: "https://pos-shell.manus.space/api/auth/keycloak/callback",
+      client_id: "platform-shell",
+      redirect_uri: "https://platform-shell.manus.space/api/auth/keycloak/callback",
       response_type: "code",
       scope: "openid profile email",
       state: "random-state-value",
@@ -143,7 +143,7 @@ describe("Keycloak — buildAuthorizationUrl", () => {
     const url = `${base}?${params.toString()}`;
     const parsed = new URL(url);
 
-    expect(parsed.searchParams.get("client_id")).toBe("pos-shell");
+    expect(parsed.searchParams.get("client_id")).toBe("platform-shell");
     expect(parsed.searchParams.get("response_type")).toBe("code");
     expect(parsed.searchParams.get("scope")).toContain("openid");
     expect(parsed.searchParams.get("state")).toBe("random-state-value");
@@ -196,7 +196,7 @@ describe("Keycloak — role mapping", () => {
 describe("Keycloak — graceful fallback when KEYCLOAK_URL is absent", () => {
   it("does not throw when building endpoint URLs with empty base URL", () => {
     const url = "";
-    const realm = "54link";
+    const realm = "insureportal";
     expect(() => {
       const issuer = `${url}/realms/${realm}`;
       const auth = `${issuer}/protocol/openid-connect/auth`;
@@ -207,10 +207,10 @@ describe("Keycloak — graceful fallback when KEYCLOAK_URL is absent", () => {
 
   it("produces relative-looking paths (not valid URLs) when base is empty — callers must guard", () => {
     const url = "";
-    const realm = "54link";
+    const realm = "insureportal";
     const issuer = `${url}/realms/${realm}`;
     // The result is a relative path, not a valid absolute URL
-    expect(issuer).toBe("/realms/54link");
+    expect(issuer).toBe("/realms/insureportal");
     // Callers should check for empty KEYCLOAK_URL before using these endpoints
     expect(url).toBeFalsy();
   });

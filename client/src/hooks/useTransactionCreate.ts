@@ -56,7 +56,7 @@ export interface CreateTxInput {
 /** Read the persistent device token stored after enrollment. */
 function getStoredDeviceToken(): string | undefined {
   try {
-    return localStorage.getItem("54link_device_token") ?? undefined;
+    return localStorage.getItem("insureportal_device_token") ?? undefined;
   } catch {
     return undefined;
   }

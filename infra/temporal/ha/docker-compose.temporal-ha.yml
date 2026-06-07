@@ -1,6 +1,6 @@
 ###############################################################################
 # Temporal HA — 3 History shards, 2 Frontend, 2 Matching, 2 Worker
-# Production-tuned for POS-54Link: KYC workflows, settlement, reconciliation
+# Production-tuned for POS-InsurePortal: KYC workflows, settlement, reconciliation
 ###############################################################################
 version: "3.9"
 

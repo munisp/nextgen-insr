@@ -1,16 +1,16 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link POS Shell — Fluvio Streaming Client
+ * InsurePortal InsurePortal Platform — Fluvio Streaming Client
  *
  * Fluvio is a cloud-native, Rust-based event streaming platform used by the
- * 54Link platform for:
+ * InsurePortal platform for:
  *   • Real-time transaction event streaming (pos.transactions.created)
  *   • Fraud alert fan-out (fraud-alerts)
  *   • Float balance change events (float-events)
  *   • Agent activity telemetry (agent-telemetry)
  *
  * Architecture:
- *   POS Shell → fluvioClient.produce() → Fluvio cluster → consumers (fraud engine,
+ *   InsurePortal Platform → fluvioClient.produce() → Fluvio cluster → consumers (fraud engine,
  *   analytics, settlement, notification services)
  *
  * Fallback strategy:
@@ -19,7 +19,7 @@
  *   unavailable, events are buffered in-memory and flushed on reconnect.
  *
  * Environment variables:
- *   FLUVIO_ENDPOINT   — WebSocket endpoint, e.g. wss://fluvio.54link.ng:9003
+ *   FLUVIO_ENDPOINT   — WebSocket endpoint, e.g. wss://fluvio.insureportal.ng:9003
  *   FLUVIO_API_KEY    — Bearer token for the Fluvio HTTP gateway
  *   FLUVIO_TLS        — "true" to enable TLS verification (default: false in dev)
  */
@@ -59,7 +59,7 @@ const FLUVIO_API_KEY = ENV.fluvioApiKey;
 const PLATFORM_BASE_URL = ENV.platformBaseUrl; // APISix proxy fallback
 const PLATFORM_API_KEY = ENV.platformApiKey;
 
-/** Well-known topics this POS Shell produces to or consumes from */
+/** Well-known topics this InsurePortal Platform produces to or consumes from */
 export const FLUVIO_TOPICS = {
   TRANSACTIONS: "pos.transactions.created",
   FRAUD_ALERTS: "fraud-alerts",
@@ -284,7 +284,7 @@ export async function publishTransactionEvent(tx: {
       status: tx.status,
       channel: tx.channel ?? "POS",
       customerId: tx.customerId ?? null,
-      source: "pos-shell",
+      source: "platform-shell",
     },
     timestamp: new Date().toISOString(),
   });
@@ -310,7 +310,7 @@ export async function publishFraudAlertEvent(alert: {
       severity: alert.severity,
       agentId: alert.agentId,
       transactionRef: alert.transactionRef ?? null,
-      source: "pos-shell",
+      source: "platform-shell",
     },
     timestamp: new Date().toISOString(),
   });
@@ -333,7 +333,7 @@ export async function publishFloatEvent(data: {
     payload: {
       event: "float.balance.changed",
       ...data,
-      source: "pos-shell",
+      source: "platform-shell",
     },
     timestamp: new Date().toISOString(),
   });
@@ -355,7 +355,7 @@ export async function publishKycEvent(data: {
     payload: {
       event: "kyc.session.updated",
       ...data,
-      source: "pos-shell",
+      source: "platform-shell",
     },
     timestamp: new Date().toISOString(),
   });

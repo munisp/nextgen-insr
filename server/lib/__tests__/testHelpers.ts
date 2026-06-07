@@ -9,7 +9,7 @@ export const MOCK_USER = {
   role: "admin" as const,
   agentCode: "AGT001",
   name: "Test Agent",
-  email: "test@54link.io",
+  email: "test@insureportal.io",
 };
 
 export function makeAuthenticatedCtx(

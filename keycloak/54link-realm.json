@@ -1,6 +1,6 @@
 {
-  "realm": "54link",
-  "displayName": "54Link Agency Banking",
+  "realm": "insureportal",
+  "displayName": "InsurePortal Agency Banking",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
@@ -29,11 +29,11 @@
     "realm": [
       {
         "name": "admin",
-        "description": "54Link platform administrator"
+        "description": "InsurePortal platform administrator"
       },
       {
         "name": "supervisor",
-        "description": "54Link agent supervisor"
+        "description": "InsurePortal agent supervisor"
       },
       {
         "name": "user",
@@ -43,18 +43,18 @@
   },
   "clients": [
     {
-      "clientId": "pos-shell",
-      "name": "54Link POS Shell",
-      "description": "54Link Agency Banking POS Shell web application",
+      "clientId": "platform-shell",
+      "name": "InsurePortal InsurePortal Platform",
+      "description": "InsurePortal Agency Banking InsurePortal Platform web application",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "https://pos.54link.io/api/auth/callback",
+        "https://pos.insureportal.io/api/auth/callback",
         "http://localhost:3000/api/auth/callback"
       ],
-      "webOrigins": ["https://pos.54link.io", "http://localhost:3000"],
+      "webOrigins": ["https://pos.insureportal.io", "http://localhost:3000"],
       "postLogoutRedirectUris": [
-        "https://pos.54link.io/",
+        "https://pos.insureportal.io/",
         "http://localhost:3000/"
       ],
       "standardFlowEnabled": true,
@@ -69,7 +69,7 @@
         "client.session.idle.timeout": "1800",
         "client.session.max.lifespan": "36000",
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "https://pos.54link.io/++"
+        "post.logout.redirect.uris": "https://pos.insureportal.io/++"
       },
       "protocolMappers": [
         {
@@ -116,12 +116,12 @@
   ],
   "passwordPolicy": "length(8) and upperCase(1) and digits(1) and specialChars(1) and notUsername(undefined)",
   "smtpServer": {
-    "replyToDisplayName": "54Link Support",
+    "replyToDisplayName": "InsurePortal Support",
     "port": "587",
     "host": "",
-    "replyTo": "support@54link.com",
-    "from": "noreply@54link.com",
-    "fromDisplayName": "54Link Agency Banking",
+    "replyTo": "support@insureportal.com",
+    "from": "noreply@insureportal.com",
+    "fromDisplayName": "InsurePortal Agency Banking",
     "ssl": "false",
     "starttls": "true"
   },

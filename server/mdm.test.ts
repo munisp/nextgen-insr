@@ -1,5 +1,5 @@
 /**
- * 54Link MDM Router — Comprehensive Unit Tests
+ * InsurePortal MDM Router — Comprehensive Unit Tests
  *
  * Tests: heartbeat auto-enrollment, compliance policy evaluation, geofence
  * violation detection, kill-switch audit logging, OTA lifecycle, enrollment
@@ -119,7 +119,7 @@ function makeAdminCtx(): TrpcContext {
       id: 1,
       keycloakSub: "admin-sub-001",
       name: "Admin User",
-      email: "admin@54link.ng",
+      email: "admin@insureportal.ng",
       loginMethod: "keycloak",
       role: "admin",
       mfaEnabled: false,
@@ -140,7 +140,7 @@ function makeUserCtx(): TrpcContext {
       id: 2,
       keycloakSub: "user-sub-002",
       name: "Regular User",
-      email: "user@54link.ng",
+      email: "user@insureportal.ng",
       loginMethod: "keycloak",
       role: "user",
       mfaEnabled: false,
@@ -391,7 +391,7 @@ describe("mdm.createOtaRelease", () => {
       caller.mdm.createOtaRelease({
         version: "5.0.0",
         s3Key: "ota/5.0.0.apk",
-        downloadUrl: "https://cdn.54link.ng/ota/5.0.0.apk",
+        downloadUrl: "https://cdn.insureportal.ng/ota/5.0.0.apk",
         checksum: "sha256:abc123",
         fileSize: 52428800,
       })
@@ -404,7 +404,7 @@ describe("mdm.createOtaRelease", () => {
       caller.mdm.createOtaRelease({
         version: "",
         s3Key: "ota/5.0.0.apk",
-        downloadUrl: "https://cdn.54link.ng/ota/5.0.0.apk",
+        downloadUrl: "https://cdn.insureportal.ng/ota/5.0.0.apk",
         checksum: "sha256:abc123",
         fileSize: 52428800,
       })
@@ -417,7 +417,7 @@ describe("mdm.createOtaRelease", () => {
       caller.mdm.createOtaRelease({
         version: "5.0.0",
         s3Key: "ota/5.0.0.apk",
-        downloadUrl: "https://cdn.54link.ng/ota/5.0.0.apk",
+        downloadUrl: "https://cdn.insureportal.ng/ota/5.0.0.apk",
         checksum: "sha256:abc123",
         fileSize: -1,
       })
@@ -632,7 +632,7 @@ describe("mdm input validation", () => {
       caller.mdm.createOtaRelease({
         version: "5.0.0",
         s3Key: "ota/5.0.0.apk",
-        downloadUrl: "https://cdn.54link.ng/ota/5.0.0.apk",
+        downloadUrl: "https://cdn.insureportal.ng/ota/5.0.0.apk",
         checksum: "sha256:abc123",
         fileSize: 0,
       })

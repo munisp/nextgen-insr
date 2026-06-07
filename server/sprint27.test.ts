@@ -170,7 +170,7 @@ describe("Sprint 27: Comprehensive README", () => {
     const content = fs.readFileSync(path.join(ROOT, "README.md"), "utf-8");
     const lines = content.split("\n").length;
     expect(lines).toBeGreaterThan(200);
-    expect(content).toContain("54Link");
+    expect(content).toContain("InsurePortal");
     expect(content).toContain("Architecture");
     expect(content).toContain("Getting Started");
   });
@@ -184,7 +184,7 @@ describe("Sprint 27: OpenAPI Specification", () => {
     );
     const spec = JSON.parse(content);
     expect(spec.openapi).toBe("3.0.3");
-    expect(spec.info.title).toContain("54Link");
+    expect(spec.info.title).toContain("InsurePortal");
     expect(Object.keys(spec.paths).length).toBeGreaterThan(5);
   });
 });

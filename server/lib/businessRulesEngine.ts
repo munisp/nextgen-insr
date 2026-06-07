@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Business Rules Engine — 54Link Agency Banking Platform
+ * Business Rules Engine — InsurePortal Agency Banking Platform
  *
  * Production-grade business logic for:
  * 1. Transaction limits per agent tier (daily/monthly caps)

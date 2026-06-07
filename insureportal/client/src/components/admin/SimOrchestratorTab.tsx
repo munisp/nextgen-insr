@@ -707,7 +707,7 @@ export function SimOrchestratorTab() {
                 className="text-xs text-gray-500 max-w-sm"
                 style={{ fontFamily: DISP }}
               >
-                Deploy the Rust SIM Orchestrator daemon on your POS terminals.
+                Deploy the Rust SIM Orchestrator daemon on your service nodes.
                 It will POST probe data to:
               </div>
               <div

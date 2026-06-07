@@ -106,7 +106,7 @@ const REWARD_CATALOG = [
   },
   {
     id: "RWD-007",
-    name: "POS Terminal Upgrade",
+    name: "Service Node Upgrade",
     category: "hardware",
     pointsCost: 25000,
     description: "Upgrade to PAX A920 MAX terminal",
@@ -119,7 +119,7 @@ const REWARD_CATALOG = [
     name: "Training Certificate",
     category: "education",
     pointsCost: 3000,
-    description: "54Link certified agent training course",
+    description: "InsurePortal certified agent training course",
     available: true,
     stock: -1,
     imageUrl: null,

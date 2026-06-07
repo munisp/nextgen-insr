@@ -140,12 +140,12 @@ function buildBreachEmailHtml(event: BreachEvent): string {
   </table>
 
   <div style="margin-top: 24px; padding: 12px; background: #fef3c7; border-radius: 4px; font-size: 13px; color: #92400e;">
-    <strong>Action Required:</strong> Please review this alert in the 54Link Dashboard under
+    <strong>Action Required:</strong> Please review this alert in the InsurePortal Dashboard under
     Data Threshold Alerts and acknowledge or resolve it.
   </div>
 
   <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af;">
-    <p>This is an automated alert from 54Link POS Shell. Rule ID: ${event.ruleId} | Event ID: ${event.eventId}</p>
+    <p>This is an automated alert from InsurePortal InsurePortal Platform. Rule ID: ${event.ruleId} | Event ID: ${event.eventId}</p>
     <p>To manage your alert preferences, visit the Data Threshold Alerts page in your dashboard.</p>
   </div>
 </body>
@@ -163,7 +163,7 @@ Threshold: ${event.operator} ${event.threshold} ${event.unit}
 Severity: ${event.severity.toUpperCase()}
 Triggered At: ${new Date(event.createdAt).toLocaleString()}
 
-Action Required: Review this alert in the 54Link Dashboard.
+Action Required: Review this alert in the InsurePortal Dashboard.
 
 Rule ID: ${event.ruleId} | Event ID: ${event.eventId}`;
 }
@@ -444,7 +444,7 @@ export async function dispatchThresholdAlert(
           timestamp: event.createdAt,
         };
         const result = await sendWebhookNotification(
-          "https://hooks.54link.com/alerts",
+          "https://hooks.insureportal.com/alerts",
           payload
         );
         const record: NotificationRecord = {
@@ -452,7 +452,7 @@ export async function dispatchThresholdAlert(
           eventId: event.eventId,
           ruleId: event.ruleId,
           channel: "webhook",
-          recipient: "https://hooks.54link.com/alerts",
+          recipient: "https://hooks.insureportal.com/alerts",
           status: result.success ? "sent" : "failed",
           sentAt: new Date().toISOString(),
         };

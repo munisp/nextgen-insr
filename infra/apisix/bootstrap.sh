@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# 54Link APISix Bootstrap Script
+# InsurePortal APISix Bootstrap Script
 # Seeds all routes, upstreams, plugins, and consumers via the APISix Admin API.
 #
 # Usage:
@@ -59,7 +59,7 @@ log "Creating upstreams..."
 
 apisix_put "/upstreams/1" '{
   "id": "1",
-  "name": "pos-shell-app",
+  "name": "platform-shell-app",
   "type": "roundrobin",
   "nodes": {"app:3000": 1},
   "scheme": "http",
@@ -159,7 +159,7 @@ log "Creating routes..."
 # Main app — all tRPC and web traffic
 apisix_put "/routes/1" '{
   "id": "1",
-  "name": "pos-shell-app",
+  "name": "platform-shell-app",
   "uri": "/*",
   "upstream_id": "1",
   "plugins": {

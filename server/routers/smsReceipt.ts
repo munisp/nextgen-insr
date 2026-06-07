@@ -31,7 +31,7 @@ async function sendTermiiSMS(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to,
-        from: "54Link",
+        from: "InsurePortal",
         sms: message,
         type: "plain",
         channel: "generic",
@@ -68,7 +68,7 @@ function buildReceiptSMS(data: {
   customerName?: string | null;
 }): string {
   const lines = [
-    `54Link Receipt`,
+    `InsurePortal Receipt`,
     `Ref: ${data.ref}`,
     `Type: ${data.type}`,
     `Amount: NGN ${data.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
@@ -79,7 +79,7 @@ function buildReceiptSMS(data: {
   lines.push(
     `Time: ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })}`
   );
-  lines.push(`Powered by 54Link Agency Banking`);
+  lines.push(`Powered by InsurePortal Agency Banking`);
   return lines.join("\n");
 }
 
@@ -250,7 +250,7 @@ export const smsReceiptRouter = router({
             message: "Agent session required",
           });
 
-        const lines = [`54Link USSD Receipt`, `Dial: ${input.ussdCode}`];
+        const lines = [`InsurePortal USSD Receipt`, `Dial: ${input.ussdCode}`];
         if (input.transactionRef) lines.push(`Ref: ${input.transactionRef}`);
         if (input.amount != null) {
           lines.push(
@@ -261,7 +261,7 @@ export const smsReceiptRouter = router({
         lines.push(
           `Time: ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })}`
         );
-        lines.push(`Powered by 54Link Agency Banking`);
+        lines.push(`Powered by InsurePortal Agency Banking`);
 
         const message = lines.join("\n");
         const smsResult = await sendTermiiSMS(input.recipientPhone, message);

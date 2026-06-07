@@ -3,7 +3,7 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "Prometheus data source connected to the POS Shell /api/metrics endpoint",
+      "description": "Prometheus data source connected to the InsurePortal Platform /api/metrics endpoint",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
@@ -33,7 +33,7 @@
     { "type": "panel", "id": "barchart", "name": "Bar chart", "version": "" }
   ],
   "annotations": { "list": [] },
-  "description": "54Link POS Shell — Live production metrics dashboard. Import via Grafana → Dashboards → Import → Upload JSON.",
+  "description": "InsurePortal InsurePortal Platform — Live production metrics dashboard. Import via Grafana → Dashboards → Import → Upload JSON.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -453,7 +453,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["pos-shell", "54link", "agency-banking", "production"],
+  "tags": ["platform-shell", "insureportal", "agency-banking", "production"],
   "templating": {
     "list": [
       {
@@ -479,7 +479,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "Africa/Lagos",
-  "title": "54Link POS Shell — Production Metrics",
-  "uid": "pos-shell-prod-v1",
+  "title": "InsurePortal InsurePortal Platform — Production Metrics",
+  "uid": "platform-shell-prod-v1",
   "version": 1
 }

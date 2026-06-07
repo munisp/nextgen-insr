@@ -1,5 +1,5 @@
 /**
- * lakehouse.ts — tRPC router for the 54Link Data Lakehouse
+ * lakehouse.ts — tRPC router for the InsurePortal Data Lakehouse
  *
  * Exposes:
  *  - snapshot management  (upload, list, presigned download URL, stats)
@@ -582,7 +582,7 @@ export const lakehouseRouter = router({
   lakehouseQuery: adminProcedure
     .input(
       z.object({
-        /** SQL query against Iceberg tables (54link.silver.* / 54link.gold.*) */
+        /** SQL query against Iceberg tables (insureportal.silver.* / insureportal.gold.*) */
         sql: z.string().min(10).max(2_000),
         /** Max rows to return */
         limit: z.number().int().min(1).max(10_000).default(1_000),

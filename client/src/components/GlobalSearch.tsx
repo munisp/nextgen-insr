@@ -32,8 +32,8 @@ interface SearchItem {
 const SEARCH_ITEMS: SearchItem[] = [
   {
     id: "home",
-    label: "POS Terminal",
-    description: "Main POS shell interface",
+    label: "Service Node",
+    description: "Main InsurePortal platform interface",
     path: "/",
     icon: <CreditCard className="w-4 h-4" />,
     category: "Navigation",

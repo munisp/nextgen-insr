@@ -1,13 +1,13 @@
 // @ts-nocheck
 /**
- * MDM Router — Mobile Device Management for 54Link POS terminals
+ * MDM Router — Mobile Device Management for InsurePortal service nodes
  *
  * Provides admin-only procedures for:
  *   - Device registry (enroll, list, get, update status)
  *   - Remote command dispatch (UPDATE, RECONFIG, RESTART, WIPE, PING)
  *   - Config push (JSON config to device)
  *   - OTA update trigger
- *   - Device heartbeat (called by mdm-agent on POS terminal)
+ *   - Device heartbeat (called by mdm-agent on service node)
  */
 
 import { z } from "zod";
@@ -342,7 +342,7 @@ export const mdmRouter = router({
     return summary;
   }),
 
-  // ── Called by mdm-agent on POS terminal ──────────────────────────────────
+  // ── Called by mdm-agent on service node ──────────────────────────────────
 
   // Heartbeat: device reports health, gets back pending commands
   heartbeat: publicProcedure

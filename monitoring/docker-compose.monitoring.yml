@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# docker-compose.monitoring.yml — 54Link POS Shell Observability Stack
+# docker-compose.monitoring.yml — InsurePortal InsurePortal Platform Observability Stack
 # ─────────────────────────────────────────────────────────────────────────────
 # Full open-source monitoring stack:
 #   - Prometheus       — metrics scraping + alerting
@@ -18,7 +18,7 @@
 #   Alertmanager: http://localhost:9093
 #   Grafana OnCall: http://localhost:3001/a/grafana-oncall-app
 #
-# POS Shell metrics endpoint: http://pos-shell:3000/api/metrics
+# InsurePortal Platform metrics endpoint: http://platform-shell:3000/api/metrics
 # ─────────────────────────────────────────────────────────────────────────────
 
 version: "3.9"
@@ -46,7 +46,7 @@ services:
       - monitoring
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./prometheus-rules.yml:/etc/prometheus/rules/pos-shell-rules.yml:ro
+      - ./prometheus-rules.yml:/etc/prometheus/rules/platform-shell-rules.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -74,7 +74,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../docs/grafana-dashboard.json:/var/lib/grafana/dashboards/pos-shell.json:ro
+      - ../docs/grafana-dashboard.json:/var/lib/grafana/dashboards/platform-shell.json:ro
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin-change-in-production

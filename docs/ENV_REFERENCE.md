@@ -1,4 +1,4 @@
-# 54Link POS Shell — Environment Variables Reference
+# InsurePortal InsurePortal Platform — Environment Variables Reference
 
 This document lists every environment variable used by the platform, grouped by service. Variables marked **Required** must be set for production deployment. Variables marked **Optional** have sensible defaults.
 
@@ -38,8 +38,8 @@ This document lists every environment variable used by the platform, grouped by 
 | Variable                 | Required | Default                | Description            |
 | ------------------------ | -------- | ---------------------- | ---------------------- |
 | `KEYCLOAK_URL`           | No       | `http://keycloak:8080` | Keycloak server URL    |
-| `KEYCLOAK_REALM`         | No       | `54link`               | Keycloak realm name    |
-| `KEYCLOAK_CLIENT_ID`     | No       | `pos-shell`            | Keycloak client ID     |
+| `KEYCLOAK_REALM`         | No       | `insureportal`               | Keycloak realm name    |
+| `KEYCLOAK_CLIENT_ID`     | No       | `platform-shell`            | Keycloak client ID     |
 | `KEYCLOAK_CLIENT_SECRET` | No       | —                      | Keycloak client secret |
 
 ## TigerBeetle Sidecar
@@ -61,7 +61,7 @@ This document lists every environment variable used by the platform, grouped by 
 | `KAFKA_ENABLED`       | No       | `false`          | Enable Kafka event streaming      |
 | `KAFKA_BROKER`        | No       | `localhost:9092` | Kafka broker address              |
 | `KAFKA_BROKERS`       | No       | `localhost:9092` | Comma-separated Kafka broker list |
-| `KAFKA_CLIENT_ID`     | No       | `54link-pos`     | Kafka client identifier           |
+| `KAFKA_CLIENT_ID`     | No       | `insureportal-pos`     | Kafka client identifier           |
 | `KAFKA_SSL`           | No       | `false`          | Enable SSL for Kafka connections  |
 | `KAFKA_SASL_USERNAME` | No       | —                | Kafka SASL username               |
 | `KAFKA_SASL_PASSWORD` | No       | —                | Kafka SASL password               |
@@ -73,7 +73,7 @@ This document lists every environment variable used by the platform, grouped by 
 | `TEMPORAL_ADDRESS`    | No       | `localhost:7233`        | Temporal gRPC address    |
 | `TEMPORAL_HTTP_URL`   | No       | `http://localhost:8233` | Temporal HTTP API URL    |
 | `TEMPORAL_NAMESPACE`  | No       | `default`               | Temporal namespace       |
-| `TEMPORAL_TASK_QUEUE` | No       | `54link-tasks`          | Temporal task queue name |
+| `TEMPORAL_TASK_QUEUE` | No       | `insureportal-tasks`          | Temporal task queue name |
 
 ## HashiCorp Vault
 
@@ -83,7 +83,7 @@ This document lists every environment variable used by the platform, grouped by 
 | `VAULT_TOKEN`       | No       | —                    | Vault authentication token |
 | `VAULT_ROLE_ID`     | No       | —                    | Vault AppRole role ID      |
 | `VAULT_SECRET_ID`   | No       | —                    | Vault AppRole secret ID    |
-| `VAULT_SECRET_PATH` | No       | `secret/data/54link` | Vault KV secret path       |
+| `VAULT_SECRET_PATH` | No       | `secret/data/insureportal` | Vault KV secret path       |
 
 ## Permify RBAC
 
@@ -99,7 +99,7 @@ This document lists every environment variable used by the platform, grouped by 
 | `MINIO_ENDPOINT`   | No       | `http://minio:9000` | MinIO/S3 endpoint URL  |
 | `MINIO_ACCESS_KEY` | No       | `minioadmin`        | MinIO access key       |
 | `MINIO_SECRET_KEY` | No       | `minioadmin`        | MinIO secret key       |
-| `MINIO_BUCKET`     | No       | `54link-uploads`    | Default S3 bucket name |
+| `MINIO_BUCKET`     | No       | `insureportal-uploads`    | Default S3 bucket name |
 | `MINIO_REGION`     | No       | `us-east-1`         | S3 region              |
 
 ## SMTP / Email
@@ -111,7 +111,7 @@ This document lists every environment variable used by the platform, grouped by 
 | `SMTP_USER`   | No       | —                   | SMTP authentication username |
 | `SMTP_PASS`   | No       | —                   | SMTP authentication password |
 | `SMTP_SECURE` | No       | `false`             | Use TLS for SMTP             |
-| `SMTP_FROM`   | No       | `noreply@54link.ng` | Default sender email address |
+| `SMTP_FROM`   | No       | `noreply@insureportal.ng` | Default sender email address |
 
 ## SMS / Termii
 
@@ -125,14 +125,14 @@ This document lists every environment variable used by the platform, grouped by 
 | ------------------- | -------- | ------------------------ | ------------------------------ |
 | `VAPID_PUBLIC_KEY`  | No       | Auto-generated           | VAPID public key for web push  |
 | `VAPID_PRIVATE_KEY` | No       | Auto-generated           | VAPID private key for web push |
-| `VAPID_SUBJECT`     | No       | `mailto:admin@54link.ng` | VAPID subject (email or URL)   |
+| `VAPID_SUBJECT`     | No       | `mailto:admin@insureportal.ng` | VAPID subject (email or URL)   |
 
 ## mTLS
 
 | Variable        | Required | Default             | Description                               |
 | --------------- | -------- | ------------------- | ----------------------------------------- |
 | `MTLS_ENABLED`  | No       | `false`             | Enable mutual TLS for inter-service calls |
-| `MTLS_CERT_DIR` | No       | `/etc/54link/certs` | Directory containing TLS certificates     |
+| `MTLS_CERT_DIR` | No       | `/etc/insureportal/certs` | Directory containing TLS certificates     |
 
 ## Microservices (Go/Rust/Python)
 
@@ -165,7 +165,7 @@ This document lists every environment variable used by the platform, grouped by 
 | Variable                      | Required | Default                      | Description                      |
 | ----------------------------- | -------- | ---------------------------- | -------------------------------- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No       | `http://otel-collector:4318` | OpenTelemetry collector endpoint |
-| `OTEL_SERVICE_NAME`           | No       | `54link-pos`                 | Service name for traces          |
+| `OTEL_SERVICE_NAME`           | No       | `insureportal-pos`                 | Service name for traces          |
 | `OTEL_SERVICE_VERSION`        | No       | `4.0.0`                      | Service version for traces       |
 | `VITE_ANALYTICS_ENDPOINT`     | No       | —                            | Frontend analytics endpoint      |
 | `VITE_ANALYTICS_WEBSITE_ID`   | No       | —                            | Frontend analytics website ID    |
@@ -187,7 +187,7 @@ This document lists every environment variable used by the platform, grouped by 
 | `MDM_COMPLIANCE_ENGINE_URL` | No       | —                       | MDM compliance engine URL                   |
 | `MDM_GEOFENCE_SERVICE_URL`  | No       | —                       | MDM geofence service URL                    |
 | `MQTT_BROKER_URL`           | No       | `mqtt://localhost:1883` | MQTT broker URL for IoT                     |
-| `MQTT_CLIENT_ID`            | No       | `54link-server`         | MQTT client identifier                      |
+| `MQTT_CLIENT_ID`            | No       | `insureportal-server`         | MQTT client identifier                      |
 | `MQTT_USERNAME`             | No       | —                       | MQTT authentication username                |
 | `MQTT_PASSWORD`             | No       | —                       | MQTT authentication password                |
 | `POS_PRINTER_URL`           | No       | —                       | POS thermal printer URL                     |

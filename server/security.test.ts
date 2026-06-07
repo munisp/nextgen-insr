@@ -32,7 +32,7 @@ function makeCtx(overrides?: Partial<TrpcContext>): TrpcContext {
   const user: AuthenticatedUser = {
     id: 1,
     openId: "test-open-id",
-    email: "admin@54link.test",
+    email: "admin@insureportal.test",
     name: "Test Admin",
     loginMethod: "manus",
     role: "admin",
@@ -279,7 +279,7 @@ function buildSmsMessage(input: SmsInput): string {
   });
   const customer = input.customerName ? ` for ${input.customerName}` : "";
   return (
-    `54Link POS: ${input.type}${customer} of ${amountStr} processed at ${timeStr}. ` +
+    `InsurePortal POS: ${input.type}${customer} of ${amountStr} processed at ${timeStr}. ` +
     `Ref: ${input.ref}. Agent: ${input.agentCode} (${input.agentName}). ` +
     `If you did not authorise this, call 0800-54LINK immediately.`
   );

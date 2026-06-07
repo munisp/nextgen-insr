@@ -1,6 +1,6 @@
 ###############################################################################
 # OpenSearch HA — 3 nodes (2 data + 1 coordinator) + Dashboards
-# Production-tuned for POS-54Link: audit search, transaction logs, analytics
+# Production-tuned for POS-InsurePortal: audit search, transaction logs, analytics
 ###############################################################################
 version: "3.9"
 

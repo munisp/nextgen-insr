@@ -177,7 +177,7 @@ const navGroups: NavGroup[] = [
     label: "Core",
     icon: LayoutDashboard,
     items: [
-      { icon: LayoutDashboard, label: "POS Terminal", path: "/" },
+      { icon: LayoutDashboard, label: "Service Node", path: "/" },
       { icon: Globe, label: "Platform Hub", path: "/hub" },
     ],
   },

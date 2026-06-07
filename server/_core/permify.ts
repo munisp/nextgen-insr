@@ -1,5 +1,5 @@
 /**
- * 54Link Permify Client
+ * InsurePortal Permify Client
  * HTTP client for Permify authorization service.
  * Falls back to role-based checks when Permify is unavailable.
  *

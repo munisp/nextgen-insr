@@ -1,5 +1,5 @@
 ##
-## 54Link POS Shell — OpenAppSec WAF Policy
+## InsurePortal InsurePortal Platform — OpenAppSec WAF Policy
 ## Comprehensive Web Application Firewall configuration
 ## Covers OWASP Top 10, API protection, rate limiting, and geo-blocking
 ##
@@ -7,10 +7,10 @@
 apiVersion: openappsec.io/v1beta1
 kind: Policy
 metadata:
-  name: 54link-billing-waf-policy
-  namespace: 54link-billing
+  name: insureportal-billing-waf-policy
+  namespace: insureportal-billing
   labels:
-    app: 54link-pos
+    app: insureportal-pos
     component: waf
     tier: security
 spec:
@@ -57,7 +57,7 @@ apiVersion: openappsec.io/v1beta1
 kind: Practice
 metadata:
   name: billing-api-protection
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   # ─── SQL Injection Protection ──────────────────────────────────────
   webAttacks:
@@ -94,7 +94,7 @@ apiVersion: openappsec.io/v1beta1
 kind: Practice
 metadata:
   name: owasp-top10-protection
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   # A01: Broken Access Control
   webAttacks:
@@ -166,7 +166,7 @@ apiVersion: openappsec.io/v1beta1
 kind: Practice
 metadata:
   name: rate-limiting
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   rateLimiting:
     rules:
@@ -217,7 +217,7 @@ apiVersion: openappsec.io/v1beta1
 kind: Practice
 metadata:
   name: bot-detection
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   antiBot:
     overrideMode: prevent-learn
@@ -237,7 +237,7 @@ apiVersion: openappsec.io/v1beta1
 kind: Practice
 metadata:
   name: geo-blocking
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   # Allow traffic from operational regions only
   geoBlocking:
@@ -281,7 +281,7 @@ apiVersion: openappsec.io/v1beta1
 kind: Practice
 metadata:
   name: api-schema-validation
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   apiSchemaValidation:
     openApiSpec: /docs/openapi.yaml

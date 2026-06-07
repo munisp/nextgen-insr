@@ -1,4 +1,4 @@
-# 54Link Agency Banking Platform — System Architecture
+# InsurePortal Agency Banking Platform — System Architecture
 
 > Version: Phase 163 | Last updated: April 2026
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-54Link is a full-stack agency banking platform built for Nigerian financial institutions. It provides a Point-of-Sale (POS) shell, multi-portal admin system, mobile apps (Flutter + React Native), and a microservices backend. The platform is CBN-compliant and supports cash-in/cash-out, airtime, bill payments, FX transfers, KYC, fraud detection, and USSD.
+InsurePortal is a full-stack agency banking platform built for Nigerian financial institutions. It provides a Point-of-Sale (POS) shell, multi-portal admin system, mobile apps (Flutter + React Native), and a microservices backend. The platform is CBN-compliant and supports cash-in/cash-out, airtime, bill payments, FX transfers, KYC, fraud detection, and USSD.
 
 ---
 
@@ -16,7 +16,7 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          CLIENT LAYER                                        │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │  POSShell    │  │ AdminPanel   │  │ Flutter App  │  │  RN App      │    │
+│  │  PlatformShell    │  │ AdminPanel   │  │ Flutter App  │  │  RN App      │    │
 │  │  (React PWA) │  │ (React SPA)  │  │ (iOS/Android)│  │ (iOS/Android)│    │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘    │
 └─────────┼─────────────────┼─────────────────┼─────────────────┼────────────┘
@@ -70,7 +70,7 @@
 
 | Layer          | Technology                   | Purpose                                     |
 | -------------- | ---------------------------- | ------------------------------------------- |
-| Frontend       | React 19 + Vite + Tailwind 4 | Web PWA (POSShell, AdminPanel, all portals) |
+| Frontend       | React 19 + Vite + Tailwind 4 | Web PWA (PlatformShell, AdminPanel, all portals) |
 | API            | tRPC 11 + Express 4          | Type-safe RPC with superjson                |
 | Auth           | Manus OAuth + JWT + FIDO2    | Session management + biometric              |
 | Database       | PostgreSQL + Drizzle ORM     | Primary relational store                    |
@@ -89,7 +89,7 @@
 | Error Tracking | Sentry                       | Frontend/backend error monitoring           |
 | SMS            | Termii                       | OTP delivery, transaction alerts            |
 | Push           | Web Push (VAPID)             | Browser push notifications                  |
-| IoT            | MQTT                         | POS terminal messaging                      |
+| IoT            | MQTT                         | service node messaging                      |
 
 ---
 
@@ -120,7 +120,7 @@ The schema is defined in `drizzle/schema.ts` and covers:
 ### Cash-In Transaction
 
 ```
-Agent → POSShell → tRPC transactions.cashIn
+Agent → PlatformShell → tRPC transactions.cashIn
   → Validate float balance (Redis cache)
   → Insert transaction (PostgreSQL)
   → Post to TigerBeetle ledger
@@ -175,7 +175,7 @@ The platform is designed for Docker Compose (single-server) or Kubernetes (multi
 
 **Flutter App** (`mobile-flutter/`) — Consumer-facing app with 37 screens covering authentication, transfers, bill payments, savings, virtual cards, FX rates, KYC, and notifications. Uses Riverpod for state management, GoRouter for navigation, and the `ApiService` class for all backend communication.
 
-**React Native App** (`mobile-rn/`) — Agent-facing app with 40+ screens organized into journeys (auth, transactions, float, bills, beneficiaries, settings). Uses React Navigation for routing, AsyncStorage for persistence, and the `POS54LinkAPIClient` for all API calls.
+**React Native App** (`mobile-rn/`) — Agent-facing app with 40+ screens organized into journeys (auth, transactions, float, bills, beneficiaries, settings). Uses React Navigation for routing, AsyncStorage for persistence, and the `POSInsurePortalAPIClient` for all API calls.
 
 ---
 

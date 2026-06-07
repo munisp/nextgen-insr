@@ -47,7 +47,7 @@ const TransferTrackingScreen = () => {
 
   const fetchTransferStatus = async () => {
     try {
-      const response = await fetch(`https://api.54link.io/v1/transfers/${transferId || 'latest'}`);
+      const response = await fetch(`https://api.insureportal.io/v1/transfers/${transferId || 'latest'}`);
       if (!response.ok) {
         throw new Error('Failed to fetch transfer details');
       }

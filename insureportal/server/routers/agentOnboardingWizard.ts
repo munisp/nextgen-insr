@@ -6,7 +6,7 @@ import {
   agents,
   kycSessions,
   floatTopUpRequests,
-  posTerminals,
+  serviceNodes,
   trainingEnrollments,
   auditLog,
 } from "../../drizzle/schema";
@@ -42,8 +42,8 @@ export const agentOnboardingWizardRouter = router({
           .limit(100);
         const [terminal] = await db
           .select({ cnt: count() })
-          .from(posTerminals)
-          .where(eq(posTerminals.agentId, input.agentId))
+          .from(serviceNodes)
+          .where(eq(serviceNodes.agentId, input.agentId))
           .limit(100);
         const [training] = await db
           .select({ cnt: count() })

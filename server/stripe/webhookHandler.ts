@@ -1,5 +1,5 @@
 /**
- * Stripe Webhook Handler — 54Link POS Shell
+ * Stripe Webhook Handler — InsurePortal InsurePortal Platform
  *
  * Handles incoming Stripe webhook events for payment confirmations,
  * subscription updates, invoice processing, dunning workflows,
@@ -144,7 +144,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
             transactionId: Math.floor(Math.random() * 1000000),
             tenantId,
             agentId: 0,
-            posTerminalId: 0,
+            serviceNodeId: 0,
             transactionType: "commission",
             grossAmount: String(amount / 100),
             platformShare: String(Math.round(amount * 0.15) / 100),

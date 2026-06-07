@@ -186,7 +186,7 @@ export default function NetworkStatusDashboard() {
 
   const navItems = [
     { label: "Overview", href: "/network-status" },
-    { label: "POS Terminal", href: "/" },
+    { label: "Service Node", href: "/" },
     { label: "Admin", href: "/admin" },
   ];
 

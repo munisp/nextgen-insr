@@ -186,7 +186,7 @@ export default function AgentLogin() {
           className="text-2xl font-bold text-white"
           style={{ fontFamily: DISP }}
         >
-          54Link POS
+          InsurePortal POS
         </div>
         <div className="text-xs text-gray-500 mt-1">
           Agency Banking Terminal

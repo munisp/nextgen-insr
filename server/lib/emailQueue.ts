@@ -13,7 +13,7 @@
  *   SMTP_PORT        - SMTP port (default: 587)
  *   SMTP_USER        - SMTP username / API key
  *   SMTP_PASS        - SMTP password / API key
- *   SMTP_FROM        - From address (e.g., "54Link POS <noreply@54link.io>")
+ *   SMTP_FROM        - From address (e.g., "InsurePortal POS <noreply@insureportal.io>")
  *   SMTP_SECURE      - "true" for TLS on port 465 (default: false)
  *
  * Usage:
@@ -43,7 +43,7 @@ interface EmailJob {
 const queue: EmailJob[] = [];
 let workerRunning = false;
 
-const DEFAULT_FROM = process.env.SMTP_FROM ?? "54Link POS <noreply@54link.io>";
+const DEFAULT_FROM = process.env.SMTP_FROM ?? "InsurePortal POS <noreply@insureportal.io>";
 const MAX_ATTEMPTS = 3;
 const BASE_RETRY_MS = 5_000; // 5s base, doubles each retry
 
@@ -224,7 +224,7 @@ export function buildTransactionReceiptEmail(opts: {
 
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:8px;">
-      <h2 style="color:#1d4ed8;margin-bottom:4px;">54Link POS</h2>
+      <h2 style="color:#1d4ed8;margin-bottom:4px;">InsurePortal POS</h2>
       <p style="color:#6b7280;margin-top:0;">Transaction Receipt</p>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;" />
       <table style="width:100%;border-collapse:collapse;">
@@ -238,11 +238,11 @@ export function buildTransactionReceiptEmail(opts: {
         <tr><td style="padding:6px 0;color:#6b7280;">Date</td><td style="padding:6px 0;">${opts.timestamp.toLocaleString("en-NG")}</td></tr>
       </table>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;" />
-      <p style="color:#6b7280;font-size:12px;margin:0;">This is an automated receipt from 54Link POS. Do not reply to this email.</p>
+      <p style="color:#6b7280;font-size:12px;margin:0;">This is an automated receipt from InsurePortal POS. Do not reply to this email.</p>
     </div>
   `;
 
-  const text = `54Link POS — Transaction Receipt\n\nRef: ${opts.ref}\nType: ${opts.type}\nAmount: ${amountStr}\nFee: ${feeStr}\nCommission: ${commStr}\nAgent: ${opts.agentName} (${opts.agentCode})\nDate: ${opts.timestamp.toLocaleString("en-NG")}`;
+  const text = `InsurePortal POS — Transaction Receipt\n\nRef: ${opts.ref}\nType: ${opts.type}\nAmount: ${amountStr}\nFee: ${feeStr}\nCommission: ${commStr}\nAgent: ${opts.agentName} (${opts.agentCode})\nDate: ${opts.timestamp.toLocaleString("en-NG")}`;
 
   return { subject, html, text };
 }
@@ -340,7 +340,7 @@ export function buildOnboardingCompleteEmail(opts: {
   agentCode: string;
   completedAt: Date;
 }): { subject: string; html: string; text: string } {
-  const subject = `Welcome to 54Link — Onboarding Complete, ${opts.agentName}!`;
+  const subject = `Welcome to InsurePortal — Onboarding Complete, ${opts.agentName}!`;
   const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #ddd6fe;border-radius:8px;background:#faf5ff;"><h2 style="color:#5b21b6;">🎉 Onboarding Complete!</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentCode}),</p><p>All 5 onboarding steps completed. You are now fully activated.</p><p style="color:#6b7280;font-size:12px;">Completed: ${opts.completedAt.toLocaleString("en-NG")}</p></div>`;
   const text = `Onboarding Complete!\n\nDear ${opts.agentName} (${opts.agentCode}),\nAll 5 steps completed.\nCompleted: ${opts.completedAt.toLocaleString("en-NG")}`;
   return { subject, html, text };

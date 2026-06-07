@@ -59,7 +59,7 @@ const ReferralProgramScreen = () => {
   const handleShare = async () => {
     try {
       const result = await Share.share({
-        message: `Join me on 54Link Agency Banking! Use my referral code ${referralCode} to get started. Download here: https://54link.io/download`,
+        message: `Join me on InsurePortal Agency Banking! Use my referral code ${referralCode} to get started. Download here: https://insureportal.io/download`,
       });
       if (result.action === Share.sharedAction) {
         if (result.activityType) {

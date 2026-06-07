@@ -1,4 +1,4 @@
-// Settings Screen for React Native — 54Link Agency Banking
+// Settings Screen for React Native — InsurePortal Agency Banking
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, Alert,
@@ -84,7 +84,7 @@ export default function SettingsScreen({ navigation }: any) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => {
         Alert.alert('Confirmation Required', 'Please contact support to complete account deletion.', [
-          { text: 'Contact Support', onPress: () => Linking.openURL('mailto:support@54link.io') },
+          { text: 'Contact Support', onPress: () => Linking.openURL('mailto:support@insureportal.io') },
           { text: 'Cancel', style: 'cancel' },
         ]);
       }},
@@ -148,16 +148,16 @@ export default function SettingsScreen({ navigation }: any) {
       </Section>
       <Section title="About">
         <View style={styles.row}><Text style={styles.rowLabel}>App Version</Text><Text style={styles.rowValue}>{appVersion}</Text></View>
-        <ActionRow label="Terms of Service" onPress={() => Linking.openURL('https://54link.io/terms')} />
-        <ActionRow label="Privacy Policy" onPress={() => Linking.openURL('https://54link.io/privacy')} />
-        <ActionRow label="Contact Support" onPress={() => Linking.openURL('mailto:support@54link.io')} />
+        <ActionRow label="Terms of Service" onPress={() => Linking.openURL('https://insureportal.io/terms')} />
+        <ActionRow label="Privacy Policy" onPress={() => Linking.openURL('https://insureportal.io/privacy')} />
+        <ActionRow label="Contact Support" onPress={() => Linking.openURL('mailto:support@insureportal.io')} />
       </Section>
       <Section title="Danger Zone">
         <ActionRow label="Delete Account" description="Permanently delete your account and all data" onPress={handleDeleteAccount} destructive />
       </Section>
       <View style={styles.footer}>
-        <Text style={styles.footerText}>54Link Agency Banking Platform</Text>
-        <Text style={styles.footerText}>© 2024-2026 54Link. All rights reserved.</Text>
+        <Text style={styles.footerText}>InsurePortal Agency Banking Platform</Text>
+        <Text style={styles.footerText}>© 2024-2026 InsurePortal. All rights reserved.</Text>
       </View>
     </ScrollView>
   );

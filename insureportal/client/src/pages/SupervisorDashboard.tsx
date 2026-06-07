@@ -192,7 +192,7 @@ export default function SupervisorDashboard() {
             className="px-6 py-3 rounded-xl font-bold text-white"
             style={{ background: BLUE, fontFamily: DISP }}
           >
-            ← Return to POS Terminal
+            ← Return to Service Node
           </a>
         </div>
       </div>

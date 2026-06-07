@@ -91,13 +91,13 @@ async function runRetryBatch(): Promise<void> {
       const webhookUrl = cfg.baseUrl.endsWith("/")
         ? cfg.baseUrl.slice(0, -1)
         : cfg.baseUrl;
-      const res = await fetch(`${webhookUrl}/api/54link/sync`, {
+      const res = await fetch(`${webhookUrl}/api/insureportal/sync`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${cfg.apiKey ?? ""}`,
           "X-ERP-Type": cfg.erpType ?? "custom",
-          "X-54Link-Retry": String(record.retryCount + 1),
+          "X-InsurePortal-Retry": String(record.retryCount + 1),
         },
         body: JSON.stringify({
           entityType: record.entityType,

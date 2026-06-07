@@ -17,7 +17,7 @@ import { APIClient } from '../api/APIClient';
 const apiClient = new APIClient();
 
 
-// 54Link Brand Colors
+// InsurePortal Brand Colors
 const COLORS = {
   primary: '#6C63FF',
   background: '#1A1A2E',
@@ -29,7 +29,7 @@ const COLORS = {
   success: '#4CAF50',
 };
 
-const BASE_URL = 'https://api.54link.io/v1';
+const BASE_URL = 'https://api.insureportal.io/v1';
 
 export const AddBeneficiaryScreen = () => {
   const navigation = useNavigation();

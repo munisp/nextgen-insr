@@ -76,8 +76,8 @@ export class KafkaConnector {
   constructor(config?: Partial<KafkaConfig>) {
     this.config = {
       brokers: (process.env.KAFKA_BROKERS ?? "localhost:9092").split(","),
-      clientId: process.env.KAFKA_CLIENT_ID ?? "pos-shell",
-      groupId: process.env.KAFKA_GROUP_ID ?? "pos-shell-group",
+      clientId: process.env.KAFKA_CLIENT_ID ?? "platform-shell",
+      groupId: process.env.KAFKA_GROUP_ID ?? "platform-shell-group",
       ...config,
     };
   }
@@ -253,7 +253,7 @@ export class TemporalConnector {
     workflowId: string,
     workflowType: string,
     args: any[],
-    taskQueue: string = "pos-shell"
+    taskQueue: string = "platform-shell"
   ): Promise<string | null> {
     if (!canAttempt("temporal")) return null;
     try {
@@ -308,8 +308,8 @@ export class KeycloakConnector {
       process.env.KEYCLOAK_URL ??
       process.env.OAUTH_SERVER_URL ??
       "http://localhost:8080";
-    this.realm = process.env.KEYCLOAK_REALM ?? "pos-shell";
-    this.clientId = process.env.KEYCLOAK_CLIENT_ID ?? "pos-shell-app";
+    this.realm = process.env.KEYCLOAK_REALM ?? "platform-shell";
+    this.clientId = process.env.KEYCLOAK_CLIENT_ID ?? "platform-shell-app";
     this.clientSecret = process.env.KEYCLOAK_CLIENT_SECRET ?? "";
   }
 
@@ -518,7 +518,7 @@ export class MojalloopConnector {
 
   constructor() {
     this.hubUrl = process.env.MOJALOOP_HUB_URL ?? "http://localhost:4000";
-    this.dfspId = process.env.MOJALOOP_DFSP_ID ?? "pos-shell-dfsp";
+    this.dfspId = process.env.MOJALOOP_DFSP_ID ?? "platform-shell-dfsp";
   }
 
   async initiateTransfer(transfer: {
@@ -801,7 +801,7 @@ export class LakehouseConnector {
         method: "POST",
         headers: {
           "Content-Type": "text/plain",
-          "X-Trino-User": "pos-shell",
+          "X-Trino-User": "platform-shell",
           "X-Trino-Catalog": this.catalog,
           "X-Trino-Schema": this.schema,
         },

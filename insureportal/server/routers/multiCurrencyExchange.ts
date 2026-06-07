@@ -130,7 +130,7 @@ const getStats = publicProcedure
       return {
         supportedCurrencies: 15,
         activePairs: 42,
-        corridors: ["NGN-USD", "NGN-GBP", "NGN-EUR", "USD-GBP", "EUR-GBP"],
+        regions: ["NGN-USD", "NGN-GBP", "NGN-EUR", "USD-GBP", "EUR-GBP"],
         dailyVolume: 125000000,
         lastRateUpdate: new Date().toISOString(),
       };
@@ -143,7 +143,7 @@ const getStats = publicProcedure
       });
     }
   });
-const getCorridors = protectedProcedure
+const getRegions = protectedProcedure
   .input(
     z.object({
       page: z.number().optional(),
@@ -217,6 +217,6 @@ export const multiCurrencyExchangeRouter = router({
   convert,
   getHistory,
   getStats,
-  getCorridors,
+  getRegions,
   setSpread,
 });

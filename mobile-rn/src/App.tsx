@@ -1,5 +1,5 @@
 /**
- * 54Link Nigerian Remittance — React Native App Entry
+ * InsurePortal Nigerian Remittance — React Native App Entry
  * Full navigation setup with all 40 screens registered.
  */
 import React, { useEffect, useState } from 'react';

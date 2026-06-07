@@ -235,7 +235,7 @@ export async function initiateMobileMoneyTransfer(params: {
 
   // Initiate transfer
   const result = await mojaloop.initiateTransfer({
-    payerFsp: "pos-shell-dfsp",
+    payerFsp: "platform-shell-dfsp",
     payeeFsp: payee?.party?.partyIdInfo?.fspId ?? "unknown-dfsp",
     amount: { amount: params.amount, currency: params.currency },
     transferId,

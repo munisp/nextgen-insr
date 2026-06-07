@@ -1,5 +1,5 @@
 /**
- * Global Search Router — 54Link Agency Banking Platform
+ * Global Search Router — InsurePortal Agency Banking Platform
  *
  * Unified search across agents, transactions, customers, disputes.
  * Features:

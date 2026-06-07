@@ -1,14 +1,14 @@
-# 54Link Agency Banking Platform — Production Readiness Scorecard
+# InsurePortal Agency Banking Platform — Production Readiness Scorecard
 
 **Date:** 1 April 2026  
 **Version:** Phase 105 (Post-Production Completions)  
-**Repository:** `pos-shell-demo` (54Link Agency Banking Platform)
+**Repository:** `platform-shell-demo` (InsurePortal Agency Banking Platform)
 
 ---
 
 ## Executive Summary
 
-The 54Link Agency Banking Platform is a full-stack, multi-service agency banking solution built for the Nigerian fintech market. It covers the complete lifecycle of an agent banking operation: POS terminal transactions, fraud detection, compliance, settlement, merchant management, developer API access, and regulatory reporting.
+The InsurePortal Agency Banking Platform is a full-stack, multi-service agency banking solution built for the Nigerian fintech market. It covers the complete lifecycle of an agent banking operation: service node transactions, fraud detection, compliance, settlement, merchant management, developer API access, and regulatory reporting.
 
 ---
 
@@ -16,12 +16,12 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 
 | Layer                   | Technology                         | Purpose                                       |
 | ----------------------- | ---------------------------------- | --------------------------------------------- |
-| Frontend                | React 19 + Vite + Tailwind CSS 4   | SPA with POS shell, admin dashboards, portals |
+| Frontend                | React 19 + Vite + Tailwind CSS 4   | SPA with InsurePortal platform, admin dashboards, portals |
 | API Layer               | tRPC 11 + Express 4 + Node.js      | Type-safe RPC with superjson serialisation    |
 | Database                | PostgreSQL (Drizzle ORM)           | Primary data store with 55 tables             |
 | Real-time               | Socket.IO + SSE                    | Live fraud alerts, terminal presence          |
 | Auth                    | Manus OAuth + JWT + FIDO2/WebAuthn | Multi-factor, biometric agent login           |
-| OTA Service             | Go (Gin)                           | Firmware update delivery for POS terminals    |
+| OTA Service             | Go (Gin)                           | Firmware update delivery for service nodes    |
 | FIDO2 Service           | Go (Gin)                           | WebAuthn challenge/verify for biometric auth  |
 | Credit Scoring          | Python (Flask + scikit-learn)      | Agent creditworthiness scoring                |
 | Analytics               | Python (Flask + pandas)            | Transaction success rates, trend analysis     |
@@ -36,7 +36,7 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 
 ## Feature Inventory
 
-### Core POS Terminal (`/`)
+### Core Service Node (`/`)
 
 - Cash In, Cash Out, Transfer, Bill Payment, Airtime, Data
 - Offline queue with IndexedDB + sync-on-reconnect
@@ -264,4 +264,4 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 
 ---
 
-_Generated: 1 April 2026 | 54Link Financial Services Limited_
+_Generated: 1 April 2026 | InsurePortal Financial Services Limited_

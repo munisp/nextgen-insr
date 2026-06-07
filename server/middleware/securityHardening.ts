@@ -1,5 +1,5 @@
 /**
- * Security Hardening Middleware — 54Link POS Shell
+ * Security Hardening Middleware — InsurePortal InsurePortal Platform
  * Sprint 91: Upgraded — removed @ts-nocheck, added brute-force protection,
  * request fingerprinting, anomaly detection, and DDoS mitigation.
  *

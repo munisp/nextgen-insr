@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-POS-54Link Chaos Tester — Automated resilience testing for middleware stack.
+POS-InsurePortal Chaos Tester — Automated resilience testing for middleware stack.
 Injects failures (network partitions, latency, resource exhaustion) and
 validates recovery behavior across all 13 middleware components.
 """
@@ -307,7 +307,7 @@ class ChaosEngine:
 
     async def run_all(self, experiments: list[ChaosExperiment]):
         """Run all experiments sequentially."""
-        logger.info(f"=== POS-54Link Chaos Test Suite — {len(experiments)} experiments ===\n")
+        logger.info(f"=== POS-InsurePortal Chaos Test Suite — {len(experiments)} experiments ===\n")
 
         for i, exp in enumerate(experiments, 1):
             logger.info(f"\n[{i}/{len(experiments)}] ─────────────────────────────────────")
@@ -338,7 +338,7 @@ class ChaosEngine:
 
     def _save_report(self):
         report = {
-            "suite": "POS-54Link Chaos Test",
+            "suite": "POS-InsurePortal Chaos Test",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "total_experiments": len(self.results),
             "passed": sum(1 for r in self.results if r.success),

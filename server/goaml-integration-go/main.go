@@ -847,7 +847,7 @@ func (s *AppState) buildGoAMLReport(filing *Filing) GoAMLReport {
 		ReportDate:      filing.FilingDate.Format("2006-01-02"),
 		ReportingEntity: GoAMLEntity{
 			EntityType:  "institution",
-			FullName:    "54Link Agency Banking Platform",
+			FullName:    "InsurePortal Agency Banking Platform",
 			IDType:      "CBN_LICENSE",
 			IDNumber:    s.config.NFIUInstitutionID,
 			Nationality: "Nigeria",

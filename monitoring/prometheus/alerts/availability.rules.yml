@@ -2,17 +2,17 @@ groups:
   - name: availability_alerts
     interval: 30s
     rules:
-      # ── POS Shell app down ──────────────────────────────────────────────────
+      # ── InsurePortal Platform app down ──────────────────────────────────────────────────
       - alert: PosShellAppDown
-        expr: up{job="pos-shell-app"} == 0
+        expr: up{job="platform-shell-app"} == 0
         for: 1m
         labels:
           severity: critical
           team: backend
         annotations:
-          summary: "POS Shell application is down"
-          description: "The main POS Shell application has been unreachable for > 1 minute. All agent transactions will fail."
-          runbook: "https://wiki.54link.ng/runbooks/app-down"
+          summary: "InsurePortal Platform application is down"
+          description: "The main InsurePortal Platform application has been unreachable for > 1 minute. All agent transactions will fail."
+          runbook: "https://wiki.insureportal.ng/runbooks/app-down"
 
       # ── Fraud engine down ───────────────────────────────────────────────────
       - alert: FraudEngineDown
@@ -57,7 +57,7 @@ groups:
         annotations:
           summary: "HashiCorp Vault is sealed or down"
           description: "Vault is unavailable. Secret injection will fail and services may not start correctly."
-          runbook: "https://wiki.54link.ng/runbooks/vault-sealed"
+          runbook: "https://wiki.insureportal.ng/runbooks/vault-sealed"
 
       # ── PostgreSQL down ─────────────────────────────────────────────────────
       - alert: PostgreSQLDown
@@ -83,18 +83,18 @@ groups:
 
       # ── High error rate ─────────────────────────────────────────────────────
       - alert: HighErrorRate
-        expr: rate(pos54link_http_requests_total{status=~"5.."}[5m]) / rate(pos54link_http_requests_total[5m]) > 0.05
+        expr: rate(posinsureportal_http_requests_total{status=~"5.."}[5m]) / rate(posinsureportal_http_requests_total[5m]) > 0.05
         for: 3m
         labels:
           severity: critical
           team: backend
         annotations:
-          summary: "Error rate > 5% on POS Shell API"
+          summary: "Error rate > 5% on InsurePortal Platform API"
           description: "{{ $value | humanizePercentage }} of API requests are returning 5xx errors over the last 5 minutes."
 
       # ── Low transaction success rate ────────────────────────────────────────
       - alert: LowTransactionSuccessRate
-        expr: rate(pos54link_transactions_total{status="success"}[10m]) / rate(pos54link_transactions_total[10m]) < 0.95
+        expr: rate(posinsureportal_transactions_total{status="success"}[10m]) / rate(posinsureportal_transactions_total[10m]) < 0.95
         for: 5m
         labels:
           severity: critical

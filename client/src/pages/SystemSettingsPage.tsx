@@ -87,7 +87,7 @@ function SystemSettingsContent() {
   const [saved, setSaved] = useState(false);
 
   // General settings
-  const [platformName, setPlatformName] = useState("54Link POS Shell");
+  const [platformName, setPlatformName] = useState("InsurePortal InsurePortal Platform");
   const [defaultCurrency, setDefaultCurrency] = useState("NGN");
   const [timezone, setTimezone] = useState("Africa/Lagos");
   const [maintenanceMode, setMaintenanceMode] = useState(false);

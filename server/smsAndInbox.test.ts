@@ -50,7 +50,7 @@ describe("SMS Service", () => {
       const { sendSms } = await import("./lib/smsService");
       const result = await sendSms({
         to: "08012345678",
-        body: "Hello from 54Link",
+        body: "Hello from InsurePortal",
       });
       expect(result.messageId).toBeDefined();
       expect(typeof result.messageId).toBe("string");

@@ -1,16 +1,16 @@
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: 54link-pubsub
+  name: insureportal-pubsub
   namespace: default
 spec:
   type: pubsub.kafka
   version: v1
   metadata:
     - name: brokers
-      value: "kafka.54link.io:9092"
+      value: "kafka.insureportal.io:9092"
     - name: consumerGroup
-      value: "54link-dapr-consumers"
+      value: "insureportal-dapr-consumers"
     - name: authRequired
       value: "false"
     - name: maxMessageBytes
@@ -22,4 +22,4 @@ spec:
     - name: disableTls
       value: "false"
     - name: clientID
-      value: "54link-dapr-pubsub"
+      value: "insureportal-dapr-pubsub"

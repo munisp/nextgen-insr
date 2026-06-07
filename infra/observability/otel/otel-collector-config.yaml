@@ -1,5 +1,5 @@
 ##
-## 54Link POS Shell — OpenTelemetry Collector Configuration
+## InsurePortal InsurePortal Platform — OpenTelemetry Collector Configuration
 ## Full distributed tracing pipeline for billing microservices
 ##
 
@@ -116,7 +116,7 @@ processors:
         value: production
         action: upsert
       - key: platform
-        value: 54link-billing
+        value: insureportal-billing
         action: upsert
       - key: region
         value: af-west-1
@@ -192,7 +192,7 @@ exporters:
     endpoint: 0.0.0.0:8889
     namespace: billing
     const_labels:
-      platform: 54link
+      platform: insureportal
 
   # Loki for logs
   loki:
@@ -210,7 +210,7 @@ exporters:
   awss3:
     s3uploader:
       region: af-south-1
-      s3_bucket: 54link-billing-traces
+      s3_bucket: insureportal-billing-traces
       s3_prefix: otel-traces
       s3_partition: minute
       file_prefix: billing-trace

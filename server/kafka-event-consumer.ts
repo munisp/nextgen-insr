@@ -44,8 +44,8 @@ export interface KafkaConsumerConfig {
 
 const DEFAULT_CONFIG: KafkaConsumerConfig = {
   brokers: (process.env.KAFKA_BROKERS || "localhost:9092").split(","),
-  groupId: "pos-shell-consumer-group",
-  clientId: "pos-shell-event-consumer",
+  groupId: "platform-shell-consumer-group",
+  clientId: "platform-shell-event-consumer",
   topics: [
     "pos.transactions.events",
     "pos.agents.lifecycle",

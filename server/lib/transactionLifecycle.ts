@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Transaction Lifecycle State Machine — 54Link Agency Banking Platform
+ * Transaction Lifecycle State Machine — InsurePortal Agency Banking Platform
  *
  * Enforces valid state transitions:
  * initiated → validated → processing → processed → settled → reconciled

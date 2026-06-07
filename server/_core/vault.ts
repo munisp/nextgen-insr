@@ -1,5 +1,5 @@
 /**
- * 54Link Vault Client
+ * InsurePortal Vault Client
  * Loads secrets from HashiCorp Vault via AppRole auth on startup.
  * Falls back to environment variables when Vault is unavailable (dev/test).
  *
@@ -13,7 +13,7 @@ const VAULT_ADDR = process.env.VAULT_ADDR ?? "http://localhost:8200";
 const VAULT_ROLE_ID = process.env.VAULT_ROLE_ID ?? "";
 const VAULT_SECRET_ID = process.env.VAULT_SECRET_ID ?? "";
 const VAULT_SECRET_PATH =
-  process.env.VAULT_SECRET_PATH ?? "secret/data/pos-shell-demo";
+  process.env.VAULT_SECRET_PATH ?? "secret/data/platform-shell-demo";
 
 interface VaultTokenResponse {
   auth: { client_token: string };

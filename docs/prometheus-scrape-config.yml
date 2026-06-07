@@ -1,9 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Prometheus Scrape Configuration — 54Link POS Shell
+# Prometheus Scrape Configuration — InsurePortal InsurePortal Platform
 # ─────────────────────────────────────────────────────────────────────────────
 # Add this job to your existing prometheus.yml under the `scrape_configs:` key.
 #
-# The POS Shell exposes metrics at GET /api/metrics in Prometheus text format.
+# The InsurePortal Platform exposes metrics at GET /api/metrics in Prometheus text format.
 # All metrics are prefixed with `pos_` to avoid collision with other services.
 #
 # Metric inventory:
@@ -22,24 +22,24 @@
 
 scrape_configs:
 
-  # ── POS Shell application metrics ──────────────────────────────────────────
-  - job_name: "pos-shell"
+  # ── InsurePortal Platform application metrics ──────────────────────────────────────────
+  - job_name: "platform-shell"
     scrape_interval: 15s
     scrape_timeout: 10s
     metrics_path: /api/metrics
     scheme: https                  # Use http for local dev
     static_configs:
       - targets:
-          - "pos-shell.54link.internal:443"   # Replace with your actual host
+          - "platform-shell.insureportal.internal:443"   # Replace with your actual host
         labels:
           environment: "production"
-          service: "pos-shell"
+          service: "platform-shell"
           region: "ng-west-1"
 
   # ── Local development override ──────────────────────────────────────────────
   # Uncomment for local dev / staging:
   #
-  # - job_name: "pos-shell-dev"
+  # - job_name: "platform-shell-dev"
   #   scrape_interval: 15s
   #   metrics_path: /api/metrics
   #   scheme: http
@@ -48,7 +48,7 @@ scrape_configs:
   #         - "localhost:3000"
   #       labels:
   #         environment: "development"
-  #         service: "pos-shell"
+  #         service: "platform-shell"
 
   # ── Kubernetes pod discovery (if deployed on K8s) ──────────────────────────
   # Uncomment if using Kubernetes and annotate pods with:
@@ -56,11 +56,11 @@ scrape_configs:
   #   prometheus.io/path: "/api/metrics"
   #   prometheus.io/port: "3000"
   #
-  # - job_name: "pos-shell-k8s"
+  # - job_name: "platform-shell-k8s"
   #   kubernetes_sd_configs:
   #     - role: pod
   #       namespaces:
-  #         names: ["pos-shell"]
+  #         names: ["platform-shell"]
   #   relabel_configs:
   #     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
   #       action: keep

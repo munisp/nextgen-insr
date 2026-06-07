@@ -2,7 +2,7 @@
  * E2E: Partner Onboarding Wizard — Full Flow
  *
  * Critical flow: Tests the complete white-label partner registration
- * Steps: Invite Code → Company Details → Branding → Corridors & Fees → Go Live
+ * Steps: Invite Code → Company Details → Branding → Regions & Fees → Go Live
  * Prerequisites: Dev server running, valid invite code in seed data
  */
 import { test, expect } from "@playwright/test";

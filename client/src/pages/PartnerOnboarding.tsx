@@ -45,7 +45,7 @@ const STEPS = [
   },
   {
     id: 4,
-    label: "Corridors & Fees",
+    label: "Regions & Fees",
     icon: DollarSign,
     description: "Set up remittance routes",
   },
@@ -83,8 +83,8 @@ export default function PartnerOnboarding() {
   const [tagline, setTagline] = useState("");
   const [fontFamily, setFontFamily] = useState("Inter");
 
-  // Step 4 corridors
-  const [corridors, setCorridors] = useState<
+  // Step 4 regions
+  const [regions, setRegions] = useState<
     Array<{
       sourceCountry: string;
       sourceCurrency: string;
@@ -123,8 +123,8 @@ export default function PartnerOnboarding() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  const addCorridor = trpc.partnerOnboarding.addCorridor.useMutation({
-    onSuccess: () => toast.success("Corridor added!"),
+  const addRegion = trpc.partnerOnboarding.addRegion.useMutation({
+    onSuccess: () => toast.success("Region added!"),
     onError: (err: any) => toast.error(err.message),
   });
 
@@ -189,9 +189,9 @@ export default function PartnerOnboarding() {
     });
   }
 
-  function handleAddCorridor() {
+  function handleAddRegion() {
     if (!tenantId) return;
-    addCorridor.mutate({
+    addRegion.mutate({
       // @ts-ignore Sprint 85
       tenantId,
       sourceCountry: newCorrSrc,
@@ -199,7 +199,7 @@ export default function PartnerOnboarding() {
       destinationCountry: newCorrDst,
       destinationCurrency: newCorrDstCur,
     });
-    setCorridors(prev => [
+    setRegions(prev => [
       ...prev,
       {
         sourceCountry: newCorrSrc,
@@ -587,20 +587,20 @@ export default function PartnerOnboarding() {
           </Card>
         )}
 
-        {/* Step 4: Corridors & Fees */}
+        {/* Step 4: Regions & Fees */}
         {step === 4 && (
           <Card className="max-w-3xl mx-auto">
             <CardHeader>
-              <CardTitle>Remittance Corridors & Fee Structure</CardTitle>
+              <CardTitle>Remittance Regions & Fee Structure</CardTitle>
               <CardDescription>
-                Define which corridors you want to operate and set your fee
+                Define which regions you want to operate and set your fee
                 structure
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Add corridor */}
+              {/* Add region */}
               <div>
-                <Label className="mb-2 block">Add Corridor</Label>
+                <Label className="mb-2 block">Add Region</Label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <Label className="text-xs">Source Country</Label>
@@ -636,17 +636,17 @@ export default function PartnerOnboarding() {
                   </div>
                 </div>
                 <Button
-                  onClick={handleAddCorridor}
+                  onClick={handleAddRegion}
                   size="sm"
                   className="mt-2"
-                  disabled={addCorridor.isPending}
+                  disabled={addRegion.isPending}
                 >
-                  Add Corridor
+                  Add Region
                 </Button>
               </div>
 
-              {/* Corridors list */}
-              {corridors.length > 0 && (
+              {/* Regions list */}
+              {regions.length > 0 && (
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50">
@@ -657,7 +657,7 @@ export default function PartnerOnboarding() {
                       </tr>
                     </thead>
                     <tbody>
-                      {corridors.map((c, i) => (
+                      {regions.map((c, i) => (
                         <tr key={i} className="border-t">
                           <td className="px-4 py-2">
                             {c.sourceCountry} → {c.destinationCountry}
@@ -780,12 +780,12 @@ export default function PartnerOnboarding() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Corridors
+                      Regions
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="font-semibold">
-                      {corridors.length} corridor(s)
+                      {regions.length} region(s)
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Fee: {feeValue}
@@ -840,7 +840,7 @@ export default function PartnerOnboarding() {
                     className="grid grid-cols-3 gap-4 px-6 py-8"
                     style={{ backgroundColor: secondaryColor + "20" }}
                   >
-                    {corridors.slice(0, 3).map((c, i) => (
+                    {regions.slice(0, 3).map((c, i) => (
                       <div
                         key={i}
                         className="text-center p-4 rounded-lg"

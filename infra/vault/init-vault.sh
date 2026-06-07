@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# 54Link Vault Initialisation Script
+# InsurePortal Vault Initialisation Script
 # Run ONCE after first `docker-compose up vault` to initialise and unseal Vault
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -55,13 +55,13 @@ curl -sf -X POST "${VAULT_ADDR}/v1/sys/mounts/transit" \
   -d '{"type":"transit"}' > /dev/null || true
 
 echo "==> Creating transit key for PII..."
-curl -sf -X POST "${VAULT_ADDR}/v1/transit/keys/54link-pii" \
+curl -sf -X POST "${VAULT_ADDR}/v1/transit/keys/insureportal-pii" \
   -H "X-Vault-Token: ${ROOT_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"type":"aes256-gcm96"}' > /dev/null || true
 
 echo "==> Writing application policy..."
-curl -sf -X PUT "${VAULT_ADDR}/v1/sys/policies/acl/54link-app" \
+curl -sf -X PUT "${VAULT_ADDR}/v1/sys/policies/acl/insureportal-app" \
   -H "X-Vault-Token: ${ROOT_TOKEN}" \
   -H "Content-Type: application/json" \
   -d "{\"policy\":\"$(cat ./policies/app-policy.hcl | python3 -c "import sys; print(sys.stdin.read().replace('\"','\\\\\"').replace('\n','\\n'))")\"}" > /dev/null
@@ -70,7 +70,7 @@ echo "==> Creating application token..."
 APP_TOKEN=$(curl -sf -X POST "${VAULT_ADDR}/v1/auth/token/create" \
   -H "X-Vault-Token: ${ROOT_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"policies":["54link-app"],"ttl":"8760h","renewable":true}' \
+  -d '{"policies":["insureportal-app"],"ttl":"8760h","renewable":true}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])")
 
 echo ""

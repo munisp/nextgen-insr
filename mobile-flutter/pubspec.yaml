@@ -1,5 +1,5 @@
-name: pos54link
-description: 54Link POS Shell — Flutter app for PAX A920 and Android POS terminals
+name: posinsureportal
+description: InsurePortal InsurePortal Platform — Flutter app for PAX A920 and Android service nodes
 version: 1.0.0+1
 
 environment:

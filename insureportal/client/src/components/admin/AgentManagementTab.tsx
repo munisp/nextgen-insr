@@ -515,7 +515,7 @@ export default function AgentManagementTab() {
               {confirmModal.type === "suspend" &&
                 "The agent will not be able to log in until reactivated."}
               {confirmModal.type === "activate" &&
-                "The agent will regain full access to the POS terminal."}
+                "The agent will regain full access to the service node."}
             </div>
             <div className="flex gap-3">
               <button

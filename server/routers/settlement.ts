@@ -338,7 +338,7 @@ export const settlementRouter = router({
       try {
         const result = await initiateIlpSettlementTransfer({
           batchId: input.batchId,
-          payerFsp: "54link-fsp",
+          payerFsp: "insureportal-fsp",
           payeeFsp: input.payeeFsp,
           amount: input.amount,
           currency: input.currency,

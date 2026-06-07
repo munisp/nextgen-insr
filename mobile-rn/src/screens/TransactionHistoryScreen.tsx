@@ -43,7 +43,7 @@ const TransactionHistoryScreen = () => {
       else setLoading(true);
 
       const response = await fetch(
-        `https://api.54link.io/v1/transactions?page=${pageNum}&limit=20&type=${filterType === 'all' ? '' : filterType}&search=${searchQuery}`
+        `https://api.insureportal.io/v1/transactions?page=${pageNum}&limit=20&type=${filterType === 'all' ? '' : filterType}&search=${searchQuery}`
       );
       const data = await response.json();
 

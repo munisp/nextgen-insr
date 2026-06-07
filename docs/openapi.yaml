@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: 54Link POS Shell — Billing Engine API
+  title: InsurePortal InsurePortal Platform — Billing Engine API
   description: |
-    Comprehensive billing API for the 54Link Agency Banking Platform.
+    Comprehensive billing API for the InsurePortal Agency Banking Platform.
     Covers ledger management, invoice lifecycle, revenue reconciliation,
     tenant onboarding, RBAC, audit trails, and production billing operations.
     
@@ -24,16 +24,16 @@ info:
     - 500: Internal server error
   version: 1.0.0
   contact:
-    name: 54Link Engineering
-    email: engineering@54link.io
+    name: InsurePortal Engineering
+    email: engineering@insureportal.io
   license:
     name: Proprietary
-    url: https://54link.io/license
+    url: https://insureportal.io/license
 
 servers:
-  - url: https://api.54link.io/v1
+  - url: https://api.insureportal.io/v1
     description: Production API
-  - url: https://staging-api.54link.io/v1
+  - url: https://staging-api.insureportal.io/v1
     description: Staging API
   - url: http://localhost:3000/api/trpc
     description: Local development (tRPC)

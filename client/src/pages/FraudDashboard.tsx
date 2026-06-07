@@ -1,6 +1,6 @@
 // SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 /**
- * 54Link — Real-Time Fraud Detection Admin Dashboard
+ * InsurePortal — Real-Time Fraud Detection Admin Dashboard
  * Design: Bloomberg Terminal dark — near-black bg, electric-red alerts, emerald safe
  * Features: Live feed, risk heatmap, SHAP explanations, agent network graph, case management
  */

@@ -97,7 +97,7 @@ test.describe("Agent Logout Flow", () => {
       await logoutBtn.click();
 
       // Should return to login screen
-      await expect(page.locator("text=54Link POS").first()).toBeVisible({
+      await expect(page.locator("text=InsurePortal POS").first()).toBeVisible({
         timeout: 10_000,
       });
 
@@ -115,7 +115,7 @@ test.describe("Agent Logout Flow", () => {
 
     // Should be on login screen, not dashboard
     await expect(
-      page.locator("text=/54Link POS|agent code|login/i").first()
+      page.locator("text=/InsurePortal POS|agent code|login/i").first()
     ).toBeVisible({ timeout: 10_000 });
   });
 });

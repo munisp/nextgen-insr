@@ -165,7 +165,7 @@ export const TransactionDetailsScreen = () => {
 
           {/* Branding Footer */}
           <View style={styles.receiptFooter}>
-            <Text style={styles.footerBrand}>54Link Agency Banking</Text>
+            <Text style={styles.footerBrand}>InsurePortal Agency Banking</Text>
             <Text style={styles.footerTagline}>Secure • Fast • Reliable</Text>
           </View>
         </View>

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-POS-54Link Metrics Collector — Unified metrics aggregation from all 13
+POS-InsurePortal Metrics Collector — Unified metrics aggregation from all 13
 middleware components. Exposes Prometheus-compatible /metrics endpoint and
 pushes to Grafana Cloud / VictoriaMetrics.
 """
@@ -242,7 +242,7 @@ class MetricsAggregator:
     def to_prometheus_format(self) -> str:
         """Export all metrics in Prometheus text format."""
         lines = [
-            "# POS-54Link Middleware Metrics",
+            "# POS-InsurePortal Middleware Metrics",
             f"# Collected at {datetime.now(timezone.utc).isoformat()}",
             f"# Total metrics: {len(self.latest_metrics)}",
             "",
@@ -271,7 +271,7 @@ async def main():
     aggregator = MetricsAggregator()
     aggregator.register_defaults()
 
-    logger.info("=== POS-54Link Metrics Collector ===")
+    logger.info("=== POS-InsurePortal Metrics Collector ===")
     logger.info(f"Registered {len(aggregator.collectors)} collectors")
     logger.info(f"Collection interval: {aggregator.collection_interval}s")
 

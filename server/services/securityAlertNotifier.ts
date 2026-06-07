@@ -130,7 +130,7 @@ function seedDefaults() {
   adminPreferences.set("admin-001", {
     adminId: "admin-001",
     adminName: "System Administrator",
-    adminEmail: "admin@pos-shell.ng",
+    adminEmail: "admin@platform-shell.ng",
     adminPhone: "+2348012345678",
     channels: {
       push: true,
@@ -162,7 +162,7 @@ function seedDefaults() {
   adminPreferences.set("admin-002", {
     adminId: "admin-002",
     adminName: "Security Officer",
-    adminEmail: "security@pos-shell.ng",
+    adminEmail: "security@platform-shell.ng",
     adminPhone: "+2348098765432",
     channels: {
       push: true,
@@ -179,7 +179,7 @@ function seedDefaults() {
       overrideForCritical: true,
     },
     categories: ["ransomware", "exfiltration", "deepfake", "canary_trigger"],
-    webhookUrl: "https://hooks.pos-shell.ng/security-alerts",
+    webhookUrl: "https://hooks.platform-shell.ng/security-alerts",
     slackWebhookUrl: "https://hooks.slack.com/services/T00/B00/xxx",
   });
 
@@ -338,7 +338,7 @@ async function deliverViaEmail(
         formatAlertContent(event),
         "",
         "---",
-        "This is an automated security alert from POS Shell Platform.",
+        "This is an automated security alert from InsurePortal Platform Platform.",
         "To manage your notification preferences, visit the Security Alert Preferences page.",
       ].join("\n"),
     });
@@ -483,7 +483,7 @@ async function deliverViaSlack(
             color: colorMap[event.severity],
             title: formatAlertTitle(event),
             text: formatAlertContent(event),
-            footer: "POS Shell Security Alert System",
+            footer: "InsurePortal Platform Security Alert System",
             ts: Math.floor(event.timestamp / 1000),
           },
         ],

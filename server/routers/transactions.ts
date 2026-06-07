@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * transactions router — all transaction operations for the 54Link POS platform.
+ * transactions router — all transaction operations for the InsurePortal POS platform.
  *
  * Security controls (Phase 44-49):
  *  1. Float lock enforcement — rejects if agent.floatLocked = true
@@ -1963,7 +1963,7 @@ export const transactionsRouter = router({
 
   /**
    * getMyVelocityUsage — returns the agent's tier limits and real-time usage
-   * for the current hour and current day. Used by the POS Shell "My Limits" screen.
+   * for the current hour and current day. Used by the InsurePortal Platform "My Limits" screen.
    */
   getMyVelocityUsage: protectedProcedure.query(async ({ ctx }) => {
     try {

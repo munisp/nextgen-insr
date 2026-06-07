@@ -2170,8 +2170,8 @@
           "notNull": true,
           "default": 0
         },
-        "active_pos_terminals": {
-          "name": "active_pos_terminals",
+        "active_service_nodes": {
+          "name": "active_service_nodes",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -9708,7 +9708,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'mqtt://broker.54link.io:1883'"
+          "default": "'mqtt://broker.insureportal.io:1883'"
         },
         "port": {
           "name": "port",
@@ -9743,7 +9743,7 @@
           "type": "varchar(128)",
           "primaryKey": false,
           "notNull": false,
-          "default": "'54link-fluvio-bridge'"
+          "default": "'insureportal-fluvio-bridge'"
         },
         "topicMappings": {
           "name": "topicMappings",
@@ -9915,10 +9915,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "multi_sim_profiles_terminalId_pos_terminals_id_fk": {
-          "name": "multi_sim_profiles_terminalId_pos_terminals_id_fk",
+        "multi_sim_profiles_terminalId_service_nodes_id_fk": {
+          "name": "multi_sim_profiles_terminalId_service_nodes_id_fk",
           "tableFrom": "multi_sim_profiles",
-          "tableTo": "pos_terminals",
+          "tableTo": "service_nodes",
           "columnsFrom": ["terminalId"],
           "columnsTo": ["id"],
           "onDelete": "no action",
@@ -10683,8 +10683,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "pos_terminal_id": {
-          "name": "pos_terminal_id",
+        "service_node_id": {
+          "name": "service_node_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -11206,8 +11206,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.pos_terminals": {
-      "name": "pos_terminals",
+    "public.service_nodes": {
+      "name": "service_nodes",
       "schema": "",
       "columns": {
         "id": {
@@ -11400,8 +11400,8 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "pos_terminals_serialNumber_unique": {
-          "name": "pos_terminals_serialNumber_unique",
+        "service_nodes_serialNumber_unique": {
+          "name": "service_nodes_serialNumber_unique",
           "nullsNotDistinct": false,
           "columns": ["serialNumber"]
         }
@@ -12633,10 +12633,10 @@
         }
       },
       "foreignKeys": {
-        "service_records_terminalId_pos_terminals_id_fk": {
-          "name": "service_records_terminalId_pos_terminals_id_fk",
+        "service_records_terminalId_service_nodes_id_fk": {
+          "name": "service_records_terminalId_service_nodes_id_fk",
           "tableFrom": "service_records",
-          "tableTo": "pos_terminals",
+          "tableTo": "service_nodes",
           "columnsFrom": ["terminalId"],
           "columnsTo": ["id"],
           "onDelete": "no action",
@@ -13053,14 +13053,14 @@
           "type": "varchar(256)",
           "primaryKey": false,
           "notNull": true,
-          "default": "'https://api.54link.io/api/trpc/simOrchestrator.ingestProbe'"
+          "default": "'https://api.insureportal.io/api/trpc/simOrchestrator.ingestProbe'"
         },
         "apiKey": {
           "name": "apiKey",
           "type": "varchar(128)",
           "primaryKey": false,
           "notNull": true,
-          "default": "'54link-sim-orchestrator-default-key'"
+          "default": "'insureportal-sim-orchestrator-default-key'"
         },
         "enabled": {
           "name": "enabled",
@@ -13501,8 +13501,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.storefront_ads": {
-      "name": "storefront_ads",
+    "public.marketplace_ads": {
+      "name": "marketplace_ads",
       "schema": "",
       "columns": {
         "id": {
@@ -13605,9 +13605,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "storefront_ads_agentId_agents_id_fk": {
-          "name": "storefront_ads_agentId_agents_id_fk",
-          "tableFrom": "storefront_ads",
+        "marketplace_ads_agentId_agents_id_fk": {
+          "name": "marketplace_ads_agentId_agents_id_fk",
+          "tableFrom": "marketplace_ads",
           "tableTo": "agents",
           "columnsFrom": ["agentId"],
           "columnsTo": ["id"],

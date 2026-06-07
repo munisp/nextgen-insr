@@ -1,5 +1,5 @@
 """
-analytics-service — 54Link Nigeria Transaction Success-Rate Analytics
+analytics-service — InsurePortal Nigeria Transaction Success-Rate Analytics
 ======================================================================
 A FastAPI service that queries PostgreSQL directly and computes rolling
 statistics used by the POS Admin Panel and home-screen success badge.
@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 logging.basicConfig(level=logging.INFO, format="[analytics] %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="54Link Analytics Service", version="1.0.0")
+app = FastAPI(title="InsurePortal Analytics Service", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

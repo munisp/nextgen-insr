@@ -1,7 +1,7 @@
 /**
  * MQTTBridgeTab — Fluvio MQTT Source Connector configuration UI
  * Allows admins to configure, test, publish synthetic events, and generate
- * InfinyOn connector YAML for bridging POS terminal MQTT events into Fluvio topics.
+ * InfinyOn connector YAML for bridging service node MQTT events into Fluvio topics.
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -95,12 +95,12 @@ export function MQTTBridgeTab() {
   });
 
   // ── Local form state ──────────────────────────────────────────────────────────
-  const [brokerUrl, setBrokerUrl] = useState("mqtt://broker.54link.io:1883");
+  const [brokerUrl, setBrokerUrl] = useState("mqtt://broker.insureportal.io:1883");
   const [port, setPort] = useState(1883);
   const [useTls, setUseTls] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [clientId, setClientId] = useState("54link-fluvio-bridge");
+  const [clientId, setClientId] = useState("insureportal-fluvio-bridge");
   const [qos, setQos] = useState<"0" | "1" | "2">("1");
   const [keepAlive, setKeepAlive] = useState(60);
   const [enabled, setEnabled] = useState(false);
@@ -133,12 +133,12 @@ export function MQTTBridgeTab() {
 
   // Populate form from server data once
   if (config && !initialized) {
-    setBrokerUrl(config.brokerUrl ?? "mqtt://broker.54link.io:1883");
+    setBrokerUrl(config.brokerUrl ?? "mqtt://broker.insureportal.io:1883");
     setPort(config.port ?? 1883);
     setUseTls(config.useTls ?? false);
     setUsername(config.username ?? "");
     setPassword(config.password ?? "");
-    setClientId(config.clientId ?? "54link-fluvio-bridge");
+    setClientId(config.clientId ?? "insureportal-fluvio-bridge");
     setQos((config.qos as "0" | "1" | "2") ?? "1");
     setKeepAlive(config.keepAliveSeconds ?? 60);
     setEnabled(config.enabled ?? false);
@@ -250,7 +250,7 @@ export function MQTTBridgeTab() {
         <div>
           <h2 className="text-xl font-semibold">MQTT Bridge Configuration</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure InfinyOn MQTT Source Connector to bridge POS terminal
+            Configure InfinyOn MQTT Source Connector to bridge service node
             events into Fluvio topics.
           </p>
         </div>
@@ -307,11 +307,11 @@ export function MQTTBridgeTab() {
                 <Input
                   value={brokerUrl}
                   onChange={e => setBrokerUrl(e.target.value)}
-                  placeholder="mqtt://broker.54link.io:1883"
+                  placeholder="mqtt://broker.insureportal.io:1883"
                 />
                 <p className="text-xs text-muted-foreground">
                   Use <code>mqtt://</code> or <code>mqtts://</code> for TLS.
-                  Default: <code>mqtt://broker.54link.io:1883</code>
+                  Default: <code>mqtt://broker.insureportal.io:1883</code>
                 </p>
               </div>
               <div className="space-y-1">
@@ -328,7 +328,7 @@ export function MQTTBridgeTab() {
                 <Input
                   value={clientId}
                   onChange={e => setClientId(e.target.value)}
-                  placeholder="54link-fluvio-bridge"
+                  placeholder="insureportal-fluvio-bridge"
                 />
               </div>
               <div className="space-y-1">

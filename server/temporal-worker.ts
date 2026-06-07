@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link POS — Temporal Worker Process
+ * InsurePortal POS — Temporal Worker Process
  * Run: npx tsx server/temporal-worker.ts
  * Or via Docker: CMD ["node", "dist/temporal-worker.js"]
  *
@@ -17,7 +17,7 @@ import {
 import * as activities from "./temporal-activities";
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";
-const TEMPORAL_NAMESPACE = process.env.TEMPORAL_NAMESPACE ?? "54link";
+const TEMPORAL_NAMESPACE = process.env.TEMPORAL_NAMESPACE ?? "insureportal";
 const TASK_QUEUE = process.env.TEMPORAL_TASK_QUEUE ?? "settlement-queue";
 
 /**

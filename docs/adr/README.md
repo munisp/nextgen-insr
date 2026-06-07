@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-This directory contains the Architecture Decision Records for the 54Link POS Shell platform.
+This directory contains the Architecture Decision Records for the InsurePortal InsurePortal Platform platform.
 
 ## Index
 

@@ -1,12 +1,12 @@
 /**
- * 54Link POS Shell -- Service Worker v4
+ * InsurePortal InsurePortal Platform -- Service Worker v4
  * Features: Web Push (failover/fraud/float/settlement), offline shell cache,
  * background sync for offline TX queue, periodic sync for fraud status.
  */
 const CACHE_VERSION = "v5";
-const SHELL_CACHE = `54link-shell-${CACHE_VERSION}`;
-const API_CACHE = `54link-api-${CACHE_VERSION}`;
-const DATA_CACHE = `54link-data-${CACHE_VERSION}`;
+const SHELL_CACHE = `insureportal-shell-${CACHE_VERSION}`;
+const API_CACHE = `insureportal-api-${CACHE_VERSION}`;
+const DATA_CACHE = `insureportal-data-${CACHE_VERSION}`;
 const SHELL_ASSETS = ["/", "/offline.html", "/manifest.json", "/favicon.ico"];
 
 // API routes to cache with network-first strategy (old data OK)
@@ -39,7 +39,7 @@ self.addEventListener("activate", event => {
           keys
             .filter(
               k =>
-                k.startsWith("54link-") && k !== SHELL_CACHE && k !== API_CACHE
+                k.startsWith("insureportal-") && k !== SHELL_CACHE && k !== API_CACHE
             )
             .map(k => caches.delete(k))
         )
@@ -148,7 +148,7 @@ self.addEventListener("fetch", event => {
       const offlinePage = await cache.match("/offline.html");
       if (offlinePage) return offlinePage;
       return new Response(
-        "<!DOCTYPE html><html><head><title>54Link - Offline</title>" +
+        "<!DOCTYPE html><html><head><title>InsurePortal - Offline</title>" +
           '<meta name="viewport" content="width=device-width,initial-scale=1">' +
           "<style>body{font-family:system-ui;display:flex;align-items:center;justify-content:center;" +
           "min-height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0;text-align:center}" +
@@ -160,7 +160,7 @@ self.addEventListener("fetch", event => {
           "<p>Transactions are safely queued and will sync when you reconnect.</p>" +
           '<div class="q"><p><strong>Offline Mode Active</strong></p>' +
           "<p>Cash-in, cash-out, and balance checks available via SMS.</p>" +
-          "<p>Send <strong>HELP</strong> to your 54Link SMS number.</p></div>" +
+          "<p>Send <strong>HELP</strong> to your InsurePortal SMS number.</p></div>" +
           '<button class="r" onclick="location.reload()">Try Again</button>' +
           "</div></body></html>",
         { status: 200, headers: { "Content-Type": "text/html" } }
@@ -175,7 +175,7 @@ self.addEventListener("push", event => {
     data = event.data ? event.data.json() : {};
   } catch {
     data = {
-      title: "54Link Alert",
+      title: "InsurePortal Alert",
       body: event.data ? event.data.text() : "New alert",
     };
   }
@@ -246,7 +246,7 @@ self.addEventListener("push", event => {
       vibrate = [200];
       break;
     default:
-      title = data.title || "54Link POS";
+      title = data.title || "InsurePortal POS";
       body = data.body || "You have a new notification.";
       tag = data.tag || "notification-" + Date.now();
       requireInteraction = false;
@@ -308,7 +308,7 @@ self.addEventListener("sync", event => {
       (async () => {
         try {
           const db = await new Promise((resolve, reject) => {
-            const req = indexedDB.open("54link_offline_queue", 1);
+            const req = indexedDB.open("insureportal_offline_queue", 1);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);
           });

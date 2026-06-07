@@ -6,9 +6,9 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Full Agent Workflow E2E", () => {
   test("should complete full agent transaction lifecycle", async ({ page }) => {
-    // 1. Navigate to POS Shell
+    // 1. Navigate to InsurePortal Platform
     await page.goto("/");
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal POS")).toBeVisible({
       timeout: 10_000,
     });
 
@@ -63,7 +63,7 @@ test.describe("Full Agent Workflow E2E", () => {
   test("should verify mobile responsive layout", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto("/");
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal POS")).toBeVisible({
       timeout: 10_000,
     });
     const body = await page.textContent("body");

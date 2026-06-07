@@ -18,7 +18,7 @@ import {
   refunds,
   velocityLimits,
   kycSessions,
-  posTerminals,
+  serviceNodes,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -30,7 +30,6 @@ import {
   customers,
   tenants,
   erpSyncLog,
-  storefrontAds,
   vatRecords,
   emailQueue,
   merchants,
@@ -58,7 +57,6 @@ import {
   emailDeliveryLog,
   inviteCodes,
   tenantBranding,
-  tenantCorridors,
   tenantFeeOverrides,
   tenantUsers,
   commissionCascadeHistory,
@@ -135,7 +133,7 @@ export const agentsRelations = relations(agents, ({ one, many }) => ({
   floatTopUpRequests: many(floatTopUpRequests),
   devices: many(devices),
   disputes: many(disputes),
-  posTerminals: many(posTerminals),
+  serviceNodes: many(serviceNodes),
   commissionPayouts: many(commissionPayouts),
   agentPushSubscriptions: many(agentPushSubscriptions),
   agentOnboardingProgress: many(agentOnboardingProgress),
@@ -170,7 +168,6 @@ export const tenantsRelations = relations(tenants, ({ many }) => ({
   agents: many(agents),
   tenantUsers: many(tenantUsers),
   tenantBranding: many(tenantBranding),
-  tenantCorridors: many(tenantCorridors),
   tenantFeeOverrides: many(tenantFeeOverrides),
   tenantFeatureToggles: many(tenantFeatureToggles),
   tenantBillingConfig: many(tenantBillingConfig),
@@ -241,14 +238,14 @@ export const deviceCommandsRelations = relations(deviceCommands, ({ one }) => ({
   }),
 }));
 
-// ─── POS Terminal Relations ────────────────────────────────────────
-export const posTerminalsRelations = relations(posTerminals, ({ one }) => ({
+// ─── Service Node Relations ────────────────────────────────────────
+export const serviceNodesRelations = relations(serviceNodes, ({ one }) => ({
   agent: one(agents, {
-    fields: [posTerminals.agentId],
+    fields: [serviceNodes.agentId],
     references: [agents.id],
   }),
   terminalGroup: one(terminalGroups, {
-    fields: [posTerminals.groupId],
+    fields: [serviceNodes.groupId],
     references: [terminalGroups.id],
   }),
 }));
@@ -770,14 +767,14 @@ export const deviceLocationsRelations = relations(deviceLocations, () => ({}));
 
 export const kycSessionsRelations = relations(kycSessions, () => ({}));
 
-export const posTerminalsRelations = relations(posTerminals, () => ({}));
+export const serviceNodesRelations = relations(serviceNodes, () => ({}));
 
 export const terminalGroupsRelations = relations(terminalGroups, () => ({}));
 
 export const serviceRecordsRelations = relations(serviceRecords, ({ one }) => ({
-  posTerminal: one(posTerminals, {
+  serviceNode: one(serviceNodes, {
     fields: [serviceRecords.terminalId],
-    references: [posTerminals.id],
+    references: [serviceNodes.id],
   }),
 }));
 
@@ -792,9 +789,9 @@ export const inventoryItemsRelations = relations(inventoryItems, () => ({}));
 export const multiSimProfilesRelations = relations(
   multiSimProfiles,
   ({ one }) => ({
-    posTerminal: one(posTerminals, {
+    serviceNode: one(serviceNodes, {
       fields: [multiSimProfiles.terminalId],
-      references: [posTerminals.id],
+      references: [serviceNodes.id],
     }),
   })
 );
@@ -812,7 +809,6 @@ export const tenantsRelations = relations(tenants, () => ({}));
 
 export const erpSyncLogRelations = relations(erpSyncLog, () => ({}));
 
-export const storefrontAdsRelations = relations(storefrontAds, () => ({}));
 
 export const vatRecordsRelations = relations(vatRecords, () => ({}));
 
@@ -997,7 +993,6 @@ export const inviteCodesRelations = relations(inviteCodes, () => ({}));
 
 export const tenantBrandingRelations = relations(tenantBranding, () => ({}));
 
-export const tenantCorridorsRelations = relations(tenantCorridors, () => ({}));
 
 export const tenantFeeOverridesRelations = relations(
   tenantFeeOverrides,

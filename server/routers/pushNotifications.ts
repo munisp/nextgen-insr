@@ -161,7 +161,7 @@ export const pushNotificationsRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const sent = await sendPushToAgent(input.agentCode, {
-          title: "54Link POS — Test Notification",
+          title: "InsurePortal POS — Test Notification",
           body: input.message ?? "Push notifications are working correctly.",
           icon: "/icons/icon-192x192.png",
           badge: "/icons/badge-72x72.png",

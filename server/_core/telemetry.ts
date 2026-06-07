@@ -1,5 +1,5 @@
 /**
- * telemetry.ts — OpenTelemetry distributed tracing for 54Link POS Shell
+ * telemetry.ts — OpenTelemetry distributed tracing for InsurePortal InsurePortal Platform
  *
  * Instruments:
  *  - HTTP requests (Express)
@@ -11,7 +11,7 @@
  *
  * Environment variables:
  *  - OTEL_EXPORTER_OTLP_ENDPOINT  e.g. http://jaeger:4318
- *  - OTEL_SERVICE_NAME             defaults to "pos-shell"
+ *  - OTEL_SERVICE_NAME             defaults to "platform-shell"
  *  - OTEL_SERVICE_VERSION          defaults to "1.0.0"
  */
 
@@ -33,7 +33,7 @@ if (!endpoint) {
 } else {
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
-      [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? "pos-shell",
+      [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? "platform-shell",
       [ATTR_SERVICE_VERSION]: process.env.OTEL_SERVICE_VERSION ?? "1.0.0",
     }),
     traceExporter: new OTLPTraceExporter({

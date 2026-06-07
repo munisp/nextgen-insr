@@ -51,7 +51,7 @@ export default function TenantAdminDashboard() {
   const branding = trpc.partnerOnboarding.getBranding.useQuery({
     tenantId: DEMO_TENANT_ID,
   });
-  const corridorsList = trpc.partnerOnboarding.listCorridors.useQuery({
+  const regionsList = trpc.partnerOnboarding.listRegions.useQuery({
     tenantId: DEMO_TENANT_ID,
   });
   const feesList = trpc.partnerOnboarding.listFees.useQuery({
@@ -127,7 +127,7 @@ export default function TenantAdminDashboard() {
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="users">Sub-Users</TabsTrigger>
             <TabsTrigger value="branding">Branding</TabsTrigger>
-            <TabsTrigger value="corridors">Corridors</TabsTrigger>
+            <TabsTrigger value="regions">Regions</TabsTrigger>
             <TabsTrigger value="fees">Fee Overrides</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
@@ -172,12 +172,12 @@ export default function TenantAdminDashboard() {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm text-muted-foreground">
-                    Corridors
+                    Regions
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold">
-                    {corridorsList.data?.length ?? 0}
+                    {regionsList.data?.length ?? 0}
                   </p>
                 </CardContent>
               </Card>
@@ -468,16 +468,16 @@ export default function TenantAdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* Corridors Tab */}
-          <TabsContent value="corridors">
+          {/* Regions Tab */}
+          <TabsContent value="regions">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Globe className="h-5 w-5" /> Remittance Corridors
+                  <Globe className="h-5 w-5" /> Remittance Regions
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {corridorsList.data && corridorsList.data.length > 0 ? (
+                {regionsList.data && regionsList.data.length > 0 ? (
                   <div className="border rounded-lg overflow-hidden">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
@@ -489,7 +489,7 @@ export default function TenantAdminDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {corridorsList.data.map((c: any) => (
+                        {regionsList.data.map((c: any) => (
                           <tr key={c.id} className="border-t">
                             <td className="px-4 py-2 font-medium">
                               {c.sourceCountry} → {c.destinationCountry}
@@ -515,7 +515,7 @@ export default function TenantAdminDashboard() {
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    No corridors configured. Add corridors from the onboarding
+                    No regions configured. Add regions from the onboarding
                     flow.
                   </p>
                 )}

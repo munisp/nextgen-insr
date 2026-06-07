@@ -1,5 +1,5 @@
 /**
- * 54Link POS Shell — Production Readiness Tests
+ * InsurePortal InsurePortal Platform — Production Readiness Tests
  * Tests: agent auth, transaction creation, loyalty, fraud, chat, audit log
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -74,7 +74,7 @@ const MOCK_USER = {
   role: "admin" as const,
   agentCode: "AGT001",
   name: "Test Agent",
-  email: "test@54link.io",
+  email: "test@insureportal.io",
 };
 
 // ─── Test context factory ─────────────────────────────────────────────────────

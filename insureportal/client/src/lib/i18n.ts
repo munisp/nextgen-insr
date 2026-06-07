@@ -3,7 +3,7 @@
  *
  * Supports 6 languages for Nigerian agent banking:
  * - English (en) — Default
- * - French (fr) — West African remittance corridors
+ * - French (fr) — West African insurance markets
  * - Nigerian Pidgin English (pcm) — Most widely spoken lingua franca
  * - Hausa (ha) — Northern Nigeria
  * - Yoruba (yo) — Southwest Nigeria

@@ -1,4 +1,4 @@
-# ─── 54Link Agency Banking Platform — Docker Compose Override ────────────────
+# ─── InsurePortal Agency Banking Platform — Docker Compose Override ────────────────
 # Local development overrides for docker-compose.yml.
 # This file is automatically merged by `docker compose up` in development.
 # DO NOT commit secrets to this file — use .env.local or Docker secrets instead.
@@ -12,7 +12,7 @@ services:
       target: development
     environment:
       - NODE_ENV=development
-      - POSTGRES_URL=postgresql://posadmin:pos54link2026@postgres:5432/pos54link
+      - POSTGRES_URL=postgresql://posadmin:posinsureportal2026@postgres:5432/posinsureportal
       - VITE_DEV_SERVER_PORT=5173
       - LOG_LEVEL=debug
       - FRAUD_ENGINE_ENABLED=true
@@ -34,15 +34,15 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: posadmin
-      POSTGRES_PASSWORD: pos54link2026
-      POSTGRES_DB: pos54link
+      POSTGRES_PASSWORD: posinsureportal2026
+      POSTGRES_DB: posinsureportal
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./drizzle:/docker-entrypoint-initdb.d:ro   # auto-run migrations on first start
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U posadmin -d pos54link"]
+      test: ["CMD-SHELL", "pg_isready -U posadmin -d posinsureportal"]
       interval: 5s
       timeout: 5s
       retries: 10

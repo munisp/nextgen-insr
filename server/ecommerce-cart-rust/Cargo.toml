@@ -2,7 +2,7 @@
 name = "ecommerce-cart"
 version = "1.0.0"
 edition = "2021"
-description = "High-performance shopping cart and checkout engine for POS-54Link"
+description = "High-performance shopping cart and checkout engine for POS-InsurePortal"
 
 [dependencies]
 actix-web = "4"

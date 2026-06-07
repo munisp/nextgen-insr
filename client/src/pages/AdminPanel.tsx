@@ -1,5 +1,5 @@
 /**
- * AdminPanel — 54Link Supervisor / Back-Office Dashboard
+ * AdminPanel — InsurePortal Supervisor / Back-Office Dashboard
  * Route: /admin  (protected — requires agent.role === "admin" OR Manus OAuth admin role)
  *
  * Sections:
@@ -42,7 +42,7 @@ import { FailoverHistoryTab } from "../components/admin/FailoverHistoryTab";
 import { MQTTBridgeTab } from "../components/admin/MQTTBridgeTab";
 import { CoverageMap } from "../components/admin/CoverageMap";
 
-// ─── Design tokens (match POS Shell) ─────────────────────────────────────────
+// ─── Design tokens (match InsurePortal Platform) ─────────────────────────────────────────
 const BG = "#0a0e1a";
 const CARD = "oklch(0.14 0.02 240)";
 const BORDER = "oklch(0.22 0.02 240)";
@@ -474,7 +474,7 @@ function AnalyticsTab() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `54link-transactions-${fromDate}-to-${toDate}.csv`;
+      a.download = `insureportal-transactions-${fromDate}-to-${toDate}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1495,7 +1495,7 @@ export default function AdminPanel() {
             className="px-6 py-3 rounded-xl font-bold text-white"
             style={{ background: BLUE, fontFamily: DISP }}
           >
-            ← Return to POS Terminal
+            ← Return to Service Node
           </a>
         </div>
       </div>
@@ -1578,7 +1578,7 @@ export default function AdminPanel() {
               className="text-sm font-black text-white"
               style={{ fontFamily: DISP }}
             >
-              54Link Admin
+              InsurePortal Admin
             </div>
             <div className="text-xs text-gray-500" style={{ fontFamily: MONO }}>
               Supervisor Dashboard
@@ -1611,7 +1611,7 @@ export default function AdminPanel() {
               fontFamily: DISP,
             }}
           >
-            ← POS Terminal
+            ← Service Node
           </a>
         </div>
       </div>

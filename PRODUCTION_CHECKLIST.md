@@ -1,4 +1,4 @@
-# 54Link Agency Banking Platform — Production Deployment Checklist
+# InsurePortal Agency Banking Platform — Production Deployment Checklist
 
 > Version: Phase 163 | Last updated: April 2026
 
@@ -58,7 +58,7 @@
 ### Monitoring & Observability
 
 - [ ] Deploy Grafana + Prometheus stack
-- [ ] Import 54Link Grafana dashboards from `monitoring/dashboards/`
+- [ ] Import InsurePortal Grafana dashboards from `monitoring/dashboards/`
 - [ ] Configure PagerDuty integration for critical alerts
 - [ ] Set up OpenTelemetry collector (`OTEL_EXPORTER_OTLP_ENDPOINT`)
 - [ ] Configure Sentry error tracking (`SENTRY_DSN`)
@@ -130,7 +130,7 @@ curl https://your-domain.com/api/health
 
 ## Rollback Plan
 
-1. Keep the previous Docker image tagged as `54link-pos:previous`
+1. Keep the previous Docker image tagged as `insureportal-pos:previous`
 2. Database rollback: restore from pre-deployment backup
 3. Run: `docker-compose down && docker-compose -f docker-compose.previous.yml up -d`
 4. Verify health endpoint returns 200
@@ -142,8 +142,8 @@ curl https://your-domain.com/api/health
 
 | Role           | Contact              |
 | -------------- | -------------------- |
-| Platform Lead  | platform@54link.ng   |
-| DevOps         | devops@54link.ng     |
-| CBN Compliance | compliance@54link.ng |
-| Security       | security@54link.ng   |
-| On-call        | pagerduty@54link.ng  |
+| Platform Lead  | platform@insureportal.ng   |
+| DevOps         | devops@insureportal.ng     |
+| CBN Compliance | compliance@insureportal.ng |
+| Security       | security@insureportal.ng   |
+| On-call        | pagerduty@insureportal.ng  |

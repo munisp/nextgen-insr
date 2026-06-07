@@ -26,7 +26,7 @@
  *   /api/v1/cbn
  *   /api/v1/vat
  *   /api/v1/geofencing
- *   /api/v1/storefront-ads
+ *   /api/v1/marketplace-ads
  *   /api/v1/shareable-links
  *   /api/v1/store-map
  *   /api/v1/erp
@@ -46,7 +46,7 @@ import {
   transactions,
   kycSessions,
   commissionRules,
-  posTerminals,
+  serviceNodes,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -55,7 +55,7 @@ import {
   fraudAlerts,
   disputes,
   geofenceZones,
-  storefrontAds,
+  marketplaceAds,
   shareableLinks,
   vatRecords,
   reversalRequests,
@@ -563,7 +563,7 @@ router.get("/pos/terminals", async (req, res) => {
     const { offset, limit } = paginate(req.query);
     const rows = await db
       .select()
-      .from(posTerminals)
+      .from(serviceNodes)
       .offset(offset)
       .limit(limit);
     ok(res, rows);
@@ -578,8 +578,8 @@ router.get("/pos/terminals/:id", async (req, res) => {
     if (!db) return res.status(404).json({ error: "Not found" });
     const [row] = await db
       .select()
-      .from(posTerminals)
-      .where(eq(posTerminals.id, parseInt(req.params.id)));
+      .from(serviceNodes)
+      .where(eq(serviceNodes.id, parseInt(req.params.id)));
     if (!row) return res.status(404).json({ error: "Terminal not found" });
     ok(res, row);
   } catch (e) {
@@ -591,7 +591,7 @@ router.post("/pos/terminals/register", requireAdmin, async (req, res) => {
   try {
     const db = await getDb();
     if (!db) return err(res, "DB unavailable");
-    const [row] = await db.insert(posTerminals).values(req.body).returning();
+    const [row] = await db.insert(serviceNodes).values(req.body).returning();
     ok(res, row);
   } catch (e) {
     err(res, e);
@@ -603,9 +603,9 @@ router.put("/pos/terminals/:id", requireAdmin, async (req, res) => {
     const db = await getDb();
     if (!db) return err(res, "DB unavailable");
     const [row] = await db
-      .update(posTerminals)
+      .update(serviceNodes)
       .set(req.body)
-      .where(eq(posTerminals.id, parseInt(req.params.id)))
+      .where(eq(serviceNodes.id, parseInt(req.params.id)))
       .returning();
     ok(res, row);
   } catch (e) {
@@ -618,8 +618,8 @@ router.delete("/pos/terminals/:id", requireAdmin, async (req, res) => {
     const db = await getDb();
     if (!db) return err(res, "DB unavailable");
     await db
-      .delete(posTerminals)
-      .where(eq(posTerminals.id, parseInt(req.params.id)));
+      .delete(serviceNodes)
+      .where(eq(serviceNodes.id, parseInt(req.params.id)));
     ok(res, { deleted: true });
   } catch (e) {
     err(res, e);
@@ -645,7 +645,7 @@ router.get("/pos/status", async (_req, res) => {
   try {
     const db = await getDb();
     if (!db) return ok(res, { total: 0, active: 0 });
-    const [total] = await db.select({ count: count() }).from(posTerminals);
+    const [total] = await db.select({ count: count() }).from(serviceNodes);
     ok(res, { total: total.count, status: "operational" });
   } catch (e) {
     err(res, e);
@@ -662,8 +662,8 @@ router.get("/pos/terminals/status/:status", async (req, res) => {
     if (!db) return ok(res, []);
     const rows = await db
       .select()
-      .from(posTerminals)
-      .where(eq(posTerminals.status, req.params.status as any));
+      .from(serviceNodes)
+      .where(eq(serviceNodes.status, req.params.status as any));
     ok(res, rows);
   } catch (e) {
     err(res, e);
@@ -676,8 +676,8 @@ router.get("/pos/terminals/maintenance", async (_req, res) => {
     if (!db) return ok(res, []);
     const rows = await db
       .select()
-      .from(posTerminals)
-      .where(eq(posTerminals.status, "maintenance"));
+      .from(serviceNodes)
+      .where(eq(serviceNodes.status, "maintenance"));
     ok(res, rows);
   } catch (e) {
     err(res, e);
@@ -751,8 +751,8 @@ router.get("/pos/terminals/:id/configuration", async (req, res) => {
     if (!db) return ok(res, {});
     const [row] = await db
       .select()
-      .from(posTerminals)
-      .where(eq(posTerminals.id, parseInt(req.params.id)));
+      .from(serviceNodes)
+      .where(eq(serviceNodes.id, parseInt(req.params.id)));
     ok(res, { config: row?.configJson ?? {} });
   } catch (e) {
     err(res, e);
@@ -767,9 +767,9 @@ router.put(
       const db = await getDb();
       if (!db) return err(res, "DB unavailable");
       const [row] = await db
-        .update(posTerminals)
+        .update(serviceNodes)
         .set({ configJson: req.body })
-        .where(eq(posTerminals.id, parseInt(req.params.id)))
+        .where(eq(serviceNodes.id, parseInt(req.params.id)))
         .returning();
       ok(res, row);
     } catch (e) {
@@ -804,7 +804,7 @@ router.get("/pos/reports/terminalstatus", async (_req, res) => {
   try {
     const db = await getDb();
     if (!db) return ok(res, {});
-    const [total] = await db.select({ count: count() }).from(posTerminals);
+    const [total] = await db.select({ count: count() }).from(serviceNodes);
     ok(res, { total: total.count, generatedAt: new Date().toISOString() });
   } catch (e) {
     err(res, e);
@@ -1086,7 +1086,7 @@ router.get("/health", async (_req, res) => {
 router.get("/settings", async (_req, res) => {
   ok(res, {
     keycloakUrl: process.env.KEYCLOAK_URL ?? "",
-    keycloakRealm: process.env.KEYCLOAK_REALM ?? "54link",
+    keycloakRealm: process.env.KEYCLOAK_REALM ?? "insureportal",
     apiVersion: process.env.API_VERSION ?? "1.0.0",
     environment: process.env.NODE_ENV ?? "development",
   });
@@ -1345,14 +1345,14 @@ router.post("/geofencing/zones", requireAdmin, async (req, res) => {
 // STOREFRONT ADS / SHAREABLE LINKS / STORE MAP
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get("/storefront-ads", async (req, res) => {
+router.get("/marketplace-ads", async (req, res) => {
   try {
     const db = await getDb();
     if (!db) return ok(res, []);
     const { offset, limit } = paginate(req.query);
     const rows = await db
       .select()
-      .from(storefrontAds)
+      .from(marketplaceAds)
       .offset(offset)
       .limit(limit);
     ok(res, rows);
@@ -1361,11 +1361,11 @@ router.get("/storefront-ads", async (req, res) => {
   }
 });
 
-router.post("/storefront-ads", requireAdmin, async (req, res) => {
+router.post("/marketplace-ads", requireAdmin, async (req, res) => {
   try {
     const db = await getDb();
     if (!db) return err(res, "DB unavailable");
-    const [row] = await db.insert(storefrontAds).values(req.body).returning();
+    const [row] = await db.insert(marketplaceAds).values(req.body).returning();
     ok(res, row);
   } catch (e) {
     err(res, e);

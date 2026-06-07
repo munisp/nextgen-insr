@@ -1,14 +1,14 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link Lakehouse Client
+ * InsurePortal Lakehouse Client
  * Uses MinIO (S3-compatible) as the object store for Parquet-format data exports.
  * Provides analytics data pipeline: PostgreSQL → JSON → Parquet → MinIO.
  *
  * Buckets:
- *   54link-transactions   — daily transaction snapshots (Parquet)
- *   54link-settlements    — settlement summaries (JSON)
- *   54link-fraud-events   — fraud alert history (JSON)
- *   54link-agent-metrics  — agent performance metrics (Parquet)
+ *   insureportal-transactions   — daily transaction snapshots (Parquet)
+ *   insureportal-settlements    — settlement summaries (JSON)
+ *   insureportal-fraud-events   — fraud alert history (JSON)
+ *   insureportal-agent-metrics  — agent performance metrics (Parquet)
  */
 import {
   S3Client,
@@ -42,10 +42,10 @@ function getS3Client(): S3Client {
 
 // ── Bucket names ───────────────────────────────────────────────────────────────
 export const BUCKETS = {
-  TRANSACTIONS: "54link-transactions",
-  SETTLEMENTS: "54link-settlements",
-  FRAUD_EVENTS: "54link-fraud-events",
-  AGENT_METRICS: "54link-agent-metrics",
+  TRANSACTIONS: "insureportal-transactions",
+  SETTLEMENTS: "insureportal-settlements",
+  FRAUD_EVENTS: "insureportal-fraud-events",
+  AGENT_METRICS: "insureportal-agent-metrics",
 } as const;
 
 // ── Upload helpers ─────────────────────────────────────────────────────────────

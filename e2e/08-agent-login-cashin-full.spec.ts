@@ -16,7 +16,7 @@ test.describe("Agent Login & Cash-In — Full Flow", () => {
     page,
   }) => {
     // Verify the login screen renders
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal POS")).toBeVisible({
       timeout: 10_000,
     });
 

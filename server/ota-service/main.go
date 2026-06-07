@@ -1,6 +1,6 @@
 // P2-C: OTA Firmware Update Pipeline (Go)
 //
-// 54Link POS OTA Microservice
+// InsurePortal POS OTA Microservice
 //
 // Endpoints:
 //   GET  /health                  — liveness probe
@@ -146,7 +146,7 @@ func validateDeviceToken(token string) (deviceSerial string, valid bool) {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":    "ok",
-		"service":   "54link-ota",
+		"service":   "insureportal-ota",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }
@@ -202,7 +202,7 @@ func handleLatest(w http.ResponseWriter, r *http.Request) {
 func generatePresignedURL(s3Key string) (string, time.Time) {
 	bucket := os.Getenv("S3_BUCKET")
 	if bucket == "" {
-		bucket = "54link-firmware"
+		bucket = "insureportal-firmware"
 	}
 	expiryStr := os.Getenv("S3_PRESIGN_EXPIRY_SECS")
 	expirySecs, _ := strconv.ParseInt(expiryStr, 10, 64)
@@ -505,7 +505,7 @@ func main() {
 
 	handler := newRouter()
 
-	log.Printf("[OTA] 54Link OTA Microservice starting on :%s", port)
+	log.Printf("[OTA] InsurePortal OTA Microservice starting on :%s", port)
 	log.Printf("[OTA] Endpoints: GET /health, GET /api/v1/ota/latest, GET /api/v1/ota/download/:id")
 	log.Printf("[OTA] Admin endpoints: GET /api/v1/ota/list, POST /api/v1/ota/upload, PUT /api/v1/ota/:id/rollout")
 

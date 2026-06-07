@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Real-Time Notification System — 54Link Agency Banking Platform
+ * Real-Time Notification System — InsurePortal Agency Banking Platform
  *
  * Uses Socket.IO /notifications namespace with Redis pub/sub for
  * cross-process event distribution. Supports JWT authentication,
