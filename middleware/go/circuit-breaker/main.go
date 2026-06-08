@@ -1,4 +1,4 @@
-// Package main implements a circuit breaker proxy for POS-54Link middleware.
+// Package main implements a circuit breaker proxy for InsurePortal middleware.
 // Wraps upstream services with configurable failure thresholds, half-open
 // probing, exponential backoff, and Prometheus metrics.
 package main

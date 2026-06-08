@@ -1,4 +1,4 @@
-// Package main implements a production-grade health checker for all POS-54Link
+// Package main implements a production-grade health checker for all InsurePortal
 // middleware components. It performs deep health checks (not just TCP) and
 // exposes Prometheus metrics + a JSON status endpoint.
 package main

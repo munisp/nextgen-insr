@@ -772,7 +772,7 @@ func (s *AppState) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (s *AppState) createFiling(rt ReportType, subject SubjectInfo, txns []TransactionInfo, indicators []SuspicionIndicator, narrative string, riskScore float64, officer string) *Filing {
 	id := generateID()
-	ref := fmt.Sprintf("54LINK-%s-%s", rt, time.Now().Format("20060102-150405"))
+	ref := fmt.Sprintf("INSUREPORTAL-%s-%s", rt, time.Now().Format("20060102-150405"))
 	total := totalAmount(txns)
 
 	filing := &Filing{
@@ -848,7 +848,7 @@ func (s *AppState) buildGoAMLReport(filing *Filing) GoAMLReport {
 		ReportDate:      filing.FilingDate.Format("2006-01-02"),
 		ReportingEntity: GoAMLEntity{
 			EntityType:  "institution",
-			FullName:    "54Link Agency Banking Platform",
+			FullName:    "InsurePortal Insurance Platform",
 			IDType:      "CBN_LICENSE",
 			IDNumber:    s.config.NFIUInstitutionID,
 			Nationality: "Nigeria",
