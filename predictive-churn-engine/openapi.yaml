@@ -1,24 +1,40 @@
-openapi: "3.0.3"
+openapi: 3.0.3
 info:
   title: Predictive Churn Prevention Engine
-  version: "1.0.0"
+  version: 1.0.0
   description: ML-powered churn prediction with automated retention campaigns
 paths:
   /health:
     get:
       summary: Health check
       responses:
-        "200":
+        '200':
           description: Service healthy
   /api/v1/predict:
     post:
       summary: Predict churn probability for a policyholder
       responses:
-        "200":
+        '200':
           description: Churn prediction with retention action
   /api/v1/batch-predict:
     post:
       summary: Batch churn prediction
       responses:
-        "200":
+        '200':
           description: Array of churn predictions
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: getReady
+      responses:
+        '200':
+          description: Service is ready
+        '503':
+          description: Service not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        '200':
+          description: Service is alive

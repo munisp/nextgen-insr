@@ -1,24 +1,40 @@
-openapi: "3.0.3"
+openapi: 3.0.3
 info:
   title: Digital Twin Risk Modeler
-  version: "1.0.0"
+  version: 1.0.0
   description: Monte Carlo simulation for portfolio risk modeling
 paths:
   /health:
     get:
       summary: Health check
       responses:
-        "200":
+        '200':
           description: Service healthy
   /api/v1/simulate:
     post:
       summary: Run Monte Carlo simulation for a scenario
       responses:
-        "200":
+        '200':
           description: Simulation results
   /api/v1/stress-test:
     get:
       summary: Run stress test across all scenarios
       responses:
-        "200":
+        '200':
           description: Multi-scenario stress test results
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: getReady
+      responses:
+        '200':
+          description: Service is ready
+        '503':
+          description: Service not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        '200':
+          description: Service is alive
