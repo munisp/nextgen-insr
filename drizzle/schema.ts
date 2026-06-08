@@ -1412,35 +1412,6 @@ export const erpSyncLog = pgTable(
 
 export type ErpSyncLog = typeof erpSyncLog.$inferSelect;
 
-// ─── Storefront Ads ───────────────────────────────────────────────────────────
-export const storefrontAds = pgTable(
-  "storefront_ads",
-  {
-    id: serial("id").primaryKey(),
-    title: varchar("title", { length: 128 }).notNull(),
-    body: text("body"),
-    imageUrl: text("imageUrl"),
-    targetUrl: text("targetUrl"),
-    agentId: integer("agentId").references(() => agents.id),
-    status: adStatusEnum("status").default("draft").notNull(),
-    impressions: integer("impressions").default(0).notNull(),
-    clicks: integer("clicks").default(0).notNull(),
-    budget: numeric("budget", { precision: 12, scale: 2 }),
-    spent: numeric("spent", { precision: 12, scale: 2 })
-      .default("0.00")
-      .notNull(),
-    startsAt: timestamp("startsAt"),
-    endsAt: timestamp("endsAt"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  },
-  t => ({
-    sa_status_idx: index("sa_status_idx").on(t.status),
-    sa_createdAt_idx: index("sa_createdAt_idx").on(t.createdAt),
-  })
-);
-
-export type StorefrontAd = typeof storefrontAds.$inferSelect;
 
 // ─── VAT Records ──────────────────────────────────────────────────────────────
 export const vatRecords = pgTable(
@@ -1515,13 +1486,13 @@ export const mqttBridgeConfig = pgTable(
     name: varchar("name", { length: 128 }).notNull().default("POS MQTT Bridge"),
     brokerUrl: text("brokerUrl")
       .notNull()
-      .default("mqtt://broker.54link.io:1883"),
+      .default("mqtt://broker.insureportal.io:1883"),
     port: integer("port").default(1883).notNull(),
     useTls: boolean("useTls").default(false).notNull(),
     username: varchar("username", { length: 128 }).default(""),
     password: text("password").default(""),
     clientId: varchar("clientId", { length: 128 }).default(
-      "54link-fluvio-bridge"
+      "insureportal-fluvio-bridge"
     ),
     topicMappings: json("topicMappings")
       .$type<
@@ -2125,10 +2096,10 @@ export const simOrchestratorConfig = pgTable(
     probeIntervalMs: integer("probeIntervalMs").notNull().default(30000),
     relayEndpoint: varchar("relayEndpoint", { length: 256 })
       .notNull()
-      .default("https://api.54link.io/api/trpc/simOrchestrator.ingestProbe"),
+      .default("https://api.insureportal.io/api/trpc/simOrchestrator.ingestProbe"),
     apiKey: varchar("apiKey", { length: 128 })
       .notNull()
-      .default("54link-sim-orchestrator-default-key"),
+      .default("insureportal-sim-orchestrator-default-key"),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -2689,95 +2660,6 @@ export const tenantBranding = pgTable(
 export type TenantBranding = typeof tenantBranding.$inferSelect;
 export type InsertTenantBranding = typeof tenantBranding.$inferInsert;
 
-// ─── Tenant Corridors (Remittance Routes) ───────────────────────────────────
-export const corridorStatusEnum = pgEnum("corridor_status", [
-  "active",
-  "paused",
-  "disabled",
-]);
-
-export const tenantCorridors = pgTable(
-  "tenant_corridors",
-  {
-    id: serial("id").primaryKey(),
-    tenantId: integer("tenantId").notNull(),
-    sourceCountry: varchar("sourceCountry", { length: 3 }).notNull(),
-    sourceCurrency: varchar("sourceCurrency", { length: 3 }).notNull(),
-    destinationCountry: varchar("destinationCountry", { length: 3 }).notNull(),
-    destinationCurrency: varchar("destinationCurrency", {
-      length: 3,
-    }).notNull(),
-    status: corridorStatusEnum("status").default("active").notNull(),
-    minAmount: numeric("minAmount", { precision: 20, scale: 2 })
-      .default("10.00")
-      .notNull(),
-    maxAmount: numeric("maxAmount", { precision: 20, scale: 2 })
-      .default("1000000.00")
-      .notNull(),
-    dailyLimit: numeric("dailyLimit", { precision: 20, scale: 2 })
-      .default("5000000.00")
-      .notNull(),
-    estimatedDeliveryMinutes: integer("estimatedDeliveryMinutes")
-      .default(30)
-      .notNull(),
-    paymentMethods: json("paymentMethods")
-      .$type<string[]>()
-      .default(["bank_transfer", "mobile_money"]),
-    deliveryMethods: json("deliveryMethods")
-      .$type<string[]>()
-      .default(["bank_deposit", "mobile_wallet"]),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  },
-  t => ({
-    tenantIdIdx: index("tenant_corridors_tenantId_idx").on(t.tenantId),
-    routeIdx: index("tenant_corridors_route_idx").on(
-      t.sourceCountry,
-      t.destinationCountry
-    ),
-  })
-);
-
-export type TenantCorridor = typeof tenantCorridors.$inferSelect;
-export type InsertTenantCorridor = typeof tenantCorridors.$inferInsert;
-
-// ─── Tenant Fee Overrides ───────────────────────────────────────────────────
-export const feeTypeEnum = pgEnum("fee_type", ["percentage", "flat", "tiered"]);
-
-export const tenantFeeOverrides = pgTable(
-  "tenant_fee_overrides",
-  {
-    id: serial("id").primaryKey(),
-    tenantId: integer("tenantId").notNull(),
-    corridorId: integer("corridorId"),
-    txType: varchar("txType", { length: 64 }).default("transfer").notNull(),
-    feeType: feeTypeEnum("feeType").default("percentage").notNull(),
-    feeValue: numeric("feeValue", { precision: 10, scale: 4 })
-      .default("1.5000")
-      .notNull(),
-    minFee: numeric("minFee", { precision: 20, scale: 2 })
-      .default("100.00")
-      .notNull(),
-    maxFee: numeric("maxFee", { precision: 20, scale: 2 })
-      .default("50000.00")
-      .notNull(),
-    tieredRules:
-      json("tieredRules").$type<
-        Array<{ minAmount: number; maxAmount: number; fee: number }>
-      >(),
-    description: text("description"),
-    isActive: boolean("isActive").default(true).notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  },
-  t => ({
-    tenantIdIdx: index("tenant_fee_overrides_tenantId_idx").on(t.tenantId),
-    corridorIdx: index("tenant_fee_overrides_corridorId_idx").on(t.corridorId),
-  })
-);
-
-export type TenantFeeOverride = typeof tenantFeeOverrides.$inferSelect;
-export type InsertTenantFeeOverride = typeof tenantFeeOverrides.$inferInsert;
 
 // ─── Tenant Sub-Users ───────────────────────────────────────────────────────
 export const tenantUserRoleEnum = pgEnum("tenant_user_role", [
@@ -2812,6 +2694,58 @@ export const tenantUsers = pgTable(
 
 export type TenantUser = typeof tenantUsers.$inferSelect;
 export type InsertTenantUser = typeof tenantUsers.$inferInsert;
+
+// ─── Premium Fee Schedules (Insurance Fee Configuration) ─────────────────────
+export const premiumFeeSchedules = pgTable(
+  "premium_fee_schedules",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    productType: varchar("productType", { length: 64 }).default("motor").notNull(),
+    feeType: feeTypeEnum("feeType").default("percentage").notNull(),
+    feeValue: numeric("feeValue", { precision: 10, scale: 4 })
+      .default("2.5000")
+      .notNull(),
+    minFee: numeric("minFee", { precision: 20, scale: 2 })
+      .default("500.00")
+      .notNull(),
+    maxFee: numeric("maxFee", { precision: 20, scale: 2 })
+      .default("100000.00")
+      .notNull(),
+    description: text("description"),
+    isActive: boolean("isActive").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tenantIdIdx: index("pfs_tenantId_idx").on(t.tenantId),
+    productTypeIdx: index("pfs_productType_idx").on(t.productType),
+  })
+);
+
+export type PremiumFeeSchedule = typeof premiumFeeSchedules.$inferSelect;
+export type InsertPremiumFeeSchedule = typeof premiumFeeSchedules.$inferInsert;
+
+// ─── Customer Feedback NPS ───────────────────────────────────────────────────
+export const customerFeedbackNps = pgTable(
+  "customer_feedback_nps",
+  {
+    id: serial("id").primaryKey(),
+    customerId: integer("customerId"),
+    score: integer("score").notNull(),
+    feedback: text("feedback"),
+    channel: varchar("channel", { length: 64 }).default("web").notNull(),
+    policyId: integer("policyId"),
+    claimId: integer("claimId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    customerIdx: index("cfn_customerId_idx").on(t.customerId),
+    scoreIdx: index("cfn_score_idx").on(t.score),
+  })
+);
+
+export type CustomerFeedbackNps = typeof customerFeedbackNps.$inferSelect;
 
 // ─── Sprint 48: Commission Cascade History ──────────────────────────────────
 export const commissionCascadeHistory = pgTable(
@@ -4661,250 +4595,3 @@ export const guideFeedback = pgTable(
 );
 export type GuideFeedback = typeof guideFeedback.$inferSelect;
 
-// ─── E-Commerce: Product Categories ──────────────────────────────────────────
-export const ecommerceCategories = pgTable(
-  "ecommerce_categories",
-  {
-    id: serial("id").primaryKey(),
-    name: varchar("name", { length: 128 }).notNull(),
-    slug: varchar("slug", { length: 128 }).notNull().unique(),
-    description: text("description"),
-    parentId: integer("parent_id"),
-    imageUrl: varchar("image_url", { length: 512 }),
-    sortOrder: integer("sort_order").default(0).notNull(),
-    isActive: boolean("is_active").default(true).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  t => ({
-    slugIdx: uniqueIndex("ecom_cat_slug_idx").on(t.slug),
-    parentIdx: index("ecom_cat_parent_idx").on(t.parentId),
-  })
-);
-export type EcommerceCategory = typeof ecommerceCategories.$inferSelect;
-
-// ─── E-Commerce: Products ────────────────────────────────────────────────────
-export const ecommerceProductStatusEnum = pgEnum("ecommerce_product_status", [
-  "active",
-  "draft",
-  "archived",
-  "out_of_stock",
-]);
-
-export const ecommerceProducts = pgTable(
-  "ecommerce_products",
-  {
-    id: serial("id").primaryKey(),
-    sku: varchar("sku", { length: 64 }).notNull().unique(),
-    name: varchar("name", { length: 256 }).notNull(),
-    description: text("description"),
-    categoryId: integer("category_id").notNull(),
-    price: numeric("price", { precision: 12, scale: 2 }).notNull(),
-    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
-    imageUrl: varchar("image_url", { length: 512 }),
-    isActive: boolean("is_active").default(true).notNull(),
-    status: ecommerceProductStatusEnum("status").default("active").notNull(),
-    merchantId: integer("merchant_id").notNull(),
-    agentId: integer("agent_id"),
-    weight: numeric("weight", { precision: 8, scale: 2 }),
-    dimensions: varchar("dimensions", { length: 64 }),
-    tags: json("tags").$type<string[]>().default([]),
-    attributes: json("attributes").$type<Record<string, string>>().default({}),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  t => ({
-    skuIdx: uniqueIndex("ecom_prod_sku_idx").on(t.sku),
-    categoryIdx: index("ecom_prod_category_idx").on(t.categoryId),
-    merchantIdx: index("ecom_prod_merchant_idx").on(t.merchantId),
-    activeIdx: index("ecom_prod_active_idx").on(t.isActive),
-  })
-);
-export type EcommerceProduct = typeof ecommerceProducts.$inferSelect;
-
-// ─── E-Commerce: Inventory ───────────────────────────────────────────────────
-export const ecommerceInventory = pgTable(
-  "ecommerce_inventory",
-  {
-    id: serial("id").primaryKey(),
-    sku: varchar("sku", { length: 64 }).notNull().unique(),
-    productId: integer("product_id").notNull(),
-    quantity: integer("quantity").default(0).notNull(),
-    reserved: integer("reserved").default(0).notNull(),
-    reorderPoint: integer("reorder_point").default(10).notNull(),
-    warehouseId: varchar("warehouse_id", { length: 64 })
-      .default("default")
-      .notNull(),
-    lastRestocked: timestamp("last_restocked").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  t => ({
-    skuIdx: uniqueIndex("ecom_inv_sku_idx").on(t.sku),
-    productIdx: index("ecom_inv_product_idx").on(t.productId),
-    lowStockIdx: index("ecom_inv_low_stock_idx").on(t.quantity, t.reorderPoint),
-  })
-);
-export type EcommerceInventoryRecord = typeof ecommerceInventory.$inferSelect;
-
-// ─── E-Commerce: Inventory Reservations ──────────────────────────────────────
-export const ecommerceInventoryReservations = pgTable(
-  "ecommerce_inventory_reservations",
-  {
-    id: serial("id").primaryKey(),
-    sku: varchar("sku", { length: 64 }).notNull(),
-    orderId: integer("order_id").notNull(),
-    quantity: integer("quantity").notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  t => ({
-    skuIdx: index("ecom_res_sku_idx").on(t.sku),
-    orderIdx: index("ecom_res_order_idx").on(t.orderId),
-    expiryIdx: index("ecom_res_expiry_idx").on(t.expiresAt),
-  })
-);
-
-// ─── E-Commerce: Orders ──────────────────────────────────────────────────────
-export const ecommerceOrderStatusEnum = pgEnum("ecommerce_order_status", [
-  "pending",
-  "confirmed",
-  "processing",
-  "shipped",
-  "delivered",
-  "cancelled",
-  "refunded",
-]);
-
-export const ecommerceOrders = pgTable(
-  "ecommerce_orders",
-  {
-    id: serial("id").primaryKey(),
-    orderNumber: varchar("order_number", { length: 32 }).notNull().unique(),
-    customerId: integer("customer_id").notNull(),
-    merchantId: integer("merchant_id").notNull(),
-    agentId: integer("agent_id"),
-    status: ecommerceOrderStatusEnum("status").default("pending").notNull(),
-    subTotal: numeric("sub_total", { precision: 12, scale: 2 }).notNull(),
-    tax: numeric("tax", { precision: 12, scale: 2 }).default("0").notNull(),
-    shippingFee: numeric("shipping_fee", { precision: 12, scale: 2 })
-      .default("0")
-      .notNull(),
-    discount: numeric("discount", { precision: 12, scale: 2 })
-      .default("0")
-      .notNull(),
-    total: numeric("total", { precision: 12, scale: 2 }).notNull(),
-    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
-    paymentMethod: varchar("payment_method", { length: 32 }).notNull(),
-    paymentRef: varchar("payment_ref", { length: 128 }),
-    shippingAddress: json("shipping_address").$type<{
-      street: string;
-      city: string;
-      state: string;
-      country: string;
-      zipCode: string;
-      phone: string;
-    }>(),
-    notes: text("notes"),
-    offlineCreated: boolean("offline_created").default(false).notNull(),
-    syncedAt: timestamp("synced_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-    fulfilledAt: timestamp("fulfilled_at"),
-    cancelledAt: timestamp("cancelled_at"),
-  },
-  t => ({
-    orderNumIdx: uniqueIndex("ecom_order_num_idx").on(t.orderNumber),
-    customerIdx: index("ecom_order_customer_idx").on(t.customerId),
-    merchantIdx: index("ecom_order_merchant_idx").on(t.merchantId),
-    statusIdx: index("ecom_order_status_idx").on(t.status),
-    offlineIdx: index("ecom_order_offline_idx").on(t.offlineCreated),
-  })
-);
-export type EcommerceOrder = typeof ecommerceOrders.$inferSelect;
-
-// ─── E-Commerce: Order Items ─────────────────────────────────────────────────
-export const ecommerceOrderItems = pgTable(
-  "ecommerce_order_items",
-  {
-    id: serial("id").primaryKey(),
-    orderId: integer("order_id").notNull(),
-    productId: integer("product_id").notNull(),
-    sku: varchar("sku", { length: 64 }).notNull(),
-    name: varchar("name", { length: 256 }).notNull(),
-    quantity: integer("quantity").notNull(),
-    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
-    total: numeric("total", { precision: 12, scale: 2 }).notNull(),
-  },
-  t => ({
-    orderIdx: index("ecom_oi_order_idx").on(t.orderId),
-    productIdx: index("ecom_oi_product_idx").on(t.productId),
-  })
-);
-export type EcommerceOrderItem = typeof ecommerceOrderItems.$inferSelect;
-
-// ─── E-Commerce: Shopping Carts ──────────────────────────────────────────────
-export const ecommerceCarts = pgTable(
-  "ecommerce_carts",
-  {
-    id: serial("id").primaryKey(),
-    customerId: integer("customer_id").notNull(),
-    couponCode: varchar("coupon_code", { length: 32 }),
-    discountAmount: numeric("discount_amount", { precision: 12, scale: 2 })
-      .default("0")
-      .notNull(),
-    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
-    offlineCreated: boolean("offline_created").default(false).notNull(),
-    deviceId: varchar("device_id", { length: 128 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-    expiresAt: timestamp("expires_at"),
-  },
-  t => ({
-    customerIdx: uniqueIndex("ecom_cart_customer_idx").on(t.customerId),
-  })
-);
-export type EcommerceCart = typeof ecommerceCarts.$inferSelect;
-
-// ─── E-Commerce: Cart Items ──────────────────────────────────────────────────
-export const ecommerceCartItems = pgTable(
-  "ecommerce_cart_items",
-  {
-    id: serial("id").primaryKey(),
-    cartId: integer("cart_id").notNull(),
-    productId: integer("product_id").notNull(),
-    sku: varchar("sku", { length: 64 }).notNull(),
-    name: varchar("name", { length: 256 }).notNull(),
-    quantity: integer("quantity").notNull(),
-    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
-    merchantId: integer("merchant_id").notNull(),
-    addedAt: timestamp("added_at").defaultNow().notNull(),
-  },
-  t => ({
-    cartIdx: index("ecom_ci_cart_idx").on(t.cartId),
-    skuIdx: index("ecom_ci_sku_idx").on(t.sku),
-  })
-);
-export type EcommerceCartItem = typeof ecommerceCartItems.$inferSelect;
-
-// ─── E-Commerce: Customer Interactions (for recommendations) ─────────────────
-export const ecommerceInteractionTypeEnum = pgEnum(
-  "ecommerce_interaction_type",
-  ["view", "add_to_cart", "purchase", "review", "wishlist"]
-);
-
-export const ecommerceInteractions = pgTable(
-  "ecommerce_interactions",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    customerId: integer("customer_id").notNull(),
-    productId: integer("product_id").notNull(),
-    interactionType: ecommerceInteractionTypeEnum("interaction_type").notNull(),
-    metadata: json("metadata").$type<Record<string, unknown>>().default({}),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  t => ({
-    customerIdx: index("ecom_interact_customer_idx").on(t.customerId),
-    productIdx: index("ecom_interact_product_idx").on(t.productId),
-    typeIdx: index("ecom_interact_type_idx").on(t.interactionType),
-  })
-);
-export type EcommerceInteraction = typeof ecommerceInteractions.$inferSelect;

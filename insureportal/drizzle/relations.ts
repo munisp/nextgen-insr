@@ -30,7 +30,6 @@ import {
   customers,
   tenants,
   erpSyncLog,
-  storefrontAds,
   vatRecords,
   emailQueue,
   merchants,
@@ -58,8 +57,8 @@ import {
   emailDeliveryLog,
   inviteCodes,
   tenantBranding,
-  tenantCorridors,
-  tenantFeeOverrides,
+  premiumFeeSchedules,
+  customerFeedbackNps,
   tenantUsers,
   commissionCascadeHistory,
   agentBankAccounts,
@@ -170,8 +169,7 @@ export const tenantsRelations = relations(tenants, ({ many }) => ({
   agents: many(agents),
   tenantUsers: many(tenantUsers),
   tenantBranding: many(tenantBranding),
-  tenantCorridors: many(tenantCorridors),
-  tenantFeeOverrides: many(tenantFeeOverrides),
+  premiumFeeSchedules: many(premiumFeeSchedules),
   tenantFeatureToggles: many(tenantFeatureToggles),
   tenantBillingConfig: many(tenantBillingConfig),
   billingProvisioningHistory: many(billingProvisioningHistory),
@@ -812,7 +810,6 @@ export const tenantsRelations = relations(tenants, () => ({}));
 
 export const erpSyncLogRelations = relations(erpSyncLog, () => ({}));
 
-export const storefrontAdsRelations = relations(storefrontAds, () => ({}));
 
 export const vatRecordsRelations = relations(vatRecords, () => ({}));
 
@@ -997,10 +994,14 @@ export const inviteCodesRelations = relations(inviteCodes, () => ({}));
 
 export const tenantBrandingRelations = relations(tenantBranding, () => ({}));
 
-export const tenantCorridorsRelations = relations(tenantCorridors, () => ({}));
 
-export const tenantFeeOverridesRelations = relations(
-  tenantFeeOverrides,
+export const premiumFeeSchedulesRelations = relations(
+  premiumFeeSchedules,
+  () => ({})
+);
+
+export const customerFeedbackNpsRelations = relations(
+  customerFeedbackNps,
   () => ({})
 );
 

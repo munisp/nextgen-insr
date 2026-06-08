@@ -137,6 +137,6 @@ describe("Sprint 16: Schema Tables", () => {
     expect(content).toContain("inviteCodes");
     expect(content).toContain("tenantBranding");
     expect(content).toContain("tenantInsuranceRegions");
-    expect(content).toContain("tenantFeeOverrides");
+    expect(content).toContain("premiumFeeSchedules");
   });
 });
