@@ -302,6 +302,18 @@ func initDB() {
 	} else {
 		jsonLog("info", "database connected", "service", "nmid-integration", "driver", "postgresql")
 	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS nmid_records (
+            id TEXT PRIMARY KEY,
+            policy_id TEXT NOT NULL,
+            nmid_ref TEXT,
+            sync_status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "nmid_records")
+	}
 }
 
 // execInTransaction wraps a function in a database transaction.
@@ -355,6 +367,24 @@ func jsonLog(level, msg string, kvs ...string) {
 	log.Println(entry)
 }
 
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
 func main() {
 	initDB()
 	service := NewNMIDService()
@@ -362,6 +392,8 @@ func main() {
 	http.HandleFunc("/api/nmid/verify", service.HandleVerify)
 	http.HandleFunc("/api/nmid/register", service.HandleRegister)
 	http.HandleFunc("/health", service.HandleHealth)
+	http.HandleFunc("/ready", handleReady)
+	http.HandleFunc("/live", handleLive)
 	
 	port := getEnv("PORT", "8080")
 	log.Printf("NMID Integration Service starting on port %s", port)

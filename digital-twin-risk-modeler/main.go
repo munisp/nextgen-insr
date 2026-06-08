@@ -118,10 +118,12 @@ func initDB() {
 	db, err = sql.Open("postgres", dsn)
 	if err != nil { log.Printf(`{"level":"warn","msg":"db failed","error":"%s"}`, err); return }
 	db.SetMaxOpenConns(25); db.SetMaxIdleConns(5); db.SetConnMaxLifetime(5 * time.Minute)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS risk_simulations (
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS risk_simulations (
 		id SERIAL PRIMARY KEY, scenario TEXT, iterations INT, mean_loss REAL, p95_loss REAL,
 		p99_loss REAL, capital_required REAL, ruin_prob REAL, execution_ms BIGINT, created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 	log.Printf(`{"level":"info","msg":"database connected","service":"digital-twin-risk-modeler"}`)
 }
 
@@ -135,8 +137,10 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	}
 	result := runMonteCarlo(req)
 	if db != nil {
-		_, _ = db.Exec(`INSERT INTO risk_simulations (scenario, iterations, mean_loss, p95_loss, p99_loss, capital_required, ruin_prob, execution_ms)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, result.Scenario, result.Iterations, result.MeanLoss, result.P95Loss, result.P99Loss, result.CapitalRequired, result.RuinProbability, result.ExecutionMs)
+		if _, err := db.Exec(`INSERT INTO risk_simulations (scenario, iterations, mean_loss, p95_loss, p99_loss, capital_required, ruin_prob, execution_ms)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, result.Scenario, result.Iterations, result.MeanLoss, result.P95Loss, result.P99Loss, result.CapitalRequired, result.RuinProbability, result.ExecutionMs); err != nil {
+			log.Printf(`{"level":"warn","msg":"insert failed","error":"%s"}`, err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)

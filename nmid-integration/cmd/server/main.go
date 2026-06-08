@@ -9,7 +9,7 @@ import (
 	"github.com/unified-insurance/nmid-integration/internal/service"
 	"os"
 
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -18,7 +18,11 @@ func main() {
 	if port == "" {
 		port = "8094"
 	}
-	db, err := gorm.Open(sqlite.Open("nmid.db"), &gorm.Config{})
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "host=localhost user=ngapp password=ngapp dbname=ngapp port=5432 sslmode=disable"
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}

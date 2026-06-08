@@ -83,6 +83,20 @@ func initDB() {
 	} else {
 		jsonLog("info", "database connected", "service", "broker-api-service", "driver", "postgresql")
 	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS brokers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            tier TEXT DEFAULT 'bronze',
+            commission_rate NUMERIC DEFAULT 0.05,
+            active_policies INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "brokers")
+	}
 }
 
 // execInTransaction wraps a function in a database transaction.
@@ -136,6 +150,24 @@ func jsonLog(level, msg string, kvs ...string) {
 	log.Println(entry)
 }
 
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
 func main() {
 	initDB()
 	r := chi.NewRouter()
@@ -144,6 +176,8 @@ func main() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "broker-api-service"})
 	})
+	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
+	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Route("/api/v1/brokers", func(r chi.Router) {
 		r.Get("/", listBrokers)
 		r.Post("/", registerBroker)

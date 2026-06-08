@@ -40,6 +40,24 @@ type DeliveryResult struct {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "communication-service"})
 }
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
 
 func handleSend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -131,6 +149,19 @@ func initDB() {
 	} else {
 		jsonLog("info", "database connected", "service", "communication-service", "driver", "postgresql")
 	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS communications (
+            id TEXT PRIMARY KEY,
+            channel TEXT NOT NULL,
+            recipient TEXT NOT NULL,
+            subject TEXT,
+            status TEXT DEFAULT 'queued',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "communications")
+	}
 }
 
 // execInTransaction wraps a function in a database transaction.
@@ -188,6 +219,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/send", handleSend)
 	mux.HandleFunc("/api/v1/templates", handleTemplates)
 	

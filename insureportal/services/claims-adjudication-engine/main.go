@@ -109,11 +109,22 @@ func handleAdjudicate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	var totalProcessed, approved, rejected int
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*) FROM claims").Scan(&totalProcessed)
+		db.QueryRow("SELECT COUNT(*) FROM claims WHERE status = 'approved'").Scan(&approved)
+		db.QueryRow("SELECT COUNT(*) FROM claims WHERE status = 'rejected'").Scan(&rejected)
+	}
+	approvalRate := 0.0
+	if totalProcessed > 0 {
+		approvalRate = float64(approved) / float64(totalProcessed)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"total_claims_processed": 15420,
-		"auto_approved_rate":     0.42,
-		"avg_processing_time":    "4.2h",
-		"sla_compliance":         0.96,
+		"total_claims_processed": totalProcessed,
+		"approved":               approved,
+		"rejected":               rejected,
+		"auto_approved_rate":     approvalRate,
+		"service":               "claims-adjudication-engine",
 	})
 }
 

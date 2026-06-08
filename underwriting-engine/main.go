@@ -93,6 +93,24 @@ func calculatePremium(req QuoteRequest) QuoteResponse {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "underwriting-engine"})
 }
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
 
 func handleQuote(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -167,6 +185,20 @@ func initDB() {
 	} else {
 		jsonLog("info", "database connected", "service", "underwriting-engine", "driver", "postgresql")
 	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS underwriting_decisions (
+            id TEXT PRIMARY KEY,
+            application_id TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            premium_quoted NUMERIC,
+            risk_score NUMERIC,
+            risk_class TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "underwriting_decisions")
+	}
 }
 
 // execInTransaction wraps a function in a database transaction.
@@ -224,6 +256,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/quote", handleQuote)
 	port := ":8096"
 	log.Printf("Underwriting Engine starting on %s", port)

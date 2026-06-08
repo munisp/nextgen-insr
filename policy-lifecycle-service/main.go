@@ -52,6 +52,24 @@ func isValidTransition(from, to PolicyState) bool {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "policy-lifecycle-service"})
 }
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
 
 func handleTransition(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -144,6 +162,19 @@ func initDB() {
 	} else {
 		jsonLog("info", "database connected", "service", "policy-lifecycle-service", "driver", "postgresql")
 	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS policy_transitions (
+            id SERIAL PRIMARY KEY,
+            policy_id TEXT NOT NULL,
+            from_status TEXT NOT NULL,
+            to_status TEXT NOT NULL,
+            reason TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "policy_transitions")
+	}
 }
 
 // execInTransaction wraps a function in a database transaction.
@@ -201,6 +232,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/transition", handleTransition)
 	mux.HandleFunc("/api/v1/transitions", handleTransitions)
 	port := ":8097"

@@ -90,10 +90,12 @@ func initDB() {
 	db, err = sql.Open("postgres", dsn)
 	if err != nil { log.Printf(`{"level":"warn","msg":"db failed","error":"%s"}`, err); return }
 	db.SetMaxOpenConns(25); db.SetMaxIdleConns(5); db.SetConnMaxLifetime(5 * time.Minute)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS churn_predictions (
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS churn_predictions (
 		id SERIAL PRIMARY KEY, policy_id TEXT, churn_prob REAL, risk_level TEXT,
 		retention_action TEXT, discount_pct REAL, channel TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 	log.Printf(`{"level":"info","msg":"database connected","service":"predictive-churn-engine"}`)
 }
 
@@ -107,8 +109,10 @@ func handlePredict(w http.ResponseWriter, r *http.Request) {
 	}
 	pred := predictChurn(ph)
 	if db != nil {
-		_, _ = db.Exec(`INSERT INTO churn_predictions (policy_id, churn_prob, risk_level, retention_action, discount_pct, channel)
-			VALUES ($1,$2,$3,$4,$5,$6)`, pred.PolicyID, pred.ChurnProb, pred.RiskLevel, pred.RetentionAction, pred.DiscountOffer, pred.Channel)
+		if _, err := db.Exec(`INSERT INTO churn_predictions (policy_id, churn_prob, risk_level, retention_action, discount_pct, channel)
+			VALUES ($1,$2,$3,$4,$5,$6)`, pred.PolicyID, pred.ChurnProb, pred.RiskLevel, pred.RetentionAction, pred.DiscountOffer, pred.Channel); err != nil {
+			log.Printf(`{"level":"warn","msg":"insert failed","error":"%s"}`, err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(pred)

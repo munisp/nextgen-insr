@@ -26,6 +26,24 @@ import (
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "premium-collection-service"})
 }
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
 
 func handleCollect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -54,15 +72,20 @@ func handleCollect(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleReconcile(w http.ResponseWriter, r *http.Request) {
+	var totalCount, recentCount int
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*) FROM premium_collections").Scan(&totalCount)
+		db.QueryRow("SELECT COUNT(*) FROM premium_collections WHERE created_at > NOW() - INTERVAL '30 days'").Scan(&recentCount)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"date": time.Now().Format("2006-01-02"),
-		"total_collected": 45000000, "total_reconciled": 44500000,
-		"pending": 500000, "discrepancies": 3,
+		"total":      totalCount,
+		"recent_30d": recentCount,
+		"service":    "premium-collection-service",
+		"period":     time.Now().Format("2006-01"),
 	})
 }
 
 
-// validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
 	val := r.URL.Query().Get(key)
 	if len(val) > maxLen {
@@ -118,6 +141,20 @@ func initDB() {
 		jsonLog("warn", "database ping failed", "error", err.Error())
 	} else {
 		jsonLog("info", "database connected", "service", "premium-collection-service", "driver", "postgresql")
+	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS premium_collections (
+            id TEXT PRIMARY KEY,
+            policy_id TEXT NOT NULL,
+            amount NUMERIC NOT NULL,
+            status TEXT DEFAULT 'pending',
+            payment_method TEXT,
+            reconciled BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "premium_collections")
 	}
 }
 
@@ -176,6 +213,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/collect", handleCollect)
 	mux.HandleFunc("/api/v1/reconcile", handleReconcile)
 	port := ":8098"

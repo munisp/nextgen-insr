@@ -50,6 +50,24 @@ func calculateCommission(premium float64, product string, tier string) float64 {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "agent-commission-management"})
 }
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
 
 func handleCalculate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -75,10 +93,17 @@ func handleCalculate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
+	var totalCount int
+	var recentCount int
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*) FROM agent_commission_management").Scan(&totalCount)
+		db.QueryRow("SELECT COUNT(*) FROM agent_commission_management WHERE created_at > NOW() - INTERVAL '30 days'").Scan(&recentCount)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
+		"total": totalCount,
+		"recent_30d": recentCount,
+		"service": "agent-commission-management",
 		"period": time.Now().Format("2006-01"),
-		"total_payable": 12500000, "agents_due": 342, "avg_payout": 36549,
-		"top_earner": 285000, "pending_approval": 15,
 	})
 }
 
@@ -197,6 +222,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/calculate", handleCalculate)
 	mux.HandleFunc("/api/v1/payout-summary", handlePayoutSummary)
 	port := ":8099"

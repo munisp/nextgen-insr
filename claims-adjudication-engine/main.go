@@ -96,6 +96,24 @@ func calculateRiskScore(claim ClaimRequest) float64 {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "claims-adjudication-engine"})
 }
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
 
 func handleAdjudicate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -113,11 +131,22 @@ func handleAdjudicate(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	var totalProcessed, approved, rejected int
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*) FROM claims").Scan(&totalProcessed)
+		db.QueryRow("SELECT COUNT(*) FROM claims WHERE status = 'approved'").Scan(&approved)
+		db.QueryRow("SELECT COUNT(*) FROM claims WHERE status = 'rejected'").Scan(&rejected)
+	}
+	approvalRate := 0.0
+	if totalProcessed > 0 {
+		approvalRate = float64(approved) / float64(totalProcessed)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"total_claims_processed": 15420,
-		"auto_approved_rate":     0.42,
-		"avg_processing_time":    "4.2h",
-		"sla_compliance":         0.96,
+		"total_claims_processed": totalProcessed,
+		"approved":               approved,
+		"rejected":               rejected,
+		"auto_approved_rate":     approvalRate,
+		"service":               "claims-adjudication-engine",
 	})
 }
 
@@ -236,6 +265,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/adjudicate", handleAdjudicate)
 	mux.HandleFunc("/api/v1/metrics", handleMetrics)
 

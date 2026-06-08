@@ -39,6 +39,24 @@ var (
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "batch-processing-engine"})
 }
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
 
 func handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -140,6 +158,21 @@ func initDB() {
 	} else {
 		jsonLog("info", "database connected", "service", "batch-processing-engine", "driver", "postgresql")
 	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS batch_jobs (
+            id TEXT PRIMARY KEY,
+            job_type TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            total_records INTEGER DEFAULT 0,
+            processed_records INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW(),
+            completed_at TIMESTAMP
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "batch_jobs")
+	}
 }
 
 // execInTransaction wraps a function in a database transaction.
@@ -197,6 +230,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/batch", handleCreateBatch)
 	mux.HandleFunc("/api/v1/batch/status", handleGetBatch)
 	

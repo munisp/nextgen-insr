@@ -410,6 +410,19 @@ func initDB() {
 	} else {
 		jsonLog("info", "database connected", "service", "group-life-admin", "driver", "postgresql")
 	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS group_life_schemes (
+            id TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            member_count INTEGER DEFAULT 0,
+            total_premium NUMERIC DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "group_life_schemes")
+	}
 }
 
 // execInTransaction wraps a function in a database transaction.
@@ -463,6 +476,24 @@ func jsonLog(level, msg string, kvs ...string) {
 	log.Println(entry)
 }
 
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
 func main() {
 	initDB()
 	service := NewGroupLifeService()
@@ -470,6 +501,8 @@ func main() {
 	http.HandleFunc("/api/group-life/premium", service.HandleCalculatePremium)
 	http.HandleFunc("/api/group-life/renewal-quote", service.HandleRenewalQuote)
 	http.HandleFunc("/health", service.HandleHealth)
+	http.HandleFunc("/ready", handleReady)
+	http.HandleFunc("/live", handleLive)
 	
 	port := os.Getenv("PORT")
 	if port == "" {

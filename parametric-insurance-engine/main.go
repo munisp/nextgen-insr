@@ -106,15 +106,19 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS parametric_policies (
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS parametric_policies (
 		id TEXT PRIMARY KEY, type TEXT, trigger_param TEXT, threshold_min REAL, threshold_max REAL,
 		payout_amount REAL, premium_amount REAL, region TEXT, status TEXT DEFAULT 'active',
 		created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS parametric_payouts (
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS parametric_payouts (
 		id SERIAL PRIMARY KEY, policy_id TEXT, measured_value REAL, payout_amount REAL,
 		triggered BOOLEAN, reason TEXT, source TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 	log.Printf(`{"level":"info","msg":"database connected","service":"parametric-insurance-engine"}`)
 
 	// Seed sample policies
@@ -125,8 +129,10 @@ func initDB() {
 		{"PAR-E-001", "earthquake", "magnitude", "Abuja", 4.5, 10, 500000, 25000},
 	}
 	for _, p := range samplePolicies {
-		_, _ = db.Exec(`INSERT INTO parametric_policies (id, type, trigger_param, threshold_min, threshold_max, payout_amount, premium_amount, region)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`, p.id, p.typ, p.param, p.min, p.max, p.payout, p.premium, p.region)
+		if _, err := db.Exec(`INSERT INTO parametric_policies (id, type, trigger_param, threshold_min, threshold_max, payout_amount, premium_amount, region)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`, p.id, p.typ, p.param, p.min, p.max, p.payout, p.premium, p.region); err != nil {
+			log.Printf(`{"level":"warn","msg":"insert failed","error":"%s"}`, err)
+		}
 	}
 }
 
@@ -148,8 +154,10 @@ func handleEvaluate(w http.ResponseWriter, r *http.Request) {
 	}
 	result := evaluateTrigger(policy, event)
 	if db != nil && result.Triggered {
-		_, _ = db.Exec(`INSERT INTO parametric_payouts (policy_id, measured_value, payout_amount, triggered, reason, source)
-			VALUES ($1,$2,$3,$4,$5,$6)`, event.PolicyID, event.MeasuredVal, result.PayoutAmount, result.Triggered, result.Reason, event.Source)
+		if _, err := db.Exec(`INSERT INTO parametric_payouts (policy_id, measured_value, payout_amount, triggered, reason, source)
+			VALUES ($1,$2,$3,$4,$5,$6)`, event.PolicyID, event.MeasuredVal, result.PayoutAmount, result.Triggered, result.Reason, event.Source); err != nil {
+			log.Printf(`{"level":"warn","msg":"insert failed","error":"%s"}`, err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)

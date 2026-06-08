@@ -127,6 +127,24 @@ func jsonLog(level, msg string, kvs ...string) {
 	log.Println(entry)
 }
 
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
 func main() {
 	initDB()
 	r := chi.NewRouter()
@@ -134,6 +152,8 @@ func main() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "erpnext-integration-service", "version": "1.0.0"})
 	})
+	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
+	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Get("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"service": "erpnext-integration-service", "uptime": time.Since(startTime).String(), "ready": true})
 	})

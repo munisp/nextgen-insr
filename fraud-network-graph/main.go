@@ -96,10 +96,12 @@ func initDB() {
 	db, err = sql.Open("postgres", dsn)
 	if err != nil { log.Printf(`{"level":"warn","msg":"db failed","error":"%s"}`, err); return }
 	db.SetMaxOpenConns(25); db.SetMaxIdleConns(5); db.SetConnMaxLifetime(5 * time.Minute)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS fraud_rings (
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fraud_rings (
 		id TEXT PRIMARY KEY, node_count INT, edge_count INT, risk_score REAL,
 		pattern TEXT, detected_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 	log.Printf(`{"level":"info","msg":"database connected","service":"fraud-network-graph"}`)
 }
 

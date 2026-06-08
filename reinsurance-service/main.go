@@ -35,14 +35,37 @@ type Treaty struct {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "reinsurance-service"})
 }
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	status := map[string]string{"status": "ready"}
+	code := http.StatusOK
+	if db != nil {
+		if err := db.Ping(); err != nil {
+			status["status"] = "not_ready"
+			status["reason"] = "database unreachable"
+			code = http.StatusServiceUnavailable
+		}
+	}
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(status)
+}
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
 
 func handleTreaties(w http.ResponseWriter, r *http.Request) {
-	treaties := []Treaty{
-		{ID: "TRY-001", Type: "quota_share", Reinsurer: "Africa Re", Retention: 50000000, CessionRate: 0.30, Limit: 500000000, Period: "2026"},
-		{ID: "TRY-002", Type: "surplus", Reinsurer: "Swiss Re", Retention: 50000000, CessionRate: 0.0, Limit: 250000000, Period: "2026"},
-		{ID: "TRY-003", Type: "xl", Reinsurer: "Munich Re", Retention: 200000000, CessionRate: 0.0, Limit: 500000000, Period: "2026"},
+	var totalCount, recentCount int
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*) FROM reinsurance_treaties").Scan(&totalCount)
+		db.QueryRow("SELECT COUNT(*) FROM reinsurance_treaties WHERE created_at > NOW() - INTERVAL '30 days'").Scan(&recentCount)
 	}
-	json.NewEncoder(w).Encode(treaties)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"total":      totalCount,
+		"recent_30d": recentCount,
+		"service":    "reinsurance-service",
+		"period":     time.Now().Format("2006-01"),
+	})
 }
 
 func handleCede(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +151,20 @@ func initDB() {
 	} else {
 		jsonLog("info", "database connected", "service", "reinsurance-service", "driver", "postgresql")
 	}
+	// Create domain table
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS reinsurance_treaties (
+            id TEXT PRIMARY KEY,
+            treaty_type TEXT NOT NULL,
+            cession_rate NUMERIC NOT NULL,
+            retention_limit NUMERIC NOT NULL,
+            reinsurer TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`); err != nil {
+		jsonLog("warn", "create table failed", "error", err.Error())
+	} else {
+		jsonLog("info", "table ready", "table", "reinsurance_treaties")
+	}
 }
 
 // execInTransaction wraps a function in a database transaction.
@@ -185,6 +222,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/treaties", handleTreaties)
 	mux.HandleFunc("/api/v1/cede", handleCede)
 	port := ":8095"

@@ -82,21 +82,29 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS iaas_quotes (
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS iaas_quotes (
 		id TEXT PRIMARY KEY, partner_id TEXT, product_id TEXT, customer_id TEXT,
 		sum_insured REAL, premium REAL, duration_days INT, valid_until TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS iaas_policies (
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS iaas_policies (
 		id TEXT PRIMARY KEY, quote_id TEXT, customer_id TEXT, payment_ref TEXT,
 		status TEXT DEFAULT 'active', start_date TIMESTAMPTZ, end_date TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS iaas_claims (
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS iaas_claims (
 		id TEXT PRIMARY KEY, policy_id TEXT, amount REAL, description TEXT,
 		status TEXT DEFAULT 'submitted', created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS iaas_partners (
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS iaas_partners (
 		id TEXT PRIMARY KEY, name TEXT, api_key TEXT, commission_rate REAL DEFAULT 0.15, created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 	log.Printf(`{"level":"info","msg":"database connected","service":"insurance-as-a-service"}`)
 }
 
@@ -114,8 +122,10 @@ func handleQuote(w http.ResponseWriter, r *http.Request) {
 	quoteID := generateID("QT-")
 	validUntil := time.Now().Add(24 * time.Hour)
 	if db != nil {
-		_, _ = db.Exec(`INSERT INTO iaas_quotes (id, partner_id, product_id, customer_id, sum_insured, premium, duration_days, valid_until)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, quoteID, req.PartnerID, req.ProductID, req.CustomerID, req.SumInsured, premium, req.Duration, validUntil)
+		if _, err := db.Exec(`INSERT INTO iaas_quotes (id, partner_id, product_id, customer_id, sum_insured, premium, duration_days, valid_until)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, quoteID, req.PartnerID, req.ProductID, req.CustomerID, req.SumInsured, premium, req.Duration, validUntil); err != nil {
+			log.Printf(`{"level":"warn","msg":"insert failed","error":"%s"}`, err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(QuoteResponse{
@@ -138,8 +148,10 @@ func handleBind(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	end := start.Add(365 * 24 * time.Hour)
 	if db != nil {
-		_, _ = db.Exec(`INSERT INTO iaas_policies (id, quote_id, customer_id, payment_ref, start_date, end_date)
-			VALUES ($1,$2,$3,$4,$5,$6)`, policyID, req.QuoteID, req.CustomerID, req.PaymentRef, start, end)
+		if _, err := db.Exec(`INSERT INTO iaas_policies (id, quote_id, customer_id, payment_ref, start_date, end_date)
+			VALUES ($1,$2,$3,$4,$5,$6)`, policyID, req.QuoteID, req.CustomerID, req.PaymentRef, start, end); err != nil {
+			log.Printf(`{"level":"warn","msg":"insert failed","error":"%s"}`, err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(PolicyResponse{

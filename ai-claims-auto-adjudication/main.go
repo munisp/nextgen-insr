@@ -101,10 +101,12 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
-	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS ai_decisions (
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS ai_decisions (
 		id TEXT PRIMARY KEY, claim_id TEXT, decision TEXT, confidence REAL,
 		risk_score REAL, model TEXT, processing_ms BIGINT, created_at TIMESTAMPTZ DEFAULT NOW()
-	)`)
+	)`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 	log.Printf(`{"level":"info","msg":"database connected","service":"ai-claims-auto-adjudication"}`)
 }
 
