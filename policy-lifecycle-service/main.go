@@ -486,7 +486,10 @@ func main() {
 	mux.HandleFunc("/api/v1/transitions/delete", handleDeleteEntity)
 	mux.HandleFunc("/stats", handleStats)
 
-	port := ":8097"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8097"
+	}
 	log.Printf("Policy Lifecycle Service starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: mux}
 	go func() {

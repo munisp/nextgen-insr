@@ -290,7 +290,10 @@ func main() {
 		db.QueryRow("SELECT COUNT(*) FROM adjudication_results").Scan(&total)
 		json.NewEncoder(w).Encode(map[string]interface{}{"service": "ai-claims-auto-adjudication", "total_adjudications": total})
 	})
-	port := ":8120"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8120"
+	}
 	log.Printf(`{"level":"info","msg":"AI Claims Auto-Adjudication starting","port":"%s"}`, port)
 	srv := &http.Server{Addr: port, Handler: mux}
 	go func() {

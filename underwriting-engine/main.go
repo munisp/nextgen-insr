@@ -511,7 +511,10 @@ func main() {
 	mux.HandleFunc("/api/v1/decisions/delete", handleDeleteEntity)
 	mux.HandleFunc("/stats", handleStats)
 
-	port := ":8096"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8096"
+	}
 	log.Printf("Underwriting Engine starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: mux}
 	go func() {

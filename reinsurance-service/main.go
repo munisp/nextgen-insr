@@ -320,7 +320,10 @@ func main() {
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/treaties", handleTreaties)
 	mux.HandleFunc("/api/v1/cede", handleCede)
-	port := ":8095"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8095"
+	}
 	log.Printf("Reinsurance Service starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: mux}
 	go func() {

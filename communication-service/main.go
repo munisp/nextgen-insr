@@ -476,7 +476,10 @@ func main() {
 	mux.HandleFunc("/stats", handleStats)
 
 	
-	port := ":8093"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8093"
+	}
 	log.Printf("Communication Service starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: mux}
 	go func() {

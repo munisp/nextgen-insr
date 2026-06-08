@@ -377,7 +377,10 @@ func main() {
 	mux.HandleFunc("/api/v1/adjudicate", handleAdjudicate)
 	mux.HandleFunc("/api/v1/metrics", handleMetrics)
 
-	port := ":8091"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8091"
+	}
 	log.Printf("Claims Adjudication Engine starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: mux}
 	go func() {

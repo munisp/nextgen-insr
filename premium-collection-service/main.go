@@ -311,7 +311,10 @@ func main() {
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/collect", handleCollect)
 	mux.HandleFunc("/api/v1/reconcile", handleReconcile)
-	port := ":8098"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = ":8098"
+	}
 	log.Printf("Premium Collection Service starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: mux}
 	go func() {

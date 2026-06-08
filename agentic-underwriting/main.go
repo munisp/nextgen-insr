@@ -250,7 +250,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, application_id, risk_score, decision, premium_modifier, auto_decided, created_at FROM underwriting_decisions ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query(fmt.Sprintf("SELECT id, application_id, decision, premium_quoted, risk_score, risk_class, created_at FROM underwriting_decisions ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
@@ -306,7 +306,7 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, application_id, risk_score, decision, premium_modifier, auto_decided, created_at FROM underwriting_decisions WHERE id = $1"), id)
+	rows, err := db.Query(fmt.Sprintf("SELECT id, application_id, decision, premium_quoted, risk_score, risk_class, created_at FROM underwriting_decisions WHERE id = $1"), id)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
@@ -489,7 +489,7 @@ func main() {
 	}
 
 	// Auto-migrate
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS underwriting_decisions (id SERIAL PRIMARY KEY, application_id INTEGER NOT NULL, risk_score NUMERIC(5,2), decision VARCHAR(32) DEFAULT 'pending', premium_modifier NUMERIC(5,4) DEFAULT 1.0, conditions TEXT, underwriter_id INTEGER, auto_decided BOOLEAN DEFAULT false, decided_at TIMESTAMP, created_at TIMESTAMP DEFAULT NOW())`)
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS underwriting_decisions (id SERIAL PRIMARY KEY, application_id TEXT NOT NULL, decision TEXT NOT NULL, premium_quoted NUMERIC, risk_score NUMERIC, risk_class TEXT, created_at TIMESTAMP DEFAULT NOW())`)
 	if err != nil {
 		jsonLog("warn", "migration error", "error", err.Error())
 	}
