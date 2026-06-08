@@ -464,6 +464,61 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Insurance Batch Processing Logic ────────────────────────────────────────
+// Batch operations: premium notices, policy renewals, NAICOM statutory filing
+
+type BatchJob struct {
+	ID         string `json:"job_id"`
+	Type       string `json:"job_type"`
+	Status     string `json:"status"`
+	Total      int    `json:"total_records"`
+	Processed  int    `json:"processed"`
+	Failed     int    `json:"failed"`
+	StartedAt  string `json:"started_at"`
+}
+
+// Batch job types for Nigerian insurance operations
+var batchJobTypes = map[string]string{
+	"premium_notices":     "Generate and send premium due notices (30, 15, 7 days before)",
+	"policy_expiry":       "Identify policies expiring in next 30 days",
+	"naicom_returns":      "Generate quarterly statutory returns for NAICOM",
+	"commission_payout":   "Calculate and process agent commission payments",
+	"reinsurance_bordereaux": "Generate monthly bordereaux for treaty reinsurers",
+	"claims_reserve_review": "Review and update all open claim reserves",
+	"aml_ctr_filing":      "Generate CTR filings for transactions >₦5M",
+	"policy_anniversary":  "Send policy anniversary communications",
+}
+
+func handleStartBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		JobType string `json:"job_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	desc, valid := batchJobTypes[req.JobType]
+	if !valid {
+		http.Error(w, `{"error":"invalid job type","valid_types":["premium_notices","policy_expiry","naicom_returns","commission_payout","reinsurance_bordereaux","claims_reserve_review","aml_ctr_filing","policy_anniversary"]}`, http.StatusBadRequest)
+		return
+	}
+	job := BatchJob{
+		ID: fmt.Sprintf("BATCH-%d", time.Now().UnixNano()%100000000),
+		Type: req.JobType, Status: "running", StartedAt: time.Now().Format(time.RFC3339),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"job": job, "description": desc})
+}
+
+func handleBatchTypes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"job_types": batchJobTypes})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +563,10 @@ func main() {
 	mux.HandleFunc("/api/v1/batch_job", handleGetByID)
 	mux.HandleFunc("/api/v1/batch_jobs/create", handleCreate)
 	mux.HandleFunc("/api/v1/batch_jobs/delete", handleDelete)
+
+	// Batch processing routes
+	mux.HandleFunc("/api/v1/batch/start", handleStartBatch)
+	mux.HandleFunc("/api/v1/batch/types", handleBatchTypes)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

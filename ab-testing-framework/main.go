@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,81 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Insurance A/B Testing Logic ─────────────────────────────────────────────
+// Test insurance product variants: pricing, onboarding flows, claim UX
+
+type Experiment struct {
+	ID          string  `json:"experiment_id"`
+	Name        string  `json:"name"`
+	Variants    []Variant `json:"variants"`
+	SampleSize  int     `json:"sample_size"`
+	Significance float64 `json:"target_significance"`
+	MetricType  string  `json:"metric_type"` // conversion, premium, retention, claims_ratio
+}
+
+type Variant struct {
+	Name        string  `json:"name"`
+	Traffic     float64 `json:"traffic_pct"`
+	Conversions int     `json:"conversions"`
+	Impressions int     `json:"impressions"`
+	Rate        float64 `json:"conversion_rate"`
+}
+
+// Statistical significance using Z-test for proportions
+func calculateSignificance(controlRate, testRate float64, controlN, testN int) (float64, bool) {
+	if controlN == 0 || testN == 0 { return 0, false }
+	pooledRate := (controlRate*float64(controlN) + testRate*float64(testN)) / float64(controlN+testN)
+	if pooledRate == 0 || pooledRate == 1 { return 0, false }
+	se := math.Sqrt(pooledRate * (1 - pooledRate) * (1.0/float64(controlN) + 1.0/float64(testN)))
+	if se == 0 { return 0, false }
+	zScore := (testRate - controlRate) / se
+	// p-value approximation (two-tailed)
+	pValue := 2 * (1 - normalCDF(math.Abs(zScore)))
+	return pValue, pValue < 0.05
+}
+
+func normalCDF(x float64) float64 {
+	// Abramowitz and Stegun approximation
+	t := 1.0 / (1.0 + 0.2316419*x)
+	d := 0.3989422804 * math.Exp(-x*x/2)
+	p := d * t * (0.3193815 + t*(-0.3565638 + t*(1.781478 + t*(-1.821256 + t*1.330274))))
+	return 1.0 - p
+}
+
+func handleEvaluateExperiment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ControlConversions int `json:"control_conversions"`
+		ControlImpressions int `json:"control_impressions"`
+		TestConversions    int `json:"test_conversions"`
+		TestImpressions    int `json:"test_impressions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	controlRate := float64(req.ControlConversions) / float64(req.ControlImpressions)
+	testRate := float64(req.TestConversions) / float64(req.TestImpressions)
+	pValue, significant := calculateSignificance(controlRate, testRate, req.ControlImpressions, req.TestImpressions)
+	
+	winner := "no_winner"
+	if significant && testRate > controlRate { winner = "test" }
+	if significant && controlRate > testRate { winner = "control" }
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"control_rate": math.Round(controlRate*10000)/10000,
+		"test_rate": math.Round(testRate*10000)/10000,
+		"p_value": math.Round(pValue*10000)/10000,
+		"significant": significant,
+		"winner": winner,
+		"lift_pct": math.Round((testRate-controlRate)/controlRate*10000)/100,
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +584,9 @@ func main() {
 	mux.HandleFunc("/api/v1/experiment", handleGetByID)
 	mux.HandleFunc("/api/v1/experiments/create", handleCreate)
 	mux.HandleFunc("/api/v1/experiments/delete", handleDelete)
+
+	// A/B testing routes
+	mux.HandleFunc("/api/v1/experiment/evaluate", handleEvaluateExperiment)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

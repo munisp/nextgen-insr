@@ -15,9 +15,13 @@ Detection Models:
 import json
 import math
 import os
+import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from typing import Dict, List
+
+# Add parent directory to path for ml_models package
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python-ml-engine"))
 
 import psycopg2
 import psycopg2.extras
@@ -168,10 +172,31 @@ class FraudHandler(BaseHTTPRequestHandler):
             self._respond(404, {"error": "not found"})
 
     def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length)) if length > 0 else {}
+
         if self.path == "/api/v1/evaluate":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length)) if length > 0 else {}
             result = calculate_fraud_score(body)
+            self._respond(200, result)
+        elif self.path == "/api/v1/ml/predict":
+            from ml_models.fraud_model import predict_fraud
+            result = predict_fraud(body)
+            self._respond(200, result)
+        elif self.path == "/api/v1/ml/batch-predict":
+            from ml_models.fraud_model import batch_predict
+            claims = body.get("claims", [body])
+            results = batch_predict(claims)
+            self._respond(200, {"predictions": results, "count": len(results)})
+        elif self.path == "/api/v1/ml/model-info":
+            from ml_models.fraud_model import get_model_metadata
+            self._respond(200, get_model_metadata())
+        elif self.path == "/api/v1/severity/predict":
+            from ml_models.claims_model import predict_severity
+            result = predict_severity(body)
+            self._respond(200, result)
+        elif self.path == "/api/v1/churn/predict":
+            from ml_models.churn_model import predict_churn
+            result = predict_churn(body)
             self._respond(200, result)
         else:
             self._respond(404, {"error": "not found"})

@@ -464,6 +464,70 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Insurance DevOps Platform Logic ─────────────────────────────────────────
+// Service health monitoring, deployment readiness, and compliance checks
+
+type ServiceHealth struct {
+	Service     string  `json:"service"`
+	Status      string  `json:"status"`
+	Uptime      float64 `json:"uptime_pct"`
+	LastChecked string  `json:"last_checked"`
+	SLAMet      bool    `json:"sla_met"`
+}
+
+// NAICOM requires 99.5% uptime for insurance platforms processing policies
+const NAICOM_SLA_UPTIME = 99.5
+
+type DeploymentReadiness struct {
+	Service          string   `json:"service"`
+	ComplianceChecks []string `json:"compliance_checks_passed"`
+	FailedChecks     []string `json:"compliance_checks_failed"`
+	ReadyToDeploy    bool     `json:"ready_to_deploy"`
+	RiskLevel        string   `json:"risk_level"`
+}
+
+func assessDeploymentReadiness(service string, hasTests bool, hasRollback bool, hasHealthCheck bool, hasDR bool, hasEncryption bool) DeploymentReadiness {
+	passed := []string{}
+	failed := []string{}
+
+	if hasTests { passed = append(passed, "unit_tests") } else { failed = append(failed, "unit_tests") }
+	if hasRollback { passed = append(passed, "rollback_plan") } else { failed = append(failed, "rollback_plan") }
+	if hasHealthCheck { passed = append(passed, "health_endpoint") } else { failed = append(failed, "health_endpoint") }
+	if hasDR { passed = append(passed, "disaster_recovery") } else { failed = append(failed, "disaster_recovery") }
+	if hasEncryption { passed = append(passed, "data_encryption") } else { failed = append(failed, "data_encryption") }
+
+	risk := "low"
+	if len(failed) > 2 { risk = "critical" }
+	if len(failed) > 0 { risk = "medium" }
+
+	return DeploymentReadiness{
+		Service: service, ComplianceChecks: passed, FailedChecks: failed,
+		ReadyToDeploy: len(failed) == 0, RiskLevel: risk,
+	}
+}
+
+func handleDeploymentCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Service       string `json:"service"`
+		HasTests      bool   `json:"has_tests"`
+		HasRollback   bool   `json:"has_rollback"`
+		HasHealthCheck bool  `json:"has_health_check"`
+		HasDR         bool   `json:"has_disaster_recovery"`
+		HasEncryption bool   `json:"has_data_encryption"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := assessDeploymentReadiness(req.Service, req.HasTests, req.HasRollback, req.HasHealthCheck, req.HasDR, req.HasEncryption)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +572,9 @@ func main() {
 	mux.HandleFunc("/api/v1/deployment", handleGetByID)
 	mux.HandleFunc("/api/v1/deployments/create", handleCreate)
 	mux.HandleFunc("/api/v1/deployments/delete", handleDelete)
+
+	// DevOps platform routes
+	mux.HandleFunc("/api/v1/deploy/readiness-check", handleDeploymentCheck)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

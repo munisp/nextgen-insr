@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,87 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── InsurTech Innovation Logic ──────────────────────────────────────────────
+// Parametric insurance triggers, embedded insurance, and on-demand coverage
+
+type ParametricTrigger struct {
+	TriggerType string  `json:"trigger_type"`
+	Threshold   float64 `json:"threshold"`
+	CurrentValue float64 `json:"current_value"`
+	Triggered   bool    `json:"triggered"`
+	PayoutPct   float64 `json:"payout_percentage"`
+	PayoutAmount float64 `json:"payout_amount"`
+}
+
+// Parametric insurance products for Nigeria
+func evaluateParametricTrigger(triggerType string, currentValue, threshold, sumInsured float64) ParametricTrigger {
+	triggered := false
+	payoutPct := 0.0
+
+	switch triggerType {
+	case "rainfall_excess":
+		// Flood: rainfall > threshold mm in 24 hours
+		if currentValue > threshold {
+			triggered = true
+			excess := (currentValue - threshold) / threshold
+			payoutPct = math.Min(excess*100, 100) // Linear payout up to 100%
+		}
+	case "rainfall_deficit":
+		// Drought: rainfall < threshold mm in growing season
+		if currentValue < threshold {
+			triggered = true
+			deficit := (threshold - currentValue) / threshold
+			payoutPct = math.Min(deficit*100, 100)
+		}
+	case "earthquake":
+		// Earthquake: magnitude > threshold on Richter scale
+		if currentValue > threshold {
+			triggered = true
+			// Exponential scaling for earthquake severity
+			payoutPct = math.Min((currentValue-threshold)*25, 100)
+		}
+	case "temperature":
+		// Heat wave: temperature > threshold °C for 3+ days
+		if currentValue > threshold {
+			triggered = true
+			payoutPct = math.Min((currentValue-threshold)*10, 100)
+		}
+	case "flight_delay":
+		// Travel: flight delay > threshold hours
+		if currentValue > threshold {
+			triggered = true
+			payoutPct = math.Min(float64(int(currentValue-threshold))*25, 100)
+		}
+	}
+
+	return ParametricTrigger{
+		TriggerType: triggerType, Threshold: threshold,
+		CurrentValue: currentValue, Triggered: triggered,
+		PayoutPct: math.Round(payoutPct*100) / 100,
+		PayoutAmount: math.Round(sumInsured*payoutPct/100*100) / 100,
+	}
+}
+
+func handleEvaluateTrigger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		TriggerType  string  `json:"trigger_type"`
+		CurrentValue float64 `json:"current_value"`
+		Threshold    float64 `json:"threshold"`
+		SumInsured   float64 `json:"sum_insured"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := evaluateParametricTrigger(req.TriggerType, req.CurrentValue, req.Threshold, req.SumInsured)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +590,9 @@ func main() {
 	mux.HandleFunc("/api/v1/project", handleGetByID)
 	mux.HandleFunc("/api/v1/projects/create", handleCreate)
 	mux.HandleFunc("/api/v1/projects/delete", handleDelete)
+
+	// InsurTech innovation routes
+	mux.HandleFunc("/api/v1/parametric/evaluate", handleEvaluateTrigger)
 
 	// Apply middleware chain
 	var handler http.Handler = mux
