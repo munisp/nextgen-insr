@@ -1,0 +1,6 @@
+apiVersion: v2
+name: customer-360-view
+description: Helm chart for Customer 360 View
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

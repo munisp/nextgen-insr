@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cross-company-fraud-database
+description: Helm chart for Cross Company Fraud Database
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

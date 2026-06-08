@@ -15,6 +15,39 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// Circuit breaker for external HTTP calls
+type circuitBreakerState int
+const (
+	cbClosed circuitBreakerState = iota
+	cbOpen
+	cbHalfOpen
+)
+type circuitBreaker struct {
+	state       circuitBreakerState
+	failures    int
+	threshold   int
+	resetAfter  time.Duration
+	lastFailure time.Time
+}
+var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+func (c *circuitBreaker) allow() bool {
+	if c.state == cbClosed { return true }
+	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
+		c.state = cbHalfOpen
+		return true
+	}
+	return c.state == cbHalfOpen
+}
+func (c *circuitBreaker) recordSuccess() {
+	c.failures = 0
+	c.state = cbClosed
+}
+func (c *circuitBreaker) recordFailure() {
+	c.failures++
+	c.lastFailure = time.Now()
+	if c.failures >= c.threshold { c.state = cbOpen }
+}
+
 // Enterprise MDM — Master Data Management with golden record resolution
 // Business Rules:
 // - Golden record: Single source of truth for customer, policy, agent entities

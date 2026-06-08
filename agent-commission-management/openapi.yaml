@@ -1,0 +1,90 @@
+openapi: "3.0.3"
+info:
+  title: Agent Commission Management
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: agent-commission-management
+                  database:
+                    type: string
+                    example: connected
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: getReady
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
+      responses:
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string
