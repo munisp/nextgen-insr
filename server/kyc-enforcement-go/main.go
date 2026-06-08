@@ -72,8 +72,8 @@ func loadConfig() Config {
 		KYCEngineURL:      envOr("KYC_ENGINE_URL", "http://localhost:8104"),
 		LivenessURL:       envOr("LIVENESS_SERVICE_URL", "http://localhost:8104"),
 		SanctionsURL:      envOr("SANCTIONS_ENGINE_URL", "http://localhost:8131"),
-		KafkaBrokers:      envOr("KAFKA_BROKERS", "localhost:9092"),
-		RedisURL:          envOr("REDIS_URL", "redis://localhost:6379/11"),
+		KafkaBrokers:      requireEnv("KAFKA_BROKERS"),
+		RedisURL:          requireEnv("REDIS_URL"),
 		KeycloakURL:       envOr("KEYCLOAK_URL", "http://localhost:8080"),
 		TigerBeetleURL:    envOr("TIGERBEETLE_URL", "http://localhost:3001"),
 		TemporalURL:       envOr("TEMPORAL_URL", "http://localhost:7233"),
@@ -95,6 +95,15 @@ func envOr(key, fallback string) string {
 	}
 	return fallback
 }
+
+func requireEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("FATAL: %s environment variable is required", key)
+	}
+	return v
+}
+
 
 // ── Domain Models ────────────────────────────────────────────────────────────
 

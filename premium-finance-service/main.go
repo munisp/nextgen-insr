@@ -394,6 +394,16 @@ func main() {
 		log.Printf("WARNING: migration error: %v", err)
 	}
 
+	// Create indexes for foreign key columns and common query patterns
+	indexSQL := []string{
+		"CREATE INDEX IF NOT EXISTS idx_premium_finance_agreements_policy_id ON premium_finance_agreements(policy_id)", "CREATE INDEX IF NOT EXISTS idx_premium_finance_agreements_customer_id ON premium_finance_agreements(customer_id)",
+	}
+	for _, sql := range indexSQL {
+		if _, err := db.Exec(sql); err != nil {
+			log.Printf("WARNING: index creation: %v", err)
+		}
+	}
+
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()

@@ -63,7 +63,7 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:         envOr("PORT", "8212"),
-		KafkaBrokers: envOr("KAFKA_BROKERS", "localhost:9092"),
+		KafkaBrokers: requireEnv("KAFKA_BROKERS"),
 		RedisURL:     envOr("REDIS_URL", "redis://localhost:6379/12"),
 		KeycloakURL:  envOr("KEYCLOAK_URL", "http://localhost:8080"),
 		TemporalURL:  envOr("TEMPORAL_URL", "http://localhost:7233"),
@@ -81,6 +81,15 @@ func envOr(key, fallback string) string {
 	}
 	return fallback
 }
+
+func requireEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("FATAL: %s environment variable is required", key)
+	}
+	return v
+}
+
 
 // ── Domain Models ────────────────────────────────────────────────────────────
 

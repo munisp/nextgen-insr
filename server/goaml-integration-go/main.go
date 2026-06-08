@@ -70,7 +70,7 @@ func loadConfig() Config {
 		NFIUEndpoint:      envOr("NFIU_GOAML_ENDPOINT", "https://goaml.nfiu.gov.ng/api/v1"),
 		NFIUAPIKey:        envOr("NFIU_API_KEY", ""),
 		NFIUInstitutionID: envOr("NFIU_INSTITUTION_ID", ""),
-		KafkaBrokers:      envOr("KAFKA_BROKERS", "localhost:9092"),
+		KafkaBrokers:      requireEnv("KAFKA_BROKERS"),
 		RedisURL:          envOr("REDIS_URL", "redis://localhost:6379/10"),
 		KeycloakURL:       envOr("KEYCLOAK_URL", "http://localhost:8080"),
 		TigerBeetleURL:    envOr("TIGERBEETLE_URL", "http://localhost:3001"),
@@ -90,6 +90,15 @@ func envOr(key, fallback string) string {
 	}
 	return fallback
 }
+
+func requireEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("FATAL: %s environment variable is required", key)
+	}
+	return v
+}
+
 
 // ── Domain Models ────────────────────────────────────────────────────────────
 

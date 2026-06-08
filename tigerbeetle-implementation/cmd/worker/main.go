@@ -169,7 +169,7 @@ func loadConfig() Config {
 		TigerBeetleClusterID:   1, // Default cluster ID
 		TigerBeetleAddresses:   getEnv("TIGERBEETLE_ADDRESSES", "localhost:3000"),
 		DatabaseURL:            requireEnv("DATABASE_URL"),
-		KafkaBrokers:           getEnv("KAFKA_BROKERS", "localhost:9092"),
+		KafkaBrokers:           requireEnv("KAFKA_BROKERS"),
 		TemporalServiceURL:     getEnv("TEMPORAL_SERVICE_URL", "localhost:7233"),
 		TemporalNamespace:      getEnv("TEMPORAL_NAMESPACE", "default"),
 		TemporalTaskQueue:      getEnv("TEMPORAL_TASK_QUEUE", "policy-task-queue"),
