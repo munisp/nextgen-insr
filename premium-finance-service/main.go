@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,70 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Premium Finance Domain Logic ────────────────────────────────────────────
+
+type PremiumFinancePlan struct {
+	PolicyID       string  `json:"policy_id"`
+	TotalPremium   float64 `json:"total_premium"`
+	DownPayment    float64 `json:"down_payment"`
+	FinancedAmount float64 `json:"financed_amount"`
+	InterestRate   float64 `json:"interest_rate_annual"`
+	Installments   int     `json:"installments"`
+	MonthlyPayment float64 `json:"monthly_payment"`
+	TotalCost      float64 `json:"total_cost"`
+	APR            float64 `json:"apr"`
+}
+
+func calculatePremiumFinance(totalPremium float64, downPaymentPct float64, installments int) PremiumFinancePlan {
+	// NAICOM allows premium financing; typical rate 18-24% p.a.
+	annualRate := 0.22 // 22% p.a.
+	monthlyRate := annualRate / 12
+
+	downPayment := totalPremium * downPaymentPct
+	financed := totalPremium - downPayment
+
+	// Amortization formula: M = P * [r(1+r)^n] / [(1+r)^n - 1]
+	if installments <= 0 { installments = 6 }
+	power := math.Pow(1+monthlyRate, float64(installments))
+	monthlyPayment := financed * (monthlyRate * power) / (power - 1)
+
+	totalCost := downPayment + monthlyPayment*float64(installments)
+	apr := (totalCost - totalPremium) / totalPremium * 100 / (float64(installments) / 12)
+
+	return PremiumFinancePlan{
+		TotalPremium:   totalPremium,
+		DownPayment:    math.Round(downPayment*100) / 100,
+		FinancedAmount: math.Round(financed*100) / 100,
+		InterestRate:   annualRate * 100,
+		Installments:   installments,
+		MonthlyPayment: math.Round(monthlyPayment*100) / 100,
+		TotalCost:      math.Round(totalCost*100) / 100,
+		APR:            math.Round(apr*100) / 100,
+	}
+}
+
+func handleCalculateFinancePlan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		PolicyID       string  `json:"policy_id"`
+		TotalPremium   float64 `json:"total_premium"`
+		DownPaymentPct float64 `json:"down_payment_pct"`
+		Installments   int     `json:"installments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	if req.DownPaymentPct < 0.25 { req.DownPaymentPct = 0.25 } // Min 25% down
+	result := calculatePremiumFinance(req.TotalPremium, req.DownPaymentPct, req.Installments)
+	result.PolicyID = req.PolicyID
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -518,6 +583,9 @@ func main() {
 	mux.HandleFunc("/api/v1/agreement", handleGetByID)
 	mux.HandleFunc("/api/v1/agreements/create", handleCreate)
 	mux.HandleFunc("/api/v1/agreements/delete", handleDelete)
+
+	// Premium finance domain routes
+	mux.HandleFunc("/api/v1/premium-finance/calculate", handleCalculateFinancePlan)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

@@ -247,6 +247,10 @@ func jsonLog(level, msg string, kvs ...string) {
 	log.Println(entry)
 }
 
+// ─── Predictive Churn Engine Logic ───────────────────────────────────────────
+
+
+
 func main() {
 	initDB()
 	mux := http.NewServeMux()

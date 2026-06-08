@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,198 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Takaful Domain Logic ────────────────────────────────────────────────────
+
+// Takaful models: Wakalah (agency), Mudarabah (profit-sharing), Hybrid (Wakalah + Mudarabah)
+type TakafulContribution struct {
+	ParticipantID  string  `json:"participant_id"`
+	Amount         float64 `json:"amount"`
+	WakalahFee     float64 `json:"wakalah_fee"`     // Agency fee (operator management fee)
+	TabarruPortion float64 `json:"tabarru_portion"` // Donation to risk pool
+	InvestmentPortion float64 `json:"investment_portion"` // Goes to investment fund
+}
+
+type TakafulSurplus struct {
+	FundID           string  `json:"fund_id"`
+	Period           string  `json:"period"`
+	TotalContributions float64 `json:"total_contributions"`
+	TotalClaims      float64 `json:"total_claims"`
+	OperatingExpenses float64 `json:"operating_expenses"`
+	InvestmentIncome float64 `json:"investment_income"`
+	GrossSurplus     float64 `json:"gross_surplus"`
+	ParticipantShare float64 `json:"participant_share"` // Typically 50-70%
+	OperatorShare    float64 `json:"operator_share"`    // Mudarabah portion
+	ReserveAllocation float64 `json:"reserve_allocation"`
+}
+
+type TakafulProduct struct {
+	ProductID       string  `json:"product_id"`
+	Name            string  `json:"name"`
+	Model           string  `json:"model"` // wakalah, mudarabah, hybrid
+	WakalahRate     float64 `json:"wakalah_rate"` // Operator's management fee (10-35%)
+	MudarabahRatio  float64 `json:"mudarabah_ratio"` // Profit-sharing ratio (operator:participant)
+	TabarruRate     float64 `json:"tabarru_rate"` // Risk pool contribution rate
+	ShariaCompliant bool    `json:"sharia_compliant"`
+}
+
+// Calculate contribution split per Takaful model
+func calculateContribution(amount float64, product TakafulProduct) TakafulContribution {
+	var wakalahFee, tabarru, investment float64
+
+	switch product.Model {
+	case "wakalah":
+		// Pure agency: operator takes fixed fee, rest goes to tabarru + investment
+		wakalahFee = amount * product.WakalahRate
+		remaining := amount - wakalahFee
+		tabarru = remaining * product.TabarruRate
+		investment = remaining - tabarru
+
+	case "mudarabah":
+		// Pure profit-sharing: all to pool, profit shared per ratio
+		wakalahFee = 0
+		tabarru = amount * product.TabarruRate
+		investment = amount - tabarru
+
+	case "hybrid":
+		// Wakalah on underwriting + Mudarabah on investment
+		wakalahFee = amount * product.WakalahRate
+		remaining := amount - wakalahFee
+		tabarru = remaining * product.TabarruRate
+		investment = remaining - tabarru
+	}
+
+	return TakafulContribution{
+		Amount:           amount,
+		WakalahFee:      math.Round(wakalahFee*100) / 100,
+		TabarruPortion:  math.Round(tabarru*100) / 100,
+		InvestmentPortion: math.Round(investment*100) / 100,
+	}
+}
+
+// Calculate surplus distribution (annual)
+// Per AAOIFI FAS 13: Surplus belongs to participants after deducting claims and reserves
+func calculateSurplus(totalContributions, totalClaims, expenses, investmentIncome float64,
+	mudarabahRatio float64) TakafulSurplus {
+	
+	// Gross surplus = contributions + investment income - claims - expenses
+	grossSurplus := totalContributions + investmentIncome - totalClaims - expenses
+
+	// Reserve allocation: 20% of surplus (qard hasan reserve for deficit years)
+	reserveAllocation := 0.0
+	if grossSurplus > 0 {
+		reserveAllocation = grossSurplus * 0.20
+	}
+
+	distributableSurplus := grossSurplus - reserveAllocation
+
+	// Participant share of surplus (typically 60-70% per Sharia board approval)
+	participantShare := 0.0
+	operatorShare := 0.0
+	if distributableSurplus > 0 {
+		participantShare = distributableSurplus * (1 - mudarabahRatio)
+		operatorShare = distributableSurplus * mudarabahRatio
+	}
+
+	return TakafulSurplus{
+		Period:             time.Now().Format("2006"),
+		TotalContributions: totalContributions,
+		TotalClaims:       totalClaims,
+		OperatingExpenses: expenses,
+		InvestmentIncome:  investmentIncome,
+		GrossSurplus:      math.Round(grossSurplus*100) / 100,
+		ParticipantShare:  math.Round(participantShare*100) / 100,
+		OperatorShare:     math.Round(operatorShare*100) / 100,
+		ReserveAllocation: math.Round(reserveAllocation*100) / 100,
+	}
+}
+
+// Sharia compliance validation for investment types
+func validateShariaCompliance(investmentType string) (bool, string) {
+	// Prohibited (haram) investments per Sharia standards
+	prohibited := map[string]string{
+		"alcohol":         "Alcohol production/distribution is haram",
+		"gambling":        "Gambling/betting operations are haram",
+		"pork":            "Pork-related industries are haram",
+		"tobacco":         "Tobacco is generally prohibited",
+		"conventional_banking": "Interest-based (riba) banking is haram",
+		"weapons":         "Weapons manufacturing is haram",
+		"adult_entertainment": "Adult entertainment is haram",
+	}
+	if reason, found := prohibited[investmentType]; found {
+		return false, reason
+	}
+	// Permissible investments
+	permissible := map[string]bool{
+		"real_estate": true, "sukuk": true, "islamic_equity": true,
+		"commodity_murabaha": true, "infrastructure": true,
+		"healthcare": true, "education": true, "agriculture": true,
+	}
+	if permissible[investmentType] {
+		return true, "Compliant with Sharia investment guidelines"
+	}
+	return false, "Investment type requires Sharia board review"
+}
+
+func handleCalculateContribution(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Amount  float64        `json:"amount"`
+		Product TakafulProduct `json:"product"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	result := calculateContribution(req.Amount, req.Product)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleCalculateSurplus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		TotalContributions float64 `json:"total_contributions"`
+		TotalClaims        float64 `json:"total_claims"`
+		Expenses           float64 `json:"expenses"`
+		InvestmentIncome   float64 `json:"investment_income"`
+		MudarabahRatio     float64 `json:"mudarabah_ratio"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	result := calculateSurplus(req.TotalContributions, req.TotalClaims, req.Expenses, req.InvestmentIncome, req.MudarabahRatio)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleValidateSharia(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		InvestmentType string `json:"investment_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	compliant, reason := validateShariaCompliance(req.InvestmentType)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"investment_type": req.InvestmentType,
+		"compliant": compliant,
+		"reason": reason,
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +701,11 @@ func main() {
 	mux.HandleFunc("/api/v1/pool", handleGetByID)
 	mux.HandleFunc("/api/v1/pools/create", handleCreate)
 	mux.HandleFunc("/api/v1/pools/delete", handleDelete)
+
+	// Domain business logic routes
+	mux.HandleFunc("/api/v1/takaful/contribution", handleCalculateContribution)
+	mux.HandleFunc("/api/v1/takaful/surplus", handleCalculateSurplus)
+	mux.HandleFunc("/api/v1/takaful/sharia-validate", handleValidateSharia)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

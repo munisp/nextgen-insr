@@ -473,6 +473,55 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Audit Trail Domain Logic ────────────────────────────────────────────────
+
+type AuditRetentionPolicy struct {
+	Category         string `json:"category"`
+	RetentionMonths  int    `json:"retention_months"`
+	LegalBasis       string `json:"legal_basis"`
+	AutoPurge        bool   `json:"auto_purge"`
+}
+
+type ComplianceReport struct {
+	ReportID     string `json:"report_id"`
+	Period       string `json:"period"`
+	TotalEvents  int    `json:"total_events"`
+	ByCategory   map[string]int `json:"by_category"`
+	Anomalies    int    `json:"anomalies"`
+	HighRisk     int    `json:"high_risk_actions"`
+	GeneratedAt  string `json:"generated_at"`
+}
+
+var retentionPolicies = []AuditRetentionPolicy{
+	{Category: "financial_transactions", RetentionMonths: 84, LegalBasis: "CBN AML/CFT Regulations S.9", AutoPurge: false},
+	{Category: "kyc_verification", RetentionMonths: 84, LegalBasis: "NAICOM KYC Guidelines", AutoPurge: false},
+	{Category: "policy_changes", RetentionMonths: 120, LegalBasis: "Insurance Act 2003 S.50", AutoPurge: false},
+	{Category: "claims_processing", RetentionMonths: 72, LegalBasis: "Limitation Act 6yr", AutoPurge: false},
+	{Category: "user_access", RetentionMonths: 24, LegalBasis: "NDPR Regulation 2.5", AutoPurge: true},
+	{Category: "system_events", RetentionMonths: 12, LegalBasis: "Internal policy", AutoPurge: true},
+}
+
+func handleRetentionPolicies(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"policies": retentionPolicies})
+}
+
+func handleGenerateComplianceReport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	// Generate report from DB
+	report := ComplianceReport{
+		ReportID: fmt.Sprintf("AR-%d", time.Now().UnixNano()%100000000),
+		Period: time.Now().Format("2006-01"),
+		GeneratedAt: time.Now().Format(time.RFC3339),
+		ByCategory: map[string]int{},
+	}
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*) FROM audit_records").Scan(&report.TotalEvents)
+		db.QueryRow("SELECT COUNT(*) FROM audit_records WHERE severity='high'").Scan(&report.HighRisk)
+	}
+	json.NewEncoder(w).Encode(report)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -527,6 +576,10 @@ func main() {
 	mux.HandleFunc("/api/v1/audit_event", handleGetByID)
 	mux.HandleFunc("/api/v1/audit_events/create", handleCreate)
 	mux.HandleFunc("/api/v1/audit_events/delete", handleDelete)
+
+	// Audit trail domain routes
+	mux.HandleFunc("/api/v1/audit/retention-policies", handleRetentionPolicies)
+	mux.HandleFunc("/api/v1/audit/compliance-report", handleGenerateComplianceReport)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

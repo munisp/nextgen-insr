@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,123 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Microinsurance Domain Logic ─────────────────────────────────────────────
+
+// NAICOM Microinsurance Guidelines (2013):
+// - Maximum premium: ₦10,000/year (non-life), ₦30,000/year (life)
+// - Maximum sum insured: ₦2,000,000 (non-life), ₦5,000,000 (life)
+// - Simplified documentation: No medical exam required
+// - Grace period: Minimum 30 days for premium payment
+// - Claims settlement: Maximum 10 working days
+
+type MicroProduct struct {
+	ProductID      string  `json:"product_id"`
+	Name           string  `json:"name"`
+	Category       string  `json:"category"` // crop, livestock, health, funeral, personal_accident
+	MaxPremium     float64 `json:"max_premium"`
+	MaxSumInsured  float64 `json:"max_sum_insured"`
+	MinSumInsured  float64 `json:"min_sum_insured"`
+	WaitingPeriod  int     `json:"waiting_period_days"`
+	GracePeriod    int     `json:"grace_period_days"`
+	ClaimSettlement int    `json:"claim_settlement_days"`
+}
+
+type MicroQuoteResult struct {
+	ProductID     string  `json:"product_id"`
+	Premium       float64 `json:"premium"`
+	SumInsured    float64 `json:"sum_insured"`
+	IsCompliant   bool    `json:"naicom_compliant"`
+	Violations    []string `json:"violations,omitempty"`
+	Channel       string  `json:"channel"` // ussd, mobile_app, agent, pos
+	Frequency     string  `json:"frequency"` // daily, weekly, monthly, annual
+}
+
+var microProducts = []MicroProduct{
+	{ProductID: "MI-CROP-01", Name: "Crop Protection", Category: "crop", MaxPremium: 10000, MaxSumInsured: 2000000, MinSumInsured: 50000, WaitingPeriod: 0, GracePeriod: 30, ClaimSettlement: 10},
+	{ProductID: "MI-LIVE-01", Name: "Livestock Cover", Category: "livestock", MaxPremium: 10000, MaxSumInsured: 2000000, MinSumInsured: 25000, WaitingPeriod: 14, GracePeriod: 30, ClaimSettlement: 10},
+	{ProductID: "MI-HLTH-01", Name: "Hospital Cash", Category: "health", MaxPremium: 10000, MaxSumInsured: 500000, MinSumInsured: 50000, WaitingPeriod: 30, GracePeriod: 30, ClaimSettlement: 5},
+	{ProductID: "MI-FNL-01", Name: "Funeral Expense", Category: "funeral", MaxPremium: 5000, MaxSumInsured: 500000, MinSumInsured: 50000, WaitingPeriod: 90, GracePeriod: 30, ClaimSettlement: 3},
+	{ProductID: "MI-PA-01", Name: "Personal Accident", Category: "personal_accident", MaxPremium: 8000, MaxSumInsured: 2000000, MinSumInsured: 100000, WaitingPeriod: 0, GracePeriod: 30, ClaimSettlement: 10},
+}
+
+func calculateMicroPremium(sumInsured float64, category string, frequency string) (float64, []string) {
+	// Base rates per category (annual)
+	baseRates := map[string]float64{
+		"crop":              0.05,  // 5% (high risk, weather dependent)
+		"livestock":         0.04,  // 4%
+		"health":            0.03,  // 3%
+		"funeral":           0.015, // 1.5%
+		"personal_accident": 0.02,  // 2%
+	}
+	rate := baseRates[category]
+	if rate == 0 { rate = 0.03 }
+
+	annualPremium := sumInsured * rate
+	violations := []string{}
+
+	// NAICOM cap enforcement
+	maxPremium := 10000.0
+	if category == "funeral" { maxPremium = 5000 }
+	if annualPremium > maxPremium {
+		violations = append(violations, fmt.Sprintf("Premium ₦%.0f exceeds NAICOM cap of ₦%.0f", annualPremium, maxPremium))
+		annualPremium = maxPremium // Cap it
+	}
+
+	// Sum insured cap
+	maxSI := 2000000.0
+	if sumInsured > maxSI {
+		violations = append(violations, fmt.Sprintf("Sum insured ₦%.0f exceeds microinsurance cap of ₦%.0f", sumInsured, maxSI))
+	}
+
+	// Frequency adjustment
+	var premium float64
+	switch frequency {
+	case "daily":
+		premium = math.Ceil(annualPremium / 365)
+	case "weekly":
+		premium = math.Ceil(annualPremium / 52)
+	case "monthly":
+		premium = math.Ceil(annualPremium / 12)
+	default:
+		premium = annualPremium
+	}
+
+	return premium, violations
+}
+
+func handleMicroQuote(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Category   string  `json:"category"`
+		SumInsured float64 `json:"sum_insured"`
+		Frequency  string  `json:"frequency"`
+		Channel    string  `json:"channel"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	premium, violations := calculateMicroPremium(req.SumInsured, req.Category, req.Frequency)
+	result := MicroQuoteResult{
+		Premium:     premium,
+		SumInsured:  req.SumInsured,
+		IsCompliant: len(violations) == 0,
+		Violations:  violations,
+		Channel:     req.Channel,
+		Frequency:   req.Frequency,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleMicroProducts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"products": microProducts})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -518,6 +636,10 @@ func main() {
 	mux.HandleFunc("/api/v1/micro_policy", handleGetByID)
 	mux.HandleFunc("/api/v1/micro_policys/create", handleCreate)
 	mux.HandleFunc("/api/v1/micro_policys/delete", handleDelete)
+
+	// Domain business logic routes
+	mux.HandleFunc("/api/v1/micro/quote", handleMicroQuote)
+	mux.HandleFunc("/api/v1/micro/products", handleMicroProducts)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

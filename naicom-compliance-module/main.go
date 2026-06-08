@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -473,6 +474,228 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── NAICOM Domain Logic ─────────────────────────────────────────────────────
+
+// SCR (Solvency Capital Requirement) under NAICOM Risk-Based Supervision
+type SCRInput struct {
+	Assets          float64 `json:"assets"`
+	Liabilities     float64 `json:"liabilities"`
+	PremiumVolume   float64 `json:"premium_volume"`
+	InvestmentAssets float64 `json:"investment_assets"`
+	ReinsuranceRecoverable float64 `json:"reinsurance_recoverable"`
+}
+
+type SCRResult struct {
+	MarketRisk        float64 `json:"market_risk"`
+	InsuranceRisk     float64 `json:"insurance_risk"`
+	CreditRisk        float64 `json:"credit_risk"`
+	OperationalRisk   float64 `json:"operational_risk"`
+	GrossSCR          float64 `json:"gross_scr"`
+	DiversificationBenefit float64 `json:"diversification_benefit"`
+	NetSCR            float64 `json:"net_scr"`
+	AvailableCapital  float64 `json:"available_capital"`
+	SolvencyRatio     float64 `json:"solvency_ratio"`
+	MeetsMinimum      bool    `json:"meets_minimum"`
+	MinimumCapital    float64 `json:"minimum_capital"`
+	Status            string  `json:"status"`
+}
+
+func calculateSCR(input SCRInput) SCRResult {
+	// NAICOM minimum capital requirements (2023 recapitalization)
+	minimumCapital := 8000000000.0 // ₦8B for life, ₦5B for non-life, ₦10B for composite
+
+	// Market risk: equity (35%), property (25%), interest rate (12%), currency (20%)
+	equityRisk := input.InvestmentAssets * 0.35 * 0.12
+	propertyRisk := input.InvestmentAssets * 0.15 * 0.25
+	interestRateRisk := input.Assets * 0.12 * 0.08
+	currencyRisk := input.Assets * 0.10 * 0.20
+	marketRisk := equityRisk + propertyRisk + interestRateRisk + currencyRisk
+
+	// Insurance (underwriting) risk: premium risk + reserve risk
+	premiumRisk := input.PremiumVolume * 0.10
+	reserveRisk := input.Liabilities * 0.08
+	catastropheRisk := input.PremiumVolume * 0.03
+	insuranceRisk := premiumRisk + reserveRisk + catastropheRisk
+
+	// Credit risk: counterparty default (reinsurers, banks, policyholders)
+	creditRisk := input.ReinsuranceRecoverable*0.06 + input.Assets*0.02
+
+	// Operational risk: 3% of gross premium or 0.3% of technical provisions (whichever higher)
+	opRiskPremium := input.PremiumVolume * 0.03
+	opRiskProvisions := input.Liabilities * 0.003
+	operationalRisk := math.Max(opRiskPremium, opRiskProvisions)
+
+	grossSCR := marketRisk + insuranceRisk + creditRisk + operationalRisk
+
+	// Diversification benefit (25% correlation reduction per NAICOM guidelines)
+	diversification := grossSCR * 0.25
+	netSCR := grossSCR - diversification
+
+	availableCapital := input.Assets - input.Liabilities
+
+	solvencyRatio := 0.0
+	if netSCR > 0 {
+		solvencyRatio = availableCapital / netSCR
+	}
+
+	status := "breach"
+	if solvencyRatio >= 2.0 {
+		status = "strong"
+	} else if solvencyRatio >= 1.5 {
+		status = "adequate"
+	} else if solvencyRatio >= 1.0 {
+		status = "warning"
+	}
+
+	return SCRResult{
+		MarketRisk: math.Round(marketRisk*100) / 100,
+		InsuranceRisk: math.Round(insuranceRisk*100) / 100,
+		CreditRisk: math.Round(creditRisk*100) / 100,
+		OperationalRisk: math.Round(operationalRisk*100) / 100,
+		GrossSCR: math.Round(grossSCR*100) / 100,
+		DiversificationBenefit: math.Round(diversification*100) / 100,
+		NetSCR: math.Round(netSCR*100) / 100,
+		AvailableCapital: math.Round(availableCapital*100) / 100,
+		SolvencyRatio: math.Round(solvencyRatio*10000) / 10000,
+		MeetsMinimum: availableCapital >= minimumCapital,
+		MinimumCapital: minimumCapital,
+		Status: status,
+	}
+}
+
+// Statutory Return types per NAICOM Operational Guidelines
+type StatutoryReturn struct {
+	ReturnType    string `json:"return_type"` // annual_return, quarterly_return, monthly_premium
+	Period        string `json:"period"`
+	DueDate       string `json:"due_date"`
+	Status        string `json:"status"`
+}
+
+func getStatutoryReturnsDue(currentDate time.Time) []StatutoryReturn {
+	year := currentDate.Year()
+	month := currentDate.Month()
+	returns := []StatutoryReturn{}
+
+	// Annual returns - due by March 31 (NAICOM Section 30)
+	returns = append(returns, StatutoryReturn{
+		ReturnType: "annual_financial_statement",
+		Period:     fmt.Sprintf("%d", year-1),
+		DueDate:    fmt.Sprintf("%d-03-31", year),
+		Status:     "pending",
+	})
+	// Quarterly solvency margin report
+	quarter := (int(month)-1)/3 + 1
+	returns = append(returns, StatutoryReturn{
+		ReturnType: "quarterly_solvency_margin",
+		Period:     fmt.Sprintf("%d-Q%d", year, quarter),
+		DueDate:    fmt.Sprintf("%d-%02d-30", year, quarter*3+1),
+		Status:     "pending",
+	})
+	// Monthly premium income report (due 15th of following month)
+	returns = append(returns, StatutoryReturn{
+		ReturnType: "monthly_premium_income",
+		Period:     fmt.Sprintf("%d-%02d", year, month),
+		DueDate:    fmt.Sprintf("%d-%02d-15", year, int(month)+1),
+		Status:     "pending",
+	})
+	// Investment returns (quarterly)
+	returns = append(returns, StatutoryReturn{
+		ReturnType: "quarterly_investment_return",
+		Period:     fmt.Sprintf("%d-Q%d", year, quarter),
+		DueDate:    fmt.Sprintf("%d-%02d-30", year, quarter*3+1),
+		Status:     "pending",
+	})
+	return returns
+}
+
+// Commission cap enforcement (NAICOM Guidelines on Insurance Distribution)
+type CommissionValidation struct {
+	ProductClass    string  `json:"product_class"`
+	CommissionRate  float64 `json:"commission_rate"`
+	MaxAllowed      float64 `json:"max_allowed"`
+	IsCompliant     bool    `json:"is_compliant"`
+	Violation       string  `json:"violation,omitempty"`
+}
+
+func validateCommissionCap(productClass string, commissionRate float64) CommissionValidation {
+	// NAICOM maximum commission rates
+	caps := map[string]float64{
+		"motor":           0.15, // 15% max
+		"fire":            0.20, // 20% max
+		"marine":          0.175, // 17.5% max
+		"general_accident": 0.20,
+		"engineering":     0.20,
+		"life_individual": 0.40, // 40% first year, 7.5% renewal
+		"life_group":      0.125, // 12.5% max
+		"oil_gas":         0.125,
+		"aviation":        0.10,
+	}
+
+	maxAllowed := caps[productClass]
+	if maxAllowed == 0 {
+		maxAllowed = 0.20 // default 20%
+	}
+
+	result := CommissionValidation{
+		ProductClass:   productClass,
+		CommissionRate: commissionRate,
+		MaxAllowed:     maxAllowed,
+		IsCompliant:    commissionRate <= maxAllowed,
+	}
+	if !result.IsCompliant {
+		result.Violation = fmt.Sprintf("Commission %.1f%% exceeds NAICOM cap of %.1f%% for %s", commissionRate*100, maxAllowed*100, productClass)
+	}
+	return result
+}
+
+func handleCalculateSCR(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var input SCRInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	result := calculateSCR(input)
+	// Persist to DB
+	if db != nil {
+		data, _ := json.Marshal(result)
+		db.Exec("INSERT INTO naicom_filings (filing_type, period, status, data, filed_by) VALUES ($1, $2, $3, $4, $5)",
+			"scr_calculation", time.Now().Format("2006-Q1"), "calculated", string(data), "system")
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleStatutoryReturns(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	returns := getStatutoryReturnsDue(time.Now())
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"returns_due": returns,
+		"generated_at": time.Now().Format(time.RFC3339),
+	})
+}
+
+func handleValidateCommission(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ProductClass   string  `json:"product_class"`
+		CommissionRate float64 `json:"commission_rate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	result := validateCommissionCap(req.ProductClass, req.CommissionRate)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -517,6 +740,11 @@ func main() {
 	mux.HandleFunc("/api/v1/filing", handleGetByID)
 	mux.HandleFunc("/api/v1/filings/create", handleCreate)
 	mux.HandleFunc("/api/v1/filings/delete", handleDelete)
+
+	// Domain business logic routes
+	mux.HandleFunc("/api/v1/scr/calculate", handleCalculateSCR)
+	mux.HandleFunc("/api/v1/statutory-returns", handleStatutoryReturns)
+	mux.HandleFunc("/api/v1/commission/validate", handleValidateCommission)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

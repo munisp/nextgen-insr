@@ -464,6 +464,90 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Multi-Country Regulatory Logic ─────────────────────────────────────────
+
+type RegulatoryRequirement struct {
+	Country        string   `json:"country"`
+	Regulator      string   `json:"regulator"`
+	MinCapital     float64  `json:"minimum_capital"`
+	Currency       string   `json:"currency"`
+	Licenses       []string `json:"required_licenses"`
+	DataResidency  bool     `json:"data_residency_required"`
+	LocalPartner   bool     `json:"local_partner_required"`
+	KYCRequirements []string `json:"kyc_requirements"`
+}
+
+var regulatoryMap = map[string]RegulatoryRequirement{
+	"NG": {Country: "Nigeria", Regulator: "NAICOM", MinCapital: 8000000000, Currency: "NGN",
+		Licenses: []string{"life", "non_life", "composite", "reinsurance"},
+		DataResidency: true, LocalPartner: false,
+		KYCRequirements: []string{"bvn", "nin", "utility_bill", "passport_photo"}},
+	"GH": {Country: "Ghana", Regulator: "NIC", MinCapital: 50000000, Currency: "GHS",
+		Licenses: []string{"life", "non_life", "reinsurance", "microinsurance"},
+		DataResidency: true, LocalPartner: false,
+		KYCRequirements: []string{"ghana_card", "tin", "utility_bill"}},
+	"KE": {Country: "Kenya", Regulator: "IRA", MinCapital: 600000000, Currency: "KES",
+		Licenses: []string{"life", "general", "composite", "hmo"},
+		DataResidency: false, LocalPartner: false,
+		KYCRequirements: []string{"national_id", "kra_pin", "passport"}},
+	"ZA": {Country: "South Africa", Regulator: "FSCA/PA", MinCapital: 10000000, Currency: "ZAR",
+		Licenses: []string{"short_term", "long_term", "reinsurance"},
+		DataResidency: true, LocalPartner: true,
+		KYCRequirements: []string{"national_id", "proof_of_address", "fica_verification"}},
+	"EG": {Country: "Egypt", Regulator: "FRA", MinCapital: 60000000, Currency: "EGP",
+		Licenses: []string{"life", "property", "liability"},
+		DataResidency: true, LocalPartner: true,
+		KYCRequirements: []string{"national_id", "tax_card", "commercial_register"}},
+}
+
+func handleRegulatoryRequirements(w http.ResponseWriter, r *http.Request) {
+	country := r.URL.Query().Get("country")
+	w.Header().Set("Content-Type", "application/json")
+	if country != "" {
+		if req, ok := regulatoryMap[country]; ok {
+			json.NewEncoder(w).Encode(req)
+		} else {
+			http.Error(w, `{"error":"country not supported"}`, http.StatusNotFound)
+		}
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"countries": regulatoryMap})
+}
+
+func handleComplianceCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Country       string  `json:"country"`
+		Capital       float64 `json:"capital"`
+		HasLicense    bool    `json:"has_license"`
+		DataLocal     bool    `json:"data_local"`
+		LocalPartner  bool    `json:"local_partner"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	reg, ok := regulatoryMap[req.Country]
+	if !ok {
+		http.Error(w, `{"error":"country not found"}`, http.StatusNotFound)
+		return
+	}
+	issues := []string{}
+	if req.Capital < reg.MinCapital {
+		issues = append(issues, fmt.Sprintf("Capital %.0f below minimum %.0f %s", req.Capital, reg.MinCapital, reg.Currency))
+	}
+	if !req.HasLicense { issues = append(issues, "Operating license not obtained from "+reg.Regulator) }
+	if reg.DataResidency && !req.DataLocal { issues = append(issues, "Data residency requirement not met") }
+	if reg.LocalPartner && !req.LocalPartner { issues = append(issues, "Local partner requirement not met") }
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"country": reg.Country, "compliant": len(issues) == 0, "issues": issues,
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +592,10 @@ func main() {
 	mux.HandleFunc("/api/v1/requirement", handleGetByID)
 	mux.HandleFunc("/api/v1/requirements/create", handleCreate)
 	mux.HandleFunc("/api/v1/requirements/delete", handleDelete)
+
+	// Regulatory domain routes
+	mux.HandleFunc("/api/v1/regulatory/requirements", handleRegulatoryRequirements)
+	mux.HandleFunc("/api/v1/regulatory/compliance-check", handleComplianceCheck)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

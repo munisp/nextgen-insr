@@ -464,6 +464,214 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── NDPR Domain Logic ───────────────────────────────────────────────────────
+
+type ConsentRecord struct {
+	SubjectID     string   `json:"subject_id"`
+	Purpose       string   `json:"purpose"`
+	DataCategories []string `json:"data_categories"`
+	LawfulBasis   string   `json:"lawful_basis"` // consent, contract, legal_obligation, vital_interest, public_interest, legitimate_interest
+	ConsentDate   string   `json:"consent_date"`
+	ExpiryDate    string   `json:"expiry_date,omitempty"`
+	WithdrawDate  string   `json:"withdraw_date,omitempty"`
+	Status        string   `json:"status"` // active, withdrawn, expired
+}
+
+type DataSubjectRequest struct {
+	RequestID   string `json:"request_id"`
+	SubjectID   string `json:"subject_id"`
+	RequestType string `json:"request_type"` // access, rectification, erasure, portability, restriction, objection
+	Status      string `json:"status"`       // received, processing, completed, denied
+	ReceivedAt  string `json:"received_at"`
+	Deadline    string `json:"deadline"`     // NDPR: 30 days
+	CompletedAt string `json:"completed_at,omitempty"`
+}
+
+type BreachNotification struct {
+	BreachID       string   `json:"breach_id"`
+	DetectedAt     string   `json:"detected_at"`
+	NotifyNITDABy  string   `json:"notify_nitda_by"` // 72 hours from detection
+	AffectedCount  int      `json:"affected_count"`
+	DataTypes      []string `json:"data_types"`
+	Severity       string   `json:"severity"` // low, medium, high, critical
+	RootCause      string   `json:"root_cause"`
+	Mitigations    []string `json:"mitigations"`
+	NITDANotified  bool     `json:"nitda_notified"`
+	SubjectsNotified bool   `json:"subjects_notified"`
+}
+
+// NDPR requires notification to NITDA within 72 hours of breach discovery
+func calculateBreachDeadline(detectedAt time.Time) time.Time {
+	return detectedAt.Add(72 * time.Hour)
+}
+
+// DSR (Data Subject Request) must be completed within 30 days per NDPR
+func calculateDSRDeadline(receivedAt time.Time) time.Time {
+	return receivedAt.Add(30 * 24 * time.Hour)
+}
+
+// Determine if breach requires notification to data subjects
+// NDPR Article 2.7: Must notify if high risk to rights and freedoms
+func requiresSubjectNotification(severity string, affectedCount int, dataTypes []string) bool {
+	if severity == "critical" {
+		return true
+	}
+	if severity == "high" && affectedCount > 100 {
+		return true
+	}
+	sensitiveData := map[string]bool{
+		"health_data": true, "financial_data": true, "biometric_data": true,
+		"genetic_data": true, "political_opinions": true, "religious_beliefs": true,
+	}
+	for _, dt := range dataTypes {
+		if sensitiveData[dt] {
+			return true
+		}
+	}
+	return false
+}
+
+// Validate lawful basis for data processing (NDPR Section 2.2)
+func validateLawfulBasis(basis string, purpose string) (bool, string) {
+	validBases := map[string]bool{
+		"consent": true, "contract": true, "legal_obligation": true,
+		"vital_interest": true, "public_interest": true, "legitimate_interest": true,
+	}
+	if !validBases[basis] {
+		return false, fmt.Sprintf("Invalid lawful basis: %s", basis)
+	}
+	// Consent must be freely given, specific, informed, unambiguous
+	if basis == "consent" && purpose == "" {
+		return false, "Consent requires a specific, clearly stated purpose"
+	}
+	return true, ""
+}
+
+// Data retention periods per NDPR and sectoral guidelines
+func getRetentionPeriod(dataCategory string) int {
+	// Returns retention period in months
+	periods := map[string]int{
+		"transaction_data":    84,  // 7 years (CBN requirement)
+		"kyc_documents":      84,  // 7 years (AML/CFT)
+		"policy_data":        120, // 10 years (insurance regulatory)
+		"claims_data":        72,  // 6 years (limitation period)
+		"marketing_data":     24,  // 2 years from last interaction
+		"employee_data":      84,  // 7 years after termination
+		"communication_logs": 36,  // 3 years
+		"access_logs":        12,  // 1 year
+	}
+	if p, ok := periods[dataCategory]; ok {
+		return p
+	}
+	return 36 // default 3 years
+}
+
+func handleRecordConsent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req ConsentRecord
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	valid, reason := validateLawfulBasis(req.LawfulBasis, req.Purpose)
+	if !valid {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, reason), http.StatusBadRequest)
+		return
+	}
+	req.ConsentDate = time.Now().Format(time.RFC3339)
+	req.Status = "active"
+	// Persist
+	if db != nil {
+		data, _ := json.Marshal(req)
+		db.Exec("INSERT INTO ndpr_consents (subject_id, purpose, lawful_basis, data_categories, status, consent_date, created_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())",
+			req.SubjectID, req.Purpose, req.LawfulBasis, fmt.Sprintf("%v", req.DataCategories), req.Status)
+		_ = data
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(req)
+}
+
+func handleDataSubjectRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		SubjectID   string `json:"subject_id"`
+		RequestType string `json:"request_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	validTypes := map[string]bool{
+		"access": true, "rectification": true, "erasure": true,
+		"portability": true, "restriction": true, "objection": true,
+	}
+	if !validTypes[req.RequestType] {
+		http.Error(w, `{"error":"invalid request_type"}`, http.StatusBadRequest)
+		return
+	}
+	now := time.Now()
+	dsr := DataSubjectRequest{
+		RequestID:   fmt.Sprintf("DSR-%d", now.UnixNano()%100000000),
+		SubjectID:   req.SubjectID,
+		RequestType: req.RequestType,
+		Status:      "received",
+		ReceivedAt:  now.Format(time.RFC3339),
+		Deadline:    calculateDSRDeadline(now).Format(time.RFC3339),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(dsr)
+}
+
+func handleReportBreach(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		AffectedCount int      `json:"affected_count"`
+		DataTypes     []string `json:"data_types"`
+		Severity      string   `json:"severity"`
+		RootCause     string   `json:"root_cause"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	now := time.Now()
+	breach := BreachNotification{
+		BreachID:      fmt.Sprintf("BRH-%d", now.UnixNano()%100000000),
+		DetectedAt:    now.Format(time.RFC3339),
+		NotifyNITDABy: calculateBreachDeadline(now).Format(time.RFC3339),
+		AffectedCount: req.AffectedCount,
+		DataTypes:     req.DataTypes,
+		Severity:      req.Severity,
+		RootCause:     req.RootCause,
+		Mitigations:   []string{"incident_response_activated", "affected_systems_isolated"},
+		SubjectsNotified: requiresSubjectNotification(req.Severity, req.AffectedCount, req.DataTypes),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(breach)
+}
+
+func handleRetentionPolicy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	categories := []string{"transaction_data", "kyc_documents", "policy_data", "claims_data", "marketing_data", "employee_data", "communication_logs", "access_logs"}
+	policies := []map[string]interface{}{}
+	for _, cat := range categories {
+		policies = append(policies, map[string]interface{}{
+			"category":         cat,
+			"retention_months": getRetentionPeriod(cat),
+		})
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"retention_policies": policies})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -494,6 +702,10 @@ func main() {
 		jsonLog("warn", "migration error", "error", err.Error())
 	}
 
+	// NDPR tables
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS ndpr_consents (id SERIAL PRIMARY KEY, subject_id TEXT, purpose TEXT, lawful_basis TEXT, data_categories TEXT, status VARCHAR(32), consent_date TIMESTAMP, created_at TIMESTAMP DEFAULT NOW())`)
+	if err != nil { jsonLog("warn", "ndpr migration", "error", err.Error()) }
+
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()
@@ -508,6 +720,12 @@ func main() {
 	mux.HandleFunc("/api/v1/dsr", handleGetByID)
 	mux.HandleFunc("/api/v1/dsrs/create", handleCreate)
 	mux.HandleFunc("/api/v1/dsrs/delete", handleDelete)
+
+	// Domain business logic routes
+	mux.HandleFunc("/api/v1/ndpr/consent", handleRecordConsent)
+	mux.HandleFunc("/api/v1/ndpr/dsr", handleDataSubjectRequest)
+	mux.HandleFunc("/api/v1/ndpr/breach", handleReportBreach)
+	mux.HandleFunc("/api/v1/ndpr/retention-policy", handleRetentionPolicy)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

@@ -464,6 +464,98 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Pan-African eKYC Logic ──────────────────────────────────────────────────
+
+type IDVerificationRequest struct {
+	Country  string `json:"country"`
+	IDType   string `json:"id_type"`
+	IDNumber string `json:"id_number"`
+	FullName string `json:"full_name"`
+}
+
+type IDVerificationResult struct {
+	Country    string  `json:"country"`
+	IDType     string  `json:"id_type"`
+	Valid      bool    `json:"valid"`
+	Format     bool    `json:"format_valid"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason,omitempty"`
+}
+
+// Country-specific ID format validation
+func verifyPanAfricanID(req IDVerificationRequest) IDVerificationResult {
+	result := IDVerificationResult{Country: req.Country, IDType: req.IDType}
+
+	switch req.Country {
+	case "NG": // Nigeria
+		switch req.IDType {
+		case "bvn":
+			result.Format = len(req.IDNumber) == 11 && req.IDNumber[0] == '2'
+		case "nin":
+			result.Format = len(req.IDNumber) == 11
+		case "voters_card":
+			result.Format = len(req.IDNumber) >= 15 && len(req.IDNumber) <= 19
+		}
+	case "GH": // Ghana
+		switch req.IDType {
+		case "ghana_card":
+			result.Format = len(req.IDNumber) == 15 // GHA-XXXXXXXXX-X
+		case "tin":
+			result.Format = len(req.IDNumber) >= 11
+		}
+	case "KE": // Kenya
+		switch req.IDType {
+		case "national_id":
+			result.Format = len(req.IDNumber) >= 7 && len(req.IDNumber) <= 8
+		case "kra_pin":
+			result.Format = len(req.IDNumber) == 11 && req.IDNumber[0] == 'A'
+		}
+	case "ZA": // South Africa
+		switch req.IDType {
+		case "national_id":
+			result.Format = len(req.IDNumber) == 13 // YYMMDDXXXXXXXXX
+		}
+	case "RW": // Rwanda
+		switch req.IDType {
+		case "national_id":
+			result.Format = len(req.IDNumber) == 16
+		}
+	}
+
+	result.Valid = result.Format
+	if result.Format { result.Confidence = 0.90 } else { result.Reason = "Invalid ID format for " + req.Country }
+	return result
+}
+
+func handleVerifyID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req IDVerificationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := verifyPanAfricanID(req)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleSupportedCountries(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"countries": []map[string]interface{}{
+			{"code": "NG", "name": "Nigeria", "id_types": []string{"bvn", "nin", "voters_card", "drivers_license"}},
+			{"code": "GH", "name": "Ghana", "id_types": []string{"ghana_card", "tin", "voters_id"}},
+			{"code": "KE", "name": "Kenya", "id_types": []string{"national_id", "kra_pin", "passport"}},
+			{"code": "ZA", "name": "South Africa", "id_types": []string{"national_id", "passport"}},
+			{"code": "RW", "name": "Rwanda", "id_types": []string{"national_id", "passport"}},
+			{"code": "EG", "name": "Egypt", "id_types": []string{"national_id", "tax_card"}},
+		},
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +600,10 @@ func main() {
 	mux.HandleFunc("/api/v1/ekyc", handleGetByID)
 	mux.HandleFunc("/api/v1/ekycs/create", handleCreate)
 	mux.HandleFunc("/api/v1/ekycs/delete", handleDelete)
+
+	// Pan-African eKYC routes
+	mux.HandleFunc("/api/v1/ekyc/verify", handleVerifyID)
+	mux.HandleFunc("/api/v1/ekyc/countries", handleSupportedCountries)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

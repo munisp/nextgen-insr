@@ -464,6 +464,41 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── API Marketplace Logic ───────────────────────────────────────────────────
+
+type APIProduct struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Category    string  `json:"category"`
+	Pricing     string  `json:"pricing_model"` // per_call, monthly, freemium
+	RateLimit   int     `json:"rate_limit_per_minute"`
+	Price       float64 `json:"price_per_call"`
+}
+
+var apiProducts = []APIProduct{
+	{ID: "api-quote", Name: "Insurance Quote API", Category: "underwriting", Pricing: "per_call", RateLimit: 100, Price: 5},
+	{ID: "api-kyc", Name: "KYC Verification API", Category: "compliance", Pricing: "per_call", RateLimit: 50, Price: 25},
+	{ID: "api-claims", Name: "Claims Submission API", Category: "claims", Pricing: "per_call", RateLimit: 30, Price: 10},
+	{ID: "api-policy", Name: "Policy Issuance API", Category: "policy", Pricing: "per_call", RateLimit: 20, Price: 50},
+	{ID: "api-payment", Name: "Premium Collection API", Category: "payments", Pricing: "per_call", RateLimit: 60, Price: 15},
+}
+
+func handleAPIProducts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"products": apiProducts})
+}
+
+func handleAPIUsage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	// Mock usage stats per partner
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"period": time.Now().Format("2006-01"),
+		"total_calls": 15423,
+		"by_api": map[string]int{"api-quote": 8000, "api-kyc": 3500, "api-claims": 2000, "api-policy": 923, "api-payment": 1000},
+		"revenue": 234500.00,
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +543,10 @@ func main() {
 	mux.HandleFunc("/api/v1/api_product", handleGetByID)
 	mux.HandleFunc("/api/v1/api_products/create", handleCreate)
 	mux.HandleFunc("/api/v1/api_products/delete", handleDelete)
+
+	// API marketplace routes
+	mux.HandleFunc("/api/v1/marketplace/products", handleAPIProducts)
+	mux.HandleFunc("/api/v1/marketplace/usage", handleAPIUsage)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

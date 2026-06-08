@@ -464,6 +464,70 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Instant Payout Domain Logic ─────────────────────────────────────────────
+
+type PayoutRequest struct {
+	ClaimID       string  `json:"claim_id"`
+	PolicyID      string  `json:"policy_id"`
+	Amount        float64 `json:"amount"`
+	Beneficiary   string  `json:"beneficiary"`
+	BankCode      string  `json:"bank_code"`
+	AccountNumber string  `json:"account_number"`
+	Channel       string  `json:"channel"` // nibss, interswitch, mobile_money
+}
+
+type PayoutResult struct {
+	PayoutID     string  `json:"payout_id"`
+	ClaimID      string  `json:"claim_id"`
+	Amount       float64 `json:"amount"`
+	Fee          float64 `json:"fee"`
+	NetAmount    float64 `json:"net_amount"`
+	Status       string  `json:"status"`
+	Channel      string  `json:"channel"`
+	SettlementTime string `json:"estimated_settlement"`
+	Reference    string  `json:"reference"`
+}
+
+func processPayout(req PayoutRequest) PayoutResult {
+	// Channel-based fees and settlement times
+	fees := map[string]float64{"nibss": 50, "interswitch": 100, "mobile_money": 25}
+	settlements := map[string]string{"nibss": "instant", "interswitch": "T+1", "mobile_money": "instant"}
+
+	fee := fees[req.Channel]
+	if fee == 0 { fee = 100 }
+	settlement := settlements[req.Channel]
+	if settlement == "" { settlement = "T+1" }
+
+	// Validation
+	status := "approved"
+	if req.Amount > 10000000 { status = "pending_approval" } // >₦10M needs manual approval
+	if len(req.AccountNumber) != 10 { status = "failed" }
+
+	return PayoutResult{
+		PayoutID: fmt.Sprintf("PO-%d", time.Now().UnixNano()%100000000),
+		ClaimID: req.ClaimID, Amount: req.Amount,
+		Fee: fee, NetAmount: req.Amount - fee,
+		Status: status, Channel: req.Channel,
+		SettlementTime: settlement,
+		Reference: fmt.Sprintf("REF-%d", time.Now().UnixNano()%10000000),
+	}
+}
+
+func handleProcessPayout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req PayoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := processPayout(req)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -518,6 +582,9 @@ func main() {
 	mux.HandleFunc("/api/v1/payout", handleGetByID)
 	mux.HandleFunc("/api/v1/payouts/create", handleCreate)
 	mux.HandleFunc("/api/v1/payouts/delete", handleDelete)
+
+	// Payout domain routes
+	mux.HandleFunc("/api/v1/payout/process", handleProcessPayout)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

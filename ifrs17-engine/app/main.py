@@ -90,6 +90,136 @@ def calculate_csm(future_cash_flows: float, risk_adjustment: float, discount_rat
 def calculate_risk_adjustment(expected_claims: float, confidence_level: float = 0.75) -> float:
     return expected_claims * (1 + (confidence_level - 0.5) * 0.4)
 
+
+# ─── PAA (Premium Allocation Approach) - IFRS 17.53-59 ───────────────────────
+# PAA is simplified approach for contracts ≤12 months or where it approximates BBA
+
+def calculate_paa(premiums_received: float, claims_incurred: float,
+                  acquisition_costs: float, coverage_period_months: int,
+                  elapsed_months: int) -> dict:
+    """Premium Allocation Approach for short-duration contracts."""
+    # Liability for Remaining Coverage (LRC) - IFRS 17.55
+    coverage_fraction = elapsed_months / coverage_period_months if coverage_period_months > 0 else 0
+    earned_premium = premiums_received * coverage_fraction
+    unearned_premium = premiums_received - earned_premium
+
+    # Amortize acquisition costs over coverage period
+    amortized_acq = acquisition_costs * coverage_fraction
+
+    # LRC = unearned premium - amortized acquisition costs not yet recognized
+    lrc = unearned_premium - (acquisition_costs - amortized_acq)
+
+    # Liability for Incurred Claims (LIC) - IFRS 17.59
+    # Best estimate + risk adjustment for claims already incurred
+    lic_best_estimate = claims_incurred
+    lic_risk_adjustment = calculate_risk_adjustment(claims_incurred, 0.75)
+    lic = lic_best_estimate + lic_risk_adjustment
+
+    # Insurance Revenue = change in LRC attributable to services provided
+    insurance_revenue = earned_premium
+    insurance_service_expense = claims_incurred + amortized_acq
+
+    return {
+        "measurement_model": "PAA",
+        "liability_remaining_coverage": round(lrc, 2),
+        "liability_incurred_claims": round(lic, 2),
+        "total_liability": round(lrc + lic, 2),
+        "insurance_revenue": round(insurance_revenue, 2),
+        "insurance_service_expense": round(insurance_service_expense, 2),
+        "insurance_service_result": round(insurance_revenue - insurance_service_expense, 2),
+        "earned_premium": round(earned_premium, 2),
+        "unearned_premium": round(unearned_premium, 2),
+        "coverage_fraction": round(coverage_fraction, 4),
+        "eligible": coverage_period_months <= 12,
+    }
+
+
+# ─── VFA (Variable Fee Approach) - IFRS 17.B101-B118 ─────────────────────────
+# VFA for contracts with direct participation features (e.g., unit-linked, with-profits)
+
+def calculate_vfa(fund_value: float, management_fee_rate: float,
+                  performance_fee_rate: float, fund_return: float,
+                  risk_adjustment: float, coverage_units_total: int,
+                  coverage_units_elapsed: int) -> dict:
+    """Variable Fee Approach for direct participation contracts."""
+    # Entity's share of fair value of underlying items
+    # Variable fee = entity's share of change in FV - changes in fulfilment CFs
+    fund_change = fund_value * fund_return
+    entity_share = management_fee_rate  # Entity's share of underlying items
+
+    # Variable fee = share of FV changes
+    variable_fee = fund_change * entity_share
+
+    # Performance fee (if fund return exceeds hurdle)
+    hurdle_rate = 0.08  # 8% annual hurdle
+    performance_fee = 0.0
+    if fund_return > hurdle_rate:
+        excess_return = (fund_return - hurdle_rate) * fund_value
+        performance_fee = excess_return * performance_fee_rate
+
+    # CSM adjustment (absorbed into CSM, not P&L)
+    csm_adjustment = variable_fee + performance_fee
+
+    # CSM amortization based on coverage units
+    coverage_fraction = coverage_units_elapsed / coverage_units_total if coverage_units_total > 0 else 0
+
+    # Insurance revenue from VFA
+    insurance_revenue = csm_adjustment * coverage_fraction
+
+    return {
+        "measurement_model": "VFA",
+        "fund_value": round(fund_value, 2),
+        "fund_return": fund_return,
+        "variable_fee": round(variable_fee, 2),
+        "performance_fee": round(performance_fee, 2),
+        "csm_adjustment": round(csm_adjustment, 2),
+        "insurance_revenue": round(insurance_revenue, 2),
+        "coverage_units_fraction": round(coverage_fraction, 4),
+        "risk_adjustment": round(risk_adjustment, 2),
+        "eligible": True,  # Direct participation features present
+    }
+
+
+# ─── CSM Rollforward (BBA) - IFRS 17.44 ─────────────────────────────────────
+
+def csm_rollforward(opening_csm: float, new_contracts_csm: float,
+                    interest_accretion_rate: float, experience_adjustments: float,
+                    changes_in_estimates: float, coverage_units_total: int,
+                    coverage_units_current: int) -> dict:
+    """CSM rollforward schedule per IFRS 17.101(c)."""
+    # Interest accretion on CSM
+    interest_accretion = opening_csm * interest_accretion_rate
+
+    # Changes relating to future service (adjustments stay in CSM)
+    csm_before_release = (opening_csm + new_contracts_csm + interest_accretion
+                          + experience_adjustments + changes_in_estimates)
+
+    # Cannot go negative (losses recognized immediately)
+    if csm_before_release < 0:
+        loss_recognized = abs(csm_before_release)
+        csm_before_release = 0
+    else:
+        loss_recognized = 0
+
+    # Release to P&L based on coverage units
+    release_fraction = coverage_units_current / coverage_units_total if coverage_units_total > 0 else 0
+    csm_released = csm_before_release * release_fraction
+
+    closing_csm = csm_before_release - csm_released
+
+    return {
+        "opening_csm": round(opening_csm, 2),
+        "new_contracts": round(new_contracts_csm, 2),
+        "interest_accretion": round(interest_accretion, 2),
+        "experience_adjustments": round(experience_adjustments, 2),
+        "changes_in_estimates": round(changes_in_estimates, 2),
+        "loss_recognized": round(loss_recognized, 2),
+        "csm_released_to_pl": round(csm_released, 2),
+        "closing_csm": round(closing_csm, 2),
+        "release_fraction": round(release_fraction, 4),
+    }
+
+
 if app:
     @app.get("/health")
     def health():
@@ -125,6 +255,45 @@ if app:
                 {"year": 2026, "contracts": 1800, "csm_total": 680000000, "onerous_pct": 3},
             ],
             "measurement_model": "BBA", "risk_confidence": "75th percentile",
+        }
+
+    @app.post("/api/v1/paa/calculate")
+    def paa_endpoint(premiums_received: float = 5000000, claims_incurred: float = 1200000,
+                     acquisition_costs: float = 500000, coverage_period_months: int = 12,
+                     elapsed_months: int = 6):
+        return calculate_paa(premiums_received, claims_incurred, acquisition_costs,
+                           coverage_period_months, elapsed_months)
+
+    @app.post("/api/v1/vfa/calculate")
+    def vfa_endpoint(fund_value: float = 100000000, management_fee_rate: float = 0.015,
+                     performance_fee_rate: float = 0.20, fund_return: float = 0.12,
+                     risk_adjustment: float = 5000000, coverage_units_total: int = 120,
+                     coverage_units_elapsed: int = 24):
+        return calculate_vfa(fund_value, management_fee_rate, performance_fee_rate,
+                           fund_return, risk_adjustment, coverage_units_total, coverage_units_elapsed)
+
+    @app.post("/api/v1/csm/rollforward")
+    def csm_rollforward_endpoint(opening_csm: float = 450000000, new_contracts_csm: float = 50000000,
+                                  interest_accretion_rate: float = 0.165,
+                                  experience_adjustments: float = -5000000,
+                                  changes_in_estimates: float = 10000000,
+                                  coverage_units_total: int = 1200,
+                                  coverage_units_current: int = 300):
+        return csm_rollforward(opening_csm, new_contracts_csm, interest_accretion_rate,
+                             experience_adjustments, changes_in_estimates,
+                             coverage_units_total, coverage_units_current)
+
+    @app.get("/api/v1/measurement-models")
+    def measurement_models():
+        return {
+            "models": [
+                {"name": "BBA", "full_name": "Building Block Approach", "reference": "IFRS 17.32-52",
+                 "use_case": "Default model for all insurance contracts"},
+                {"name": "PAA", "full_name": "Premium Allocation Approach", "reference": "IFRS 17.53-59",
+                 "use_case": "Simplified approach for contracts ≤12 months"},
+                {"name": "VFA", "full_name": "Variable Fee Approach", "reference": "IFRS 17.B101-B118",
+                 "use_case": "Contracts with direct participation features (unit-linked, with-profits)"},
+            ]
         }
 
     @app.get("/api/v1/calculations")

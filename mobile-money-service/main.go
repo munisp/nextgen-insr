@@ -464,6 +464,63 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Mobile Money Domain Logic ───────────────────────────────────────────────
+
+type MobileMoneyPayment struct {
+	TransactionID string  `json:"transaction_id"`
+	PhoneNumber   string  `json:"phone_number"`
+	Amount        float64 `json:"amount"`
+	Provider      string  `json:"provider"` // mtn, airtel, glo, 9mobile
+	Fee           float64 `json:"fee"`
+	Status        string  `json:"status"`
+}
+
+func calculateMobileMoneyFee(amount float64, provider string) float64 {
+	// Nigerian mobile money fee structure (CBN Guidelines)
+	if amount <= 5000 { return 10 }
+	if amount <= 50000 { return 25 }
+	if amount <= 200000 { return 50 }
+	return 100 // Max fee cap per CBN
+}
+
+func validatePhoneNumber(phone string) (bool, string) {
+	// Nigerian mobile format: 0[7-9][0-1]XXXXXXXX (11 digits)
+	if len(phone) != 11 { return false, "Phone must be 11 digits" }
+	if phone[0] != '0' { return false, "Must start with 0" }
+	if phone[1] < '7' || phone[1] > '9' { return false, "Invalid network prefix" }
+	return true, ""
+}
+
+func handleMobileMoneyPay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		PhoneNumber string  `json:"phone_number"`
+		Amount      float64 `json:"amount"`
+		Provider    string  `json:"provider"`
+		PolicyID    string  `json:"policy_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	valid, reason := validatePhoneNumber(req.PhoneNumber)
+	if !valid {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, reason), http.StatusBadRequest)
+		return
+	}
+	fee := calculateMobileMoneyFee(req.Amount, req.Provider)
+	result := MobileMoneyPayment{
+		TransactionID: fmt.Sprintf("MM-%d", time.Now().UnixNano()%100000000),
+		PhoneNumber: req.PhoneNumber, Amount: req.Amount,
+		Provider: req.Provider, Fee: fee, Status: "pending",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -518,6 +575,9 @@ func main() {
 	mux.HandleFunc("/api/v1/transaction", handleGetByID)
 	mux.HandleFunc("/api/v1/transactions/create", handleCreate)
 	mux.HandleFunc("/api/v1/transactions/delete", handleDelete)
+
+	// Mobile money domain routes
+	mux.HandleFunc("/api/v1/mobile-money/pay", handleMobileMoneyPay)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

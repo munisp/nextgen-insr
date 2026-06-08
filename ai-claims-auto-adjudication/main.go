@@ -260,6 +260,86 @@ func jsonLog(level, msg string, kvs ...string) {
 	log.Println(entry)
 }
 
+// ─── AI Claims Auto-Adjudication Logic ───────────────────────────────────────
+
+type ClaimDecision struct {
+	ClaimID       string  `json:"claim_id"`
+	Amount        float64 `json:"amount"`
+	RiskScore     float64 `json:"risk_score"`
+	Decision      string  `json:"decision"` // auto_approve, manual_review, reject
+	Confidence    float64 `json:"confidence"`
+	Factors       []string `json:"factors"`
+	SLACategory   string  `json:"sla_category"`
+}
+
+// Multi-factor AI claim scoring (weighted rule engine)
+func adjudicateClaim(claimID string, amount float64, policyAge int, claimHistory int, hasDocuments bool, matchesPolicy bool) ClaimDecision {
+	score := 0.0
+	factors := []string{}
+
+	// Amount-based risk (higher amounts = higher risk)
+	if amount > 5000000 { score += 35; factors = append(factors, "high_value_claim") }
+	if amount > 1000000 { score += 15; factors = append(factors, "significant_amount") }
+
+	// Policy age (new policies are riskier)
+	if policyAge < 90 { score += 25; factors = append(factors, "new_policy_90d") }
+	if policyAge < 30 { score += 15; factors = append(factors, "very_new_policy_30d") }
+
+	// Claims history (frequent claimants)
+	if claimHistory > 3 { score += 20; factors = append(factors, "frequent_claimant") }
+	if claimHistory > 5 { score += 15; factors = append(factors, "excessive_claims") }
+
+	// Documentation
+	if !hasDocuments { score += 20; factors = append(factors, "missing_documentation") }
+
+	// Policy coverage match
+	if !matchesPolicy { score += 30; factors = append(factors, "coverage_mismatch") }
+
+	// Decision thresholds
+	decision := "auto_approve"
+	confidence := 0.95
+	if score >= 60 { decision = "reject"; confidence = 0.80 }
+	if score >= 30 && score < 60 { decision = "manual_review"; confidence = 0.70 }
+
+	// SLA based on complexity
+	sla := "fast_track" // 5 days
+	if decision == "manual_review" { sla = "standard" } // 15 days
+	if decision == "reject" { sla = "investigation" }   // 30 days
+
+	return ClaimDecision{
+		ClaimID: claimID, Amount: amount,
+		RiskScore: math.Min(score, 100), Decision: decision,
+		Confidence: confidence, Factors: factors, SLACategory: sla,
+	}
+}
+
+func handleAdjudicateClaim(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ClaimID      string  `json:"claim_id"`
+		Amount       float64 `json:"amount"`
+		PolicyAge    int     `json:"policy_age_days"`
+		ClaimHistory int     `json:"claim_history_count"`
+		HasDocuments bool    `json:"has_documents"`
+		MatchesPolicy bool   `json:"matches_policy_coverage"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := adjudicateClaim(req.ClaimID, req.Amount, req.PolicyAge, req.ClaimHistory, req.HasDocuments, req.MatchesPolicy)
+	if db != nil {
+		data, _ := json.Marshal(result)
+		db.Exec("INSERT INTO ai_adjudication_results (claim_id, decision, risk_score, data, created_at) VALUES ($1, $2, $3, $4, NOW())",
+			req.ClaimID, result.Decision, result.RiskScore, string(data))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	initDB()
 	mux := http.NewServeMux()

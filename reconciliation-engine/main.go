@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,185 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Reconciliation Domain Logic ─────────────────────────────────────────────
+
+type BankStatement struct {
+	TransactionRef string  `json:"transaction_ref"`
+	Amount         float64 `json:"amount"`
+	Date           string  `json:"date"`
+	Description    string  `json:"description"`
+	Source         string  `json:"source"` // nibss, interswitch, paystack, flutterwave
+}
+
+type ExpectedPayment struct {
+	PolicyID       string  `json:"policy_id"`
+	Amount         float64 `json:"amount"`
+	DueDate        string  `json:"due_date"`
+	CustomerName   string  `json:"customer_name"`
+	PaymentMethod  string  `json:"payment_method"`
+}
+
+type ReconciliationResult struct {
+	TotalBank       int     `json:"total_bank_transactions"`
+	TotalExpected   int     `json:"total_expected_payments"`
+	Matched         int     `json:"matched"`
+	Unmatched       int     `json:"unmatched"`
+	Overpayments    int     `json:"overpayments"`
+	Underpayments   int     `json:"underpayments"`
+	MatchRate       float64 `json:"match_rate_pct"`
+	UnallocatedAmt  float64 `json:"unallocated_amount"`
+	Exceptions      []ReconciliationException `json:"exceptions"`
+}
+
+type ReconciliationException struct {
+	Type   string  `json:"type"` // unmatched_bank, unmatched_expected, amount_mismatch, duplicate
+	Ref    string  `json:"ref"`
+	Amount float64 `json:"amount"`
+	Reason string  `json:"reason"`
+}
+
+type AgingBucket struct {
+	Bucket   string  `json:"bucket"`
+	Count    int     `json:"count"`
+	Amount   float64 `json:"amount"`
+}
+
+// Match bank transactions to expected payments (tolerance: ₦50 for rounding)
+func reconcile(bankTxns []BankStatement, expected []ExpectedPayment) ReconciliationResult {
+	tolerance := 50.0
+	matched := 0
+	overpayments := 0
+	underpayments := 0
+	unallocated := 0.0
+	exceptions := []ReconciliationException{}
+
+	expectedMatched := make([]bool, len(expected))
+
+	for _, txn := range bankTxns {
+		found := false
+		for i, exp := range expected {
+			if expectedMatched[i] { continue }
+			diff := math.Abs(txn.Amount - exp.Amount)
+			if diff <= tolerance {
+				matched++
+				expectedMatched[i] = true
+				found = true
+				break
+			} else if txn.Amount > exp.Amount && txn.Amount-exp.Amount < exp.Amount*0.1 {
+				// Overpayment within 10%
+				matched++
+				overpayments++
+				expectedMatched[i] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			unallocated += txn.Amount
+			exceptions = append(exceptions, ReconciliationException{
+				Type:   "unmatched_bank",
+				Ref:    txn.TransactionRef,
+				Amount: txn.Amount,
+				Reason: "No matching expected payment found",
+			})
+		}
+	}
+
+	// Check for unpaid expected
+	for i, exp := range expected {
+		if !expectedMatched[i] {
+			exceptions = append(exceptions, ReconciliationException{
+				Type:   "unmatched_expected",
+				Ref:    exp.PolicyID,
+				Amount: exp.Amount,
+				Reason: fmt.Sprintf("Expected payment from %s not received", exp.CustomerName),
+			})
+		}
+	}
+
+	matchRate := 0.0
+	if len(expected) > 0 {
+		matchRate = float64(matched) / float64(len(expected)) * 100
+	}
+
+	return ReconciliationResult{
+		TotalBank:      len(bankTxns),
+		TotalExpected:  len(expected),
+		Matched:        matched,
+		Unmatched:      len(bankTxns) - matched,
+		Overpayments:   overpayments,
+		Underpayments:  underpayments,
+		MatchRate:      math.Round(matchRate*100) / 100,
+		UnallocatedAmt: unallocated,
+		Exceptions:     exceptions,
+	}
+}
+
+// Premium aging analysis
+func calculateAging(overduePayments []struct{ DaysOverdue int; Amount float64 }) []AgingBucket {
+	buckets := []AgingBucket{
+		{Bucket: "current", Count: 0, Amount: 0},
+		{Bucket: "1-30_days", Count: 0, Amount: 0},
+		{Bucket: "31-60_days", Count: 0, Amount: 0},
+		{Bucket: "61-90_days", Count: 0, Amount: 0},
+		{Bucket: "90+_days", Count: 0, Amount: 0},
+	}
+	for _, p := range overduePayments {
+		switch {
+		case p.DaysOverdue <= 0:
+			buckets[0].Count++; buckets[0].Amount += p.Amount
+		case p.DaysOverdue <= 30:
+			buckets[1].Count++; buckets[1].Amount += p.Amount
+		case p.DaysOverdue <= 60:
+			buckets[2].Count++; buckets[2].Amount += p.Amount
+		case p.DaysOverdue <= 90:
+			buckets[3].Count++; buckets[3].Amount += p.Amount
+		default:
+			buckets[4].Count++; buckets[4].Amount += p.Amount
+		}
+	}
+	return buckets
+}
+
+func handleReconcilePayments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		BankTransactions []BankStatement   `json:"bank_transactions"`
+		ExpectedPayments []ExpectedPayment `json:"expected_payments"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	result := reconcile(req.BankTransactions, req.ExpectedPayments)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleAgingReport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	// Query overdue from DB
+	var buckets []AgingBucket
+	if db != nil {
+		for _, b := range []struct{ label string; min, max int }{
+			{"current", -999, 0}, {"1-30_days", 1, 30}, {"31-60_days", 31, 60},
+			{"61-90_days", 61, 90}, {"90+_days", 91, 9999},
+		} {
+			var cnt int
+			var amt float64
+			db.QueryRow("SELECT COALESCE(COUNT(*),0), COALESCE(SUM(amount::numeric),0) FROM reconciliation_records WHERE EXTRACT(DAY FROM NOW()-due_date) BETWEEN $1 AND $2 AND status='overdue'", b.min, b.max).Scan(&cnt, &amt)
+			buckets = append(buckets, AgingBucket{Bucket: b.label, Count: cnt, Amount: amt})
+		}
+	}
+	if buckets == nil {
+		buckets = []AgingBucket{{Bucket: "current"}, {Bucket: "1-30_days"}, {Bucket: "31-60_days"}, {Bucket: "61-90_days"}, {Bucket: "90+_days"}}
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"aging_report": buckets})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +688,10 @@ func main() {
 	mux.HandleFunc("/api/v1/run", handleGetByID)
 	mux.HandleFunc("/api/v1/runs/create", handleCreate)
 	mux.HandleFunc("/api/v1/runs/delete", handleDelete)
+
+	// Domain business logic routes
+	mux.HandleFunc("/api/v1/reconcile", handleReconcilePayments)
+	mux.HandleFunc("/api/v1/aging", handleAgingReport)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

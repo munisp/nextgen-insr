@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,96 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Agent Commission Domain Logic ──────────────────────────────────────────
+
+type CommissionTier struct {
+	Tier       string  `json:"tier"`
+	MinVolume  float64 `json:"min_volume"`
+	MaxVolume  float64 `json:"max_volume"`
+	Rate       float64 `json:"rate"`
+	BonusRate  float64 `json:"bonus_rate"`
+}
+
+type CommissionCalcResult struct {
+	AgentID      string  `json:"agent_id"`
+	GrossVolume  float64 `json:"gross_volume"`
+	Tier         string  `json:"tier"`
+	BaseRate     float64 `json:"base_rate"`
+	BonusRate    float64 `json:"bonus_rate"`
+	Commission   float64 `json:"commission"`
+	WithholdingTax float64 `json:"withholding_tax"` // 10% per FIRS
+	NetPayable   float64 `json:"net_payable"`
+	NaicomCap    float64 `json:"naicom_cap"`
+	IsCompliant  bool    `json:"naicom_compliant"`
+}
+
+var commissionTiers = []CommissionTier{
+	{Tier: "bronze", MinVolume: 0, MaxVolume: 500000, Rate: 0.10, BonusRate: 0},
+	{Tier: "silver", MinVolume: 500001, MaxVolume: 2000000, Rate: 0.12, BonusRate: 0.02},
+	{Tier: "gold", MinVolume: 2000001, MaxVolume: 10000000, Rate: 0.15, BonusRate: 0.03},
+	{Tier: "platinum", MinVolume: 10000001, MaxVolume: 999999999, Rate: 0.15, BonusRate: 0.05},
+}
+
+func calculateAgentCommission(agentID string, volume float64, productClass string) CommissionCalcResult {
+	// Find tier
+	tier := commissionTiers[0]
+	for _, t := range commissionTiers {
+		if volume >= t.MinVolume && volume <= t.MaxVolume {
+			tier = t
+			break
+		}
+	}
+
+	// NAICOM commission cap (per product class)
+	naicomCaps := map[string]float64{
+		"motor": 0.15, "fire": 0.20, "marine": 0.175,
+		"life_individual": 0.40, "life_group": 0.125, "oil_gas": 0.125,
+	}
+	cap := naicomCaps[productClass]
+	if cap == 0 { cap = 0.20 }
+
+	effectiveRate := tier.Rate + tier.BonusRate
+	if effectiveRate > cap { effectiveRate = cap }
+
+	commission := volume * effectiveRate
+	// FIRS withholding tax: 10% on commission
+	wht := commission * 0.10
+	netPayable := commission - wht
+
+	return CommissionCalcResult{
+		AgentID: agentID, GrossVolume: volume, Tier: tier.Tier,
+		BaseRate: tier.Rate, BonusRate: tier.BonusRate,
+		Commission: math.Round(commission*100) / 100,
+		WithholdingTax: math.Round(wht*100) / 100,
+		NetPayable: math.Round(netPayable*100) / 100,
+		NaicomCap: cap, IsCompliant: effectiveRate <= cap,
+	}
+}
+
+func handleCalculateCommission(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		AgentID      string  `json:"agent_id"`
+		Volume       float64 `json:"volume"`
+		ProductClass string  `json:"product_class"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := calculateAgentCommission(req.AgentID, req.Volume, req.ProductClass)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleCommissionTiers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"tiers": commissionTiers})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -518,6 +609,10 @@ func main() {
 	mux.HandleFunc("/api/v1/commission", handleGetByID)
 	mux.HandleFunc("/api/v1/commissions/create", handleCreate)
 	mux.HandleFunc("/api/v1/commissions/delete", handleDelete)
+
+	// Commission domain routes
+	mux.HandleFunc("/api/v1/commission/calculate", handleCalculateCommission)
+	mux.HandleFunc("/api/v1/commission/tiers", handleCommissionTiers)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

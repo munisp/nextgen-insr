@@ -464,6 +464,137 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Cross-Company Fraud Database ────────────────────────────────────────────
+
+// AML Transaction Monitoring per CBN AML/CFT regulations
+type AMLAlert struct {
+	TransactionID string  `json:"transaction_id"`
+	CustomerID    string  `json:"customer_id"`
+	Amount        float64 `json:"amount"`
+	Currency      string  `json:"currency"`
+	AlertType     string  `json:"alert_type"` // ctr, str, threshold_breach, structuring
+	Threshold     float64 `json:"threshold"`
+	Status        string  `json:"status"`
+}
+
+// CBN AML/CFT thresholds (Section 3.1.3 of CBN AML Manual)
+func checkAMLThresholds(amount float64, txType string, customerRisk string) (bool, string, string) {
+	// Cash Transaction Report (CTR): >₦5,000,000 or USD equivalent
+	if txType == "cash" && amount >= 5000000 {
+		return true, "ctr", "Cash transaction exceeds ₦5M CTR threshold (CBN S.3.1.3)"
+	}
+	// Wire transfer threshold: >₦10,000,000
+	if txType == "wire" && amount >= 10000000 {
+		return true, "str", "Wire transfer exceeds ₦10M reporting threshold"
+	}
+	// Structuring detection: Multiple transactions just below threshold within 24h
+	if txType == "cash" && amount >= 4500000 && amount < 5000000 {
+		return true, "structuring_suspected", "Transaction appears structured to avoid ₦5M CTR threshold"
+	}
+	// High-risk customer lower thresholds
+	if customerRisk == "high" && amount >= 1000000 {
+		return true, "enhanced_monitoring", "High-risk customer transaction exceeds ₦1M enhanced threshold"
+	}
+	return false, "", ""
+}
+
+// Generate CTR (Currency Transaction Report) per CBN format
+type CTRReport struct {
+	ReportID       string  `json:"report_id"`
+	TransactionID  string  `json:"transaction_id"`
+	CustomerName   string  `json:"customer_name"`
+	CustomerBVN    string  `json:"customer_bvn"`
+	Amount         float64 `json:"amount"`
+	TransactionType string `json:"transaction_type"`
+	FilingDeadline string  `json:"filing_deadline"` // Within 7 days per CBN
+	Status         string  `json:"status"`
+}
+
+func generateCTR(txID, customerName, bvn string, amount float64, txType string) CTRReport {
+	return CTRReport{
+		ReportID:       fmt.Sprintf("CTR-%d", time.Now().UnixNano()%100000000),
+		TransactionID:  txID,
+		CustomerName:   customerName,
+		CustomerBVN:    bvn,
+		Amount:         amount,
+		TransactionType: txType,
+		FilingDeadline: time.Now().Add(7 * 24 * time.Hour).Format(time.RFC3339),
+		Status:         "pending_filing",
+	}
+}
+
+func handleCheckAML(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Amount       float64 `json:"amount"`
+		TxType       string  `json:"transaction_type"`
+		CustomerRisk string  `json:"customer_risk"`
+		CustomerName string  `json:"customer_name"`
+		CustomerBVN  string  `json:"customer_bvn"`
+		TransactionID string `json:"transaction_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	triggered, alertType, reason := checkAMLThresholds(req.Amount, req.TxType, req.CustomerRisk)
+	response := map[string]interface{}{"triggered": triggered, "alert_type": alertType, "reason": reason}
+	if triggered && alertType == "ctr" {
+		ctr := generateCTR(req.TransactionID, req.CustomerName, req.CustomerBVN, req.Amount, req.TxType)
+		response["ctr_report"] = ctr
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func handleFraudRingAnalysis(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Entities []struct {
+			ID    string   `json:"id"`
+			Links []string `json:"links"`
+		} `json:"entities"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	// Simple connected component detection
+	adjacency := map[string][]string{}
+	for _, e := range req.Entities {
+		adjacency[e.ID] = e.Links
+	}
+	visited := map[string]bool{}
+	clusters := [][]string{}
+	for _, e := range req.Entities {
+		if visited[e.ID] { continue }
+		cluster := []string{}
+		queue := []string{e.ID}
+		for len(queue) > 0 {
+			node := queue[0]; queue = queue[1:]
+			if visited[node] { continue }
+			visited[node] = true
+			cluster = append(cluster, node)
+			for _, link := range adjacency[node] {
+				if !visited[link] { queue = append(queue, link) }
+			}
+		}
+		if len(cluster) > 1 { clusters = append(clusters, cluster) }
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"fraud_rings": clusters,
+		"ring_count":  len(clusters),
+		"risk_level":  func() string { if len(clusters) > 3 { return "critical" }; if len(clusters) > 0 { return "high" }; return "low" }(),
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +639,10 @@ func main() {
 	mux.HandleFunc("/api/v1/fraud_report", handleGetByID)
 	mux.HandleFunc("/api/v1/fraud_reports/create", handleCreate)
 	mux.HandleFunc("/api/v1/fraud_reports/delete", handleDelete)
+
+	// AML & Fraud Ring routes
+	mux.HandleFunc("/api/v1/aml/check", handleCheckAML)
+	mux.HandleFunc("/api/v1/fraud-ring/analyze", handleFraudRingAnalysis)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

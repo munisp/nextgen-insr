@@ -271,6 +271,84 @@ func jsonLog(level, msg string, kvs ...string) {
 	log.Println(entry)
 }
 
+// ─── Digital Twin Risk Modeling Logic ────────────────────────────────────────
+
+type AssetRiskModel struct {
+	AssetID       string  `json:"asset_id"`
+	AssetType     string  `json:"asset_type"`
+	CurrentValue  float64 `json:"current_value"`
+	RiskScore     float64 `json:"risk_score"`
+	FailureProb   float64 `json:"failure_probability"`
+	ExpectedLoss  float64 `json:"expected_loss"`
+	OptimalCover  float64 `json:"optimal_coverage"`
+	Recommendations []string `json:"recommendations"`
+}
+
+func modelAssetRisk(assetType string, age int, value float64, maintenanceScore float64, environmentRisk float64) AssetRiskModel {
+	// Failure probability based on bathtub curve (reliability engineering)
+	failureProb := 0.01 // base 1%
+	if age < 2 { failureProb = 0.03 } // infant mortality
+	if age > 10 { failureProb += float64(age-10) * 0.005 } // wear-out
+
+	// Adjust for maintenance quality (0-100)
+	if maintenanceScore < 50 { failureProb *= 2.0 }
+	if maintenanceScore < 25 { failureProb *= 1.5 }
+
+	// Environment risk multiplier
+	failureProb *= (1 + environmentRisk/100)
+	failureProb = math.Min(failureProb, 0.95)
+
+	// Expected loss = value * failure probability * severity factor
+	severityFactor := map[string]float64{
+		"building": 0.40, "vehicle": 0.60, "machinery": 0.70,
+		"electronics": 0.80, "inventory": 0.50,
+	}
+	severity := severityFactor[assetType]
+	if severity == 0 { severity = 0.50 }
+	expectedLoss := value * failureProb * severity
+
+	// Optimal coverage (expected loss * safety margin)
+	optimalCover := expectedLoss * 3.0 // 3x expected loss
+
+	riskScore := failureProb * 100
+	recs := []string{}
+	if riskScore > 50 { recs = append(recs, "Immediate maintenance required") }
+	if riskScore > 30 { recs = append(recs, "Increase coverage") }
+	if age > 15 { recs = append(recs, "Consider asset replacement") }
+
+	return AssetRiskModel{
+		AssetType: assetType, CurrentValue: value,
+		RiskScore: math.Round(riskScore*100) / 100,
+		FailureProb: math.Round(failureProb*10000) / 10000,
+		ExpectedLoss: math.Round(expectedLoss*100) / 100,
+		OptimalCover: math.Round(optimalCover*100) / 100,
+		Recommendations: recs,
+	}
+}
+
+func handleModelRisk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		AssetID        string  `json:"asset_id"`
+		AssetType      string  `json:"asset_type"`
+		Age            int     `json:"age_years"`
+		Value          float64 `json:"value"`
+		MaintenanceScore float64 `json:"maintenance_score"`
+		EnvironmentRisk float64 `json:"environment_risk"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := modelAssetRisk(req.AssetType, req.Age, req.Value, req.MaintenanceScore, req.EnvironmentRisk)
+	result.AssetID = req.AssetID
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	initDB()
 	mux := http.NewServeMux()

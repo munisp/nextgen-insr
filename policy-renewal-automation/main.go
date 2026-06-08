@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,86 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Policy Renewal Automation Logic ─────────────────────────────────────────
+
+type RenewalAssessment struct {
+	PolicyID         string  `json:"policy_id"`
+	CurrentPremium   float64 `json:"current_premium"`
+	ProposedPremium  float64 `json:"proposed_premium"`
+	PremiumChange    float64 `json:"premium_change_pct"`
+	ClaimsExperience float64 `json:"claims_experience_ratio"`
+	RenewalDecision  string  `json:"renewal_decision"` // auto_renew, review_required, non_renew
+	Reason           string  `json:"reason"`
+	RenewalDate      string  `json:"renewal_date"`
+	GracePeriodEnd   string  `json:"grace_period_end"`
+}
+
+func assessRenewal(policyID string, currentPremium, claimsPaid, yearsOnBook float64, hasOutstandingPremium bool) RenewalAssessment {
+	claimsRatio := 0.0
+	if currentPremium > 0 { claimsRatio = claimsPaid / currentPremium }
+
+	proposed := currentPremium
+	decision := "auto_renew"
+	reason := "Standard renewal"
+
+	// Experience-based pricing
+	if claimsRatio > 1.0 {
+		proposed = currentPremium * 1.25 // 25% increase for loss-making
+		decision = "review_required"
+		reason = fmt.Sprintf("Claims ratio %.0f%% exceeds 100%%", claimsRatio*100)
+	} else if claimsRatio > 0.7 {
+		proposed = currentPremium * 1.10
+		reason = "Moderate claims experience"
+	} else if claimsRatio < 0.3 && yearsOnBook >= 3 {
+		proposed = currentPremium * 0.90 // 10% loyalty discount
+		reason = "Loyalty discount: low claims + 3+ years"
+	}
+
+	// Non-renewal conditions
+	if claimsRatio > 2.0 {
+		decision = "non_renew"
+		reason = "Extreme loss ratio — recommend non-renewal"
+	}
+	if hasOutstandingPremium {
+		decision = "review_required"
+		reason = "Outstanding premium balance"
+	}
+
+	change := (proposed - currentPremium) / currentPremium * 100
+	now := time.Now()
+
+	return RenewalAssessment{
+		PolicyID: policyID, CurrentPremium: currentPremium,
+		ProposedPremium: math.Round(proposed*100) / 100,
+		PremiumChange: math.Round(change*100) / 100,
+		ClaimsExperience: math.Round(claimsRatio*10000) / 10000,
+		RenewalDecision: decision, Reason: reason,
+		RenewalDate: now.Add(30 * 24 * time.Hour).Format("2006-01-02"),
+		GracePeriodEnd: now.Add(60 * 24 * time.Hour).Format("2006-01-02"),
+	}
+}
+
+func handleAssessRenewal(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		PolicyID      string  `json:"policy_id"`
+		CurrentPremium float64 `json:"current_premium"`
+		ClaimsPaid    float64 `json:"claims_paid"`
+		YearsOnBook   float64 `json:"years_on_book"`
+		HasOutstanding bool   `json:"has_outstanding_premium"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := assessRenewal(req.PolicyID, req.CurrentPremium, req.ClaimsPaid, req.YearsOnBook, req.HasOutstanding)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -518,6 +599,9 @@ func main() {
 	mux.HandleFunc("/api/v1/renewal_task", handleGetByID)
 	mux.HandleFunc("/api/v1/renewal_tasks/create", handleCreate)
 	mux.HandleFunc("/api/v1/renewal_tasks/delete", handleDelete)
+
+	// Renewal domain routes
+	mux.HandleFunc("/api/v1/renewal/assess", handleAssessRenewal)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

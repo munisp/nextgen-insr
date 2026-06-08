@@ -473,6 +473,86 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Fraud Network Graph Logic ───────────────────────────────────────────────
+
+type NetworkNode struct {
+	ID       string   `json:"id"`
+	Type     string   `json:"type"` // person, address, phone, vehicle, policy
+	Links    []string `json:"links"`
+}
+
+type GraphAnalysis struct {
+	TotalNodes    int      `json:"total_nodes"`
+	TotalEdges    int      `json:"total_edges"`
+	Clusters      int      `json:"clusters"`
+	SuspiciousNodes []string `json:"suspicious_nodes"`
+	RiskLevel     string   `json:"risk_level"`
+	MaxDegree     int      `json:"max_degree"`
+}
+
+func analyzeGraph(nodes []NetworkNode) GraphAnalysis {
+	totalEdges := 0
+	maxDegree := 0
+	suspicious := []string{}
+
+	for _, n := range nodes {
+		totalEdges += len(n.Links)
+		if len(n.Links) > maxDegree { maxDegree = len(n.Links) }
+		// Suspicious: node connected to >5 other entities
+		if len(n.Links) > 5 { suspicious = append(suspicious, n.ID) }
+	}
+	totalEdges /= 2 // undirected
+
+	// BFS cluster detection
+	visited := map[string]bool{}
+	clusters := 0
+	for _, n := range nodes {
+		if visited[n.ID] { continue }
+		clusters++
+		queue := []string{n.ID}
+		for len(queue) > 0 {
+			cur := queue[0]; queue = queue[1:]
+			if visited[cur] { continue }
+			visited[cur] = true
+			for _, node := range nodes {
+				if node.ID == cur {
+					for _, link := range node.Links {
+						if !visited[link] { queue = append(queue, link) }
+					}
+				}
+			}
+		}
+	}
+
+	risk := "low"
+	if len(suspicious) > 3 { risk = "critical" }
+	if len(suspicious) > 0 { risk = "high" }
+	if clusters > 5 { risk = "medium" }
+
+	return GraphAnalysis{
+		TotalNodes: len(nodes), TotalEdges: totalEdges,
+		Clusters: clusters, SuspiciousNodes: suspicious,
+		RiskLevel: risk, MaxDegree: maxDegree,
+	}
+}
+
+func handleAnalyzeNetwork(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Nodes []NetworkNode `json:"nodes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := analyzeGraph(req.Nodes)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -517,6 +597,9 @@ func main() {
 	mux.HandleFunc("/api/v1/graph_node", handleGetByID)
 	mux.HandleFunc("/api/v1/graph_nodes/create", handleCreate)
 	mux.HandleFunc("/api/v1/graph_nodes/delete", handleDelete)
+
+	// Graph analysis routes
+	mux.HandleFunc("/api/v1/graph/analyze", handleAnalyzeNetwork)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

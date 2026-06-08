@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"log"
 	"net/http"
 	"os"
@@ -464,6 +465,137 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── Usage-Based Insurance Domain Logic ──────────────────────────────────────
+
+type TelematicsData struct {
+	PolicyID        string  `json:"policy_id"`
+	DailyMileage    float64 `json:"daily_mileage_km"`
+	NightDrivingPct float64 `json:"night_driving_pct"` // 0-1
+	HardBraking     int     `json:"hard_braking_events"`
+	Speeding        int     `json:"speeding_events"`
+	PhoneUsage      int     `json:"phone_usage_events"`
+	TripCount       int     `json:"trip_count"`
+	AvgSpeed        float64 `json:"avg_speed_kmh"`
+	MaxSpeed        float64 `json:"max_speed_kmh"`
+}
+
+type UBIPremiumResult struct {
+	PolicyID       string  `json:"policy_id"`
+	BasePremium    float64 `json:"base_premium"`
+	MileageFactor  float64 `json:"mileage_factor"`
+	BehaviorScore  float64 `json:"behavior_score"`
+	BehaviorFactor float64 `json:"behavior_factor"`
+	FinalPremium   float64 `json:"final_premium"`
+	Discount       float64 `json:"discount_pct"`
+	RiskTier       string  `json:"risk_tier"`
+}
+
+// Calculate driving behavior score (0-100)
+func calculateBehaviorScore(data TelematicsData) float64 {
+	score := 100.0
+
+	// Hard braking (>5 per day is concerning)
+	if data.HardBraking > 10 { score -= 25 } else if data.HardBraking > 5 { score -= 15 } else if data.HardBraking > 2 { score -= 5 }
+
+	// Speeding events
+	if data.Speeding > 5 { score -= 30 } else if data.Speeding > 2 { score -= 15 } else if data.Speeding > 0 { score -= 5 }
+
+	// Phone usage while driving
+	if data.PhoneUsage > 3 { score -= 25 } else if data.PhoneUsage > 0 { score -= 10 }
+
+	// Night driving (10pm-5am increases risk by 3x statistically)
+	if data.NightDrivingPct > 0.30 { score -= 15 } else if data.NightDrivingPct > 0.15 { score -= 5 }
+
+	// Max speed (>140 km/h in Nigeria is extremely dangerous)
+	if data.MaxSpeed > 160 { score -= 20 } else if data.MaxSpeed > 140 { score -= 10 }
+
+	return math.Max(score, 0)
+}
+
+// Calculate UBI premium based on actual usage
+func calculateUBIPremium(basePremium float64, data TelematicsData) UBIPremiumResult {
+	// Mileage-based factor (pay-per-km)
+	annualMileage := data.DailyMileage * 365
+	mileageFactor := 1.0
+	if annualMileage < 5000 { mileageFactor = 0.6 }      // Very low usage
+	if annualMileage < 10000 { mileageFactor = 0.75 }     // Low usage
+	if annualMileage < 20000 { mileageFactor = 1.0 }      // Average
+	if annualMileage >= 20000 { mileageFactor = 1.2 }     // High usage
+	if annualMileage >= 40000 { mileageFactor = 1.5 }     // Very high
+
+	// Behavior factor
+	behaviorScore := calculateBehaviorScore(data)
+	behaviorFactor := 1.0
+	if behaviorScore >= 90 { behaviorFactor = 0.70 }      // Excellent: 30% discount
+	if behaviorScore >= 75 && behaviorScore < 90 { behaviorFactor = 0.85 }  // Good: 15% discount
+	if behaviorScore >= 50 && behaviorScore < 75 { behaviorFactor = 1.0 }   // Average: no change
+	if behaviorScore < 50 { behaviorFactor = 1.25 }       // Poor: 25% surcharge
+	if behaviorScore < 25 { behaviorFactor = 1.50 }       // Dangerous: 50% surcharge
+
+	finalPremium := basePremium * mileageFactor * behaviorFactor
+	finalPremium = math.Round(finalPremium*100) / 100
+	discount := (1 - (finalPremium / basePremium)) * 100
+
+	riskTier := "standard"
+	if behaviorScore >= 90 { riskTier = "preferred" }
+	if behaviorScore >= 75 { riskTier = "good" }
+	if behaviorScore < 50 { riskTier = "high_risk" }
+	if behaviorScore < 25 { riskTier = "unacceptable" }
+
+	return UBIPremiumResult{
+		PolicyID:      data.PolicyID,
+		BasePremium:   basePremium,
+		MileageFactor: mileageFactor,
+		BehaviorScore: behaviorScore,
+		BehaviorFactor: behaviorFactor,
+		FinalPremium:  finalPremium,
+		Discount:      math.Round(discount*100) / 100,
+		RiskTier:      riskTier,
+	}
+}
+
+func handleCalculateUBIPremium(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		BasePremium float64        `json:"base_premium"`
+		Telematics  TelematicsData `json:"telematics"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	result := calculateUBIPremium(req.BasePremium, req.Telematics)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleBehaviorScore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var data TelematicsData
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	score := calculateBehaviorScore(data)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"policy_id": data.PolicyID,
+		"behavior_score": score,
+		"risk_tier": func() string {
+			if score >= 90 { return "preferred" }
+			if score >= 75 { return "good" }
+			if score >= 50 { return "standard" }
+			return "high_risk"
+		}(),
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -518,6 +650,10 @@ func main() {
 	mux.HandleFunc("/api/v1/usage_event", handleGetByID)
 	mux.HandleFunc("/api/v1/usage_events/create", handleCreate)
 	mux.HandleFunc("/api/v1/usage_events/delete", handleDelete)
+
+	// Domain business logic routes
+	mux.HandleFunc("/api/v1/ubi/calculate-premium", handleCalculateUBIPremium)
+	mux.HandleFunc("/api/v1/ubi/behavior-score", handleBehaviorScore)
 
 	// Apply middleware chain
 	var handler http.Handler = mux

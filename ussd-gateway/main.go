@@ -464,6 +464,91 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+// ─── USSD Gateway Domain Logic ───────────────────────────────────────────────
+
+type USSDSession struct {
+	SessionID string `json:"session_id"`
+	Phone     string `json:"phone"`
+	Stage     int    `json:"stage"`
+	Input     string `json:"input"`
+	Response  string `json:"response"`
+	EndSession bool  `json:"end_session"`
+}
+
+// USSD menu tree for insurance operations
+func processUSSD(phone string, input string, stage int) USSDSession {
+	session := USSDSession{Phone: phone, Input: input, Stage: stage}
+
+	switch stage {
+	case 0: // Main menu
+		session.Response = "Welcome to InsurePortal\n1. Buy Insurance\n2. Check Policy\n3. File Claim\n4. Pay Premium\n5. Check Balance"
+		session.Stage = 1
+	case 1: // Sub-menu
+		switch input {
+		case "1":
+			session.Response = "Select Product:\n1. Motor (from N8,000/yr)\n2. Health (from N5,000/yr)\n3. Life (from N3,000/yr)\n4. Crop (from N2,000/yr)"
+			session.Stage = 2
+		case "2":
+			session.Response = "Enter Policy Number:"
+			session.Stage = 10
+		case "3":
+			session.Response = "Enter Policy Number for Claim:"
+			session.Stage = 20
+		case "4":
+			session.Response = "Enter Policy Number:"
+			session.Stage = 30
+		default:
+			session.Response = "Invalid option. Try again."
+			session.Stage = 0
+		}
+	case 2: // Product selected
+		products := map[string]string{"1": "Motor", "2": "Health", "3": "Life", "4": "Crop"}
+		if p, ok := products[input]; ok {
+			session.Response = fmt.Sprintf("You selected %s insurance.\nEnter Sum Insured (e.g., 500000):", p)
+			session.Stage = 3
+		} else {
+			session.Response = "Invalid product. Try again."
+			session.Stage = 1
+		}
+	case 3: // Sum insured entered
+		session.Response = fmt.Sprintf("Sum Insured: N%s\nEstimated Premium: N%.0f/year\n1. Confirm\n2. Cancel", input, 10000.0)
+		session.Stage = 4
+	case 4: // Confirmation
+		if input == "1" {
+			session.Response = fmt.Sprintf("Policy created! Ref: POL-%d\nPayment link sent to %s via SMS.", time.Now().Unix()%100000, phone)
+			session.EndSession = true
+		} else {
+			session.Response = "Cancelled. Thank you!"
+			session.EndSession = true
+		}
+	default:
+		session.Response = "Session expired. Dial *384*100# to start again."
+		session.EndSession = true
+	}
+	return session
+}
+
+func handleUSSDCallback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		SessionID string `json:"session_id"`
+		Phone     string `json:"phone"`
+		Input     string `json:"input"`
+		Stage     int    `json:"stage"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	result := processUSSD(req.Phone, req.Input, req.Stage)
+	result.SessionID = req.SessionID
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -508,6 +593,9 @@ func main() {
 	mux.HandleFunc("/api/v1/ussd_session", handleGetByID)
 	mux.HandleFunc("/api/v1/ussd_sessions/create", handleCreate)
 	mux.HandleFunc("/api/v1/ussd_sessions/delete", handleDelete)
+
+	// USSD domain routes
+	mux.HandleFunc("/api/v1/ussd/callback", handleUSSDCallback)
 
 	// Apply middleware chain
 	var handler http.Handler = mux
