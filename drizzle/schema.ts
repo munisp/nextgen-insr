@@ -1030,13 +1030,13 @@ export const kycSessions = pgTable(
 
 export type KycSession = typeof kycSessions.$inferSelect;
 
-// ─── POS Terminals ────────────────────────────────────────────────────────────
-export const posTerminals = pgTable(
-  "pos_terminals",
+// ─── Field Agent Devices ──────────────────────────────────────────────────────
+export const fieldAgentDevices = pgTable(
+  "field_agent_devices",
   {
     id: serial("id").primaryKey(),
     serialNumber: varchar("serialNumber", { length: 64 }).notNull().unique(),
-    model: varchar("model", { length: 64 }).default("PAX A920 MAX"),
+    model: varchar("model", { length: 64 }).default("Standard Tablet"),
     agentId: integer("agentId"),
     status: varchar("status", { length: 32 }).default("unassigned").notNull(),
     firmwareVersion: varchar("firmwareVersion", { length: 32 }),
@@ -1048,24 +1048,22 @@ export const posTerminals = pgTable(
     lastLocation: json("lastLocation"),
     configJson: json("configJson"),
     groupId: integer("groupId"),
-    // Legacy fields used by routers
     lastCommand: varchar("lastCommand", { length: 64 }),
     lastCommandAt: timestamp("lastCommandAt"),
-    // P0-B: Soft delete + tenant isolation
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    serialNumberIdx: uniqueIndex("pos_serialNumber_idx").on(t.serialNumber),
-    agentIdIdx: index("pos_agentId_idx").on(t.agentId),
-    statusIdx: index("pos_status_idx").on(t.status),
-    tenantIdIdx: index("pos_tenantId_idx").on(t.tenantId),
+    serialNumberIdx: uniqueIndex("device_serialNumber_idx").on(t.serialNumber),
+    agentIdIdx: index("device_agentId_idx").on(t.agentId),
+    statusIdx: index("device_status_idx").on(t.status),
+    tenantIdIdx: index("device_tenantId_idx").on(t.tenantId),
   })
 );
 
-export type PosTerminal = typeof posTerminals.$inferSelect;
+export type FieldAgentDevice = typeof fieldAgentDevices.$inferSelect;
 
 // ─── Terminal Groups ──────────────────────────────────────────────────────────
 export const terminalGroups = pgTable(
@@ -1090,7 +1088,7 @@ export const serviceRecords = pgTable(
   {
     id: serial("id").primaryKey(),
     terminalId: integer("terminalId")
-      .references(() => posTerminals.id)
+      .references(() => fieldAgentDevices.id)
       .notNull(),
     technicianName: varchar("technicianName", { length: 128 }),
     issueDescription: text("issueDescription").notNull(),
@@ -1219,7 +1217,7 @@ export const multiSimProfiles = pgTable(
   {
     id: serial("id").primaryKey(),
     terminalId: integer("terminalId")
-      .references(() => posTerminals.id)
+      .references(() => fieldAgentDevices.id)
       .notNull(),
     simSlot: integer("simSlot").default(1).notNull(),
     carrier: varchar("carrier", { length: 64 }).notNull(),
@@ -4129,7 +4127,7 @@ export const platformBillingLedger = pgTable(
     transactionRef: varchar("transaction_ref", { length: 64 }).notNull(),
     transactionType: varchar("transaction_type", { length: 32 }).notNull(),
     agentId: integer("agent_id").notNull(),
-    posTerminalId: integer("pos_terminal_id"),
+    policyTransactionId: integer("policy_transaction_id"),
     grossAmount: numeric("gross_amount", { precision: 15, scale: 2 }).notNull(),
     grossFee: numeric("gross_fee", { precision: 12, scale: 2 }).notNull(),
     agentCommission: numeric("agent_commission", {
@@ -4222,7 +4220,7 @@ export const billingRevenuePeriods = pgTable(
     breakdownByType: json("breakdown_by_type"),
     breakdownByRegion: json("breakdown_by_region"),
     activeAgents: integer("active_agents").notNull().default(0),
-    activePosTerminals: integer("active_pos_terminals").notNull().default(0),
+    activeFieldAgents: integer("active_field_agents").notNull().default(0),
     avgTxPerAgent: numeric("avg_tx_per_agent", {
       precision: 8,
       scale: 2,

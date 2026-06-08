@@ -18,7 +18,7 @@ import {
   refunds,
   velocityLimits,
   kycSessions,
-  posTerminals,
+  fieldAgentDevices,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -134,7 +134,7 @@ export const agentsRelations = relations(agents, ({ one, many }) => ({
   floatTopUpRequests: many(floatTopUpRequests),
   devices: many(devices),
   disputes: many(disputes),
-  posTerminals: many(posTerminals),
+  fieldAgentDevices: many(fieldAgentDevices),
   commissionPayouts: many(commissionPayouts),
   agentPushSubscriptions: many(agentPushSubscriptions),
   agentOnboardingProgress: many(agentOnboardingProgress),
@@ -240,13 +240,13 @@ export const deviceCommandsRelations = relations(deviceCommands, ({ one }) => ({
 }));
 
 // ─── POS Terminal Relations ────────────────────────────────────────
-export const posTerminalsRelations = relations(posTerminals, ({ one }) => ({
+export const fieldAgentDevicesRelations = relations(fieldAgentDevices, ({ one }) => ({
   agent: one(agents, {
-    fields: [posTerminals.agentId],
+    fields: [fieldAgentDevices.agentId],
     references: [agents.id],
   }),
   terminalGroup: one(terminalGroups, {
-    fields: [posTerminals.groupId],
+    fields: [fieldAgentDevices.groupId],
     references: [terminalGroups.id],
   }),
 }));
@@ -768,14 +768,14 @@ export const deviceLocationsRelations = relations(deviceLocations, () => ({}));
 
 export const kycSessionsRelations = relations(kycSessions, () => ({}));
 
-export const posTerminalsRelations = relations(posTerminals, () => ({}));
+export const fieldAgentDevicesRelations = relations(fieldAgentDevices, () => ({}));
 
 export const terminalGroupsRelations = relations(terminalGroups, () => ({}));
 
 export const serviceRecordsRelations = relations(serviceRecords, ({ one }) => ({
-  posTerminal: one(posTerminals, {
+  fieldAgentDevice: one(fieldAgentDevices, {
     fields: [serviceRecords.terminalId],
-    references: [posTerminals.id],
+    references: [fieldAgentDevices.id],
   }),
 }));
 
@@ -790,9 +790,9 @@ export const inventoryItemsRelations = relations(inventoryItems, () => ({}));
 export const multiSimProfilesRelations = relations(
   multiSimProfiles,
   ({ one }) => ({
-    posTerminal: one(posTerminals, {
+    fieldAgentDevice: one(fieldAgentDevices, {
       fields: [multiSimProfiles.terminalId],
-      references: [posTerminals.id],
+      references: [fieldAgentDevices.id],
     }),
   })
 );
