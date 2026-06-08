@@ -5,179 +5,440 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"os"
+	"os/signal"
+	"context"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	_ "github.com/lib/pq"
 )
 
-// Circuit breaker for external HTTP calls
-type circuitBreakerState int
-const (
-	cbClosed circuitBreakerState = iota
-	cbOpen
-	cbHalfOpen
-)
-type circuitBreaker struct {
-	state       circuitBreakerState
-	failures    int
-	threshold   int
-	resetAfter  time.Duration
-	lastFailure time.Time
-}
-var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
-func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
-	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
-		c.state = cbHalfOpen
-		return true
-	}
-	return c.state == cbHalfOpen
-}
-func (c *circuitBreaker) recordSuccess() {
-	c.failures = 0
-	c.state = cbClosed
-}
-func (c *circuitBreaker) recordFailure() {
-	c.failures++
-	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
-}
-
-// Fraud Network Graph Service
-// Detects fraud rings by analyzing relationships between agents, customers,
-// devices, locations, and transactions using graph-based analytics.
-
 var db *sql.DB
 
-type GraphNode struct {
-	ID    string `json:"id"`
-	Type  string `json:"type"` // agent, customer, device, location, policy
-	Label string `json:"label"`
+// ─── Production Middleware ───────────────────────────────────────────────────
+
+var (
+	reqCount    int64
+	errCount    int64
+	avgLatencyMs float64
+)
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = os.Getenv("ALLOWED_ORIGIN")
+		}
+		if origin == "" {
+			origin = "*"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,X-Request-ID,X-Tenant-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
-type GraphEdge struct {
-	Source string  `json:"source"`
-	Target string  `json:"target"`
-	Type   string  `json:"type"` // sold_by, claimed_by, used_device, same_location
-	Weight float64 `json:"weight"`
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
 }
 
-type FraudRing struct {
-	ID         string      `json:"id"`
-	Nodes      []GraphNode `json:"nodes"`
-	Edges      []GraphEdge `json:"edges"`
-	RiskScore  float64     `json:"risk_score"`
-	Pattern    string      `json:"pattern"`
-	DetectedAt string      `json:"detected_at"`
+type rateLimiter struct {
+	mu       sync.Mutex
+	requests map[string][]time.Time
+	limit    int
+	window   time.Duration
 }
 
-type AnalysisRequest struct {
-	EntityID   string `json:"entity_id"`
-	EntityType string `json:"entity_type"`
-	Depth      int    `json:"depth"`
+func newRateLimiter(limit int, window time.Duration) *rateLimiter {
+	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
 
-func analyzeNetwork(entityID, entityType string, depth int) FraudRing {
-	nodes := []GraphNode{
-		{ID: entityID, Type: entityType, Label: fmt.Sprintf("%s-%s", entityType, entityID[:8])},
-	}
-	edges := []GraphEdge{}
-	riskScore := 0.0
-
-	// Simulate connected nodes (in production, query graph DB)
-	connectedAgents := 3
-	connectedDevices := 2
-	sharedLocations := 1
-
-	for i := 0; i < connectedAgents; i++ {
-		nodeID := fmt.Sprintf("agent-%d", i)
-		nodes = append(nodes, GraphNode{ID: nodeID, Type: "agent", Label: fmt.Sprintf("Agent %d", i)})
-		edges = append(edges, GraphEdge{Source: entityID, Target: nodeID, Type: "sold_by", Weight: 0.8})
-	}
-	for i := 0; i < connectedDevices; i++ {
-		nodeID := fmt.Sprintf("device-%d", i)
-		nodes = append(nodes, GraphNode{ID: nodeID, Type: "device", Label: fmt.Sprintf("Device %d", i)})
-		edges = append(edges, GraphEdge{Source: entityID, Target: nodeID, Type: "used_device", Weight: 0.6})
-	}
-	for i := 0; i < sharedLocations; i++ {
-		nodeID := fmt.Sprintf("location-%d", i)
-		nodes = append(nodes, GraphNode{ID: nodeID, Type: "location", Label: fmt.Sprintf("Location %d", i)})
-		edges = append(edges, GraphEdge{Source: entityID, Target: nodeID, Type: "same_location", Weight: 0.4})
-	}
-
-	density := float64(len(edges)) / math.Max(float64(len(nodes)*(len(nodes)-1)/2), 1)
-	riskScore = density * 100
-	if len(nodes) > 5 { riskScore += 20 }
-
-	pattern := "low_risk"
-	if riskScore > 60 { pattern = "potential_ring" }
-	if riskScore > 80 { pattern = "confirmed_ring" }
-
-	return FraudRing{
-		ID: fmt.Sprintf("ring-%s", entityID[:8]), Nodes: nodes, Edges: edges,
-		RiskScore: riskScore, Pattern: pattern, DetectedAt: time.Now().Format(time.RFC3339),
-	}
-}
-
-func initDB() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" { dsn = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable" }
-	var err error
-	db, err = sql.Open("postgres", dsn)
-	if err != nil { log.Printf(`{"level":"warn","msg":"db failed","error":"%s"}`, err); return }
-	db.SetMaxOpenConns(25); db.SetMaxIdleConns(5); db.SetConnMaxLifetime(5 * time.Minute)
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fraud_rings (
-		id TEXT PRIMARY KEY, node_count INT, edge_count INT, risk_score REAL,
-		pattern TEXT, detected_at TIMESTAMPTZ DEFAULT NOW()
-	)`); err != nil {
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"fraud-network-graph"}`)
-}
-
-func handleAnalyze(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
-	}
-	var req AnalysisRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusBadRequest); return
-	}
-	if req.Depth == 0 { req.Depth = 2 }
-	ring := analyzeNetwork(req.EntityID, req.EntityType, req.Depth)
-	if db != nil {
-		if _, err := db.Exec(`INSERT INTO fraud_rings (id, node_count, edge_count, risk_score, pattern)
-			VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO UPDATE SET risk_score=$4, pattern=$5`,
-			ring.ID, len(ring.Nodes), len(ring.Edges), ring.RiskScore, ring.Pattern); err != nil {
-			log.Printf(`{"level":"warn","msg":"insert fraud ring failed","error":"%s"}`, err)
+func (rl *rateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+	filtered := make([]time.Time, 0)
+	for _, t := range rl.requests[ip] {
+		if t.After(cutoff) {
+			filtered = append(filtered, t)
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ring)
+	if len(filtered) >= rl.limit {
+		return false
+	}
+	rl.requests[ip] = append(filtered, now)
+	return true
 }
+
+func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := r.RemoteAddr
+			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				ip = strings.Split(xff, ",")[0]
+			}
+			if !rl.allow(strings.TrimSpace(ip)) {
+				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		duration := time.Since(start).Milliseconds()
+		atomic.AddInt64(&reqCount, 1)
+		total := atomic.LoadInt64(&reqCount)
+		avgLatencyMs = (avgLatencyMs*float64(total-1) + float64(duration)) / float64(total)
+	})
+}
+
+func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	total := atomic.LoadInt64(&reqCount)
+	errors := atomic.LoadInt64(&errCount)
+	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	fmt.Fprintf(w, "http_requests_total %d\n", total)
+	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors\n")
+	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
+	fmt.Fprintf(w, "http_errors_total %d\n", errors)
+	fmt.Fprintf(w, "# HELP http_request_duration_ms Average request latency\n")
+	fmt.Fprintf(w, "# TYPE http_request_duration_ms gauge\n")
+	fmt.Fprintf(w, "http_request_duration_ms %.2f\n", avgLatencyMs)
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			fmt.Fprintf(w, "# HELP db_connection_active Database connected\n")
+			fmt.Fprintf(w, "# TYPE db_connection_active gauge\n")
+			fmt.Fprintf(w, "db_connection_active 1\n")
+		}
+	}
+}
+
+
+// ─── Domain Handlers ─────────────────────────────────────────────────────────
+
+func handleList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 { page = 1 }
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 1 || limit > 100 { limit = 20 }
+	offset := (page - 1) * limit
+
+	var total int
+	err := db.QueryRow("SELECT COUNT(*) FROM fraud_graph_nodes").Scan(&total)
+	if err != nil {
+		atomic.AddInt64(&errCount, 1)
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	rows, err := db.Query(fmt.Sprintf("SELECT id, node_type, external_id, label, risk_score, flagged, cluster_id FROM fraud_graph_nodes ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	if err != nil {
+		atomic.AddInt64(&errCount, 1)
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	cols, _ := rows.Columns()
+	var results []map[string]interface{}
+	for rows.Next() {
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals { ptrs[i] = &vals[i] }
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
+		row := make(map[string]interface{})
+		for i, col := range cols {
+			row[col] = vals[i]
+		}
+		results = append(results, row)
+	}
+	if results == nil { results = []map[string]interface{}{} }
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data":  results,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+func handleGetByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, `{"error":"id parameter required"}`, http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	rows, err := db.Query(fmt.Sprintf("SELECT id, node_type, external_id, label, risk_score, flagged, cluster_id FROM fraud_graph_nodes WHERE id = $1"), id)
+	if err != nil {
+		atomic.AddInt64(&errCount, 1)
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	cols, _ := rows.Columns()
+	if !rows.Next() {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	vals := make([]interface{}, len(cols))
+	ptrs := make([]interface{}, len(cols))
+	for i := range vals { ptrs[i] = &vals[i] }
+	if err := rows.Scan(ptrs...); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	row := make(map[string]interface{})
+	for i, col := range cols {
+		row[col] = vals[i]
+	}
+	json.NewEncoder(w).Encode(row)
+}
+
+func handleCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid JSON body"}`, http.StatusBadRequest)
+		return
+	}
+
+	cols := make([]string, 0)
+	vals := make([]interface{}, 0)
+	placeholders := make([]string, 0)
+	i := 1
+	for k, v := range body {
+		if k == "id" || k == "created_at" { continue }
+		cols = append(cols, k)
+		vals = append(vals, v)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
+		i++
+	}
+
+	if len(cols) == 0 {
+		http.Error(w, `{"error":"no fields provided"}`, http.StatusBadRequest)
+		return
+	}
+
+	query := fmt.Sprintf("INSERT INTO fraud_graph_nodes (%s) VALUES (%s) RETURNING id",
+		strings.Join(cols, ", "), strings.Join(placeholders, ", "))
+
+	var newID int
+	err := db.QueryRow(query, vals...).Scan(&newID)
+	if err != nil {
+		atomic.AddInt64(&errCount, 1)
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+}
+
+func handleDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, `{"error":"id parameter required"}`, http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+
+	result, err := db.Exec("DELETE FROM fraud_graph_nodes WHERE id = $1", id)
+	if err != nil {
+		atomic.AddInt64(&errCount, 1)
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
+}
+
+// ─── Health & Probes ─────────────────────────────────────────────────────────
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	dbStatus := "disconnected"
-	if db != nil { if err := db.Ping(); err == nil { dbStatus = "connected" } }
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "fraud-network-graph", "database": dbStatus})
+	w.Header().Set("Content-Type", "application/json")
+	dbStatus := "connected"
+	if err := db.Ping(); err != nil {
+		dbStatus = "disconnected"
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "database": dbStatus})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": dbStatus})
 }
+
 func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil { w.WriteHeader(503); json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"}); return }
+	w.Header().Set("Content-Type", "application/json")
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
-func handleLive(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "alive"}) }
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM fraud_graph_nodes").Scan(&count)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"service": "fraud-network-graph",
+		"table":   "fraud_graph_nodes",
+		"total_records": count,
+		"uptime":  time.Since(startTime).String(),
+	})
+}
+
+var startTime = time.Now()
+
+// ─── Main ────────────────────────────────────────────────────────────────────
 
 func main() {
-	initDB()
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("FATAL: DATABASE_URL environment variable is required")
+	}
+
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	if err = db.Ping(); err != nil {
+		log.Printf("WARNING: Database not reachable at startup: %v", err)
+	}
+
+	// Auto-migrate
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS fraud_graph_nodes (id SERIAL PRIMARY KEY, node_type VARCHAR(32) NOT NULL, external_id VARCHAR(128) NOT NULL, label VARCHAR(256), risk_score NUMERIC(5,2) DEFAULT 0, flagged BOOLEAN DEFAULT false, cluster_id INTEGER, metadata JSONB, created_at TIMESTAMP DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARNING: migration error: %v", err)
+	}
+
+	rl := newRateLimiter(100, time.Minute)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
-	mux.HandleFunc("/api/v1/analyze", handleAnalyze)
-	port := ":8123"
-	log.Printf(`{"level":"info","msg":"Fraud Network Graph starting","port":"%s"}`, port)
-	log.Fatal(http.ListenAndServe(port, mux))
+	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/metrics", handlePrometheusMetrics)
+
+	// Domain CRUD routes
+	mux.HandleFunc("/api/v1/graph_nodes", handleList)
+	mux.HandleFunc("/api/v1/graph_node", handleGetByID)
+	mux.HandleFunc("/api/v1/graph_nodes/create", handleCreate)
+	mux.HandleFunc("/api/v1/graph_nodes/delete", handleDelete)
+
+	// Apply middleware chain
+	var handler http.Handler = mux
+	handler = metricsMiddleware(handler)
+	handler = rateLimitMiddleware(rl)(handler)
+	handler = securityHeaders(handler)
+	handler = corsMiddleware(handler)
+
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Graceful shutdown
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("Shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Forced shutdown: %v", err)
+		}
+	}()
+
+	log.Printf("Fraud Network Graph starting on :%s", port)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Server failed: %v", err)
+	}
 }

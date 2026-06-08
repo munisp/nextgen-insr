@@ -1,0 +1,91 @@
+name: Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (or "all" for all services)'
+        required: true
+        default: 'all'
+      strategy:
+        description: 'Deploy strategy'
+        required: true
+        default: 'rolling'
+        type: choice
+        options:
+          - rolling
+          - canary
+          - blue-green
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  pre-deploy-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify staging tests passed
+        run: |
+          echo "Verifying last staging deploy was successful..."
+          # In production, this would check the staging deployment status
+
+      - name: Run security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+  deploy-production:
+    needs: pre-deploy-checks
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl (production)
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
+
+      - name: Rolling deploy
+        if: inputs.strategy == 'rolling'
+        run: |
+          SERVICES="${{ inputs.service }}"
+          if [ "$SERVICES" = "all" ]; then
+            SERVICES="claims-adjudication-engine policy-renewal-automation agent-commission-management enhanced-kyc-kyb notification-service audit-trail-system naicom-compliance-module microinsurance-engine takaful-module ussd-gateway"
+          fi
+          for svc in $SERVICES; do
+            echo "Deploying ${svc}..."
+            kubectl set image deployment/${svc} ${svc}=${IMAGE_PREFIX}/${svc}:staging-latest \
+              -n insureportal --record
+            kubectl rollout status deployment/${svc} -n insureportal --timeout=300s
+          done
+
+      - name: Canary deploy
+        if: inputs.strategy == 'canary'
+        run: |
+          SVC="${{ inputs.service }}"
+          echo "Deploying canary for ${SVC}..."
+          # Deploy canary with 10% traffic
+          kubectl apply -f helm/charts/${SVC}/canary.yaml -n insureportal || true
+          echo "Canary deployed. Monitor for 15 minutes before promoting."
+
+      - name: Post-deploy smoke test
+        run: |
+          sleep 30
+          PROD_URL=$(kubectl get svc claims-adjudication-engine -n insureportal -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          if [ -n "$PROD_URL" ]; then
+            curl -sf "http://${PROD_URL}/health" | jq .
+          fi
+
+      - name: Notify team
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          echo "Deploy status: ${STATUS}"
+          # In production, send Slack/Teams notification

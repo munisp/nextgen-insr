@@ -188,7 +188,7 @@ func loadConfig() Config {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://postgres:postgres@localhost:5432/geospatial?sslmode=disable"
+		log.Fatal("FATAL: DATABASE_URL environment variable is required")
 	}
 
 	return Config{

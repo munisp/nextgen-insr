@@ -20,7 +20,7 @@ func main() {
 	}
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		log.Fatal("FATAL: DATABASE_URL environment variable is required")
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})

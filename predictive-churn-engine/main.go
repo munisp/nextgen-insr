@@ -118,7 +118,7 @@ func predictChurn(ph PolicyHolder) ChurnPrediction {
 
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" { dsn = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable" }
+	if dsn == "" { log.Fatal("FATAL: DATABASE_URL environment variable is required") }
 	var err error
 	db, err = sql.Open("postgres", dsn)
 	if err != nil { log.Printf(`{"level":"warn","msg":"db failed","error":"%s"}`, err); return }

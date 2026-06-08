@@ -168,7 +168,7 @@ func loadConfig() Config {
 	return Config{
 		TigerBeetleClusterID:   1, // Default cluster ID
 		TigerBeetleAddresses:   getEnv("TIGERBEETLE_ADDRESSES", "localhost:3000"),
-		DatabaseURL:            getEnv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/insurance_db?sslmode=disable"),
+		DatabaseURL:            requireEnv("DATABASE_URL"),
 		KafkaBrokers:           getEnv("KAFKA_BROKERS", "localhost:9092"),
 		TemporalServiceURL:     getEnv("TEMPORAL_SERVICE_URL", "localhost:7233"),
 		TemporalNamespace:      getEnv("TEMPORAL_NAMESPACE", "default"),
@@ -180,6 +180,14 @@ func loadConfig() Config {
 }
 
 // getEnv gets an environment variable with a default value
+func requireEnv(key string) string {
+	val := os.Getenv(key)
+	if val == "" {
+		log.Fatalf("FATAL: %s environment variable is required", key)
+	}
+	return val
+}
+
 func getEnv(key, defaultValue string) string {
 	value := os.Getenv(key)
 	if value == "" {

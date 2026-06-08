@@ -128,7 +128,7 @@ func evaluateTrigger(policy ParametricPolicy, event EventTrigger) PayoutResult {
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+		log.Fatal("FATAL: DATABASE_URL environment variable is required")
 	}
 	var err error
 	db, err = sql.Open("postgres", dsn)
