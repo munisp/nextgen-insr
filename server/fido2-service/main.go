@@ -160,6 +160,110 @@ func getOrCreateUser(userID, userName, displayName string) *User {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 // GET /health
+
+
+
+func execInTransaction(fn func(tx *sql.Tx) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		}
+	}()
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func otelMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceID := r.Header.Get("X-Trace-ID")
+		if traceID == "" {
+			traceID = r.Header.Get("X-Request-Id")
+		}
+		spanID := fmt.Sprintf("span-%d", time.Now().UnixNano())
+		w.Header().Set("X-Trace-ID", traceID)
+		w.Header().Set("X-Span-ID", spanID)
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		duration := time.Since(start)
+		if duration > 500*time.Millisecond {
+			jsonLog("warn", "slow request", "path", r.URL.Path, "duration_ms", fmt.Sprintf("%.0f", float64(duration.Milliseconds())), "trace_id", traceID)
+		}
+	})
+}
+
+
+
+type rateLimiter struct {
+	mu       sync.Mutex
+	requests map[string][]time.Time
+	limit    int
+	window   time.Duration
+}
+func newRateLimiter(limit int, window time.Duration) *rateLimiter {
+	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
+}
+func (rl *rateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+	var valid []time.Time
+	for _, t := range rl.requests[ip] {
+		if t.After(cutoff) { valid = append(valid, t) }
+	}
+	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	rl.requests[ip] = append(valid, now)
+	return true
+}
+func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := r.RemoteAddr
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if !rl.allow(strings.TrimSpace(ip)) {
+				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id, X-Trace-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func jsonLog(level, msg string, kvs ...string) {
+	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
+	for i := 0; i+1 < len(kvs); i += 2 {
+		entry += fmt.Sprintf(`,"%s":"%s"`, kvs[i], kvs[i+1])
+	}
+	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
+	log.Println(entry)
+}
+
 func isPQClientError(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "(22") || strings.Contains(msg, "(23") || strings.Contains(msg, "(42703)") || strings.Contains(msg, "value too long")
@@ -607,6 +711,39 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 }
 
 var db *sql.DB
+// Circuit breaker for external HTTP calls
+type circuitBreakerState int
+const (
+	cbClosed circuitBreakerState = iota
+	cbOpen
+	cbHalfOpen
+)
+type circuitBreaker struct {
+	state       circuitBreakerState
+	failures    int
+	threshold   int
+	resetAfter  time.Duration
+	lastFailure time.Time
+}
+var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+func (c *circuitBreaker) allow() bool {
+	if c.state == cbClosed { return true }
+	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
+		c.state = cbHalfOpen
+		return true
+	}
+	return c.state == cbHalfOpen
+}
+func (c *circuitBreaker) recordSuccess() {
+	c.failures = 0
+	c.state = cbClosed
+}
+func (c *circuitBreaker) recordFailure() {
+	c.failures++
+	c.lastFailure = time.Now()
+	if c.failures >= c.threshold { c.state = cbOpen }
+}
+
 
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")

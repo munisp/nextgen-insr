@@ -20,6 +20,39 @@ import (
 )
 
 var db *sql.DB
+// Circuit breaker for external HTTP calls
+type circuitBreakerState int
+const (
+	cbClosed circuitBreakerState = iota
+	cbOpen
+	cbHalfOpen
+)
+type circuitBreaker struct {
+	state       circuitBreakerState
+	failures    int
+	threshold   int
+	resetAfter  time.Duration
+	lastFailure time.Time
+}
+var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+func (c *circuitBreaker) allow() bool {
+	if c.state == cbClosed { return true }
+	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
+		c.state = cbHalfOpen
+		return true
+	}
+	return c.state == cbHalfOpen
+}
+func (c *circuitBreaker) recordSuccess() {
+	c.failures = 0
+	c.state = cbClosed
+}
+func (c *circuitBreaker) recordFailure() {
+	c.failures++
+	c.lastFailure = time.Now()
+	if c.failures >= c.threshold { c.state = cbOpen }
+}
+
 
 // ─── Production Middleware ───────────────────────────────────────────────────
 
@@ -116,6 +149,54 @@ func metricsMiddleware(next http.Handler) http.Handler {
 		total := atomic.LoadInt64(&reqCount)
 		avgLatencyMs = (avgLatencyMs*float64(total-1) + float64(duration)) / float64(total)
 	})
+}
+
+
+
+
+func execInTransaction(fn func(tx *sql.Tx) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		}
+	}()
+	if err := fn(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+func otelMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceID := r.Header.Get("X-Trace-ID")
+		if traceID == "" {
+			traceID = r.Header.Get("X-Request-Id")
+		}
+		spanID := fmt.Sprintf("span-%d", time.Now().UnixNano())
+		w.Header().Set("X-Trace-ID", traceID)
+		w.Header().Set("X-Span-ID", spanID)
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		duration := time.Since(start)
+		if duration > 500*time.Millisecond {
+			jsonLog("warn", "slow request", "path", r.URL.Path, "duration_ms", fmt.Sprintf("%.0f", float64(duration.Milliseconds())), "trace_id", traceID)
+		}
+	})
+}
+
+func jsonLog(level, msg string, kvs ...string) {
+	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
+	for i := 0; i+1 < len(kvs); i += 2 {
+		entry += fmt.Sprintf(`,"%s":"%s"`, kvs[i], kvs[i+1])
+	}
+	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
+	log.Println(entry)
 }
 
 func isPQClientError(err error) bool {
@@ -410,7 +491,7 @@ func main() {
 	// Auto-migrate
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS perf_metrics (id SERIAL PRIMARY KEY, service_name VARCHAR(128) NOT NULL, metric_name VARCHAR(64) NOT NULL, value NUMERIC(20,4) NOT NULL, unit VARCHAR(16) DEFAULT 'ms', percentile VARCHAR(8) DEFAULT 'p50', environment VARCHAR(32) DEFAULT 'production', recorded_at TIMESTAMP DEFAULT NOW())`)
 	if err != nil {
-		log.Printf("WARNING: migration error: %v", err)
+		jsonLog("warn", "migration error", "error", err.Error())
 	}
 
 	rl := newRateLimiter(100, time.Minute)
@@ -433,7 +514,7 @@ func main() {
 	handler = metricsMiddleware(handler)
 	handler = rateLimitMiddleware(rl)(handler)
 	handler = securityHeaders(handler)
-	handler = corsMiddleware(handler)
+	handler = otelMiddleware(corsMiddleware(handler))
 
 	srv := &http.Server{
 		Addr:         ":" + port,

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,10 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -191,6 +196,70 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
+
+type rateLimiter struct {
+	mu       sync.Mutex
+	requests map[string][]time.Time
+	limit    int
+	window   time.Duration
+}
+func newRateLimiter(limit int, window time.Duration) *rateLimiter {
+	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
+}
+func (rl *rateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	cutoff := now.Add(-rl.window)
+	var valid []time.Time
+	for _, t := range rl.requests[ip] {
+		if t.After(cutoff) { valid = append(valid, t) }
+	}
+	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	rl.requests[ip] = append(valid, now)
+	return true
+}
+func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := r.RemoteAddr
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if !rl.allow(strings.TrimSpace(ip)) {
+				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id, X-Trace-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func jsonLog(level, msg string, kvs ...string) {
+	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
+	for i := 0; i+1 < len(kvs); i += 2 {
+		entry += fmt.Sprintf(`,"%s":"%s"`, kvs[i], kvs[i+1])
+	}
+	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
+	log.Println(entry)
+}
+
 func main() {
 	initDB()
 	mux := http.NewServeMux()
@@ -223,5 +292,17 @@ func main() {
 	})
 	port := ":8120"
 	log.Printf(`{"level":"info","msg":"AI Claims Auto-Adjudication starting","port":"%s"}`, port)
-	log.Fatal(http.ListenAndServe(port, mux))
+	srv := &http.Server{Addr: port, Handler: mux}
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		jsonLog("info", "shutting down gracefully", "service", "ai-claims-auto-adjudication")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			jsonLog("error", "shutdown error", "error", err.Error())
+		}
+	}()
+	log.Fatal(srv.ListenAndServe())
 }

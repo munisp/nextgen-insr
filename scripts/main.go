@@ -6,6 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"context"
+	"syscall"
 	"strconv"
 	"os/exec"
 	"time"
@@ -109,7 +112,19 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" { port = "8114" }
 	log.Printf("Scripts Runner starting on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, r))
+	srv := &http.Server{Addr: ":" + port, Handler: r}
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("Shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Shutdown error: %v", err)
+		}
+	}()
+	log.Fatal(srv.ListenAndServe())
 }
 
 func init() { _ = exec.Command("echo") }
