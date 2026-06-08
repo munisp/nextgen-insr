@@ -124,7 +124,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bank_transactions (id TEXT PRIMARY KEY, bank_code TEXT NOT NULL, account_number TEXT, amount NUMERIC(15,2), direction TEXT, reference TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bank_transactions (id SERIAL PRIMARY KEY, bank_code TEXT NOT NULL, account_number TEXT, amount NUMERIC(15,2), direction TEXT, reference TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table bank_transactions failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

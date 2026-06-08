@@ -403,11 +403,11 @@ func main() {
 	mux.HandleFunc("/api/v1/transition", handleTransition)
 	mux.HandleFunc("/api/v1/transitions", handleTransitions)
 
-	http.HandleFunc("/api/v1/transitions", handleListEntities)
-	http.HandleFunc("/api/v1/transition_record", handleGetEntity)
-	http.HandleFunc("/api/v1/transitions/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/transitions/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/transitions", handleListEntities)
+	mux.HandleFunc("/api/v1/transition_record", handleGetEntity)
+	mux.HandleFunc("/api/v1/transitions/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/transitions/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 	port := ":8097"
 	log.Printf("Policy Lifecycle Service starting on %s", port)

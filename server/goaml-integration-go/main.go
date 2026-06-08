@@ -1138,11 +1138,11 @@ func main() {
 	mux.HandleFunc("/api/v1/stats", state.authMiddleware(state.handleStats))
 	mux.HandleFunc("/health", state.handleHealth)
 
-	http.HandleFunc("/api/v1/goaml_reports", handleListEntities)
-	http.HandleFunc("/api/v1/goaml_report", handleGetEntity)
-	http.HandleFunc("/api/v1/goaml_reports/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/goaml_reports/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/goaml_reports", handleListEntities)
+	mux.HandleFunc("/api/v1/goaml_report", handleGetEntity)
+	mux.HandleFunc("/api/v1/goaml_reports/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/goaml_reports/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 
 	addr := ":" + cfg.Port

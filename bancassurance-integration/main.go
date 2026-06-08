@@ -419,7 +419,7 @@ func initDB() {
 	}
 	// Create domain table
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bancassurance_referrals (
-            id TEXT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             bank_id TEXT NOT NULL,
             customer_id TEXT NOT NULL,
             product_type TEXT,

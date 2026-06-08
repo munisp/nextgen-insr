@@ -109,7 +109,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS mobile_users (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, device_token TEXT, platform TEXT, app_version TEXT, push_enabled BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS mobile_users (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, device_token TEXT, platform TEXT, app_version TEXT, push_enabled BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table mobile_users failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

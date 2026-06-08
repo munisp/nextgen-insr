@@ -939,11 +939,11 @@ func main() {
 	mux.HandleFunc("/api/v1/dashboard", state.handleDashboard)
 	mux.HandleFunc("/health", state.handleHealth)
 
-	http.HandleFunc("/api/v1/aml_cases", handleListEntities)
-	http.HandleFunc("/api/v1/aml_case", handleGetEntity)
-	http.HandleFunc("/api/v1/aml_cases/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/aml_cases/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/aml_cases", handleListEntities)
+	mux.HandleFunc("/api/v1/aml_case", handleGetEntity)
+	mux.HandleFunc("/api/v1/aml_cases/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/aml_cases/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 
 	addr := ":" + cfg.Port

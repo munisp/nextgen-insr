@@ -108,7 +108,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS gif_policies (id TEXT PRIMARY KEY, product_id TEXT, holder_id TEXT, premium NUMERIC(15,2), coverage NUMERIC(15,2), state TEXT DEFAULT 'applied', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS gif_policies (id SERIAL PRIMARY KEY, product_id TEXT, holder_id TEXT, premium NUMERIC(15,2), coverage NUMERIC(15,2), state TEXT DEFAULT 'applied', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table gif_policies failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

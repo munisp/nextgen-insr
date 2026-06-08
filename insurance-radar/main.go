@@ -105,7 +105,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS risk_signals (id TEXT PRIMARY KEY, region TEXT, peril_type TEXT, severity REAL, source TEXT, coordinates JSONB, expires_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS risk_signals (id SERIAL PRIMARY KEY, region TEXT, peril_type TEXT, severity REAL, source TEXT, coordinates JSONB, expires_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table risk_signals failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

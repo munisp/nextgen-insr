@@ -1217,11 +1217,11 @@ func main() {
 	mux.HandleFunc("/api/v1/tiers/requirements", state.handleTierRequirements)
 	mux.HandleFunc("/health", state.handleHealth)
 
-	http.HandleFunc("/api/v1/kyc_enforcement_records", handleListEntities)
-	http.HandleFunc("/api/v1/kyc_enforcement_record", handleGetEntity)
-	http.HandleFunc("/api/v1/kyc_enforcement_records/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/kyc_enforcement_records/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/kyc_enforcement_records", handleListEntities)
+	mux.HandleFunc("/api/v1/kyc_enforcement_record", handleGetEntity)
+	mux.HandleFunc("/api/v1/kyc_enforcement_records/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/kyc_enforcement_records/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 
 	addr := ":" + cfg.Port

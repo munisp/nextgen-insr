@@ -105,7 +105,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS parametric_policies (id TEXT PRIMARY KEY, holder_id TEXT NOT NULL, peril_type TEXT, trigger_threshold REAL, payout_amount NUMERIC(15,2), oracle_source TEXT, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS parametric_policies (id SERIAL PRIMARY KEY, holder_id TEXT NOT NULL, peril_type TEXT, trigger_threshold REAL, payout_amount NUMERIC(15,2), oracle_source TEXT, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table parametric_policies failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

@@ -185,7 +185,7 @@ func initDB() {
 	}
 	// Create domain table
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS communications (
-            id TEXT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             channel TEXT NOT NULL,
             recipient TEXT NOT NULL,
             subject TEXT,
@@ -390,11 +390,11 @@ func main() {
 	mux.HandleFunc("/api/v1/send", handleSend)
 	mux.HandleFunc("/api/v1/templates", handleTemplates)
 
-	http.HandleFunc("/api/v1/messages", handleListEntities)
-	http.HandleFunc("/api/v1/message", handleGetEntity)
-	http.HandleFunc("/api/v1/messages/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/messages/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/messages", handleListEntities)
+	mux.HandleFunc("/api/v1/message", handleGetEntity)
+	mux.HandleFunc("/api/v1/messages/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/messages/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 	
 	port := ":8093"

@@ -105,7 +105,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS lakehouse_jobs (id TEXT PRIMARY KEY, source TEXT, destination TEXT, row_count BIGINT, status TEXT DEFAULT 'queued', started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS lakehouse_jobs (id SERIAL PRIMARY KEY, source TEXT, destination TEXT, row_count BIGINT, status TEXT DEFAULT 'queued', started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table lakehouse_jobs failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

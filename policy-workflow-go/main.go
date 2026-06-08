@@ -121,7 +121,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS workflow_instances (id TEXT PRIMARY KEY, policy_id TEXT NOT NULL, workflow_type TEXT, current_step TEXT, status TEXT DEFAULT 'active', assignee TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS workflow_instances (id SERIAL PRIMARY KEY, policy_id TEXT NOT NULL, workflow_type TEXT, current_step TEXT, status TEXT DEFAULT 'active', assignee TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table workflow_instances failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

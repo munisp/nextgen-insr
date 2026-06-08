@@ -450,7 +450,7 @@ func initDB() {
 	}
 	// Create domain table
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS pfa_contributions (
-            id TEXT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             employee_id TEXT NOT NULL,
             employer_id TEXT,
             amount NUMERIC NOT NULL,

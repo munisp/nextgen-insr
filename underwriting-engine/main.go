@@ -221,7 +221,7 @@ func initDB() {
 	}
 	// Create domain table
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS underwriting_decisions (
-            id TEXT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             application_id TEXT NOT NULL,
             decision TEXT NOT NULL,
             premium_quoted NUMERIC,
@@ -426,11 +426,11 @@ func main() {
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/quote", handleQuote)
 
-	http.HandleFunc("/api/v1/decisions", handleListEntities)
-	http.HandleFunc("/api/v1/decision", handleGetEntity)
-	http.HandleFunc("/api/v1/decisions/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/decisions/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/decisions", handleListEntities)
+	mux.HandleFunc("/api/v1/decision", handleGetEntity)
+	mux.HandleFunc("/api/v1/decisions/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/decisions/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 	port := ":8096"
 	log.Printf("Underwriting Engine starting on %s", port)

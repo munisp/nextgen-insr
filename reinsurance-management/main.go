@@ -416,7 +416,7 @@ func initDB() {
 	}
 	// Create domain table
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS reinsurance_contracts (
-            id TEXT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             reinsurer_name TEXT NOT NULL,
             contract_type TEXT NOT NULL,
             limit_amount NUMERIC,

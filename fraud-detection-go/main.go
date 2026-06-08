@@ -126,7 +126,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fraud_alerts (id TEXT PRIMARY KEY, policy_id TEXT, customer_id TEXT, alert_type TEXT, risk_score REAL, status TEXT DEFAULT 'open', analyst_notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fraud_alerts (id SERIAL PRIMARY KEY, policy_id TEXT, customer_id TEXT, alert_type TEXT, risk_score REAL, status TEXT DEFAULT 'open', analyst_notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table fraud_alerts failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

@@ -116,7 +116,7 @@ func initDB() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS exchange_rates (id TEXT PRIMARY KEY, base_currency TEXT NOT NULL, target_currency TEXT NOT NULL, rate NUMERIC(18,8), source TEXT, valid_from TIMESTAMPTZ, valid_to TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS exchange_rates (id SERIAL PRIMARY KEY, base_currency TEXT NOT NULL, target_currency TEXT NOT NULL, rate NUMERIC(18,8), source TEXT, valid_from TIMESTAMPTZ, valid_to TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
 		log.Printf(`{"level":"warn","msg":"create table exchange_rates failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)

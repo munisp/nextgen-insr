@@ -446,7 +446,7 @@ func initDB() {
 	}
 	// Create domain table
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS group_life_schemes (
-            id TEXT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             company_name TEXT NOT NULL,
             member_count INTEGER DEFAULT 0,
             total_premium NUMERIC DEFAULT 0,
