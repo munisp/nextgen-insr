@@ -198,6 +198,29 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/auto-adjudicate", handleAutoAdjudicate)
+	mux.HandleFunc("/api/v1/adjudication-history", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		rows, err := db.Query("SELECT id, claim_type, amount, risk_score, decision, created_at FROM adjudication_results ORDER BY id DESC LIMIT 50")
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{"data": []interface{}{}, "error": err.Error()})
+			return
+		}
+		defer rows.Close()
+		var results []map[string]interface{}
+		for rows.Next() {
+			var id int; var claimType, decision string; var amount, riskScore float64; var createdAt interface{}
+			if err := rows.Scan(&id, &claimType, &amount, &riskScore, &decision, &createdAt); err != nil { continue }
+			results = append(results, map[string]interface{}{"id": id, "claim_type": claimType, "amount": amount, "risk_score": riskScore, "decision": decision, "created_at": createdAt})
+		}
+		if results == nil { results = []map[string]interface{}{} }
+		json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": len(results)})
+	})
+	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var total int
+		db.QueryRow("SELECT COUNT(*) FROM adjudication_results").Scan(&total)
+		json.NewEncoder(w).Encode(map[string]interface{}{"service": "ai-claims-auto-adjudication", "total_adjudications": total})
+	})
 	port := ":8120"
 	log.Printf(`{"level":"info","msg":"AI Claims Auto-Adjudication starting","port":"%s"}`, port)
 	log.Fatal(http.ListenAndServe(port, mux))

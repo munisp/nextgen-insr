@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"strconv"
 	"time"
 
@@ -205,6 +206,136 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"table": "exchange_rates", "count": count})
 }
 
+
+// ─── Domain CRUD Handlers ────────────────────────────────────────────────────
+
+func handleListEntities(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 { page = 1 }
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 1 || limit > 100 { limit = 20 }
+	offset := (page - 1) * limit
+
+	var total int
+	if err := db.QueryRow("SELECT COUNT(*) FROM currency_conversions").Scan(&total); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	rows, err := db.Query(fmt.Sprintf("SELECT id, from_currency, to_currency, amount, rate, converted_amount, source, created_at FROM currency_conversions ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	cols, _ := rows.Columns()
+	var results []map[string]interface{}
+	for rows.Next() {
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals { ptrs[i] = &vals[i] }
+		if err := rows.Scan(ptrs...); err != nil { continue }
+		row := make(map[string]interface{})
+		for i, col := range cols { row[col] = vals[i] }
+		results = append(results, row)
+	}
+	if results == nil { results = []map[string]interface{}{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
+}
+
+func handleGetEntity(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, `{"error":"id parameter required"}`, http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	rows, err := db.Query(fmt.Sprintf("SELECT id, from_currency, to_currency, amount, rate, converted_amount, source, created_at FROM currency_conversions WHERE id = $1"), id)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	cols, _ := rows.Columns()
+	if !rows.Next() {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	vals := make([]interface{}, len(cols))
+	ptrs := make([]interface{}, len(cols))
+	for i := range vals { ptrs[i] = &vals[i] }
+	if err := rows.Scan(ptrs...); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	row := make(map[string]interface{})
+	for i, col := range cols { row[col] = vals[i] }
+	json.NewEncoder(w).Encode(row)
+}
+
+func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid JSON body"}`, http.StatusBadRequest)
+		return
+	}
+	cols := make([]string, 0)
+	vals := make([]interface{}, 0)
+	placeholders := make([]string, 0)
+	i := 1
+	for k, v := range body {
+		if k == "id" || k == "created_at" { continue }
+		cols = append(cols, k)
+		vals = append(vals, v)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
+		i++
+	}
+	if len(cols) == 0 {
+		http.Error(w, `{"error":"no fields provided"}`, http.StatusBadRequest)
+		return
+	}
+	query := fmt.Sprintf("INSERT INTO currency_conversions (%s) VALUES (%s) RETURNING id",
+		strings.Join(cols, ", "), strings.Join(placeholders, ", "))
+	var newID int
+	if err := db.QueryRow(query, vals...).Scan(&newID); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+}
+
+func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		http.Error(w, `{"error":"id parameter required"}`, http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
+		return
+	}
+	result, err := db.Exec("DELETE FROM currency_conversions WHERE id = $1", id)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
+}
+
 func main() {
 	initDB()
 	r := chi.NewRouter()
@@ -214,6 +345,12 @@ func main() {
 	})
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
 	r.Get("/stats", handleStats)
+
+	r.Get("/api/v1/conversions", handleListEntities)
+	r.Get("/api/v1/conversion", handleGetEntity)
+	r.Post("/api/v1/conversions/create", handleCreateEntity)
+	r.Delete("/api/v1/conversions/delete", handleDeleteEntity)
+
 	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Get("/api/v1/rates", getRates)
 	r.Post("/api/v1/convert", convertCurrency)
