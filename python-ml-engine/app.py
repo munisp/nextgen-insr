@@ -26,7 +26,93 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import urlparse, parse_qs
 
-# ── In-Memory State ──────────────────────────────────────────────────────────
+# ── Database ─────────────────────────────────────────────────────────────────
+
+import psycopg2
+import psycopg2.extras
+
+db_conn = None
+
+def get_db():
+    global db_conn
+    if db_conn is None or db_conn.closed:
+        url = os.environ.get("DATABASE_URL", "")
+        if not url:
+            raise RuntimeError("DATABASE_URL is required")
+        db_conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+        db_conn.autocommit = True
+        with db_conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_anomalies (
+                    id SERIAL PRIMARY KEY,
+                    transaction_id TEXT,
+                    agent_id TEXT,
+                    amount NUMERIC,
+                    anomaly_score NUMERIC,
+                    anomalies JSONB DEFAULT '[]'::jsonb,
+                    is_anomaly BOOLEAN DEFAULT false,
+                    detected_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_compliance_checks (
+                    id SERIAL PRIMARY KEY,
+                    entity_name TEXT,
+                    check_type TEXT,
+                    risk_score NUMERIC,
+                    result JSONB,
+                    checked_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_risk_scores (
+                    id SERIAL PRIMARY KEY,
+                    transaction_id TEXT,
+                    risk_score NUMERIC,
+                    risk_level TEXT,
+                    factors JSONB,
+                    scored_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+    return db_conn
+
+def persist_anomaly(result: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO ml_anomalies (transaction_id, agent_id, amount, anomaly_score, anomalies, is_anomaly) VALUES (%s,%s,%s,%s,%s,%s)",
+                (result.get("transaction_id"), result.get("agent_id", ""), result.get("amount", 0),
+                 result.get("anomaly_score", 0), json.dumps(result.get("anomalies", [])), result.get("is_anomaly", False))
+            )
+    except Exception as e:
+        print(f"DB persist error: {e}")
+
+def persist_compliance(result: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO ml_compliance_checks (entity_name, check_type, risk_score, result) VALUES (%s,%s,%s,%s)",
+                (result.get("entity", ""), result.get("check_type", "aml"), result.get("risk_score", 0),
+                 json.dumps(result, default=str))
+            )
+    except Exception as e:
+        print(f"DB persist error: {e}")
+
+def persist_risk_score(result: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO ml_risk_scores (transaction_id, risk_score, risk_level, factors) VALUES (%s,%s,%s,%s)",
+                (result.get("transaction_id", ""), result.get("composite_score", 0),
+                 result.get("risk_level", ""), json.dumps(result.get("factors", {})))
+            )
+    except Exception as e:
+        print(f"DB persist error: {e}")
+
+# ── In-Memory State (hot cache, backed by PostgreSQL) ─────────────────────────
 
 class MLState:
     def __init__(self):
@@ -135,6 +221,8 @@ def detect_anomalies(transaction: dict) -> dict:
 
     result = {
         "transaction_id": transaction.get("id", f"txn_{int(time.time()*1000)}"),
+        "agent_id": agent_id,
+        "amount": amount,
         "is_anomalous": len(anomalies) > 0,
         "anomaly_score": min(round(score, 1), 100),
         "risk_level": "high" if score > 50 else "medium" if score > 20 else "low",
@@ -352,6 +440,8 @@ def score_fraud_risk(transaction: dict) -> dict:
 
     result = {
         "transaction_id": transaction.get("id", f"txn_{int(time.time()*1000)}"),
+        "agent_id": agent_id,
+        "amount": amount,
         "fraud_score": min(score, 100),
         "risk_level": "high" if score > 50 else "medium" if score > 25 else "low",
         "factors": factors,

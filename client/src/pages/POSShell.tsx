@@ -10458,7 +10458,7 @@ function OfflineResilienceScreen({ onBack }: { onBack: () => void }) {
                 className="text-xs"
                 style={{ color: "#6b7280", fontFamily: MONO }}
               >
-                <span style={{ color: GOLD }}>Durable (SQLite):</span>{" "}
+                <span style={{ color: GOLD }}>Durable (PostgreSQL):</span>{" "}
                 {rustQueue.length}
               </div>
             </div>
@@ -10571,7 +10571,7 @@ function OfflineResilienceScreen({ onBack }: { onBack: () => void }) {
             className="rounded-2xl p-4"
             style={{ background: CARD, border: `1px solid ${BORDER}` }}
           >
-            {sec("Durable Queue (SQLite WAL)", "🦀")}
+            {sec("Durable Queue (PostgreSQL)", "🦀")}
             <div className="flex flex-col gap-2">
               {rustQueue.map(item => (
                 <div

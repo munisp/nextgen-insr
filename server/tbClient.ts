@@ -4,7 +4,7 @@ import { ENV } from "./_core/env";
  * TigerBeetle Sidecar Client
  *
  * The insurance service runs a local Go sidecar (tb-sidecar) on port 7070 that:
- *   1. Commits double-entry transfers to SQLite immediately (offline-safe)
+ *   1. Commits double-entry transfers to PostgreSQL immediately (offline-safe)
  *   2. Syncs those transfers to the TigerBeetle Zig cluster when online
  *   3. Writes metadata to PostgreSQL as a secondary record
  *
