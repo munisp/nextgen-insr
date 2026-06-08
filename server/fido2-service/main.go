@@ -645,11 +645,11 @@ func newRouter() http.Handler {
 	mux.HandleFunc("/api/v1/fido2/authenticate/finish", handleAuthFinish)
 	mux.HandleFunc("/api/v1/fido2/credentials/", func(w http.ResponseWriter, r *http.Request) {
 
-	http.HandleFunc("/api/v1/fido2_credentials", handleListEntities)
-	http.HandleFunc("/api/v1/fido2_credential", handleGetEntity)
-	http.HandleFunc("/api/v1/fido2_credentials/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/fido2_credentials/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/fido2_credentials", handleListEntities)
+	mux.HandleFunc("/api/v1/fido2_credential", handleGetEntity)
+	mux.HandleFunc("/api/v1/fido2_credentials/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/fido2_credentials/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 		switch r.Method {
 		case http.MethodGet:

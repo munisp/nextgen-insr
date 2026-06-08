@@ -598,11 +598,11 @@ func newRouter() http.Handler {
 	mux.HandleFunc("/api/v1/ota/download/", handleDownload)
 	mux.HandleFunc("/api/v1/ota/", func(w http.ResponseWriter, r *http.Request) {
 
-	http.HandleFunc("/api/v1/ota_updates", handleListEntities)
-	http.HandleFunc("/api/v1/ota_update", handleGetEntity)
-	http.HandleFunc("/api/v1/ota_updates/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/ota_updates/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/ota_updates", handleListEntities)
+	mux.HandleFunc("/api/v1/ota_update", handleGetEntity)
+	mux.HandleFunc("/api/v1/ota_updates/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/ota_updates/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 		// Route /api/v1/ota/{id}/rollout
 		if strings.HasSuffix(r.URL.Path, "/rollout") && r.Method == http.MethodPut {

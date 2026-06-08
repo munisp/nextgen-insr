@@ -816,11 +816,11 @@ func main() {
 	// Listing Status
 	mux.HandleFunc("GET /api/v1/connections/{id}/listings", func(w http.ResponseWriter, r *http.Request) {
 
-	http.HandleFunc("/api/v1/marketplace_integrations", handleListEntities)
-	http.HandleFunc("/api/v1/marketplace_integration", handleGetEntity)
-	http.HandleFunc("/api/v1/marketplace_integrations/create", handleCreateEntity)
-	http.HandleFunc("/api/v1/marketplace_integrations/delete", handleDeleteEntity)
-	http.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/marketplace_integrations", handleListEntities)
+	mux.HandleFunc("/api/v1/marketplace_integration", handleGetEntity)
+	mux.HandleFunc("/api/v1/marketplace_integrations/create", handleCreateEntity)
+	mux.HandleFunc("/api/v1/marketplace_integrations/delete", handleDeleteEntity)
+	mux.HandleFunc("/stats", handleStats)
 
 		id, _ := strconv.Atoi(r.PathValue("id"))
 		mu.RLock()
