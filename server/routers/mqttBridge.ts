@@ -37,7 +37,7 @@ const DEFAULT_TOPIC_MAPPINGS = [
   { mqttTopic: "pos/+/kyc", fluvioTopic: "pos.kyc-events", transform: "json" },
   {
     mqttTopic: "pos/+/heartbeat",
-    fluvioTopic: "pos.terminal-heartbeat",
+    fluvioTopic: "insurance.service-heartbeat",
     transform: "json",
   },
 ];

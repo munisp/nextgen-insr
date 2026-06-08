@@ -53,7 +53,7 @@ const FLUVIO_TOPICS = [
   "pos.fraud-alerts",
   "pos.float-events",
   "pos.kyc-events",
-  "pos.terminal-heartbeat",
+  "insurance.service-heartbeat",
 ];
 
 export function MQTTBridgeTab() {
