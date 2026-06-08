@@ -42,13 +42,13 @@ interface AgentSettlement {
 
 function buildSettlementSms(data: AgentSettlement): string {
   return (
-    `54Link Daily Settlement - ${new Date().toLocaleDateString("en-NG")}\n` +
+    `InsurePortal Daily Settlement - ${new Date().toLocaleDateString("en-NG")}\n` +
     `Agent: ${data.agentCode}\n` +
     `Transactions: ${data.txCount}\n` +
     `Volume: ₦${data.totalVolume.toLocaleString("en-NG", { minimumFractionDigits: 2 })}\n` +
     `Commission: ₦${data.totalCommission.toLocaleString("en-NG", { minimumFractionDigits: 2 })}\n` +
     `Float Balance: ₦${data.floatBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}\n` +
-    `Thank you for using 54Link.`
+    `Thank you for using InsurePortal.`
   );
 }
 
@@ -516,7 +516,7 @@ export async function runDeadLetterDigest(): Promise<void> {
         dateStyle: "full",
       });
       await notifyOwner({
-        title: `[54Link POS] Auto-retried ${requeued} ERP dead-letter item(s)`,
+        title: `[InsurePortal] Auto-retried ${requeued} ERP dead-letter item(s)`,
         content: [
           `Dead-Letter Auto-Retry — ${today}`,
           ``,
@@ -559,12 +559,12 @@ export async function runDeadLetterDigest(): Promise<void> {
       ...itemLines,
       moreNote,
       ``,
-      `Action required: Log in to the POS Shell → Offline Resilience → ERP Retry Worker`,
+      `Action required: Log in to the Insurance Portal → Offline Resilience → ERP Retry Worker`,
       `and click "Retry All Dead-Letter" to re-queue these items.`,
     ].join("\n");
 
     await notifyOwner({
-      title: `[54Link POS] ${failedItems.length} ERP dead-letter item(s) require attention`,
+      title: `[InsurePortal] ${failedItems.length} ERP dead-letter item(s) require attention`,
       content,
     });
 
@@ -686,7 +686,7 @@ export async function runWeeklyConnectivitySlaReport(): Promise<void> {
     ].join("\n");
 
     await notifyOwner({
-      title: `[54Link POS] Weekly Connectivity SLA — ${ranked.length} agents, ${belowSla.length} below SLA`,
+      title: `[InsurePortal] Weekly Connectivity SLA — ${ranked.length} agents, ${belowSla.length} below SLA`,
       content,
     });
     console.log(

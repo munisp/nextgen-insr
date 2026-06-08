@@ -1,5 +1,5 @@
 /**
- * usePushNotifications — Web Push API integration for 54Link POS Shell.
+ * usePushNotifications — Web Push API integration for InsurePortal Shell.
  *
  * Responsibilities:
  *  1. Register the Service Worker (sw.js)

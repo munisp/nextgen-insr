@@ -17,7 +17,7 @@ describe("AI Chat Support Router", () => {
       id: "msg-1",
       sessionId: session.id,
       role: "assistant",
-      content: "Hello! I'm the 54Link AI Support Assistant.",
+      content: "Hello! I'm the InsurePortal AI Support Assistant.",
       timestamp: new Date().toISOString(),
     };
     session.messages.push(welcomeMsg as any);
@@ -253,7 +253,7 @@ describe("User Guide", () => {
   it("should have all required guide sections", () => {
     const requiredSections = [
       "getting-started",
-      "pos-terminal",
+      "insurance-service",
       "agent-management",
       "transactions",
       "fraud-detection",
@@ -336,14 +336,14 @@ describe("User Guide", () => {
 describe("LiveChatWidget", () => {
   it("should define page context mappings", () => {
     const pageContextMap: Record<string, string> = {
-      "/": "POS Terminal",
+      "/": "Insurance Service",
       "/hub": "Platform Hub",
       "/agent": "Agent Portal",
       "/admin": "Admin Panel",
       "/admin/fraud": "Fraud Dashboard",
     };
 
-    expect(pageContextMap["/"]).toBe("POS Terminal");
+    expect(pageContextMap["/"]).toBe("Insurance Service");
     expect(pageContextMap["/admin/fraud"]).toBe("Fraud Dashboard");
   });
 
@@ -362,7 +362,7 @@ describe("LiveChatWidget", () => {
 
   it("should validate message length constraints", () => {
     const maxLength = 2000;
-    const validMsg = "Hello, I need help with my POS terminal";
+    const validMsg = "Hello, I need help with my insurance service";
     const invalidMsg = "x".repeat(2001);
 
     expect(validMsg.length).toBeLessThanOrEqual(maxLength);

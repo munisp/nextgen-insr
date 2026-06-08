@@ -1,5 +1,5 @@
 /**
- * Single Product / DTC Storefront Template Components
+ * Single Product / DTC InsurancePortal Template Components
  * Hero-focused layout for product launches.
  */
 import React, { useState } from "react";

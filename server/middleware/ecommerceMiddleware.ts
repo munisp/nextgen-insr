@@ -19,7 +19,7 @@ interface HealthResponse {
   status: string;
 }
 
-interface EcommerceServiceStatus {
+interface InsuranceServiceStatus {
   catalog: "healthy" | "degraded" | "unavailable";
   cart: "healthy" | "degraded" | "unavailable";
   intelligence: "healthy" | "degraded" | "unavailable";
@@ -28,8 +28,8 @@ interface EcommerceServiceStatus {
 /**
  * Check health of all e-commerce microservices.
  */
-export async function checkEcommerceHealth(): Promise<EcommerceServiceStatus> {
-  const status: EcommerceServiceStatus = {
+export async function checkInsuranceHealth(): Promise<InsuranceServiceStatus> {
+  const status: InsuranceServiceStatus = {
     catalog: "unavailable",
     cart: "unavailable",
     intelligence: "unavailable",
@@ -208,14 +208,14 @@ export async function processOrderPayment(order: {
 }): Promise<{ settled: boolean; settlementId?: string; error?: string }> {
   try {
     const data = await resilientFetch<{ settlementId: string }>(
-      `${process.env.APP_URL || "http://localhost:3000"}/api/internal/ecommerce-settlement`,
+      `${process.env.APP_URL || "http://localhost:3000"}/api/internal/insurance-settlement`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Internal-Key": process.env.INTERNAL_API_KEY || "",
         },
-        body: JSON.stringify({ type: "ecommerce_order", ...order }),
+        body: JSON.stringify({ type: "insurance_order", ...order }),
       },
       { serviceName: "settlement", timeoutMs: 10000 }
     );
@@ -231,7 +231,7 @@ export async function processOrderPayment(order: {
 /**
  * Calculate agent commission on e-commerce sale.
  */
-export async function calculateEcommerceCommission(order: {
+export async function calculateInsuranceCommission(order: {
   orderId: number;
   total: number;
   agentId: number;

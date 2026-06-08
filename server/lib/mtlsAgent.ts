@@ -3,7 +3,7 @@
  * mtlsAgent.ts — Mutual TLS HTTPS Agent for platform microservice calls
  * ─────────────────────────────────────────────────────────────────────────────
  * Loads client certificate, private key, and CA bundle from the directory
- * specified by MTLS_CERT_DIR (default: /etc/54link/certs).
+ * specified by MTLS_CERT_DIR (default: /etc/insureportal/certs).
  *
  * Usage:
  *   import { getMtlsAgent } from "../lib/mtlsAgent";

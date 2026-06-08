@@ -3,11 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AnalyticsService } from '../services/AnalyticsService';
 
 export class APIClient {
-  // Base URL points to the 54Link pos-shell backend REST bridge.
+  // Base URL points to the InsurePortal insurance-portal backend REST bridge.
   // Development: http://10.0.2.2:3000/api/v1  (Android emulator)
   //              http://localhost:3000/api/v1   (iOS simulator)
   // Production:  set REACT_NATIVE_API_BASE_URL env var or update below.
-  private baseURL: string = (process.env.REACT_NATIVE_API_BASE_URL as string) ?? 'https://api.54link.io/v1';
+  private baseURL: string = (process.env.REACT_NATIVE_API_BASE_URL as string) ?? 'https://api.insureportal.io/v1';
 
   async get(endpoint: string): Promise<any> {
     return this.request('GET', endpoint);
@@ -83,9 +83,9 @@ export class APIClient {
 }
 
 // ── Domain-specific API client ───────────────────────────────────────────────
-// Extends the base APIClient with typed methods for all 54Link features.
+// Extends the base APIClient with typed methods for all InsurePortal features.
 
-export class POS54LinkAPIClient extends APIClient {
+export class POSInsurePortalAPIClient extends APIClient {
   // Auth
   async login(phone: string, pin: string) { return this.post('/auth/login', { phone, pin }); }
   async register(data: { phone: string; bvn: string; nin: string; firstName: string; lastName: string }) { return this.post('/auth/register', data); }
@@ -162,4 +162,4 @@ export class POS54LinkAPIClient extends APIClient {
   async sendChatMessage(ticketId: string, message: string) { return this.post(`/support/tickets/${ticketId}/messages`, { message }); }
 }
 
-export const apiClient = new POS54LinkAPIClient();
+export const apiClient = new POSInsurePortalAPIClient();

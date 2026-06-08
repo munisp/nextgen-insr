@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * Monthly Invoice Cron Handler — 54Link POS Shell
+ * Monthly Invoice Cron Handler — InsurePortal Shell
  *
  * Triggered on the 1st of every month at 02:00 UTC via Manus Heartbeat.
  * Generates Stripe invoices for all active tenants based on their billing model

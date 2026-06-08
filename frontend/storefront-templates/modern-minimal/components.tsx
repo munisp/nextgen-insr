@@ -1,5 +1,5 @@
 /**
- * Modern Minimal Storefront Template Components
+ * Modern Minimal InsurancePortal Template Components
  * Clean, image-first layout for fashion and lifestyle brands.
  */
 import React from "react";

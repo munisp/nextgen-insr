@@ -119,7 +119,7 @@ export function startSpan(
     spanId: generateId(16),
     parentSpanId,
     operationName,
-    serviceName: `54link.${engine}`,
+    serviceName: `insureportal.${engine}`,
     startTime: performance.now(),
     status: "unset",
     attributes: {

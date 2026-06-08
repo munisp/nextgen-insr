@@ -23,7 +23,7 @@ const SECONDARY_TEXT = '#666666';
 const SUCCESS_COLOR = '#4CAF50';
 const ERROR_COLOR = '#F44336';
 
-const API_BASE_URL = 'https://api.54link.io/v1';
+const API_BASE_URL = 'https://api.insureportal.io/v1';
 
 interface ExchangeRate {
   pair: string;

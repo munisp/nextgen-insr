@@ -1,6 +1,6 @@
 /**
  * KYB (Know Your Business) Router
- * tRPC procedures bridging POS Shell to the Go KYB Engine, Rust Risk Engine,
+ * tRPC procedures bridging Insurance Portal to the Go KYB Engine, Rust Risk Engine,
  * and Python Analytics services.
  *
  * Integrations: Kafka, Dapr, Temporal, PostgreSQL, Keycloak, Permify, Redis,

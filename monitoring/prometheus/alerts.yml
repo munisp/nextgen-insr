@@ -11,7 +11,7 @@ groups:
         annotations:
           summary: "Agent float balance critically low"
           description: "Agent {{ $labels.agent_id }} ({{ $labels.agent_code }}) has float balance of {{ $value | humanize }} NGN, below 10,000 NGN minimum."
-          runbook: "https://docs.54link.ng/runbooks/float-replenishment"
+          runbook: "https://docs.insureportal.ng/runbooks/float-replenishment"
 
       - alert: AgentFloatLow
         expr: pos_agent_float_balance_ngn < 50000
@@ -45,7 +45,7 @@ groups:
         annotations:
           summary: "High fraud alert rate detected"
           description: "Fraud alert rate is {{ $value | humanize }}/s over the last 5 minutes. Possible coordinated attack."
-          runbook: "https://docs.54link.ng/runbooks/fraud-response"
+          runbook: "https://docs.insureportal.ng/runbooks/fraud-response"
 
       - alert: FraudAlertSpikeByAgent
         expr: increase(pos_fraud_alerts_by_agent_total[10m]) > 5
@@ -79,7 +79,7 @@ groups:
         annotations:
           summary: "SIM signal critically weak"
           description: "Terminal {{ $labels.terminal_id }} SIM {{ $labels.sim_slot }} RSSI is {{ $value }} dBm (critical threshold: -90 dBm)."
-          runbook: "https://docs.54link.ng/runbooks/sim-failover"
+          runbook: "https://docs.insureportal.ng/runbooks/sim-failover"
 
       - alert: SimSignalWeak
         expr: pos_sim_rssi_dbm < -70
@@ -123,7 +123,7 @@ groups:
         annotations:
           summary: "Transaction P95 latency above 3 seconds"
           description: "P95 transaction latency is {{ $value | humanizeDuration }}. SLA threshold: 3s."
-          runbook: "https://docs.54link.ng/runbooks/latency-degradation"
+          runbook: "https://docs.insureportal.ng/runbooks/latency-degradation"
 
       - alert: TransactionLatencyWarning
         expr: histogram_quantile(0.95, rate(pos_transaction_duration_seconds_bucket[5m])) > 1.5

@@ -8,9 +8,9 @@ test.describe("Agent Login and Cash-In Flow", () => {
   test("should login, perform cash-in, see receipt, and logout", async ({
     page,
   }) => {
-    // ── 1. Navigate to POS Shell ─────────────────────────────────────────────
+    // ── 1. Navigate to Insurance Portal ─────────────────────────────────────────────
     await page.goto("/");
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal")).toBeVisible({
       timeout: 10_000,
     });
 
@@ -25,7 +25,7 @@ test.describe("Agent Login and Cash-In Flow", () => {
       await page.locator(`button[data-digit="${digit}"]`).first().click();
     }
 
-    // ── 4. Wait for POS Shell dashboard ─────────────────────────────────────
+    // ── 4. Wait for Insurance Portal dashboard ─────────────────────────────────────
     await expect(page.locator("text=Cash In")).toBeVisible({ timeout: 15_000 });
 
     // ── 5. Navigate to Cash In ───────────────────────────────────────────────
@@ -74,7 +74,7 @@ test.describe("Agent Login and Cash-In Flow", () => {
       .first();
     if (await logoutBtn.isVisible()) {
       await logoutBtn.click();
-      await expect(page.locator("text=54Link POS")).toBeVisible({
+      await expect(page.locator("text=InsurePortal")).toBeVisible({
         timeout: 5_000,
       });
     }

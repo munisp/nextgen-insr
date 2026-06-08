@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * metrics.ts — Prometheus metrics registry for the 54Link POS Shell
+ * metrics.ts — Prometheus metrics registry for the InsurePortal Shell
  * ─────────────────────────────────────────────────────────────────────────────
  * Exposes a single shared prom-client Registry.  All instrumentation points
  * import from this module so they share the same registry instance.

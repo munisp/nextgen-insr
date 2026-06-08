@@ -88,6 +88,10 @@ func initDB() {
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS kyc_verifications (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, doc_type TEXT, doc_number TEXT, status TEXT DEFAULT 'pending', risk_level TEXT, verified_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table kyc_verifications failed","error":"%s"}`, err)
+	}
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
 	if err := db.Ping(); err != nil {
@@ -166,6 +170,15 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	var count int
+	if db != nil {
+		db.QueryRow(`SELECT COUNT(*) FROM kyc_verifications`).Scan(&count)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"table": "kyc_verifications", "count": count})
+}
+
 func main() {
 	initDB()
 	r := chi.NewRouter()
@@ -174,6 +187,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "enhanced-kyc-kyb"})
 	})
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
+	r.Get("/stats", handleStats)
 	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Post("/api/v1/kyc/verify", verifyKYC)
 	r.Post("/api/v1/kyb/verify", verifyKYB)

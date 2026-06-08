@@ -103,7 +103,7 @@ describe("Commission Middleware Integration", () => {
     const mod = await import("./middleware/commissionMiddleware");
     await expect(
       mod.initiateIlpCommissionTransfer({
-        payerFsp: "54link-fsp",
+        payerFsp: "insureportal-fsp",
         payeeFsp: "test-fsp",
         amount: 1000,
         currency: "NGN",

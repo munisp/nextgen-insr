@@ -34,14 +34,14 @@ describe("Sprint 16: Partner Onboarding Router", () => {
     expect(procedures).toContain("validateInvite");
     expect(procedures).toContain("registerTenant");
     expect(procedures).toContain("updateBranding");
-    expect(procedures).toContain("addCorridor");
+    expect(procedures).toContain("addInsuranceRegion");
     expect(procedures).toContain("addFeeOverride");
     expect(procedures).toContain("completeOnboarding");
     expect(procedures).toContain("getProgress");
     expect(procedures).toContain("getBranding");
-    expect(procedures).toContain("listCorridors");
+    expect(procedures).toContain("listInsuranceRegions");
     expect(procedures).toContain("listFees");
-    expect(procedures).toContain("removeCorridor");
+    expect(procedures).toContain("removeInsuranceRegion");
     expect(procedures).toContain("removeFee");
   });
 });
@@ -131,12 +131,12 @@ describe("Sprint 16: Navigation Reorganization", () => {
 });
 
 describe("Sprint 16: Schema Tables", () => {
-  it("should have invite_codes, tenant_branding, tenant_corridors, tenant_fee_overrides in schema", async () => {
+  it("should have invite_codes, tenant_branding, tenant_insurance_regions, tenant_fee_overrides in schema", async () => {
     const fs = await import("fs");
     const content = fs.readFileSync("drizzle/schema.ts", "utf-8");
     expect(content).toContain("inviteCodes");
     expect(content).toContain("tenantBranding");
-    expect(content).toContain("tenantCorridors");
+    expect(content).toContain("tenantInsuranceRegions");
     expect(content).toContain("tenantFeeOverrides");
   });
 });

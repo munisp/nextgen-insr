@@ -1,7 +1,7 @@
 /**
- * MQTT Bridge Router — 54Link Fluvio MQTT Source Connector management
+ * MQTT Bridge Router — InsurePortal Fluvio MQTT Source Connector management
  * Manages InfinyOn MQTT Source Connector configuration for bridging
- * POS terminal MQTT events into Fluvio topics.
+ * insurance service MQTT events into Fluvio topics.
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -310,7 +310,7 @@ export const mqttBridgeRouter = router({
       } = input;
 
       const connectors = topicMappings.map((m, i) => {
-        const connectorName = `54link-mqtt-${m.fluvioTopic.replace(/\./g, "-")}-${i}`;
+        const connectorName = `insureportal-mqtt-${m.fluvioTopic.replace(/\./g, "-")}-${i}`;
         const effectiveUrl = useTls
           ? brokerUrl.replace(/^mqtt:\/\//, "mqtts://")
           : brokerUrl.replace(/^mqtts:\/\//, "mqtt://");
@@ -361,12 +361,12 @@ export const mqttBridgeRouter = router({
 
       const installScript = [
         `#!/bin/bash`,
-        `# 54Link MQTT → Fluvio Bridge — Connector Install Script`,
+        `# InsurePortal MQTT → Fluvio Bridge — Connector Install Script`,
         `# Prerequisites: fluvio CLI installed and authenticated to InfinyOn Cloud`,
         `# Run: bash install-mqtt-connectors.sh`,
         ``,
         `set -e`,
-        `echo "Installing 54Link MQTT Source Connectors..."`,
+        `echo "Installing InsurePortal MQTT Source Connectors..."`,
         ``,
         ...connectors.map(c =>
           [

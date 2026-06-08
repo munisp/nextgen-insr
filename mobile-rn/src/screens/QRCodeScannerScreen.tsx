@@ -44,7 +44,7 @@ const QRCodeScannerScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const response = await fetch('https://api.54link.io/v1/payments/resolve-qr', {
+      const response = await fetch('https://api.insureportal.io/v1/payments/resolve-qr', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -171,7 +171,7 @@ const QRCodeScannerScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A2E', // 54Link background
+    backgroundColor: '#1A1A2E', // InsurePortal background
   },
   header: {
     flexDirection: 'row',
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 40,
     height: 40,
-    borderColor: '#6C63FF', // 54Link primary
+    borderColor: '#6C63FF', // InsurePortal primary
     borderWidth: 4,
   },
   topLeft: {
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   inputWrapper: {
-    backgroundColor: '#fff', // 54Link card
+    backgroundColor: '#fff', // InsurePortal card
     borderRadius: 12,
     padding: 8,
     flexDirection: 'row',
@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: 15,
     fontSize: 16,
-    color: '#1A1A2E', // 54Link text
+    color: '#1A1A2E', // InsurePortal text
   },
   submitButton: {
     backgroundColor: '#6C63FF',

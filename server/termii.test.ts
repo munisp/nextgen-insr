@@ -90,7 +90,7 @@ describe("sendSms — live mode (TERMII_API_KEY set)", () => {
     const body = JSON.parse(options?.body as string);
     expect(body.to).toBe("+2348012345678");
     expect(body.sms).toBe("Your OTP is 654321");
-    expect(body.from).toBe("54Link");
+    expect(body.from).toBe("InsurePortal");
     expect(body.api_key).toBe("test-api-key-123");
     expect(body.type).toBe("plain");
     expect(body.channel).toBe("generic");
@@ -206,9 +206,9 @@ describe("buildReceiptSms", () => {
     expect(sms).not.toContain("Fee:");
   });
 
-  it("includes 54Link branding", () => {
+  it("includes InsurePortal branding", () => {
     const sms = buildReceiptSms(baseData);
-    expect(sms).toContain("54Link");
+    expect(sms).toContain("InsurePortal");
   });
 
   it("includes the transaction reference", () => {

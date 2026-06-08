@@ -1,5 +1,5 @@
 /**
- * 54Link Agency Banking Platform — Business Rules Engine Tests
+ * InsurePortal Agency Banking Platform — Business Rules Engine Tests
  * ─────────────────────────────────────────────────────────────────────────────
  * Covers all CBN limit checks, float alert thresholds, KYC tier enforcement,
  * fraud scoring, commission calculation, loyalty accrual, tier upgrade

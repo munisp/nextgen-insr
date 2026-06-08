@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link Temporal Client
+ * InsurePortal Temporal Client
  * Provides a Temporal client for scheduling and triggering workflows.
  *
  * Workflows:

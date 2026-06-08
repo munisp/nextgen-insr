@@ -7,7 +7,7 @@ test.describe("Float Top-Up Approval Workflow", () => {
   test("admin can approve a float top-up request", async ({ page }) => {
     // Login as admin
     await page.goto("/");
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal")).toBeVisible({
       timeout: 10_000,
     });
     await page.locator('input[placeholder*="AGT"]').fill("AGT001");

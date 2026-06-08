@@ -28,7 +28,7 @@ export default function MultiCurrencyPage() {
           <div>
             <h1 className="text-2xl font-bold">Multi-Currency</h1>
             <p className="text-muted-foreground">
-              Exchange rates corridors and FX settlements
+              Exchange rates insurance_regions and FX settlements
             </p>
           </div>
           <Button onClick={() => refetch()}>Refresh</Button>

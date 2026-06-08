@@ -1,5 +1,5 @@
 /**
- * Payments Page — 54Link POS Shell
+ * Payments Page — InsurePortal Shell
  *
  * Displays subscription plans, one-time products, payment history,
  * active subscription management (cancel, portal), and checkout status.

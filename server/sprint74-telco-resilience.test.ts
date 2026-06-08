@@ -296,8 +296,8 @@ describe("F9: TypeScript Network Telemetry Router", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION 3: Offline Mode UI Indicator (F10-F16)
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("F10: POSShell Offline Mode Indicator", () => {
-  const filePath = "client/src/pages/POSShell.tsx";
+describe("F10: InsurancePortal Offline Mode Indicator", () => {
+  const filePath = "client/src/pages/InsurancePortal.tsx";
 
   it("should contain offline-mode-indicator test ID", () => {
     expect(fileContains(filePath, "offline-mode-indicator")).toBe(true);
@@ -508,10 +508,10 @@ describe("Sprint 74 Integration", () => {
     ).toBe(true);
   });
 
-  it("should have offline indicator in POSShell with all tier labels", () => {
+  it("should have offline indicator in InsurancePortal with all tier labels", () => {
     expect(
       fileContains(
-        "client/src/pages/POSShell.tsx",
+        "client/src/pages/InsurancePortal.tsx",
         "offline-mode-indicator",
         "OFFLINE",
         "2G GPRS",

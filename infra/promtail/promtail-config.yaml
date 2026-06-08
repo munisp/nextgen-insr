@@ -1,4 +1,4 @@
-# ─── 54Link Promtail Log Shipper Configuration ───────────────────────────────
+# ─── InsurePortal Promtail Log Shipper Configuration ───────────────────────────────
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
@@ -8,7 +8,7 @@ positions:
 
 clients:
   - url: http://loki:3100/loki/api/v1/push
-    tenant_id: 54link
+    tenant_id: insureportal
 
 scrape_configs:
   # ── Docker container logs ──────────────────────────────────────────────────
@@ -18,7 +18,7 @@ scrape_configs:
         refresh_interval: 5s
         filters:
           - name: label
-            values: ["com.docker.compose.project=pos-shell-demo"]
+            values: ["com.docker.compose.project=insurance-portal-demo"]
     relabel_configs:
       - source_labels: [__meta_docker_container_name]
         regex: "/(.*)"

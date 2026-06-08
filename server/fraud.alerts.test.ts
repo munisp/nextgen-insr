@@ -111,7 +111,7 @@ function makeCtx(): TrpcContext {
       role: "admin" as const,
       agentCode: "AGT001",
       name: "Test Agent",
-      email: "test@54link.io",
+      email: "test@insureportal.io",
     },
     req: { headers: { cookie: "agent_session=mock.jwt.token" } } as any,
     res: { cookie: vi.fn(), clearCookie: vi.fn() } as any,

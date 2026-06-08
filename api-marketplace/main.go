@@ -75,6 +75,10 @@ func initDB() {
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS api_subscriptions (id TEXT PRIMARY KEY, partner_id TEXT NOT NULL, api_name TEXT, plan TEXT DEFAULT 'free', rate_limit INT DEFAULT 1000, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table api_subscriptions failed","error":"%s"}`, err)
+	}
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
 	if err := db.Ping(); err != nil {
@@ -153,6 +157,15 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	var count int
+	if db != nil {
+		db.QueryRow(`SELECT COUNT(*) FROM api_subscriptions`).Scan(&count)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"table": "api_subscriptions", "count": count})
+}
+
 func main() {
 	initDB()
 	r := chi.NewRouter()
@@ -161,6 +174,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "api-marketplace"})
 	})
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
+	r.Get("/stats", handleStats)
 	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Get("/api/v1/catalog", apiCatalog)
 	r.Post("/api/v1/subscribe", subscribe)

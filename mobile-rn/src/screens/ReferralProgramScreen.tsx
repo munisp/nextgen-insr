@@ -25,7 +25,7 @@ interface ReferralHistory {
 }
 
 const ReferralProgramScreen = () => {
-  const [referralCode, setReferralCode] = useState<string>('54LINK-REF-2024');
+  const [referralCode, setReferralCode] = useState<string>('INSUREPORTAL-REF-2024');
   const [referralHistory, setReferralHistory] = useState<ReferralHistory[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [stats, setStats] = useState({
@@ -59,7 +59,7 @@ const ReferralProgramScreen = () => {
   const handleShare = async () => {
     try {
       const result = await Share.share({
-        message: `Join me on 54Link Agency Banking! Use my referral code ${referralCode} to get started. Download here: https://54link.io/download`,
+        message: `Join me on InsurePortal Agency Banking! Use my referral code ${referralCode} to get started. Download here: https://insureportal.io/download`,
       });
       if (result.action === Share.sharedAction) {
         if (result.activityType) {

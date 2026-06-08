@@ -76,6 +76,10 @@ func initDB() {
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS data_processing_records (id TEXT PRIMARY KEY, data_subject_id TEXT, purpose TEXT, legal_basis TEXT, retention_days INT, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table data_processing_records failed","error":"%s"}`, err)
+	}
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
 	if err := db.Ping(); err != nil {
@@ -154,6 +158,15 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	var count int
+	if db != nil {
+		db.QueryRow(`SELECT COUNT(*) FROM data_processing_records`).Scan(&count)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"table": "data_processing_records", "count": count})
+}
+
 func main() {
 	initDB()
 	r := chi.NewRouter()
@@ -162,6 +175,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "ndpr-compliance"})
 	})
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
+	r.Get("/stats", handleStats)
 	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Post("/api/v1/consent", recordConsent)
 	r.Post("/api/v1/dsar", submitDSAR)

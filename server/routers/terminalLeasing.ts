@@ -1,5 +1,5 @@
 /**
- * Terminal Leasing — manage POS terminal lease agreements, billing cycles,
+ * Terminal Leasing — manage insurance service lease agreements, billing cycles,
  * insurance, and return processing.
  *
  * Middleware: Temporal (billing workflow), Kafka (lease events),
@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { posTerminals, agents, platformSettings } from "../../drizzle/schema";
+import { insuranceServices, agents, platformSettings } from "../../drizzle/schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -59,13 +59,13 @@ export const terminalLeasingRouter = router({
           .values({ key, value: JSON.stringify(lease) });
 
         await db
-          .update(posTerminals)
+          .update(insuranceServices)
           .set({
             agentId: input.agentId,
             status: "active",
             updatedAt: new Date(),
           })
-          .where(eq(posTerminals.id, input.terminalId));
+          .where(eq(insuranceServices.id, input.terminalId));
 
         await writeAuditLog({
           agentId: session.id,

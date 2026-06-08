@@ -281,10 +281,10 @@ describe("Redis cache — REDIS_URL configuration", () => {
   });
 
   it("accepts rediss:// (TLS) URL format", () => {
-    const url = "rediss://user:pass@redis.54link.io:6380";
+    const url = "rediss://user:pass@redis.insureportal.io:6380";
     expect(url.startsWith("rediss://")).toBe(true);
     const parsed = new URL(url);
-    expect(parsed.hostname).toBe("redis.54link.io");
+    expect(parsed.hostname).toBe("redis.insureportal.io");
     expect(parsed.port).toBe("6380");
     expect(parsed.username).toBe("user");
   });

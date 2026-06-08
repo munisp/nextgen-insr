@@ -76,6 +76,10 @@ func initDB() {
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS ekyc_checks (id TEXT PRIMARY KEY, applicant_id TEXT NOT NULL, country_code TEXT, doc_type TEXT, doc_number TEXT, match_score REAL, status TEXT DEFAULT 'pending', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table ekyc_checks failed","error":"%s"}`, err)
+	}
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
 	if err := db.Ping(); err != nil {
@@ -154,6 +158,15 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	var count int
+	if db != nil {
+		db.QueryRow(`SELECT COUNT(*) FROM ekyc_checks`).Scan(&count)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"table": "ekyc_checks", "count": count})
+}
+
 func main() {
 	initDB()
 	r := chi.NewRouter()
@@ -162,6 +175,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "pan-african-ekyc"})
 	})
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
+	r.Get("/stats", handleStats)
 	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Post("/api/v1/verify", verifyIdentity)
 	r.Get("/api/v1/countries", supportedCountries)

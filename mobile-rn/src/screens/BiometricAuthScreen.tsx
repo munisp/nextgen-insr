@@ -42,15 +42,15 @@ interface BiometricState {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const AUTH_TOKEN_KEY = '@54link:authToken';
-const REFRESH_TOKEN_KEY = '@54link:refreshToken';
-const USER_ID_KEY = '@54link:userId';
+const AUTH_TOKEN_KEY = '@insureportal:authToken';
+const REFRESH_TOKEN_KEY = '@insureportal:refreshToken';
+const USER_ID_KEY = '@insureportal:userId';
 const apiClient = new APIClient();
 
 // ── Real API helpers ──────────────────────────────────────────────────────────
 
 /**
- * Verify biometric signature against the 54Link backend.
+ * Verify biometric signature against the InsurePortal backend.
  * The server checks the signature using the public key registered during setup.
  */
 const verifyBiometricWithServer = async (
@@ -72,7 +72,7 @@ const verifyBiometricWithServer = async (
 };
 
 /**
- * Register biometric public key with the 54Link backend.
+ * Register biometric public key with the InsurePortal backend.
  * Called once during biometric setup / first login.
  */
 const registerBiometricKey = async (publicKey: string): Promise<boolean> => {
@@ -135,7 +135,7 @@ const BiometricAuthScreen: React.FC<BiometricAuthScreenProps> = () => {
     try {
       const epochSeconds = String(Math.round(Date.now() / 1000));
       const userId = (await AsyncStorage.getItem(USER_ID_KEY)) ?? 'unknown';
-      const payload = `${epochSeconds}:${userId}:54link-biometric`;
+      const payload = `${epochSeconds}:${userId}:insureportal-biometric`;
 
       // Ensure biometric key pair exists (creates on first use)
       const { keysExist } = await rnBiometrics.biometricKeysExist();

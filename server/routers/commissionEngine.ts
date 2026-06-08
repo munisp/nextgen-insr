@@ -1221,7 +1221,7 @@ export const commissionEngineRouter = router({
     .mutation(async ({ input }) => {
       try {
         const result = await initiateIlpCommissionTransfer({
-          payerFsp: "54link-fsp",
+          payerFsp: "insureportal-fsp",
           payeeFsp: input.payeeFsp,
           amount: input.amount,
           currency: input.currency,

@@ -17,7 +17,7 @@ const VAPID_PUBLIC_KEY =
 const VAPID_PRIVATE_KEY =
   process.env.VAPID_PRIVATE_KEY ||
   "vBqalBipE6mu4a592N8c1wucdpun-RaKemy8gZDa99M";
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:ops@54link.ng";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:ops@insureportal.ng";
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 

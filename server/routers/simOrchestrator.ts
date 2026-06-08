@@ -78,7 +78,7 @@ export const simOrchestratorRouter = router({
           .limit(1);
 
         const expectedKey =
-          config[0]?.apiKey ?? "54link-sim-orchestrator-default-key";
+          config[0]?.apiKey ?? "insureportal-sim-orchestrator-default-key";
         if (input.apiKey !== expectedKey) {
           throw new TRPCError({
             code: "UNAUTHORIZED",
@@ -150,7 +150,7 @@ export const simOrchestratorRouter = router({
           return {
             probeIntervalMs: 30000,
             relayEndpoint:
-              "https://api.54link.io/api/trpc/simOrchestrator.ingestProbe",
+              "https://api.insureportal.io/api/trpc/simOrchestrator.ingestProbe",
             enabled: true,
           };
         }
@@ -326,13 +326,13 @@ export const simOrchestratorRouter = router({
           .url()
           .max(256)
           .default(
-            "https://api.54link.io/api/trpc/simOrchestrator.ingestProbe"
+            "https://api.insureportal.io/api/trpc/simOrchestrator.ingestProbe"
           ),
         apiKey: z
           .string()
           .min(8)
           .max(128)
-          .default("54link-sim-orchestrator-default-key"),
+          .default("insureportal-sim-orchestrator-default-key"),
         enabled: z.boolean().default(true),
       })
     )
@@ -507,7 +507,7 @@ export const simOrchestratorRouter = router({
           .where(eq(simOrchestratorConfig.terminalId, input.terminalId))
           .limit(1);
 
-        const defaultKey = "54link-sim-orchestrator-default-key";
+        const defaultKey = "insureportal-sim-orchestrator-default-key";
         const expectedKey = cfg?.apiKey ?? defaultKey;
         if (input.apiKey !== expectedKey) {
           throw new TRPCError({

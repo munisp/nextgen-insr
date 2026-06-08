@@ -10,7 +10,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 import { GdprConsentBanner } from "./components/GdprConsentBanner";
 import AgentLogin from "./pages/AgentLogin";
-import POSShell from "./pages/POSShell";
+import InsurancePortal from "./pages/InsurancePortal";
 import GlobalSearch from "./components/GlobalSearch";
 import { LiveChatWidget } from "./components/LiveChatWidget";
 import { ProactiveHelp } from "./components/ProactiveHelp";
@@ -432,7 +432,7 @@ const LoyaltyProgramPage = lazy(() => import("./pages/LoyaltyProgramPage"));
 const FraudCaseManagementPage = lazy(
   () => import("./pages/FraudCaseManagementPage")
 );
-const TerminalFleetPage = lazy(() => import("./pages/TerminalFleetPage"));
+const ServiceFleetPage = lazy(() => import("./pages/ServiceFleetPage"));
 const FinancialReconciliationPage = lazy(
   () => import("./pages/FinancialReconciliationPage")
 );
@@ -534,7 +534,7 @@ const CustomerWalletSystem = lazy(() => import("./pages/CustomerWalletSystem"));
 const MerchantAnalyticsDash = lazy(
   () => import("./pages/MerchantAnalyticsDash")
 );
-const POSFirmwareOTA = lazy(() => import("./pages/POSFirmwareOTA"));
+const POSServiceUpdate = lazy(() => import("./pages/POSServiceUpdate"));
 const TransactionReceiptGenerator = lazy(
   () => import("./pages/TransactionReceiptGenerator")
 );
@@ -851,7 +851,7 @@ const ADMIN_DASHBOARD_PREFIXES = [
   "/dynamic-pricing",
   "/customer-loyalty",
   "/fraud-case",
-  "/pos-terminal-fleet",
+  "/insurance-service-fleet",
   "/financial-reconciliation",
   "/api-analytics",
   "/agent-communication",
@@ -1267,7 +1267,7 @@ function AuthenticatedApp() {
       <Switch>
         {/* Core POS routes */}
         <Route path="/hub" component={PlatformHub} />
-        <Route path="/" component={POSShell} />
+        <Route path="/" component={InsurancePortal} />
         <Route path="/admin/fraud" component={FraudDashboard} />
         <Route path="/admin/analytics" component={AnalyticsDashboard} />
         <Route path="/admin" component={AdminPanel} />
@@ -1575,7 +1575,7 @@ function AuthenticatedApp() {
           path="/fraud-case-management"
           component={FraudCaseManagementPage}
         />
-        <Route path="/terminal-fleet" component={TerminalFleetPage} />
+        <Route path="/terminal-fleet" component={ServiceFleetPage} />
         <Route
           path="/financial-reconciliation"
           component={FinancialReconciliationPage}
@@ -1715,7 +1715,7 @@ function AuthenticatedApp() {
           path="/merchant-analytics-dash"
           component={MerchantAnalyticsDash}
         />
-        <Route path="/pos-firmware-ota" component={POSFirmwareOTA} />
+        <Route path="/pos-service-update" component={POSServiceUpdate} />
         <Route
           path="/transaction-receipt-generator"
           component={TransactionReceiptGenerator}
@@ -2115,8 +2115,8 @@ function AuthenticatedApp() {
           component={AlertNotificationPreferences}
         />
         <Route path="/network-heatmap" component={NetworkQualityHeatmap} />
-        {/* Fallback — POSShell handles named screens */}
-        <Route path="/:screen" component={POSShell} />
+        {/* Fallback — InsurancePortal handles named screens */}
+        <Route path="/:screen" component={InsurancePortal} />
       </Switch>
     </Suspense>
   );

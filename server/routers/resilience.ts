@@ -574,7 +574,7 @@ export const resilienceRouter = router({
         if (subs.length === 0) return { sent: 0, failed: 0 };
 
         const payload = JSON.stringify({
-          title: "54Link — Offline Sync Pending",
+          title: "InsurePortal — Offline Sync Pending",
           body: `You have ${input.pendingCount} offline transaction${input.pendingCount > 1 ? "s" : ""} waiting to sync. Open the app to complete them.`,
           tag: "offline-sync-pending",
           url: "/pos?screen=offline-resilience",
@@ -851,7 +851,7 @@ export const resilienceRouter = router({
           }
         }
 
-        const alertTitle = `[54Link POS] Poor connectivity — Agent ${input.agentCode}`;
+        const alertTitle = `[InsurePortal] Poor connectivity — Agent ${input.agentCode}`;
         const alertContent =
           `Agent ${input.agentCode} has had ${uptimePct}% uptime in the last hour ` +
           `(${online}/${rows.length} probes online). Immediate attention may be required.`;

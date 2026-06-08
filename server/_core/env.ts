@@ -4,12 +4,12 @@
  * All values have safe defaults so the server starts without any .env file.
  * Production deployments override these via the platform Secrets panel.
  *
- * Default URLs follow the 54Link Docker Compose service name convention:
+ * Default URLs follow the InsurePortal Docker Compose service name convention:
  *   http://<service>:<port>  — internal Docker network (production default)
- *   https://<service>.54link.io  — public-facing microservices
- *   https://api.54link.io        — APISix gateway
- *   https://auth.54link.io       — Keycloak OIDC
- *   mqtt://broker.54link.io:1883 — MQTT broker (TLS: 8883)
+ *   https://<service>.insureportal.io  — public-facing microservices
+ *   https://api.insureportal.io        — APISix gateway
+ *   https://auth.insureportal.io       — Keycloak OIDC
+ *   mqtt://broker.insureportal.io:1883 — MQTT broker (TLS: 8883)
  */
 export const ENV = {
   // ── Manus Platform ──────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ export const ENV = {
 
   // ── Kafka ───────────────────────────────────────────────────────────────────
   kafkaBrokers: process.env.KAFKA_BROKERS ?? "kafka:9092",
-  kafkaClientId: process.env.KAFKA_CLIENT_ID ?? "pos-shell",
+  kafkaClientId: process.env.KAFKA_CLIENT_ID ?? "insurance-portal",
   kafkaEnabled: process.env.KAFKA_ENABLED ?? "false",
   kafkaSsl: process.env.KAFKA_SSL ?? "false",
   kafkaSaslUsername: process.env.KAFKA_SASL_USERNAME ?? "",
@@ -41,20 +41,20 @@ export const ENV = {
 
   // ── Platform APISix gateway ─────────────────────────────────────────────────
   platformBaseUrl: process.env.PLATFORM_BASE_URL ?? "http://apisix:9080",
-  platformApiKey: process.env.PLATFORM_API_KEY ?? "54link-platform-dev-api-key",
+  platformApiKey: process.env.PLATFORM_API_KEY ?? "insureportal-platform-dev-api-key",
   platformServiceToken:
-    process.env.PLATFORM_SERVICE_TOKEN ?? "54link-service-token-dev",
+    process.env.PLATFORM_SERVICE_TOKEN ?? "insureportal-service-token-dev",
 
   // ── Keycloak OIDC ───────────────────────────────────────────────────────────
   keycloakUrl: process.env.KEYCLOAK_URL ?? "http://keycloak:8080",
-  keycloakRealm: process.env.KEYCLOAK_REALM ?? "54link",
-  keycloakClientId: process.env.KEYCLOAK_CLIENT_ID ?? "pos-shell",
+  keycloakRealm: process.env.KEYCLOAK_REALM ?? "insureportal",
+  keycloakClientId: process.env.KEYCLOAK_CLIENT_ID ?? "insurance-portal",
   keycloakClientSecret:
-    process.env.KEYCLOAK_CLIENT_SECRET ?? "54link-keycloak-dev-secret",
+    process.env.KEYCLOAK_CLIENT_SECRET ?? "insureportal-keycloak-dev-secret",
 
   // ── Temporal workflow engine ─────────────────────────────────────────────────
   temporalAddress: process.env.TEMPORAL_ADDRESS ?? "temporal:7233",
-  temporalNamespace: process.env.TEMPORAL_NAMESPACE ?? "54link-production",
+  temporalNamespace: process.env.TEMPORAL_NAMESPACE ?? "insureportal-production",
   temporalTaskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "settlement-queue",
 
   // ── HashiCorp Vault ──────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ export const ENV = {
   vaultRoleId: process.env.VAULT_ROLE_ID ?? "",
   vaultSecretId: process.env.VAULT_SECRET_ID ?? "",
   vaultSecretPath:
-    process.env.VAULT_SECRET_PATH ?? "secret/data/pos-shell-demo",
+    process.env.VAULT_SECRET_PATH ?? "secret/data/insurance-portal-demo",
 
   // ── Permify authorization service ───────────────────────────────────────────
   permifyUrl: process.env.PERMIFY_URL ?? "http://permify:3476",
@@ -70,13 +70,13 @@ export const ENV = {
 
   // ── MinIO / Lakehouse ────────────────────────────────────────────────────────
   minioEndpoint: process.env.MINIO_ENDPOINT ?? "http://minio:9000",
-  minioAccessKey: process.env.MINIO_ACCESS_KEY ?? "54link_admin",
-  minioSecretKey: process.env.MINIO_SECRET_KEY ?? "54link_minio_dev_secret",
-  minioBucket: process.env.MINIO_BUCKET ?? "54link-screenshots",
+  minioAccessKey: process.env.MINIO_ACCESS_KEY ?? "insureportal_admin",
+  minioSecretKey: process.env.MINIO_SECRET_KEY ?? "insureportal_minio_dev_secret",
+  minioBucket: process.env.MINIO_BUCKET ?? "insureportal-screenshots",
 
   // ── APISix gateway admin API ────────────────────────────────────────────────
   apisixAdminUrl: process.env.APISIX_ADMIN_URL ?? "http://apisix:9180",
-  apisixAdminKey: process.env.APISIX_ADMIN_KEY ?? "54link-apisix-dev-admin-key",
+  apisixAdminKey: process.env.APISIX_ADMIN_KEY ?? "insureportal-apisix-dev-admin-key",
 
   // ── MDM microservices ────────────────────────────────────────────────────────
   mdmComplianceEngineUrl:
@@ -87,27 +87,27 @@ export const ENV = {
 
   // ── Resilience / offline sub-services ──────────────────────────────────────
   resilienceAgentUrl:
-    process.env.RESILIENCE_AGENT_URL ?? "https://resilience.54link.io",
-  offlineQueueUrl: process.env.OFFLINE_QUEUE_URL ?? "https://queue.54link.io",
+    process.env.RESILIENCE_AGENT_URL ?? "https://resilience.insureportal.io",
+  offlineQueueUrl: process.env.OFFLINE_QUEUE_URL ?? "https://queue.insureportal.io",
   analyticsServiceUrl:
-    process.env.ANALYTICS_SERVICE_URL ?? "https://analytics.54link.io",
+    process.env.ANALYTICS_SERVICE_URL ?? "https://analytics.insureportal.io",
 
   // ── POS Printer sidecar (Rust ESC/POS service) ──────────────────────────────
   posPrinterUrl: process.env.POS_PRINTER_URL ?? "http://pos-printer:8085",
 
   // ── mTLS ────────────────────────────────────────────────────────────────────
   mtlsEnabled: (process.env.MTLS_ENABLED ?? "false") === "true",
-  mtlsCertDir: process.env.MTLS_CERT_DIR ?? "/etc/54link/certs",
+  mtlsCertDir: process.env.MTLS_CERT_DIR ?? "/etc/insureportal/certs",
 
   // ── OpenTelemetry ───────────────────────────────────────────────────────────
   otelEndpoint:
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://otel-collector:4318",
-  otelServiceName: process.env.OTEL_SERVICE_NAME ?? "pos-shell",
+  otelServiceName: process.env.OTEL_SERVICE_NAME ?? "insurance-portal",
   otelServiceVersion: process.env.OTEL_SERVICE_VERSION ?? "1.0.0",
 
   // ── Termii SMS / OTP ────────────────────────────────────────────────────────
   // Override TERMII_API_KEY in production Secrets panel.
-  termiiApiKey: process.env.TERMII_API_KEY ?? "TLtest_54link_dev_key",
+  termiiApiKey: process.env.TERMII_API_KEY ?? "TLtest_insureportal_dev_key",
 
   // ── Web Push (VAPID) ────────────────────────────────────────────────────────
   // These are dev/demo VAPID keys — override via VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in production.
@@ -117,7 +117,7 @@ export const ENV = {
   vapidPrivateKey:
     process.env.VAPID_PRIVATE_KEY ??
     "vBqalBipE6mu4a592N8c1wucdpun-RaKemy8gZDa99M",
-  vapidSubject: process.env.VAPID_SUBJECT ?? "mailto:admin@54link.io",
+  vapidSubject: process.env.VAPID_SUBJECT ?? "mailto:admin@insureportal.io",
 
   // ── Platform microservice URLs (override per deployment) ───────────────────
   PLATFORM_KYC_URL: process.env.PLATFORM_KYC_URL ?? "http://kyc-service:8070",
@@ -142,13 +142,13 @@ export const ENV = {
 
   // ── Fluvio streaming cluster ─────────────────────────────────────────────────
   fluvioEndpoint: process.env.FLUVIO_ENDPOINT ?? "http://fluvio:9003",
-  fluvioApiKey: process.env.FLUVIO_API_KEY ?? "54link-fluvio-dev-key",
+  fluvioApiKey: process.env.FLUVIO_API_KEY ?? "insureportal-fluvio-dev-key",
 
   // ── MQTT broker (InfinyOn MQTT Source Connector) ─────────────────────────────
   mqttBrokerUrl: process.env.MQTT_BROKER_URL ?? "mqtt://mosquitto:1883",
-  mqttClientId: process.env.MQTT_CLIENT_ID ?? "54link-fluvio-bridge",
-  mqttUsername: process.env.MQTT_USERNAME ?? "54link_mqtt",
-  mqttPassword: process.env.MQTT_PASSWORD ?? "54link_mqtt_dev_pass",
+  mqttClientId: process.env.MQTT_CLIENT_ID ?? "insureportal-fluvio-bridge",
+  mqttUsername: process.env.MQTT_USERNAME ?? "insureportal_mqtt",
+  mqttPassword: process.env.MQTT_PASSWORD ?? "insureportal_mqtt_dev_pass",
 
   // ── S3 presigned URL signing ─────────────────────────────────────────────────
   s3Region: process.env.S3_REGION ?? "us-east-1",

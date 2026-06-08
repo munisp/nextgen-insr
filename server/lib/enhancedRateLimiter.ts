@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Enhanced Rate Limiter — 54Link Agency Banking Platform
+ * Enhanced Rate Limiter — InsurePortal Agency Banking Platform
  *
  * Sliding window rate limiting with Redis backing.
  * Features:

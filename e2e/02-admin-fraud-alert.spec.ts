@@ -8,7 +8,7 @@ test.describe("Admin Panel Fraud Alert Flow", () => {
   test.beforeEach(async ({ page }) => {
     // Login as admin
     await page.goto("/");
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal")).toBeVisible({
       timeout: 10_000,
     });
     const agentCodeInput = page.locator('input[placeholder*="AGT"]');

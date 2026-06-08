@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * redisClient.ts — Redis integration for 54Link POS Shell
+ * redisClient.ts — Redis integration for InsurePortal Shell
  * ─────────────────────────────────────────────────────────────────────────────
  * Provides a thin wrapper around the platform's Redis service (accessed via
  * the APISix gateway at PLATFORM_BASE_URL/v1/cache/*).

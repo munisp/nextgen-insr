@@ -1,5 +1,5 @@
 /**
- * Admin System Health — 54Link POS Shell (Sprint 89)
+ * Admin System Health — InsurePortal Shell (Sprint 89)
  * Real-time system health monitoring for admin users.
  */
 import DashboardLayout from "@/components/DashboardLayout";

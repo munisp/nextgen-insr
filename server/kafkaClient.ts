@@ -1,16 +1,16 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * kafkaClient.ts — Kafka integration for 54Link POS Shell
+ * kafkaClient.ts — Kafka integration for InsurePortal Shell
  * ─────────────────────────────────────────────────────────────────────────────
  * Provides a thin wrapper for publishing domain events to Kafka topics.
  * Two modes:
  *
  *  1. Direct KafkaJS (when KAFKA_BROKERS is set) — used in local Docker Compose
- *     and staging environments where the POS Shell has direct broker access.
+ *     and staging environments where the Insurance Portal has direct broker access.
  *
  *  2. Platform proxy (when only PLATFORM_BASE_URL is available) — forwards
  *     publish calls to the Go event-bus service via APISix gateway.
- *     This is the default in production where the POS Shell sits behind the
+ *     This is the default in production where the Insurance Portal sits behind the
  *     gateway and does not have direct broker access.
  *
  * Fail-open: publish() returns false on error so callers can continue
@@ -18,8 +18,8 @@
  *
  * Environment variables:
  *  - KAFKA_BROKERS        Comma-separated list e.g. kafka:9092,kafka2:9092
- *  - KAFKA_CLIENT_ID      Defaults to "pos-shell"
- *  - KAFKA_GROUP_ID       Consumer group ID, defaults to "pos-shell-group"
+ *  - KAFKA_CLIENT_ID      Defaults to "insurance-portal"
+ *  - KAFKA_GROUP_ID       Consumer group ID, defaults to "insurance-portal-group"
  *  - PLATFORM_BASE_URL    APISix gateway base URL (proxy mode fallback)
  *  - PLATFORM_API_KEY     Bearer token for the gateway
  */

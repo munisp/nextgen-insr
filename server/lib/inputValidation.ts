@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Input Validation & Sanitization — 54Link Agency Banking Platform
+ * Input Validation & Sanitization — InsurePortal Agency Banking Platform
  *
  * Centralized Zod schemas and sanitization for all tRPC inputs.
  * Prevents:

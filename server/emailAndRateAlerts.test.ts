@@ -186,7 +186,7 @@ describe("Email Helper Functions", () => {
     // Test internal helper via template output
     const { buildWelcomeEmail } = await import("./lib/emailService");
     const msg = buildWelcomeEmail({ agentName: "Test", agentCode: "AG-001" });
-    expect(msg.html).toContain("54Link POS");
+    expect(msg.html).toContain("InsurePortal");
     expect(msg.html).toContain("DOCTYPE html");
   });
 
@@ -268,7 +268,7 @@ describe("Email + Rate Alert Integration", () => {
       direction: "above",
       triggeredAt: new Date(),
     });
-    emailMsg.to = "agent@54link.io";
+    emailMsg.to = "agent@insureportal.io";
     const result = await sendEmail(emailMsg);
     expect(result.success).toBe(true);
     expect(result.provider).toBe("console");

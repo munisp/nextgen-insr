@@ -1,5 +1,5 @@
 /**
- * 54Link POS Shell — OWASP Top 10 Security Test Suite
+ * InsurePortal Shell — OWASP Top 10 Security Test Suite
  *
  * Tests for:
  *   A01: Broken Access Control

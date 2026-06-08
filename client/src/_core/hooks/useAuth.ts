@@ -1,5 +1,5 @@
 /**
- * useAuth.ts — Authentication hook for 54Link POS Shell
+ * useAuth.ts — Authentication hook for InsurePortal Shell
  *
  * Uses Keycloak OIDC for authentication.
  *  - Login: redirect to /api/auth/login (Keycloak Authorization Code flow)

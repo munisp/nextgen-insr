@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * redisClient.ts — Shared ioredis client for the 54Link POS Shell
+ * redisClient.ts — Shared ioredis client for the InsurePortal Shell
  *
  * Provides a single Redis connection used by:
  *  - Rate limiting (rate-limit-redis store)

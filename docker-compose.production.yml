@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# docker-compose.production.yml — 54Link Agency Banking Platform
+# docker-compose.production.yml — InsurePortal Agency Banking Platform
 # Full production stack: infrastructure + application services + observability
 #
 # Usage:
@@ -29,14 +29,14 @@ x-healthcheck-defaults: &hc-defaults
 
 # ─── Networks ─────────────────────────────────────────────────────────────────
 networks:
-  54link-infra:
-    name: 54link-infra
+  insureportal-infra:
+    name: insureportal-infra
     driver: bridge
-  54link-app:
-    name: 54link-app
+  insureportal-app:
+    name: insureportal-app
     driver: bridge
-  54link-obs:
-    name: 54link-obs
+  insureportal-obs:
+    name: insureportal-obs
     driver: bridge
 
 # ─── Volumes ──────────────────────────────────────────────────────────────────
@@ -68,31 +68,31 @@ services:
   # ── PostgreSQL (primary OLTP) ─────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: 54link-postgres
+    container_name: insureportal-postgres
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-54link}
-      POSTGRES_USER: ${POSTGRES_USER:-54link}
+      POSTGRES_DB: ${POSTGRES_DB:-insureportal}
+      POSTGRES_USER: ${POSTGRES_USER:-insureportal}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=en_US.UTF-8"
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-54link} -d ${POSTGRES_DB:-54link}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-insureportal} -d ${POSTGRES_DB:-insureportal}"]
       <<: *hc-defaults
 
   # ── Redis (cache + distributed locks + session store) ─────────────────────
   redis:
     image: redis:7.2-alpine
-    container_name: 54link-redis
+    container_name: insureportal-redis
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     volumes:
       - redis_data:/data
       - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -106,10 +106,10 @@ services:
   # ── Zookeeper (Kafka dependency) ──────────────────────────────────────────
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
-    container_name: 54link-zookeeper
+    container_name: insureportal-zookeeper
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     volumes:
       - zookeeper_data:/var/lib/zookeeper/data
       - zookeeper_log:/var/lib/zookeeper/log
@@ -124,10 +124,10 @@ services:
   # ── Kafka (event bus) ─────────────────────────────────────────────────────
   kafka:
     image: confluentinc/cp-kafka:7.6.1
-    container_name: 54link-kafka
+    container_name: insureportal-kafka
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     volumes:
       - kafka_data:/var/lib/kafka/data
     depends_on:
@@ -156,17 +156,17 @@ services:
   # ── Kafka UI (admin console) ──────────────────────────────────────────────
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    container_name: 54link-kafka-ui
+    container_name: insureportal-kafka-ui
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     depends_on:
       kafka:
         condition: service_healthy
     ports:
       - "8090:8080"
     environment:
-      KAFKA_CLUSTERS_0_NAME: 54link-cluster
+      KAFKA_CLUSTERS_0_NAME: insureportal-cluster
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9093
       AUTH_TYPE: LOGIN_FORM
       SPRING_SECURITY_USER_NAME: ${KAFKA_UI_USER:-admin}
@@ -175,10 +175,10 @@ services:
   # ── TigerBeetle (financial ledger) ────────────────────────────────────────
   tigerbeetle:
     image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
-    container_name: 54link-tigerbeetle
+    container_name: insureportal-tigerbeetle
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     volumes:
       - tigerbeetle_data:/data
     ports:
@@ -186,7 +186,7 @@ services:
     command: >
       start
       --addresses=0.0.0.0:3001
-      /data/54link.tigerbeetle
+      /data/insureportal.tigerbeetle
     healthcheck:
       test: ["CMD-SHELL", "echo 'ping' | nc -w 2 localhost 3001 || exit 1"]
       interval: 30s
@@ -196,10 +196,10 @@ services:
   # ── Temporal (workflow orchestration) ─────────────────────────────────────
   temporal:
     image: temporalio/auto-setup:1.24.2
-    container_name: 54link-temporal
+    container_name: insureportal-temporal
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     volumes:
       - temporal_data:/var/lib/temporal
     depends_on:
@@ -210,7 +210,7 @@ services:
     environment:
       DB: postgresql
       DB_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER:-54link}
+      POSTGRES_USER: ${POSTGRES_USER:-insureportal}
       POSTGRES_PWD: ${POSTGRES_PASSWORD}
       POSTGRES_SEEDS: postgres
       DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/development-sql.yaml
@@ -224,28 +224,28 @@ services:
   # ── Temporal UI ───────────────────────────────────────────────────────────
   temporal-ui:
     image: temporalio/ui:2.26.2
-    container_name: 54link-temporal-ui
+    container_name: insureportal-temporal-ui
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     depends_on:
       - temporal
     ports:
       - "8088:8080"
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: "https://${DOMAIN:-54link.ng}"
+      TEMPORAL_CORS_ORIGINS: "https://${DOMAIN:-insureportal.ng}"
 
   # ── Keycloak (identity & access management) ───────────────────────────────
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.4
-    container_name: 54link-keycloak
+    container_name: insureportal-keycloak
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     volumes:
       - keycloak_data:/opt/keycloak/data
-      - ./infra/keycloak/realm-54link.json:/opt/keycloak/data/import/realm-54link.json:ro
+      - ./infra/keycloak/realm-insureportal.json:/opt/keycloak/data/import/realm-insureportal.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -253,10 +253,10 @@ services:
       - "${KEYCLOAK_PORT:-8080}:8080"
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-54link}
-      KC_DB_USERNAME: ${POSTGRES_USER:-54link}
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-insureportal}
+      KC_DB_USERNAME: ${POSTGRES_USER:-insureportal}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-keycloak.54link.ng}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-keycloak.insureportal.ng}
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_PROXY: edge
@@ -273,10 +273,10 @@ services:
   # ── Permify (fine-grained authorization) ─────────────────────────────────
   permify:
     image: ghcr.io/permify/permify:v0.10.1
-    container_name: 54link-permify
+    container_name: insureportal-permify
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     depends_on:
       postgres:
         condition: service_healthy
@@ -285,7 +285,7 @@ services:
       - "3478:3478"
     environment:
       PERMIFY_DATABASE_ENGINE: postgres
-      PERMIFY_DATABASE_URI: postgres://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-54link}?sslmode=disable
+      PERMIFY_DATABASE_URI: postgres://${POSTGRES_USER:-insureportal}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-insureportal}?sslmode=disable
       PERMIFY_DATABASE_MAX_OPEN_CONNECTIONS: 20
       PERMIFY_SERVER_RATE_LIMIT: 100
     command: serve
@@ -296,10 +296,10 @@ services:
   # ── Apache APISIX (API gateway) ───────────────────────────────────────────
   apisix-etcd:
     image: bitnami/etcd:3.5.12
-    container_name: 54link-apisix-etcd
+    container_name: insureportal-apisix-etcd
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     environment:
       ALLOW_NONE_AUTHENTICATION: "yes"
       ETCD_ADVERTISE_CLIENT_URLS: http://apisix-etcd:2379
@@ -309,10 +309,10 @@ services:
 
   apisix:
     image: apache/apisix:3.9.1-debian
-    container_name: 54link-apisix
+    container_name: insureportal-apisix
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       apisix-etcd:
         condition: service_healthy
@@ -330,10 +330,10 @@ services:
   # ── HashiCorp Vault (secrets management) ──────────────────────────────────
   vault:
     image: hashicorp/vault:1.16.3
-    container_name: 54link-vault
+    container_name: insureportal-vault
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     volumes:
       - vault_data:/vault/data
       - vault_logs:/vault/logs
@@ -358,10 +358,10 @@ services:
   # ── Vault Agent (auto-unseal + secret injection) ──────────────────────────
   vault-agent:
     image: hashicorp/vault:1.16.3
-    container_name: 54link-vault-agent
+    container_name: insureportal-vault-agent
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     depends_on:
       vault:
         condition: service_healthy
@@ -376,16 +376,16 @@ services:
   # APPLICATION TIER
   # ═══════════════════════════════════════════════════════════════════════════
 
-  # ── Main Node.js POS Shell ────────────────────────────────────────────────
+  # ── Main Node.js Insurance Portal ────────────────────────────────────────────────
   app:
     build:
       context: .
       dockerfile: Dockerfile
       target: production
-    container_name: 54link-app
+    container_name: insureportal-app
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       postgres:
         condition: service_healthy
@@ -416,17 +416,17 @@ services:
     build:
       context: ./server/ota-service
       dockerfile: Dockerfile
-    container_name: 54link-ota
+    container_name: insureportal-ota
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-app]
+    networks: [insureportal-app]
     environment:
       <<: *common-env
       PORT: 8081
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ${AWS_REGION:-us-east-1}
-      S3_BUCKET: ${S3_BUCKET:-54link-firmware}
+      S3_BUCKET: ${S3_BUCKET:-insureportal-firmware}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
       <<: *hc-defaults
@@ -436,19 +436,19 @@ services:
     build:
       context: ./server/fido2-service
       dockerfile: Dockerfile
-    container_name: 54link-fido2
+    container_name: insureportal-fido2
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       <<: *common-env
       PORT: 8083
-      FIDO2_RP_ID: ${FIDO2_RP_ID:-54link.ng}
-      FIDO2_RP_NAME: ${FIDO2_RP_NAME:-54Link POS}
-      FIDO2_ORIGIN: ${FIDO2_ORIGIN:-https://54link.ng}
+      FIDO2_RP_ID: ${FIDO2_RP_ID:-insureportal.ng}
+      FIDO2_RP_NAME: ${FIDO2_RP_NAME:-InsurePortal}
+      FIDO2_ORIGIN: ${FIDO2_ORIGIN:-https://insureportal.ng}
       DATABASE_URL: ${DATABASE_URL}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8083/health"]
@@ -459,10 +459,10 @@ services:
     build:
       context: ./services/rust/i18n-currency
       dockerfile: Dockerfile
-    container_name: 54link-i18n
+    container_name: insureportal-i18n
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-app]
+    networks: [insureportal-app]
     environment:
       <<: *common-env
       PORT: 8084
@@ -475,10 +475,10 @@ services:
     build:
       context: ./services/rust/fraud-engine
       dockerfile: Dockerfile
-    container_name: 54link-fraud
+    container_name: insureportal-fraud
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       redis:
         condition: service_healthy
@@ -499,10 +499,10 @@ services:
     build:
       context: ./services/rust/tx-validator
       dockerfile: Dockerfile
-    container_name: 54link-tx-validator
+    container_name: insureportal-tx-validator
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       redis:
         condition: service_healthy
@@ -520,10 +520,10 @@ services:
     build:
       context: ./services/rust/ledger-bridge
       dockerfile: Dockerfile
-    container_name: 54link-ledger
+    container_name: insureportal-ledger
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       postgres:
         condition: service_healthy
@@ -543,10 +543,10 @@ services:
     build:
       context: ./services/go/workflow-orchestrator
       dockerfile: Dockerfile
-    container_name: 54link-workflow
+    container_name: insureportal-workflow
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       postgres:
         condition: service_healthy
@@ -564,7 +564,7 @@ services:
       KAFKA_BROKERS: kafka:9093
       TEMPORAL_ADDRESS: temporal:7233
       KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-54link}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-insureportal}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-workflow-orchestrator}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
       PERMIFY_URL: http://permify:3476
@@ -578,10 +578,10 @@ services:
     build:
       context: ./services/python/credit-scoring
       dockerfile: Dockerfile
-    container_name: 54link-credit
+    container_name: insureportal-credit
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       postgres:
         condition: service_healthy
@@ -598,10 +598,10 @@ services:
     build:
       context: ./services/python/settlement-service
       dockerfile: Dockerfile
-    container_name: 54link-settlement
+    container_name: insureportal-settlement
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       postgres:
         condition: service_healthy
@@ -625,10 +625,10 @@ services:
     build:
       context: ./services/python/risk-assessment
       dockerfile: Dockerfile
-    container_name: 54link-risk
+    container_name: insureportal-risk
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       redis:
         condition: service_healthy
@@ -647,10 +647,10 @@ services:
     build:
       context: ./services/python/ussd-service
       dockerfile: Dockerfile
-    container_name: 54link-ussd
+    container_name: insureportal-ussd
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       redis:
         condition: service_healthy
@@ -668,10 +668,10 @@ services:
     build:
       context: ./services/python/whatsapp-service
       dockerfile: Dockerfile
-    container_name: 54link-whatsapp
+    container_name: insureportal-whatsapp
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     environment:
       <<: *common-env
       PORT: 8093
@@ -687,10 +687,10 @@ services:
     build:
       context: ./services/python/pos-integration
       dockerfile: Dockerfile
-    container_name: 54link-sim-orch
+    container_name: insureportal-sim-orch
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     depends_on:
       postgres:
         condition: service_healthy
@@ -712,10 +712,10 @@ services:
   # ── nginx (TLS termination + reverse proxy) ───────────────────────────────
   nginx:
     image: nginx:1.27-alpine
-    container_name: 54link-nginx
+    container_name: insureportal-nginx
     <<: *restart-policy
     profiles: [gateway, all]
-    networks: [54link-app, 54link-obs]
+    networks: [insureportal-app, insureportal-obs]
     depends_on:
       - app
     volumes:
@@ -734,9 +734,9 @@ services:
   # ── Certbot (Let's Encrypt TLS) ───────────────────────────────────────────
   certbot:
     image: certbot/certbot:v2.10.0
-    container_name: 54link-certbot
+    container_name: insureportal-certbot
     profiles: [gateway, all]
-    networks: [54link-app]
+    networks: [insureportal-app]
     volumes:
       - nginx_certs:/etc/letsencrypt
     entrypoint: >
@@ -753,13 +753,13 @@ services:
   # ── Prometheus (metrics) ──────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.53.0
-    container_name: 54link-prometheus
+    container_name: insureportal-prometheus
     <<: *restart-policy
     profiles: [observability, all]
-    networks: [54link-obs, 54link-app, 54link-infra]
+    networks: [insureportal-obs, insureportal-app, insureportal-infra]
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/prometheus-rules.yml:/etc/prometheus/rules/pos-shell-rules.yml:ro
+      - ./monitoring/prometheus-rules.yml:/etc/prometheus/rules/insurance-portal-rules.yml:ro
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
@@ -776,29 +776,29 @@ services:
   # ── Grafana (dashboards) ──────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:11.1.0
-    container_name: 54link-grafana
+    container_name: insureportal-grafana
     <<: *restart-policy
     profiles: [observability, all]
-    networks: [54link-obs]
+    networks: [insureportal-obs]
     depends_on:
       - prometheus
       - loki
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./docs/grafana-dashboard.json:/var/lib/grafana/dashboards/pos-shell.json:ro
+      - ./docs/grafana-dashboard.json:/var/lib/grafana/dashboards/insurance-portal.json:ro
     ports:
       - "3002:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD required}
-      GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:-grafana.54link.ng}
-      GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN:-grafana.54link.ng}
+      GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:-grafana.insureportal.ng}
+      GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN:-grafana.insureportal.ng}
       GF_SMTP_ENABLED: "true"
       GF_SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}:${SMTP_PORT:-587}
       GF_SMTP_USER: ${SMTP_USER}
       GF_SMTP_PASSWORD: ${SMTP_PASS}
-      GF_SMTP_FROM_ADDRESS: ${SMTP_FROM:-alerts@54link.ng}
+      GF_SMTP_FROM_ADDRESS: ${SMTP_FROM:-alerts@insureportal.ng}
       GF_FEATURE_TOGGLES_ENABLE: publicDashboards
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
@@ -807,10 +807,10 @@ services:
   # ── Loki (log aggregation) ────────────────────────────────────────────────
   loki:
     image: grafana/loki:3.0.0
-    container_name: 54link-loki
+    container_name: insureportal-loki
     <<: *restart-policy
     profiles: [observability, all]
-    networks: [54link-obs]
+    networks: [insureportal-obs]
     volumes:
       - loki_data:/loki
       - ./infra/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
@@ -824,10 +824,10 @@ services:
   # ── Promtail (log shipper) ────────────────────────────────────────────────
   promtail:
     image: grafana/promtail:3.0.0
-    container_name: 54link-promtail
+    container_name: insureportal-promtail
     <<: *restart-policy
     profiles: [observability, all]
-    networks: [54link-obs, 54link-app]
+    networks: [insureportal-obs, insureportal-app]
     depends_on:
       - loki
     volumes:
@@ -839,10 +839,10 @@ services:
   # ── Alertmanager ─────────────────────────────────────────────────────────
   alertmanager:
     image: prom/alertmanager:v0.27.0
-    container_name: 54link-alertmanager
+    container_name: insureportal-alertmanager
     <<: *restart-policy
     profiles: [observability, all]
-    networks: [54link-obs]
+    networks: [insureportal-obs]
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
@@ -851,7 +851,7 @@ services:
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--storage.path=/alertmanager"
-      - "--web.external-url=https://${ALERTMANAGER_DOMAIN:-alerts.54link.ng}"
+      - "--web.external-url=https://${ALERTMANAGER_DOMAIN:-alerts.insureportal.ng}"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
       <<: *hc-defaults
@@ -859,10 +859,10 @@ services:
   # ── Node Exporter (host metrics) ──────────────────────────────────────────
   node-exporter:
     image: prom/node-exporter:v1.8.1
-    container_name: 54link-node-exporter
+    container_name: insureportal-node-exporter
     <<: *restart-policy
     profiles: [observability, all]
-    networks: [54link-obs]
+    networks: [insureportal-obs]
     pid: host
     volumes:
       - /proc:/host/proc:ro
@@ -878,10 +878,10 @@ services:
   # ── cAdvisor (container metrics) ──────────────────────────────────────────
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: 54link-cadvisor
+    container_name: insureportal-cadvisor
     <<: *restart-policy
     profiles: [observability, all]
-    networks: [54link-obs]
+    networks: [insureportal-obs]
     privileged: true
     volumes:
       - /:/rootfs:ro
@@ -896,15 +896,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.temporal-worker
-    container_name: 54link-temporal-worker
+    container_name: insureportal-temporal-worker
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-app, 54link-infra]
+    networks: [insureportal-app, insureportal-infra]
     env_file: .env.production
     environment:
       - NODE_ENV=production
       - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_NAMESPACE=54link-production
+      - TEMPORAL_NAMESPACE=insureportal-production
     depends_on:
       temporal:
         condition: service_healthy
@@ -926,13 +926,13 @@ services:
   # ── MinIO (S3-compatible object storage / Lakehouse) ──────────────────────
   minio:
     image: minio/minio:RELEASE.2024-11-07T00-52-20Z
-    container_name: 54link-minio
+    container_name: insureportal-minio
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-54link_admin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-insureportal_admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-MinioSecure2024!}
       MINIO_PROMETHEUS_AUTH_TYPE: public
     volumes:
@@ -955,9 +955,9 @@ services:
   # ── MinIO Init (create buckets + lifecycle policies) ──────────────────────
   minio-init:
     image: minio/mc:RELEASE.2024-11-17T19-35-25Z
-    container_name: 54link-minio-init
+    container_name: insureportal-minio-init
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     depends_on:
       minio:
         condition: service_healthy
@@ -966,17 +966,17 @@ services:
       - ./infra/minio:/init:ro
     environment:
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-54link_admin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-insureportal_admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-MinioSecure2024!}
     restart: "no"
 
   # ── Fluvio (real-time streaming platform) ─────────────────────────────────
   fluvio:
     image: infinyon/fluvio:0.11.11
-    container_name: 54link-fluvio
+    container_name: insureportal-fluvio
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra]
+    networks: [insureportal-infra]
     command: fluvio-run sc --local /fluvio/metadata
     environment:
       RUST_LOG: info
@@ -1000,10 +1000,10 @@ services:
   # ── Dapr Placement Service ─────────────────────────────────────────────────
   dapr-placement:
     image: daprio/dapr:1.14.4
-    container_name: 54link-dapr-placement
+    container_name: insureportal-dapr-placement
     <<: *restart-policy
     profiles: [infra, all]
-    networks: [54link-infra, 54link-app]
+    networks: [insureportal-infra, insureportal-app]
     command: ["./placement", "--port", "50006", "--log-level", "info"]
     ports:
       - "50006:50006"
@@ -1024,10 +1024,10 @@ services:
     build:
       context: ./services/go/mdm-compliance-engine
       dockerfile: Dockerfile
-    container_name: 54link-mdm-compliance-engine
+    container_name: insureportal-mdm-compliance-engine
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-app, 54link-infra]
+    networks: [insureportal-app, insureportal-infra]
     env_file: .env.production
     environment:
       - PORT=8091
@@ -1035,7 +1035,7 @@ services:
       - KAFKA_GROUP_ID=mdm-compliance-engine
       - KAFKA_TOPIC_HEARTBEAT=mdm.heartbeat
       - KAFKA_TOPIC_VIOLATIONS=mdm.compliance.violations
-      - DB_URL=postgres://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:-54linkSecure2024}@postgres:5432/${POSTGRES_DB:-54link_production}?sslmode=disable
+      - DB_URL=postgres://${POSTGRES_USER:-insureportal}:${POSTGRES_PASSWORD:-insureportalSecure2024}@postgres:5432/${POSTGRES_DB:-insureportal_production}?sslmode=disable
       - MDM_API_URL=http://app:3000
       - PROMETHEUS_PORT=9091
       - LOG_LEVEL=info
@@ -1061,10 +1061,10 @@ services:
     build:
       context: ./services/python/mdm-geofence-service
       dockerfile: Dockerfile
-    container_name: 54link-mdm-geofence-service
+    container_name: insureportal-mdm-geofence-service
     <<: *restart-policy
     profiles: [app, all]
-    networks: [54link-app, 54link-infra]
+    networks: [insureportal-app, insureportal-infra]
     env_file: .env.production
     environment:
       - PORT=8092
@@ -1072,7 +1072,7 @@ services:
       - KAFKA_GROUP_ID=mdm-geofence-service
       - KAFKA_TOPIC_HEARTBEAT=mdm.heartbeat
       - KAFKA_TOPIC_VIOLATIONS=mdm.geofence.violations
-      - DB_URL=postgresql://${POSTGRES_USER:-54link}:${POSTGRES_PASSWORD:-54linkSecure2024}@postgres:5432/${POSTGRES_DB:-54link_production}
+      - DB_URL=postgresql://${POSTGRES_USER:-insureportal}:${POSTGRES_PASSWORD:-insureportalSecure2024}@postgres:5432/${POSTGRES_DB:-insureportal_production}
       - MDM_API_URL=http://app:3000
       - REDIS_URL=redis://redis:6379/3
       - LOG_LEVEL=INFO

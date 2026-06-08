@@ -1,5 +1,5 @@
 /**
- * Transaction Analytics — 54Link POS Shell (Sprint 89)
+ * Transaction Analytics — InsurePortal Shell (Sprint 89)
  *
  * Real-time analytics dashboard powered by Fluvio→OpenSearch pipeline.
  * Displays transaction volume, time-series charts, search, and pipeline health.

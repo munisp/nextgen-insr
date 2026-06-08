@@ -9,7 +9,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   agents,
-  posTerminals,
+  insuranceServices,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -19,7 +19,7 @@ import {
   multiSimProfiles,
   reversalRequests,
   shareableLinks,
-  storefrontAds,
+  insurance_portalAds,
   vatRecords,
   erpSyncLog,
   transactions,
@@ -65,7 +65,7 @@ export const managementRouter = router({
         .limit(100);
       const [terminalCount] = await db
         .select({ c: count() })
-        .from(posTerminals)
+        .from(insuranceServices)
         .limit(100);
       const [txCount] = await db
         .select({ c: count() })
@@ -618,7 +618,7 @@ export const managementRouter = router({
     }),
   }),
 
-  // ── POS Terminal Management ────────────────────────────────────────────────
+  // ── Insurance Service Management ────────────────────────────────────────────────
   pos: router({
     listTerminals: mgmtProcedure
       .input(
@@ -638,19 +638,19 @@ export const managementRouter = router({
           const offset = (input.page - 1) * input.limit;
           const conditions = [];
           if (input.status)
-            conditions.push(eq(posTerminals.status, input.status));
+            conditions.push(eq(insuranceServices.status, input.status));
           if (input.agentId)
-            conditions.push(eq(posTerminals.agentId, input.agentId));
+            conditions.push(eq(insuranceServices.agentId, input.agentId));
           const where = conditions.length > 0 ? and(...conditions) : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(posTerminals)
+              .from(insuranceServices)
               .where(where)
-              .orderBy(desc(posTerminals.createdAt))
+              .orderBy(desc(insuranceServices.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(posTerminals).where(where),
+            db.select({ total: count() }).from(insuranceServices).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -670,8 +670,8 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "NOT_FOUND" });
           const [t] = await db
             .select()
-            .from(posTerminals)
-            .where(eq(posTerminals.id, input.id))
+            .from(insuranceServices)
+            .where(eq(insuranceServices.id, input.id))
             .limit(100);
           if (!t) throw new TRPCError({ code: "NOT_FOUND" });
           return t;
@@ -698,7 +698,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .insert(posTerminals)
+            .insert(insuranceServices)
             .values(input as any)
             .returning();
           return t;
@@ -731,13 +731,13 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(posTerminals)
+            .update(insuranceServices)
             .set({
               lastCommand: input.command,
               lastCommandAt: new Date(),
               updatedAt: new Date(),
             })
-            .where(eq(posTerminals.id, input.terminalId))
+            .where(eq(insuranceServices.id, input.terminalId))
             .returning();
           return { success: true, terminal: t };
         } catch (error) {
@@ -820,9 +820,9 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           // Unassign all terminals in this group first
           await db
-            .update(posTerminals)
+            .update(insuranceServices)
             .set({ groupId: null, updatedAt: new Date() })
-            .where(eq(posTerminals.groupId, input.id));
+            .where(eq(insuranceServices.groupId, input.id));
           await db
             .delete(terminalGroups)
             .where(eq(terminalGroups.id, input.id));
@@ -845,9 +845,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(posTerminals)
+            .update(insuranceServices)
             .set({ groupId: input.groupId, updatedAt: new Date() })
-            .where(eq(posTerminals.id, input.terminalId))
+            .where(eq(insuranceServices.id, input.terminalId))
             .returning();
           if (!t)
             throw new TRPCError({
@@ -877,19 +877,19 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const terminals = await db
             .select()
-            .from(posTerminals)
-            .where(eq(posTerminals.groupId, input.groupId))
+            .from(insuranceServices)
+            .where(eq(insuranceServices.groupId, input.groupId))
             .limit(100);
           let dispatched = 0;
           for (const t of terminals) {
             await db
-              .update(posTerminals)
+              .update(insuranceServices)
               .set({
                 lastCommand: input.command,
                 lastCommandAt: new Date(),
                 updatedAt: new Date(),
               })
-              .where(eq(posTerminals.id, t.id));
+              .where(eq(insuranceServices.id, t.id));
             dispatched++;
           }
           return { dispatched, command: input.command, groupId: input.groupId };
@@ -996,12 +996,12 @@ export const managementRouter = router({
       if (!db) return { active: 0, inactive: 0, maintenance: 0, total: 0 };
       const [total] = await db
         .select({ c: count() })
-        .from(posTerminals)
+        .from(insuranceServices)
         .limit(100);
       const [active] = await db
         .select({ c: count() })
-        .from(posTerminals)
-        .where(eq(posTerminals.status, "active"))
+        .from(insuranceServices)
+        .where(eq(insuranceServices.status, "active"))
         .limit(100);
       return { total: total.c, active: active.c, inactive: 0, maintenance: 0 };
     }),
@@ -1255,7 +1255,7 @@ export const managementRouter = router({
       api: { status: "up", latency: 12 },
       database: { status: "up", connections: 5 },
       tigerbeetle: { status: "up", ledgerVersion: "0.16.11" },
-      keycloak: { status: "up", realm: process.env.KEYCLOAK_REALM || "54link" },
+      keycloak: { status: "up", realm: process.env.KEYCLOAK_REALM || "insureportal" },
       redis: { status: "up" },
       kafka: { status: "up", topics: 12 },
       timestamp: new Date(),
@@ -1487,8 +1487,8 @@ export const managementRouter = router({
       }),
   }),
 
-  // ── Storefront Ads ─────────────────────────────────────────────────────────
-  storefrontAds: router({
+  // ── InsurancePortal Ads ─────────────────────────────────────────────────────────
+  insurance_portalAds: router({
     list: mgmtProcedure
       .input(
         z.object({
@@ -1505,17 +1505,17 @@ export const managementRouter = router({
           if (!db) return { items: [], total: 0 };
           const offset = (input.page - 1) * input.limit;
           const where = input.status
-            ? eq(storefrontAds.status, input.status)
+            ? eq(insurance_portalAds.status, input.status)
             : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(storefrontAds)
+              .from(insurance_portalAds)
               .where(where)
-              .orderBy(desc(storefrontAds.createdAt))
+              .orderBy(desc(insurance_portalAds.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(storefrontAds).where(where),
+            db.select({ total: count() }).from(insurance_portalAds).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -1545,7 +1545,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
-            .insert(storefrontAds)
+            .insert(insurance_portalAds)
             .values(input as any)
             .returning();
           return ad;
@@ -1570,9 +1570,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
-            .update(storefrontAds)
+            .update(insurance_portalAds)
             .set({ status: input.status, updatedAt: new Date() })
-            .where(eq(storefrontAds.id, input.id))
+            .where(eq(insurance_portalAds.id, input.id))
             .returning();
           return ad;
         } catch (error) {
@@ -1850,7 +1850,7 @@ export const managementRouter = router({
   // ── Settings ─────────────────────────────────────────────────────
   settings: router({
     get: adminProcedure.query(() => ({
-      platformName: "54Link Agency Banking",
+      platformName: "InsurePortal Agency Banking",
       defaultCurrency: "NGN",
       defaultCountry: "NGA",
       maxTransactionAmount: 500000,

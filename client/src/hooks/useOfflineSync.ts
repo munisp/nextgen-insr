@@ -1,5 +1,5 @@
 /**
- * useOfflineSync — Auto-sync hook for 54Link POS
+ * useOfflineSync — Auto-sync hook for InsurePortal
  *
  * Drains two queues on reconnect:
  *   1. Zustand in-memory offlineQueue (current session)

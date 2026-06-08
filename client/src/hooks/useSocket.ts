@@ -223,7 +223,7 @@ export function useTerminalSocket(agentCode?: string) {
         tier: string;
         timestamp: string;
       }) => {
-        // Dispatch DOM event so POSShell can show an amber banner
+        // Dispatch DOM event so InsurancePortal can show an amber banner
         window.dispatchEvent(
           new CustomEvent("terminal:velocity_warning", { detail: data })
         );
@@ -243,8 +243,8 @@ export function useTerminalSocket(agentCode?: string) {
       "terminal:kill-switch",
       (data: { reason: string; disabledBy: string; disabledAt: string }) => {
         // Persist in localStorage so the overlay survives a page reload
-        localStorage.setItem("pos_terminal_disabled", JSON.stringify(data));
-        // Dispatch custom DOM event so POSShell reacts immediately
+        localStorage.setItem("insurance_service_disabled", JSON.stringify(data));
+        // Dispatch custom DOM event so InsurancePortal reacts immediately
         window.dispatchEvent(
           new CustomEvent("terminal:kill-switch", { detail: data })
         );
@@ -257,7 +257,7 @@ export function useTerminalSocket(agentCode?: string) {
     socket.on(
       "terminal:kill-switch-lift",
       (data: { enabledBy: string; enabledAt: string }) => {
-        localStorage.removeItem("pos_terminal_disabled");
+        localStorage.removeItem("insurance_service_disabled");
         window.dispatchEvent(
           new CustomEvent("terminal:kill-switch-lift", { detail: data })
         );

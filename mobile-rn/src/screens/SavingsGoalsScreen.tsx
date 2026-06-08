@@ -29,7 +29,7 @@ interface SavingsGoal {
   category: string;
 }
 
-const API_BASE_URL = 'https://api.54link.io/v1';
+const API_BASE_URL = 'https://api.insureportal.io/v1';
 
 const SavingsGoalsScreen = () => {
   const navigation = useNavigation();

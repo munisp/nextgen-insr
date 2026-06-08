@@ -114,7 +114,7 @@ const reducer = (state: State, action: Action): State => {
 
 // --- API and Storage Constants/Functions (Stubs) ---
 
-const API_BASE_URL = 'https://api.54link.io/v1';
+const API_BASE_URL = 'https://api.insureportal.io/v1';
 const PAYMENT_METHODS_STORAGE_KEY = '@PaymentMethods';
 const BIOMETRICS_KEY = 'payment_auth_key';
 
@@ -125,7 +125,7 @@ const apiCall = async <T,>(
   data?: any
 ): Promise<T> => {
   // Retrieve auth token from AsyncStorage (set during biometric login in BiometricAuthScreen)
-  const token = (await AsyncStorage.getItem('@54link:authToken')) ?? '';
+  const token = (await AsyncStorage.getItem('@insureportal:authToken')) ?? '';
   const config = {
     headers: {
       Authorization: `Bearer ${token}`,

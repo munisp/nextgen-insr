@@ -1,7 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 import { ENV } from "./_core/env";
 /**
- * termii.ts — Shared Termii SMS helper for the 54Link platform.
+ * termii.ts — Shared Termii SMS helper for the InsurePortal platform.
  *
  * All SMS-sending logic is centralised here so every router (transactions,
  * pinReset, settlement, smsReceipt, disputes) uses the same API client and
@@ -42,7 +42,7 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to,
-        from: "54Link",
+        from: "InsurePortal",
         sms: message,
         type: "plain",
         channel: "generic",
@@ -92,7 +92,7 @@ export function buildConfirmationSms(data: {
     minute: "2-digit",
   });
   const lines = [
-    `54Link Agency Banking`,
+    `InsurePortal Agency Banking`,
     `Ref: ${data.ref}`,
     `Type: ${data.type}`,
     `Amount: NGN ${data.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
@@ -100,7 +100,7 @@ export function buildConfirmationSms(data: {
   if (data.customerName) lines.push(`Customer: ${data.customerName}`);
   lines.push(`Agent: ${data.agentName} (${data.agentCode})`);
   lines.push(`Time: ${ts}`);
-  lines.push(`To dispute, call 0700-54LINK or reply DISPUTE to this number.`);
+  lines.push(`To dispute, call 0700-INSUREPORTAL or reply DISPUTE to this number.`);
   return lines.join("\n");
 }
 
@@ -117,7 +117,7 @@ export function buildReceiptSms(data: {
   customerName?: string | null;
 }): string {
   const lines = [
-    `54Link Receipt`,
+    `InsurePortal Receipt`,
     `Ref: ${data.ref}`,
     `Type: ${data.type}`,
     `Amount: NGN ${data.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
@@ -128,6 +128,6 @@ export function buildReceiptSms(data: {
   lines.push(
     `Time: ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })}`
   );
-  lines.push(`Powered by 54Link Agency Banking`);
+  lines.push(`Powered by InsurePortal Agency Banking`);
   return lines.join("\n");
 }

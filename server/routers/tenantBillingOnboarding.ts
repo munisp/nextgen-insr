@@ -30,7 +30,7 @@ async function getTemporalClient(): Promise<Client | null> {
     });
     temporalClient = new Client({
       connection,
-      namespace: process.env.TEMPORAL_NAMESPACE || "54link",
+      namespace: process.env.TEMPORAL_NAMESPACE || "insureportal",
     });
     return temporalClient;
   } catch {
@@ -49,10 +49,10 @@ export const BILLING_TEMPLATES = {
   revenue_share: {
     name: "Revenue Share",
     description:
-      "54Link takes a percentage of each transaction. Best for high-volume partners.",
+      "InsurePortal takes a percentage of each transaction. Best for high-volume partners.",
     billingModel: "revenue_share" as const,
     revenueShareConfig: {
-      startSplitPct: 70, // Client gets 70%, 54Link gets 30%
+      startSplitPct: 70, // Client gets 70%, InsurePortal gets 30%
       scaleSplitPct: 80, // At scale, client gets 80%
       scaleThreshold: 100000, // Monthly tx count threshold for scale pricing
       minimumMonthlyGuarantee: 500000, // NGN minimum monthly revenue guarantee
@@ -70,7 +70,7 @@ export const BILLING_TEMPLATES = {
     revenueShareConfig: null,
     subscriptionConfig: {
       perAgentFee: 15000, // NGN per agent per month
-      perPosFee: 5000, // NGN per POS terminal per month
+      perPosFee: 5000, // NGN per insurance service per month
       implementationFee: 5000000, // NGN one-time implementation
       billingCycle: "monthly" as const,
     },
@@ -84,7 +84,7 @@ export const BILLING_TEMPLATES = {
     revenueShareConfig: null,
     subscriptionConfig: null,
     hybridConfig: {
-      reducedSharePct: 15, // 54Link takes only 15% of tx revenue
+      reducedSharePct: 15, // InsurePortal takes only 15% of tx revenue
       reducedPerAgent: 8000, // NGN reduced per-agent fee
       licenseFee: 3000000, // NGN annual license fee
     },

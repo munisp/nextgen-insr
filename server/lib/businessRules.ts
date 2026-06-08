@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link Agency Banking Platform — Business Rules Engine
+ * InsurePortal Agency Banking Platform — Business Rules Engine
  * ─────────────────────────────────────────────────────────────────────────────
  * Centralised enforcement of CBN-mandated agency banking regulations, internal
  * risk policies, and commercial rules. All rules are data-driven and can be
@@ -792,10 +792,10 @@ export const REWARD_CATALOG = [
   },
   {
     id: "pos_upgrade",
-    name: "POS Terminal Upgrade",
+    name: "Insurance Service Upgrade",
     pointsCost: 50_000,
     category: "hardware",
-    description: "Upgrade to next-generation POS terminal",
+    description: "Upgrade to next-generation insurance service",
   },
 ];
 

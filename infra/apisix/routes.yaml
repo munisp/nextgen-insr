@@ -1,12 +1,12 @@
-# ─── 54Link APISIX Declarative Routes ────────────────────────────────────────
+# ─── InsurePortal APISIX Declarative Routes ────────────────────────────────────────
 # These routes are loaded at startup via apisix.yaml (standalone mode)
 # Rate limits: api_general=60/min, api_auth=10/min, api_tx=30/min
 
 routes:
-  # ── Main POS Shell App ─────────────────────────────────────────────────────
-  - id: pos-shell-api
+  # ── Main Insurance Portal App ─────────────────────────────────────────────────────
+  - id: insurance-portal-api
     uri: /api/*
-    upstream_id: pos-shell
+    upstream_id: insurance-portal
     plugins:
       limit-req:
         rate: 60
@@ -18,9 +18,9 @@ routes:
         include_in_response: true
       prometheus: {}
 
-  - id: pos-shell-trpc
+  - id: insurance-portal-trpc
     uri: /api/trpc/*
-    upstream_id: pos-shell
+    upstream_id: insurance-portal
     plugins:
       limit-req:
         rate: 120
@@ -31,9 +31,9 @@ routes:
       prometheus: {}
 
   # ── Auth endpoints (stricter rate limiting) ────────────────────────────────
-  - id: pos-shell-auth
+  - id: insurance-portal-auth
     uri: /api/oauth/*
-    upstream_id: pos-shell
+    upstream_id: insurance-portal
     plugins:
       limit-req:
         rate: 10
@@ -238,16 +238,16 @@ routes:
       prometheus: {}
 
   # ── Health check (no auth, no rate limit) ─────────────────────────────────
-  - id: pos-shell-health
+  - id: insurance-portal-health
     uri: /health
-    upstream_id: pos-shell
+    upstream_id: insurance-portal
     plugins:
       prometheus: {}
 
   # ── WebSocket / Socket.IO ─────────────────────────────────────────────────
-  - id: pos-shell-ws
+  - id: insurance-portal-ws
     uri: /socket.io/*
-    upstream_id: pos-shell
+    upstream_id: insurance-portal
     plugins:
       limit-conn:
         conn: 1000
@@ -258,9 +258,9 @@ routes:
       prometheus: {}
 
   # ── Keycloak auth routes ──────────────────────────────────────────────────
-  - id: pos-shell-keycloak-auth
+  - id: insurance-portal-keycloak-auth
     uri: /api/auth/*
-    upstream_id: pos-shell
+    upstream_id: insurance-portal
     plugins:
       limit-req:
         rate: 10
@@ -270,7 +270,7 @@ routes:
       prometheus: {}
 
 upstreams:
-  - id: pos-shell
+  - id: insurance-portal
     nodes:
       app:3000: 1
     type: roundrobin
@@ -389,13 +389,13 @@ global_rules:
             X-Frame-Options: "DENY"
             X-XSS-Protection: "1; mode=block"
             Referrer-Policy: "strict-origin-when-cross-origin"
-            X-Powered-By: "54Link"
+            X-Powered-By: "InsurePortal"
 
 plugin_configs:
   - id: cors-config
     plugins:
       cors:
-        allow_origins: "https://54link.io,https://app.54link.io,https://admin.54link.io,https://merchant.54link.io"
+        allow_origins: "https://insureportal.io,https://app.insureportal.io,https://admin.insureportal.io,https://merchant.insureportal.io"
         allow_methods: "GET,POST,PUT,DELETE,PATCH,OPTIONS"
         allow_headers: "Content-Type,Authorization,X-Request-ID,X-Device-ID,X-Agent-ID"
         expose_headers: "X-Request-ID,X-RateLimit-Limit,X-RateLimit-Remaining"
@@ -486,7 +486,7 @@ plugin_configs:
   # ── DLQ Admin ─────────────────────────────────────────────────────────────
   - id: dlq-admin
     uri: /api/dlq/*
-    upstream_id: pos-shell
+    upstream_id: insurance-portal
     plugins:
       limit-req:
         rate: 20

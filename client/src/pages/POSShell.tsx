@@ -1,7 +1,7 @@
 // @ts-nocheck
 // SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 /**
- * 54Link POS — Bloomberg Terminal meets Modern Fintech (Dark Professional)
+ * InsurePortal — Bloomberg Terminal meets Modern Fintech (Dark Professional)
  * Features: Fraud Detection Dashboard, Live Chat Support, Loyalty Points System
  * Design: near-black (#0a0e1a), electric blue primary, emerald for positive values
  * Font: Space Grotesk (display) + Inter (body) + JetBrains Mono (financial data)
@@ -560,7 +560,7 @@ const TILE_REGISTRY: Tile[] = [
     bgColor: "oklch(0.78 0.18 80 / 0.15)",
     category: "settings",
     size: "sm",
-    screen: "FirmwareOTA",
+    screen: "ServiceUpdate",
     hot: false,
     description: "Update terminal firmware",
     badge: 1,
@@ -1120,10 +1120,10 @@ function ReceiptModal({
           }}
         >
           <div className="text-center font-bold text-sm mb-2">
-            54LINK AGENCY BANKING
+            INSUREPORTAL AGENCY BANKING
           </div>
           <div className="text-center text-xs mb-1">
-            Powered by 54Link Platform
+            Powered by InsurePortal Platform
           </div>
           <div className="text-center mb-3">{"─".repeat(32)}</div>
           <div className="flex justify-between">
@@ -2411,7 +2411,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
   const DEFAULT_PRESET_AMOUNTS = [
     500, 1000, 2000, 5000, 10000, 20000, 50000, 100000,
   ];
-  const LS_PRESETS_KEY = "54link-qr-preset-amounts";
+  const LS_PRESETS_KEY = "insureportal-qr-preset-amounts";
   const [batchPresetAmounts, setBatchPresetAmounts] = useState<number[]>(() => {
     try {
       const saved = localStorage.getItem(LS_PRESETS_KEY);
@@ -2489,9 +2489,9 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
     if (num > 0) {
       const ref = `QR-${agentCode}-${Date.now().toString(36).toUpperCase()}`;
       const expiresAt = Date.now() + QR_TTL_MS;
-      // Format: 54LINK:{ref}:{amount}:{agentCode}:{expiresAt_unix_sec}
+      // Format: INSUREPORTAL:{ref}:{amount}:{agentCode}:{expiresAt_unix_sec}
       setQrPayload(
-        `54LINK:${ref}:${num}:${agentCode}:${Math.floor(expiresAt / 1000)}`
+        `INSUREPORTAL:${ref}:${num}:${agentCode}:${Math.floor(expiresAt / 1000)}`
       );
       setQrExpiresAt(expiresAt);
       setQrExpired(false);
@@ -2520,7 +2520,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
       const ref = `QR-${agentCode}-${Date.now().toString(36).toUpperCase()}`;
       const expiresAt = Date.now() + QR_TTL_MS;
       setQrPayload(
-        `54LINK:${ref}:${num}:${agentCode}:${Math.floor(expiresAt / 1000)}`
+        `INSUREPORTAL:${ref}:${num}:${agentCode}:${Math.floor(expiresAt / 1000)}`
       );
       setQrExpiresAt(expiresAt);
       setQrExpired(false);
@@ -2529,7 +2529,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
 
   // Load offline QR codes from IndexedDB
   useEffect(() => {
-    const IDB_NAME = "54link-qr-store";
+    const IDB_NAME = "insureportal-qr-store";
     const IDB_STORE = "offline_qr_codes";
     const req = indexedDB.open(IDB_NAME, 1);
     req.onupgradeneeded = e => {
@@ -2608,10 +2608,10 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
           if (code?.data) {
             stopCamera();
             setScanResult(code.data);
-            // If it's a 54Link QR, validate TTL and auto-process the payment
-            if (code.data.startsWith("54LINK:")) {
+            // If it's a InsurePortal QR, validate TTL and auto-process the payment
+            if (code.data.startsWith("INSUREPORTAL:")) {
               const parts = code.data.split(":");
-              // parts: ["54LINK", ref, amount, agentCode, expiresAt_sec?]
+              // parts: ["INSUREPORTAL", ref, amount, agentCode, expiresAt_sec?]
               const scannedAmount = parseFloat(parts[2] ?? "0");
               const expiresAtSec = parts[4] ? parseInt(parts[4], 10) : null;
               // Validate expiry if present
@@ -2686,7 +2686,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
       toast.error("Enter an amount first");
       return;
     }
-    const IDB_NAME = "54link-qr-store";
+    const IDB_NAME = "insureportal-qr-store";
     const IDB_STORE = "offline_qr_codes";
     const record = {
       id: qrPayload,
@@ -2830,7 +2830,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
           {scanError && (
             <div className="text-xs text-red-400 text-center">{scanError}</div>
           )}
-          {scanResult && !scanResult.startsWith("54LINK:") && (
+          {scanResult && !scanResult.startsWith("INSUREPORTAL:") && (
             <div
               className="w-full p-3 rounded-xl text-xs"
               style={{
@@ -2873,7 +2873,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
             className="text-xs text-gray-500 text-center"
             style={{ fontFamily: DISP }}
           >
-            Supports NIP QR · NIBSS QR · Masterpass · Visa QR · 54Link QR
+            Supports NIP QR · NIBSS QR · Masterpass · Visa QR · InsurePortal QR
           </div>
 
           {/* USSD Offline Fallback */}
@@ -2995,7 +2995,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
                 className="text-xs text-gray-400 text-center"
                 style={{ fontFamily: MONO }}
               >
-                54Link QR · {fmt(num)}
+                InsurePortal QR · {fmt(num)}
               </div>
               <div
                 className="text-xs text-gray-600 text-center break-all px-2"
@@ -3348,7 +3348,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
             onClick={async () => {
               if (selectedBatchAmounts.size === 0) return;
               setBatchGenerating(true);
-              const IDB_NAME = "54link-qr-store";
+              const IDB_NAME = "insureportal-qr-store";
               const IDB_STORE = "offline_qr_codes";
               const newItems: typeof batchQRList = [];
               const expiresAt = Date.now() + QR_TTL_MS;
@@ -3356,7 +3356,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
                 (a: any, b: any) => a - b
               )) {
                 const ref = `QR-${agentCode}-${Date.now().toString(36).toUpperCase()}-${amt}`;
-                const payload = `54LINK:${ref}:${amt}:${agentCode}:${Math.floor(expiresAt / 1000)}`;
+                const payload = `INSUREPORTAL:${ref}:${amt}:${agentCode}:${Math.floor(expiresAt / 1000)}`;
                 const item = {
                   id: ref,
                   amount: amt,
@@ -3473,7 +3473,7 @@ function QRPaymentScreen({ onBack }: { onBack: () => void }) {
                       const _serialNo = TERMINAL.serialNo;
                       const _printDate = new Date().toLocaleString("en-NG");
                       printWin.document.write(
-                        `<!DOCTYPE html><html><head><title>54Link Batch QR — ${_agentCode}</title><style>@page{size:A4;margin:12mm}body{font-family:'Courier New',monospace;background:#fff;color:#000}h1{font-size:13px;margin:0 0 4px;font-weight:bold}.meta{font-size:9px;color:#555;margin-bottom:10px;line-height:1.6}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.qr-cell{border:1px solid #bbb;border-radius:6px;padding:8px;text-align:center;page-break-inside:avoid}.amount{font-size:13px;font-weight:bold;margin-bottom:4px;color:#000}.label{font-size:8px;color:#666;margin-top:3px;word-break:break-all}.ttl{font-size:8px;color:#999;margin-top:2px}.agent-footer{font-size:8px;color:#aaa;margin-top:3px;border-top:1px dashed #ddd;padding-top:3px}img{display:block;margin:0 auto}.watermark{position:fixed;bottom:8mm;right:10mm;font-size:8px;color:#ccc;text-align:right}@media print{.watermark{position:fixed}}</style></head><body><h1>54Link Agent Banking — QR Payment Sheet</h1><div class="meta">Agent: <strong>${_agentName}</strong> &nbsp;|&nbsp; Code: <strong>${_agentCode}</strong> &nbsp;|&nbsp; Terminal: <strong>${_serialNo}</strong><br/>Printed: ${_printDate} &nbsp;|&nbsp; ${activeQRs.length} code(s) &nbsp;|&nbsp; Codes expire 15 min after generation</div><div class="grid">${rows}</div><div class="watermark">54Link Agent Banking<br/>${_agentCode} | ${_serialNo}<br/>Printed ${_printDate}</div></body></html>`
+                        `<!DOCTYPE html><html><head><title>InsurePortal Batch QR — ${_agentCode}</title><style>@page{size:A4;margin:12mm}body{font-family:'Courier New',monospace;background:#fff;color:#000}h1{font-size:13px;margin:0 0 4px;font-weight:bold}.meta{font-size:9px;color:#555;margin-bottom:10px;line-height:1.6}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.qr-cell{border:1px solid #bbb;border-radius:6px;padding:8px;text-align:center;page-break-inside:avoid}.amount{font-size:13px;font-weight:bold;margin-bottom:4px;color:#000}.label{font-size:8px;color:#666;margin-top:3px;word-break:break-all}.ttl{font-size:8px;color:#999;margin-top:2px}.agent-footer{font-size:8px;color:#aaa;margin-top:3px;border-top:1px dashed #ddd;padding-top:3px}img{display:block;margin:0 auto}.watermark{position:fixed;bottom:8mm;right:10mm;font-size:8px;color:#ccc;text-align:right}@media print{.watermark{position:fixed}}</style></head><body><h1>InsurePortal Agent Banking — QR Payment Sheet</h1><div class="meta">Agent: <strong>${_agentName}</strong> &nbsp;|&nbsp; Code: <strong>${_agentCode}</strong> &nbsp;|&nbsp; Terminal: <strong>${_serialNo}</strong><br/>Printed: ${_printDate} &nbsp;|&nbsp; ${activeQRs.length} code(s) &nbsp;|&nbsp; Codes expire 15 min after generation</div><div class="grid">${rows}</div><div class="watermark">InsurePortal Agent Banking<br/>${_agentCode} | ${_serialNo}<br/>Printed ${_printDate}</div></body></html>`
                       );
                       printWin.document.close();
                       printWin.focus();
@@ -7218,7 +7218,7 @@ function TerminalConfigScreen({ onBack }: { onBack: () => void }) {
             ["Agent Code", TERMINAL.agentCode],
             ["Firmware", "v4.2.1-NG"],
             ["OS", "PAXBiz 3.1"],
-            ["App Version", "54Link v14.0.0"],
+            ["App Version", "InsurePortal v14.0.0"],
           ].map(([k, v]) => (
             <div
               key={k}
@@ -7855,8 +7855,8 @@ function NetworkTestScreen({ onBack }: { onBack: () => void }) {
     </div>
   );
 }
-// 26. FirmwareOTA ───────────────────────────────────────────────────────────────
-function FirmwareOTAScreen({ onBack }: { onBack: () => void }) {
+// 26. ServiceUpdate ───────────────────────────────────────────────────────────────
+function ServiceUpdateScreen({ onBack }: { onBack: () => void }) {
   const [step, setStep] = useState<
     "idle" | "checking" | "available" | "downloading" | "installing" | "done"
   >("idle");
@@ -11218,7 +11218,7 @@ function OfflineResilienceScreen({ onBack }: { onBack: () => void }) {
                 className="text-center font-black text-base mb-1"
                 style={{ letterSpacing: "0.08em" }}
               >
-                54LINK POS
+                INSUREPORTAL POS
               </div>
               <div
                 className="text-center text-xs mb-3"
@@ -11287,7 +11287,7 @@ function OfflineResilienceScreen({ onBack }: { onBack: () => void }) {
                 className="text-center text-xs mt-2"
                 style={{ color: "#bbb" }}
               >
-                www.54link.io
+                www.insureportal.io
               </div>
             </div>
             {/* Thermal paper bottom perforation */}
@@ -11345,7 +11345,7 @@ function OfflineResilienceScreen({ onBack }: { onBack: () => void }) {
                   }
                   const now = new Date();
                   printWin.document.write(`<!DOCTYPE html>
-<html><head><title>54Link USSD Receipt</title>
+<html><head><title>InsurePortal USSD Receipt</title>
 <style>
   @page { size: 80mm auto; margin: 4mm; }
   * { box-sizing: border-box; }
@@ -11360,7 +11360,7 @@ function OfflineResilienceScreen({ onBack }: { onBack: () => void }) {
   @media print { body { width: 100%; } }
 </style></head><body>
 <div class="perf"></div>
-<div class="center bold" style="font-size:14px;margin:6px 0 2px">54LINK POS</div>
+<div class="center bold" style="font-size:14px;margin:6px 0 2px">INSUREPORTAL POS</div>
 <div class="center" style="font-size:10px;color:#555;margin-bottom:6px">OFFLINE USSD RECEIPT</div>
 <div class="divider"></div>
 <div class="row"><span>TYPE</span><span class="bold">${thermalPreviewCode.tx_type.toUpperCase()}</span></div>
@@ -11389,7 +11389,7 @@ ${thermalPreviewCode.carrier_hint ? `<div class="row"><span>CARRIER</span><span 
     qr.appendChild(img);
   })();
 <\/script>
-<div class="footer">www.54link.io</div>
+<div class="footer">www.insureportal.io</div>
 <div class="perf" style="margin-top:6px"></div>
 </body></html>`);
                   printWin.document.close();
@@ -11461,8 +11461,8 @@ ${thermalPreviewCode.carrier_hint ? `<div class="row"><span>CARRIER</span><span 
   );
 }
 
-// ─── Main POSShell Component ──────────────────────────────────────────────────
-export default function POSShell() {
+// ─── Main InsurancePortal Component ──────────────────────────────────────────────────
+export default function InsurancePortal() {
   const [activeScreen, setActiveScreen] = useState<string | null>(null);
   const [layout, setLayout] = useState<string[]>(DEFAULT_LAYOUT);
   const [editMode, setEditMode] = useState(false);
@@ -11647,7 +11647,7 @@ export default function POSShell() {
     disabledAt: string;
   } | null>(() => {
     try {
-      const stored = localStorage.getItem("pos_terminal_disabled");
+      const stored = localStorage.getItem("insurance_service_disabled");
       return stored ? JSON.parse(stored) : null;
     } catch {
       return null;
@@ -11902,7 +11902,7 @@ export default function POSShell() {
       TerminalConfig: <TerminalConfigScreen {...props} />,
       PrinterTest: <PrinterTestScreen {...props} />,
       NetworkTest: <NetworkTestScreen {...props} />,
-      FirmwareOTA: <FirmwareOTAScreen {...props} />,
+      ServiceUpdate: <ServiceUpdateScreen {...props} />,
       NanoLoan: <NanoLoanScreen {...props} />,
       EODReconcile: <ReconciliationWizard {...props} />,
       MicroInsurance: <MicroInsuranceScreen {...props} />,
@@ -11914,7 +11914,7 @@ export default function POSShell() {
     const screen = screenMap[activeScreen];
     if (!screen) {
       // All screens are implemented — this branch only fires if a tile ID is misconfigured
-      console.warn(`[POSShell] No screen mapped for: ${activeScreen}`);
+      console.warn(`[InsurancePortal] No screen mapped for: ${activeScreen}`);
       setActiveScreen(null);
       return null;
     }
@@ -12199,7 +12199,7 @@ export default function POSShell() {
             className="text-xs font-bold"
             style={{ color: BLUE, fontFamily: DISP }}
           >
-            54Link
+            InsurePortal
           </span>
           <span className="text-xs text-gray-500" style={{ fontFamily: MONO }}>
             ·
@@ -13070,7 +13070,7 @@ export function ReceiptPrinterModal({
           style={{ background: "#1a1a1a", border: `1px solid ${BORDER}` }}
         >
           <div className="text-center text-white font-bold mb-2">
-            54LINK AGENCY BANKING
+            INSUREPORTAL AGENCY BANKING
           </div>
           <div className="text-center text-gray-500 mb-3">
             ━━━━━━━━━━━━━━━━━━━━
@@ -13105,7 +13105,7 @@ export function ReceiptPrinterModal({
           {/* Real QR code for transaction verification */}
           <div className="flex justify-center my-2">
             <QRCodeCanvas
-              value={`54LINK:${tx.ref}:${tx.amount}`}
+              value={`INSUREPORTAL:${tx.ref}:${tx.amount}`}
               size={64}
               bgColor="#1a1a2e"
               fgColor="#ffffff"
@@ -13116,7 +13116,7 @@ export function ReceiptPrinterModal({
             Scan to verify transaction
           </div>
           <div className="text-center text-gray-500 mt-3">
-            Thank you for using 54Link
+            Thank you for using InsurePortal
           </div>
         </div>
 
@@ -13729,7 +13729,7 @@ export function USSDSimulator({ onClose }: { onClose: () => void }) {
   > = {
     main: {
       title:
-        "Welcome to 54Link\nEnter *347# to start\n\n1. Cash In\n2. Cash Out\n3. Transfer\n4. Check Balance\n5. Airtime\n0. Exit",
+        "Welcome to InsurePortal\nEnter *347# to start\n\n1. Cash In\n2. Cash Out\n3. Transfer\n4. Check Balance\n5. Airtime\n0. Exit",
       options: [
         { key: "1", label: "Cash In", next: "cashin" },
         { key: "2", label: "Cash Out", next: "cashout" },
@@ -13748,7 +13748,7 @@ export function USSDSimulator({ onClose }: { onClose: () => void }) {
     },
     transfer: {
       title:
-        "TRANSFER\n\n1. Bank Transfer\n2. Mobile Money\n3. 54Link Wallet\n\n0. Back",
+        "TRANSFER\n\n1. Bank Transfer\n2. Mobile Money\n3. InsurePortal Wallet\n\n0. Back",
       options: [
         { key: "1", label: "Bank Transfer", next: "bank_transfer" },
         { key: "0", label: "Back", next: "main" },
@@ -14457,7 +14457,7 @@ export function MicroInsuranceScreen({ onBack }: { onBack: () => void }) {
       premium: 300,
       cover: 150000,
       period: "Monthly",
-      desc: "Cover for POS terminal & mobile devices",
+      desc: "Cover for insurance service & mobile devices",
     },
     {
       name: "Travel Accident",
@@ -14869,7 +14869,7 @@ export function ArchitecturePanel({ onClose }: { onClose: () => void }) {
               className="text-base font-bold text-white"
               style={{ fontFamily: DISP }}
             >
-              54Link Platform Architecture
+              InsurePortal Platform Architecture
             </div>
             <div className="text-xs text-gray-500">v14 · Production Ready</div>
           </div>

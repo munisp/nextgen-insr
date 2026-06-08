@@ -142,7 +142,7 @@ const guideSections: GuideSection[] = [
     ],
   },
   {
-    id: "pos-terminal",
+    id: "insurance-service",
     title: "Policy & Claims Operations",
     icon: Smartphone,
     description: "Manage policies, claims, and premium collections",

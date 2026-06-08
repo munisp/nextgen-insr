@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Security Audit Fixes — 54Link Agency Banking Platform
+ * Security Audit Fixes — InsurePortal Agency Banking Platform
  * Sprint 62: Comprehensive security hardening based on deep audit
  *
  * Fixes:

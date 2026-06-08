@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Scheduled Load Test Worker — 54Link Agency Banking Platform
+ * Scheduled Load Test Worker — InsurePortal Agency Banking Platform
  *
  * Runs recurring load tests (nightly regression) based on cron schedule.
  * Integrates with:

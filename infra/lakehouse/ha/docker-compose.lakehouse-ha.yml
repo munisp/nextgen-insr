@@ -1,6 +1,6 @@
 ###############################################################################
 # Lakehouse HA — MinIO distributed (4 nodes) + Spark cluster + Iceberg REST
-# Production-tuned for POS-54Link: analytics, ETL, data warehouse
+# Production-tuned for POS-InsurePortal: analytics, ETL, data warehouse
 ###############################################################################
 version: "3.9"
 

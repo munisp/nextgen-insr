@@ -134,7 +134,7 @@ describe("VAPID Push Notification Service", () => {
     });
 
     it("VAPID subject is a valid mailto URI", () => {
-      const subject = "mailto:ops@54link.ng";
+      const subject = "mailto:ops@insureportal.ng";
       expect(subject).toMatch(/^mailto:.+@.+\..+$/);
     });
   });

@@ -26,11 +26,11 @@ const LOCALES = [
 const MENU_ITEMS = [
   {
     key: "welcome",
-    en: "Welcome to 54Link POS",
-    fr: "Bienvenue chez 54Link POS",
-    sw: "Karibu 54Link POS",
-    ha: "Barka da zuwa 54Link POS",
-    yo: "Kaabo si 54Link POS",
+    en: "Welcome to InsurePortal",
+    fr: "Bienvenue chez InsurePortal",
+    sw: "Karibu InsurePortal",
+    ha: "Barka da zuwa InsurePortal",
+    yo: "Kaabo si InsurePortal",
   },
   {
     key: "cash_in",

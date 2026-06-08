@@ -155,7 +155,7 @@ export default function ManagementPortal() {
       {/* Sidebar */}
       <aside className="w-56 flex-shrink-0 bg-card border-r border-border flex flex-col">
         <div className="p-4 border-b border-border">
-          <h1 className="text-sm font-bold text-primary">54Link Management</h1>
+          <h1 className="text-sm font-bold text-primary">InsurePortal Management</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Back-office Portal
           </p>
@@ -271,7 +271,7 @@ export default function ManagementPortal() {
                       icon: <AlertTriangle size={20} />,
                     },
                     {
-                      label: "POS Terminals",
+                      label: "Insurance Services",
                       value: stats.terminals ?? 0,
                       icon: <Database size={20} />,
                     },

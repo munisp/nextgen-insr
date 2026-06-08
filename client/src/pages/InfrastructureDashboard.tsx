@@ -761,7 +761,7 @@ function VaultTab() {
               {paths.data?.paths.map(p => (
                 <TableRow key={p.path}>
                   <TableCell className="font-mono text-xs">
-                    {p.path.replace("secret/data/54link/", "")}
+                    {p.path.replace("secret/data/insureportal/", "")}
                   </TableCell>
                   <TableCell className="text-sm">{p.description}</TableCell>
                   <TableCell>

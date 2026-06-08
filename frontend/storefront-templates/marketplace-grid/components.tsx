@@ -1,5 +1,5 @@
 /**
- * Marketplace Grid Storefront Template Components
+ * Marketplace Grid InsurancePortal Template Components
  * Compact grid layout for large catalogs with sidebar filters.
  */
 import React from "react";

@@ -35,7 +35,7 @@ describe("Sprint 75: USSD Integration Router", () => {
   describe("USSD Menu Tree", () => {
     const MENU_TREE = {
       id: "root",
-      title: "54Link POS",
+      title: "InsurePortal",
       shortcode: "*384#",
       children: [
         {
@@ -622,12 +622,12 @@ describe("Sprint 75: Integration", () => {
     expect(langs.has("Rust")).toBe(true);
   });
 
-  it("should have 2 new POSShell screens", () => {
+  it("should have 2 new InsurancePortal screens", () => {
     const screens = ["UssdTransaction", "CarrierSwitch"];
     expect(screens).toHaveLength(2);
   });
 
-  it("should have 2 new POSShell tiles", () => {
+  it("should have 2 new InsurancePortal tiles", () => {
     const tiles = [
       { id: "ussd-tx", screen: "UssdTransaction" },
       { id: "carrier-switch", screen: "CarrierSwitch" },

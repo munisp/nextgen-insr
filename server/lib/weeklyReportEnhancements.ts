@@ -55,7 +55,7 @@ export interface EmailDistributionConfig {
 
 let emailConfig: EmailDistributionConfig = {
   recipients: [
-    { email: "admin@54link.io", name: "Platform Admin", role: "admin" },
+    { email: "admin@insureportal.io", name: "Platform Admin", role: "admin" },
   ],
   enabled: true,
   includeFullReport: true,
@@ -374,13 +374,13 @@ export function buildWeeklyReportEmail(
 <body style="margin:0;padding:0;background:${BRAND_BG};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:640px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
     <div style="background:${BRAND_COLOR};padding:20px 24px;">
-      <h1 style="color:#fff;margin:0;font-size:20px;">54Link POS — Weekly Health Report</h1>
+      <h1 style="color:#fff;margin:0;font-size:20px;">InsurePortal — Weekly Health Report</h1>
       <p style="color:rgba(255,255,255,0.8);margin:4px 0 0;font-size:13px;">${m.period.start} → ${m.period.end}</p>
     </div>
     <div style="padding:24px;">${body}</div>
     <div style="padding:16px 24px;background:#f1f5f9;border-top:1px solid #e2e8f0;">
-      <p style="margin:0;color:#94a3b8;font-size:11px;">This is an automated weekly report from 54Link POS. Do not reply to this email.</p>
-      <p style="margin:4px 0 0;color:#94a3b8;font-size:11px;">&copy; ${new Date().getFullYear()} 54Link Financial Technologies</p>
+      <p style="margin:0;color:#94a3b8;font-size:11px;">This is an automated weekly report from InsurePortal. Do not reply to this email.</p>
+      <p style="margin:4px 0 0;color:#94a3b8;font-size:11px;">&copy; ${new Date().getFullYear()} InsurePortal Financial Technologies</p>
     </div>
   </div>
 </body>
@@ -603,7 +603,7 @@ export function generateReportPdfHtml(
 </head>
 <body>
   <div class="header">
-    <h1>54Link POS — Weekly Health Report</h1>
+    <h1>InsurePortal — Weekly Health Report</h1>
     <p>${m.period.start} → ${m.period.end} | Generated: ${new Date(report.generatedAt).toLocaleString("en-NG")}</p>
   </div>
 
@@ -618,7 +618,7 @@ export function generateReportPdfHtml(
   ${recsHtml}
 
   <div class="footer">
-    <p>&copy; ${new Date().getFullYear()} 54Link Financial Technologies | Confidential</p>
+    <p>&copy; ${new Date().getFullYear()} InsurePortal Financial Technologies | Confidential</p>
     <p>Report ID: ${report.id}</p>
   </div>
 </body>

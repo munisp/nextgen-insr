@@ -9,7 +9,7 @@ test.describe("Settlement & Reporting E2E", () => {
     page,
   }) => {
     await page.goto("/");
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal")).toBeVisible({
       timeout: 10_000,
     });
     // Login via SSO

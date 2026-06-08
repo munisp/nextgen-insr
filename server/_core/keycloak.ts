@@ -1,5 +1,5 @@
 /**
- * keycloak.ts — Keycloak OIDC integration for 54Link POS Shell
+ * keycloak.ts — Keycloak OIDC integration for InsurePortal Shell
  *
  * Responsibilities:
  *  1. Discover Keycloak OIDC configuration (JWKS, endpoints)
@@ -10,9 +10,9 @@
  *  6. Build end-session (logout) URL
  *
  * Environment variables required:
- *  - KEYCLOAK_URL          e.g. https://auth.54link.io
- *  - KEYCLOAK_REALM        e.g. 54link
- *  - KEYCLOAK_CLIENT_ID    e.g. pos-shell
+ *  - KEYCLOAK_URL          e.g. https://auth.insureportal.io
+ *  - KEYCLOAK_REALM        e.g. insureportal
+ *  - KEYCLOAK_CLIENT_ID    e.g. insurance-portal
  *  - KEYCLOAK_CLIENT_SECRET (confidential client secret)
  *
  * The platform uses a confidential OIDC client with PKCE disabled.
@@ -36,11 +36,11 @@ function getConfig(): KeycloakConfig {
   // Default: local Keycloak Docker container (docker-compose.production.yml)
   // Override KEYCLOAK_URL in .env.production for remote deployments
   const url = process.env.KEYCLOAK_URL ?? "http://localhost:8080";
-  const realm = process.env.KEYCLOAK_REALM ?? "54link";
-  const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "pos-shell";
+  const realm = process.env.KEYCLOAK_REALM ?? "insureportal";
+  const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "insurance-portal";
   const clientSecret =
     process.env.KEYCLOAK_CLIENT_SECRET ??
-    "pos-shell-secret-change-in-production";
+    "insurance-portal-secret-change-in-production";
 
   return { url, realm, clientId, clientSecret };
 }
@@ -259,8 +259,8 @@ export function mapKeycloakRoleToPlatformRole(
   payload: KeycloakTokenPayload
 ): "admin" | "supervisor" | "user" {
   const roles = getRealmRoles(payload);
-  if (roles.includes("54link-admin") || roles.includes("admin")) return "admin";
-  if (roles.includes("54link-supervisor") || roles.includes("supervisor"))
+  if (roles.includes("insureportal-admin") || roles.includes("admin")) return "admin";
+  if (roles.includes("insureportal-supervisor") || roles.includes("supervisor"))
     return "supervisor";
   return "user";
 }

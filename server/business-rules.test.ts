@@ -1,5 +1,5 @@
 /**
- * Business Rules Validation — 54Link Agency Banking Platform
+ * Business Rules Validation — InsurePortal Agency Banking Platform
  *
  * Validates core business logic, domain constraints, and workflow rules
  * that must hold true for a production-ready agency banking system.

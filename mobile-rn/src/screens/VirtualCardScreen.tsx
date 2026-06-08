@@ -25,7 +25,7 @@ const VirtualCardScreen: React.FC = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [isFrozen, setIsFrozen] = useState(false);
 
-  const API_BASE_URL = 'https://api.54link.io/v1';
+  const API_BASE_URL = 'https://api.insureportal.io/v1';
 
   useEffect(() => {
     fetchCardDetails();
@@ -115,7 +115,7 @@ const VirtualCardScreen: React.FC = () => {
         {/* Virtual Card Visual */}
         <View style={[styles.cardContainer, isFrozen && styles.cardFrozen]}>
           <View style={styles.cardHeader}>
-            <Text style={styles.brandName}>54Link</Text>
+            <Text style={styles.brandName}>InsurePortal</Text>
             <Text style={styles.cardType}>{cardData?.type}</Text>
           </View>
           

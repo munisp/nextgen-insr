@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link Redis Client
+ * InsurePortal Redis Client
  * Provides connection-pooled ioredis client with typed cache helpers.
  *
  * Cache namespaces:

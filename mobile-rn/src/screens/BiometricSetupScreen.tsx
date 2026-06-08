@@ -20,7 +20,7 @@ const apiClient = new APIClient();
  * BiometricSetupScreen
  * 
  * This screen allows users to enable or disable biometric authentication 
- * (Fingerprint and Face ID) for the 54Link Agency Banking app.
+ * (Fingerprint and Face ID) for the InsurePortal Agency Banking app.
  * 
  * Brand Colors:
  * - Primary: #6C63FF (Purple)
@@ -36,7 +36,7 @@ export const BiometricSetupScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const BASE_URL = 'https://api.54link.io/v1';
+  const BASE_URL = 'https://api.insureportal.io/v1';
 
   useEffect(() => {
     fetchBiometricSettings();
@@ -171,7 +171,7 @@ export const BiometricSetupScreen = () => {
         <View style={styles.infoBox}>
           <Text style={styles.infoTitle}>Why use biometrics?</Text>
           <Text style={styles.infoText}>
-            Biometric authentication adds an extra layer of security by ensuring only you can access your 54Link account. It's faster than typing a PIN and highly secure.
+            Biometric authentication adds an extra layer of security by ensuring only you can access your InsurePortal account. It's faster than typing a PIN and highly secure.
           </Text>
         </View>
 

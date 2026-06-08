@@ -91,6 +91,10 @@ func initDB() {
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fraud_alerts (id TEXT PRIMARY KEY, policy_id TEXT, customer_id TEXT, alert_type TEXT, risk_score REAL, status TEXT DEFAULT 'open', analyst_notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table fraud_alerts failed","error":"%s"}`, err)
+	}
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
 	if err := db.Ping(); err != nil {
@@ -169,6 +173,15 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	var count int
+	if db != nil {
+		db.QueryRow(`SELECT COUNT(*) FROM fraud_alerts`).Scan(&count)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"table": "fraud_alerts", "count": count})
+}
+
 func main() {
 	initDB()
 	r := chi.NewRouter()
@@ -177,6 +190,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "fraud-detection-go"})
 	})
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
+	r.Get("/stats", handleStats)
 	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Post("/api/v1/score", scoreTransaction)
 	r.Get("/api/v1/rules", getRules)

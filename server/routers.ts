@@ -180,7 +180,7 @@ import { agentTerritoryMgmtRouter } from "./routers/agentTerritoryMgmt";
 import { dynamicPricingEngineRouter } from "./routers/dynamicPricingEngine";
 import { customerLoyaltyProgramRouter } from "./routers/customerLoyaltyProgram";
 import { fraudCaseManagementRouter } from "./routers/fraudCaseManagement";
-import { posTerminalFleetRouter } from "./routers/posTerminalFleet";
+import { insuranceServiceFleetRouter } from "./routers/insuranceServiceFleet";
 import { financialReconciliationDashRouter } from "./routers/financialReconciliationDash";
 import { apiAnalyticsDashRouter } from "./routers/apiAnalyticsDash";
 import { agentCommunicationHubRouter } from "./routers/agentCommunicationHub";
@@ -319,7 +319,7 @@ import { agentPerformanceLeaderboardRouter } from "./routers/agentPerformanceLea
 import { automatedSettlementSchedulerRouter } from "./routers/automatedSettlementScheduler";
 import { customerWalletSystemRouter } from "./routers/customerWalletSystem";
 import { merchantAnalyticsDashRouter } from "./routers/merchantAnalyticsDash";
-import { posFirmwareOTARouter } from "./routers/posFirmwareOTA";
+import { posServiceUpdateRouter } from "./routers/posServiceUpdate";
 import { transactionReceiptGeneratorRouter } from "./routers/transactionReceiptGenerator";
 import { agentLoanAdvanceRouter } from "./routers/agentLoanAdvance";
 import { multiChannelPaymentOrchRouter } from "./routers/multiChannelPaymentOrch";
@@ -482,9 +482,9 @@ import { transactionMonitoringRouter } from "./routers/transactionMonitoring";
 import { transactionReversalWorkflowRouter } from "./routers/transactionReversalWorkflow";
 import { ussdLocalizationRouter } from "./routers/ussdLocalization";
 import { geoFenceDedicatedRouter } from "./routers/geoFenceDedicated";
-import { ecommerceCatalogRouter } from "./routers/ecommerceCatalog";
-import { ecommerceCartRouter } from "./routers/ecommerceCart";
-import { ecommerceOrdersRouter } from "./routers/ecommerceOrders";
+import { insuranceCatalogRouter } from "./routers/insuranceCatalog";
+import { insuranceCartRouter } from "./routers/insuranceCart";
+import { policyOrdersRouter } from "./routers/policyOrders";
 import { supplyChainRouter } from "./routers/supplyChain";
 import { marketplaceRouter } from "./routers/marketplace";
 import { promotionsRouter } from "./routers/promotions";
@@ -539,7 +539,7 @@ export const appRouter = router({
   tenantFeeOverrides: tenantFeeOverridesRouter,
   trainingCourses: trainingCoursesRouter,
   trainingEnrollments: trainingEnrollmentsRouter,
-  // 54Link POS feature routers
+  // InsurePortal feature routers
   agent: agentRouter,
   transactions: transactionsRouter,
   fraud: fraudRouter,
@@ -789,7 +789,7 @@ export const appRouter = router({
   dynamicPricingEngine: dynamicPricingEngineRouter,
   customerLoyaltyProgram: customerLoyaltyProgramRouter,
   fraudCaseManagement: fraudCaseManagementRouter,
-  posTerminalFleet: posTerminalFleetRouter,
+  insuranceServiceFleet: insuranceServiceFleetRouter,
   financialReconciliationDash: financialReconciliationDashRouter,
   apiAnalyticsDash: apiAnalyticsDashRouter,
   agentCommunicationHub: agentCommunicationHubRouter,
@@ -848,7 +848,7 @@ export const appRouter = router({
   automatedSettlementScheduler: automatedSettlementSchedulerRouter,
   customerWalletSystem: customerWalletSystemRouter,
   merchantAnalyticsDash: merchantAnalyticsDashRouter,
-  posFirmwareOTA: posFirmwareOTARouter,
+  posServiceUpdate: posServiceUpdateRouter,
   transactionReceiptGenerator: transactionReceiptGeneratorRouter,
   agentLoanAdvance: agentLoanAdvanceRouter,
   multiChannelPaymentOrch: multiChannelPaymentOrchRouter,
@@ -1077,9 +1077,9 @@ export const appRouter = router({
   amlScreening: amlScreeningRouter,
   receiptTemplates: receiptTemplatesRouter,
   // E-commerce & Supply Chain
-  ecommerceCatalog: ecommerceCatalogRouter,
-  ecommerceCart: ecommerceCartRouter,
-  ecommerceOrders: ecommerceOrdersRouter,
+  insuranceCatalog: insuranceCatalogRouter,
+  insuranceCart: insuranceCartRouter,
+  policyOrders: policyOrdersRouter,
   supplyChain: supplyChainRouter,
   marketplace: marketplaceRouter,
   promotions: promotionsRouter,

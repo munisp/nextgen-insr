@@ -1,5 +1,5 @@
 /**
- * WiseCorridorScreen
+ * WiseInsuranceRegionScreen
  * Journey: Float Top-up
  * ID: journey_12
  */
@@ -17,12 +17,12 @@ import { APIClient } from '../../api/APIClient';
 const apiClient = new APIClient();
 
 
-interface WiseCorridorScreenProps {
+interface WiseInsuranceRegionScreenProps {
   navigation: any;
   route: any;
 }
 
-export const WiseCorridorScreen: React.FC<WiseCorridorScreenProps> = ({ navigation, route }) => {
+export const WiseInsuranceRegionScreen: React.FC<WiseInsuranceRegionScreenProps> = ({ navigation, route }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleContinue = async () => {
@@ -37,7 +37,7 @@ export const WiseCorridorScreen: React.FC<WiseCorridorScreenProps> = ({ navigati
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Wise Corridor</Text>
+      <Text style={styles.title}>Wise InsuranceRegion</Text>
       <Text style={styles.subtitle}>Float Top-up</Text>
 
       <TouchableOpacity

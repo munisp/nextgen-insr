@@ -1,5 +1,5 @@
 ##
-## 54Link POS Shell — Prometheus Alerting Rules
+## InsurePortal Shell — Prometheus Alerting Rules
 ## Production-grade alerts for billing engine health
 ##
 
@@ -16,7 +16,7 @@ groups:
         annotations:
           summary: "Billing API is down"
           description: "The billing tRPC backend has been unreachable for more than 2 minutes."
-          runbook_url: "https://wiki.54link.com/runbooks/billing-api-down"
+          runbook_url: "https://wiki.insureportal.com/runbooks/billing-api-down"
 
       - alert: BillingHighErrorRate
         expr: |

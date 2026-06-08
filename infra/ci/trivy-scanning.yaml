@@ -1,5 +1,5 @@
 ##
-## 54Link POS Shell — Trivy Container Image Scanning
+## InsurePortal Shell — Trivy Container Image Scanning
 ## GitHub Actions CI pipeline for vulnerability scanning
 ##
 
@@ -16,7 +16,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: 54link
+  IMAGE_PREFIX: insureportal
 
 jobs:
   # ─── Scan TypeScript Backend ────────────────────────────────────────────────

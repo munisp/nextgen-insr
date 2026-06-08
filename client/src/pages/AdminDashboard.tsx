@@ -1,5 +1,5 @@
 /**
- * Admin Dashboard — 54Link POS Shell (Sprint 89)
+ * Admin Dashboard — InsurePortal Shell (Sprint 89)
  *
  * Role-gated admin dashboard with system stats, user management,
  * billing ledger summary, and system health monitoring.

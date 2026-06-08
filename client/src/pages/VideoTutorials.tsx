@@ -81,7 +81,7 @@ const tutorials: Tutorial[] = [
       "Sufficient float balance",
     ],
     relatedPages: [
-      { label: "POS Terminal", path: "/" },
+      { label: "Insurance Service", path: "/" },
       { label: "User Guide: Transactions", path: "/user-guide" },
     ],
     chapters: [
@@ -93,7 +93,7 @@ const tutorials: Tutorial[] = [
         content:
           "Cash-in (deposits) and cash-out (withdrawals) are the most common POS operations. Cash-in adds money to a customer's account while cash-out allows them to withdraw. Both operations require proper customer identification and affect your float balance.",
         steps: [
-          "Navigate to the POS Terminal from the Hub",
+          "Navigate to the Insurance Service from the Hub",
           "Select either 'Cash In' or 'Cash Out' from the transaction menu",
           "The system will check your current float balance before proceeding",
         ],
@@ -109,7 +109,7 @@ const tutorials: Tutorial[] = [
         content:
           "A cash-in transaction involves collecting physical cash from the customer and crediting their account. The amount is deducted from your float balance and the customer receives a deposit confirmation.",
         steps: [
-          "Select 'Cash In' from the POS Terminal menu",
+          "Select 'Cash In' from the Insurance Service menu",
           "Enter the customer's account number or phone number",
           "Enter the deposit amount (minimum ₦100, maximum ₦500,000)",
           "Verify the customer name displayed on screen matches the person",
@@ -130,7 +130,7 @@ const tutorials: Tutorial[] = [
         content:
           "A cash-out transaction involves debiting the customer's account and dispensing physical cash. This increases your float balance. Ensure you have sufficient physical cash before starting.",
         steps: [
-          "Select 'Cash Out' from the POS Terminal menu",
+          "Select 'Cash Out' from the Insurance Service menu",
           "Enter the customer's account number or phone number",
           "Enter the withdrawal amount",
           "The customer authorizes the transaction via their bank's approval",
@@ -151,7 +151,7 @@ const tutorials: Tutorial[] = [
         content:
           "Your float balance determines how many cash-in transactions you can process. Cash-in reduces float, cash-out increases it. Monitor your float regularly and request top-ups when running low.",
         steps: [
-          "Check your current float in the POS Terminal header bar",
+          "Check your current float in the Insurance Service header bar",
           "Navigate to Admin Panel > Float Requests to request a top-up",
           "Enter the desired top-up amount and submit",
           "Wait for supervisor approval (you'll receive a notification)",
@@ -205,7 +205,7 @@ const tutorials: Tutorial[] = [
         timestamp: "00:00",
         duration: "3 min",
         content:
-          "The 54Link fraud detection system uses AI and rule-based engines to monitor transactions in real-time. It assigns fraud scores (0-100) and categorizes alerts by severity: Critical (80+), High (60-79), Medium (40-59), and Low (0-39).",
+          "The InsurePortal fraud detection system uses AI and rule-based engines to monitor transactions in real-time. It assigns fraud scores (0-100) and categorizes alerts by severity: Critical (80+), High (60-79), Medium (40-59), and Low (0-39).",
         steps: [
           "Navigate to Admin Panel > Fraud tab or the dedicated Fraud Dashboard",
           "Review the overview panel showing active alerts by severity",
@@ -428,7 +428,7 @@ const tutorials: Tutorial[] = [
         content:
           "Float is the working capital that enables agents to process transactions. Cash-in transactions reduce your float (you give the customer credit and collect cash), while cash-out transactions increase it (customer's account is debited and you dispense cash).",
         steps: [
-          "View your current float balance in the POS Terminal header",
+          "View your current float balance in the Insurance Service header",
           "Monitor float changes in real-time as you process transactions",
           "Set up low-float alerts in Settings > Notifications",
           "Understand the float formula: Starting Float + Cash-Outs - Cash-Ins = Current Float",

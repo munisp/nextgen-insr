@@ -83,6 +83,10 @@ func initDB() {
 	}
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS translations (id TEXT PRIMARY KEY, locale TEXT NOT NULL, key TEXT NOT NULL, value TEXT, namespace TEXT DEFAULT 'common', created_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(locale, key, namespace))`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table translations failed","error":"%s"}`, err)
+	}
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
 	if err := db.Ping(); err != nil {
