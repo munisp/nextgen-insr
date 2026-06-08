@@ -116,9 +116,11 @@ func handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	if req.Depth == 0 { req.Depth = 2 }
 	ring := analyzeNetwork(req.EntityID, req.EntityType, req.Depth)
 	if db != nil {
-		_, _ = db.Exec(`INSERT INTO fraud_rings (id, node_count, edge_count, risk_score, pattern)
+		if _, err := db.Exec(`INSERT INTO fraud_rings (id, node_count, edge_count, risk_score, pattern)
 			VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO UPDATE SET risk_score=$4, pattern=$5`,
-			ring.ID, len(ring.Nodes), len(ring.Edges), ring.RiskScore, ring.Pattern)
+			ring.ID, len(ring.Nodes), len(ring.Edges), ring.RiskScore, ring.Pattern); err != nil {
+			log.Printf(`{"level":"warn","msg":"insert fraud ring failed","error":"%s"}`, err)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ring)
