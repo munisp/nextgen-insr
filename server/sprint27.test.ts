@@ -192,7 +192,7 @@ describe("Sprint 27: OpenAPI Specification", () => {
 describe("Sprint 27: Grafana Dashboards", () => {
   it("should have 4 Grafana dashboards", () => {
     const dashDir = path.join(ROOT, "infra/grafana/dashboards");
-    expect(fs.existsSync(path.join(dashDir, "pos-operations.json"))).toBe(true);
+    expect(fs.existsSync(path.join(dashDir, "field-operations.json"))).toBe(true);
     expect(fs.existsSync(path.join(dashDir, "fraud-detection.json"))).toBe(
       true
     );

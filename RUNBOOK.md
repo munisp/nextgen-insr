@@ -1,6 +1,6 @@
-# 54Link Agency Banking Platform — Production Runbook
+# InsurePortal Agency Banking Platform — Production Runbook
 
-**Version:** Phase 161 | **Last Updated:** April 2026 | **Owner:** 54Link SRE Team
+**Version:** Phase 161 | **Last Updated:** April 2026 | **Owner:** InsurePortal SRE Team
 
 ---
 
@@ -56,8 +56,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/54link/pos-shell-demo.git
-cd pos-shell-demo
+git clone https://github.com/insureportal/agent-dashboard-demo.git
+cd agent-dashboard-demo
 
 # Run the full bootstrap (creates network, volumes, starts all services)
 bash scripts/bootstrap-production.sh
@@ -65,7 +65,7 @@ bash scripts/bootstrap-production.sh
 
 The bootstrap script performs the following steps in order:
 
-1. Creates the `54link-net` Docker network
+1. Creates the `insureportal-net` Docker network
 2. Initialises TigerBeetle 3-node cluster data files
 3. Starts infrastructure services (Postgres, Redis, Kafka, MinIO, Vault, Keycloak)
 4. Waits for all health checks to pass
@@ -80,7 +80,7 @@ The bootstrap script performs the following steps in order:
 
 ```bash
 # 1. Create Docker network
-docker network create 54link-net
+docker network create insureportal-net
 
 # 2. Initialise TigerBeetle cluster
 bash infra/tigerbeetle/init-cluster.sh
@@ -90,7 +90,7 @@ docker compose -f docker-compose.production.yml up -d \
   postgres redis kafka minio vault keycloak
 
 # 4. Wait for Postgres
-until docker exec pos-postgres pg_isready -U 54link; do sleep 2; done
+until docker exec pos-postgres pg_isready -U insureportal; do sleep 2; done
 
 # 5. Run migrations
 pnpm db:push
@@ -128,7 +128,7 @@ make -f Makefile.production health-check
 docker compose -f docker-compose.production.yml logs --tail=100
 
 # Specific service
-docker compose -f docker-compose.production.yml logs -f pos-shell
+docker compose -f docker-compose.production.yml logs -f agent-dashboard
 
 # Error logs only
 docker compose -f docker-compose.production.yml logs --tail=200 | grep -i "error\|fatal\|panic"
@@ -151,7 +151,7 @@ docker compose -f docker-compose.production.yml up -d --force-recreate <service-
 docker compose -f docker-compose.production.yml pull
 
 # Rolling restart (zero downtime for stateless services)
-docker compose -f docker-compose.production.yml up -d --no-deps --build pos-shell
+docker compose -f docker-compose.production.yml up -d --no-deps --build agent-dashboard
 
 # Run migrations if schema changed
 pnpm db:push
@@ -170,7 +170,7 @@ pnpm db:push
 curl -sf http://localhost:3000/api/health | jq .
 
 # 2. Check database connectivity
-docker exec pos-postgres pg_isready -U 54link
+docker exec pos-postgres pg_isready -U insureportal
 
 # 3. Check TigerBeetle cluster
 for i in 0 1 2; do
@@ -181,10 +181,10 @@ done
 # 4. Check Kafka consumer lag
 docker exec pos-kafka kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 \
-  --describe --group pos-shell-consumers
+  --describe --group agent-dashboard-consumers
 
 # 5. Check recent error logs
-docker compose -f docker-compose.production.yml logs --tail=50 pos-shell | grep -i error
+docker compose -f docker-compose.production.yml logs --tail=50 agent-dashboard | grep -i error
 ```
 
 **Resolution:**
@@ -236,7 +236,7 @@ curl -X POST http://localhost:8095/api/v1/reports/generate \
   -d '{"reportType": "monthly_activity", "month": "2026-03"}'
 
 # Verify report was created
-mc ls myminio/54link-reports/54LINK001/monthly_activity/2026/03/
+mc ls myminio/insureportal-reports/54LINK001/monthly_activity/2026/03/
 ```
 
 ### P1: Temporal Worker Down
@@ -284,7 +284,7 @@ docker compose -f docker-compose.production.yml logs --tail=100 fraud-engine | g
 
 ```bash
 # Scale POS Shell to 3 replicas
-docker compose -f docker-compose.production.yml up -d --scale pos-shell=3
+docker compose -f docker-compose.production.yml up -d --scale agent-dashboard=3
 
 # Scale MDM compliance engine
 docker compose -f docker-compose.production.yml up -d --scale mdm-compliance-engine=3
@@ -311,15 +311,15 @@ docker exec pos-kafka kafka-topics.sh \
 
 ```bash
 # Daily backup
-docker exec pos-postgres pg_dump -U 54link 54link | \
-  gzip > /backups/postgres/54link_$(date +%Y%m%d_%H%M%S).sql.gz
+docker exec pos-postgres pg_dump -U insureportal insureportal | \
+  gzip > /backups/postgres/insureportal_$(date +%Y%m%d_%H%M%S).sql.gz
 
 # Upload to MinIO
-mc cp /backups/postgres/*.sql.gz myminio/54link-lakehouse/backups/postgres/
+mc cp /backups/postgres/*.sql.gz myminio/insureportal-lakehouse/backups/postgres/
 
 # Restore from backup
-gunzip -c /backups/postgres/54link_20260401_000000.sql.gz | \
-  docker exec -i pos-postgres psql -U 54link 54link
+gunzip -c /backups/postgres/insureportal_20260401_000000.sql.gz | \
+  docker exec -i pos-postgres psql -U insureportal insureportal
 ```
 
 ### 6.2 TigerBeetle Backup
@@ -353,13 +353,13 @@ docker compose -f docker-compose.production.yml start tigerbeetle-0 tigerbeetle-
 NEW_SECRET=$(openssl rand -base64 64)
 
 # 2. Update in Vault
-docker exec pos-vault vault kv put secret/54link/jwt JWT_SECRET="$NEW_SECRET"
+docker exec pos-vault vault kv put secret/insureportal/jwt JWT_SECRET="$NEW_SECRET"
 
 # 3. Update .env.production
 sed -i "s/JWT_SECRET=.*/JWT_SECRET=$NEW_SECRET/" .env.production
 
 # 4. Rolling restart (existing sessions will be invalidated)
-docker compose -f docker-compose.production.yml up -d --force-recreate pos-shell
+docker compose -f docker-compose.production.yml up -d --force-recreate agent-dashboard
 echo "JWT secret rotated. All active sessions have been invalidated."
 ```
 
@@ -371,11 +371,11 @@ NEW_PASS=$(openssl rand -base64 32)
 
 # 2. Update in PostgreSQL
 docker exec pos-postgres psql -U postgres -c \
-  "ALTER USER 54link PASSWORD '$NEW_PASS';"
+  "ALTER USER insureportal PASSWORD '$NEW_PASS';"
 
 # 3. Update .env.production and restart services
 sed -i "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW_PASS/" .env.production
-docker compose -f docker-compose.production.yml up -d --force-recreate pos-shell
+docker compose -f docker-compose.production.yml up -d --force-recreate agent-dashboard
 ```
 
 ---
@@ -472,10 +472,10 @@ curl -X POST http://localhost:3000/api/trpc/mdm.pushCommand \
 
 | Dashboard      | URL                                     | Purpose                                  |
 | -------------- | --------------------------------------- | ---------------------------------------- |
-| Main Overview  | http://localhost:3001/d/54link-overview | Transaction volume, error rates, latency |
+| Main Overview  | http://localhost:3001/d/insureportal-overview | Transaction volume, error rates, latency |
 | MDM Fleet      | http://localhost:3001/d/mdm-fleet       | Device health, compliance, heartbeats    |
 | CBN Compliance | http://localhost:3001/d/cbn-compliance  | Daily limits, KYC rates, report status   |
-| Infrastructure | http://localhost:3001/d/54link-infra    | CPU, memory, disk, network               |
+| Infrastructure | http://localhost:3001/d/insureportal-infra    | CPU, memory, disk, network               |
 | Kafka          | http://localhost:3001/d/kafka           | Consumer lag, throughput, partitions     |
 
 ### 10.2 Critical Alert Thresholds
@@ -507,7 +507,7 @@ count(time() - mdm_device_last_seen_seconds > 1800)
 pos_agent_daily_volume_naira / pos_agent_daily_limit_naira
 
 # Kafka consumer lag
-kafka_consumer_group_lag{group="pos-shell-consumers"}
+kafka_consumer_group_lag{group="agent-dashboard-consumers"}
 
 # OTA download success rate
 rate(ota_download_total{status="success"}[5m]) /
@@ -520,8 +520,8 @@ rate(ota_download_total[5m])
 
 | Role                 | Contact              |
 | -------------------- | -------------------- |
-| Platform Engineering | platform@54link.ng   |
-| Database             | dba@54link.ng        |
-| Security             | security@54link.ng   |
-| CBN Compliance       | compliance@54link.ng |
+| Platform Engineering | platform@insureportal.ng   |
+| Database             | dba@insureportal.ng        |
+| Security             | security@insureportal.ng   |
+| CBN Compliance       | compliance@insureportal.ng |
 | On-Call              | +234-800-54LINK      |

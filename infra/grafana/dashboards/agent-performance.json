@@ -98,7 +98,7 @@
   ],
   "refresh": "1m",
   "schemaVersion": 39,
-  "tags": ["54link", "agents", "performance"],
+  "tags": ["insureportal", "agents", "performance"],
   "time": { "from": "now-7d", "to": "now" },
   "title": "Agent Performance",
   "uid": "agent-performance-v1"

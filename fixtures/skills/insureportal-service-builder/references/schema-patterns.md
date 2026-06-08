@@ -1,6 +1,6 @@
 # Schema Patterns
 
-Common database schema patterns used in the 54Link POS platform.
+Common database schema patterns used in the InsurePortal POS platform.
 
 ## Core Tables
 

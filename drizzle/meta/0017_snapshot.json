@@ -4719,7 +4719,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'mqtt://broker.54link.io:1883'"
+          "default": "'mqtt://broker.insureportal.io:1883'"
         },
         "port": {
           "name": "port",
@@ -4754,7 +4754,7 @@
           "type": "varchar(128)",
           "primaryKey": false,
           "notNull": false,
-          "default": "'54link-fluvio-bridge'"
+          "default": "'insureportal-fluvio-bridge'"
         },
         "topicMappings": {
           "name": "topicMappings",
@@ -4926,10 +4926,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "multi_sim_profiles_terminalId_pos_terminals_id_fk": {
-          "name": "multi_sim_profiles_terminalId_pos_terminals_id_fk",
+        "multi_sim_profiles_terminalId_field_agent_devicess_id_fk": {
+          "name": "multi_sim_profiles_terminalId_field_agent_devicess_id_fk",
           "tableFrom": "multi_sim_profiles",
-          "tableTo": "pos_terminals",
+          "tableTo": "field_agent_devicess",
           "columnsFrom": ["terminalId"],
           "columnsTo": ["id"],
           "onDelete": "no action",
@@ -5364,8 +5364,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.pos_terminals": {
-      "name": "pos_terminals",
+    "public.field_agent_devicess": {
+      "name": "field_agent_devicess",
       "schema": "",
       "columns": {
         "id": {
@@ -5558,8 +5558,8 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "pos_terminals_serialNumber_unique": {
-          "name": "pos_terminals_serialNumber_unique",
+        "field_agent_devicess_serialNumber_unique": {
+          "name": "field_agent_devicess_serialNumber_unique",
           "nullsNotDistinct": false,
           "columns": ["serialNumber"]
         }
@@ -5934,10 +5934,10 @@
         }
       },
       "foreignKeys": {
-        "service_records_terminalId_pos_terminals_id_fk": {
-          "name": "service_records_terminalId_pos_terminals_id_fk",
+        "service_records_terminalId_field_agent_devicess_id_fk": {
+          "name": "service_records_terminalId_field_agent_devicess_id_fk",
           "tableFrom": "service_records",
-          "tableTo": "pos_terminals",
+          "tableTo": "field_agent_devicess",
           "columnsFrom": ["terminalId"],
           "columnsTo": ["id"],
           "onDelete": "no action",
@@ -6173,8 +6173,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.storefront_ads": {
-      "name": "storefront_ads",
+    "public.insurance_product_promotions": {
+      "name": "insurance_product_promotions",
       "schema": "",
       "columns": {
         "id": {
@@ -6277,9 +6277,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "storefront_ads_agentId_agents_id_fk": {
-          "name": "storefront_ads_agentId_agents_id_fk",
-          "tableFrom": "storefront_ads",
+        "insurance_product_promotions_agentId_agents_id_fk": {
+          "name": "insurance_product_promotions_agentId_agents_id_fk",
+          "tableFrom": "insurance_product_promotions",
           "tableTo": "agents",
           "columnsFrom": ["agentId"],
           "columnsTo": ["id"],

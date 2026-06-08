@@ -1,6 +1,6 @@
 # Router Patterns
 
-Standard tRPC router patterns in the 54Link POS platform.
+Standard tRPC router patterns in the InsurePortal POS platform.
 
 ## CRUD Router
 

@@ -1,9 +1,9 @@
 ---
-name: 54link-pos-builder
-description: Build and maintain the 54Link POS platform — Agent Authentication, POS Terminal, Float Management, Transaction Processing, Fraud Detection, KYC Verification, Settlement, Stripe integration, and compliance features.
+name: insureportal-pos-builder
+description: Build and maintain the InsurePortal POS platform — Agent Authentication, POS Terminal, Float Management, Transaction Processing, Fraud Detection, KYC Verification, Settlement, Stripe integration, and compliance features.
 ---
 
-# 54Link POS Builder Skill
+# InsurePortal POS Builder Skill
 
 ## Core Modules
 

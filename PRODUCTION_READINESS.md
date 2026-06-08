@@ -1,14 +1,14 @@
-# 54Link Agency Banking Platform — Production Readiness Scorecard
+# InsurePortal Agency Banking Platform — Production Readiness Scorecard
 
 **Date:** 1 April 2026  
 **Version:** Phase 105 (Post-Production Completions)  
-**Repository:** `pos-shell-demo` (54Link Agency Banking Platform)
+**Repository:** `agent-dashboard-demo` (InsurePortal Agency Banking Platform)
 
 ---
 
 ## Executive Summary
 
-The 54Link Agency Banking Platform is a full-stack, multi-service agency banking solution built for the Nigerian fintech market. It covers the complete lifecycle of an agent banking operation: POS terminal transactions, fraud detection, compliance, settlement, merchant management, developer API access, and regulatory reporting.
+The InsurePortal Agency Banking Platform is a full-stack, multi-service agency banking solution built for the Nigerian fintech market. It covers the complete lifecycle of an agent banking operation: POS terminal transactions, fraud detection, compliance, settlement, merchant management, developer API access, and regulatory reporting.
 
 ---
 
@@ -264,4 +264,4 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 
 ---
 
-_Generated: 1 April 2026 | 54Link Financial Services Limited_
+_Generated: 1 April 2026 | InsurePortal Financial Services Limited_

@@ -1,14 +1,14 @@
-# 54Link POS Shell — Middleware Integration Audit
+# InsurePortal POS Shell — Middleware Integration Audit
 
 **Date:** 30 March 2026  
 **Author:** Manus AI  
-**Scope:** All middleware layers between the 54Link POS Shell Node.js server and the canonical platform infrastructure
+**Scope:** All middleware layers between the InsurePortal POS Shell Node.js server and the canonical platform infrastructure
 
 ---
 
 ## Executive Summary
 
-The 54Link Agency Banking Platform comprises a React/Node.js POS Shell (`pos-shell-demo`) that sits in front of a rich platform monorepo (`/home/ubuntu/platform/`). The platform monorepo contains production-ready implementations of every major middleware component — Kafka, Dapr, Fluvio, Temporal, Redis, APISix, TigerBeetle, and a Delta Lake-based data lakehouse. The POS Shell currently integrates with these layers through a **thin HTTP proxy pattern** (`server/_core/platformClient.ts`), with graceful local-PostgreSQL fallbacks for every call. This document maps the current integration status, identifies gaps, and prescribes the remaining work to achieve full middleware connectivity.
+The InsurePortal Agency Banking Platform comprises a React/Node.js POS Shell (`agent-dashboard-demo`) that sits in front of a rich platform monorepo (`/home/ubuntu/platform/`). The platform monorepo contains production-ready implementations of every major middleware component — Kafka, Dapr, Fluvio, Temporal, Redis, APISix, TigerBeetle, and a Delta Lake-based data lakehouse. The POS Shell currently integrates with these layers through a **thin HTTP proxy pattern** (`server/_core/platformClient.ts`), with graceful local-PostgreSQL fallbacks for every call. This document maps the current integration status, identifies gaps, and prescribes the remaining work to achieve full middleware connectivity.
 
 ---
 
@@ -16,7 +16,7 @@ The 54Link Agency Banking Platform comprises a React/Node.js POS Shell (`pos-she
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│                  54Link POS Shell (Node.js / tRPC)                 │
+│                  InsurePortal POS Shell (Node.js / tRPC)                 │
 │                                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐ │
 │  │  platformClient.ts  (thin HTTP proxy, fail-open, 3s timeout) │ │
@@ -116,7 +116,7 @@ The 54Link Agency Banking Platform comprises a React/Node.js POS Shell (`pos-she
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Platform location**     | `/home/ubuntu/platform/platform/middleware/temporal-production/`                                                                                                                                                                                                                                                                                                                                                                                                    |
 | **Workflows**             | Payment Processing, KYC Verification, Fraud Detection                                                                                                                                                                                                                                                                                                                                                                                                               |
-| **Activities**            | TigerBeetle processing, multi-corridor settlement (PAPSS, CIPS, PIX, SWIFT, M-Pesa), fraud ensemble scoring, KYC document OCR                                                                                                                                                                                                                                                                                                                                       |
+| **Activities**            | TigerBeetle processing, multi-cross_border_remittance settlement (PAPSS, CIPS, PIX, SWIFT, M-Pesa), fraud ensemble scoring, KYC document OCR                                                                                                                                                                                                                                                                                                                                       |
 | **POS Shell integration** | **None currently.** Long-running operations (KYC, settlement) are handled synchronously in tRPC procedures.                                                                                                                                                                                                                                                                                                                                                         |
 | **Status**                | **Not wired.**                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | **Gap**                   | Two POS Shell flows are natural Temporal workflow candidates: (1) **KYC Verification** — currently a synchronous HTTP call to `kycClient.ts`; a Temporal workflow would provide durable retry, timeout, and human-in-the-loop approval. (2) **Settlement Run** — `runDailySettlement()` in `settlementCron.ts` is a multi-step process (lock floats → aggregate → SMS → PDF → S3 → unlock floats); a Temporal workflow would make each step durable and observable. |
@@ -266,8 +266,8 @@ The following environment variables must be set in production to activate all pl
 | `PLATFORM_ANALYTICS_URL`    | `http://localhost:8109` | analytics-service                               |
 | `PLATFORM_NOTIFICATION_URL` | `http://localhost:8110` | notification-service                            |
 | `KEYCLOAK_URL`              | `http://localhost:8080` | Keycloak OIDC server                            |
-| `KEYCLOAK_REALM`            | `54link`                | Keycloak realm name                             |
-| `KEYCLOAK_CLIENT_ID`        | `pos-shell`             | Keycloak client ID                              |
+| `KEYCLOAK_REALM`            | `insureportal`                | Keycloak realm name                             |
+| `KEYCLOAK_CLIENT_ID`        | `agent-dashboard`             | Keycloak client ID                              |
 | `KEYCLOAK_CLIENT_SECRET`    | _(required)_            | Keycloak client secret                          |
 | `TERMII_API_KEY`            | _(optional)_            | SMS delivery (graceful fallback to console.log) |
 | `VAPID_PUBLIC_KEY`          | _(bundled default)_     | Web push public key                             |
@@ -275,4 +275,4 @@ The following environment variables must be set in production to activate all pl
 
 ---
 
-_Document generated from live codebase inspection of `/home/ubuntu/pos-shell-demo/` and `/home/ubuntu/platform/platform/middleware/`. All integration statuses reflect the state as of the Phase 84 checkpoint._
+_Document generated from live codebase inspection of `/home/ubuntu/agent-dashboard-demo/` and `/home/ubuntu/platform/platform/middleware/`. All integration statuses reflect the state as of the Phase 84 checkpoint._

@@ -1,4 +1,4 @@
-# 54Link Agency Banking Platform — Production Readiness Report
+# InsurePortal Agency Banking Platform — Production Readiness Report
 
 **Platform:** POS Shell (Node.js/TypeScript tRPC + React PWA)  
 **Sprint:** Production Readiness Sprint — Final Assessment  
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-The 54Link Agency Banking Platform POS Shell has completed its production readiness sprint. The system comprises a Node.js/TypeScript tRPC backend, a React 18 PWA frontend, and integration bridges to nine platform microservices (KYC, Fraud, Settlement, Float, Analytics, Geofencing, Disputes, Loyalty, Notification). All 149 unit and integration tests pass, TypeScript compiles with zero errors, and every major production hardening item has been addressed.
+The InsurePortal Agency Banking Platform POS Shell has completed its production readiness sprint. The system comprises a Node.js/TypeScript tRPC backend, a React 18 PWA frontend, and integration bridges to nine platform microservices (KYC, Fraud, Settlement, Float, Analytics, Geofencing, Disputes, Loyalty, Notification). All 149 unit and integration tests pass, TypeScript compiles with zero errors, and every major production hardening item has been addressed.
 
 This report scores each domain on a 0–10 scale, identifies any remaining gaps, and provides a prioritised remediation roadmap.
 
@@ -213,7 +213,7 @@ All screens previously showing mock/hardcoded data have been upgraded to live tR
 
 ### 10. Mobile Parity (7.5 / 10)
 
-The React Native and Flutter mobile apps exist in the platform monorepo (`/home/ubuntu/platform/platform/pos-shell/`). However, a formal parity audit against the 33 PWA screens has not been completed in this sprint.
+The React Native and Flutter mobile apps exist in the platform monorepo (`/home/ubuntu/platform/platform/agent-dashboard/`). However, a formal parity audit against the 33 PWA screens has not been completed in this sprint.
 
 **Gap:** Mobile apps may lack implementations for newer screens (KYC Verify, Disputes, Fraud Alerts, My Limits). A parity matrix is needed.
 
@@ -314,7 +314,7 @@ The following items must be confirmed before go-live:
 
 ## Conclusion
 
-The 54Link POS Shell achieves a production readiness score of **9.4 / 10**. The two P1 items (k6 load test execution and mTLS wiring) should be resolved before the first production traffic is directed to the system. All other gaps are non-blocking and can be addressed in the next sprint without impacting the launch timeline.
+The InsurePortal POS Shell achieves a production readiness score of **9.4 / 10**. The two P1 items (k6 load test execution and mTLS wiring) should be resolved before the first production traffic is directed to the system. All other gaps are non-blocking and can be addressed in the next sprint without impacting the launch timeline.
 
 The platform demonstrates a mature, defence-in-depth security posture, comprehensive platform proxy integration with fail-open resilience, and a well-structured test suite. It is ready for controlled production launch with the P1 items addressed.
 

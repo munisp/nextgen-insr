@@ -2,11 +2,11 @@
   "tenants": [
     {
       "id": "a7af2da3-0e6d-4ba5-821f-06ff00aa5440",
-      "name": "54Link Default",
-      "slug": "54link",
+      "name": "InsurePortal Default",
+      "slug": "insureportal",
       "status": "active",
       "plan": "enterprise",
-      "domain": "54link.ng",
+      "domain": "insureportal.ng",
       "createdAt": 1756010324832
     },
     {
@@ -32256,7 +32256,7 @@
   "webhooks": [
     {
       "id": "c6f2b4d6-f756-4f11-9c8f-5c0f2153104f",
-      "url": "https://api.partner1.com/webhooks/54link",
+      "url": "https://api.partner1.com/webhooks/insureportal",
       "events": [
         "transaction.completed",
         "fraud.detected"
@@ -32292,7 +32292,7 @@
     {
       "id": "e7c01ed1-c7b7-4867-8158-b0374b9f6be0",
       "tenantId": "a7af2da3-0e6d-4ba5-821f-06ff00aa5440",
-      "name": "54Link Default Production Key",
+      "name": "InsurePortal Default Production Key",
       "keyPrefix": "pk_live_0u0h2l4w",
       "hashedKey": "28ae9c142c8960bb07fe8fd35d7262d33025e48c7528fb27a14c1517c6e91800",
       "permissions": [

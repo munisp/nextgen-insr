@@ -1,4 +1,4 @@
-# 54Link POS Shell — k6 Load Tests
+# InsurePortal POS Shell — k6 Load Tests
 
 This directory contains [k6](https://k6.io) load test scenarios for the three highest-traffic paths in the POS Shell.
 
@@ -41,7 +41,7 @@ k6 run --vus 5 --duration 30s k6/transaction-throughput.js
 ### Full load test against staging
 
 ```bash
-BASE_URL=https://staging.54link.io \
+BASE_URL=https://staging.insureportal.io \
 AGENT_TOKEN=<pre-authenticated-cookie-value> \
 k6 run k6/transaction-throughput.js
 ```
@@ -49,16 +49,16 @@ k6 run k6/transaction-throughput.js
 ### All three scenarios in parallel
 
 ```bash
-BASE_URL=https://staging.54link.io \
+BASE_URL=https://staging.insureportal.io \
 AGENT_TOKEN=<token> \
 k6 run k6/transaction-throughput.js &
 
-BASE_URL=https://staging.54link.io \
+BASE_URL=https://staging.insureportal.io \
 AGENT_TOKEN=<token> \
 ADMIN_TOKEN=<admin-token> \
 k6 run k6/float-topup.js &
 
-BASE_URL=https://staging.54link.io \
+BASE_URL=https://staging.insureportal.io \
 AGENT_TOKEN=<token> \
 k6 run k6/dispute-creation.js &
 

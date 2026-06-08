@@ -33,7 +33,7 @@
     { "type": "panel", "id": "barchart", "name": "Bar chart", "version": "" }
   ],
   "annotations": { "list": [] },
-  "description": "54Link POS Shell — Live production metrics dashboard. Import via Grafana → Dashboards → Import → Upload JSON.",
+  "description": "InsurePortal POS Shell — Live production metrics dashboard. Import via Grafana → Dashboards → Import → Upload JSON.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -453,7 +453,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["pos-shell", "54link", "agency-banking", "production"],
+  "tags": ["agent-dashboard", "insureportal", "agency-banking", "production"],
   "templating": {
     "list": [
       {
@@ -479,7 +479,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "Africa/Lagos",
-  "title": "54Link POS Shell — Production Metrics",
-  "uid": "pos-shell-prod-v1",
+  "title": "InsurePortal POS Shell — Production Metrics",
+  "uid": "agent-dashboard-prod-v1",
   "version": 1
 }

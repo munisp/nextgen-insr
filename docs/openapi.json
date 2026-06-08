@@ -1,15 +1,15 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "54Link POS Agent Banking API",
-    "description": "Production API for 54Link POS Agent Banking Platform. Provides endpoints for agent management, transaction processing, fraud detection, KYC verification, settlement, and more.",
+    "title": "InsurePortal POS Agent Banking API",
+    "description": "Production API for InsurePortal POS Agent Banking Platform. Provides endpoints for agent management, transaction processing, fraud detection, KYC verification, settlement, and more.",
     "version": "2.0.0",
-    "contact": { "name": "54Link Engineering", "email": "api@54link.com" },
-    "license": { "name": "Proprietary", "url": "https://54link.com/license" }
+    "contact": { "name": "InsurePortal Engineering", "email": "api@insureportal.com" },
+    "license": { "name": "Proprietary", "url": "https://insureportal.com/license" }
   },
   "servers": [
-    { "url": "https://api.54link.com", "description": "Production" },
-    { "url": "https://staging-api.54link.com", "description": "Staging" },
+    { "url": "https://api.insureportal.com", "description": "Production" },
+    { "url": "https://staging-api.insureportal.com", "description": "Staging" },
     { "url": "http://localhost:3000", "description": "Local Development" }
   ],
   "tags": [

@@ -1,4 +1,4 @@
-# 54Link Workspace Redundancy Audit
+# InsurePortal Workspace Redundancy Audit
 
 **Date:** 30 March 2026  
 **Scope:** `/home/ubuntu/` workspace — all directories  
@@ -10,7 +10,7 @@
 
 | Directory                            | Size    | Purpose                                           | Status                           |
 | ------------------------------------ | ------- | ------------------------------------------------- | -------------------------------- |
-| `/home/ubuntu/pos-shell-demo/`       | ~45 MB  | **Canonical POS Shell** — React/Node.js/tRPC app  | **Active — primary deliverable** |
+| `/home/ubuntu/agent-dashboard-demo/`       | ~45 MB  | **Canonical POS Shell** — React/Node.js/tRPC app  | **Active — primary deliverable** |
 | `/home/ubuntu/platform/`             | 403 MB  | Platform monorepo — all backend microservices     | **Active — platform reference**  |
 | `/home/ubuntu/archives/`             | ~120 MB | ZIP archives of previous phases                   | Archival — safe to keep          |
 | `/home/ubuntu/.archived-stale/`      | ~80 MB  | Stale phase archives (65–70, production-overhaul) | **Stale — can be deleted**       |
@@ -99,13 +99,13 @@ The following directories/files are stale and can be safely deleted to reclaim ~
 
 | Path                                                          | Size   | Reason for Deletion                  |
 | ------------------------------------------------------------- | ------ | ------------------------------------ |
-| `/home/ubuntu/.archived-stale/54link-phases-65-70/`           | ~30 MB | Superseded by current implementation |
-| `/home/ubuntu/.archived-stale/54link-phases-65-70.zip`        | ~15 MB | Same content as directory            |
-| `/home/ubuntu/.archived-stale/54link-production-overhaul/`    | ~20 MB | Superseded by pos-shell-demo         |
-| `/home/ubuntu/.archived-stale/54link-production-overhaul.zip` | ~10 MB | Same content as directory            |
+| `/home/ubuntu/.archived-stale/insureportal-phases-65-70/`           | ~30 MB | Superseded by current implementation |
+| `/home/ubuntu/.archived-stale/insureportal-phases-65-70.zip`        | ~15 MB | Same content as directory            |
+| `/home/ubuntu/.archived-stale/insureportal-production-overhaul/`    | ~20 MB | Superseded by agent-dashboard-demo         |
+| `/home/ubuntu/.archived-stale/insureportal-production-overhaul.zip` | ~10 MB | Same content as directory            |
 | `/home/ubuntu/.archived-stale/pos-demo/`                      | ~5 MB  | Early prototype, superseded          |
 
-**Retained:** `/home/ubuntu/.archived-stale/54link-pos-shell-complete.zip` and `/home/ubuntu/.archived-stale/54link-pos-source.zip` — these are the most recent pre-overhaul snapshots and should be kept as rollback references.
+**Retained:** `/home/ubuntu/.archived-stale/insureportal-agent-dashboard-complete.zip` and `/home/ubuntu/.archived-stale/insureportal-pos-source.zip` — these are the most recent pre-overhaul snapshots and should be kept as rollback references.
 
 ---
 

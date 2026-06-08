@@ -1,6 +1,6 @@
-# Alertmanager Setup Guide — 54Link POS Shell
+# Alertmanager Setup Guide — InsurePortal POS Shell
 
-This document covers deploying and configuring the full open-source alerting stack for the 54Link POS Shell. The stack uses **Grafana OnCall** as the on-call rotation and escalation engine (replacing commercial tools like PagerDuty), **Alertmanager** for alert routing, and **Slack** for team notifications.
+This document covers deploying and configuring the full open-source alerting stack for the InsurePortal POS Shell. The stack uses **Grafana OnCall** as the on-call rotation and escalation engine (replacing commercial tools like PagerDuty), **Alertmanager** for alert routing, and **Slack** for team notifications.
 
 ---
 
@@ -117,7 +117,7 @@ To enable annotations, set these environment variables before running the suite:
 ```bash
 export GRAFANA_URL=http://localhost:3001
 export GRAFANA_API_KEY=glsa_xxxxxxxxxxxxxxxxxxxx   # Grafana → Profile → API Keys → New
-export GRAFANA_DASHBOARD_UID=pos-shell-prod-v1
+export GRAFANA_DASHBOARD_UID=agent-dashboard-prod-v1
 
 ./tests/load/run-all.sh http://localhost:3000 AGT001 1234
 ```
@@ -133,7 +133,7 @@ Before deploying to production, replace all placeholder values:
 | File                            | Placeholder                                                | Replace with                    |
 | ------------------------------- | ---------------------------------------------------------- | ------------------------------- |
 | `alertmanager.yml`              | `slack-webhook-url-change-in-production`                   | Real Slack incoming webhook URL |
-| `alertmanager.yml`              | `pos-shell-integration-token-change-in-production`         | Grafana OnCall webhook token    |
+| `alertmanager.yml`              | `agent-dashboard-integration-token-change-in-production`         | Grafana OnCall webhook token    |
 | `docker-compose.monitoring.yml` | `admin-change-in-production`                               | Strong Grafana admin password   |
 | `docker-compose.monitoring.yml` | `oncall-secret-key-change-in-production-min-50-chars-long` | 50+ char random string          |
 | `docker-compose.monitoring.yml` | `slack-oauth-id-change-in-production`                      | Slack App OAuth client ID       |

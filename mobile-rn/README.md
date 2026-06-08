@@ -1,6 +1,6 @@
-# 54Link Agent App — React Native
+# InsurePortal Agent App — React Native
 
-The 54Link Agent App is the mobile companion for field agents using the 54Link Agency Banking Platform. It provides cash-in/cash-out, airtime, bill payments, beneficiary management, recurring payments, FX rates, and KYC — all in a secure, offline-capable React Native app.
+The InsurePortal Agent App is the mobile companion for field agents using the InsurePortal Agency Banking Platform. It provides cash-in/cash-out, airtime, bill payments, beneficiary management, recurring payments, FX rates, and KYC — all in a secure, offline-capable React Native app.
 
 ## Tech Stack
 
@@ -19,7 +19,7 @@ The 54Link Agent App is the mobile companion for field agents using the 54Link A
 src/
 ├── App.tsx                    # Root navigator (Stack + Bottom Tabs)
 ├── api/
-│   └── APIClient.ts           # Typed HTTP client for all 54Link endpoints
+│   └── APIClient.ts           # Typed HTTP client for all InsurePortal endpoints
 ├── screens/                   # 40+ screens covering all agent journeys
 ├── services/
 │   ├── BiometricService.ts    # Fingerprint/Face ID helpers
@@ -62,7 +62,7 @@ private baseURL = 'http://10.0.2.2:3000/api/v1';
 private baseURL = 'http://localhost:3000/api/v1';
 
 // Production
-private baseURL = 'https://api.54link.io/v1';
+private baseURL = 'https://api.insureportal.io/v1';
 ```
 
 ## API Client Usage
@@ -89,7 +89,7 @@ cd android && ./gradlew assembleRelease
 # Android AAB (Play Store)
 cd android && ./gradlew bundleRelease
 
-# iOS: Open ios/54LinkAgent.xcworkspace in Xcode → Product → Archive
+# iOS: Open ios/InsurePortalAgent.xcworkspace in Xcode → Product → Archive
 ```
 
 ## Security

@@ -1,4 +1,4 @@
-# 54Link POS Shell — Production Deployment Guide
+# InsurePortal POS Shell — Production Deployment Guide
 
 **Version:** Phase 136  
 **Target:** Ubuntu 22.04 LTS, Docker 24+, 8 vCPU / 32 GB RAM minimum
@@ -57,8 +57,8 @@ sudo apt-get install -y certbot
 ## Step 1: Clone and Configure
 
 ```bash
-git clone https://github.com/54link/pos-shell-demo.git
-cd pos-shell-demo
+git clone https://github.com/insureportal/agent-dashboard-demo.git
+cd agent-dashboard-demo
 
 # Copy environment template
 cp .env.production.example .env.production
@@ -79,14 +79,14 @@ nano .env.production
 | `KEYCLOAK_ADMIN_PASSWORD` | Keycloak admin console password              |
 | `VAULT_ROOT_TOKEN`        | Initial Vault root token (change after init) |
 | `MINIO_ROOT_PASSWORD`     | MinIO admin password                         |
-| `DOMAIN`                  | Your production domain (e.g., pos.54link.io) |
+| `DOMAIN`                  | Your production domain (e.g., pos.insureportal.io) |
 
 ---
 
 ## Step 2: TLS Certificates
 
 ```bash
-make -f Makefile.production cert-init DOMAIN=pos.54link.io
+make -f Makefile.production cert-init DOMAIN=pos.insureportal.io
 ```
 
 This runs certbot in standalone mode. Ensure port 80 is open and DNS is pointed to your server.
@@ -126,7 +126,7 @@ This runs `infra/vault/init-vault.sh` which:
 1. Initialises Vault (generates unseal keys + root token)
 2. Unseals Vault with 3 of 5 keys
 3. Enables AppRole auth method
-4. Creates `pos-shell-demo` policy
+4. Creates `agent-dashboard-demo` policy
 5. Seeds secrets: DB password, JWT secret, VAPID keys, Termii key
 
 **Save the unseal keys and root token securely — they cannot be recovered.**
@@ -169,7 +169,7 @@ This starts all services in the correct dependency order:
 
 ```bash
 # Create admin agent (AGT001 / PIN: 1234)
-docker compose -f docker-compose.production.yml exec pos-shell pnpm seed
+docker compose -f docker-compose.production.yml exec agent-dashboard pnpm seed
 
 # Or run against local DB
 pnpm seed
@@ -186,7 +186,7 @@ make -f Makefile.production health
 Expected output:
 
 ```
-✅ pos-shell      healthy (3000)
+✅ agent-dashboard      healthy (3000)
 ✅ postgres       healthy (5432)
 ✅ redis          healthy (6379)
 ✅ kafka          healthy (9092)
@@ -206,7 +206,7 @@ Expected output:
 
 1. Navigate to `https://your-domain/auth/admin`
 2. Login with `admin` / `$KEYCLOAK_ADMIN_PASSWORD`
-3. The `54link` realm is pre-imported from `infra/keycloak/realm-54link.json`
+3. The `insureportal` realm is pre-imported from `infra/keycloak/realm-insureportal.json`
 4. Configure SMTP: Realm Settings → Email
 5. Create supervisor users and assign the `supervisor` role
 
@@ -237,8 +237,8 @@ The `deploy` target runs `docker compose pull` then `docker compose up -d --buil
 
 ```bash
 # Rollback to previous image tag
-docker compose -f docker-compose.production.yml up -d --no-deps pos-shell \
-  --image ghcr.io/54link/pos-shell:previous-tag
+docker compose -f docker-compose.production.yml up -d --no-deps agent-dashboard \
+  --image ghcr.io/insureportal/agent-dashboard:previous-tag
 ```
 
 ---
@@ -247,7 +247,7 @@ docker compose -f docker-compose.production.yml up -d --no-deps pos-shell \
 
 ```bash
 # Scale POS Shell horizontally (requires Redis session sharing — already implemented)
-docker compose -f docker-compose.production.yml up -d --scale pos-shell=3
+docker compose -f docker-compose.production.yml up -d --scale agent-dashboard=3
 ```
 
 Note: Socket.IO requires sticky sessions at the nginx level. The provided nginx config includes `ip_hash` for this purpose.
@@ -262,7 +262,7 @@ docker compose -f docker-compose.production.yml exec postgres \
   pg_dump -U postgres pos_shell > backup-$(date +%Y%m%d).sql
 
 # MinIO backup (sync to S3)
-mc mirror minio/54link-transactions s3/54link-backup/transactions/
+mc mirror minio/insureportal-transactions s3/insureportal-backup/transactions/
 
 # Redis backup (RDB snapshot)
 docker compose -f docker-compose.production.yml exec redis \
@@ -278,8 +278,8 @@ The TB sidecar runs as a systemd service on the PAX terminal:
 ```bash
 # On the PAX A920 terminal
 scp tb-sidecar/tb-sidecar root@pax-terminal:/usr/local/bin/
-scp tb-sidecar/54link-tb-sidecar.service root@pax-terminal:/etc/systemd/system/
-ssh root@pax-terminal "systemctl enable --now 54link-tb-sidecar"
+scp tb-sidecar/insureportal-tb-sidecar.service root@pax-terminal:/etc/systemd/system/
+ssh root@pax-terminal "systemctl enable --now insureportal-tb-sidecar"
 ```
 
 ---
