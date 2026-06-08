@@ -118,6 +118,11 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func isPQClientError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "(22") || strings.Contains(msg, "(23") || strings.Contains(msg, "(42703)") || strings.Contains(msg, "value too long")
+}
+
 func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	total := atomic.LoadInt64(&reqCount)
@@ -183,7 +188,12 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-			row[col] = vals[i]
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
 		results = append(results, row)
 	}
@@ -237,7 +247,12 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 	}
 	row := make(map[string]interface{})
 	for i, col := range cols {
-		row[col] = vals[i]
+		switch v := vals[i].(type) {
+		case []byte:
+			row[col] = string(v)
+		default:
+			row[col] = v
+		}
 	}
 	json.NewEncoder(w).Encode(row)
 }
@@ -262,7 +277,16 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	for k, v := range body {
 		if k == "id" || k == "created_at" { continue }
 		cols = append(cols, k)
-		vals = append(vals, v)
+		switch mv := v.(type) {
+		case map[string]interface{}:
+			b, _ := json.Marshal(mv)
+			vals = append(vals, string(b))
+		case []interface{}:
+			b, _ := json.Marshal(mv)
+			vals = append(vals, string(b))
+		default:
+			vals = append(vals, v)
+		}
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
 		i++
 	}
@@ -279,7 +303,11 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	err := db.QueryRow(query, vals...).Scan(&newID)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		if isPQClientError(err) {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+		} else {
+			http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		}
 		return
 	}
 

@@ -124,6 +124,11 @@ func calculatePremium(req QuoteRequest) QuoteResponse {
 	}
 }
 
+func isPQClientError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "(22") || strings.Contains(msg, "(23") || strings.Contains(msg, "(42703)") || strings.Contains(msg, "value too long")
+}
+
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "underwriting-engine"})
 }
@@ -315,7 +320,14 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		for i := range vals { ptrs[i] = &vals[i] }
 		if err := rows.Scan(ptrs...); err != nil { continue }
 		row := make(map[string]interface{})
-		for i, col := range cols { row[col] = vals[i] }
+		for i, col := range cols {
+		switch v := vals[i].(type) {
+		case []byte:
+			row[col] = string(v)
+		default:
+			row[col] = v
+		}
+	}
 		results = append(results, row)
 	}
 	if results == nil { results = []map[string]interface{}{} }
@@ -348,7 +360,14 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row := make(map[string]interface{})
-	for i, col := range cols { row[col] = vals[i] }
+	for i, col := range cols {
+		switch v := vals[i].(type) {
+		case []byte:
+			row[col] = string(v)
+		default:
+			row[col] = v
+		}
+	}
 	json.NewEncoder(w).Encode(row)
 }
 

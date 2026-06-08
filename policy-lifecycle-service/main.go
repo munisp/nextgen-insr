@@ -83,6 +83,11 @@ func isValidTransition(from, to PolicyState) bool {
 	return false
 }
 
+func isPQClientError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "(22") || strings.Contains(msg, "(23") || strings.Contains(msg, "(42703)") || strings.Contains(msg, "value too long")
+}
+
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "policy-lifecycle-service"})
 }
@@ -291,7 +296,14 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		for i := range vals { ptrs[i] = &vals[i] }
 		if err := rows.Scan(ptrs...); err != nil { continue }
 		row := make(map[string]interface{})
-		for i, col := range cols { row[col] = vals[i] }
+		for i, col := range cols {
+		switch v := vals[i].(type) {
+		case []byte:
+			row[col] = string(v)
+		default:
+			row[col] = v
+		}
+	}
 		results = append(results, row)
 	}
 	if results == nil { results = []map[string]interface{}{} }
@@ -324,7 +336,14 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row := make(map[string]interface{})
-	for i, col := range cols { row[col] = vals[i] }
+	for i, col := range cols {
+		switch v := vals[i].(type) {
+		case []byte:
+			row[col] = string(v)
+		default:
+			row[col] = v
+		}
+	}
 	json.NewEncoder(w).Encode(row)
 }
 
@@ -402,8 +421,6 @@ func main() {
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/transition", handleTransition)
 	mux.HandleFunc("/api/v1/transitions", handleTransitions)
-
-	mux.HandleFunc("/api/v1/transitions", handleListEntities)
 	mux.HandleFunc("/api/v1/transition_record", handleGetEntity)
 	mux.HandleFunc("/api/v1/transitions/create", handleCreateEntity)
 	mux.HandleFunc("/api/v1/transitions/delete", handleDeleteEntity)

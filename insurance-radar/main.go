@@ -168,6 +168,11 @@ func jsonLog(level, msg string, kvs ...string) {
 	log.Println(entry)
 }
 
+func isPQClientError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "(22") || strings.Contains(msg, "(23") || strings.Contains(msg, "(42703)") || strings.Contains(msg, "value too long")
+}
+
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	status := map[string]string{"status": "ready"}
 	code := http.StatusOK
@@ -225,7 +230,14 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		for i := range vals { ptrs[i] = &vals[i] }
 		if err := rows.Scan(ptrs...); err != nil { continue }
 		row := make(map[string]interface{})
-		for i, col := range cols { row[col] = vals[i] }
+		for i, col := range cols {
+		switch v := vals[i].(type) {
+		case []byte:
+			row[col] = string(v)
+		default:
+			row[col] = v
+		}
+	}
 		results = append(results, row)
 	}
 	if results == nil { results = []map[string]interface{}{} }
@@ -263,7 +275,14 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row := make(map[string]interface{})
-	for i, col := range cols { row[col] = vals[i] }
+	for i, col := range cols {
+		switch v := vals[i].(type) {
+		case []byte:
+			row[col] = string(v)
+		default:
+			row[col] = v
+		}
+	}
 	json.NewEncoder(w).Encode(row)
 }
 
@@ -281,7 +300,16 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	for k, v := range body {
 		if k == "id" || k == "created_at" { continue }
 		cols = append(cols, k)
-		vals = append(vals, v)
+		switch mv := v.(type) {
+		case map[string]interface{}:
+			b, _ := json.Marshal(mv)
+			vals = append(vals, string(b))
+		case []interface{}:
+			b, _ := json.Marshal(mv)
+			vals = append(vals, string(b))
+		default:
+			vals = append(vals, v)
+		}
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
 		i++
 	}
