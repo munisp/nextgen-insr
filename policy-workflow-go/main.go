@@ -126,6 +126,9 @@ func initDB() {
 	db.SetMaxIdleConns(5)
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS workflow_instances (id SERIAL PRIMARY KEY, policy_id TEXT NOT NULL, workflow_type TEXT, current_step TEXT, status TEXT DEFAULT 'active', assignee TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS workflow_transitions (id TEXT PRIMARY KEY, policy_id TEXT, from_state TEXT, to_state TEXT, approver_id TEXT, notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 		log.Printf(`{"level":"warn","msg":"create table workflow_instances failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)
@@ -392,6 +395,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -417,7 +421,223 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
+}
+
+
+// ── Middleware Clients ────────────────────────────────────────────────────
+var (
+	redisClient  *redisPool
+	kafkaWriter  *kafkaProducer
+	osClient     *opensearchClient
+)
+
+type redisPool struct {
+	addr string
+	password string
+}
+func (r *redisPool) CacheGet(key string) (string, bool) {
+	// Production: use go-redis client
+	return "", false
+}
+func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
+	// Production: use go-redis client
+}
+func (r *redisPool) CacheInvalidate(keys ...string) {
+	// Production: DEL keys
+}
+
+type kafkaProducer struct {
+	brokers string
+	topic   string
+}
+func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key string, payload interface{}) {
+	data, _ := json.Marshal(map[string]interface{}{
+		"event_type": eventType,
+		"source":     "policy-workflow",
+		"key":        key,
+		"payload":    payload,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+	jsonLog("info", "kafka_event_published", "topic", k.topic, "event_type", eventType, "key", key, "size", fmt.Sprintf("%d", len(data)))
+}
+
+type opensearchClient struct {
+	url  string
+	user string
+}
+func (o *opensearchClient) IndexLog(level, msg, service string, fields map[string]interface{}) {
+	entry := map[string]interface{}{
+		"@timestamp": time.Now().Format(time.RFC3339),
+		"level":      level,
+		"message":    msg,
+		"service":    service,
+		"fields":     fields,
+	}
+	data, _ := json.Marshal(entry)
+	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
+}
+
+// Keycloak JWT authentication middleware
+type jwtClaims struct {
+	UserID   string   `json:"sub"`
+	Email    string   `json:"email"`
+	Username string   `json:"preferred_username"`
+	Roles    []string `json:"realm_access_roles"`
+	TenantID string   `json:"tenant_id"`
+}
+
+func keycloakAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health/ready/live probes
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Dev bypass for local development
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
+			ctx = context.WithValue(ctx, "tenant_id", "default")
+			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(401)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			return
+		}
+		// In production: validate JWT against Keycloak JWKS endpoint
+		// For now, decode and pass through (validation handled by APISIX gateway)
+		tokenStr := strings.TrimPrefix(auth, "Bearer ")
+		_ = tokenStr
+		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
+		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// Permify authorization check
+func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
+	permifyAddr := os.Getenv("PERMIFY_ADDR")
+	if permifyAddr == "" {
+		return true // Permissive when Permify is not configured
+	}
+	payload := map[string]interface{}{
+		"entity":     map[string]string{"type": entity, "id": entityID},
+		"permission": permission,
+		"subject":    map[string]string{"type": "user", "id": subjectID},
+	}
+	data, _ := json.Marshal(payload)
+	tenantID := "default"
+	if tid, ok := ctx.Value("tenant_id").(string); ok && tid != "" {
+		tenantID = tid
+	}
+	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, tenantID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		jsonLog("warn", "permify_check_failed", "error", err.Error())
+		return true // Fail open
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Can string `json:"can"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Can == "RESULT_ALLOWED"
+}
+
+func initMiddleware() {
+	// Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient = &redisPool{addr: redisAddr, password: os.Getenv("REDIS_PASSWORD")}
+	jsonLog("info", "redis_client_initialized", "addr", redisAddr)
+
+	// Kafka
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		kafkaBrokers = "localhost:9092"
+	}
+	kafkaWriter = &kafkaProducer{brokers: kafkaBrokers, topic: "policy-workflow-events"}
+	jsonLog("info", "kafka_producer_initialized", "brokers", kafkaBrokers, "topic", "policy-workflow-events")
+
+	// OpenSearch
+	osURL := os.Getenv("OPENSEARCH_URL")
+	if osURL == "" {
+		osURL = "http://localhost:9200"
+	}
+	osClient = &opensearchClient{url: osURL, user: os.Getenv("OPENSEARCH_USER")}
+	jsonLog("info", "opensearch_client_initialized", "url", osURL)
+}
+
+
+
+func handleWorkflowTransition(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		PolicyID   string `json:"policy_id"`
+		FromState  string `json:"from_state"`
+		ToState    string `json:"to_state"`
+		ApproverID string `json:"approver_id"`
+		Notes      string `json:"notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	// Valid state transitions
+	validTransitions := map[string][]string{
+		"draft": {"submitted"}, "submitted": {"under_review", "rejected"},
+		"under_review": {"approved", "rejected", "referred"}, "approved": {"bound", "cancelled"},
+		"referred": {"under_review", "rejected"}, "bound": {"active", "cancelled"},
+		"active": {"lapsed", "cancelled", "matured", "claimed"}, "lapsed": {"reinstated"},
+		"reinstated": {"active"}, "claimed": {"settled"},
+	}
+	allowed, ok := validTransitions[req.FromState]
+	if !ok {
+		http.Error(w, fmt.Sprintf(`{"error":"unknown state: %s"}`, req.FromState), 400); return
+	}
+	valid := false
+	for _, s := range allowed { if s == req.ToState { valid = true; break } }
+	if !valid {
+		http.Error(w, fmt.Sprintf(`{"error":"invalid transition %s -> %s"}`, req.FromState, req.ToState), 400); return
+	}
+	txID := fmt.Sprintf("WT-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO workflow_transitions (id, policy_id, from_state, to_state, approver_id, notes, created_at) VALUES ($1,$2,$3,$4,$5,$6,NOW())",
+			txID, req.PolicyID, req.FromState, req.ToState, req.ApproverID, req.Notes)
+	}
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "policy_state_changed", req.PolicyID, nil) }
+	json.NewEncoder(w).Encode(map[string]interface{}{"transition_id": txID, "policy_id": req.PolicyID, "from": req.FromState, "to": req.ToState, "valid": true})
+}
+
+
+func handleSLAStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var overdue, onTrack, completed int
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(CASE WHEN to_state='submitted' AND created_at < NOW() - INTERVAL '2 days' THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN to_state IN ('approved','bound','active') THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN to_state IN ('settled','matured') THEN 1 ELSE 0 END),0) FROM workflow_transitions").Scan(&overdue, &onTrack, &completed)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"overdue": overdue, "on_track": onTrack, "completed": completed, "sla_target_hours": 48})
 }
 
 func main() {

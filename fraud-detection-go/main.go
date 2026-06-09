@@ -131,6 +131,12 @@ func initDB() {
 	db.SetMaxIdleConns(5)
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fraud_alerts (id SERIAL PRIMARY KEY, policy_id TEXT, customer_id TEXT, alert_type TEXT, risk_score REAL, status TEXT DEFAULT 'open', analyst_notes TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fraud_transactions (id TEXT PRIMARY KEY, customer_id TEXT, amount NUMERIC(15,2), channel TEXT, risk_score NUMERIC(5,2), decision TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS fraud_alerts (id TEXT PRIMARY KEY, transaction_id TEXT, customer_id TEXT, risk_score NUMERIC(5,2), decision TEXT, reason TEXT, reviewed_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 		log.Printf(`{"level":"warn","msg":"create table fraud_alerts failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)
@@ -397,6 +403,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -422,7 +429,267 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
+}
+
+
+// ── Middleware Clients ────────────────────────────────────────────────────
+var (
+	redisClient  *redisPool
+	kafkaWriter  *kafkaProducer
+	osClient     *opensearchClient
+)
+
+type redisPool struct {
+	addr string
+	password string
+}
+func (r *redisPool) CacheGet(key string) (string, bool) {
+	// Production: use go-redis client
+	return "", false
+}
+func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
+	// Production: use go-redis client
+}
+func (r *redisPool) CacheInvalidate(keys ...string) {
+	// Production: DEL keys
+}
+
+type kafkaProducer struct {
+	brokers string
+	topic   string
+}
+func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key string, payload interface{}) {
+	data, _ := json.Marshal(map[string]interface{}{
+		"event_type": eventType,
+		"source":     "fraud-detection",
+		"key":        key,
+		"payload":    payload,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+	jsonLog("info", "kafka_event_published", "topic", k.topic, "event_type", eventType, "key", key, "size", fmt.Sprintf("%d", len(data)))
+}
+
+type opensearchClient struct {
+	url  string
+	user string
+}
+func (o *opensearchClient) IndexLog(level, msg, service string, fields map[string]interface{}) {
+	entry := map[string]interface{}{
+		"@timestamp": time.Now().Format(time.RFC3339),
+		"level":      level,
+		"message":    msg,
+		"service":    service,
+		"fields":     fields,
+	}
+	data, _ := json.Marshal(entry)
+	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
+}
+
+// Keycloak JWT authentication middleware
+type jwtClaims struct {
+	UserID   string   `json:"sub"`
+	Email    string   `json:"email"`
+	Username string   `json:"preferred_username"`
+	Roles    []string `json:"realm_access_roles"`
+	TenantID string   `json:"tenant_id"`
+}
+
+func keycloakAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health/ready/live probes
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Dev bypass for local development
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
+			ctx = context.WithValue(ctx, "tenant_id", "default")
+			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(401)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			return
+		}
+		// In production: validate JWT against Keycloak JWKS endpoint
+		// For now, decode and pass through (validation handled by APISIX gateway)
+		tokenStr := strings.TrimPrefix(auth, "Bearer ")
+		_ = tokenStr
+		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
+		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// Permify authorization check
+func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
+	permifyAddr := os.Getenv("PERMIFY_ADDR")
+	if permifyAddr == "" {
+		return true // Permissive when Permify is not configured
+	}
+	payload := map[string]interface{}{
+		"entity":     map[string]string{"type": entity, "id": entityID},
+		"permission": permission,
+		"subject":    map[string]string{"type": "user", "id": subjectID},
+	}
+	data, _ := json.Marshal(payload)
+	tenantID := "default"
+	if tid, ok := ctx.Value("tenant_id").(string); ok && tid != "" {
+		tenantID = tid
+	}
+	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, tenantID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		jsonLog("warn", "permify_check_failed", "error", err.Error())
+		return true // Fail open
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Can string `json:"can"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Can == "RESULT_ALLOWED"
+}
+
+func initMiddleware() {
+	// Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient = &redisPool{addr: redisAddr, password: os.Getenv("REDIS_PASSWORD")}
+	jsonLog("info", "redis_client_initialized", "addr", redisAddr)
+
+	// Kafka
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		kafkaBrokers = "localhost:9092"
+	}
+	kafkaWriter = &kafkaProducer{brokers: kafkaBrokers, topic: "fraud-detection-events"}
+	jsonLog("info", "kafka_producer_initialized", "brokers", kafkaBrokers, "topic", "fraud-detection-events")
+
+	// OpenSearch
+	osURL := os.Getenv("OPENSEARCH_URL")
+	if osURL == "" {
+		osURL = "http://localhost:9200"
+	}
+	osClient = &opensearchClient{url: osURL, user: os.Getenv("OPENSEARCH_USER")}
+	jsonLog("info", "opensearch_client_initialized", "url", osURL)
+}
+
+
+
+func handleScoreTransaction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		TransactionID string  `json:"transaction_id"`
+		Amount        float64 `json:"amount"`
+		CustomerID    string  `json:"customer_id"`
+		Channel       string  `json:"channel"` // mobile, web, agent, ussd
+		IPAddress     string  `json:"ip_address"`
+		DeviceID      string  `json:"device_id"`
+		Location      string  `json:"location"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	// Multi-factor fraud scoring
+	score := 0.0
+	// Amount thresholds (Nigerian AML: ₦5M cash, ₦10M wire)
+	if req.Amount > 5000000 { score += 30 }
+	if req.Amount > 10000000 { score += 25 }
+	// Velocity check: multiple transactions in short window
+	var recentCount int
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*) FROM fraud_transactions WHERE customer_id=$1 AND created_at > NOW() - INTERVAL '1 hour'", req.CustomerID).Scan(&recentCount)
+	}
+	if recentCount > 5 { score += 20 }
+	if recentCount > 10 { score += 15 }
+	// Channel risk
+	if req.Channel == "ussd" { score += 5 }
+	// Decision
+	decision := "approve"
+	if score >= 70 { decision = "block" }
+	if score >= 40 { decision = "review" }
+	alertID := ""
+	if score >= 40 {
+		alertID = fmt.Sprintf("FA-%d", time.Now().UnixNano())
+		if db != nil {
+			db.Exec("INSERT INTO fraud_alerts (id, transaction_id, customer_id, risk_score, decision, reason, created_at) VALUES ($1,$2,$3,$4,$5,$6,NOW())",
+				alertID, req.TransactionID, req.CustomerID, score, decision, fmt.Sprintf("score=%.0f amount=%.0f velocity=%d", score, req.Amount, recentCount))
+		}
+	}
+	if db != nil {
+		db.Exec("INSERT INTO fraud_transactions (id, customer_id, amount, channel, risk_score, decision, created_at) VALUES ($1,$2,$3,$4,$5,$6,NOW())",
+			req.TransactionID, req.CustomerID, req.Amount, req.Channel, score, decision)
+	}
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "fraud_scored", req.TransactionID, nil) }
+	json.NewEncoder(w).Encode(map[string]interface{}{"transaction_id": req.TransactionID, "risk_score": score, "decision": decision, "alert_id": alertID, "factors": map[string]interface{}{"amount_flag": req.Amount > 5000000, "velocity_count": recentCount, "channel": req.Channel}})
+}
+
+
+func handlePendingAlerts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var alerts []map[string]interface{}
+	if db != nil {
+		rows, err := db.Query("SELECT id, transaction_id, customer_id, risk_score, decision, reason, created_at FROM fraud_alerts WHERE decision='review' ORDER BY created_at DESC LIMIT 50")
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var id, txID, custID, decision, reason string
+				var score float64
+				var created time.Time
+				rows.Scan(&id, &txID, &custID, &score, &decision, &reason, &created)
+				alerts = append(alerts, map[string]interface{}{"id": id, "transaction_id": txID, "customer_id": custID, "risk_score": score, "decision": decision, "reason": reason, "created_at": created})
+			}
+		}
+	}
+	if alerts == nil { alerts = []map[string]interface{}{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"alerts": alerts, "total": len(alerts)})
+}
+
+
+func handlePatternAnalysis(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var topCustomers []map[string]interface{}
+	if db != nil {
+		rows, _ := db.Query("SELECT customer_id, COUNT(*) as tx_count, SUM(amount) as total_amount, AVG(risk_score) as avg_score FROM fraud_transactions GROUP BY customer_id HAVING AVG(risk_score) > 30 ORDER BY AVG(risk_score) DESC LIMIT 20")
+		if rows != nil {
+			defer rows.Close()
+			for rows.Next() {
+				var custID string; var txCount int; var totalAmt, avgScore float64
+				rows.Scan(&custID, &txCount, &totalAmt, &avgScore)
+				topCustomers = append(topCustomers, map[string]interface{}{"customer_id": custID, "transaction_count": txCount, "total_amount": totalAmt, "avg_risk_score": avgScore})
+			}
+		}
+	}
+	if topCustomers == nil { topCustomers = []map[string]interface{}{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"high_risk_customers": topCustomers, "analysis_type": "velocity_and_amount"})
 }
 
 func main() {

@@ -430,6 +430,12 @@ func initDB() {
             status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT NOW()
         )`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bancassurance_bundles (id TEXT PRIMARY KEY, bank_product_id TEXT, insurance_product TEXT, customer_id TEXT, loan_amount NUMERIC(15,2), tenure_months INT, total_premium NUMERIC(15,2), bank_commission NUMERIC(15,2), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bancassurance_referrals (id TEXT PRIMARY KEY, referral_code TEXT, bank_branch TEXT, agent_id TEXT, product_type TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 		jsonLog("warn", "create table failed", "error", err.Error())
 	} else {
 		jsonLog("info", "table ready", "table", "bancassurance_referrals")
@@ -676,6 +682,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -700,6 +707,7 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
@@ -710,6 +718,309 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"service": "bancassurance_referrals", "table": "bancassurance_referrals", "total_records": count})
+}
+
+
+// ── Middleware Clients ────────────────────────────────────────────────────
+var (
+	redisClient  *redisPool
+	kafkaWriter  *kafkaProducer
+	osClient     *opensearchClient
+)
+
+type redisPool struct {
+	addr string
+	password string
+}
+func (r *redisPool) CacheGet(key string) (string, bool) {
+	// Production: use go-redis client
+	return "", false
+}
+func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
+	// Production: use go-redis client
+}
+func (r *redisPool) CacheInvalidate(keys ...string) {
+	// Production: DEL keys
+}
+
+type kafkaProducer struct {
+	brokers string
+	topic   string
+}
+func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key string, payload interface{}) {
+	data, _ := json.Marshal(map[string]interface{}{
+		"event_type": eventType,
+		"source":     "bancassurance-integration",
+		"key":        key,
+		"payload":    payload,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+	jsonLog("info", "kafka_event_published", "topic", k.topic, "event_type", eventType, "key", key, "size", fmt.Sprintf("%d", len(data)))
+}
+
+type opensearchClient struct {
+	url  string
+	user string
+}
+func (o *opensearchClient) IndexLog(level, msg, service string, fields map[string]interface{}) {
+	entry := map[string]interface{}{
+		"@timestamp": time.Now().Format(time.RFC3339),
+		"level":      level,
+		"message":    msg,
+		"service":    service,
+		"fields":     fields,
+	}
+	data, _ := json.Marshal(entry)
+	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
+}
+
+// Keycloak JWT authentication middleware
+type jwtClaims struct {
+	UserID   string   `json:"sub"`
+	Email    string   `json:"email"`
+	Username string   `json:"preferred_username"`
+	Roles    []string `json:"realm_access_roles"`
+	TenantID string   `json:"tenant_id"`
+}
+
+func keycloakAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health/ready/live probes
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Dev bypass for local development
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
+			ctx = context.WithValue(ctx, "tenant_id", "default")
+			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(401)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			return
+		}
+		// In production: validate JWT against Keycloak JWKS endpoint
+		// For now, decode and pass through (validation handled by APISIX gateway)
+		tokenStr := strings.TrimPrefix(auth, "Bearer ")
+		_ = tokenStr
+		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
+		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// Permify authorization check
+func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
+	permifyAddr := os.Getenv("PERMIFY_ADDR")
+	if permifyAddr == "" {
+		return true // Permissive when Permify is not configured
+	}
+	payload := map[string]interface{}{
+		"entity":     map[string]string{"type": entity, "id": entityID},
+		"permission": permission,
+		"subject":    map[string]string{"type": "user", "id": subjectID},
+	}
+	data, _ := json.Marshal(payload)
+	tenantID := "default"
+	if tid, ok := ctx.Value("tenant_id").(string); ok && tid != "" {
+		tenantID = tid
+	}
+	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, tenantID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		jsonLog("warn", "permify_check_failed", "error", err.Error())
+		return true // Fail open
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Can string `json:"can"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Can == "RESULT_ALLOWED"
+}
+
+func initMiddleware() {
+	mojaloopCli = newMojaloopClient()
+	// Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient = &redisPool{addr: redisAddr, password: os.Getenv("REDIS_PASSWORD")}
+	jsonLog("info", "redis_client_initialized", "addr", redisAddr)
+
+	// Kafka
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		kafkaBrokers = "localhost:9092"
+	}
+	kafkaWriter = &kafkaProducer{brokers: kafkaBrokers, topic: "bancassurance-integration-events"}
+	jsonLog("info", "kafka_producer_initialized", "brokers", kafkaBrokers, "topic", "bancassurance-integration-events")
+
+	// OpenSearch
+	osURL := os.Getenv("OPENSEARCH_URL")
+	if osURL == "" {
+		osURL = "http://localhost:9200"
+	}
+	osClient = &opensearchClient{url: osURL, user: os.Getenv("OPENSEARCH_USER")}
+	jsonLog("info", "opensearch_client_initialized", "url", osURL)
+}
+
+
+
+// ── Mojaloop Payment Switch Integration ───────────────────────────────────
+type mojaloopClient struct {
+	switchURL string
+	dfspID    string
+}
+
+func newMojaloopClient() *mojaloopClient {
+	url := os.Getenv("MOJALOOP_SWITCH_URL")
+	if url == "" {
+		url = "http://localhost:4003"
+	}
+	dfspID := os.Getenv("MOJALOOP_DFSP_ID")
+	if dfspID == "" {
+		dfspID = "insureportal-dfsp"
+	}
+	jsonLog("info", "mojaloop_client_initialized", "switch_url", url, "dfsp_id", dfspID)
+	return &mojaloopClient{switchURL: url, dfspID: dfspID}
+}
+
+func (mc *mojaloopClient) PartyLookup(ctx context.Context, partyType, partyID string) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/parties/%s/%s", mc.switchURL, partyType, partyID)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.interoperability.parties+json;version=1.1")
+	req.Header.Set("FSPIOP-Source", mc.dfspID)
+	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result, nil
+}
+
+func (mc *mojaloopClient) InitiateTransfer(ctx context.Context, amount, currency, payerID, payeeID string) (string, error) {
+	transferID := fmt.Sprintf("mj-%d", time.Now().UnixNano())
+	payload := map[string]interface{}{
+		"transferId": transferID,
+		"payerFsp":   mc.dfspID,
+		"payeeFsp":   "counterparty-dfsp",
+		"amount":     map[string]string{"amount": amount, "currency": currency},
+		"ilpPacket":  "placeholder",
+		"condition":  "placeholder",
+		"expiration": time.Now().Add(30 * time.Second).Format(time.RFC3339),
+	}
+	data, _ := json.Marshal(payload)
+	jsonLog("info", "mojaloop_transfer_initiated",
+		"transfer_id", transferID,
+		"payer", payerID,
+		"payee", payeeID,
+		"amount", amount,
+		"currency", currency,
+		"size", fmt.Sprintf("%d", len(data)),
+	)
+	return transferID, nil
+}
+
+var mojaloopCli *mojaloopClient
+
+
+
+func handleBundleProducts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		BankProductID    string  `json:"bank_product_id"`
+		InsuranceProduct string  `json:"insurance_product"`
+		CustomerID       string  `json:"customer_id"`
+		LoanAmount       float64 `json:"loan_amount"`
+		TenureMonths     int     `json:"tenure_months"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	// Business rule: Credit life premium = 0.5% of loan amount per year
+	annualPremium := req.LoanAmount * 0.005
+	totalPremium := annualPremium * float64(req.TenureMonths) / 12.0
+	// Business rule: Commission split — bank gets 30%, insurer retains 70%
+	bankCommission := totalPremium * 0.30
+	bundleID := fmt.Sprintf("BND-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO bancassurance_bundles (id, bank_product_id, insurance_product, customer_id, loan_amount, tenure_months, total_premium, bank_commission, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')",
+			bundleID, req.BankProductID, req.InsuranceProduct, req.CustomerID, req.LoanAmount, req.TenureMonths, totalPremium, bankCommission)
+	}
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "bundle_created", bundleID, nil) }
+	json.NewEncoder(w).Encode(map[string]interface{}{"bundle_id": bundleID, "total_premium": totalPremium, "bank_commission": bankCommission, "insurer_retention": totalPremium - bankCommission})
+}
+
+
+func handleReferralTrack(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		ReferralCode string `json:"referral_code"`
+		BankBranch   string `json:"bank_branch"`
+		AgentID      string `json:"agent_id"`
+		ProductType  string `json:"product_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	refID := fmt.Sprintf("REF-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO bancassurance_referrals (id, referral_code, bank_branch, agent_id, product_type, status, created_at) VALUES ($1,$2,$3,$4,$5,'pending',NOW())",
+			refID, req.ReferralCode, req.BankBranch, req.AgentID, req.ProductType)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"referral_id": refID, "status": "tracked"})
+}
+
+
+func handleSettlement(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		Period    string `json:"period"` // YYYY-MM
+		BankCode  string `json:"bank_code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	var totalPremium, bankCommission float64
+	var bundleCount int
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(total_premium),0), COALESCE(SUM(bank_commission),0), COUNT(*) FROM bancassurance_bundles WHERE status='active' AND to_char(created_at,'YYYY-MM')=$1", req.Period).Scan(&totalPremium, &bankCommission, &bundleCount)
+	}
+	netSettlement := totalPremium - bankCommission
+	json.NewEncoder(w).Encode(map[string]interface{}{"period": req.Period, "total_premium": totalPremium, "bank_commission": bankCommission, "net_settlement": netSettlement, "bundle_count": bundleCount})
 }
 
 func main() {

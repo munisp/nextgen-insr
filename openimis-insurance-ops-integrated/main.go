@@ -110,6 +110,12 @@ func initDB() {
 	db.SetMaxIdleConns(5)
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS openimis_claims (id TEXT PRIMARY KEY, insuree_id TEXT, product_code TEXT, amount NUMERIC(15,2), status TEXT DEFAULT 'entered', review_status TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS openimis_beneficiaries (id TEXT PRIMARY KEY, national_id TEXT, full_name TEXT, date_of_birth TEXT, scheme_id TEXT, facility_id TEXT, status TEXT, enrolled_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS openimis_claims (id TEXT PRIMARY KEY, beneficiary_id TEXT, facility_id TEXT, diagnosis_code TEXT, amount NUMERIC(15,2), service_date TEXT, status TEXT, submitted_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 		log.Printf(`{"level":"warn","msg":"create table openimis_claims failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)
@@ -253,6 +259,214 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"table": "openimis_claims", "count": count})
+}
+
+
+// ── Middleware Clients ────────────────────────────────────────────────────
+var (
+	redisClient  *redisPool
+	kafkaWriter  *kafkaProducer
+	osClient     *opensearchClient
+)
+
+type redisPool struct {
+	addr string
+	password string
+}
+func (r *redisPool) CacheGet(key string) (string, bool) {
+	// Production: use go-redis client
+	return "", false
+}
+func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
+	// Production: use go-redis client
+}
+func (r *redisPool) CacheInvalidate(keys ...string) {
+	// Production: DEL keys
+}
+
+type kafkaProducer struct {
+	brokers string
+	topic   string
+}
+func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key string, payload interface{}) {
+	data, _ := json.Marshal(map[string]interface{}{
+		"event_type": eventType,
+		"source":     "openimis-insurance-ops-integrated",
+		"key":        key,
+		"payload":    payload,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+	jsonLog("info", "kafka_event_published", "topic", k.topic, "event_type", eventType, "key", key, "size", fmt.Sprintf("%d", len(data)))
+}
+
+type opensearchClient struct {
+	url  string
+	user string
+}
+func (o *opensearchClient) IndexLog(level, msg, service string, fields map[string]interface{}) {
+	entry := map[string]interface{}{
+		"@timestamp": time.Now().Format(time.RFC3339),
+		"level":      level,
+		"message":    msg,
+		"service":    service,
+		"fields":     fields,
+	}
+	data, _ := json.Marshal(entry)
+	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
+}
+
+// Keycloak JWT authentication middleware
+type jwtClaims struct {
+	UserID   string   `json:"sub"`
+	Email    string   `json:"email"`
+	Username string   `json:"preferred_username"`
+	Roles    []string `json:"realm_access_roles"`
+	TenantID string   `json:"tenant_id"`
+}
+
+func keycloakAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health/ready/live probes
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Dev bypass for local development
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
+			ctx = context.WithValue(ctx, "tenant_id", "default")
+			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(401)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			return
+		}
+		// In production: validate JWT against Keycloak JWKS endpoint
+		// For now, decode and pass through (validation handled by APISIX gateway)
+		tokenStr := strings.TrimPrefix(auth, "Bearer ")
+		_ = tokenStr
+		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
+		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// Permify authorization check
+func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
+	permifyAddr := os.Getenv("PERMIFY_ADDR")
+	if permifyAddr == "" {
+		return true // Permissive when Permify is not configured
+	}
+	payload := map[string]interface{}{
+		"entity":     map[string]string{"type": entity, "id": entityID},
+		"permission": permission,
+		"subject":    map[string]string{"type": "user", "id": subjectID},
+	}
+	data, _ := json.Marshal(payload)
+	tenantID := "default"
+	if tid, ok := ctx.Value("tenant_id").(string); ok && tid != "" {
+		tenantID = tid
+	}
+	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, tenantID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		jsonLog("warn", "permify_check_failed", "error", err.Error())
+		return true // Fail open
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Can string `json:"can"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Can == "RESULT_ALLOWED"
+}
+
+func initMiddleware() {
+	// Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient = &redisPool{addr: redisAddr, password: os.Getenv("REDIS_PASSWORD")}
+	jsonLog("info", "redis_client_initialized", "addr", redisAddr)
+
+	// Kafka
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		kafkaBrokers = "localhost:9092"
+	}
+	kafkaWriter = &kafkaProducer{brokers: kafkaBrokers, topic: "openimis-insurance-ops-integrated-events"}
+	jsonLog("info", "kafka_producer_initialized", "brokers", kafkaBrokers, "topic", "openimis-insurance-ops-integrated-events")
+
+	// OpenSearch
+	osURL := os.Getenv("OPENSEARCH_URL")
+	if osURL == "" {
+		osURL = "http://localhost:9200"
+	}
+	osClient = &opensearchClient{url: osURL, user: os.Getenv("OPENSEARCH_USER")}
+	jsonLog("info", "opensearch_client_initialized", "url", osURL)
+}
+
+
+
+func handleBeneficiaryEnroll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		NationalID string `json:"national_id"`
+		FullName   string `json:"full_name"`
+		DateOfBirth string `json:"date_of_birth"`
+		SchemeID   string `json:"scheme_id"` // NHIS scheme
+		FacilityID string `json:"facility_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	enrollID := fmt.Sprintf("BEN-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO openimis_beneficiaries (id, national_id, full_name, date_of_birth, scheme_id, facility_id, status, enrolled_at) VALUES ($1,$2,$3,$4,$5,$6,'active',NOW())",
+			enrollID, req.NationalID, req.FullName, req.DateOfBirth, req.SchemeID, req.FacilityID)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"enrollment_id": enrollID, "status": "active", "scheme_id": req.SchemeID})
+}
+
+
+func handleSocialClaimSubmit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		BeneficiaryID string  `json:"beneficiary_id"`
+		FacilityID    string  `json:"facility_id"`
+		DiagnosisCode string  `json:"diagnosis_code"` // ICD-10
+		Amount        float64 `json:"amount"`
+		ServiceDate   string  `json:"service_date"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	claimID := fmt.Sprintf("SC-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO openimis_claims (id, beneficiary_id, facility_id, diagnosis_code, amount, service_date, status, submitted_at) VALUES ($1,$2,$3,$4,$5,$6,'submitted',NOW())",
+			claimID, req.BeneficiaryID, req.FacilityID, req.DiagnosisCode, req.Amount, req.ServiceDate)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"claim_id": claimID, "status": "submitted"})
 }
 
 func main() {

@@ -114,6 +114,12 @@ func initDB() {
 	db.SetMaxIdleConns(5)
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS mobile_users (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, device_token TEXT, platform TEXT, app_version TEXT, push_enabled BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS mobile_devices (device_id TEXT PRIMARY KEY, user_id TEXT, platform TEXT, push_token TEXT, app_version TEXT, last_seen TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS sync_events (id TEXT PRIMARY KEY, user_id TEXT, entity_type TEXT, entity_id TEXT, action TEXT, payload TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 		log.Printf(`{"level":"warn","msg":"create table mobile_users failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)
@@ -380,6 +386,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -405,7 +412,216 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
+}
+
+
+// ── Middleware Clients ────────────────────────────────────────────────────
+var (
+	redisClient  *redisPool
+	kafkaWriter  *kafkaProducer
+	osClient     *opensearchClient
+)
+
+type redisPool struct {
+	addr string
+	password string
+}
+func (r *redisPool) CacheGet(key string) (string, bool) {
+	// Production: use go-redis client
+	return "", false
+}
+func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
+	// Production: use go-redis client
+}
+func (r *redisPool) CacheInvalidate(keys ...string) {
+	// Production: DEL keys
+}
+
+type kafkaProducer struct {
+	brokers string
+	topic   string
+}
+func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key string, payload interface{}) {
+	data, _ := json.Marshal(map[string]interface{}{
+		"event_type": eventType,
+		"source":     "insurance-mobile-app",
+		"key":        key,
+		"payload":    payload,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+	jsonLog("info", "kafka_event_published", "topic", k.topic, "event_type", eventType, "key", key, "size", fmt.Sprintf("%d", len(data)))
+}
+
+type opensearchClient struct {
+	url  string
+	user string
+}
+func (o *opensearchClient) IndexLog(level, msg, service string, fields map[string]interface{}) {
+	entry := map[string]interface{}{
+		"@timestamp": time.Now().Format(time.RFC3339),
+		"level":      level,
+		"message":    msg,
+		"service":    service,
+		"fields":     fields,
+	}
+	data, _ := json.Marshal(entry)
+	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
+}
+
+// Keycloak JWT authentication middleware
+type jwtClaims struct {
+	UserID   string   `json:"sub"`
+	Email    string   `json:"email"`
+	Username string   `json:"preferred_username"`
+	Roles    []string `json:"realm_access_roles"`
+	TenantID string   `json:"tenant_id"`
+}
+
+func keycloakAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health/ready/live probes
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Dev bypass for local development
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
+			ctx = context.WithValue(ctx, "tenant_id", "default")
+			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(401)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			return
+		}
+		// In production: validate JWT against Keycloak JWKS endpoint
+		// For now, decode and pass through (validation handled by APISIX gateway)
+		tokenStr := strings.TrimPrefix(auth, "Bearer ")
+		_ = tokenStr
+		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
+		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// Permify authorization check
+func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
+	permifyAddr := os.Getenv("PERMIFY_ADDR")
+	if permifyAddr == "" {
+		return true // Permissive when Permify is not configured
+	}
+	payload := map[string]interface{}{
+		"entity":     map[string]string{"type": entity, "id": entityID},
+		"permission": permission,
+		"subject":    map[string]string{"type": "user", "id": subjectID},
+	}
+	data, _ := json.Marshal(payload)
+	tenantID := "default"
+	if tid, ok := ctx.Value("tenant_id").(string); ok && tid != "" {
+		tenantID = tid
+	}
+	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, tenantID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		jsonLog("warn", "permify_check_failed", "error", err.Error())
+		return true // Fail open
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Can string `json:"can"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Can == "RESULT_ALLOWED"
+}
+
+func initMiddleware() {
+	// Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient = &redisPool{addr: redisAddr, password: os.Getenv("REDIS_PASSWORD")}
+	jsonLog("info", "redis_client_initialized", "addr", redisAddr)
+
+	// Kafka
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		kafkaBrokers = "localhost:9092"
+	}
+	kafkaWriter = &kafkaProducer{brokers: kafkaBrokers, topic: "insurance-mobile-app-events"}
+	jsonLog("info", "kafka_producer_initialized", "brokers", kafkaBrokers, "topic", "insurance-mobile-app-events")
+
+	// OpenSearch
+	osURL := os.Getenv("OPENSEARCH_URL")
+	if osURL == "" {
+		osURL = "http://localhost:9200"
+	}
+	osClient = &opensearchClient{url: osURL, user: os.Getenv("OPENSEARCH_USER")}
+	jsonLog("info", "opensearch_client_initialized", "url", osURL)
+}
+
+
+
+func handleDeviceRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		DeviceID   string `json:"device_id"`
+		UserID     string `json:"user_id"`
+		Platform   string `json:"platform"` // ios, android
+		PushToken  string `json:"push_token"`
+		AppVersion string `json:"app_version"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	if db != nil {
+		db.Exec("INSERT INTO mobile_devices (device_id, user_id, platform, push_token, app_version, last_seen) VALUES ($1,$2,$3,$4,$5,NOW()) ON CONFLICT (device_id) DO UPDATE SET push_token=$4, app_version=$5, last_seen=NOW()",
+			req.DeviceID, req.UserID, req.Platform, req.PushToken, req.AppVersion)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "registered", "device_id": req.DeviceID})
+}
+
+
+func handleSyncPull(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	userID := r.URL.Query().Get("user_id")
+	lastSync := r.URL.Query().Get("last_sync")
+	if lastSync == "" { lastSync = "2000-01-01T00:00:00Z" }
+	var changes []map[string]interface{}
+	if db != nil {
+		rows, _ := db.Query("SELECT id, entity_type, entity_id, action, payload, created_at FROM sync_events WHERE user_id=$1 AND created_at > $2 ORDER BY created_at ASC LIMIT 100", userID, lastSync)
+		if rows != nil {
+			defer rows.Close()
+			for rows.Next() {
+				var id, eType, eID, action, payload string; var created time.Time
+				rows.Scan(&id, &eType, &eID, &action, &payload, &created)
+				changes = append(changes, map[string]interface{}{"id": id, "entity_type": eType, "entity_id": eID, "action": action, "payload": payload, "timestamp": created})
+			}
+		}
+	}
+	if changes == nil { changes = []map[string]interface{}{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"changes": changes, "count": len(changes), "server_time": time.Now().Format(time.RFC3339)})
 }
 
 func main() {

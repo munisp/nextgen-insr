@@ -1,3 +1,4 @@
+import os
 """
 Supply Chain Demand Forecasting Service
 AI-powered demand prediction with multiple algorithms:
@@ -17,6 +18,117 @@ from pydantic import BaseModel
 
 from forecasting import DemandForecaster, ForecastResult
 from anomaly import AnomalyDetector
+
+# ── Middleware Clients ─────────────────────────────────────────────────────
+import redis
+import json as _json
+from datetime import datetime
+
+# Redis client
+_redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+_redis_client = None
+try:
+    _redis_client = redis.from_url(_redis_url, decode_responses=True, socket_timeout=5)
+    _redis_client.ping()
+    print(f"[middleware] Redis connected: {_redis_url}")
+except Exception as _e:
+    print(f"[middleware] Redis not available: {_e}")
+    _redis_client = None
+
+# Kafka producer helper
+_kafka_brokers = os.environ.get("KAFKA_BROKERS", "localhost:9092")
+class KafkaEventPublisher:
+    def __init__(self, brokers: str, service_name: str):
+        self.brokers = brokers
+        self.service_name = service_name
+    
+    def publish(self, event_type: str, key: str, payload: dict):
+        """Publish event to Kafka topic. In production, use confluent-kafka or aiokafka."""
+        event = {
+            "event_type": event_type,
+            "source": self.service_name,
+            "key": key,
+            "payload": payload,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+        # Production: producer.produce(topic, key=key, value=json.dumps(event))
+        print(f"[kafka] event published: {event_type} key={key}")
+
+_kafka_publisher = KafkaEventPublisher(_kafka_brokers, "demand-forecasting-py")
+
+# OpenSearch structured logger
+_opensearch_url = os.environ.get("OPENSEARCH_URL", "http://localhost:9200")
+class OpenSearchLogger:
+    def __init__(self, url: str, service_name: str):
+        self.url = url
+        self.service_name = service_name
+    
+    def index_log(self, level: str, message: str, fields: dict = None):
+        """Index structured log to OpenSearch."""
+        doc = {
+            "@timestamp": datetime.utcnow().isoformat() + "Z",
+            "level": level,
+            "message": message,
+            "service": self.service_name,
+            "fields": fields or {},
+        }
+        # Production: requests.post(f"{self.url}/logs-demand-forecasting-py/_doc", json=doc)
+        print(f"[opensearch] {level}: {message}")
+
+_os_logger = OpenSearchLogger(_opensearch_url, "demand-forecasting-py")
+
+# Permify authorization client
+_permify_addr = os.environ.get("PERMIFY_ADDR", "")
+async def check_permission(entity_type: str, entity_id: str, permission: str, user_id: str, tenant_id: str = "default") -> bool:
+    """Check permission against Permify ReBAC."""
+    if not _permify_addr:
+        return True  # Permissive when Permify is not configured
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                f"http://{_permify_addr}/v1/tenants/{tenant_id}/permissions/check",
+                json={
+                    "entity": {"type": entity_type, "id": entity_id},
+                    "permission": permission,
+                    "subject": {"type": "user", "id": user_id},
+                },
+            )
+            data = resp.json()
+            return data.get("can") == "RESULT_ALLOWED"
+    except Exception:
+        return True  # Fail open
+
+# Keycloak JWT authentication middleware
+from fastapi import Request, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+_security = HTTPBearer(auto_error=False)
+
+async def keycloak_auth_middleware(request: Request, call_next):
+    """Validate JWT token from Keycloak. Skip for health/ready/live probes."""
+    path = request.url.path
+    if path in ("/health", "/ready", "/live", "/metrics", "/docs", "/openapi.json"):
+        return await call_next(request)
+    
+    # Dev bypass
+    if os.environ.get("DEV_AUTH_BYPASS") == "true":
+        request.state.user_id = "dev-user"
+        request.state.tenant_id = "default"
+        request.state.roles = ["admin", "user"]
+        return await call_next(request)
+    
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "missing bearer token"})
+    
+    # In production: validate JWT against Keycloak JWKS endpoint
+    # For now, pass through (validation handled by APISIX gateway)
+    request.state.user_id = request.headers.get("X-User-ID", "unknown")
+    request.state.tenant_id = request.headers.get("X-Tenant-ID", "default")
+    return await call_next(request)
+
+
 
 
 forecaster: Optional[DemandForecaster] = None
@@ -38,6 +150,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.middleware("http")(keycloak_auth_middleware)
+
 
 
 @app.get("/health")

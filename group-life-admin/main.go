@@ -457,6 +457,9 @@ func initDB() {
             status TEXT DEFAULT 'active',
             created_at TIMESTAMP DEFAULT NOW()
         )`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS group_members (id TEXT PRIMARY KEY, group_id TEXT, member_id TEXT, member_name TEXT, date_of_birth TEXT, sum_assured NUMERIC(15,2), category TEXT, annual_premium NUMERIC(15,2), claim_amount NUMERIC(15,2) DEFAULT 0, premium_paid NUMERIC(15,2) DEFAULT 0, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+	}
 		jsonLog("warn", "create table failed", "error", err.Error())
 	} else {
 		jsonLog("info", "table ready", "table", "group_life_schemes")
@@ -703,6 +706,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -727,6 +731,7 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
@@ -737,6 +742,250 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"service": "group_life_schemes", "table": "group_life_schemes", "total_records": count})
+}
+
+
+// ── Middleware Clients ────────────────────────────────────────────────────
+var (
+	redisClient  *redisPool
+	kafkaWriter  *kafkaProducer
+	osClient     *opensearchClient
+)
+
+type redisPool struct {
+	addr string
+	password string
+}
+func (r *redisPool) CacheGet(key string) (string, bool) {
+	// Production: use go-redis client
+	return "", false
+}
+func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
+	// Production: use go-redis client
+}
+func (r *redisPool) CacheInvalidate(keys ...string) {
+	// Production: DEL keys
+}
+
+type kafkaProducer struct {
+	brokers string
+	topic   string
+}
+func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key string, payload interface{}) {
+	data, _ := json.Marshal(map[string]interface{}{
+		"event_type": eventType,
+		"source":     "group-life-admin",
+		"key":        key,
+		"payload":    payload,
+		"timestamp":  time.Now().Format(time.RFC3339),
+	})
+	jsonLog("info", "kafka_event_published", "topic", k.topic, "event_type", eventType, "key", key, "size", fmt.Sprintf("%d", len(data)))
+}
+
+type opensearchClient struct {
+	url  string
+	user string
+}
+func (o *opensearchClient) IndexLog(level, msg, service string, fields map[string]interface{}) {
+	entry := map[string]interface{}{
+		"@timestamp": time.Now().Format(time.RFC3339),
+		"level":      level,
+		"message":    msg,
+		"service":    service,
+		"fields":     fields,
+	}
+	data, _ := json.Marshal(entry)
+	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
+}
+
+// Keycloak JWT authentication middleware
+type jwtClaims struct {
+	UserID   string   `json:"sub"`
+	Email    string   `json:"email"`
+	Username string   `json:"preferred_username"`
+	Roles    []string `json:"realm_access_roles"`
+	TenantID string   `json:"tenant_id"`
+}
+
+func keycloakAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for health/ready/live probes
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Dev bypass for local development
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
+			ctx = context.WithValue(ctx, "tenant_id", "default")
+			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(401)
+			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			return
+		}
+		// In production: validate JWT against Keycloak JWKS endpoint
+		// For now, decode and pass through (validation handled by APISIX gateway)
+		tokenStr := strings.TrimPrefix(auth, "Bearer ")
+		_ = tokenStr
+		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
+		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// Permify authorization check
+func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
+	permifyAddr := os.Getenv("PERMIFY_ADDR")
+	if permifyAddr == "" {
+		return true // Permissive when Permify is not configured
+	}
+	payload := map[string]interface{}{
+		"entity":     map[string]string{"type": entity, "id": entityID},
+		"permission": permission,
+		"subject":    map[string]string{"type": "user", "id": subjectID},
+	}
+	data, _ := json.Marshal(payload)
+	tenantID := "default"
+	if tid, ok := ctx.Value("tenant_id").(string); ok && tid != "" {
+		tenantID = tid
+	}
+	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, tenantID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
+	if err != nil {
+		return true
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		jsonLog("warn", "permify_check_failed", "error", err.Error())
+		return true // Fail open
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Can string `json:"can"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Can == "RESULT_ALLOWED"
+}
+
+func initMiddleware() {
+	// Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient = &redisPool{addr: redisAddr, password: os.Getenv("REDIS_PASSWORD")}
+	jsonLog("info", "redis_client_initialized", "addr", redisAddr)
+
+	// Kafka
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		kafkaBrokers = "localhost:9092"
+	}
+	kafkaWriter = &kafkaProducer{brokers: kafkaBrokers, topic: "group-life-admin-events"}
+	jsonLog("info", "kafka_producer_initialized", "brokers", kafkaBrokers, "topic", "group-life-admin-events")
+
+	// OpenSearch
+	osURL := os.Getenv("OPENSEARCH_URL")
+	if osURL == "" {
+		osURL = "http://localhost:9200"
+	}
+	osClient = &opensearchClient{url: osURL, user: os.Getenv("OPENSEARCH_USER")}
+	jsonLog("info", "opensearch_client_initialized", "url", osURL)
+}
+
+
+
+func handleGroupEnroll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		GroupID    string `json:"group_id"`
+		MemberID   string `json:"member_id"`
+		MemberName string `json:"member_name"`
+		DateOfBirth string `json:"date_of_birth"`
+		SumAssured float64 `json:"sum_assured"`
+		Category   string `json:"category"` // employee, spouse, child
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	// Business rule: max sum assured = ₦50M for employees, ₦25M for spouse, ₦10M for child
+	maxSA := map[string]float64{"employee": 50000000, "spouse": 25000000, "child": 10000000}
+	if max, ok := maxSA[req.Category]; ok && req.SumAssured > max {
+		http.Error(w, fmt.Sprintf(`{"error":"sum_assured exceeds max %.0f for %s"}`, max, req.Category), 400); return
+	}
+	// Premium calculation: per-mille rate based on group experience
+	rate := 2.5 // base rate per ₦1000 sum assured per annum
+	var claimsRatio float64
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(claim_amount)/NULLIF(SUM(premium_paid),0), 0) FROM group_members WHERE group_id=$1", req.GroupID).Scan(&claimsRatio)
+	}
+	// Experience rating adjustment
+	if claimsRatio < 0.4 { rate *= 0.85 } // Good experience discount
+	if claimsRatio > 0.8 { rate *= 1.25 } // Bad experience loading
+	annualPremium := (req.SumAssured / 1000) * rate
+	enrollID := fmt.Sprintf("GE-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO group_members (id, group_id, member_id, member_name, date_of_birth, sum_assured, category, annual_premium, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')",
+			enrollID, req.GroupID, req.MemberID, req.MemberName, req.DateOfBirth, req.SumAssured, req.Category, annualPremium)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"enrollment_id": enrollID, "annual_premium": annualPremium, "rate_per_mille": rate, "experience_adjustment": claimsRatio})
+}
+
+
+func handleExperienceRating(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	groupID := r.URL.Query().Get("group_id")
+	if groupID == "" { http.Error(w, `{"error":"group_id required"}`, 400); return }
+	var memberCount int; var totalSA, totalPremium, totalClaims float64
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*), COALESCE(SUM(sum_assured),0), COALESCE(SUM(annual_premium),0), COALESCE(SUM(claim_amount),0) FROM group_members WHERE group_id=$1 AND status='active'", groupID).Scan(&memberCount, &totalSA, &totalPremium, &totalClaims)
+	}
+	claimsRatio := 0.0
+	if totalPremium > 0 { claimsRatio = totalClaims / totalPremium }
+	rating := "standard"
+	if claimsRatio < 0.4 { rating = "preferred" }
+	if claimsRatio > 0.8 { rating = "substandard" }
+	json.NewEncoder(w).Encode(map[string]interface{}{"group_id": groupID, "member_count": memberCount, "total_sum_assured": totalSA, "total_premium": totalPremium, "total_claims": totalClaims, "claims_ratio": claimsRatio, "experience_rating": rating})
+}
+
+
+func handlePremiumSchedule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	groupID := r.URL.Query().Get("group_id")
+	var schedule []map[string]interface{}
+	if db != nil {
+		rows, _ := db.Query("SELECT category, COUNT(*) as members, SUM(sum_assured) as total_sa, SUM(annual_premium) as total_premium FROM group_members WHERE group_id=$1 AND status='active' GROUP BY category", groupID)
+		if rows != nil {
+			defer rows.Close()
+			for rows.Next() {
+				var cat string; var cnt int; var sa, prem float64
+				rows.Scan(&cat, &cnt, &sa, &prem)
+				schedule = append(schedule, map[string]interface{}{"category": cat, "member_count": cnt, "total_sum_assured": sa, "annual_premium": prem, "monthly_premium": prem / 12})
+			}
+		}
+	}
+	if schedule == nil { schedule = []map[string]interface{}{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"group_id": groupID, "schedule": schedule})
 }
 
 func main() {

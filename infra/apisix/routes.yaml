@@ -556,3 +556,2184 @@ upstreams:
     type: roundrobin
     scheme: http
     pass_host: pass
+
+
+# ── Auto-generated Go Microservice Routes ──────────────────────────────
+
+  - id: ab-testing-framework
+    uri: /svc/ab-testing-framework/*
+    upstream_id: ab-testing-framework
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: agent-commission-management
+    uri: /svc/agent-commission-management/*
+    upstream_id: agent-commission-management
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: agent-mobile-app
+    uri: /svc/agent-mobile-app/*
+    upstream_id: agent-mobile-app
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: agent-network-platform
+    uri: /svc/agent-network-platform/*
+    upstream_id: agent-network-platform
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: agentic-underwriting
+    uri: /svc/agentic-underwriting/*
+    upstream_id: agentic-underwriting
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: ai-claims-auto-adjudication
+    uri: /svc/ai-claims-auto-adjudication/*
+    upstream_id: ai-claims-auto-adjudication
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: api-marketplace
+    uri: /svc/api-marketplace/*
+    upstream_id: api-marketplace
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: audit-trail-system
+    uri: /svc/audit-trail-system/*
+    upstream_id: audit-trail-system
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: bancassurance-integration
+    uri: /svc/bancassurance-integration/*
+    upstream_id: bancassurance-integration
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: batch-processing-engine
+    uri: /svc/batch-processing-engine/*
+    upstream_id: batch-processing-engine
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: blockchain-transparency
+    uri: /svc/blockchain-transparency/*
+    upstream_id: blockchain-transparency
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: broker-api-service
+    uri: /svc/broker-api-service/*
+    upstream_id: broker-api-service
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: claims-adjudication-engine
+    uri: /svc/claims-adjudication-engine/*
+    upstream_id: claims-adjudication-engine
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: communication-service
+    uri: /svc/communication-service/*
+    upstream_id: communication-service
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: cross-company-fraud-database
+    uri: /svc/cross-company-fraud-database/*
+    upstream_id: cross-company-fraud-database
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: customer-360-view
+    uri: /svc/customer-360-view/*
+    upstream_id: customer-360-view
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: customer-feedback-loop
+    uri: /svc/customer-feedback-loop/*
+    upstream_id: customer-feedback-loop
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: devops-platform
+    uri: /svc/devops-platform/*
+    upstream_id: devops-platform
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: digital-twin-risk-modeler
+    uri: /svc/digital-twin-risk-modeler/*
+    upstream_id: digital-twin-risk-modeler
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: disaster-recovery-module
+    uri: /svc/disaster-recovery-module/*
+    upstream_id: disaster-recovery-module
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: document-management-system
+    uri: /svc/document-management-system/*
+    upstream_id: document-management-system
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: dr-ha-service
+    uri: /svc/dr-ha-service/*
+    upstream_id: dr-ha-service
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: enhanced-kyc-kyb
+    uri: /svc/enhanced-kyc-kyb/*
+    upstream_id: enhanced-kyc-kyb
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: enterprise-mdm
+    uri: /svc/enterprise-mdm/*
+    upstream_id: enterprise-mdm
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: erpnext-integration-service
+    uri: /svc/erpnext-integration-service/*
+    upstream_id: erpnext-integration-service
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: etherisc-gif-enhanced
+    uri: /svc/etherisc-gif-enhanced/*
+    upstream_id: etherisc-gif-enhanced
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: etherisc-gif-integration
+    uri: /svc/etherisc-gif-integration/*
+    upstream_id: etherisc-gif-integration
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: fraud-detection-go
+    uri: /svc/fraud-detection-go/*
+    upstream_id: fraud-detection-go
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: fraud-network-graph
+    uri: /svc/fraud-network-graph/*
+    upstream_id: fraud-network-graph
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: gamification-service
+    uri: /svc/gamification-service/*
+    upstream_id: gamification-service
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: group-life-admin
+    uri: /svc/group-life-admin/*
+    upstream_id: group-life-admin
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: instant-payout-service
+    uri: /svc/instant-payout-service/*
+    upstream_id: instant-payout-service
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: insurance-as-a-service
+    uri: /svc/insurance-as-a-service/*
+    upstream_id: insurance-as-a-service
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: insurance-mobile-app
+    uri: /svc/insurance-mobile-app/*
+    upstream_id: insurance-mobile-app
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: insurance-radar
+    uri: /svc/insurance-radar/*
+    upstream_id: insurance-radar
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: insurance-tech-innovations
+    uri: /svc/insurance-tech-innovations/*
+    upstream_id: insurance-tech-innovations
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: lakehouse-integration
+    uri: /svc/lakehouse-integration/*
+    upstream_id: lakehouse-integration
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: microinsurance-engine
+    uri: /svc/microinsurance-engine/*
+    upstream_id: microinsurance-engine
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: mobile-money-service
+    uri: /svc/mobile-money-service/*
+    upstream_id: mobile-money-service
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: multi-country-regulatory
+    uri: /svc/multi-country-regulatory/*
+    upstream_id: multi-country-regulatory
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: multi-currency-service
+    uri: /svc/multi-currency-service/*
+    upstream_id: multi-currency-service
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: multi-currency-support
+    uri: /svc/multi-currency-support/*
+    upstream_id: multi-currency-support
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: multi-language-service
+    uri: /svc/multi-language-service/*
+    upstream_id: multi-language-service
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: multi-tenant-platform
+    uri: /svc/multi-tenant-platform/*
+    upstream_id: multi-tenant-platform
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: naicom-compliance-module
+    uri: /svc/naicom-compliance-module/*
+    upstream_id: naicom-compliance-module
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: native-mobile-ios
+    uri: /svc/native-mobile-ios/*
+    upstream_id: native-mobile-ios
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: ndpr-compliance
+    uri: /svc/ndpr-compliance/*
+    upstream_id: ndpr-compliance
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: nigerian-bank-integrations
+    uri: /svc/nigerian-bank-integrations/*
+    upstream_id: nigerian-bank-integrations
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: nmid-integration
+    uri: /svc/nmid-integration/*
+    upstream_id: nmid-integration
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: openimis-insurance-ops-integrated
+    uri: /svc/openimis-insurance-ops-integrated/*
+    upstream_id: openimis-insurance-ops-integrated
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: pan-african-ekyc
+    uri: /svc/pan-african-ekyc/*
+    upstream_id: pan-african-ekyc
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: parametric-insurance-engine
+    uri: /svc/parametric-insurance-engine/*
+    upstream_id: parametric-insurance-engine
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: performance-monitoring-dashboard
+    uri: /svc/performance-monitoring-dashboard/*
+    upstream_id: performance-monitoring-dashboard
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: pfa-integration
+    uri: /svc/pfa-integration/*
+    upstream_id: pfa-integration
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: policy-lifecycle-service
+    uri: /svc/policy-lifecycle-service/*
+    upstream_id: policy-lifecycle-service
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: policy-renewal-automation
+    uri: /svc/policy-renewal-automation/*
+    upstream_id: policy-renewal-automation
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: policy-workflow-go
+    uri: /svc/policy-workflow-go/*
+    upstream_id: policy-workflow-go
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: predictive-churn-engine
+    uri: /svc/predictive-churn-engine/*
+    upstream_id: predictive-churn-engine
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: premium-collection-service
+    uri: /svc/premium-collection-service/*
+    upstream_id: premium-collection-service
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: premium-finance-service
+    uri: /svc/premium-finance-service/*
+    upstream_id: premium-finance-service
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: reconciliation-engine
+    uri: /svc/reconciliation-engine/*
+    upstream_id: reconciliation-engine
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: reinsurance-management
+    uri: /svc/reinsurance-management/*
+    upstream_id: reinsurance-management
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: reinsurance-service
+    uri: /svc/reinsurance-service/*
+    upstream_id: reinsurance-service
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: strategic-implementations
+    uri: /svc/strategic-implementations/*
+    upstream_id: strategic-implementations
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: takaful-module
+    uri: /svc/takaful-module/*
+    upstream_id: takaful-module
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: underwriting-engine
+    uri: /svc/underwriting-engine/*
+    upstream_id: underwriting-engine
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: usage-based-insurance
+    uri: /svc/usage-based-insurance/*
+    upstream_id: usage-based-insurance
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+  - id: ussd-gateway
+    uri: /svc/ussd-gateway/*
+    upstream_id: ussd-gateway
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      request-id:
+        header_name: X-Request-ID
+        include_in_response: true
+      prometheus: {}
+
+# ── Auto-generated Go Microservice Upstreams ──────────────────────────
+
+  - id: ab-testing-framework
+    nodes:
+      "ab-testing-framework:9100": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: agent-commission-management
+    nodes:
+      "agent-commission-management:9101": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: agent-mobile-app
+    nodes:
+      "agent-mobile-app:9102": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: agent-network-platform
+    nodes:
+      "agent-network-platform:9103": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: agentic-underwriting
+    nodes:
+      "agentic-underwriting:9104": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: ai-claims-auto-adjudication
+    nodes:
+      "ai-claims-auto-adjudication:9105": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: api-marketplace
+    nodes:
+      "api-marketplace:9106": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: audit-trail-system
+    nodes:
+      "audit-trail-system:9107": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: bancassurance-integration
+    nodes:
+      "bancassurance-integration:9108": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: batch-processing-engine
+    nodes:
+      "batch-processing-engine:9109": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: blockchain-transparency
+    nodes:
+      "blockchain-transparency:9110": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: broker-api-service
+    nodes:
+      "broker-api-service:9111": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: claims-adjudication-engine
+    nodes:
+      "claims-adjudication-engine:9112": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: communication-service
+    nodes:
+      "communication-service:9113": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: cross-company-fraud-database
+    nodes:
+      "cross-company-fraud-database:9114": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: customer-360-view
+    nodes:
+      "customer-360-view:9115": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: customer-feedback-loop
+    nodes:
+      "customer-feedback-loop:9116": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: devops-platform
+    nodes:
+      "devops-platform:9117": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: digital-twin-risk-modeler
+    nodes:
+      "digital-twin-risk-modeler:9118": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: disaster-recovery-module
+    nodes:
+      "disaster-recovery-module:9119": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: document-management-system
+    nodes:
+      "document-management-system:9120": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: dr-ha-service
+    nodes:
+      "dr-ha-service:9121": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: enhanced-kyc-kyb
+    nodes:
+      "enhanced-kyc-kyb:9122": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: enterprise-mdm
+    nodes:
+      "enterprise-mdm:9123": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: erpnext-integration-service
+    nodes:
+      "erpnext-integration-service:9124": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: etherisc-gif-enhanced
+    nodes:
+      "etherisc-gif-enhanced:9125": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: etherisc-gif-integration
+    nodes:
+      "etherisc-gif-integration:9126": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: fraud-detection-go
+    nodes:
+      "fraud-detection-go:9127": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: fraud-network-graph
+    nodes:
+      "fraud-network-graph:9128": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: gamification-service
+    nodes:
+      "gamification-service:9129": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: group-life-admin
+    nodes:
+      "group-life-admin:9130": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: instant-payout-service
+    nodes:
+      "instant-payout-service:9131": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: insurance-as-a-service
+    nodes:
+      "insurance-as-a-service:9132": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: insurance-mobile-app
+    nodes:
+      "insurance-mobile-app:9133": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: insurance-radar
+    nodes:
+      "insurance-radar:9134": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: insurance-tech-innovations
+    nodes:
+      "insurance-tech-innovations:9135": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: lakehouse-integration
+    nodes:
+      "lakehouse-integration:9136": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: microinsurance-engine
+    nodes:
+      "microinsurance-engine:9137": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: mobile-money-service
+    nodes:
+      "mobile-money-service:9138": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: multi-country-regulatory
+    nodes:
+      "multi-country-regulatory:9139": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: multi-currency-service
+    nodes:
+      "multi-currency-service:9140": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: multi-currency-support
+    nodes:
+      "multi-currency-support:9141": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: multi-language-service
+    nodes:
+      "multi-language-service:9142": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: multi-tenant-platform
+    nodes:
+      "multi-tenant-platform:9143": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: naicom-compliance-module
+    nodes:
+      "naicom-compliance-module:9144": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: native-mobile-ios
+    nodes:
+      "native-mobile-ios:9145": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: ndpr-compliance
+    nodes:
+      "ndpr-compliance:9146": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: nigerian-bank-integrations
+    nodes:
+      "nigerian-bank-integrations:9147": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: nmid-integration
+    nodes:
+      "nmid-integration:9148": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: openimis-insurance-ops-integrated
+    nodes:
+      "openimis-insurance-ops-integrated:9149": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: pan-african-ekyc
+    nodes:
+      "pan-african-ekyc:9150": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: parametric-insurance-engine
+    nodes:
+      "parametric-insurance-engine:9151": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: performance-monitoring-dashboard
+    nodes:
+      "performance-monitoring-dashboard:9152": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: pfa-integration
+    nodes:
+      "pfa-integration:9153": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: policy-lifecycle-service
+    nodes:
+      "policy-lifecycle-service:9154": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: policy-renewal-automation
+    nodes:
+      "policy-renewal-automation:9155": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: policy-workflow-go
+    nodes:
+      "policy-workflow-go:9156": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: predictive-churn-engine
+    nodes:
+      "predictive-churn-engine:9157": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: premium-collection-service
+    nodes:
+      "premium-collection-service:9158": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: premium-finance-service
+    nodes:
+      "premium-finance-service:9159": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: reconciliation-engine
+    nodes:
+      "reconciliation-engine:9160": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: reinsurance-management
+    nodes:
+      "reinsurance-management:9161": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: reinsurance-service
+    nodes:
+      "reinsurance-service:9162": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: strategic-implementations
+    nodes:
+      "strategic-implementations:9163": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: takaful-module
+    nodes:
+      "takaful-module:9164": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: underwriting-engine
+    nodes:
+      "underwriting-engine:9165": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: usage-based-insurance
+    nodes:
+      "usage-based-insurance:9166": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
+
+  - id: ussd-gateway
+    nodes:
+      "ussd-gateway:9167": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    checks:
+      active:
+        type: http
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 3
+          http_failures: 3
