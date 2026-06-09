@@ -638,6 +638,49 @@ func initMiddleware() {
 }
 
 
+
+func handleCollectMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		Service    string  `json:"service"`
+		Endpoint   string  `json:"endpoint"`
+		LatencyMs  float64 `json:"latency_ms"`
+		StatusCode int     `json:"status_code"`
+		ErrorRate  float64 `json:"error_rate"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Service == "" {
+		http.Error(w, `{"error":"service name required"}`, http.StatusBadRequest); return
+	}
+	if db != nil {
+		db.Exec("INSERT INTO perf_metrics (service, endpoint, latency_ms, status_code, error_rate, created_at) VALUES ($1,$2,$3,$4,$5,NOW())",
+			req.Service, req.Endpoint, req.LatencyMs, req.StatusCode, req.ErrorRate)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "recorded"})
+}
+
+func handleServiceSLA(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	type SLA struct { Service string `json:"service"`; P50 float64 `json:"p50_ms"`; P99 float64 `json:"p99_ms"`; ErrorRate float64 `json:"error_rate"` }
+	var slas []SLA
+	if db != nil {
+		rows, _ := db.Query("SELECT service, COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY latency_ms),0), COALESCE(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY latency_ms),0), COALESCE(AVG(error_rate),0) FROM perf_metrics GROUP BY service")
+		if rows != nil {
+			defer rows.Close()
+			for rows.Next() {
+				var s SLA
+				rows.Scan(&s.Service, &s.P50, &s.P99, &s.ErrorRate)
+				slas = append(slas, s)
+			}
+		}
+	}
+	if slas == nil { slas = []SLA{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"sla_metrics": slas})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -677,6 +720,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/service-sla", handleServiceSLA)
+	mux.HandleFunc("/api/v1/collect-metrics", handleCollectMetrics)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

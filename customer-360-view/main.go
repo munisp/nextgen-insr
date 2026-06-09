@@ -638,6 +638,43 @@ func initMiddleware() {
 }
 
 
+
+func handleUnifiedProfile(w http.ResponseWriter, r *http.Request) {
+	customerID := r.URL.Query().Get("customer_id")
+	if customerID == "" {
+		http.Error(w, `{"error":"customer_id query param required"}`, http.StatusBadRequest); return
+	}
+	var policies, claims, premiumPaid int
+	var riskScore float64
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(policies_count,0), COALESCE(claims_count,0), COALESCE(total_premium_paid,0), COALESCE(risk_score,0) FROM customer_profiles WHERE customer_id=$1", customerID).Scan(&policies, &claims, &premiumPaid, &riskScore)
+	}
+	clv := float64(premiumPaid) * 5.0
+	churnRisk := 0.1
+	if claims > policies { churnRisk = 0.6 }
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"customer_id": customerID, "policies_count": policies, "claims_count": claims, "total_premium_paid": premiumPaid, "risk_score": riskScore, "customer_lifetime_value": clv, "churn_risk": churnRisk})
+}
+
+func handleSegmentation(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	type Segment struct { Name string `json:"name"`; Count int `json:"count"`; AvgPremium float64 `json:"avg_premium"` }
+	var segments []Segment
+	if db != nil {
+		rows, _ := db.Query("SELECT COALESCE(segment,'unclassified'), COUNT(*), COALESCE(AVG(total_premium_paid),0) FROM customer_profiles GROUP BY segment")
+		if rows != nil {
+			defer rows.Close()
+			for rows.Next() {
+				var s Segment
+				rows.Scan(&s.Name, &s.Count, &s.AvgPremium)
+				segments = append(segments, s)
+			}
+		}
+	}
+	if segments == nil { segments = []Segment{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"segments": segments})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -687,6 +724,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/segmentation", handleSegmentation)
+	mux.HandleFunc("/api/v1/unified-profile", handleUnifiedProfile)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

@@ -638,6 +638,45 @@ func initMiddleware() {
 }
 
 
+
+func handleRegisterAgent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		Name     string `json:"name"`
+		Phone    string `json:"phone"`
+		Region   string `json:"region"`
+		BVNHash  string `json:"bvn_hash"`
+		TierCode string `json:"tier_code"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Name == "" || req.Phone == "" {
+		http.Error(w, `{"error":"name and phone required"}`, http.StatusBadRequest); return
+	}
+	agentID := fmt.Sprintf("AGT-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO agent_activities (id, agent_name, phone, region, tier_code, activity_type, created_at) VALUES ($1,$2,$3,$4,$5,'registration',NOW())",
+			agentID, req.Name, req.Phone, req.Region, req.TierCode)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"agent_id": agentID, "status": "registered", "tier": req.TierCode})
+}
+
+func handleAgentPerformance(w http.ResponseWriter, r *http.Request) {
+	agentID := r.URL.Query().Get("agent_id")
+	if agentID == "" {
+		http.Error(w, `{"error":"agent_id required"}`, http.StatusBadRequest); return
+	}
+	var salesCount, claimsAssisted int
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(CASE WHEN activity_type='sale' THEN 1 END),0), COALESCE(SUM(CASE WHEN activity_type='claim_assist' THEN 1 END),0) FROM agent_activities WHERE id=$1 OR agent_name=$1", agentID).Scan(&salesCount, &claimsAssisted)
+	}
+	performanceScore := float64(salesCount*10 + claimsAssisted*5)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"agent_id": agentID, "sales": salesCount, "claims_assisted": claimsAssisted, "performance_score": performanceScore})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -677,6 +716,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/agent-performance", handleAgentPerformance)
+	mux.HandleFunc("/api/v1/register-agent", handleRegisterAgent)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

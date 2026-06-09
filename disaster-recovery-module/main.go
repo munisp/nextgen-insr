@@ -638,6 +638,38 @@ func initMiddleware() {
 }
 
 
+
+func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var dbOK bool
+	if db != nil {
+		if err := db.Ping(); err == nil { dbOK = true }
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"database": dbOK, "service": true, "timestamp": time.Now().UTC()})
+}
+
+func handleTriggerFailover(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		Region   string `json:"region"`
+		Reason   string `json:"reason"`
+		Services []string `json:"services"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Region == "" {
+		http.Error(w, `{"error":"region required"}`, http.StatusBadRequest); return
+	}
+	eventID := fmt.Sprintf("DR-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO dr_events (id, region, reason, services_affected, status, created_at) VALUES ($1,$2,$3,$4,'initiated',NOW())",
+			eventID, req.Region, req.Reason, len(req.Services))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"event_id": eventID, "status": "failover_initiated", "region": req.Region, "services_affected": len(req.Services)})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -677,6 +709,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/failover", handleTriggerFailover)
+	mux.HandleFunc("/api/v1/dr-health", handleHealthCheck)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

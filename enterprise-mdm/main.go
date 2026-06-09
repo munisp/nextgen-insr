@@ -647,6 +647,38 @@ func initMiddleware() {
 }
 
 
+
+func handleDeduplication(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		Name    string `json:"name"`
+		Phone   string `json:"phone"`
+		Email   string `json:"email"`
+		BVNHash string `json:"bvn_hash"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	var duplicates int
+	var goldenID string
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*), COALESCE(MIN(id)::TEXT,'') FROM master_records WHERE bvn_hash=$1 OR phone=$2 OR email=$3", req.BVNHash, req.Phone, req.Email).Scan(&duplicates, &goldenID)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"duplicates_found": duplicates, "golden_record_id": goldenID, "action": map[bool]string{true: "merge", false: "create_new"}[duplicates > 0]})
+}
+
+func handleDataQuality(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var total, withPhone, withEmail, withBVN int
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*), COALESCE(SUM(CASE WHEN phone!='' THEN 1 END),0), COALESCE(SUM(CASE WHEN email!='' THEN 1 END),0), COALESCE(SUM(CASE WHEN bvn_hash!='' THEN 1 END),0) FROM master_records").Scan(&total, &withPhone, &withEmail, &withBVN)
+	}
+	completeness := 0.0
+	if total > 0 { completeness = float64(withPhone+withEmail+withBVN) / float64(total*3) * 100 }
+	json.NewEncoder(w).Encode(map[string]interface{}{"total_records": total, "phone_coverage": withPhone, "email_coverage": withEmail, "bvn_coverage": withBVN, "completeness_pct": completeness})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -686,6 +718,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/data-quality", handleDataQuality)
+	mux.HandleFunc("/api/v1/dedup", handleDeduplication)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

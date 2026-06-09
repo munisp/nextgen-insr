@@ -769,6 +769,53 @@ func initMiddleware() {
 }
 
 
+
+func handleCrossReference(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		BVNHash    string `json:"bvn_hash"`
+		Name       string `json:"name"`
+		PhoneHash  string `json:"phone_hash"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.BVNHash == "" && req.Name == "" {
+		http.Error(w, `{"error":"bvn_hash or name required"}`, http.StatusBadRequest); return
+	}
+	var matches int
+	var maxSeverity string
+	if db != nil {
+		db.QueryRow("SELECT COUNT(*), COALESCE(MAX(severity),'none') FROM fraud_records WHERE bvn_hash=$1 OR name=$2", req.BVNHash, req.Name).Scan(&matches, &maxSeverity)
+	}
+	riskLevel := "clear"
+	if matches > 3 { riskLevel = "high" } else if matches > 0 { riskLevel = "flagged" }
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"matches": matches, "risk_level": riskLevel, "max_severity": maxSeverity})
+}
+
+func handleReportFraud(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		BVNHash  string `json:"bvn_hash"`
+		Name     string `json:"name"`
+		Severity string `json:"severity"`
+		Reason   string `json:"reason"`
+		Reporter string `json:"reporter"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.BVNHash == "" || req.Severity == "" {
+		http.Error(w, `{"error":"bvn_hash and severity required"}`, http.StatusBadRequest); return
+	}
+	if db != nil {
+		db.Exec("INSERT INTO fraud_records (bvn_hash, name, severity, reason, reporter, created_at) VALUES ($1,$2,$3,$4,$5,NOW())", req.BVNHash, req.Name, req.Severity, req.Reason, req.Reporter)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "reported", "severity": req.Severity})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -808,6 +855,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/report-fraud", handleReportFraud)
+	mux.HandleFunc("/api/v1/cross-reference", handleCrossReference)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

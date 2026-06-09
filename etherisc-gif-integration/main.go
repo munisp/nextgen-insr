@@ -594,6 +594,61 @@ func handleOnchainRegister(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"policy_id": req.PolicyID, "tx_hash": txHash, "status": "registered", "chain": "ethereum"})
 }
 
+func handleParametricTrigger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		ProductID  string  `json:"product_id"`
+		OracleData string  `json:"oracle_data"`
+		Value      float64 `json:"measured_value"`
+		Threshold  float64 `json:"threshold"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	triggered := req.Value < req.Threshold
+	payoutPct := 0.0
+	if triggered {
+		deficit := (req.Threshold - req.Value) / req.Threshold
+		if deficit > 1 { deficit = 1 }
+		payoutPct = deficit * 100
+	}
+	triggerID := fmt.Sprintf("TRG-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO parametric_triggers (id, product_id, oracle_data, measured_value, threshold, triggered, payout_percentage, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())",
+			triggerID, req.ProductID, req.OracleData, req.Value, req.Threshold, triggered, payoutPct)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"trigger_id": triggerID, "product_id": req.ProductID, "triggered": triggered,
+		"payout_percentage": payoutPct, "measured_value": req.Value, "threshold": req.Threshold,
+	})
+}
+
+func handleOraclePriceFeed(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if db == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"feeds": []interface{}{}}); return
+	}
+	rows, err := db.Query("SELECT id, product_id, oracle_data, measured_value, threshold, triggered, payout_percentage FROM parametric_triggers ORDER BY created_at DESC LIMIT 50")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"feeds": []interface{}{}, "error": err.Error()}); return
+	}
+	defer rows.Close()
+	var feeds []map[string]interface{}
+	for rows.Next() {
+		var id, productID, oracleData string
+		var value, threshold, payoutPct float64
+		var triggered bool
+		if err := rows.Scan(&id, &productID, &oracleData, &value, &threshold, &triggered, &payoutPct); err != nil { continue }
+		feeds = append(feeds, map[string]interface{}{"id": id, "product_id": productID, "oracle_data": oracleData,
+			"measured_value": value, "threshold": threshold, "triggered": triggered, "payout_percentage": payoutPct})
+	}
+	if feeds == nil { feeds = []map[string]interface{}{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"feeds": feeds, "count": len(feeds)})
+}
+
 func main() {
 	initDB()
 	initMiddleware()
@@ -610,6 +665,10 @@ func main() {
 	r.Get("/api/v1/gif_policy", handleGetEntity)
 	r.Post("/api/v1/gif_policys/create", handleCreateEntity)
 	r.Delete("/api/v1/gif_policys/delete", handleDeleteEntity)
+
+	r.Post("/api/v1/gif/onchain-register", handleOnchainRegister)
+	r.Post("/api/v1/gif/parametric-trigger", handleParametricTrigger)
+	r.Get("/api/v1/gif/oracle-feeds", handleOraclePriceFeed)
 
 	r.Get("/live", func(w http.ResponseWriter, r *http.Request) { handleLive(w, r) })
 	r.Get("/api/v1/products", func(w http.ResponseWriter, r *http.Request) {

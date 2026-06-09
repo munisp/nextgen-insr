@@ -756,6 +756,65 @@ func initMiddleware() {
 }
 
 
+
+func handlePriceMicroProduct(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		ProductType string  `json:"product_type"`
+		CoverAmount float64 `json:"cover_amount"`
+		DurationDays int    `json:"duration_days"`
+		CustomerAge  int    `json:"customer_age"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.CoverAmount <= 0 || req.DurationDays <= 0 {
+		http.Error(w, `{"error":"cover_amount and duration_days required"}`, http.StatusBadRequest); return
+	}
+	// NAICOM microinsurance cap: max ₦2M cover, max ₦50K premium
+	if req.CoverAmount > 2000000 {
+		http.Error(w, `{"error":"microinsurance cover capped at ₦2,000,000 (NAICOM)"}`, http.StatusBadRequest); return
+	}
+	// Pricing: base rate per day * risk factor
+	baseRate := req.CoverAmount * 0.0001
+	riskFactor := 1.0
+	if req.CustomerAge > 55 { riskFactor = 1.4 } else if req.CustomerAge > 40 { riskFactor = 1.2 }
+	switch req.ProductType {
+	case "crop": riskFactor *= 1.3
+	case "livestock": riskFactor *= 1.5
+	case "health": riskFactor *= 1.1
+	case "funeral": riskFactor *= 0.9
+	}
+	premium := baseRate * float64(req.DurationDays) * riskFactor
+	if premium > 50000 { premium = 50000 }
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"premium": premium, "cover_amount": req.CoverAmount, "duration_days": req.DurationDays, "product_type": req.ProductType, "naicom_compliant": true})
+}
+
+func handleIssueMicroPolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		CustomerID  string  `json:"customer_id"`
+		ProductType string  `json:"product_type"`
+		CoverAmount float64 `json:"cover_amount"`
+		Premium     float64 `json:"premium"`
+		DurationDays int    `json:"duration_days"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.CustomerID == "" || req.CoverAmount <= 0 {
+		http.Error(w, `{"error":"customer_id and cover_amount required"}`, http.StatusBadRequest); return
+	}
+	policyID := fmt.Sprintf("MICRO-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO micro_policies (id, customer_id, product_type, cover_amount, premium, duration_days, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,'active',NOW())",
+			policyID, req.CustomerID, req.ProductType, req.CoverAmount, req.Premium, req.DurationDays)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"policy_id": policyID, "status": "active", "cover_amount": req.CoverAmount, "premium": req.Premium})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -805,6 +864,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/issue-micro", handleIssueMicroPolicy)
+	mux.HandleFunc("/api/v1/price-micro", handlePriceMicroProduct)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

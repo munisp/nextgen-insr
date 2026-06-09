@@ -647,6 +647,56 @@ func initMiddleware() {
 }
 
 
+
+func handleAwardPoints(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		UserID string `json:"user_id"`
+		Action string `json:"action"`
+		Points int    `json:"points"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.UserID == "" || req.Action == "" {
+		http.Error(w, `{"error":"user_id and action required"}`, http.StatusBadRequest); return
+	}
+	pointMap := map[string]int{"policy_purchase": 100, "claim_submitted": 50, "referral": 200, "renewal": 75, "kyc_complete": 150}
+	points := req.Points
+	if points == 0 { points = pointMap[req.Action] }
+	if points == 0 { points = 10 }
+	if db != nil {
+		db.Exec("INSERT INTO gamification_events (user_id, action, points, created_at) VALUES ($1,$2,$3,NOW())", req.UserID, req.Action, points)
+	}
+	var totalPoints int
+	if db != nil { db.QueryRow("SELECT COALESCE(SUM(points),0) FROM gamification_events WHERE user_id=$1", req.UserID).Scan(&totalPoints) }
+	tier := "bronze"
+	if totalPoints > 5000 { tier = "platinum" } else if totalPoints > 2000 { tier = "gold" } else if totalPoints > 500 { tier = "silver" }
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"user_id": req.UserID, "points_awarded": points, "total_points": totalPoints, "tier": tier})
+}
+
+func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	type Entry struct { UserID string `json:"user_id"`; Points int `json:"points"`; Rank int `json:"rank"` }
+	var entries []Entry
+	if db != nil {
+		rows, _ := db.Query("SELECT user_id, SUM(points) as total FROM gamification_events GROUP BY user_id ORDER BY total DESC LIMIT 10")
+		if rows != nil {
+			defer rows.Close()
+			rank := 1
+			for rows.Next() {
+				var e Entry
+				rows.Scan(&e.UserID, &e.Points)
+				e.Rank = rank; rank++
+				entries = append(entries, e)
+			}
+		}
+	}
+	if entries == nil { entries = []Entry{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"leaderboard": entries})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -696,6 +746,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/leaderboard", handleLeaderboard)
+	mux.HandleFunc("/api/v1/award-points", handleAwardPoints)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

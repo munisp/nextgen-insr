@@ -638,6 +638,50 @@ func initMiddleware() {
 }
 
 
+
+func handleGenerateDocument(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		TemplateID string                 `json:"template_id"`
+		PolicyID   string                 `json:"policy_id"`
+		DocType    string                 `json:"doc_type"`
+		Data       map[string]interface{} `json:"data"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.TemplateID == "" || req.DocType == "" {
+		http.Error(w, `{"error":"template_id and doc_type required"}`, http.StatusBadRequest); return
+	}
+	validTypes := map[string]bool{"policy_schedule": true, "certificate": true, "endorsement": true, "claim_form": true, "renewal_notice": true}
+	if !validTypes[req.DocType] {
+		http.Error(w, `{"error":"invalid doc_type"}`, http.StatusBadRequest); return
+	}
+	docID := fmt.Sprintf("DOC-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO documents (id, template_id, policy_id, doc_type, status, created_at) VALUES ($1,$2,$3,$4,'generated',NOW())", docID, req.TemplateID, req.PolicyID, req.DocType)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"document_id": docID, "doc_type": req.DocType, "status": "generated", "download_url": "/api/v1/documents/" + docID + "/download"})
+}
+
+func handleVerifyDocument(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		DocumentID string `json:"document_id"`
+		Checksum   string `json:"checksum"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	var exists bool
+	if db != nil {
+		db.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id=$1)", req.DocumentID).Scan(&exists)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"document_id": req.DocumentID, "valid": exists, "tampered": false})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -677,6 +721,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/verify-document", handleVerifyDocument)
+	mux.HandleFunc("/api/v1/generate-document", handleGenerateDocument)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

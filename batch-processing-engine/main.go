@@ -693,6 +693,38 @@ func initMiddleware() {
 }
 
 
+
+func handleSubmitBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		JobType    string   `json:"job_type"`
+		PolicyIDs  []string `json:"policy_ids"`
+		ScheduleAt string   `json:"schedule_at"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.JobType == "" {
+		http.Error(w, `{"error":"job_type required"}`, http.StatusBadRequest); return
+	}
+	jobID := fmt.Sprintf("BATCH-%d", time.Now().UnixNano())
+	itemCount := len(req.PolicyIDs)
+	if db != nil {
+		db.Exec("INSERT INTO batch_jobs (id, job_type, item_count, status, created_at) VALUES ($1,$2,$3,'queued',NOW())", jobID, req.JobType, itemCount)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"job_id": jobID, "status": "queued", "item_count": itemCount})
+}
+
+func handleBatchStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var queued, running, completed, failed int
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(CASE WHEN status='queued' THEN 1 END),0), COALESCE(SUM(CASE WHEN status='running' THEN 1 END),0), COALESCE(SUM(CASE WHEN status='completed' THEN 1 END),0), COALESCE(SUM(CASE WHEN status='failed' THEN 1 END),0) FROM batch_jobs").Scan(&queued, &running, &completed, &failed)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"queued": queued, "running": running, "completed": completed, "failed": failed})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -732,6 +764,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/batch/status", handleBatchStatus)
+	mux.HandleFunc("/api/v1/batch/submit", handleSubmitBatch)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

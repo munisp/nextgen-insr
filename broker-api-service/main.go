@@ -638,6 +638,51 @@ func initMiddleware() {
 }
 
 
+
+func handlePlaceRisk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		BrokerID   string  `json:"broker_id"`
+		RiskType   string  `json:"risk_type"`
+		SumInsured float64 `json:"sum_insured"`
+		CommRate   float64 `json:"commission_rate"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.BrokerID == "" || req.SumInsured <= 0 {
+		http.Error(w, `{"error":"broker_id and sum_insured required"}`, http.StatusBadRequest); return
+	}
+	if req.CommRate <= 0 { req.CommRate = 0.15 }
+	// NAICOM broker commission cap: 15% motor, 20% fire, 25% marine
+	caps := map[string]float64{"motor": 0.15, "fire": 0.20, "marine": 0.25, "life": 0.10}
+	if cap, ok := caps[req.RiskType]; ok && req.CommRate > cap {
+		req.CommRate = cap
+	}
+	commission := req.SumInsured * req.CommRate
+	placementID := fmt.Sprintf("PLC-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO broker_placements (id, broker_id, risk_type, sum_insured, commission_rate, commission_amount, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,'placed',NOW())",
+			placementID, req.BrokerID, req.RiskType, req.SumInsured, req.CommRate, commission)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"placement_id": placementID, "commission": commission, "rate_applied": req.CommRate, "naicom_capped": caps[req.RiskType] > 0})
+}
+
+func handleBrokerStatement(w http.ResponseWriter, r *http.Request) {
+	brokerID := r.URL.Query().Get("broker_id")
+	if brokerID == "" {
+		http.Error(w, `{"error":"broker_id query param required"}`, http.StatusBadRequest); return
+	}
+	var totalPlaced, totalCommission float64
+	var placements int
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(sum_insured),0), COALESCE(SUM(commission_amount),0), COUNT(*) FROM broker_placements WHERE broker_id=$1", brokerID).Scan(&totalPlaced, &totalCommission, &placements)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"broker_id": brokerID, "total_placed": totalPlaced, "total_commission": totalCommission, "placements": placements})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -687,6 +732,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/broker-statement", handleBrokerStatement)
+	mux.HandleFunc("/api/v1/place-risk", handlePlaceRisk)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

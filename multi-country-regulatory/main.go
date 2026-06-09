@@ -722,6 +722,53 @@ func initMiddleware() {
 }
 
 
+
+func handleGenerateReturn(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		Country    string `json:"country"`
+		ReportType string `json:"report_type"`
+		Period     string `json:"period"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Country == "" || req.ReportType == "" {
+		http.Error(w, `{"error":"country and report_type required"}`, http.StatusBadRequest); return
+	}
+	validCountries := map[string]string{"NG": "NAICOM", "GH": "NIC", "KE": "IRA", "ZA": "FSCA", "EG": "FRA"}
+	regulator, ok := validCountries[req.Country]
+	if !ok {
+		http.Error(w, `{"error":"unsupported country code"}`, http.StatusBadRequest); return
+	}
+	filingID := fmt.Sprintf("REG-%s-%d", req.Country, time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO regulatory_filings (id, country, regulator, report_type, period, status, created_at) VALUES ($1,$2,$3,$4,$5,'generated',NOW())",
+			filingID, req.Country, regulator, req.ReportType, req.Period)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"filing_id": filingID, "regulator": regulator, "status": "generated", "report_type": req.ReportType})
+}
+
+func handleComplianceStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	type CountryStatus struct { Country string `json:"country"`; Filed int `json:"filed"`; Pending int `json:"pending"` }
+	var statuses []CountryStatus
+	if db != nil {
+		rows, _ := db.Query("SELECT country, COALESCE(SUM(CASE WHEN status='filed' THEN 1 END),0), COALESCE(SUM(CASE WHEN status='generated' THEN 1 END),0) FROM regulatory_filings GROUP BY country")
+		if rows != nil {
+			defer rows.Close()
+			for rows.Next() {
+				var s CountryStatus
+				rows.Scan(&s.Country, &s.Filed, &s.Pending)
+				statuses = append(statuses, s)
+			}
+		}
+	}
+	if statuses == nil { statuses = []CountryStatus{} }
+	json.NewEncoder(w).Encode(map[string]interface{}{"compliance": statuses})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -761,6 +808,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/compliance-status", handleComplianceStatus)
+	mux.HandleFunc("/api/v1/generate-return", handleGenerateReturn)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes
