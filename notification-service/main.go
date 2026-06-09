@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -638,6 +640,87 @@ func initMiddleware() {
 }
 
 
+
+func handleDispatchNotification(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		UserID   string `json:"user_id"`
+		Type     string `json:"type"`
+		Title    string `json:"title"`
+		Body     string `json:"body"`
+		Priority string `json:"priority"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.UserID == "" || req.Title == "" {
+		http.Error(w, `{"error":"user_id and title required"}`, http.StatusBadRequest); return
+	}
+	if req.Priority == "" { req.Priority = "normal" }
+	notifID := fmt.Sprintf("NOTIF-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO notifications (id, user_id, type, title, body, priority, read, created_at) VALUES ($1,$2,$3,$4,$5,$6,false,NOW())",
+			notifID, req.UserID, req.Type, req.Title, req.Body, req.Priority)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"notification_id": notifID, "status": "dispatched", "priority": req.Priority})
+}
+
+func handleMarkRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		NotificationIDs []string `json:"notification_ids"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	updated := 0
+	if db != nil {
+		for _, id := range req.NotificationIDs {
+			result, _ := db.Exec("UPDATE notifications SET read=true WHERE id=$1", id)
+			if result != nil { n, _ := result.RowsAffected(); updated += int(n) }
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"marked_read": updated})
+}
+
+
+// Dapr sidecar integration
+var daprClient *http.Client
+var daprBaseURL string
+
+func initDapr() {
+	daprPort := os.Getenv("DAPR_HTTP_PORT")
+	if daprPort == "" { daprPort = "3500" }
+	daprBaseURL = "http://localhost:" + daprPort
+	daprClient = &http.Client{Timeout: 5 * time.Second}
+	jsonLog("info", "dapr_sidecar_configured", "port", daprPort)
+}
+
+func daprPublish(topic string, data interface{}) {
+	if daprClient == nil { return }
+	body, _ := json.Marshal(data)
+	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
+	if req != nil {
+		req.Header.Set("Content-Type", "application/json")
+		go func() { daprClient.Do(req) }()
+	}
+}
+
+func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
+	if daprClient == nil { return nil, fmt.Errorf("dapr not initialized") }
+	body, _ := json.Marshal(data)
+	url := fmt.Sprintf("%s/v1.0/invoke/%s/method/%s", daprBaseURL, appID, method)
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+	if req == nil { return nil, fmt.Errorf("failed to create request") }
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := daprClient.Do(req)
+	if err != nil { return nil, err }
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -679,14 +762,18 @@ func main() {
 	}
 
 	initMiddleware()
+	initDapr()
 
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]map[string]string{}) })
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/mark-read", handleMarkRead)
+	mux.HandleFunc("/api/v1/dispatch", handleDispatchNotification)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

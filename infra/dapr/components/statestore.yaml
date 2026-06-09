@@ -1,25 +1,17 @@
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: insureportal-statestore
-  namespace: default
+  name: insure-statestore
+  namespace: insureportal
 spec:
-  type: state.redis
+  type: state.postgresql
   version: v1
   metadata:
-    - name: redisHost
-      value: "redis.insureportal.io:6379"
-    - name: redisPassword
-      secretKeyRef:
-        name: redis-secret
-        key: password
-    - name: actorStateStore
-      value: "true"
-    - name: enableTLS
-      value: "false"
-    - name: maxRetries
-      value: "3"
-    - name: maxRetryBackoff
-      value: "1000ms"
-    - name: ttlInSeconds
-      value: "86400"
+    - name: connectionString
+      value: "${DATABASE_URL}"
+    - name: tableName
+      value: "dapr_state"
+    - name: keyPrefix
+      value: "none"
+    - name: cleanupIntervalInSeconds
+      value: "3600"

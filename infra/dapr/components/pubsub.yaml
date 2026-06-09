@@ -1,25 +1,19 @@
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: insureportal-pubsub
-  namespace: default
+  name: insure-pubsub
+  namespace: insureportal
 spec:
   type: pubsub.kafka
   version: v1
   metadata:
     - name: brokers
-      value: "kafka.insureportal.io:9092"
+      value: "${KAFKA_BROKERS}"
+    - name: authType
+      value: "none"
     - name: consumerGroup
-      value: "insureportal-dapr-consumers"
-    - name: authRequired
-      value: "false"
+      value: "insureportal-dapr"
     - name: maxMessageBytes
       value: "1048576"
     - name: consumeRetryInterval
       value: "200ms"
-    - name: version
-      value: "2.0.0"
-    - name: disableTls
-      value: "false"
-    - name: clientID
-      value: "insureportal-dapr-pubsub"

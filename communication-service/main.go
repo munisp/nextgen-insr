@@ -1,8 +1,11 @@
 package main
 
 import (
+	"io"
+	"bytes"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -620,11 +623,86 @@ func initMiddleware() {
 }
 
 
+
+func handleSendNotification(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		RecipientID string `json:"recipient_id"`
+		Channel     string `json:"channel"`
+		Template    string `json:"template"`
+		Subject     string `json:"subject"`
+		Body        string `json:"body"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.RecipientID == "" || req.Channel == "" {
+		http.Error(w, `{"error":"recipient_id and channel required"}`, http.StatusBadRequest); return
+	}
+	validChannels := map[string]bool{"sms": true, "email": true, "push": true, "whatsapp": true, "in_app": true}
+	if !validChannels[req.Channel] {
+		http.Error(w, `{"error":"invalid channel, must be: sms, email, push, whatsapp, in_app"}`, http.StatusBadRequest); return
+	}
+	msgID := fmt.Sprintf("MSG-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO communications (id, recipient_id, channel, template, subject, status, created_at) VALUES ($1,$2,$3,$4,$5,'sent',NOW())", msgID, req.RecipientID, req.Channel, req.Template, req.Subject)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"message_id": msgID, "status": "sent", "channel": req.Channel})
+}
+
+func handleDeliveryStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var sent, delivered, failed int
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(CASE WHEN status='sent' THEN 1 END),0), COALESCE(SUM(CASE WHEN status='delivered' THEN 1 END),0), COALESCE(SUM(CASE WHEN status='failed' THEN 1 END),0) FROM communications").Scan(&sent, &delivered, &failed)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"sent": sent, "delivered": delivered, "failed": failed, "delivery_rate": float64(delivered) / math.Max(1, float64(sent+delivered+failed)) * 100})
+}
+
+
+// Dapr sidecar integration
+var daprClient *http.Client
+var daprBaseURL string
+
+func initDapr() {
+	daprPort := os.Getenv("DAPR_HTTP_PORT")
+	if daprPort == "" { daprPort = "3500" }
+	daprBaseURL = "http://localhost:" + daprPort
+	daprClient = &http.Client{Timeout: 5 * time.Second}
+	jsonLog("info", "dapr_sidecar_configured", "port", daprPort)
+}
+
+func daprPublish(topic string, data interface{}) {
+	if daprClient == nil { return }
+	body, _ := json.Marshal(data)
+	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
+	if req != nil {
+		req.Header.Set("Content-Type", "application/json")
+		go func() { daprClient.Do(req) }()
+	}
+}
+
+func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
+	if daprClient == nil { return nil, fmt.Errorf("dapr not initialized") }
+	body, _ := json.Marshal(data)
+	url := fmt.Sprintf("%s/v1.0/invoke/%s/method/%s", daprBaseURL, appID, method)
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+	if req == nil { return nil, fmt.Errorf("failed to create request") }
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := daprClient.Do(req)
+	if err != nil { return nil, err }
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
 func main() {
 	initDB()
 	initMiddleware()
+	initDapr()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]map[string]string{}) })
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/send", handleSend)
@@ -635,6 +713,8 @@ func main() {
 	mux.HandleFunc("/api/v1/messages/create", handleCreateEntity)
 	mux.HandleFunc("/api/v1/messages/delete", handleDeleteEntity)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/delivery-status", handleDeliveryStatus)
+	mux.HandleFunc("/api/v1/send", handleSendNotification)
 
 	
 	port := os.Getenv("PORT")

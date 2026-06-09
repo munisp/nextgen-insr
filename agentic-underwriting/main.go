@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -699,6 +701,95 @@ func (tc *temporalClient) SignalWorkflow(ctx context.Context, workflowID, signal
 var temporalCli *temporalClient
 
 
+
+func handleQuoteRisk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		ApplicantAge   int     `json:"applicant_age"`
+		SumAssured     float64 `json:"sum_assured"`
+		OccupationCode string  `json:"occupation_code"`
+		BMI            float64 `json:"bmi"`
+		Smoker         bool    `json:"smoker"`
+		MedicalHistory []string `json:"medical_history"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.SumAssured <= 0 || req.ApplicantAge <= 0 {
+		http.Error(w, `{"error":"sum_assured and applicant_age required"}`, http.StatusBadRequest); return
+	}
+	// Risk scoring engine
+	riskScore := 100.0
+	if req.ApplicantAge > 60 { riskScore += 30 } else if req.ApplicantAge > 45 { riskScore += 15 }
+	if req.Smoker { riskScore += 40 }
+	if req.BMI > 35 { riskScore += 25 } else if req.BMI > 30 { riskScore += 10 }
+	for _, cond := range req.MedicalHistory {
+		switch cond {
+		case "diabetes": riskScore += 30
+		case "hypertension": riskScore += 20
+		case "cancer": riskScore += 50
+		case "heart_disease": riskScore += 45
+		}
+	}
+	// Decision
+	premiumModifier := riskScore / 100.0
+	decision := "approved"
+	if riskScore > 250 { decision = "declined" } else if riskScore > 180 { decision = "refer_to_medical" } else if riskScore > 140 { decision = "substandard" }
+	premium := req.SumAssured * 0.003 * premiumModifier
+	if db != nil {
+		db.Exec("INSERT INTO underwriting_decisions (applicant_age, sum_assured, risk_score, decision, premium_quoted, created_at) VALUES ($1,$2,$3,$4,$5,NOW())",
+			req.ApplicantAge, req.SumAssured, riskScore, decision, premium)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"risk_score": riskScore, "decision": decision, "premium_quoted": premium, "premium_modifier": premiumModifier})
+}
+
+func handleAssessPortfolio(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var totalExposure, avgRisk float64
+	var count int
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(sum_assured),0), COALESCE(AVG(risk_score),0), COUNT(*) FROM underwriting_decisions WHERE decision != 'declined'").Scan(&totalExposure, &avgRisk, &count)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"total_exposure": totalExposure, "avg_risk_score": avgRisk, "active_policies": count, "max_single_risk": totalExposure * 0.1})
+}
+
+
+// Dapr sidecar integration
+var daprClient *http.Client
+var daprBaseURL string
+
+func initDapr() {
+	daprPort := os.Getenv("DAPR_HTTP_PORT")
+	if daprPort == "" { daprPort = "3500" }
+	daprBaseURL = "http://localhost:" + daprPort
+	daprClient = &http.Client{Timeout: 5 * time.Second}
+	jsonLog("info", "dapr_sidecar_configured", "port", daprPort)
+}
+
+func daprPublish(topic string, data interface{}) {
+	if daprClient == nil { return }
+	body, _ := json.Marshal(data)
+	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
+	if req != nil {
+		req.Header.Set("Content-Type", "application/json")
+		go func() { daprClient.Do(req) }()
+	}
+}
+
+func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
+	if daprClient == nil { return nil, fmt.Errorf("dapr not initialized") }
+	body, _ := json.Marshal(data)
+	url := fmt.Sprintf("%s/v1.0/invoke/%s/method/%s", daprBaseURL, appID, method)
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+	if req == nil { return nil, fmt.Errorf("failed to create request") }
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := daprClient.Do(req)
+	if err != nil { return nil, err }
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -740,14 +831,18 @@ func main() {
 	}
 
 	initMiddleware()
+	initDapr()
 
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]map[string]string{}) })
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/assess-portfolio", handleAssessPortfolio)
+	mux.HandleFunc("/api/v1/quote-risk", handleQuoteRisk)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

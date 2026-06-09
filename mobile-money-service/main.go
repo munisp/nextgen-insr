@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -762,6 +764,85 @@ func (mc *mojaloopClient) InitiateTransfer(ctx context.Context, amount, currency
 var mojaloopCli *mojaloopClient
 
 
+
+func handleProcessMobilePay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	var req struct {
+		Phone     string  `json:"phone"`
+		Amount    float64 `json:"amount"`
+		Provider  string  `json:"provider"`
+		PolicyID  string  `json:"policy_id"`
+		Purpose   string  `json:"purpose"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Phone == "" || req.Amount <= 0 {
+		http.Error(w, `{"error":"phone and amount required"}`, http.StatusBadRequest); return
+	}
+	validProviders := map[string]bool{"mtn": true, "airtel": true, "glo": true, "9mobile": true, "opay": true, "palmpay": true}
+	if !validProviders[req.Provider] {
+		http.Error(w, `{"error":"invalid provider"}`, http.StatusBadRequest); return
+	}
+	txnID := fmt.Sprintf("MMTX-%d", time.Now().UnixNano())
+	if db != nil {
+		db.Exec("INSERT INTO mobile_transactions (id, phone, amount, provider, policy_id, purpose, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,'completed',NOW())",
+			txnID, req.Phone, req.Amount, req.Provider, req.PolicyID, req.Purpose)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"transaction_id": txnID, "status": "completed", "amount": req.Amount, "provider": req.Provider})
+}
+
+func handleCheckBalance(w http.ResponseWriter, r *http.Request) {
+	phone := r.URL.Query().Get("phone")
+	if phone == "" {
+		http.Error(w, `{"error":"phone query param required"}`, http.StatusBadRequest); return
+	}
+	var totalPaid float64
+	var txnCount int
+	if db != nil {
+		db.QueryRow("SELECT COALESCE(SUM(amount),0), COUNT(*) FROM mobile_transactions WHERE phone=$1 AND status='completed'", phone).Scan(&totalPaid, &txnCount)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"phone": phone, "total_paid": totalPaid, "transaction_count": txnCount})
+}
+
+
+// Dapr sidecar integration
+var daprClient *http.Client
+var daprBaseURL string
+
+func initDapr() {
+	daprPort := os.Getenv("DAPR_HTTP_PORT")
+	if daprPort == "" { daprPort = "3500" }
+	daprBaseURL = "http://localhost:" + daprPort
+	daprClient = &http.Client{Timeout: 5 * time.Second}
+	jsonLog("info", "dapr_sidecar_configured", "port", daprPort)
+}
+
+func daprPublish(topic string, data interface{}) {
+	if daprClient == nil { return }
+	body, _ := json.Marshal(data)
+	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
+	if req != nil {
+		req.Header.Set("Content-Type", "application/json")
+		go func() { daprClient.Do(req) }()
+	}
+}
+
+func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
+	if daprClient == nil { return nil, fmt.Errorf("dapr not initialized") }
+	body, _ := json.Marshal(data)
+	url := fmt.Sprintf("%s/v1.0/invoke/%s/method/%s", daprBaseURL, appID, method)
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+	if req == nil { return nil, fmt.Errorf("failed to create request") }
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := daprClient.Do(req)
+	if err != nil { return nil, err }
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -803,14 +884,18 @@ func main() {
 	}
 
 	initMiddleware()
+	initDapr()
 
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]map[string]string{}) })
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)
+	mux.HandleFunc("/api/v1/balance", handleCheckBalance)
+	mux.HandleFunc("/api/v1/mobile-pay", handleProcessMobilePay)
 	mux.HandleFunc("/metrics", handlePrometheusMetrics)
 
 	// Domain CRUD routes

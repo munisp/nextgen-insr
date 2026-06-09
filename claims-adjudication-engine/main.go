@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -635,13 +637,51 @@ func (tb *tigerBeetleClient) QueryAccountBalance(ctx context.Context, accountID 
 var tbClient *tigerBeetleClient
 
 
+
+// Dapr sidecar integration
+var daprClient *http.Client
+var daprBaseURL string
+
+func initDapr() {
+	daprPort := os.Getenv("DAPR_HTTP_PORT")
+	if daprPort == "" { daprPort = "3500" }
+	daprBaseURL = "http://localhost:" + daprPort
+	daprClient = &http.Client{Timeout: 5 * time.Second}
+	jsonLog("info", "dapr_sidecar_configured", "port", daprPort)
+}
+
+func daprPublish(topic string, data interface{}) {
+	if daprClient == nil { return }
+	body, _ := json.Marshal(data)
+	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
+	if req != nil {
+		req.Header.Set("Content-Type", "application/json")
+		go func() { daprClient.Do(req) }()
+	}
+}
+
+func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
+	if daprClient == nil { return nil, fmt.Errorf("dapr not initialized") }
+	body, _ := json.Marshal(data)
+	url := fmt.Sprintf("%s/v1.0/invoke/%s/method/%s", daprBaseURL, appID, method)
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
+	if req == nil { return nil, fmt.Errorf("failed to create request") }
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := daprClient.Do(req)
+	if err != nil { return nil, err }
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
 func main() {
 	initDB()
 	initMiddleware()
+	initDapr()
 	temporalCli = newTemporalClient()
 	tbClient = newTigerBeetleClient()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]map[string]string{}) })
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/adjudicate", handleAdjudicate)
