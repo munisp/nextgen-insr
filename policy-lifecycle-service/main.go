@@ -711,7 +711,10 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = ":8097"
+		port = "8097"
+	}
+	if port[0] != ':' {
+		port = ":" + port
 	}
 	log.Printf("Policy Lifecycle Service starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: keycloakAuthMiddleware(corsMiddleware(otelMiddleware(mux)))}

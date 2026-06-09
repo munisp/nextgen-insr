@@ -649,7 +649,10 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = ":8091"
+		port = "8091"
+	}
+	if port[0] != ':' {
+		port = ":" + port
 	}
 	log.Printf("Claims Adjudication Engine starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: keycloakAuthMiddleware(corsMiddleware(otelMiddleware(mux)))}

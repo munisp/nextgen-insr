@@ -674,7 +674,10 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = ":8096"
+		port = "8096"
+	}
+	if port[0] != ':' {
+		port = ":" + port
 	}
 	log.Printf("Underwriting Engine starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: keycloakAuthMiddleware(corsMiddleware(otelMiddleware(mux)))}

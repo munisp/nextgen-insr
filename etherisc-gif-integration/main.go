@@ -282,7 +282,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	rows, err := db.Query(fmt.Sprintf("SELECT id, oracle_id, risk_pool, premium, sum_insured, status, created_at FROM gif_policies ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query(fmt.Sprintf("SELECT id, product_id, holder_id, premium, coverage, state, created_at FROM gif_policies ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -322,7 +322,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
 		return
 	}
-	rows, err := db.Query(fmt.Sprintf("SELECT id, oracle_id, risk_pool, premium, sum_insured, status, created_at FROM gif_policies WHERE id = $1"), id)
+	rows, err := db.Query(fmt.Sprintf("SELECT id, product_id, holder_id, premium, coverage, state, created_at FROM gif_policies WHERE id = $1"), id)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -599,6 +599,7 @@ func main() {
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
+	r.Use(keycloakAuthMiddleware)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "etherisc-gif-integration"})
 	})

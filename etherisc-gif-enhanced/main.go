@@ -282,7 +282,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	rows, err := db.Query(fmt.Sprintf("SELECT id, product_type, trigger_type, trigger_threshold, payout_amount, status, created_at FROM parametric_policies ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query(fmt.Sprintf("SELECT id, holder_id, peril_type, trigger_threshold, payout_amount, oracle_source, status, created_at FROM parametric_policies ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -630,6 +630,7 @@ func main() {
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
+	r.Use(keycloakAuthMiddleware)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "etherisc-gif-enhanced", "version": "1.0.0"})
 	})

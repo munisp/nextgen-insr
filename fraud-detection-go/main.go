@@ -303,7 +303,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	rows, err := db.Query(fmt.Sprintf("SELECT id, claim_id, policy_id, alert_type, risk_score, status, created_at FROM fraud_alerts ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query(fmt.Sprintf("SELECT id, policy_id, customer_id, alert_type, risk_score, status, created_at FROM fraud_alerts ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -697,6 +697,7 @@ func main() {
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
+	r.Use(keycloakAuthMiddleware)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "fraud-detection-go"})
 	})

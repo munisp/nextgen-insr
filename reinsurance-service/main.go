@@ -592,7 +592,10 @@ func main() {
 	mux.HandleFunc("/api/v1/cede", handleCede)
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = ":8095"
+		port = "8095"
+	}
+	if port[0] != ':' {
+		port = ":" + port
 	}
 	log.Printf("Reinsurance Service starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: keycloakAuthMiddleware(corsMiddleware(otelMiddleware(mux)))}

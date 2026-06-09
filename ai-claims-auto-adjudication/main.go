@@ -531,7 +531,10 @@ func main() {
 	})
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = ":8120"
+		port = "8120"
+	}
+	if port[0] != ':' {
+		port = ":" + port
 	}
 	log.Printf(`{"level":"info","msg":"AI Claims Auto-Adjudication starting","port":"%s"}`, port)
 	srv := &http.Server{Addr: port, Handler: keycloakAuthMiddleware(corsMiddleware(mux))}

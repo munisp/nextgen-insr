@@ -650,7 +650,10 @@ func main() {
 	mux.HandleFunc("/api/v1/reconcile", handleReconcile)
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = ":8098"
+		port = "8098"
+	}
+	if port[0] != ':' {
+		port = ":" + port
 	}
 	log.Printf("Premium Collection Service starting on %s", port)
 	srv := &http.Server{Addr: port, Handler: keycloakAuthMiddleware(corsMiddleware(otelMiddleware(mux)))}

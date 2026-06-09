@@ -688,6 +688,7 @@ func main() {
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
+	r.Use(keycloakAuthMiddleware)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "nigerian-bank-integrations"})
 	})
