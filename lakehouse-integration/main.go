@@ -637,6 +637,7 @@ func handleDataQualityCheck(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	initDB()
+	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

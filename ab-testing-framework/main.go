@@ -744,6 +744,8 @@ func main() {
 		jsonLog("warn", "migration error", "error", err.Error())
 	}
 
+	initMiddleware()
+
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()

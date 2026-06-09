@@ -1025,10 +1025,16 @@ func handleSettlement(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	initDB()
+	initMiddleware()
 	service := NewBancassuranceService()
 
 	http.HandleFunc("/api/bancassurance/offer", service.HandleGenerateOffer)
 	http.HandleFunc("/api/bancassurance/loan-protection", service.HandleCreateLoanProtection)
+
+	// Domain-specific routes
+	http.HandleFunc("/api/v1/bundle-products", handleBundleProducts)
+	http.HandleFunc("/api/v1/referral-track", handleReferralTrack)
+	http.HandleFunc("/api/v1/settlement", handleSettlement)
 
 	http.HandleFunc("/api/v1/referrals", handleListEntities)
 	http.HandleFunc("/api/v1/referral", handleGetEntity)

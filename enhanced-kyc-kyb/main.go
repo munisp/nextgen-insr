@@ -1041,6 +1041,8 @@ func main() {
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS kyc_verifications (id SERIAL PRIMARY KEY, verification_type VARCHAR(32), customer_data JSONB, result JSONB, created_at TIMESTAMP DEFAULT NOW())`)
 	if err != nil { jsonLog("warn", "kyc migration", "error", err.Error()) }
 
+	initMiddleware()
+
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()

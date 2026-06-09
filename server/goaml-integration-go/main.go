@@ -1436,6 +1436,8 @@ func main() {
 	cfg := loadConfig()
 	state := NewAppState(cfg)
 
+	initMiddleware()
+
 	mux := http.NewServeMux()
 
 	// STR endpoints

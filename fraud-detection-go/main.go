@@ -694,6 +694,7 @@ func handlePatternAnalysis(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	initDB()
+	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -744,8 +745,14 @@ func scoreTransaction(w http.ResponseWriter, r *http.Request) {
 	score := 10.0
 	rules := []Rule{}
 
-	// Amount anomaly
-	if body.Amount > 5000000 {
+	// Amount thresholds (Nigerian AML: CBN regulations)
+	// ₦10M+ wire: auto-block + CTR (Currency Transaction Report)
+	// ₦5M+ cash: file STR (Suspicious Transaction Report)
+	if body.Amount > 10000000 {
+		score += 60
+		rules = append(rules, Rule{"very_high_amount", 25, "Transaction exceeds ₦10M CTR threshold"})
+		rules = append(rules, Rule{"high_amount", 35, "Transaction exceeds ₦5M STR threshold"})
+	} else if body.Amount > 5000000 {
 		score += 35
 		rules = append(rules, Rule{"high_amount", 35, "Transaction exceeds ₦5M STR threshold"})
 	} else if body.Amount > 1000000 {
@@ -767,7 +774,11 @@ func scoreTransaction(w http.ResponseWriter, r *http.Request) {
 
 	score = math.Min(100, score)
 	decision := "allow"
-	if score > 80 { decision = "block" } else if score > 60 { decision = "review" }
+	if score >= 70 {
+		decision = "block"
+	} else if score >= 40 {
+		decision = "review"
+	}
 
 	result := FraudScore{TransactionID: "TXN-" + time.Now().Format("20060102150405"), Score: score, Decision: decision, Rules: rules}
 	json.NewEncoder(w).Encode(result)
@@ -776,12 +787,18 @@ func scoreTransaction(w http.ResponseWriter, r *http.Request) {
 func getRules(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"rules": []map[string]interface{}{
-			{"name": "high_amount", "threshold": 5000000, "impact": 35},
+			{"name": "very_high_amount", "threshold": 10000000, "impact": 60, "detail": "CBN CTR: auto-block + report"},
+			{"name": "high_amount", "threshold": 5000000, "impact": 35, "detail": "CBN STR: suspicious transaction report"},
 			{"name": "elevated_amount", "threshold": 1000000, "impact": 15},
 			{"name": "unusual_time", "hours": "2-5 AM", "impact": 20},
 			{"name": "unknown_device", "impact": 15},
 			{"name": "velocity_breach", "threshold": "20 txn/hour", "impact": 25},
 			{"name": "geo_impossible", "threshold": "2 states in 30min", "impact": 30},
+		},
+		"decision_bands": map[string]interface{}{
+			"block":  "score >= 70",
+			"review": "score >= 40",
+			"allow":  "score < 40",
 		},
 	})
 }

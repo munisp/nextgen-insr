@@ -810,6 +810,8 @@ func main() {
 		}
 	}
 
+	initMiddleware()
+
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()

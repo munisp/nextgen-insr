@@ -880,6 +880,8 @@ func main() {
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS ndpr_consents (id SERIAL PRIMARY KEY, subject_id TEXT, purpose TEXT, lawful_basis TEXT, data_categories TEXT, status VARCHAR(32), consent_date TIMESTAMP, created_at TIMESTAMP DEFAULT NOW())`)
 	if err != nil { jsonLog("warn", "ndpr migration", "error", err.Error()) }
 
+	initMiddleware()
+
 	rl := newRateLimiter(100, time.Minute)
 
 	mux := http.NewServeMux()

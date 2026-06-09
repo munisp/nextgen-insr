@@ -963,6 +963,7 @@ func handleContributionProcess(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	initDB()
+	initMiddleware()
 	service := NewPFAService()
 	
 	http.HandleFunc("/api/pfa/annuity-quote", service.HandleAnnuityQuote)

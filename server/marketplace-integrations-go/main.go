@@ -842,6 +842,8 @@ func main() {
 		port = "8201"
 	}
 
+	initMiddleware()
+
 	mux := http.NewServeMux()
 
 	// Health

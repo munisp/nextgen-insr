@@ -936,6 +936,7 @@ func handleTreatySummary(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	initDB()
+	initMiddleware()
 	service := NewReinsuranceService()
 	
 	http.HandleFunc("/api/reinsurance/cession", service.HandleCalculateCession)

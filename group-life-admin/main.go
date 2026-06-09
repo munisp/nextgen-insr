@@ -990,6 +990,7 @@ func handlePremiumSchedule(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	initDB()
+	initMiddleware()
 	service := NewGroupLifeService()
 	
 	http.HandleFunc("/api/group-life/premium", service.HandleCalculatePremium)

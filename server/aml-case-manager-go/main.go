@@ -1230,6 +1230,8 @@ func main() {
 	cfg := loadConfig()
 	state := NewAppState(cfg)
 
+	initMiddleware()
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/api/v1/cases", func(w http.ResponseWriter, r *http.Request) {
