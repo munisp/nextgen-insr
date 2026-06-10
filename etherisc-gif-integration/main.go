@@ -282,6 +282,16 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
+	// Redis cache for list queries
+	if redisClient != nil {
+		if cached, ok := redisClient.CacheGet("etherisc-gif-integration:list"); ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Cache", "HIT")
+			w.Write([]byte(cached))
+			return
+		}
+	}
+
 	rows, err := db.Query(fmt.Sprintf("SELECT id, product_id, holder_id, premium, coverage, state, created_at FROM gif_policies ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
@@ -353,6 +363,10 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value("user_id").(string)
+	if !permifyCheck(r.Context(), "etherisc-gif-integration", "", "create", userID) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden); return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	var body map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -384,6 +398,11 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	// Index to OpenSearch for full-text search
+	if osClient != nil {
+		go osClient.IndexLog("info", "entity_created", "etherisc-gif-integration", map[string]interface{}{"action": "created", "timestamp": time.Now().Format(time.RFC3339)})
+	}
+	if redisClient != nil { redisClient.CacheInvalidate("etherisc-gif-integration:list") }
 }
 
 func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
@@ -483,7 +502,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		// Dev bypass for local development
-		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("ENVIRONMENT") != "production" {
 			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
 			ctx = context.WithValue(ctx, "tenant_id", "default")
 			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
@@ -493,6 +512,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 		auth := r.Header.Get("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
 			w.Header().Set("Content-Type", "application/json")
+			jsonLog("warn", "auth_failure", "service", "etherisc-gif-integration", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
@@ -654,6 +674,14 @@ func main() {
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+				r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB limit
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	r.Use(keycloakAuthMiddleware)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "etherisc-gif-integration"})

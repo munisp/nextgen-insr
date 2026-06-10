@@ -131,6 +131,7 @@ func handleCede(w http.ResponseWriter, r *http.Request) {
 		"retention": retention, "ceded": ceded,
 		"net_retained": req.Amount - ceded,
 	})
+	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "handleCede", "reinsurance-service", nil) }
 }
 
 
@@ -385,7 +386,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		// Dev bypass for local development
-		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("ENVIRONMENT") != "production" {
 			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
 			ctx = context.WithValue(ctx, "tenant_id", "default")
 			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
@@ -395,6 +396,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 		auth := r.Header.Get("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
 			w.Header().Set("Content-Type", "application/json")
+			jsonLog("warn", "auth_failure", "service", "reinsurance-service", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
@@ -617,6 +619,15 @@ func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+func bodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB limit
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initDB()
 	initMiddleware()
@@ -638,7 +649,7 @@ func main() {
 		port = ":" + port
 	}
 	log.Printf("Reinsurance Service starting on %s", port)
-	srv := &http.Server{Addr: port, Handler: keycloakAuthMiddleware(corsMiddleware(otelMiddleware(mux)))}
+	srv := &http.Server{Addr: port, Handler: bodyLimitMiddleware(keycloakAuthMiddleware(corsMiddleware(otelMiddleware(mux))))}
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)

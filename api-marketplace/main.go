@@ -586,7 +586,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		// Dev bypass for local development
-		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("ENVIRONMENT") != "production" {
 			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
 			ctx = context.WithValue(ctx, "tenant_id", "default")
 			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
@@ -596,6 +596,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 		auth := r.Header.Get("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
 			w.Header().Set("Content-Type", "application/json")
+			jsonLog("warn", "auth_failure", "service", "api-marketplace", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
@@ -673,6 +674,15 @@ func initMiddleware() {
 }
 
 
+func bodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB limit
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -730,6 +740,7 @@ func main() {
 	handler = rateLimitMiddleware(rl)(handler)
 	handler = securityHeaders(handler)
 	handler = otelMiddleware(corsMiddleware(handler))
+	handler = bodyLimitMiddleware(handler)
 
 	srv := &http.Server{
 		Addr:         ":" + port,
