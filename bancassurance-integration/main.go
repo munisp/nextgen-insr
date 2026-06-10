@@ -1082,7 +1082,7 @@ func main() {
 
 	log.Printf("Bancassurance Integration Service starting on port %s", port)
 
-	srv := &http.Server{Addr: ":" + port, Handler: bodyLimitMiddleware(nil)}
+	srv := &http.Server{Addr: ":" + port, Handler: bodyLimitMiddleware(http.DefaultServeMux)}
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
