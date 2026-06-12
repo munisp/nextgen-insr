@@ -114,20 +114,31 @@ const pool = new Pool({
   statement_timeout: 30000,
 });
 
-// Verify DB connection on startup + ensure auth tables exist
+// Database schema initialization
+const schemaPath = path.join(__dirname, 'db', 'schema.sql');
+const seedPath = path.join(__dirname, 'db', 'seed.sql');
+
+async function initDatabase(pool) {
+  const fs = require('fs');
+  // Run schema (CREATE TABLE IF NOT EXISTS — safe to re-run)
+  if (fs.existsSync(schemaPath)) {
+    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    await pool.query(schemaSql);
+    console.log('✓ Database schema initialized (122 tables)');
+  }
+  // Run seed only if users table is empty (first boot)
+  const { rows } = await pool.query('SELECT COUNT(*) as c FROM users');
+  if (Number(rows[0].c) === 0 && fs.existsSync(seedPath)) {
+    const seedSql = fs.readFileSync(seedPath, 'utf8');
+    await pool.query(seedSql);
+    console.log('✓ Seed data loaded (demo users, policies, claims, products)');
+  }
+}
+
+// Verify DB connection on startup + initialize schema
 pool.query('SELECT NOW()').then(async () => {
   console.log('✓ PostgreSQL connected');
-  // Create auth-related tables if not exist
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS password_resets (
-      user_id INTEGER PRIMARY KEY REFERENCES users(id),
-      token VARCHAR(10) NOT NULL,
-      expires_at TIMESTAMP NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpSecret" VARCHAR(64);
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpEnabled" BOOLEAN DEFAULT false;
-  `).catch(() => {});
+  await initDatabase(pool).catch(e => console.error('Schema init warning:', e.message));
   // Pre-warm connection pool (avoids first-query latency)
   const warmups = Array.from({ length: 5 }, () => pool.query('SELECT 1'));
   await Promise.all(warmups);
@@ -560,13 +571,13 @@ const ROUTE_HANDLERS = {
     };
   },
   'dashboard.recentClaims': () => q(`SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt" as date FROM claims c LEFT JOIN policies p ON c."policyId"=p.id ORDER BY c."createdAt" DESC LIMIT 10`),
-  'dashboard.notifications': () => q('SELECT id, type, title, message, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 AND "isRead"=false ORDER BY "createdAt" DESC LIMIT 5'),
+  'dashboard.notifications': () => q('SELECT id, type, title, description as message, "isRead" as read, "createdAt" as date FROM notifications WHERE "isRead"=false ORDER BY "createdAt" DESC LIMIT 5'),
   'dashboard.activity': () => q('SELECT id, action, "entityType", "entityId", "createdAt" FROM audit_trail ORDER BY "createdAt" DESC LIMIT 10'),
 
   // ─── Products & Marketplace ───
-  'products.list': () => q(`SELECT DISTINCT ON (type) id, name, type as category, premium, name as description, status, "sumAssured" as "coverageAmount" FROM policies WHERE status='Active' ORDER BY type, premium DESC`),
-  'products.getById': () => q1('SELECT id, name, type as category, premium, name as description, status, "sumAssured" as "coverageAmount" FROM policies WHERE status=\'Active\' LIMIT 1'),
-  'marketplace.featured': () => q('SELECT id, name, \'InsurePortal\' as provider, 4.8 as rating, premium FROM policies WHERE status=\'Active\' ORDER BY premium DESC LIMIT 5'),
+  'products.list': () => q('SELECT id, name, category, premium, description, status, "maxCoverage" as "coverageAmount" FROM insurance_products WHERE status=\'active\' ORDER BY name'),
+  'products.getById': () => q1('SELECT id, name, category, premium, description, status, "maxCoverage" as "coverageAmount" FROM insurance_products WHERE status=\'active\' LIMIT 1'),
+  'marketplace.featured': () => q('SELECT id, name, \'InsurePortal\' as provider, 4.8 as rating, premium FROM insurance_products WHERE status=\'active\' ORDER BY premium DESC LIMIT 5'),
   'marketplace.categories': async () => { const rows = await q('SELECT DISTINCT category FROM insurance_products ORDER BY category'); return rows.map(r => r.category); },
 
   // ─── Coverage ───
@@ -691,7 +702,7 @@ const ROUTE_HANDLERS = {
 
   // ─── Savings ───
   'savings.balance': async () => { const r = await q1('SELECT COALESCE(SUM(current_amount),0) as total, COALESCE(SUM(current_amount * interest_rate / 100),0) as returns FROM savings_plans WHERE status=\'active\''); return { totalSavings: Number(r?.total) || 0, investmentReturns: Number(r?.returns) || 0 }; },
-  'savings.plans': async () => { const rows = await q('SELECT id, name, target_amount as "targetAmount", current_amount as "currentAmount", interest_rate as "interestRate", frequency, status FROM savings_plans WHERE user_id=1 ORDER BY created_at DESC'); return rows; },
+  'savings.plans': async () => { const rows = await q('SELECT id, name, "targetAmount", "currentAmount", "interestRate", frequency, status FROM savings_plans ORDER BY "createdAt" DESC'); return rows; },
 
   // ─── Financial ───
   'financial.score': async () => {
@@ -724,7 +735,7 @@ const ROUTE_HANDLERS = {
       productsOffered: [p.offerType],
     }));
   },
-  'bancassurance.partners': () => q('SELECT id, "bankName" as name, \'\' as logo, array_length(products, 1) as products FROM bancassurance_partners ORDER BY id'),
+  'bancassurance.partners': () => q('SELECT id, "bankName" as name, \'\' as logo, "bankCode", integration_type, status FROM bancassurance_partners ORDER BY id'),
   'bancassurance.dashboard': async () => {
     const stats = await q1('SELECT COUNT(*) as banks FROM bancassurance_partners WHERE status=\'active\'');
     const offers = await q1('SELECT COUNT(*) as total, COALESCE(SUM(premium),0) as premium FROM bancassurance_offers WHERE status=\'active\'');
@@ -776,8 +787,8 @@ const ROUTE_HANDLERS = {
     const benefits = tier === 'Platinum' ? ['15% discount on renewals', 'Dedicated account manager', 'Priority claims'] : tier === 'Gold' ? ['10% discount on renewals', 'Priority claims processing'] : ['5% discount on renewals'];
     return { tier, points, benefits, totalEarned: Number(referrals.earned) || 0 };
   },
-  'loyalty.tiers': () => q('SELECT id, name, min_points as "minPoints", discount_pct as "discountPct", benefits, color, icon FROM loyalty_tiers ORDER BY min_points ASC'),
-  'loyalty.rewards': async () => { const rows = await q('SELECT id, customer_id, points, tier, description FROM loyalty_rewards ORDER BY created_at DESC LIMIT 20'); return rows; },
+  'loyalty.tiers': () => q('SELECT id, name, "minPoints", "discountPct", benefits, multiplier FROM loyalty_tiers ORDER BY "minPoints" ASC'),
+  'loyalty.rewards': async () => { const rows = await q('SELECT id, customer_id, points, tier, description FROM loyalty_rewards ORDER BY "createdAt" DESC LIMIT 20'); return rows; },
 
   // ─── Referrals ───
   'referral.stats': async () => {
@@ -805,7 +816,7 @@ const ROUTE_HANDLERS = {
   'literacy.articles': () => q('SELECT id, title, category, duration_minutes::text as "readTime", description FROM training_courses WHERE is_active=true ORDER BY id'),
 
   // ─── Health ───
-  'health.programs': () => q('SELECT id, name, description, frequency, category, points_reward as "pointsReward", enrolled_count as "enrolledCount", is_active as enrolled FROM health_programs WHERE is_active=true ORDER BY id'),
+  'health.programs': () => q(`SELECT id, name, program_type as category, "enrolledCount", "pointsReward", participants, status FROM health_programs WHERE status='active' ORDER BY id`),
 
   // ─── AI ───
   'ai.history': async () => { const rows = await q('SELECT id, message as query, message as response, created_at FROM chat_messages ORDER BY created_at DESC LIMIT 20'); return rows; },
@@ -868,7 +879,7 @@ const ROUTE_HANDLERS = {
   'modelSecurity.status': async () => { const audits = await q('SELECT model_name, overall_score, vulnerabilities_found, vulnerabilities_patched, recommendations, encryption_status, inference_logging FROM model_security_audits ORDER BY audit_date DESC'); const totalVuln = audits.reduce((s,a)=>s+a.vulnerabilities_found,0); const patched = audits.reduce((s,a)=>s+a.vulnerabilities_patched,0); const recs = audits.flatMap(a=>a.recommendations||[]); return {overallScore: Math.round(audits.reduce((s,a)=>s+a.overall_score,0)/audits.length), lastScan:new Date().toISOString(), recommendations:recs.slice(0,5), vulnerabilities:totalVuln-patched, patchesApplied:patched}; },
 
   // ─── Fraud ───
-  'fraud.alerts': () => q('SELECT id, "alertId", severity, "entityType" as type, message as description, "createdAt" as date, CASE WHEN resolved THEN \'Resolved\' ELSE \'Open\' END as status FROM fraud_alerts ORDER BY "createdAt" DESC'),
+  'fraud.alerts': () => q('SELECT id, "alertId", severity, "entityType" as type, alert_type as description, "createdAt" as date, status FROM fraud_alerts ORDER BY "createdAt" DESC'),
   'fraud.network': async () => {
     const alerts = await q('SELECT id, "alertId", "entityType", "entityId", severity::text, message FROM fraud_alerts WHERE NOT resolved ORDER BY "createdAt" DESC LIMIT 20');
     const nodes = [];
@@ -936,7 +947,7 @@ const ROUTE_HANDLERS = {
 
   // ─── Embedded Insurance ───
   'embedded.partners': async () => { const rows = await q('SELECT id, name, type, integration_type, status, monthly_revenue as revenue, total_policies as policies FROM embedded_partners ORDER BY monthly_revenue DESC'); return rows; },
-  'embedded.distribution': () => q('SELECT id, channel_name as "channelName", partner_name as "partnerName", integration_type as "integrationType", product_types as "productTypes", monthly_policies as "monthlyPolicies", monthly_premium as "monthlyPremium", commission_rate as "commissionRate", status, api_version as "apiVersion" FROM embedded_distribution WHERE status IN (\'active\',\'pilot\') ORDER BY monthly_premium DESC'),
+  'embedded.distribution': () => q('SELECT id, "channelName", "partnerName", "integrationType", "productTypes", "monthlyPolicies", "monthlyPremium", "commissionRate", status, "apiVersion" FROM embedded_distribution WHERE status IN (\'active\',\'pilot\') ORDER BY "monthlyPremium" DESC'),
   'embeddedInsurance.partners': async () => { const rows = await q('SELECT id, name, type, status, total_policies as policies, monthly_revenue as revenue FROM embedded_partners WHERE status=\'active\''); return rows; },
 
   // ─── NIIRA ───
@@ -997,14 +1008,14 @@ const ROUTE_HANDLERS = {
     }));
     return { items, totalPages: 1 };
   },
-  'telematics.devices': () => q('SELECT id, name, "deviceId", device_type as type, make, model, imei, vehicle_vin as vin, avg_daily_km as "avgDailyKm", harsh_braking_events as "harshBraking", speeding_events as "speedingEvents", night_driving_pct as "nightDriving", driver_score as score, status, install_date as "installDate", last_ping as "lastPing" FROM telematics_devices ORDER BY id'),
+  'telematics.devices': () => q('SELECT id, "deviceId", device_type as type, "vehicleId" as vin, "avgDailyKm", "harshBraking", "speedingEvents", "nightDriving", "engineStatus", status, "installDate", "lastPing" FROM telematics_devices ORDER BY id'),
 
   // ─── Geospatial ───
   'geospatial.data': async () => { const regions = await q('SELECT name, policy_count as policies, claims_count as claims, loss_ratio as "lossRatio", latitude as lat, longitude as lng FROM geospatial_zones WHERE zone_type=\'region\' ORDER BY policy_count DESC'); const riskZones = await q('SELECT name, risk_level as level, policy_count as "affectedPolicies" FROM geospatial_zones WHERE zone_type IN (\'risk_zone\',\'flood_zone\') ORDER BY id'); const heatmap = regions.map(r=>({lat:Number(r.lat),lng:Number(r.lng),intensity:Number(r.policies)/10000})); return {regions, riskZones, heatmap}; },
   'geospatial.riskMap': async () => { const zones = await q('SELECT name, risk_level as risk, polygon FROM geospatial_zones WHERE polygon IS NOT NULL ORDER BY id'); return {center:{lat:9.0820,lng:8.6753}, zoom:6, zones:zones.map(z=>({name:z.name, risk:z.risk, polygon:z.polygon}))}; },
 
   // ─── Broker ───
-  'broker.apiKeys': () => q('SELECT id, name, "apiKey", permissions, "rateLimit", status, "expiresAt", "lastUsedAt" FROM broker_api_keys ORDER BY id'),
+  'broker.apiKeys': () => q('SELECT id, broker_name as name, "apiKey", permissions, "rateLimit", status, "expiresAt", "lastUsedAt" FROM broker_api_keys ORDER BY id'),
   'broker.documentation': async () => { const keyCount = await q1('SELECT COUNT(*) as c FROM broker_api_keys WHERE status=\'active\''); return {version:'2.1', baseUrl:'/api/v2', authentication:'Bearer token (API key)', activeKeys:Number(keyCount?.c)||0, endpoints:[{method:'GET',path:'/policies',description:'List all policies'},{method:'POST',path:'/claims',description:'File a new claim'},{method:'GET',path:'/quotes',description:'Get insurance quotes'},{method:'POST',path:'/payments',description:'Process premium payment'},{method:'GET',path:'/customers',description:'List customers'},{method:'POST',path:'/applications',description:'Submit application'}], rateLimit:'1000 requests/hour', sdkUrls:{javascript:'npm install @insureportal/sdk',python:'pip install insureportal',go:'go get github.com/insureportal/sdk-go'}}; },
 
   // ─── ERPNext ───
@@ -1022,7 +1033,7 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Customers ───
-  'customers.list': () => q('SELECT c.id, c."firstName" || \' \' || c."lastName" as name, c.email, c.status, c."kycLevel" FROM customers c ORDER BY c."createdAt" DESC'),
+  'customers.list': () => q('SELECT c.id, c.full_name as name, c.phone, c.status, c.segment, c.lifetime_value FROM customers c ORDER BY c."createdAt" DESC'),
 
   // ─── Commission ───
   'commission.summary': async () => {
@@ -1093,8 +1104,8 @@ const ROUTE_HANDLERS = {
   'feedback.list': () => q('SELECT id, "userId" as customer, rating, message as comment, "createdAt" as date, subject, "feedbackType" FROM customer_feedback ORDER BY "createdAt" DESC'),
 
   // ─── Currency ───
-  'currency.rates': () => q('SELECT id, from_currency as "from", to_currency as "to", rate, source, last_updated as "lastUpdated" FROM currency_rates ORDER BY from_currency, to_currency'),
-  'currency.supported': async () => { const rows = await q('SELECT DISTINCT from_currency FROM currency_rates UNION SELECT DISTINCT to_currency FROM currency_rates'); return rows.map(r => r.from_currency || r.to_currency); },
+  'currency.rates': () => q('SELECT id, "from", "to", rate, "lastUpdated" FROM currency_rates ORDER BY "from", "to"'),
+  'currency.supported': async () => { const rows = await q('SELECT DISTINCT from_currency FROM currency_rates UNION SELECT DISTINCT "to" FROM currency_rates'); return rows.map(r => r.from_currency || r.to); },
 
   // ─── Bank Integrations ───
   'bank.integrations': () => q('SELECT id, "bankName" as bank, status, "updatedAt" as "lastSync" FROM bancassurance_partners ORDER BY id'),
@@ -1119,7 +1130,7 @@ const ROUTE_HANDLERS = {
     const r = await q1('SELECT COUNT(*) as total, COALESCE(SUM("totalPoliciesSold"),0) as sold FROM agents');
     return { totalAgents: Number(r.total), averageScore: 89.9, totalPoliciesSold: Number(r.sold) };
   },
-  'agents.commissions': () => q('SELECT ac.id, ac."agentId", ac."commissionAmount" as amount, ac.status, ac."createdAt" as period FROM agent_commissions ORDER BY ac."createdAt" DESC'),
+  'agents.commissions': () => q('SELECT id, "agentId", "commissionAmount" as amount, status, "createdAt" as period FROM agent_commissions ORDER BY "createdAt" DESC'),
 
   // ─── Rate Management ───
   'rates.list': () => q('SELECT id, name, "productType", "baseRate", "effectiveDate", "expiryDate", status FROM premium_rate_tables ORDER BY id'),
@@ -1141,8 +1152,8 @@ const ROUTE_HANDLERS = {
   'premiumRates.factors': () => q('SELECT prf.id, prf.name, prf.category, prf.weight, prt.name as "tableName", prt."productType" FROM premium_risk_factors prf LEFT JOIN premium_rate_tables prt ON prf."tableId"=prt.id ORDER BY prf.id'),
 
   // ─── ERP Integration ───
-  'erp.config': () => q1('SELECT id, "erpType", name, "baseUrl", "apiKey", "syncEnabled", "syncIntervalMinutes", "syncTransactions", "syncAgents", "syncInventory", "lastSyncAt", "lastSyncStatus", "lastSyncError", "lastSyncCount", "fieldMappings" FROM erp_config LIMIT 1'),
-  'erp.transactions': () => q('SELECT id, "erpDocType", "erpDocId", "localEntityType", "localEntityId", "syncStatus"::text, amount, currency, "lastSyncAt", "errorMessage" FROM erpnext_transactions ORDER BY "createdAt" DESC'),
+  'erp.config': () => q1('SELECT id, "erpType", config_key as name, "baseUrl", "apiKey", "syncEnabled", "syncIntervalMinutes", "syncTransactions", "syncAgents", "syncInventory", "lastSyncAt", "lastSyncStatus", "lastSyncError", "lastSyncCount", "fieldMappings" FROM erp_config LIMIT 1'),
+  'erp.transactions': () => q('SELECT id, "erpDocType", "erpDocId", "localEntityType", "localEntityId", "syncStatus", amount, "lastSyncAt", "errorMessage" FROM erpnext_transactions ORDER BY "createdAt" DESC'),
   'erp.updateConfig': async (input) => {
     const fields = [];
     const vals = [];
@@ -1357,7 +1368,7 @@ const ROUTE_HANDLERS = {
   },
 
   // AB Testing
-  'abTesting.list': () => q('SELECT id, name, description, status, start_date as "startDate", end_date as "endDate", variant_a as "variantA", variant_b as "variantB", winner, variant_a_conversion as "variantAConversion", variant_b_conversion as "variantBConversion", sample_size as "sampleSize" FROM ab_experiments ORDER BY start_date DESC'),
+  'abTesting.list': () => q('SELECT id, test_id as name, variant, "sampleSize", "trafficSplit", "variantA", "variantB", "variantAConversion", "variantBConversion", "startDate", "endDate" FROM ab_experiments ORDER BY "startDate" DESC'),
   'abTesting.create': async (input) => {
     const r = await q1(`INSERT INTO ab_tests (name, description, status, "startDate", "endDate", "variant_a", "variant_b", "createdAt") VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '30 days', $3, $4, NOW()) RETURNING *`, [input.name || 'New Test', input.description || '', input.variantA || 'Control', input.variantB || 'Variant'], { id: 1 });
     return r;
@@ -1380,7 +1391,7 @@ const ROUTE_HANDLERS = {
   },
 
   // Agricultural
-  'agricultural.schemes': () => q('SELECT id, name, scheme_type as type, coverage_type as coverage, max_payout as "maxPayout", subsidy_pct as subsidy, administering_body as "adminBody", enrollment_count as "enrollmentCount", status FROM agricultural_schemes WHERE status=\'active\' ORDER BY enrollment_count DESC'),
+  'agricultural.schemes': () => q('SELECT id, name, crop_type as type, coverage_type as coverage, "maxPayout", "adminBody", "enrollmentCount", status FROM agricultural_schemes WHERE status=\'active\' ORDER BY "enrollmentCount" DESC'),
   'agricultural.submitApplication': async (input) => { const ref = 'AGR-' + Date.now(); await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES (\'agricultural.submitApplication\', \'agriculture\', $1, $2, NOW())', [ref, JSON.stringify(input || {})]); return {success:true,applicationId:ref,status:'under_review',estimatedPayout:input?.coverage || 500000}; },
   'agriculturalInsurance.products': () => q(`SELECT DISTINCT ON (type) id, name, type, premium, "sumAssured" as "coverageAmount" FROM policies WHERE type='Agricultural' ORDER BY type, id`),
   'agriculturalInsurance.ndviReadings': () => q('SELECT id, region, reading_date as date, ndvi_value as ndvi, status, satellite FROM ndvi_readings ORDER BY reading_date DESC LIMIT 20'),
@@ -1685,8 +1696,8 @@ const ROUTE_HANDLERS = {
   'nmid.history': async () => { const rows = await q('SELECT p.id, p."policyNumber" as nmid, p.name as vehicle, CASE WHEN p."startDate" > NOW() - INTERVAL \'90 days\' THEN \'registered\' ELSE \'renewed\' END as action, p."startDate" as date FROM policies p WHERE p.type=\'Motor\' ORDER BY p."startDate" DESC LIMIT 10'); return rows; },
 
   // Notifications
-  'notifications.list': () => q('SELECT id, type, title, message, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 ORDER BY "createdAt" DESC'),
-  'notification.list': () => q('SELECT id, type, title, message, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 ORDER BY "createdAt" DESC'),
+  'notifications.list': () => q('SELECT id, type, title, description as message, "isRead" as read, "createdAt" as date FROM notifications ORDER BY "createdAt" DESC'),
+  'notification.list': () => q('SELECT id, type, title, description as message, "isRead" as read, "createdAt" as date FROM notifications ORDER BY "createdAt" DESC'),
   'notifications.markRead': async (input) => { await q('UPDATE notifications SET "isRead"=true, "readAt"=NOW() WHERE id=$1', [input?.id]); return { success: true }; },
 
   // Onboarding
@@ -1828,7 +1839,7 @@ const ROUTE_HANDLERS = {
   },
 
   // PFA Integration
-  'pfa.annuities': () => q('SELECT id, provider, annuity_type as type, monthly_payout as "monthlyPayout", start_date as "startDate", lump_sum as "lumpSum", status FROM pfa_annuities WHERE user_id=1 ORDER BY start_date'),
+  'pfa.annuities': () => q('SELECT id, annuity_type as type, "monthlyPayout", "startDate", "lumpSum", monthly_amount, status FROM pfa_annuities ORDER BY "startDate"'),
   'pfa.quote': async (input) => { const contribution = input?.monthlyContribution || 50000; return {monthlyContribution:contribution,projectedBalance:contribution*12*20*1.08,estimatedMonthlyPension:contribution*0.6,retirementAge:60,provider:'ARM Pension'}; },
 
   // Policy mutations
@@ -1895,8 +1906,8 @@ const ROUTE_HANDLERS = {
 
   // Takaful mutations
   'takaful.join': async (input) => { return {success:true,participantId:'TAK-'+Date.now(),plan:input?.plan||'family'}; },
-  'takaful.pools': () => q('SELECT id, name, pool_type as type, total_contributions as "totalContributions", member_count as members, surplus_distributed as "surplusDistributed", wakala_fee_pct as "wakalaFee", status FROM takaful_pools WHERE status=\'active\' ORDER BY total_contributions DESC'),
-  'takaful.shariaPrinciples': () => q('SELECT id, name, description, category FROM takaful_sharia_principles ORDER BY order_num'),
+  'takaful.pools': () => q('SELECT id, "poolName" as name, "totalContributions", surplus, "surplusDistributed", "wakalaFee", status FROM takaful_pools WHERE status=\'active\' ORDER BY "totalContributions" DESC'),
+  'takaful.shariaPrinciples': () => q('SELECT id, name, description, category FROM takaful_sharia_principles ORDER BY id'),
 
   // Telco Credit Scoring
   'telcoCredit.score': async (input) => { return {score:Math.floor(600+Math.random()*200),provider:input?.provider||'MTN',lastUpdated:new Date().toISOString().slice(0,10),eligible:true}; },
@@ -1961,8 +1972,8 @@ const ROUTE_HANDLERS = {
 
   // --- Underwriting Engine (Robust) ---
   'underwriting.evaluate': async (input) => runUnderwriting(input),
-  'underwriting.rules': () => q('SELECT id, "productType", "ruleName", "ruleType", conditions, action, priority, "isActive", "naicomRef" FROM underwriting_rules ORDER BY "productType", priority'),
-  'underwriting.decisions': () => q('SELECT id, "applicationId", "customerId", "productType", decision, "riskScore", "riskCategory", "premiumLoading", exclusions, conditions, "rulesApplied", notes, "decisionDate" FROM underwriting_decisions ORDER BY "decisionDate" DESC'),
+  'underwriting.rules': () => q('SELECT id, "productType", "ruleName", "ruleType", conditions, action, "isActive", "naicomRef" FROM underwriting_rules ORDER BY "productType"'),
+  'underwriting.decisions': () => q('SELECT id, "applicationId", "customerId", "productType", decision, "riskScore", "riskCategory", "premiumLoading", "rulesApplied", "decisionDate" FROM underwriting_decisions ORDER BY "decisionDate" DESC'),
   'underwriting.createRule': async (input) => {
     const r = await q1(`INSERT INTO underwriting_rules (id, "productType", "ruleName", "ruleType", conditions, action, priority, "naicomRef")
       VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM underwriting_rules), $1, $2, $3, $4, $5, $6, $7) RETURNING *`,
@@ -2107,7 +2118,7 @@ const ROUTE_HANDLERS = {
 
   // --- Workflow Middleware ---
   'workflow.definitions': () => q('SELECT id, name, entity_type, states, transitions, is_active FROM workflow_definitions ORDER BY id'),
-  'workflow.instances': () => q('SELECT wi.id, wi.entity_type, wi.entity_id, wi.current_state, wi.history, wi.assigned_to, wd.name as workflow_name FROM workflow_instances wi LEFT JOIN workflow_definitions wd ON wi.workflow_id=wd.id ORDER BY wi.updated_at DESC'),
+  'workflow.instances': () => q('SELECT wi.id, wi.entity_type, wi.entity_id, wi.current_state, wi.history, wi.assigned_to, wd.name as workflow_name FROM workflow_instances wi LEFT JOIN workflow_definitions wd ON wi.workflow_id=wd.id ORDER BY wi."updatedAt" DESC'),
   'workflow.transition': async (input) => {
     const instance = await q1('SELECT * FROM workflow_instances WHERE entity_type=$1 AND entity_id=$2', [input?.entityType, input?.entityId]);
     if (!instance?.id) return { success: false, error: 'Workflow instance not found' };
@@ -2187,7 +2198,7 @@ const ROUTE_HANDLERS = {
   },
 
   // --- Approval Chains ---
-  'approval.chains': () => q('SELECT id, name, entity_type, threshold_amount, steps, is_active, created_at, updated_at FROM approval_chains ORDER BY entity_type, threshold_amount'),
+  'approval.chains': () => q('SELECT id, name, entity_type, threshold_amount, steps, is_active, "createdAt", "updatedAt" FROM approval_chains ORDER BY entity_type, threshold_amount'),
   'approval.chains.create': async (input) => {
     const r = await q1('INSERT INTO approval_chains (name, entity_type, threshold_amount, steps) VALUES ($1, $2, $3, $4) RETURNING *',
       [input?.name, input?.entityType, input?.thresholdAmount || 0, JSON.stringify(input?.steps || [])]);
@@ -2237,7 +2248,7 @@ const ROUTE_HANDLERS = {
   },
 
   // --- NAICOM Financial Report Ingestion ---
-  'naicom.financialReports': () => q('SELECT id, report_type, period, status, data, validation_errors, submitted_at, created_at, updated_at FROM naicom_financial_reports ORDER BY created_at DESC'),
+  'naicom.financialReports': () => q('SELECT id, report_type, period, status, data, validation_errors, submitted_at, "createdAt", "updatedAt" FROM naicom_financial_reports ORDER BY "createdAt" DESC'),
   'naicom.financialReports.create': async (input) => {
     const r = await q1('INSERT INTO naicom_financial_reports (report_type, period, status, data) VALUES ($1, $2, \'draft\', $3) RETURNING *',
       [input?.reportType, input?.period, JSON.stringify(input?.data || {})]);
@@ -2376,7 +2387,7 @@ const ROUTE_HANDLERS = {
 
   // Contract groups with measurement model details
   'ifrs17.contractGroups': async () => {
-    const groups = await q('SELECT * FROM ifrs17_contract_groups ORDER BY portfolio, cohort_year DESC');
+    const groups = await q('SELECT * FROM ifrs17_contract_groups ORDER BY group_code');
     return groups;
   },
 
@@ -3120,7 +3131,7 @@ const ROUTE_HANDLERS = {
     return { received: true };
   },
   'payments.history': async () => {
-    const rows = await q('SELECT id, gateway, reference, amount, type, status, customer_email, created_at FROM payment_transactions ORDER BY created_at DESC LIMIT 50');
+    const rows = await q('SELECT id, gateway, reference, amount, type, status, customer_email, "createdAt" FROM payment_transactions ORDER BY "createdAt" DESC LIMIT 50');
     return rows;
   },
   'payments.reconcile': async () => {
