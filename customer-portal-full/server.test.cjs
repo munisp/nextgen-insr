@@ -73,7 +73,7 @@ async function runTests() {
   console.log('\n=== Metrics ===');
   const metricsRes = await request('GET', '/metrics');
   assert('GET /metrics returns 200', metricsRes.status === 200);
-  assert('/metrics has totalRequests', typeof metricsRes.body?.totalRequests === 'number');
+  assert('/metrics has requests', typeof metricsRes.body?.requests === 'number');
 
   // 6. tRPC routes
   console.log('\n=== tRPC Query Routes ===');
