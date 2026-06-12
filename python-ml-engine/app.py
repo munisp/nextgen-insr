@@ -1,5 +1,5 @@
 """
-pos-ml-engine — Python sidecar for 54Link POS Shell
+insureportal-ml-engine — Python sidecar for InsurePortal InsurePortal
 
 Provides:
 1. ML-based anomaly detection (transaction patterns, velocity checks)
@@ -481,7 +481,7 @@ class MLHandler(BaseHTTPRequestHandler):
         if path == "/health":
             self._send_json({
                 "status": "healthy",
-                "service": "pos-ml-engine",
+                "service": "insureportal-ml-engine",
                 "version": "1.0.0",
                 "uptime_seconds": int(time.time() - state.start_time),
                 "anomalies_detected": state.anomaly_count,
@@ -596,7 +596,7 @@ class MLHandler(BaseHTTPRequestHandler):
 def main():
     port = int(os.environ.get("PYTHON_ML_PORT", "9300"))
     server = HTTPServer(("0.0.0.0", port), MLHandler)
-    print(f"[pos-ml-engine] Starting Python sidecar on port {port}")
+    print(f"[insureportal-ml-engine] Starting Python sidecar on port {port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

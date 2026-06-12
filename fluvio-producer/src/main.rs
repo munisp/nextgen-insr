@@ -35,7 +35,7 @@ pub struct ProduceRequest {
     pub source: String,
 }
 
-fn default_source() -> String { "pos-shell".to_string() }
+fn default_source() -> String { "insureportal".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchProduceRequest {

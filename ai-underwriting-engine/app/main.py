@@ -1,5 +1,41 @@
 import os
 from fastapi import FastAPI
+
+# ── PostgreSQL Connection ──────────────────────────────────────────────────
+import psycopg2
+import psycopg2.extras
+
+_pg_config = {
+    "host": os.environ.get("PGHOST", "localhost"),
+    "port": int(os.environ.get("PGPORT", "5432")),
+    "database": os.environ.get("PGDATABASE", "ngapp"),
+    "user": os.environ.get("PGUSER", "ngapp"),
+    "password": os.environ.get("PGPASSWORD", "ngapp"),
+}
+_pg_conn = None
+
+def get_db():
+    global _pg_conn
+    try:
+        if _pg_conn is None or _pg_conn.closed:
+            _pg_conn = psycopg2.connect(**_pg_config)
+            _pg_conn.autocommit = True
+        return _pg_conn
+    except Exception as e:
+        return None
+
+def db_query(sql, params=None):
+    conn = get_db()
+    if not conn: return []
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            if cur.description: return cur.fetchall()
+            return []
+    except Exception as e:
+        try: conn.rollback()
+        except: pass
+        return []
 from pydantic import BaseModel
 from typing import Optional
 import uuid

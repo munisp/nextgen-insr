@@ -8,6 +8,21 @@ const compression = require('compression');
 const app = express();
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
+
+// CORS middleware
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5002,http://localhost:3000').split(',');
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID,X-RateLimit-Limit,X-RateLimit-Remaining');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 const PORT = process.env.PORT || 5002;
 const DIST = path.join(__dirname, 'dist', 'public');
 
@@ -24,12 +39,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// Security headers
+// Security headers (Helmet-equivalent)
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: wss:");
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  res.setHeader('X-Download-Options', 'noopen');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  // Request ID for tracing
+  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+  res.setHeader('X-Request-ID', requestId);
+  req.requestId = requestId;
   next();
 });
 
@@ -50,8 +75,31 @@ function checkRateLimit(key) {
   return true;
 }
 
+// JWT secret for token signing
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
+
 // Session tokens store (Redis-ready interface)
 const sessions = new Map();
+const tokenBlacklist = new Set();
+
+function signJWT(payload) {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify({ ...payload, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64url');
+  const signature = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+function verifyJWT(token) {
+  if (!token || tokenBlacklist.has(token)) return null;
+  try {
+    const [header, body, signature] = token.split('.');
+    const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+    if (signature !== expected) return null;
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch { return null; }
+}
 
 // PostgreSQL connection
 const pool = new Pool({
@@ -1166,7 +1214,7 @@ const ROUTE_HANDLERS = {
     if (!user?.id) {
       // Demo fallback — allows existing demo flow to keep working
       if (email === 'demo@insureportal.ng' && password === 'demo123') {
-        const token = crypto.randomBytes(32).toString('hex');
+        const token = signJWT({ sub: 0, email, role: 'admin' });
         sessions.set(token, { ...DEMO_USER, kycLevel: 3 });
         return { ...DEMO_USER, token, kycLevel: 3, kycPassed: true };
       }
@@ -1190,8 +1238,8 @@ const ROUTE_HANDLERS = {
     if (user.totpEnabled) {
       return { requires2FA: true, email: user.email, message: 'Please enter your 2FA code' };
     }
-    // Generate session token
-    const token = crypto.randomBytes(32).toString('hex');
+    // Generate JWT
+    const token = signJWT({ sub: user.id, email: user.email, role: user.role });
     const kycCheck = await checkKycGate(user.id);
     const sessionUser = {
       id: user.id, email: user.email,
@@ -1223,7 +1271,7 @@ const ROUTE_HANDLERS = {
        VALUES ($1, 0, 'pending', 'unknown', NOW(), NOW()) RETURNING id`,
       [newUser.id]
     );
-    const token = crypto.randomBytes(32).toString('hex');
+    const token = signJWT({ sub: newUser.id, email: newUser.email, role: newUser.role });
     const sessionUser = { ...newUser, kycLevel: 0, kycPassed: false };
     sessions.set(token, sessionUser);
     return { ...sessionUser, token, requiresKyc: true, kycRemainingSteps: ['bvn', 'nin', 'phone', 'address', 'id_document', 'facial_match'] };
@@ -1231,7 +1279,7 @@ const ROUTE_HANDLERS = {
   'auth.logout': async (input) => {
     const authHeader = input?._headers?.authorization;
     const token = input?.token || (authHeader ? authHeader.replace('Bearer ', '') : null);
-    if (token) sessions.delete(token);
+    if (token) { sessions.delete(token); tokenBlacklist.add(token); }
     return { success: true, message: 'Logged out successfully' };
   },
   'auth.resetPassword': async (input) => {
@@ -3155,6 +3203,14 @@ async function logAudit(action, entityType, entityId, userId, details) {
   } catch (e) { /* non-critical */ }
 }
 
+// Public routes that don't require JWT auth
+const PUBLIC_ROUTES = new Set([
+  'auth.login', 'auth.signup', 'auth.logout', 'auth.resetPassword', 'auth.confirmResetPassword', 'auth.verify2FA', 'auth.me',
+  'dashboard.stats', 'dashboard.recentClaims', 'dashboard.notifications', 'dashboard.activity',
+  'products.list', 'products.getById', 'marketplace.featured', 'marketplace.categories',
+  'coverage.types', 'coverage.recommendations', 'premium.calculate',
+]);
+
 // Database-backed tRPC handler (httpLink: no batching, no superjson, O(1) Map lookup)
 app.all('/api/trpc/*', async (req, res) => {
   const batch = req.query.batch === '1';
@@ -3166,8 +3222,21 @@ app.all('/api/trpc/*', async (req, res) => {
   if (route.startsWith('auth.')) {
     const ip = req.ip || req.connection.remoteAddress;
     if (!checkRateLimit(ip, route)) {
-      return res.status(429).json({ error: { message: 'Too many attempts. Please try again in 15 minutes.' } });
+      res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT_MAX));
+      res.setHeader('X-RateLimit-Remaining', '0');
+      return res.status(429).json({ error: { message: 'Too many attempts. Please try again in 15 minutes.', code: 'RATE_LIMITED' } });
     }
+  }
+
+  // Extract auth context
+  const authHeader = req.headers?.authorization;
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const jwtPayload = bearerToken ? verifyJWT(bearerToken) : null;
+  const userId = jwtPayload?.sub || (bearerToken && sessions.has(bearerToken) ? sessions.get(bearerToken).id : null);
+
+  // Enforce auth on POST mutations (except PUBLIC_ROUTES)
+  if (req.method === 'POST' && !PUBLIC_ROUTES.has(route) && !userId) {
+    return res.status(401).json({ error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
   }
 
   // httpLink (non-batch): single route, single response object
@@ -3179,24 +3248,22 @@ app.all('/api/trpc/*', async (req, res) => {
       try { input = JSON.parse(req.query.input); } catch (e) {}
     }
     if (route === 'auth.me') {
-      const authHeader = req.headers?.authorization;
-      const token = authHeader?.replace('Bearer ', '') || input?.token;
-      if (token && sessions.has(token)) return res.json({ result: { data: sessions.get(token) } });
+      if (bearerToken && sessions.has(bearerToken)) return res.json({ result: { data: sessions.get(bearerToken) } });
+      if (jwtPayload) return res.json({ result: { data: { ...DEMO_USER, id: jwtPayload.sub, email: jwtPayload.email } } });
       return res.json({ result: { data: DEMO_USER } });
     }
     const handler = ROUTE_MAP.get(route);
     if (handler) {
       try {
         const data = await handler(input);
-        // Log mutations to audit trail
-        if (req.method === 'POST') logAudit(route, route.split('.')[0], null, null, { input: Object.keys(input) });
+        if (req.method === 'POST') logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
         return res.json({ result: { data: data } });
       } catch (err) {
         console.error(`Route error [${route}]:`, err.message);
-        return res.json({ result: { data: [] } });
+        return res.status(500).json({ result: { data: [] }, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
       }
     }
-    return res.json({ result: { data: [] } });
+    return res.status(404).json({ result: { data: [] }, error: { message: `Route not found: ${route}`, code: 'NOT_FOUND' } });
   }
 
   // Batch path (legacy support for httpBatchLink clients)

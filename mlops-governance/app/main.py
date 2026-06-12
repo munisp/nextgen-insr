@@ -130,8 +130,7 @@ async def keycloak_auth_middleware(request: Request, call_next):
 try:
     from fastapi import FastAPI
     app = FastAPI(title="MLOps Governance", version="1.0.0")
-app.middleware("http")(keycloak_auth_middleware)
-
+    app.middleware("http")(keycloak_auth_middleware)
 except ImportError:
     app = None
 
