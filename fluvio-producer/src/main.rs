@@ -504,7 +504,7 @@ async fn main() -> std::io::Result<()> {
         });
     }
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
             .app_data(state.clone())
@@ -527,8 +527,17 @@ async fn main() -> std::io::Result<()> {
             .route("/produce/kyc", web::post().to(produce_kyc))
     })
     .bind(("0.0.0.0", port))?
-    .run()
-    .await
+    .shutdown_timeout(30)
+    .run();
+
+    let srv = server.handle();
+    actix_web::rt::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("Received shutdown signal, draining...");
+        srv.stop(true).await;
+    });
+
+    server.await
 }
 
 

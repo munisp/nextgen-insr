@@ -121,7 +121,27 @@ async def keycloak_auth_middleware(request: Request, call_next):
 
 
 
-app = FastAPI(title="Predictive Analytics", version="3.0.0")
+import signal
+import asyncio
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(application):
+    print("[predictive-analytics] Starting up...")
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(_shutdown(application, s)))
+    yield
+    print("[predictive-analytics] Shutting down gracefully...")
+    global db_conn
+    if db_conn and not db_conn.closed:
+        db_conn.close()
+        print("[predictive-analytics] Database connection closed")
+
+async def _shutdown(application, sig):
+    print(f"[predictive-analytics] Received {sig.name}, initiating graceful shutdown...")
+
+app = FastAPI(title="Predictive Analytics", version="3.0.0", lifespan=lifespan)
 app.middleware("http")(keycloak_auth_middleware)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

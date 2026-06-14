@@ -11,10 +11,12 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -1275,8 +1277,22 @@ func main() {
 
 
 	addr := ":" + cfg.Port
+	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("[AML-Case-Manager] Shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("[AML-Case-Manager] Forced shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("[AML-Case-Manager] Starting on %s (env=%s)", addr, cfg.Environment)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("[AML-Case-Manager] Failed: %v", err)
 	}
 }

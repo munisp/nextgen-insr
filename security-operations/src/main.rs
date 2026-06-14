@@ -298,7 +298,7 @@ fn main() -> std::io::Result<()> {
     let state = Arc::new(AppState { db: client });
 
     println!("Security Operations starting on :{} (PostgreSQL)", port);
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(state.clone()))
             .route("/health", web::get().to(health))
@@ -307,6 +307,15 @@ fn main() -> std::io::Result<()> {
             .route("/api/v1/threat-intel", web::get().to(get_threat_intel))
     })
     .bind(format!("0.0.0.0:{}", port))?
-    .run()
-    .await
+    .shutdown_timeout(30)
+    .run();
+
+    let srv = server.handle();
+    actix_web::rt::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        println!("[security-operations] Received shutdown signal, draining...");
+        srv.stop(true).await;
+    });
+
+    server.await
 }

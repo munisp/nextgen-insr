@@ -151,10 +151,27 @@ async def keycloak_auth_middleware(request: Request, call_next):
 
 
 
+import signal
+import asyncio
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(application):
+    print("[ai-underwriting-engine] Starting up...")
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(_shutdown(application, s)))
+    yield
+    print("[ai-underwriting-engine] Shutting down gracefully...")
+
+async def _shutdown(application, sig):
+    print(f"[ai-underwriting-engine] Received {sig.name}, initiating graceful shutdown...")
+
 app = FastAPI(
     title="AI Underwriting Engine",
     description="ML-powered underwriting with alternative data scoring for thin-file customers",
     version="1.0.0",
+    lifespan=lifespan,
 )
 app.middleware("http")(keycloak_auth_middleware)
 

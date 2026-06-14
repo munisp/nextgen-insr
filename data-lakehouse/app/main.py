@@ -148,10 +148,27 @@ async def keycloak_auth_middleware(request: Request, call_next):
 
 
 
+import signal
+import asyncio
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(application):
+    print("[data-lakehouse] Starting up...")
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(_shutdown(application, s)))
+    yield
+    print("[data-lakehouse] Shutting down gracefully...")
+
+async def _shutdown(application, sig):
+    print(f"[data-lakehouse] Received {sig.name}, initiating graceful shutdown...")
+
 app = FastAPI(
     title="Data Lakehouse",
     description="Unified data lakehouse for insurance analytics, reporting, and ML pipelines",
     version="1.0.0",
+    lifespan=lifespan,
 )
 app.middleware("http")(keycloak_auth_middleware)
 

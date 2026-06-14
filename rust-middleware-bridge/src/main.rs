@@ -326,14 +326,23 @@ async fn main() -> std::io::Result<()> {
         for k in &expired { cache_state.cache.remove(k); }
         if !expired.is_empty() { info!(count = expired.len(), "Evicted expired cache entries"); }
     }});
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new().app_data(web::Data::new(state.clone())).app_data(web::JsonConfig::default().limit(10*1024*1024))
             .route("/kafka/publish", web::post().to(kafka_publish)).route("/kafka/batch", web::post().to(kafka_batch)).route("/kafka/drain", web::get().to(kafka_drain))
             .route("/cache/set", web::post().to(cache_set_handler)).route("/cache/get/{key}", web::get().to(cache_get_handler)).route("/cache/invalidate/{key}", web::delete().to(cache_invalidate_handler))
             .route("/audit/log", web::post().to(audit_log_handler)).route("/audit/batch", web::post().to(audit_batch_handler)).route("/audit/query", web::get().to(audit_query_handler))
             .route("/webhook/verify", web::post().to(webhook_verify)).route("/ratelimit/check", web::post().to(ratelimit_check)).route("/sanitize", web::post().to(sanitize_handler))
             .route("/health", web::get().to(health)).route("/stats", web::get().to(stats))
-    }).bind(("0.0.0.0", port))?.workers(4).run().await
+    }).bind(("0.0.0.0", port))?.workers(4).shutdown_timeout(30).run();
+
+    let srv = server.handle();
+    actix_web::rt::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        info!("Received shutdown signal, draining...");
+        srv.stop(true).await;
+    });
+
+    server.await
 }
 
 #[cfg(test)]

@@ -14,9 +14,11 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -1474,10 +1476,24 @@ func main() {
 
 
 	addr := ":" + cfg.Port
+	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("[goAML] Shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("[goAML] Forced shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("[goAML] Starting on %s (env=%s, nfiu=%s)", addr, cfg.Environment, cfg.NFIUEndpoint)
 	log.Printf("[goAML] Integrations: Kafka=%s, Temporal=%s, TigerBeetle=%s", cfg.KafkaBrokers, cfg.TemporalURL, cfg.TigerBeetleURL)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("[goAML] Server failed: %v", err)
 	}
 }

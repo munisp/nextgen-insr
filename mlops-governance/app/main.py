@@ -127,9 +127,29 @@ async def keycloak_auth_middleware(request: Request, call_next):
 
 
 
+import signal
+import asyncio
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(application):
+    print("[mlops-governance] Starting up...")
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(_shutdown(application, s)))
+    yield
+    print("[mlops-governance] Shutting down gracefully...")
+    global db_conn
+    if db_conn and not db_conn.closed:
+        db_conn.close()
+        print("[mlops-governance] Database connection closed")
+
+async def _shutdown(application, sig):
+    print(f"[mlops-governance] Received {sig.name}, initiating graceful shutdown...")
+
 try:
     from fastapi import FastAPI
-    app = FastAPI(title="MLOps Governance", version="1.0.0")
+    app = FastAPI(title="MLOps Governance", version="1.0.0", lifespan=lifespan)
     app.middleware("http")(keycloak_auth_middleware)
 except ImportError:
     app = None

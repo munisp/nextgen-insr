@@ -156,7 +156,23 @@ async def keycloak_auth_middleware(request: Request, call_next):
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [lakehouse] %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Lakehouse Analytics", version="3.0.0")
+import signal
+import asyncio
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(application):
+    print("[lakehouse-analytics] Starting up...")
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(_shutdown(application, s)))
+    yield
+    print("[lakehouse-analytics] Shutting down gracefully...")
+
+async def _shutdown(application, sig):
+    print(f"[lakehouse-analytics] Received {sig.name}, initiating graceful shutdown...")
+
+app = FastAPI(title="Lakehouse Analytics", version="3.0.0", lifespan=lifespan)
 app.middleware("http")(keycloak_auth_middleware)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

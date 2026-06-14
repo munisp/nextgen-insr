@@ -414,7 +414,13 @@ async fn main() {
     let addr = format!("0.0.0.0:{}", port);
     println!("[offline-queue] Listening on {} (PostgreSQL)", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            tokio::signal::ctrl_c().await.ok();
+            println!("[offline-queue] Received shutdown signal, draining...");
+        })
+        .await
+        .unwrap();
 }
 
 
