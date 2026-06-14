@@ -35,11 +35,12 @@ INSERT INTO user_roles ("userId", "roleId") VALUES
 ON CONFLICT DO NOTHING;
 
 -- KYC Profiles
-INSERT INTO kyc_profiles ("userId", nin, bvn, phone, level, "kycLevel", status, "kycStatus", "ninVerified", "bvnVerified", "phoneVerified") VALUES
-  (2, '12345678901', '22345678901', '+2348012345001', 3, 3, 'verified', 'verified', true, true, true),
-  (3, '12345678902', '22345678902', '+2348012345002', 3, 3, 'verified', 'verified', true, true, true),
-  (4, '12345678903', '22345678903', '+2348012345003', 2, 2, 'pending', 'pending', true, false, true),
-  (5, '12345678904', '22345678904', '+2348012345004', 3, 3, 'verified', 'verified', true, true, true)
+INSERT INTO kyc_profiles ("userId", nin, bvn, phone, level, "kycLevel", status, "kycStatus", "ninVerified", "bvnVerified", "phoneVerified", "riskRating") VALUES
+  (1, '12345678900', '22345678900', '+2348012345000', 3, 3, 'verified', 'verified', true, true, true, 'low'),
+  (2, '12345678901', '22345678901', '+2348012345001', 3, 3, 'verified', 'verified', true, true, true, 'low'),
+  (3, '12345678902', '22345678902', '+2348012345002', 3, 3, 'verified', 'verified', true, true, true, 'low'),
+  (4, '12345678903', '22345678903', '+2348012345003', 2, 2, 'pending', 'pending', true, false, true, 'medium'),
+  (5, '12345678904', '22345678904', '+2348012345004', 3, 3, 'verified', 'verified', true, true, true, 'low')
 ON CONFLICT DO NOTHING;
 
 -- Insurance Products
@@ -137,9 +138,9 @@ INSERT INTO payment_transactions ("userId", customer_email, amount, type, gatewa
 ON CONFLICT DO NOTHING;
 
 -- Agents & Commissions
-INSERT INTO agents (id, "userId", "agentCode", name, region, status, "commissionRate") VALUES
-  (1, 6, 'AGT-001', 'Obinna Nwosu', 'Lagos', 'active', 0.10),
-  (2, 7, 'AGT-002', 'Grace Adeyemi', 'Abuja', 'active', 0.12)
+INSERT INTO agents (id, "userId", "agentCode", name, "agencyName", region, status, "commissionRate") VALUES
+  (1, 6, 'AGT-001', 'Obinna Nwosu', 'Obinna Nwosu Insurance Agency', 'Lagos', 'active', 0.10),
+  (2, 7, 'AGT-002', 'Grace Adeyemi', 'Adeyemi Financial Services', 'Abuja', 'active', 0.12)
 ON CONFLICT (id) DO NOTHING;
 SELECT setval('agents_id_seq', 2, true);
 
@@ -180,10 +181,10 @@ INSERT INTO notifications ("userId", type, title, description) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Reinsurance
-INSERT INTO reinsurance_treaties (id, name, treaty_type, reinsurer, retention, "retentionLimit", "coverLimit", "commissionRate", "effectiveDate", "expiryDate", status) VALUES
-  (1, 'Quota Share 2026', 'quota_share', 'Africa Re', 5000000.00, 5000000.00, 50000000.00, 0.25, '2026-01-01', '2026-12-31', 'active'),
-  (2, 'Surplus Treaty 2026', 'surplus', 'Munich Re', 10000000.00, 10000000.00, 100000000.00, 0.20, '2026-01-01', '2026-12-31', 'active'),
-  (3, 'Catastrophe XL', 'excess_of_loss', 'Swiss Re', 20000000.00, 20000000.00, 200000000.00, 0.15, '2026-01-01', '2026-12-31', 'active')
+INSERT INTO reinsurance_treaties (id, name, "treatyName", treaty_type, "treatyType", reinsurer, retention, "retentionLimit", "coverLimit", "commissionRate", "effectiveDate", "expiryDate", status) VALUES
+  (1, 'Quota Share 2026', 'Quota Share 2026', 'quota_share', 'quota_share', 'Africa Re', 5000000.00, 5000000.00, 50000000.00, 0.25, '2026-01-01', '2026-12-31', 'active'),
+  (2, 'Surplus Treaty 2026', 'Surplus Treaty 2026', 'surplus', 'surplus', 'Munich Re', 10000000.00, 10000000.00, 100000000.00, 0.20, '2026-01-01', '2026-12-31', 'active'),
+  (3, 'Catastrophe XL', 'Catastrophe XL', 'excess_of_loss', 'excess_of_loss', 'Swiss Re', 20000000.00, 20000000.00, 200000000.00, 0.15, '2026-01-01', '2026-12-31', 'active')
 ON CONFLICT (id) DO NOTHING;
 SELECT setval('reinsurance_treaties_id_seq', 3, true);
 
@@ -314,9 +315,22 @@ ON CONFLICT DO NOTHING;
 
 -- Underwriting
 INSERT INTO underwriting_rules ("productType", "ruleName", "ruleType", conditions, action, "isActive") VALUES
-  ('motor', 'Age Restriction', 'eligibility', '{"min_age":18,"max_age":70}', 'reject', true),
-  ('health', 'Pre-existing Conditions', 'exclusion', '{"conditions":["cancer","HIV"]}', 'exclude', true),
-  ('life', 'Medical Exam Required', 'requirement', '{"min_sum_assured":10000000}', 'require_exam', true)
+  ('Motor', 'Motor Age Eligibility', 'eligibility', '{"min_age":18,"max_age":70}', '{"reason":"Applicant age outside acceptable range"}', true),
+  ('Motor', 'No Tracker Loading', 'pricing', '{"has_tracker":false}', '{"loading_pct":15}', true),
+  ('Motor', 'Young Driver Loading', 'pricing', '{"driver_age_under":25}', '{"loading_pct":20}', true),
+  ('Motor', 'No Claims Discount', 'pricing', '{"claims_free_years_min":1}', '{"discount_pct_per_year":5,"max_discount":60}', true),
+  ('Motor', 'Fleet Discount', 'pricing', '{"fleet_size_min":5}', '{"discount_pct":10}', true),
+  ('Motor', 'Vehicle Age Limit', 'eligibility', '{"max_vehicle_age":15}', '{"reason":"Vehicle exceeds maximum age"}', true),
+  ('Life', 'Life Age Eligibility', 'eligibility', '{"min_age":18,"max_age":75}', '{"reason":"Applicant age outside acceptable range"}', true),
+  ('Life', 'Smoker Loading', 'pricing', '{"is_smoker":true}', '{"loading_pct":35}', true),
+  ('Life', 'Hazardous Occupation', 'pricing', '{"occupation_class":"hazardous"}', '{"loading_pct":40}', true),
+  ('Life', 'Medical Exam Required', 'eligibility', '{"sum_assured_threshold":10000000}', '{"reason":"Medical exam required for high sum assured"}', true),
+  ('Life', 'Income Multiple Limit', 'limit', '{"income_multiple_max":15}', '{"reason":"Sum assured limited to 15x annual income"}', true),
+  ('Health', 'Health Age Eligibility', 'eligibility', '{"min_age":0,"max_age":80}', '{"reason":"Applicant age outside acceptable range"}', true),
+  ('Health', 'Pre-existing Condition Loading', 'pricing', '{"has_pre_existing":true}', '{"loading_pct":30,"reason":"Pre-existing condition exclusion period: 24 months"}', true),
+  ('Property', 'Wooden Construction Loading', 'pricing', '{"construction":"wooden"}', '{"loading_pct":25}', true),
+  ('Property', 'Fire Protection Discount', 'pricing', '{"has_fire_alarm":true,"has_sprinkler":true}', '{"discount_pct":15}', true),
+  ('All', 'Sum Assured Cap', 'limit', '{"income_multiple_max":20}', '{"reason":"Sum assured limited to 20x annual income"}', true)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO underwriting_decisions ("applicationId", "customerId", "productType", decision, "riskScore", "riskCategory", "premiumLoading", "rulesApplied") VALUES

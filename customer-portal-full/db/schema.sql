@@ -826,7 +826,7 @@ CREATE TABLE IF NOT EXISTS underwriting_rules (
   "ruleName" VARCHAR(128),
   "ruleType" VARCHAR(32),
   conditions JSONB DEFAULT '{}'::jsonb,
-  action VARCHAR(32),
+  action TEXT,
   "isActive" BOOLEAN DEFAULT true,
   "naicomRef" VARCHAR(32),
   "updatedAt" TIMESTAMP DEFAULT NOW()

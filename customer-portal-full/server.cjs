@@ -233,7 +233,7 @@ const DEMO_USER = {
 async function runUnderwriting(applicationData) {
   const { productType, applicantAge, sumAssured, annualIncome, riskFactors = {} } = applicationData;
   const category = productType === 'Motor' ? 'Motor' : productType?.includes('Health') ? 'Health' : productType?.includes('Life') ? 'Life' : productType?.includes('Property') ? 'Property' : productType?.includes('Agri') ? 'Agricultural' : 'Commercial';
-  const rules = await q('SELECT * FROM underwriting_rules WHERE ("productType"=$1 OR "productType"=\'All\') AND "isActive"=true ORDER BY priority', [category]);
+  const rules = await q('SELECT * FROM underwriting_rules WHERE ("productType"=$1 OR "productType"=\'All\') AND "isActive"=true ORDER BY id', [category]);
   const product = await q1('SELECT * FROM insurance_products WHERE category=$1 AND status=\'active\' LIMIT 1', [category]);
   const appliedRules = [];
   let totalLoading = 0;
@@ -613,7 +613,7 @@ const ROUTE_HANDLERS = {
   'insuranceScore.improve': () => q('SELECT id, suggestion, impact, priority, category FROM score_improvement_tips ORDER BY CASE priority WHEN \'high\' THEN 1 WHEN \'medium\' THEN 2 ELSE 3 END'),
 
   // ─── Microinsurance ───
-  'microinsurance.products': () => q('SELECT id, "productName" as name, premium, coverage, duration::text || \' days\' as duration FROM microinsurance_policies ORDER BY id'),
+  'microinsurance.products': () => q('SELECT id, product_type as name, premium, coverage, status FROM microinsurance_policies ORDER BY id'),
 
   // ─── Parametric ───
   'parametric.products': () => q(`SELECT id, name, "coverageDetails"->>'triggerCondition' as trigger, "sumAssured" as payout FROM policies WHERE type='Parametric' AND status='Active'`),
@@ -681,12 +681,14 @@ const ROUTE_HANDLERS = {
   'claims.evidence': () => q('SELECT id, "claimId", "evidenceType" as type, "fileName" as filename, "createdAt" as "uploadDate" FROM claim_evidence ORDER BY "createdAt" DESC'),
   'claims.tracker': async () => {
     const claim = await q1('SELECT id, "claimNumber", status::text FROM claims ORDER BY "createdAt" DESC LIMIT 1');
+    const total = await q1('SELECT COUNT(*) as total FROM claims');
     const steps = ['Filed', 'Documents', 'Review', 'Assessment', 'Settlement'];
     const statusMap = { 'Submitted': 1, 'Under Review': 3, 'Approved': 4, 'Paid': 5, 'Rejected': 5, 'Escalated': 3 };
-    const completedIdx = statusMap[claim.status] || 1;
+    const completedIdx = statusMap[claim?.status] || 1;
     return {
-      claimId: claim.claimNumber || 'N/A',
-      status: claim.status || 'Unknown',
+      claimId: claim?.claimNumber || 'N/A',
+      status: claim?.status || 'Unknown',
+      total: Number(total?.total) || 0,
       progress: Math.round(completedIdx / steps.length * 100),
       steps: steps.map((name, i) => ({ name, completed: i < completedIdx })),
     };
@@ -2039,7 +2041,7 @@ const ROUTE_HANDLERS = {
   },
 
   // --- RBAC ---
-  'rbac.roles': () => q('SELECT id, name, description, permissions, "isSystem" FROM roles ORDER BY id'),
+  'rbac.roles': () => q('SELECT id, name, permissions, "isSystem" FROM roles ORDER BY id'),
   'rbac.userRoles': async () => {
     const roles = await q('SELECT ur.id, ur."userId", r.name as "roleName", r.permissions, ur."assignedAt" FROM user_roles ur JOIN roles r ON ur."roleId"=r.id ORDER BY ur."userId"');
     return roles;
@@ -3117,10 +3119,10 @@ const ROUTE_HANDLERS = {
   'payments.verify': async (input) => {
     const { reference } = input || {};
     const txn = await q1('SELECT * FROM payment_transactions WHERE reference=$1', [reference]);
-    if (!txn) return { verified: false, error: 'Transaction not found' };
+    if (!txn) return { success: false, verified: false, error: 'Transaction not found' };
     // In production, verify with gateway API. For now, mark as success.
     await q('UPDATE payment_transactions SET status=\'success\' WHERE reference=$1', [reference]);
-    return { verified: true, reference, amount: Number(txn.amount), gateway: txn.gateway, status: 'success' };
+    return { success: true, verified: true, reference, amount: Number(txn.amount), gateway: txn.gateway, status: 'success' };
   },
   'payments.webhook': async (input) => {
     const { event, data } = input || {};
