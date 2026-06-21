@@ -322,6 +322,7 @@ CREATE TABLE IF NOT EXISTS premium_collections (
   "transactionId" VARCHAR(64),
   "collectionDate" TIMESTAMP DEFAULT NOW(),
   "dueDate" TIMESTAMP,
+  narration TEXT,
   "createdAt" TIMESTAMP DEFAULT NOW()
 );
 
@@ -1560,6 +1561,42 @@ CREATE TABLE IF NOT EXISTS knowledge_entities (
   related_to JSONB DEFAULT '[]'::jsonb,
   "createdAt" TIMESTAMP DEFAULT NOW()
 );
+
+-- Fund Flow Safety: Idempotency Keys (prevents duplicate fund movements)
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  key VARCHAR(64) PRIMARY KEY,
+  result JSONB NOT NULL,
+  expires_at TIMESTAMP NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_keys (expires_at);
+
+-- Fund Flow Safety: Fund Flow Events (Kafka event outbox pattern)
+CREATE TABLE IF NOT EXISTS fund_flow_events (
+  id SERIAL PRIMARY KEY,
+  topic VARCHAR(128) NOT NULL,
+  event_key VARCHAR(128),
+  payload JSONB NOT NULL,
+  status VARCHAR(16) DEFAULT 'pending',
+  published_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_fund_events_status ON fund_flow_events (status) WHERE status = 'pending';
+
+-- Fund Flow Safety: TigerBeetle Sync Outbox (ensures eventual consistency)
+CREATE TABLE IF NOT EXISTS tigerbeetle_outbox (
+  id SERIAL PRIMARY KEY,
+  debit_account VARCHAR(128) NOT NULL,
+  credit_account VARCHAR(128) NOT NULL,
+  amount NUMERIC(18,2) NOT NULL,
+  ledger_id INTEGER DEFAULT 1,
+  code INTEGER DEFAULT 0,
+  trace_id VARCHAR(64),
+  synced BOOLEAN DEFAULT false,
+  synced_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tb_outbox_unsynced ON tigerbeetle_outbox (synced) WHERE synced = false;
 
 -- Broker
 CREATE TABLE IF NOT EXISTS broker_api_keys (

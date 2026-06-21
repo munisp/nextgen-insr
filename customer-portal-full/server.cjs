@@ -215,6 +215,129 @@ async function q1(sql, params = [], fallback = {}) {
   return rows[0] || fallback;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// FUND FLOW SAFETY INFRASTRUCTURE
+// Atomicity, Idempotency, Double-Entry Ledger, Kafka Events, Compensation
+// ═══════════════════════════════════════════════════════════════════════
+
+// Atomic transaction helper — all fund flow operations MUST use this
+async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const txq = async (sql, params = []) => {
+      const { rows } = await client.query(sql, params);
+      return rows;
+    };
+    const txq1 = async (sql, params = []) => {
+      const rows = await txq(sql, params);
+      return rows[0] || null;
+    };
+    const result = await fn({ txq, txq1, client });
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Idempotency: prevent duplicate fund movements using SHA-256 key
+// Keys stored in DB with 24h TTL, checked before every financial operation
+const idempotencyCache = new Map();
+function generateIdempotencyKey(...parts) {
+  return crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 32);
+}
+async function checkIdempotency(key) {
+  if (idempotencyCache.has(key)) return idempotencyCache.get(key);
+  const row = await q1('SELECT result FROM idempotency_keys WHERE key=$1 AND expires_at > NOW()', [key]);
+  if (row?.result) {
+    const cached = typeof row.result === 'string' ? JSON.parse(row.result) : row.result;
+    idempotencyCache.set(key, cached);
+    return cached;
+  }
+  return null;
+}
+async function saveIdempotency(txq, key, result) {
+  await txq('INSERT INTO idempotency_keys (key, result, expires_at) VALUES ($1, $2, NOW() + INTERVAL \'24 hours\') ON CONFLICT (key) DO NOTHING', [key, JSON.stringify(result)]);
+  idempotencyCache.set(key, result);
+}
+
+// Double-entry ledger: every fund movement MUST have equal debit + credit
+async function recordLedgerEntry(txq, { type, entityType, entityId, debitAccount, creditAccount, amount, description, traceId }) {
+  const id = await txq('SELECT COALESCE(MAX(id),0)+1 as next FROM financial_transactions');
+  const nextId = id[0]?.next || 1;
+  await txq(
+    `INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate", reference)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, $9)`,
+    [nextId, type, entityType, entityId, debitAccount, creditAccount, amount, description, traceId || 'TRC-' + Date.now()]
+  );
+  return nextId;
+}
+
+// GL double-entry: write both sides of the entry to general_ledger
+async function recordGLDoubleEntry(txq, { debitAccount, creditAccount, amount, description, reference }) {
+  const id1 = await txq('SELECT COALESCE(MAX(id),0)+1 as next FROM general_ledger');
+  const nextId = id1[0]?.next || 1;
+  await txq(
+    'INSERT INTO general_ledger (id, account_code, account_name, debit, credit, description, reference, "createdAt") VALUES ($1, $2, $3, $4, 0, $5, $6, NOW())',
+    [nextId, debitAccount.replace(/\s+/g, '-').toUpperCase(), debitAccount, amount, description, reference]
+  );
+  await txq(
+    'INSERT INTO general_ledger (id, account_code, account_name, debit, credit, description, reference, "createdAt") VALUES ($1, $2, $3, 0, $4, $5, $6, NOW())',
+    [nextId + 1, creditAccount.replace(/\s+/g, '-').toUpperCase(), creditAccount, amount, description, reference]
+  );
+}
+
+// Audit trail: log every fund movement for compliance
+async function recordFundAudit(txq, { action, entityType, entityId, amount, traceId, details }) {
+  const numId = typeof entityId === 'number' ? entityId : (parseInt(entityId, 10) || 0);
+  await txq(
+    'INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES ($1, $2, $3, $4, NOW())',
+    [action, entityType, numId, JSON.stringify({ ...details, amount, traceId, entityRef: String(entityId), timestamp: new Date().toISOString() })]
+  );
+}
+
+// Kafka event publishing (async, non-blocking — failures logged but don't block transaction)
+const KAFKA_BROKER = process.env.KAFKA_BROKER || 'localhost:9092';
+const kafkaEventQueue = [];
+function publishFundEvent(topic, event) {
+  const enrichedEvent = {
+    ...event,
+    timestamp: new Date().toISOString(),
+    source: 'nextgen-monolith',
+    version: '1.0',
+  };
+  kafkaEventQueue.push({ topic, event: enrichedEvent });
+  // In production, flush to Kafka via the Go fund-flow-orchestrator sidecar
+  if (process.env.FUND_FLOW_SIDECAR_URL) {
+    const http = require('http');
+    const data = JSON.stringify({ topic, event: enrichedEvent });
+    const req = http.request(`${process.env.FUND_FLOW_SIDECAR_URL}/publish`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+    });
+    req.on('error', (e) => console.error(`Kafka publish error (${topic}):`, e.message));
+    req.write(data);
+    req.end();
+  }
+}
+
+// TigerBeetle ledger sync (async, non-blocking — immutable financial record)
+function syncToTigerBeetle(entry) {
+  if (process.env.TIGERBEETLE_SIDECAR_URL) {
+    const http = require('http');
+    const data = JSON.stringify(entry);
+    const req = http.request(`${process.env.TIGERBEETLE_SIDECAR_URL}/transfer`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+    });
+    req.on('error', (e) => console.error('TigerBeetle sync error:', e.message));
+    req.write(data);
+    req.end();
+  }
+}
+
 // Demo user for unauthenticated mode
 const DEMO_USER = {
   id: 1,
@@ -1117,7 +1240,7 @@ const ROUTE_HANDLERS = {
     const r = await q1('SELECT COUNT(*) as total, COALESCE(SUM(matched_count),0) as matched, COALESCE(SUM(unmatched_count),0) as unmatched, MAX(processed_at) as last_run FROM reconciliation_batches');
     return { lastRun: r.last_run || new Date().toISOString().slice(0, 10), matched: Number(r.matched) || 0, unmatched: Number(r.unmatched) || 0, totalBatches: Number(r.total) || 0 };
   },
-  'reconciliation.batches': () => q('SELECT id, batch_reference as ref, source_type as type, total_records as total, matched_count as matched, unmatched_count as unmatched, discrepancy_count as discrepancies, total_amount::text as amount, status, created_at, processed_at FROM reconciliation_batches ORDER BY created_at DESC'),
+  'reconciliation.batches': () => q('SELECT id, batch_reference as ref, source_type as type, total_records as total, matched_count as matched, unmatched_count as unmatched, discrepancy_count as discrepancies, total_amount::text as amount, status, "createdAt", processed_at FROM reconciliation_batches ORDER BY "createdAt" DESC'),
 
   // ─── DR ───
   'dr.status': async () => { const rows = await q('SELECT component, rto_hours, rpo_hours, replication_lag_seconds, last_test_date, last_test_result, status FROM disaster_recovery_config ORDER BY id'); const primary = rows[0] || {}; return {healthy: rows.every(r=>r.status==='healthy'), components: rows, lastTest: primary.last_test_date, rto: primary.rto_hours+'h', rpo: primary.rpo_hours+'h', replicationLag: (primary.replication_lag_seconds||0)+'s'}; },
@@ -1709,22 +1832,44 @@ const ROUTE_HANDLERS = {
   // Parametric mutations
   'parametric.claim': async (input) => { const ref = 'PAR-CLM-'+Date.now(); return {success:true,claimId:ref,autoApproved:true,payout:input?.amount||75000,triggerEvent:input?.event||'rainfall_deficit',processingTime:'instant'}; },
 
-  // Payments
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 1: Premium Payment (Card/Bank) — ATOMIC
+  // Stakeholder: Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  // ═══════════════════════════════════════════════════════════════════
   'payments.process': async (input) => {
-    // KYC gate check
     const kycCheck = await checkKycGate(1);
     if (!kycCheck.passed) return { success: false, error: 'KYC verification required before making payments', kycLevel: kycCheck.level, requiredLevel: 1 };
-    const txnId = 'TXN-' + Date.now();
-    const receiptNo = 'RCT-' + new Date().getFullYear() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-    // Record premium collection
-    await q1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
-      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, $3, $4, 'InsurePortal', $5, 'completed', $6, $7) RETURNING id`,
-      [input?.policyId || 1, input?.amount || 0, input?.method || 'card', 'PAY-' + Date.now(), txnId, receiptNo, input?.narration || 'Premium payment']);
-    // Record GL entry
-    await q1(`INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate")
-      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM financial_transactions), 'premium_received', 'policy', $1, 'Bank - Online', 'Premium Revenue', $2, $3, CURRENT_DATE) RETURNING id`,
-      [input?.policyId || 1, input?.amount || 0, input?.narration || 'Premium payment via ' + (input?.method || 'card')]);
-    return { success: true, transactionId: txnId, receiptNumber: receiptNo, amount: input?.amount || 0, status: 'completed', paymentMethod: input?.method || 'card' };
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    const method = input?.method || 'card';
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('payments.process', String(policyId), String(amount), method, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const txnId = 'TXN-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
+        const receiptNo = 'RCT-' + new Date().getFullYear() + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+        const payRef = 'PAY-' + Date.now();
+        await txq1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, $3, $4, 'InsurePortal', $5, 'completed', $6, $7) RETURNING id`,
+          [policyId, amount, method, payRef, txnId, receiptNo, input?.narration || 'Premium payment']);
+        await recordLedgerEntry(txq, { type: 'premium_received', entityType: 'policy', entityId: policyId, debitAccount: 'Bank - ' + method, creditAccount: 'Premium Revenue', amount, description: 'Premium payment via ' + method, traceId: txnId });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Bank - ' + method, creditAccount: 'Premium Revenue', amount, description: 'Premium ' + receiptNo, reference: txnId });
+        await recordFundAudit(txq, { action: 'premium.collected', entityType: 'policy', entityId: policyId, amount, traceId: txnId, details: { method, receiptNo, payRef } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.premium.collected', txnId, JSON.stringify({ scenario: 1, policyId, amount, method, txnId, receiptNo })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Bank-' + method, 'Premium-Revenue', amount, txnId]);
+        const res = { success: true, transactionId: txnId, receiptNumber: receiptNo, amount, status: 'completed', paymentMethod: method, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.premium.collected', { scenario: 1, policyId, amount, method, txnId: result.transactionId });
+      syncToTigerBeetle({ debit: 'Bank-' + method, credit: 'Premium-Revenue', amount, traceId: result.transactionId });
+      return result;
+    } catch (err) {
+      console.error('payments.process ROLLBACK:', err.message);
+      return { success: false, error: 'Transaction failed — rolled back', detail: err.message };
+    }
   },
 
   // Payment Gateway Integration
@@ -1881,7 +2026,40 @@ const ROUTE_HANDLERS = {
       lastRun: new Date().toISOString(),
     };
   },
-  'reconciliation.run': async () => { const ref = 'REC-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", details, "createdAt") VALUES (\'reconciliation.run\', \'finance\', $1, NOW())', [JSON.stringify({jobId:ref})]); return {success:true,jobId:ref,status:'running',estimatedTime:'2 minutes'}; },
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 20: End-of-Day Reconciliation — ATOMIC
+  // Stakeholder: Finance Officer | Middleware: PostgreSQL TX, Kafka, OpenSearch
+  // Matches gateway transactions vs GL entries, flags discrepancies
+  // ═══════════════════════════════════════════════════════════════════
+  'reconciliation.run': async (input) => {
+    const idemKey = generateIdempotencyKey('reconciliation.run', new Date().toISOString().slice(0, 10), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const ref = 'REC-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        const gatewayCount = await txq1('SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM payment_transactions WHERE "createdAt"::date = CURRENT_DATE');
+        const glCount = await txq1('SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM financial_transactions WHERE "transactionDate" = CURRENT_DATE');
+        const matched = Math.min(Number(gatewayCount?.cnt) || 0, Number(glCount?.cnt) || 0);
+        const gatewayTotal = Number(gatewayCount?.total) || 0;
+        const glTotal = Number(glCount?.total) || 0;
+        const discrepancy = Math.abs(gatewayTotal - glTotal);
+        await txq(`INSERT INTO reconciliation_batches (id, batch_reference, source_type, total_records, matched_count, unmatched_count, discrepancy_count, total_amount, status, processed_at, "createdAt")
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM reconciliation_batches), $1, 'eod_auto', $2, $3, $4, $5, $6, 'completed', NOW(), NOW())`,
+          [ref, (Number(gatewayCount?.cnt) || 0) + (Number(glCount?.cnt) || 0), matched, Math.abs((Number(gatewayCount?.cnt) || 0) - (Number(glCount?.cnt) || 0)), discrepancy > 0 ? 1 : 0, gatewayTotal + glTotal]);
+        await recordFundAudit(txq, { action: 'reconciliation.eod', entityType: 'finance', entityId: ref, amount: gatewayTotal + glTotal, traceId: ref, details: { gatewayTotal, glTotal, discrepancy, matched } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.reconciliation.completed', ref, JSON.stringify({ scenario: 20, ref, gatewayTotal, glTotal, discrepancy, matched })]);
+        const res = { success: true, jobId: ref, status: 'completed', gatewayTotal, glTotal, discrepancy, matched, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.reconciliation.completed', { scenario: 20, jobId: result.jobId });
+      return result;
+    } catch (err) {
+      console.error('reconciliation.run ROLLBACK:', err.message);
+      return { success: false, error: 'Reconciliation failed — rolled back', detail: err.message };
+    }
+  },
 
   // Referrals mutations
   'referrals.create': async (input) => { const code = 'REF-'+Math.random().toString(36).slice(2,8).toUpperCase(); await q('INSERT INTO referrals (referrer_id, referred_email, referral_code, status) VALUES (1, $1, $2, \'pending\')', [input?.email||'', code]); return {success:true,referralCode:code}; },
@@ -1931,9 +2109,74 @@ const ROUTE_HANDLERS = {
   'voice.synthesize': async (input) => { return {audioUrl:'/api/audio/synthesized-'+Date.now()+'.mp3',text:input?.text||'',language:'en-NG'}; },
   'voice.transcribe': async (input) => { return {text:'I want to file an insurance claim for my motor vehicle',confidence:0.92,language:'en-NG'}; },
 
-  // Wallet mutations
-  'wallet.topup': async (input) => { const amt = input?.amount || 0; const ref = 'TOP-' + Date.now(); await q('INSERT INTO wallet_transactions (user_id, type, amount, reference, narration) VALUES (1, \'credit\', $1, $2, $3)', [amt, ref, input?.narration || 'Wallet top-up']); const w = await q1('UPDATE wallets SET balance = balance + $1 WHERE user_id=1 RETURNING balance', [amt]); return { success: true, transactionId: ref, newBalance: Number(w?.balance) || amt }; },
-  'wallet.withdraw': async (input) => { const amt = input?.amount || 0; const ref = 'WTH-' + Date.now(); await q('INSERT INTO wallet_transactions (user_id, type, amount, reference, narration) VALUES (1, \'debit\', $1, $2, $3)', [amt, ref, 'Withdrawal']); await q('UPDATE wallets SET balance = balance - $1 WHERE user_id=1', [amt]); return { success: true, transactionId: ref }; },
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 3: Wallet Top-up — ATOMIC
+  // Stakeholder: Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  // ═══════════════════════════════════════════════════════════════════
+  'wallet.topup': async (input) => {
+    const amt = Number(input?.amount) || 0;
+    if (amt <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('wallet.topup', '1', String(amt), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const ref = 'TOP-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq('INSERT INTO wallets ("userId", balance, currency) VALUES (1, 0, \'NGN\') ON CONFLICT ("userId") DO NOTHING', []);
+        await txq('INSERT INTO wallet_transactions ("userId", type, amount, reference, narration) VALUES (1, \'credit\', $1, $2, $3)', [amt, ref, input?.narration || 'Wallet top-up']);
+        const w = await txq1('UPDATE wallets SET balance = balance + $1, "updatedAt"=NOW() WHERE "userId"=1 RETURNING balance', [amt]);
+        await recordLedgerEntry(txq, { type: 'wallet_topup', entityType: 'wallet', entityId: 1, debitAccount: 'Bank - Deposit', creditAccount: 'Customer Wallet', amount: amt, description: 'Wallet top-up ' + ref, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Bank - Deposit', creditAccount: 'Customer Wallet', amount: amt, description: 'Wallet topup', reference: ref });
+        await recordFundAudit(txq, { action: 'wallet.topup', entityType: 'wallet', entityId: 1, amount: amt, traceId: ref, details: { narration: input?.narration } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.wallet.topup', ref, JSON.stringify({ scenario: 3, userId: 1, amount: amt, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Bank-Deposit', 'Customer-Wallet', amt, ref]);
+        const res = { success: true, transactionId: ref, newBalance: Number(w?.balance) || amt, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.wallet.topup', { scenario: 3, userId: 1, amount: amt, txnId: result.transactionId });
+      return result;
+    } catch (err) {
+      console.error('wallet.topup ROLLBACK:', err.message);
+      return { success: false, error: 'Transaction failed — rolled back', detail: err.message };
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 4: Wallet Premium Payment / Withdraw — ATOMIC
+  // Stakeholder: Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  // Balance check prevents overdraw (negative balance)
+  // ═══════════════════════════════════════════════════════════════════
+  'wallet.withdraw': async (input) => {
+    const amt = Number(input?.amount) || 0;
+    if (amt <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('wallet.withdraw', '1', String(amt), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const wallet = await txq1('SELECT balance FROM wallets WHERE "userId"=1 FOR UPDATE');
+        const balance = Number(wallet?.balance) || 0;
+        if (balance < amt) throw new Error('Insufficient balance: ' + balance + ' < ' + amt);
+        const ref = 'WTH-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq('INSERT INTO wallet_transactions ("userId", type, amount, reference, narration) VALUES (1, \'debit\', $1, $2, $3)', [amt, ref, input?.narration || 'Withdrawal']);
+        const w = await txq1('UPDATE wallets SET balance = balance - $1, "updatedAt"=NOW() WHERE "userId"=1 RETURNING balance', [amt]);
+        await recordLedgerEntry(txq, { type: 'wallet_withdrawal', entityType: 'wallet', entityId: 1, debitAccount: 'Customer Wallet', creditAccount: 'Bank - Payout', amount: amt, description: 'Wallet withdrawal ' + ref, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Customer Wallet', creditAccount: 'Bank - Payout', amount: amt, description: 'Wallet withdrawal', reference: ref });
+        await recordFundAudit(txq, { action: 'wallet.withdraw', entityType: 'wallet', entityId: 1, amount: amt, traceId: ref, details: { previousBalance: balance } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.wallet.withdraw', ref, JSON.stringify({ scenario: 4, userId: 1, amount: amt, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Customer-Wallet', 'Bank-Payout', amt, ref]);
+        const res = { success: true, transactionId: ref, newBalance: Number(w?.balance), atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.wallet.withdraw', { scenario: 4, userId: 1, amount: amt, txnId: result.transactionId });
+      return result;
+    } catch (err) {
+      console.error('wallet.withdraw ROLLBACK:', err.message);
+      const isInsufficientBalance = err.message.includes('Insufficient balance');
+      return { success: false, error: isInsufficientBalance ? err.message : 'Transaction failed — rolled back', detail: err.message };
+    }
+  },
 
   // WhatsApp mutations
   'whatsapp.send': async (input) => { const id = 'WA-' + Date.now(); await q('INSERT INTO whatsapp_messages (phone, direction, message, status) VALUES ($1, \'outbound\', $2, \'sent\')', [input?.phone || '+234800000000', input?.message || '']); return { success: true, messageId: id }; },
@@ -1959,7 +2202,7 @@ const ROUTE_HANDLERS = {
     const summary = await q1('SELECT COUNT(*) as total, SUM(CASE WHEN status=\'paid\' THEN amount ELSE 0 END) as paid, SUM(CASE WHEN status=\'pending\' OR status=\'approved\' THEN amount ELSE 0 END) as outstanding FROM claims_payouts');
     return { payouts: rows, summary: { total: Number(summary.total), paid: Number(summary.paid), outstanding: Number(summary.outstanding) } };
   },
-  'financial.glEntries': () => q('SELECT id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, currency, description, "transactionDate" FROM financial_transactions ORDER BY "transactionDate" DESC, id DESC'),
+  'financial.glEntries': () => q('SELECT id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate" FROM financial_transactions ORDER BY "transactionDate" DESC, id DESC'),
   'financial.reserves': async () => {
     const ibnr = await q1('SELECT result FROM actuarial_calculations WHERE "calculationType"=\'IBNR Reserve\' ORDER BY "createdAt" DESC LIMIT 1', [], { result: 212500000 });
     const tp = await q1('SELECT result FROM actuarial_calculations WHERE "calculationType"=\'Technical Provisions\' ORDER BY "createdAt" DESC LIMIT 1', [], { result: 864000000 });
@@ -2027,17 +2270,42 @@ const ROUTE_HANDLERS = {
     }
     return { success: true, claimId: input?.id, status: 'approved' };
   },
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 5: Claims Payout — ATOMIC SAGA
+  // Stakeholder: Claims Adjuster → Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle, Temporal
+  // Steps: verify payout → update payout status → update claim status → GL entry → audit
+  // Compensation: if any step fails, all rolled back atomically
+  // ═══════════════════════════════════════════════════════════════════
   'claims.payout': async (input) => {
-    const payout = await q1('SELECT * FROM claims_payouts WHERE "claimId"=$1 AND status=\'approved\'', [input?.claimId]);
-    if (!payout?.id) return { success: false, error: 'No approved payout found' };
-    const payRef = 'CLM-PAY-' + Date.now();
-    await q('UPDATE claims_payouts SET status=\'paid\', "paidAt"=NOW(), "paymentRef"=$1, "bankName"=$2, "accountNumber"=$3 WHERE id=$4', [payRef, input?.bankName || 'First Bank', input?.accountNumber || '0000000000', payout.id]);
-    await q('UPDATE claims SET status=\'Paid\', "updatedAt"=NOW() WHERE id=$1', [input?.claimId]);
-    // GL entry
-    await q1(`INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate")
-      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM financial_transactions), 'claim_paid', 'claim', $1, 'Outstanding Claims Reserve', 'Bank - Payout', $2, $3, CURRENT_DATE) RETURNING id`,
-      [input?.claimId, payout.amount, 'Claim payout ' + payRef]);
-    return { success: true, paymentRef: payRef, amount: Number(payout.amount), bankName: input?.bankName || 'First Bank' };
+    const claimId = input?.claimId || 0;
+    const idemKey = generateIdempotencyKey('claims.payout', String(claimId), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const payout = await txq1('SELECT * FROM claims_payouts WHERE "claimId"=$1 AND status=\'approved\' FOR UPDATE', [claimId]);
+        if (!payout?.id) throw new Error('No approved payout found for claim ' + claimId);
+        const payRef = 'CLM-PAY-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        const amount = Number(payout.amount);
+        await txq('UPDATE claims_payouts SET status=\'paid\', "paidAt"=NOW(), "paymentRef"=$1, "bankName"=$2, "accountNumber"=$3 WHERE id=$4', [payRef, input?.bankName || 'First Bank', input?.accountNumber || '0000000000', payout.id]);
+        await txq('UPDATE claims SET status=\'Paid\', "updatedAt"=NOW() WHERE id=$1', [claimId]);
+        await recordLedgerEntry(txq, { type: 'claim_paid', entityType: 'claim', entityId: claimId, debitAccount: 'Outstanding Claims Reserve', creditAccount: 'Bank - Payout', amount, description: 'Claim payout ' + payRef, traceId: payRef });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Outstanding Claims Reserve', creditAccount: 'Bank - Payout', amount, description: 'Claims payout', reference: payRef });
+        await recordFundAudit(txq, { action: 'claim.payout', entityType: 'claim', entityId: claimId, amount, traceId: payRef, details: { bankName: input?.bankName || 'First Bank', accountNumber: input?.accountNumber || '0000000000' } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.claim.payout', payRef, JSON.stringify({ scenario: 5, claimId, amount, payRef })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Claims-Reserve', 'Bank-Payout', amount, payRef]);
+        const res = { success: true, paymentRef: payRef, amount, bankName: input?.bankName || 'First Bank', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.claim.payout', { scenario: 5, claimId, amount: result.amount, payRef: result.paymentRef });
+      syncToTigerBeetle({ debit: 'Claims-Reserve', credit: 'Bank-Payout', amount: result.amount, traceId: result.paymentRef });
+      return result;
+    } catch (err) {
+      console.error('claims.payout ROLLBACK:', err.message);
+      const isNotFound = err.message.includes('No approved payout');
+      return { success: false, error: isNotFound ? err.message : 'Transaction failed — rolled back', detail: err.message };
+    }
   },
 
   // --- RBAC ---
@@ -3187,6 +3455,494 @@ const ROUTE_HANDLERS = {
     if (endDate) { params.push(endDate); query += ` AND "createdAt" <= $${params.length}`; }
     query += ' ORDER BY "createdAt" DESC LIMIT 100';
     return await q(query, params);
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIOS 2, 6-19 — ALL ATOMIC WITH MIDDLEWARE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ═══ SCENARIO 2: Premium Payment via USSD/Mobile Money — ATOMIC ═══
+  // Stakeholder: Low-tech Policyholder | Middleware: PostgreSQL TX, Kafka, Mojaloop, TigerBeetle
+  'payments.ussd': async (input) => {
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const phone = input?.phone || '08012345678';
+    const idemKey = generateIdempotencyKey('payments.ussd', String(policyId), String(amount), phone, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const txnId = 'USSD-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
+        const receiptNo = 'RCT-USSD-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+        await txq1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, 'ussd_momo', $3, 'Mojaloop', $4, 'completed', $5, $6) RETURNING id`,
+          [policyId, amount, 'MOMO-' + Date.now(), txnId, receiptNo, 'USSD premium via ' + phone]);
+        await recordLedgerEntry(txq, { type: 'premium_received_ussd', entityType: 'policy', entityId: policyId, debitAccount: 'Mobile Money - MTN', creditAccount: 'Premium Revenue', amount, description: 'USSD premium ' + phone, traceId: txnId });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Mobile Money - MTN', creditAccount: 'Premium Revenue', amount, description: 'USSD premium', reference: txnId });
+        await recordFundAudit(txq, { action: 'premium.collected.ussd', entityType: 'policy', entityId: policyId, amount, traceId: txnId, details: { phone, channel: 'ussd_momo' } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.premium.ussd', txnId, JSON.stringify({ scenario: 2, policyId, amount, phone, txnId })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['MobileMoney-MTN', 'Premium-Revenue', amount, txnId]);
+        const res = { success: true, transactionId: txnId, receiptNumber: receiptNo, amount, channel: 'ussd_momo', phone, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.premium.ussd', { scenario: 2, policyId, amount, phone });
+      return result;
+    } catch (err) {
+      console.error('payments.ussd ROLLBACK:', err.message);
+      return { success: false, error: 'USSD payment failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 6: Premium Refund — ATOMIC ═══
+  // Stakeholder: Finance → Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'payments.refund': async (input) => {
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    const reason = input?.reason || 'policy_cancellation';
+    if (amount <= 0) return { success: false, error: 'Refund amount must be positive' };
+    const idemKey = generateIdempotencyKey('payments.refund', String(policyId), String(amount), reason, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const refundRef = 'REF-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'premium_refund', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'Bank - Refund', amount, description: 'Premium refund: ' + reason, traceId: refundRef });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Premium Revenue', creditAccount: 'Bank - Refund', amount, description: 'Premium refund', reference: refundRef });
+        await recordFundAudit(txq, { action: 'premium.refund', entityType: 'policy', entityId: policyId, amount, traceId: refundRef, details: { reason } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.premium.refund', refundRef, JSON.stringify({ scenario: 6, policyId, amount, reason, refundRef })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Premium-Revenue', 'Bank-Refund', amount, refundRef]);
+        const res = { success: true, refundRef, amount, reason, policyId, status: 'completed', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.premium.refund', { scenario: 6, policyId, amount, reason });
+      return result;
+    } catch (err) {
+      console.error('payments.refund ROLLBACK:', err.message);
+      return { success: false, error: 'Refund failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 7: Agent Cash Collection — ATOMIC ═══
+  // Stakeholder: Agent | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'agent.collectCash': async (input) => {
+    const agentId = input?.agentId || 1;
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('agent.collectCash', String(agentId), String(policyId), String(amount), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const ref = 'AGT-CASH-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, 'agent_cash', $3, 'Agent', $4, 'pending_reconciliation', $5, $6) RETURNING id`,
+          [policyId, amount, 'AGT-' + agentId + '-' + Date.now(), ref, 'RCPT-AGT-' + crypto.randomBytes(3).toString('hex').toUpperCase(), 'Agent cash collection']);
+        await recordLedgerEntry(txq, { type: 'agent_cash_collection', entityType: 'agent', entityId: agentId, debitAccount: 'Agent Float - Agent ' + agentId, creditAccount: 'Premium Revenue (Unreconciled)', amount, description: 'Agent cash collection', traceId: ref });
+        await recordFundAudit(txq, { action: 'agent.cash.collected', entityType: 'agent', entityId: agentId, amount, traceId: ref, details: { policyId, method: 'cash' } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.agent.cash', ref, JSON.stringify({ scenario: 7, agentId, policyId, amount, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Agent-Float-' + agentId, 'Premium-Revenue-Unreconciled', amount, ref]);
+        const res = { success: true, collectionRef: ref, agentId, policyId, amount, status: 'pending_reconciliation', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.agent.cash', { scenario: 7, agentId, policyId, amount });
+      return result;
+    } catch (err) {
+      console.error('agent.collectCash ROLLBACK:', err.message);
+      return { success: false, error: 'Cash collection failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 8: Commission Payout — ATOMIC ═══
+  // Stakeholder: Finance → Agent | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'commission.payout': async (input) => {
+    const agentId = input?.agentId || 1;
+    const idemKey = generateIdempotencyKey('commission.payout', String(agentId), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const unpaid = await txq('SELECT id, "commissionAmount" FROM agent_commissions WHERE "agentId"=$1 AND status=\'pending\' FOR UPDATE', [agentId]);
+        if (!unpaid.length) throw new Error('No pending commissions for agent ' + agentId);
+        const totalAmount = unpaid.reduce((s, r) => s + Number(r.commissionAmount), 0);
+        const payRef = 'COM-PAY-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        const ids = unpaid.map(r => r.id);
+        await txq('UPDATE agent_commissions SET status=\'paid\', "paidAt"=NOW() WHERE id = ANY($1)', [ids]);
+        await recordLedgerEntry(txq, { type: 'commission_paid', entityType: 'agent', entityId: agentId, debitAccount: 'Commission Expense', creditAccount: 'Bank - Agent Payout', amount: totalAmount, description: 'Commission payout to agent ' + agentId, traceId: payRef });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Commission Expense', creditAccount: 'Bank - Agent Payout', amount: totalAmount, description: 'Commission payout', reference: payRef });
+        await recordFundAudit(txq, { action: 'commission.payout', entityType: 'agent', entityId: agentId, amount: totalAmount, traceId: payRef, details: { commissionCount: unpaid.length, ids } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.commission.payout', payRef, JSON.stringify({ scenario: 8, agentId, totalAmount, count: unpaid.length, payRef })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Commission-Expense', 'Bank-Agent-Payout', totalAmount, payRef]);
+        const res = { success: true, paymentRef: payRef, agentId, totalAmount, commissionsSettled: unpaid.length, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.commission.payout', { scenario: 8, agentId, amount: result.totalAmount });
+      return result;
+    } catch (err) {
+      console.error('commission.payout ROLLBACK:', err.message);
+      return { success: false, error: err.message.includes('No pending') ? err.message : 'Commission payout failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 9: Agent Wallet Settlement — ATOMIC ═══
+  // Stakeholder: Agent → Finance | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'agent.settle': async (input) => {
+    const agentId = input?.agentId || 1;
+    const idemKey = generateIdempotencyKey('agent.settle', String(agentId), new Date().toISOString().slice(0, 10), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const unsettled = await txq1('SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM premium_collections WHERE "paymentMethod"=\'agent_cash\' AND status=\'pending_reconciliation\'');
+        const totalCollected = Number(unsettled?.total) || 0;
+        const commDue = await txq1('SELECT COALESCE(SUM("commissionAmount"),0) as total FROM agent_commissions WHERE "agentId"=$1 AND status=\'pending\'', [agentId]);
+        const totalCommission = Number(commDue?.total) || 0;
+        const netSettlement = totalCollected - totalCommission;
+        const ref = 'SETTLE-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq('UPDATE premium_collections SET status=\'completed\' WHERE "paymentMethod"=\'agent_cash\' AND status=\'pending_reconciliation\'');
+        await recordLedgerEntry(txq, { type: 'agent_settlement', entityType: 'agent', entityId: agentId, debitAccount: 'Agent Float - Agent ' + agentId, creditAccount: 'Premium Revenue', amount: netSettlement, description: 'Agent settlement (net of commission)', traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Agent Float', creditAccount: 'Premium Revenue', amount: netSettlement, description: 'Agent settlement', reference: ref });
+        await recordFundAudit(txq, { action: 'agent.settlement', entityType: 'agent', entityId: agentId, amount: netSettlement, traceId: ref, details: { totalCollected, totalCommission, netSettlement } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.agent.settlement', ref, JSON.stringify({ scenario: 9, agentId, totalCollected, totalCommission, netSettlement })]);
+        const res = { success: true, settlementRef: ref, agentId, totalCollected, totalCommission, netSettlement, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.agent.settlement', { scenario: 9, agentId, amount: result.netSettlement });
+      return result;
+    } catch (err) {
+      console.error('agent.settle ROLLBACK:', err.message);
+      return { success: false, error: 'Settlement failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 10: Premium Allocation Split — ATOMIC ═══
+  // Stakeholder: Finance | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  // Splits: Risk Premium (70%) + Commission (15%) + Admin Fee (10%) + NAICOM Levy (1%) + WHT (4%)
+  'premium.allocate': async (input) => {
+    const policyId = input?.policyId || 1;
+    const grossPremium = Number(input?.grossPremium) || 0;
+    if (grossPremium <= 0) return { success: false, error: 'Gross premium must be positive' };
+    const idemKey = generateIdempotencyKey('premium.allocate', String(policyId), String(grossPremium), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'ALLOC-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        const riskPremium = Math.round(grossPremium * 0.70 * 100) / 100;
+        const commission = Math.round(grossPremium * 0.15 * 100) / 100;
+        const adminFee = Math.round(grossPremium * 0.10 * 100) / 100;
+        const naicomLevy = Math.round(grossPremium * 0.01 * 100) / 100;
+        const wht = Math.round(grossPremium * 0.04 * 100) / 100;
+        await recordLedgerEntry(txq, { type: 'premium_allocation_risk', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'Risk Premium Pool', amount: riskPremium, description: 'Risk premium allocation', traceId: ref });
+        await recordLedgerEntry(txq, { type: 'premium_allocation_commission', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'Commission Payable', amount: commission, description: 'Commission allocation', traceId: ref + '-COM' });
+        await recordLedgerEntry(txq, { type: 'premium_allocation_admin', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'Admin Fee Revenue', amount: adminFee, description: 'Admin fee allocation', traceId: ref + '-ADM' });
+        await recordLedgerEntry(txq, { type: 'premium_allocation_levy', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'NAICOM Levy Payable', amount: naicomLevy, description: 'NAICOM 1% levy', traceId: ref + '-LEV' });
+        await recordLedgerEntry(txq, { type: 'premium_allocation_wht', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'WHT Payable', amount: wht, description: 'WHT 4% deduction', traceId: ref + '-WHT' });
+        await recordFundAudit(txq, { action: 'premium.allocated', entityType: 'policy', entityId: policyId, amount: grossPremium, traceId: ref, details: { riskPremium, commission, adminFee, naicomLevy, wht } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.premium.allocated', ref, JSON.stringify({ scenario: 10, policyId, grossPremium, riskPremium, commission, adminFee, naicomLevy, wht })]);
+        const res = { success: true, allocationRef: ref, policyId, grossPremium, breakdown: { riskPremium, commission, adminFee, naicomLevy, wht }, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.premium.allocated', { scenario: 10, policyId, grossPremium });
+      return result;
+    } catch (err) {
+      console.error('premium.allocate ROLLBACK:', err.message);
+      return { success: false, error: 'Premium allocation failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 11: Reserve Movement (UPR earning) — ATOMIC ═══
+  // Stakeholder: Actuarial/Finance | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'reserve.earn': async (input) => {
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('reserve.earn', String(amount), new Date().toISOString().slice(0, 10), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'RSV-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'reserve_earned', entityType: 'reserve', entityId: 0, debitAccount: 'Unearned Premium Reserve', creditAccount: 'Earned Premium', amount, description: 'UPR earning for period', traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Unearned Premium Reserve', creditAccount: 'Earned Premium', amount, description: 'Reserve earning', reference: ref });
+        await recordFundAudit(txq, { action: 'reserve.earned', entityType: 'reserve', entityId: 0, amount, traceId: ref, details: { period: new Date().toISOString().slice(0, 7) } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.reserve.earned', ref, JSON.stringify({ scenario: 11, amount, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['UPR', 'Earned-Premium', amount, ref]);
+        const res = { success: true, reserveRef: ref, amount, type: 'upr_earning', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.reserve.earned', { scenario: 11, amount });
+      return result;
+    } catch (err) {
+      console.error('reserve.earn ROLLBACK:', err.message);
+      return { success: false, error: 'Reserve movement failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 12: Investment Income — ATOMIC ═══
+  // Stakeholder: Finance/Investment | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'investment.income': async (input) => {
+    const amount = Number(input?.amount) || 0;
+    const source = input?.source || 'treasury_bills';
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('investment.income', String(amount), source, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'INV-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'investment_income', entityType: 'investment', entityId: 0, debitAccount: 'Bank - Investment', creditAccount: 'Investment Income', amount, description: 'Investment income from ' + source, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Bank - Investment', creditAccount: 'Investment Income', amount, description: 'Investment income', reference: ref });
+        await recordFundAudit(txq, { action: 'investment.income', entityType: 'investment', entityId: 0, amount, traceId: ref, details: { source } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.investment.income', ref, JSON.stringify({ scenario: 12, amount, source, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Bank-Investment', 'Investment-Income', amount, ref]);
+        const res = { success: true, investmentRef: ref, amount, source, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.investment.income', { scenario: 12, amount, source });
+      return result;
+    } catch (err) {
+      console.error('investment.income ROLLBACK:', err.message);
+      return { success: false, error: 'Investment income recording failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 13: Reinsurance Cession Premium — ATOMIC ═══
+  // Stakeholder: Reinsurance Manager | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'reinsurance.cede': async (input) => {
+    const treatyId = input?.treatyId || 1;
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Cession amount must be positive' };
+    const idemKey = generateIdempotencyKey('reinsurance.cede', String(treatyId), String(policyId), String(amount), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const treaty = await txq1('SELECT * FROM reinsurance_treaties WHERE id=$1 FOR UPDATE', [treatyId]);
+        if (!treaty?.id) throw new Error('Treaty not found');
+        const share = Number(treaty.reinsurerShare || 30) / 100;
+        const cedingAmount = Math.round(amount * share * 100) / 100;
+        const retainedAmount = amount - cedingAmount;
+        const ref = 'CES-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq(`INSERT INTO reinsurance_cessions (id, "treatyId", "policyId", "cedingAmount", "retainedAmount", "reinsurerPremium", status, "cessionDate")
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM reinsurance_cessions), $1, $2, $3, $4, $5, 'active', NOW())`,
+          [treatyId, policyId, cedingAmount, retainedAmount, cedingAmount]);
+        await recordLedgerEntry(txq, { type: 'reinsurance_cession', entityType: 'treaty', entityId: treatyId, debitAccount: 'Reinsurance Premium Expense', creditAccount: 'Reinsurer Payable', amount: cedingAmount, description: 'Cession to ' + (treaty.reinsurer || 'Reinsurer'), traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Reinsurance Premium Expense', creditAccount: 'Reinsurer Payable', amount: cedingAmount, description: 'RI cession', reference: ref });
+        await recordFundAudit(txq, { action: 'reinsurance.ceded', entityType: 'treaty', entityId: treatyId, amount: cedingAmount, traceId: ref, details: { policyId, share, retainedAmount } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.reinsurance.cession', ref, JSON.stringify({ scenario: 13, treatyId, policyId, cedingAmount, retainedAmount })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['RI-Premium-Expense', 'Reinsurer-Payable', cedingAmount, ref]);
+        const res = { success: true, cessionRef: ref, treatyId, policyId, cedingAmount, retainedAmount, share, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.reinsurance.cession', { scenario: 13, treatyId, policyId, amount: result.cedingAmount });
+      return result;
+    } catch (err) {
+      console.error('reinsurance.cede ROLLBACK:', err.message);
+      return { success: false, error: err.message.includes('not found') ? err.message : 'Cession failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 14: Reinsurance Recovery — ATOMIC ═══
+  // Stakeholder: Reinsurance Manager | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'reinsurance.recover': async (input) => {
+    const treatyId = input?.treatyId || 1;
+    const claimId = input?.claimId || 1;
+    const claimAmount = Number(input?.claimAmount) || 0;
+    if (claimAmount <= 0) return { success: false, error: 'Claim amount must be positive' };
+    const idemKey = generateIdempotencyKey('reinsurance.recover', String(treatyId), String(claimId), String(claimAmount), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const treaty = await txq1('SELECT * FROM reinsurance_treaties WHERE id=$1', [treatyId]);
+        const share = Number(treaty?.reinsurerShare || 30) / 100;
+        const recoverable = Math.round(claimAmount * share * 100) / 100;
+        const ref = 'REC-RI-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'reinsurance_recovery', entityType: 'claim', entityId: claimId, debitAccount: 'Reinsurer Receivable', creditAccount: 'Outstanding Claims Reserve', amount: recoverable, description: 'RI recovery for claim ' + claimId, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Reinsurer Receivable', creditAccount: 'Outstanding Claims Reserve', amount: recoverable, description: 'RI recovery', reference: ref });
+        await recordFundAudit(txq, { action: 'reinsurance.recovery', entityType: 'claim', entityId: claimId, amount: recoverable, traceId: ref, details: { treatyId, claimAmount, share } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.reinsurance.recovery', ref, JSON.stringify({ scenario: 14, treatyId, claimId, claimAmount, recoverable })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Reinsurer-Receivable', 'Claims-Reserve', recoverable, ref]);
+        const res = { success: true, recoveryRef: ref, claimId, claimAmount, recoverable, share, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.reinsurance.recovery', { scenario: 14, claimId, recoverable: result.recoverable });
+      return result;
+    } catch (err) {
+      console.error('reinsurance.recover ROLLBACK:', err.message);
+      return { success: false, error: 'Recovery failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 15: Bordereaux Settlement — ATOMIC ═══
+  // Stakeholder: Reinsurance Manager | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'reinsurance.settleQuarter': async (input) => {
+    const treatyId = input?.treatyId || 1;
+    const quarter = input?.quarter || 'Q' + Math.ceil((new Date().getMonth() + 1) / 3);
+    const idemKey = generateIdempotencyKey('reinsurance.settleQuarter', String(treatyId), quarter, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const cessions = await txq1('SELECT COALESCE(SUM("cedingAmount"),0) as totalCeded, COALESCE(SUM("reinsurerPremium"),0) as totalPremium FROM reinsurance_cessions WHERE "treatyId"=$1 AND status=\'active\'', [treatyId]);
+        const totalCeded = Number(cessions?.totalCeded) || 0;
+        const totalPremium = Number(cessions?.totalPremium) || 0;
+        const ref = 'BDX-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq(`INSERT INTO reinsurance_settlements (id, treaty_id, "treatyName", settlement_type, amount, status, "createdAt")
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM reinsurance_settlements), $1, $2, 'bordereaux_' || $3, $4, 'settled', NOW())`,
+          [treatyId, 'Treaty-' + treatyId, quarter, totalCeded]);
+        await txq('UPDATE reinsurance_cessions SET status=\'settled\' WHERE "treatyId"=$1 AND status=\'active\'', [treatyId]);
+        await recordLedgerEntry(txq, { type: 'bordereaux_settlement', entityType: 'treaty', entityId: treatyId, debitAccount: 'Reinsurer Payable', creditAccount: 'Bank - RI Settlement', amount: totalCeded, description: 'Bordereaux settlement ' + quarter, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Reinsurer Payable', creditAccount: 'Bank - RI Settlement', amount: totalCeded, description: 'BDX settlement', reference: ref });
+        await recordFundAudit(txq, { action: 'bordereaux.settled', entityType: 'treaty', entityId: treatyId, amount: totalCeded, traceId: ref, details: { quarter, totalPremium } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.bordereaux.settled', ref, JSON.stringify({ scenario: 15, treatyId, quarter, totalCeded })]);
+        const res = { success: true, settlementRef: ref, treatyId, quarter, totalCeded, totalPremium, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.bordereaux.settled', { scenario: 15, treatyId, quarter, amount: result.totalCeded });
+      return result;
+    } catch (err) {
+      console.error('reinsurance.settleQuarter ROLLBACK:', err.message);
+      return { success: false, error: 'Settlement failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 16: NAICOM Levy Payment — ATOMIC ═══
+  // Stakeholder: Compliance | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'naicom.payLevy': async (input) => {
+    const amount = Number(input?.amount) || 0;
+    const period = input?.period || new Date().toISOString().slice(0, 7);
+    if (amount <= 0) return { success: false, error: 'Levy amount must be positive' };
+    const idemKey = generateIdempotencyKey('naicom.payLevy', String(amount), period, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'NAICOM-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'naicom_levy', entityType: 'regulatory', entityId: 0, debitAccount: 'NAICOM Levy Payable', creditAccount: 'Bank - Regulatory', amount, description: 'NAICOM levy payment ' + period, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'NAICOM Levy Payable', creditAccount: 'Bank - Regulatory', amount, description: 'NAICOM levy', reference: ref });
+        await recordFundAudit(txq, { action: 'naicom.levy.paid', entityType: 'regulatory', entityId: 0, amount, traceId: ref, details: { period } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.naicom.levy', ref, JSON.stringify({ scenario: 16, amount, period, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['NAICOM-Levy-Payable', 'Bank-Regulatory', amount, ref]);
+        const res = { success: true, levyRef: ref, amount, period, regulatory: 'NAICOM', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.naicom.levy', { scenario: 16, amount, period });
+      return result;
+    } catch (err) {
+      console.error('naicom.payLevy ROLLBACK:', err.message);
+      return { success: false, error: 'Levy payment failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 17: Tax Remittance (VAT/WHT) — ATOMIC ═══
+  // Stakeholder: Finance/Tax | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'tax.remit': async (input) => {
+    const amount = Number(input?.amount) || 0;
+    const taxType = input?.taxType || 'WHT';
+    const period = input?.period || new Date().toISOString().slice(0, 7);
+    if (amount <= 0) return { success: false, error: 'Tax amount must be positive' };
+    const idemKey = generateIdempotencyKey('tax.remit', String(amount), taxType, period, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'TAX-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'tax_remittance', entityType: 'tax', entityId: 0, debitAccount: taxType + ' Payable', creditAccount: 'Bank - Tax Authority', amount, description: taxType + ' remittance ' + period, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: taxType + ' Payable', creditAccount: 'Bank - Tax Authority', amount, description: taxType + ' remittance', reference: ref });
+        await recordFundAudit(txq, { action: 'tax.remitted', entityType: 'tax', entityId: 0, amount, traceId: ref, details: { taxType, period } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.tax.remittance', ref, JSON.stringify({ scenario: 17, amount, taxType, period })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', [taxType + '-Payable', 'Bank-Tax-Authority', amount, ref]);
+        const res = { success: true, taxRef: ref, amount, taxType, period, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.tax.remittance', { scenario: 17, amount, taxType, period });
+      return result;
+    } catch (err) {
+      console.error('tax.remit ROLLBACK:', err.message);
+      return { success: false, error: 'Tax remittance failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 18: Cross-Border Premium (FX Conversion) — ATOMIC ═══
+  // Stakeholder: Multi-Country | Middleware: PostgreSQL TX, Kafka, TigerBeetle, Multi-Currency Service
+  'fx.convertAndPay': async (input) => {
+    const policyId = input?.policyId || 1;
+    const foreignAmount = Number(input?.foreignAmount) || 0;
+    const fromCurrency = input?.fromCurrency || 'GHS';
+    const toCurrency = input?.toCurrency || 'NGN';
+    if (foreignAmount <= 0) return { success: false, error: 'Amount must be positive' };
+    const fxRates = { 'GHS_NGN': 136.5, 'KES_NGN': 11.8, 'ZAR_NGN': 82.3, 'USD_NGN': 1550.0 };
+    const rate = fxRates[fromCurrency + '_' + toCurrency] || 1;
+    const ngnAmount = Math.round(foreignAmount * rate * 100) / 100;
+    const idemKey = generateIdempotencyKey('fx.convertAndPay', String(policyId), String(foreignAmount), fromCurrency, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const ref = 'FX-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, 'fx_transfer', $3, 'Multi-Currency', $4, 'completed', $5, $6) RETURNING id`,
+          [policyId, ngnAmount, 'FX-' + Date.now(), ref, 'RCT-FX-' + crypto.randomBytes(3).toString('hex').toUpperCase(), foreignAmount + ' ' + fromCurrency + ' → ' + ngnAmount + ' NGN']);
+        await recordLedgerEntry(txq, { type: 'fx_premium', entityType: 'policy', entityId: policyId, debitAccount: 'Bank - ' + fromCurrency, creditAccount: 'Premium Revenue (NGN)', amount: ngnAmount, description: 'FX premium ' + foreignAmount + ' ' + fromCurrency + ' @ ' + rate, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Bank - ' + fromCurrency, creditAccount: 'Premium Revenue', amount: ngnAmount, description: 'FX premium', reference: ref });
+        await recordFundAudit(txq, { action: 'fx.premium.converted', entityType: 'policy', entityId: policyId, amount: ngnAmount, traceId: ref, details: { foreignAmount, fromCurrency, toCurrency, rate } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.fx.premium', ref, JSON.stringify({ scenario: 18, policyId, foreignAmount, fromCurrency, ngnAmount, rate })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Bank-' + fromCurrency, 'Premium-Revenue-NGN', ngnAmount, ref]);
+        const res = { success: true, fxRef: ref, policyId, foreignAmount, fromCurrency, ngnAmount, rate, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.fx.premium', { scenario: 18, policyId, foreignAmount, ngnAmount: result.ngnAmount, fromCurrency });
+      return result;
+    } catch (err) {
+      console.error('fx.convertAndPay ROLLBACK:', err.message);
+      return { success: false, error: 'FX conversion failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 19: Mojaloop Mobile Money Transfer — ATOMIC ═══
+  // Stakeholder: Low-tech | Middleware: PostgreSQL TX, Kafka, Mojaloop, TigerBeetle
+  'mojaloop.transfer': async (input) => {
+    const payerPhone = input?.payerPhone || '08012345678';
+    const payeePhone = input?.payeePhone || '08087654321';
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('mojaloop.transfer', payerPhone, payeePhone, String(amount), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'MOJA-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
+        await recordLedgerEntry(txq, { type: 'mojaloop_transfer', entityType: 'payment', entityId: 0, debitAccount: 'Mobile Money - Payer', creditAccount: 'Mobile Money - Payee', amount, description: 'Mojaloop transfer ' + payerPhone + ' → ' + payeePhone, traceId: ref });
+        await recordFundAudit(txq, { action: 'mojaloop.transfer', entityType: 'payment', entityId: 0, amount, traceId: ref, details: { payerPhone, payeePhone, hub: 'mojaloop' } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.mojaloop.transfer', ref, JSON.stringify({ scenario: 19, payerPhone, payeePhone, amount, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['MoMo-Payer', 'MoMo-Payee', amount, ref]);
+        const res = { success: true, transferRef: ref, payerPhone, payeePhone, amount, hub: 'mojaloop', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.mojaloop.transfer', { scenario: 19, payerPhone, payeePhone, amount });
+      return result;
+    } catch (err) {
+      console.error('mojaloop.transfer ROLLBACK:', err.message);
+      return { success: false, error: 'Transfer failed — rolled back', detail: err.message };
+    }
   },
 };
 
