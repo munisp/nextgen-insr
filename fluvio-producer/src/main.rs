@@ -483,10 +483,9 @@ async fn main() -> std::io::Result<()> {
 
     // Attempt Fluvio connection (non-blocking)
     {
-        let connected = state.fluvio_connected.clone();
-        let endpoint = state.fluvio_endpoint.clone();
+        let state_clone = state.clone();
         actix_web::rt::spawn(async move {
-            // Try to connect to Fluvio cluster
+            let endpoint = &state_clone.fluvio_endpoint;
             match reqwest::Client::new()
                 .get(format!("{}/health", endpoint))
                 .timeout(std::time::Duration::from_secs(5))
@@ -494,7 +493,7 @@ async fn main() -> std::io::Result<()> {
                 .await
             {
                 Ok(resp) if resp.status().is_success() => {
-                    *connected.lock().unwrap() = true;
+                    *state_clone.fluvio_connected.lock().unwrap() = true;
                     tracing::info!("Connected to Fluvio cluster at {}", endpoint);
                 }
                 _ => {

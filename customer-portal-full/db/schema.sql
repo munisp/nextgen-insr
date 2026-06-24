@@ -1683,4 +1683,101 @@ CREATE TABLE IF NOT EXISTS fraud_velocity_log (
 );
 CREATE INDEX IF NOT EXISTS idx_fraud_velocity_user ON fraud_velocity_log (user_id, recorded_at);
 
+-- Stablecoin/CBDC bridge ledger
+CREATE TABLE IF NOT EXISTS stablecoin_ledger (
+  id SERIAL PRIMARY KEY,
+  coin_type VARCHAR(10) NOT NULL CHECK (coin_type IN ('eNaira', 'cNGN', 'USDC', 'USDT')),
+  wallet_address VARCHAR(128) NOT NULL,
+  amount NUMERIC(18,8) NOT NULL CHECK (amount > 0),
+  direction VARCHAR(16) NOT NULL CHECK (direction IN ('mint', 'burn', 'transfer_in', 'transfer_out')),
+  fiat_equivalent NUMERIC(18,2) NOT NULL,
+  fiat_currency VARCHAR(3) NOT NULL DEFAULT 'NGN',
+  idempotency_key VARCHAR(128) UNIQUE NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'failed', 'reconciled')),
+  tx_hash VARCHAR(128),
+  policy_id VARCHAR(64),
+  claim_id VARCHAR(64),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_stablecoin_idempotency ON stablecoin_ledger (idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_stablecoin_status ON stablecoin_ledger (status, created_at);
+
+-- NDPR compliance (data masking audit trail)
+CREATE TABLE IF NOT EXISTS ndpr_data_masks (
+  id SERIAL PRIMARY KEY,
+  table_name VARCHAR(64) NOT NULL,
+  column_name VARCHAR(64) NOT NULL,
+  masking_rule VARCHAR(32) NOT NULL DEFAULT 'hash',
+  applied_by VARCHAR(128),
+  applied_at TIMESTAMP DEFAULT NOW()
+);
+
+-- NDPR data access log (tracks who accessed PII)
+CREATE TABLE IF NOT EXISTS ndpr_access_log (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER,
+  data_subject_id INTEGER,
+  access_type VARCHAR(32) NOT NULL,
+  fields_accessed TEXT[],
+  purpose VARCHAR(128),
+  legal_basis VARCHAR(64),
+  accessed_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ndpr_access_subject ON ndpr_access_log (data_subject_id, accessed_at);
+
+-- NAICOM regulatory returns
+CREATE TABLE IF NOT EXISTS naicom_returns (
+  id SERIAL PRIMARY KEY,
+  return_type VARCHAR(64) NOT NULL,
+  reporting_period VARCHAR(32) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'accepted', 'rejected')),
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  submitted_at TIMESTAMP,
+  submission_ref VARCHAR(128),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- KYC/KYB verification results
+CREATE TABLE IF NOT EXISTS kyc_verifications (
+  id SERIAL PRIMARY KEY,
+  entity_type VARCHAR(8) NOT NULL CHECK (entity_type IN ('person', 'business')),
+  entity_id INTEGER NOT NULL,
+  verification_type VARCHAR(32) NOT NULL,
+  provider VARCHAR(64) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'verified', 'failed', 'expired')),
+  score NUMERIC(5,2),
+  data JSONB DEFAULT '{}'::jsonb,
+  verified_at TIMESTAMP,
+  expires_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kyc_entity ON kyc_verifications (entity_type, entity_id, status);
+
+-- Mobile device registry
+CREATE TABLE IF NOT EXISTS mobile_devices (
+  id SERIAL PRIMARY KEY,
+  device_id VARCHAR(128) UNIQUE NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  platform VARCHAR(16) NOT NULL CHECK (platform IN ('ios', 'android', 'web')),
+  push_token VARCHAR(512),
+  app_version VARCHAR(16),
+  last_seen TIMESTAMP DEFAULT NOW(),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_mobile_devices_user ON mobile_devices (user_id);
+
+-- Offline sync events (CRDT-friendly event log)
+CREATE TABLE IF NOT EXISTS sync_events (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(64) NOT NULL,
+  entity_type VARCHAR(64) NOT NULL,
+  entity_id VARCHAR(128) NOT NULL,
+  action VARCHAR(16) NOT NULL CHECK (action IN ('create', 'update', 'delete')),
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  device_id VARCHAR(128),
+  client_timestamp TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sync_events_user ON sync_events (user_id, created_at);
+
 COMMIT;
