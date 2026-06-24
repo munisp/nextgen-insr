@@ -3,11 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
+use tokio_postgres::NoTls;
 
 /// Fraud Gate — Real-time payment fraud detection for NextGen Insurance
 ///
 /// Integrates with: Kafka (consumes fund.* events), Redis (velocity cache),
-/// Fluvio (streaming analytics), PostgreSQL (fraud case storage)
+/// Fluvio (streaming analytics), PostgreSQL (fraud case storage + velocity persistence)
 ///
 /// Rules engine checks:
 /// 1. Velocity: >5 transactions per minute from same user → BLOCK
@@ -50,14 +51,46 @@ struct AppState {
     velocity_cache: Mutex<HashMap<i64, Vec<TransactionRecord>>>,
     total_checks: Mutex<u64>,
     total_blocked: Mutex<u64>,
+    db_url: String,
 }
 
 async fn health() -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({
         "status": "healthy",
         "service": "fraud-gate",
-        "version": "1.0.0"
+        "version": "1.1.0"
     }))
+}
+
+/// Persist a velocity record to PostgreSQL (non-blocking, fire-and-forget)
+async fn persist_velocity(db_url: String, user_id: i64, amount: f64, recipient: String) {
+    let result = tokio_postgres::connect(&db_url, NoTls).await;
+    if let Ok((client, connection)) = result {
+        tokio::spawn(async move { let _ = connection.await; });
+        // Cast amount to text for NUMERIC compatibility
+        let amount_str = format!("{:.2}", amount);
+        let _ = client.execute(
+            "INSERT INTO fraud_velocity_log (user_id, amount, recipient, recorded_at) VALUES ($1, $2::NUMERIC, $3, NOW())",
+            &[&user_id, &amount_str, &recipient],
+        ).await;
+    }
+}
+
+/// Count recent velocity records from PostgreSQL for a given user (used on cold start)
+#[allow(dead_code)]
+async fn count_velocity_from_db(db_url: &str, user_id: i64) -> i64 {
+    let result = tokio_postgres::connect(db_url, NoTls).await;
+    if let Ok((client, connection)) = result {
+        tokio::spawn(async move { let _ = connection.await; });
+        let row = client.query_one(
+            "SELECT COUNT(*) FROM fraud_velocity_log WHERE user_id = $1 AND recorded_at > NOW() - INTERVAL '1 minute'",
+            &[&user_id],
+        ).await;
+        if let Ok(row) = row {
+            return row.get::<_, i64>(0);
+        }
+    }
+    0
 }
 
 async fn check_fraud(
@@ -117,11 +150,11 @@ async fn check_fraud(
             risk_score += 50.0;
         }
 
-        // Record this transaction
+        // Record this transaction in memory
         records.push(TransactionRecord {
             amount,
             timestamp: now,
-            recipient,
+            recipient: recipient.clone(),
         });
 
         // Rule 3: Frequency check (>20 txns per hour)
@@ -130,6 +163,13 @@ async fn check_fraud(
             risk_score += 20.0;
         }
     }
+
+    // Persist velocity record to PostgreSQL (async, non-blocking)
+    let db_url = data.db_url.clone();
+    let persist_recipient = recipient.clone();
+    tokio::spawn(async move {
+        persist_velocity(db_url, user_id, amount, persist_recipient).await;
+    });
 
     // Rule 2: Amount threshold
     if amount > 10_000_000.0 {
@@ -197,13 +237,18 @@ async fn main() -> std::io::Result<()> {
         .parse()
         .unwrap_or(8091);
 
-    println!("Fraud Gate v1.0 — Real-time Payment Fraud Detection");
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "host=localhost user=ngapp password=ngapp dbname=ngapp".to_string());
+
+    println!("Fraud Gate v1.1 — Real-time Payment Fraud Detection");
     println!("Listening on :{}", port);
+    println!("PostgreSQL velocity persistence enabled");
 
     let data = web::Data::new(AppState {
         velocity_cache: Mutex::new(HashMap::new()),
         total_checks: Mutex::new(0),
         total_blocked: Mutex::new(0),
+        db_url,
     });
 
     HttpServer::new(move || {

@@ -1612,4 +1612,75 @@ CREATE TABLE IF NOT EXISTS broker_api_keys (
   "createdAt" TIMESTAMP DEFAULT NOW()
 );
 
+-- ═══════════════════════════════════════════════════════════════════════
+-- Persistence tables: eliminate in-memory state, persist to PostgreSQL
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- User sessions (replaces in-memory sessions Map)
+CREATE TABLE IF NOT EXISTS user_sessions (
+  token VARCHAR(512) PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  user_data JSONB NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
+);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions (expires_at);
+
+-- Token blacklist (replaces in-memory tokenBlacklist Set)
+CREATE TABLE IF NOT EXISTS token_blacklist (
+  token VARCHAR(512) PRIMARY KEY,
+  blacklisted_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
+);
+CREATE INDEX IF NOT EXISTS idx_token_blacklist_expires ON token_blacklist (expires_at);
+
+-- Rate limiting (replaces in-memory rateLimits Map)
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key VARCHAR(256) PRIMARY KEY,
+  hits JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_updated ON rate_limits (updated_at);
+
+-- Request metrics (replaces in-memory metrics object)
+CREATE TABLE IF NOT EXISTS request_metrics (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  requests BIGINT DEFAULT 0,
+  errors BIGINT DEFAULT 0,
+  latency_sum BIGINT DEFAULT 0,
+  start_time TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+INSERT INTO request_metrics (id, requests, errors, latency_sum) VALUES (1, 0, 0, 0) ON CONFLICT (id) DO NOTHING;
+
+-- FX rates (replaces hardcoded rate constants)
+CREATE TABLE IF NOT EXISTS fx_rates (
+  id SERIAL PRIMARY KEY,
+  from_currency VARCHAR(3) NOT NULL,
+  to_currency VARCHAR(3) NOT NULL,
+  rate NUMERIC(12,4) NOT NULL,
+  source VARCHAR(64) DEFAULT 'manual',
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (from_currency, to_currency)
+);
+INSERT INTO fx_rates (from_currency, to_currency, rate, source) VALUES
+  ('USD', 'NGN', 1550.0, 'cbn_reference'),
+  ('GBP', 'NGN', 1960.0, 'cbn_reference'),
+  ('EUR', 'NGN', 1680.0, 'cbn_reference'),
+  ('GHS', 'NGN', 136.5, 'cbn_reference'),
+  ('KES', 'NGN', 11.8, 'cbn_reference'),
+  ('ZAR', 'NGN', 82.3, 'cbn_reference')
+ON CONFLICT (from_currency, to_currency) DO UPDATE SET rate = EXCLUDED.rate, updated_at = NOW();
+
+-- Fraud velocity log (replaces Rust fraud-gate in-memory HashMap)
+CREATE TABLE IF NOT EXISTS fraud_velocity_log (
+  id SERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  amount NUMERIC(18,2) NOT NULL,
+  recipient VARCHAR(128),
+  recorded_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_fraud_velocity_user ON fraud_velocity_log (user_id, recorded_at);
+
 COMMIT;

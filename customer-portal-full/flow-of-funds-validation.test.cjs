@@ -8,7 +8,7 @@
 const http = require('http');
 const crypto = require('crypto');
 
-const BASE = 'http://localhost:5002';
+const BASE = process.env.TEST_BASE_URL || 'http://localhost:5002';
 let TOKEN = '';
 let passed = 0;
 let failed = 0;

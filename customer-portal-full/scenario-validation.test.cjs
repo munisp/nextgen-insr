@@ -7,7 +7,7 @@
  */
 const http = require('http');
 
-const BASE = 'http://localhost:5002';
+const BASE = process.env.TEST_BASE_URL || 'http://localhost:5002';
 let TOKEN = '';
 let pass = 0;
 let fail = 0;

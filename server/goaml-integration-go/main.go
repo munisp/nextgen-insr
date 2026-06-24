@@ -271,10 +271,43 @@ type FilingStats struct {
 }
 
 func NewAppState(cfg Config) *AppState {
-	return &AppState{
+	s := &AppState{
 		config:    cfg,
 		filings:   make(map[string]*Filing),
 		startTime: time.Now(),
+	}
+	// Load persisted filings from PostgreSQL on startup
+	go s.loadFilingsFromDB()
+	return s
+}
+
+func (s *AppState) loadFilingsFromDB() {
+	if db == nil {
+		return
+	}
+	rows, err := db.Query("SELECT data FROM goaml_reports WHERE status != 'deleted' ORDER BY created_at DESC LIMIT 1000")
+	if err != nil {
+		log.Printf("[GoAML] Failed to load filings from DB: %v", err)
+		return
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			continue
+		}
+		var filing Filing
+		if err := json.Unmarshal(data, &filing); err != nil {
+			continue
+		}
+		s.mu.Lock()
+		s.filings[filing.ID] = &filing
+		s.mu.Unlock()
+		count++
+	}
+	if count > 0 {
+		log.Printf("[GoAML] Restored %d filings from PostgreSQL", count)
 	}
 }
 
@@ -825,6 +858,23 @@ func (s *AppState) createFiling(rt ReportType, subject SubjectInfo, txns []Trans
 	s.stats.LastFiledAt = time.Now()
 	s.mu.Unlock()
 
+	// Persist filing to PostgreSQL (source of truth)
+	go func() {
+		if db == nil {
+			return
+		}
+		data, _ := json.Marshal(filing)
+		_, err := db.Exec(
+			`INSERT INTO goaml_reports (name, status, data, created_at)
+			 VALUES ($1, $2, $3, NOW())
+			 ON CONFLICT DO NOTHING`,
+			filing.ReferenceNumber, string(filing.Status), data,
+		)
+		if err != nil {
+			log.Printf("[GoAML] Failed to persist filing %s to DB: %v", id, err)
+		}
+	}()
+
 	return filing
 }
 
@@ -1060,7 +1110,10 @@ type rateLimiter struct {
 	window   time.Duration
 }
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
-	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
+	rl := &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
+	// Load persisted rate limits from PostgreSQL on startup
+	go rl.loadFromDB()
+	return rl
 }
 func (rl *rateLimiter) allow(ip string) bool {
 	rl.mu.Lock()
@@ -1073,7 +1126,55 @@ func (rl *rateLimiter) allow(ip string) bool {
 	}
 	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
 	rl.requests[ip] = append(valid, now)
+	// Persist to PostgreSQL (async, non-blocking)
+	go rl.persistToDB(ip, valid)
 	return true
+}
+func (rl *rateLimiter) persistToDB(ip string, hits []time.Time) {
+	if db == nil {
+		return
+	}
+	data, _ := json.Marshal(hits)
+	_, _ = db.Exec(
+		`INSERT INTO rate_limits (key, hits, updated_at) VALUES ($1, $2, NOW())
+		 ON CONFLICT (key) DO UPDATE SET hits = $2, updated_at = NOW()`,
+		"goaml:"+ip, string(data),
+	)
+}
+func (rl *rateLimiter) loadFromDB() {
+	if db == nil {
+		return
+	}
+	rows, err := db.Query("SELECT key, hits FROM rate_limits WHERE key LIKE 'goaml:%' AND updated_at > NOW() - INTERVAL '2 minutes'")
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	now := time.Now()
+	for rows.Next() {
+		var key string
+		var hitsJSON []byte
+		if err := rows.Scan(&key, &hitsJSON); err != nil {
+			continue
+		}
+		var times []time.Time
+		if err := json.Unmarshal(hitsJSON, &times); err != nil {
+			continue
+		}
+		ip := strings.TrimPrefix(key, "goaml:")
+		cutoff := now.Add(-rl.window)
+		var valid []time.Time
+		for _, t := range times {
+			if t.After(cutoff) {
+				valid = append(valid, t)
+			}
+		}
+		if len(valid) > 0 {
+			rl.mu.Lock()
+			rl.requests[ip] = valid
+			rl.mu.Unlock()
+		}
+	}
 }
 func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

@@ -30,14 +30,29 @@ const DIST = path.join(__dirname, 'dist', 'public');
 // PRODUCTION HARDENING: Observability, Health, Security
 // ═══════════════════════════════════════════════════════════════════════
 
-// Request metrics
+// Request metrics — persisted to PostgreSQL (survives restarts)
+// In-memory accumulator flushed to DB every 10 seconds
 const metrics = { requests: 0, errors: 0, latencySum: 0, startTime: Date.now() };
+let metricsDirty = false;
 app.use((req, res, next) => {
   const start = Date.now();
   metrics.requests++;
-  res.on('finish', () => { metrics.latencySum += Date.now() - start; if (res.statusCode >= 500) metrics.errors++; });
+  metricsDirty = true;
+  res.on('finish', () => { metrics.latencySum += Date.now() - start; if (res.statusCode >= 500) { metrics.errors++; metricsDirty = true; } });
   next();
 });
+// Flush metrics to PostgreSQL periodically (non-blocking)
+setInterval(async () => {
+  if (!metricsDirty) return;
+  metricsDirty = false;
+  try {
+    await pool.query(
+      'UPDATE request_metrics SET requests = requests + $1, errors = errors + $2, latency_sum = latency_sum + $3, updated_at = NOW() WHERE id = 1',
+      [metrics.requests, metrics.errors, metrics.latencySum]
+    );
+    metrics.requests = 0; metrics.errors = 0; metrics.latencySum = 0;
+  } catch (e) { /* non-critical, retry next interval */ }
+}, 10000);
 
 // Security headers (Helmet-equivalent)
 app.use((req, res, next) => {
@@ -60,7 +75,8 @@ app.use((req, res, next) => {
 
 // Health check endpoints registered after pool init (see below)
 
-// Rate limiting (sliding window)
+// Rate limiting (sliding window) — persisted to PostgreSQL
+// Hot path uses in-memory Map as write-through cache; DB is source of truth on restart
 const rateLimits = new Map();
 const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '60000'); // 1 min
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '100'); // per window
@@ -72,15 +88,77 @@ function checkRateLimit(key) {
   rateLimits.set(key, hits);
   if (hits.length >= RATE_LIMIT_MAX) return false;
   hits.push(now);
+  // Persist to PostgreSQL (async, non-blocking)
+  pool.query(
+    'INSERT INTO rate_limits (key, hits, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET hits = $2, updated_at = NOW()',
+    [key, JSON.stringify(hits)]
+  ).catch(() => {});
   return true;
+}
+// Load rate limits from PostgreSQL on startup (restore state after restart)
+async function loadRateLimitsFromDB() {
+  try {
+    const rows = await pool.query('SELECT key, hits FROM rate_limits WHERE updated_at > NOW() - INTERVAL \'2 minutes\'');
+    const now = Date.now();
+    for (const row of rows.rows) {
+      const hits = (typeof row.hits === 'string' ? JSON.parse(row.hits) : row.hits).filter(t => t > now - RATE_LIMIT_WINDOW);
+      if (hits.length > 0) rateLimits.set(row.key, hits);
+    }
+  } catch (e) { /* non-critical */ }
 }
 
 // JWT secret for token signing
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 
-// Session tokens store (Redis-ready interface)
+// Session tokens store — persisted to PostgreSQL (survives restarts)
+// In-memory Map is write-through cache; PostgreSQL is source of truth
 const sessions = new Map();
 const tokenBlacklist = new Set();
+
+// Persist session to DB (async, non-blocking)
+async function persistSession(token, userData) {
+  sessions.set(token, userData);
+  try {
+    await pool.query(
+      'INSERT INTO user_sessions (token, user_id, user_data, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL \'24 hours\') ON CONFLICT (token) DO UPDATE SET user_data = $3',
+      [token, userData.id, JSON.stringify(userData)]
+    );
+  } catch (e) { /* non-critical, in-memory still works */ }
+}
+
+// Persist blacklist to DB (async, non-blocking)
+async function persistBlacklist(token) {
+  tokenBlacklist.add(token);
+  try {
+    await pool.query(
+      'INSERT INTO token_blacklist (token, expires_at) VALUES ($1, NOW() + INTERVAL \'24 hours\') ON CONFLICT (token) DO NOTHING',
+      [token]
+    );
+  } catch (e) { /* non-critical */ }
+}
+
+// Load sessions & blacklist from PostgreSQL on startup
+async function loadSessionsFromDB() {
+  try {
+    const sess = await pool.query('SELECT token, user_data FROM user_sessions WHERE expires_at > NOW()');
+    for (const row of sess.rows) {
+      const userData = typeof row.user_data === 'string' ? JSON.parse(row.user_data) : row.user_data;
+      sessions.set(row.token, userData);
+    }
+    const bl = await pool.query('SELECT token FROM token_blacklist WHERE expires_at > NOW()');
+    for (const row of bl.rows) tokenBlacklist.add(row.token);
+    console.log(`✓ Restored ${sess.rows.length} sessions, ${bl.rows.length} blacklisted tokens from PostgreSQL`);
+  } catch (e) { /* non-critical on first boot before table exists */ }
+}
+
+// Periodic cleanup of expired sessions/tokens (every 5 minutes)
+setInterval(async () => {
+  try {
+    await pool.query('DELETE FROM user_sessions WHERE expires_at < NOW()');
+    await pool.query('DELETE FROM token_blacklist WHERE expires_at < NOW()');
+    await pool.query('DELETE FROM rate_limits WHERE updated_at < NOW() - INTERVAL \'5 minutes\'');
+  } catch (e) { /* non-critical */ }
+}, 300000);
 
 function signJWT(payload) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -139,6 +217,9 @@ async function initDatabase(pool) {
 pool.query('SELECT NOW()').then(async () => {
   console.log('✓ PostgreSQL connected');
   await initDatabase(pool).catch(e => console.error('Schema init warning:', e.message));
+  // Restore persisted state from PostgreSQL (sessions, blacklist, rate limits)
+  await loadSessionsFromDB();
+  await loadRateLimitsFromDB();
   // Pre-warm connection pool (avoids first-query latency)
   const warmups = Array.from({ length: 5 }, () => pool.query('SELECT 1'));
   await Promise.all(warmups);
@@ -1351,7 +1432,7 @@ const ROUTE_HANDLERS = {
       // Demo fallback — allows existing demo flow to keep working
       if (email === 'demo@insureportal.ng' && password === 'demo123') {
         const token = signJWT({ sub: 0, email, role: 'admin' });
-        sessions.set(token, { ...DEMO_USER, kycLevel: 3 });
+        persistSession(token, { ...DEMO_USER, kycLevel: 3 });
         return { ...DEMO_USER, token, kycLevel: 3, kycPassed: true };
       }
       return { error: 'Invalid email or password' };
@@ -1384,7 +1465,7 @@ const ROUTE_HANDLERS = {
       kycLevel: kycCheck.level, kycPassed: kycCheck.passed,
       kycStatus: kycCheck.kycStatus, blockedFeatures: kycCheck.blockedFeatures,
     };
-    sessions.set(token, sessionUser);
+    persistSession(token, sessionUser);
     return { ...sessionUser, token, requiresKyc: !kycCheck.passed, kycRemainingSteps: kycCheck.remainingSteps };
   },
   'auth.signup': async (input) => {
@@ -1409,13 +1490,17 @@ const ROUTE_HANDLERS = {
     );
     const token = signJWT({ sub: newUser.id, email: newUser.email, role: newUser.role });
     const sessionUser = { ...newUser, kycLevel: 0, kycPassed: false };
-    sessions.set(token, sessionUser);
+    persistSession(token, sessionUser);
     return { ...sessionUser, token, requiresKyc: true, kycRemainingSteps: ['bvn', 'nin', 'phone', 'address', 'id_document', 'facial_match'] };
   },
   'auth.logout': async (input) => {
     const authHeader = input?._headers?.authorization;
     const token = input?.token || (authHeader ? authHeader.replace('Bearer ', '') : null);
-    if (token) { sessions.delete(token); tokenBlacklist.add(token); }
+    if (token) {
+      sessions.delete(token);
+      persistBlacklist(token);
+      pool.query('DELETE FROM user_sessions WHERE token = $1', [token]).catch(() => {});
+    }
     return { success: true, message: 'Logged out successfully' };
   },
   'auth.resetPassword': async (input) => {
@@ -1613,7 +1698,15 @@ const ROUTE_HANDLERS = {
 
   // Currency
   'currency.convert': async (input) => {
-    const rates = { USD: 1550, GBP: 1960, EUR: 1680, NGN: 1 };
+    // FX rates from PostgreSQL (source of truth) with hardcoded fallback
+    let rates = { USD: 1550, GBP: 1960, EUR: 1680, NGN: 1 };
+    try {
+      const rows = await q('SELECT from_currency, rate FROM fx_rates WHERE to_currency = \'NGN\'');
+      if (rows && rows.length > 0) {
+        rates = { NGN: 1 };
+        for (const r of rows) rates[r.from_currency] = parseFloat(r.rate);
+      }
+    } catch (e) { /* fallback to hardcoded if DB unavailable */ }
     const from = rates[input?.from] || 1;
     const to = rates[input?.to] || 1;
     return { from: input?.from || 'USD', to: input?.to || 'NGN', amount: input?.amount || 1, result: (input?.amount || 1) * (to / from), rate: to / from };
