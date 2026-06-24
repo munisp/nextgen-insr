@@ -1,4 +1,4 @@
-//! POS-54Link Rate Limiter — High-performance sliding window rate limiter
+//! InsurePortal Rate Limiter — High-performance sliding window rate limiter
 //! Built in Rust for maximum throughput with minimal latency overhead.
 //! Supports per-IP, per-API-key, and per-tenant rate limiting.
 
@@ -75,7 +75,7 @@ struct RateLimiter {
 impl RateLimiter {
     fn new() -> Self {
         let mut tiers = HashMap::new();
-        // POS-54Link tier definitions
+        // InsurePortal tier definitions
         tiers.insert("free".to_string(), TierConfig { requests_per_minute: 60, burst_size: 10 });
         tiers.insert("basic".to_string(), TierConfig { requests_per_minute: 300, burst_size: 50 });
         tiers.insert("pro".to_string(), TierConfig { requests_per_minute: 1000, burst_size: 200 });
@@ -119,7 +119,7 @@ struct EndpointLimits {
 impl EndpointLimits {
     fn new() -> Self {
         let mut limits = HashMap::new();
-        // POS-54Link endpoint-specific limits (per minute)
+        // InsurePortal endpoint-specific limits (per minute)
         limits.insert("/api/v1/transactions".to_string(), 500);
         limits.insert("/api/v1/auth/login".to_string(), 10);
         limits.insert("/api/v1/auth/register".to_string(), 5);

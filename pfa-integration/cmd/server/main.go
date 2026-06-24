@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"github.com/unified-insurance/pfa-integration/internal/handlers"
 	"github.com/unified-insurance/pfa-integration/internal/repository"
 	"github.com/unified-insurance/pfa-integration/internal/service"
@@ -44,8 +49,22 @@ func main() {
 	handler.RegisterRoutes(mux)
 
 	addr := fmt.Sprintf(":%s", port)
+	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("Shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Forced shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("PFA integration starting on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

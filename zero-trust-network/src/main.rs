@@ -164,13 +164,23 @@ impl MiddlewareClients {
 fn main() -> std::io::Result<()> {
     let port = std::env::var("PORT").unwrap_or_else(|_| "8094".to_string());
     println!("Zero Trust Network starting on :{}", port);
-    HttpServer::new(|| {
+
+    let server = HttpServer::new(|| {
         App::new()
             .route("/health", web::get().to(health))
             .route("/api/v1/policy/evaluate", web::get().to(evaluate_policy))
             .route("/api/v1/mesh/status", web::get().to(get_mesh_status))
     })
     .bind(format!("0.0.0.0:{}", port))?
-    .run()
-    .await
+    .shutdown_timeout(30)
+    .run();
+
+    let srv = server.handle();
+    actix_web::rt::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        println!("[zero-trust-network] Received shutdown signal, draining...");
+        srv.stop(true).await;
+    });
+
+    server.await
 }
