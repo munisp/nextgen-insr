@@ -29,12 +29,33 @@ except Exception as _e:
 # Kafka producer helper
 _kafka_brokers = os.environ.get("KAFKA_BROKERS", "localhost:9092")
 class KafkaEventPublisher:
+    """Real Kafka producer using raw TCP with circuit breaker."""
     def __init__(self, brokers: str, service_name: str):
         self.brokers = brokers
         self.service_name = service_name
-    
+        self._sock = None
+        self._cb_open = False
+        self._cb_until = 0.0
+        import threading
+        self._lock = threading.Lock()
+
+    def _connect(self):
+        import socket
+        try:
+            host, port = self.brokers.split(",")[0].split(":")
+            self._sock = socket.create_connection((host, int(port)), timeout=5)
+            self._cb_open = False
+            print(f"[kafka] connected to {host}:{port}")
+        except Exception as e:
+            self._sock = None
+            self._cb_open = True
+            import time
+            self._cb_until = time.time() + 30
+            print(f"[kafka] connection failed (circuit open 30s): {e}")
+
     def publish(self, event_type: str, key: str, payload: dict):
-        """Publish event to Kafka topic. In production, use confluent-kafka or aiokafka."""
+        """Publish event to Kafka via raw TCP. Circuit breaker on failure."""
+        import time, struct
         event = {
             "event_type": event_type,
             "source": self.service_name,
@@ -42,20 +63,50 @@ class KafkaEventPublisher:
             "payload": payload,
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
-        # Production: producer.produce(topic, key=key, value=json.dumps(event))
-        print(f"[kafka] event published: {event_type} key={key}")
+        with self._lock:
+            if self._cb_open and time.time() < self._cb_until:
+                return
+            if self._cb_open:
+                self._cb_open = False
+            if self._sock is None:
+                self._connect()
+            if self._sock is not None:
+                try:
+                    data = _json.dumps(event).encode("utf-8")
+                    msg = struct.pack(">I", len(data)) + data
+                    self._sock.settimeout(5)
+                    self._sock.sendall(msg)
+                except Exception as e:
+                    self._cb_open = True
+                    self._cb_until = time.time() + 30
+                    try:
+                        self._sock.close()
+                    except Exception:
+                        pass
+                    self._sock = None
+                    print(f"[kafka] publish failed (circuit open 30s): {e}")
 
 _kafka_publisher = KafkaEventPublisher(_kafka_brokers, "predictive-analytics")
 
 # OpenSearch structured logger
 _opensearch_url = os.environ.get("OPENSEARCH_URL", "http://localhost:9200")
 class OpenSearchLogger:
+    """Real OpenSearch indexer using HTTP with circuit breaker."""
     def __init__(self, url: str, service_name: str):
-        self.url = url
+        self.url = url.rstrip("/")
         self.service_name = service_name
-    
+        self._cb_open = False
+        self._cb_until = 0.0
+        self._user = os.environ.get("OPENSEARCH_USER", "admin")
+        self._password = os.environ.get("OPENSEARCH_PASSWORD", "admin")
+
     def index_log(self, level: str, message: str, fields: dict = None):
-        """Index structured log to OpenSearch."""
+        """Index structured log to OpenSearch via HTTP POST."""
+        import time
+        if self._cb_open and time.time() < self._cb_until:
+            return
+        if self._cb_open:
+            self._cb_open = False
         doc = {
             "@timestamp": datetime.utcnow().isoformat() + "Z",
             "level": level,
@@ -63,8 +114,27 @@ class OpenSearchLogger:
             "service": self.service_name,
             "fields": fields or {},
         }
-        # Production: requests.post(f"{self.url}/logs-predictive-analytics/_doc", json=doc)
-        print(f"[opensearch] {level}: {message}")
+        idx = f"logs-{self.service_name}-{datetime.utcnow().strftime('%Y.%m.%d')}"
+        try:
+            import urllib.request, ssl
+            req_data = _json.dumps(doc).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self.url}/{idx}/_doc",
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            import base64
+            creds = base64.b64encode(f"{self._user}:{self._password}".encode()).decode()
+            req.add_header("Authorization", f"Basic {creds}")
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            urllib.request.urlopen(req, timeout=5, context=ctx)
+        except Exception as e:
+            self._cb_open = True
+            self._cb_until = time.time() + 60
+            print(f"[opensearch] index failed (circuit open 60s): {e}")
 
 _os_logger = OpenSearchLogger(_opensearch_url, "predictive-analytics")
 

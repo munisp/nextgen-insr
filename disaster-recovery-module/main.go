@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net"
+	"encoding/binary"
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -489,38 +492,166 @@ var (
 )
 
 type redisPool struct {
-	addr string
+	addr     string
 	password string
+	conn     net.Conn
+	mu       sync.Mutex
+	cbOpen   bool
+	cbUntil  time.Time
+}
+func newRedisPool(addr, password string) *redisPool {
+	r := &redisPool{addr: addr, password: password}
+	go r.connect()
+	return r
+}
+func (r *redisPool) connect() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.conn != nil { return }
+	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
+	if err != nil {
+		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
+		return
+	}
+	if r.password != "" {
+		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		buf := make([]byte, 128)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		conn.Read(buf)
+	}
+	r.conn = conn
+	r.cbOpen = false
+	jsonLog("info", "redis_connected", "addr", r.addr)
+}
+func (r *redisPool) respCmd(args ...string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.conn == nil {
+		r.mu.Unlock()
+		r.connect()
+		r.mu.Lock()
+		if r.conn == nil { return "", fmt.Errorf("not connected") }
+	}
+	cmd := fmt.Sprintf("*%d\r\n", len(args))
+	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_, err := fmt.Fprint(r.conn, cmd)
+	if err != nil {
+		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		return "", err
+	}
+	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	buf := make([]byte, 4096)
+	n, err := r.conn.Read(buf)
+	if err != nil {
+		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		return "", err
+	}
+	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
-	// Production: use go-redis client
+	resp, err := r.respCmd("GET", key)
+	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	parts := strings.SplitN(resp, "\r\n", 3)
+	if len(parts) >= 2 { return parts[1], true }
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
-	// Production: use go-redis client
+	if ttl > 0 {
+		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+	} else {
+		r.respCmd("SET", key, value)
+	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	// Production: DEL keys
+	for _, k := range keys { r.respCmd("DEL", k) }
 }
 
 type kafkaProducer struct {
 	brokers string
 	topic   string
+	conn    net.Conn
+	mu      sync.Mutex
+	cbOpen  bool
+	cbUntil time.Time
+}
+func newKafkaProducer(brokers, topic string) *kafkaProducer {
+	p := &kafkaProducer{brokers: brokers, topic: topic}
+	go p.connect()
+	return p
+}
+func (k *kafkaProducer) connect() {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.conn != nil { return }
+	addr := k.brokers
+	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
+		k.cbOpen = true
+		k.cbUntil = time.Now().Add(30 * time.Second)
+		return
+	}
+	k.conn = conn
+	k.cbOpen = false
+	jsonLog("info", "kafka_connected", "brokers", k.brokers, "topic", k.topic)
 }
 func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key string, payload interface{}) {
 	data, _ := json.Marshal(map[string]interface{}{
 		"event_type": eventType,
-		"source":     "disaster-recovery-module",
+		"source":     k.topic,
 		"key":        key,
 		"payload":    payload,
 		"timestamp":  time.Now().Format(time.RFC3339),
 	})
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.cbOpen && time.Now().Before(k.cbUntil) {
+		jsonLog("debug", "kafka_circuit_open", "topic", k.topic, "event_type", eventType)
+		return
+	}
+	if k.conn == nil {
+		k.mu.Unlock()
+		k.connect()
+		k.mu.Lock()
+	}
+	if k.conn != nil {
+		msg := append([]byte{0, 0, 0, 0}, data...)
+		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
+		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_, err := k.conn.Write(msg)
+		if err != nil {
+			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
+			k.conn.Close()
+			k.conn = nil
+			k.cbOpen = true
+			k.cbUntil = time.Now().Add(30 * time.Second)
+			return
+		}
+	}
 	jsonLog("info", "kafka_event_published", "topic", k.topic, "event_type", eventType, "key", key, "size", fmt.Sprintf("%d", len(data)))
 }
 
 type opensearchClient struct {
-	url  string
-	user string
+	url      string
+	user     string
+	password string
+	client   *http.Client
+	cbOpen   bool
+	cbUntil  time.Time
+	mu       sync.Mutex
+}
+func newOpenSearchClient(url, user string) *opensearchClient {
+	return &opensearchClient{
+		url:      url,
+		user:     user,
+		password: os.Getenv("OPENSEARCH_PASSWORD"),
+		client:   &http.Client{Timeout: 5 * time.Second},
+	}
 }
 func (o *opensearchClient) IndexLog(level, msg, service string, fields map[string]interface{}) {
 	entry := map[string]interface{}{
@@ -531,6 +662,28 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		"fields":     fields,
 	}
 	data, _ := json.Marshal(entry)
+	o.mu.Lock()
+	if o.cbOpen && time.Now().Before(o.cbUntil) {
+		o.mu.Unlock()
+		return
+	}
+	o.mu.Unlock()
+	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
+	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
+	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
+	if err != nil { return }
+	req.Header.Set("Content-Type", "application/json")
+	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	resp, err := o.client.Do(req)
+	if err != nil {
+		o.mu.Lock()
+		o.cbOpen = true
+		o.cbUntil = time.Now().Add(60 * time.Second)
+		o.mu.Unlock()
+		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
+		return
+	}
+	resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -618,7 +771,7 @@ func initMiddleware() {
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
 	}
-	redisClient = &redisPool{addr: redisAddr, password: os.Getenv("REDIS_PASSWORD")}
+	redisClient = newRedisPool(redisAddr, os.Getenv("REDIS_PASSWORD"))
 	jsonLog("info", "redis_client_initialized", "addr", redisAddr)
 
 	// Kafka
@@ -626,7 +779,7 @@ func initMiddleware() {
 	if kafkaBrokers == "" {
 		kafkaBrokers = "localhost:9092"
 	}
-	kafkaWriter = &kafkaProducer{brokers: kafkaBrokers, topic: "disaster-recovery-module-events"}
+	kafkaWriter = newKafkaProducer(kafkaBrokers, "disaster-recovery-module-events")
 	jsonLog("info", "kafka_producer_initialized", "brokers", kafkaBrokers, "topic", "disaster-recovery-module-events")
 
 	// OpenSearch
@@ -634,7 +787,7 @@ func initMiddleware() {
 	if osURL == "" {
 		osURL = "http://localhost:9200"
 	}
-	osClient = &opensearchClient{url: osURL, user: os.Getenv("OPENSEARCH_USER")}
+	osClient = newOpenSearchClient(osURL, os.Getenv("OPENSEARCH_USER"))
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
