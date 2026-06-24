@@ -797,6 +797,49 @@ func handleSyncPull(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"changes": changes, "count": len(changes), "server_time": time.Now().Format(time.RFC3339)})
 }
 
+func handleSyncPush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		UserID   string `json:"user_id"`
+		DeviceID string `json:"device_id"`
+		Events   []struct {
+			EntityType      string `json:"entity_type"`
+			EntityID        string `json:"entity_id"`
+			Action          string `json:"action"`
+			Payload         string `json:"payload"`
+			ClientTimestamp string `json:"client_timestamp"`
+		} `json:"events"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, 400); return
+	}
+	accepted := 0
+	if db != nil {
+		tx, err := db.Begin()
+		if err == nil {
+			for _, evt := range req.Events {
+				_, err := tx.Exec(
+					"INSERT INTO sync_events (user_id, entity_type, entity_id, action, payload, device_id, client_timestamp, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())",
+					req.UserID, evt.EntityType, evt.EntityID, evt.Action, evt.Payload, req.DeviceID, evt.ClientTimestamp,
+				)
+				if err == nil { accepted++ }
+			}
+			tx.Commit()
+		}
+	}
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "mobile_sync", req.UserID, map[string]interface{}{
+			"user_id": req.UserID, "device_id": req.DeviceID, "event_count": accepted,
+		})
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"accepted": accepted, "total": len(req.Events), "server_time": time.Now().Format(time.RFC3339),
+	})
+}
+
 func main() {
 	initDB()
 	initMiddleware()
@@ -830,6 +873,9 @@ func main() {
 			"maintenance_mode": false,
 		})
 	})
+	r.Post("/api/v1/device/register", func(w http.ResponseWriter, r *http.Request) { handleDeviceRegister(w, r) })
+	r.Get("/api/v1/sync/pull", func(w http.ResponseWriter, r *http.Request) { handleSyncPull(w, r) })
+	r.Post("/api/v1/sync/push", handleSyncPush)
 	r.Post("/api/v1/sync", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"synced": true, "timestamp": time.Now().Format(time.RFC3339), "pending_transactions": 0})
 	})

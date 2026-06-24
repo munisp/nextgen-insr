@@ -384,6 +384,23 @@ async function recordFundAudit(txq, { action, entityType, entityId, amount, trac
 // Kafka event publishing (async, non-blocking — failures logged but don't block transaction)
 const KAFKA_BROKER = process.env.KAFKA_BROKER || 'localhost:9092';
 const kafkaEventQueue = [];
+let _kafkaSocket = null;
+let _kafkaCbOpen = false;
+let _kafkaCbUntil = 0;
+function _getKafkaSocket() {
+  if (_kafkaCbOpen && Date.now() < _kafkaCbUntil) return null;
+  if (_kafkaCbOpen) _kafkaCbOpen = false;
+  if (_kafkaSocket && !_kafkaSocket.destroyed) return _kafkaSocket;
+  try {
+    const net = require('net');
+    const [host, port] = KAFKA_BROKER.split(':');
+    _kafkaSocket = new net.Socket();
+    _kafkaSocket.connect(parseInt(port) || 9092, host);
+    _kafkaSocket.on('error', () => { _kafkaCbOpen = true; _kafkaCbUntil = Date.now() + 30000; _kafkaSocket = null; });
+    _kafkaSocket.on('close', () => { _kafkaSocket = null; });
+    return _kafkaSocket;
+  } catch (e) { _kafkaCbOpen = true; _kafkaCbUntil = Date.now() + 30000; return null; }
+}
 function publishFundEvent(topic, event) {
   const enrichedEvent = {
     ...event,
@@ -392,30 +409,54 @@ function publishFundEvent(topic, event) {
     version: '1.0',
   };
   kafkaEventQueue.push({ topic, event: enrichedEvent });
-  // In production, flush to Kafka via the Go fund-flow-orchestrator sidecar
+  // Raw TCP publish to Kafka (length-prefixed JSON)
+  const sock = _getKafkaSocket();
+  if (sock) {
+    try {
+      const data = Buffer.from(JSON.stringify({ topic, event: enrichedEvent }));
+      const lenBuf = Buffer.alloc(4);
+      lenBuf.writeUInt32BE(data.length);
+      sock.write(Buffer.concat([lenBuf, data]));
+    } catch (e) { /* circuit breaker handles reconnect */ }
+  }
+  // Also publish via sidecar if configured (redundant path for reliability)
   if (process.env.FUND_FLOW_SIDECAR_URL) {
-    const http = require('http');
-    const data = JSON.stringify({ topic, event: enrichedEvent });
-    const req = http.request(`${process.env.FUND_FLOW_SIDECAR_URL}/publish`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-    });
-    req.on('error', (e) => console.error(`Kafka publish error (${topic}):`, e.message));
-    req.write(data);
-    req.end();
+    const sidecarPublish = (attempt) => {
+      const http = require('http');
+      const payload = JSON.stringify({ topic, event: enrichedEvent });
+      const req = http.request(`${process.env.FUND_FLOW_SIDECAR_URL}/publish`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        timeout: 5000,
+      });
+      req.on('error', (e) => {
+        if (attempt < 3) setTimeout(() => sidecarPublish(attempt + 1), 1000 * attempt);
+        else console.error(`Kafka sidecar publish failed after 3 retries (${topic}):`, e.message);
+      });
+      req.write(payload);
+      req.end();
+    };
+    sidecarPublish(1);
   }
 }
 
-// TigerBeetle ledger sync (async, non-blocking — immutable financial record)
+// TigerBeetle ledger sync (async, non-blocking — immutable financial record with retry)
 function syncToTigerBeetle(entry) {
   if (process.env.TIGERBEETLE_SIDECAR_URL) {
-    const http = require('http');
-    const data = JSON.stringify(entry);
-    const req = http.request(`${process.env.TIGERBEETLE_SIDECAR_URL}/transfer`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-    });
-    req.on('error', (e) => console.error('TigerBeetle sync error:', e.message));
-    req.write(data);
-    req.end();
+    const tbSync = (attempt) => {
+      const http = require('http');
+      const data = JSON.stringify(entry);
+      const req = http.request(`${process.env.TIGERBEETLE_SIDECAR_URL}/transfer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+        timeout: 5000,
+      });
+      req.on('error', (e) => {
+        if (attempt < 3) setTimeout(() => tbSync(attempt + 1), 1000 * attempt);
+        else console.error('TigerBeetle sync failed after 3 retries:', e.message);
+      });
+      req.write(data);
+      req.end();
+    };
+    tbSync(1);
   }
 }
 

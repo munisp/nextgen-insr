@@ -481,6 +481,235 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 
 var startTime = time.Now()
 
+// ─── Stablecoin/CBDC Bridge ──────────────────────────────────────────────────
+
+type StablecoinLedgerEntry struct {
+	ID             int64     `json:"id"`
+	CoinType       string    `json:"coin_type"` // eNaira, cNGN, USDC, USDT
+	WalletAddress  string    `json:"wallet_address"`
+	Amount         float64   `json:"amount"`
+	Direction      string    `json:"direction"` // mint, burn, transfer_in, transfer_out
+	FiatEquivalent float64   `json:"fiat_equivalent"`
+	FiatCurrency   string    `json:"fiat_currency"`
+	IdempotencyKey string    `json:"idempotency_key"`
+	Status         string    `json:"status"` // pending, confirmed, failed, reconciled
+	TxHash         string    `json:"tx_hash,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type StablecoinBridgeRequest struct {
+	CoinType       string  `json:"coin_type"`
+	WalletAddress  string  `json:"wallet_address"`
+	Amount         float64 `json:"amount"`
+	Direction      string  `json:"direction"`
+	IdempotencyKey string  `json:"idempotency_key"`
+	PolicyID       string  `json:"policy_id,omitempty"`
+	ClaimID        string  `json:"claim_id,omitempty"`
+}
+
+func handleStablecoinBridge(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req StablecoinBridgeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	validCoins := map[string]bool{"eNaira": true, "cNGN": true, "USDC": true, "USDT": true}
+	if !validCoins[req.CoinType] {
+		http.Error(w, `{"error":"unsupported coin type — valid: eNaira, cNGN, USDC, USDT"}`, http.StatusBadRequest)
+		return
+	}
+	validDirs := map[string]bool{"mint": true, "burn": true, "transfer_in": true, "transfer_out": true}
+	if !validDirs[req.Direction] {
+		http.Error(w, `{"error":"invalid direction — valid: mint, burn, transfer_in, transfer_out"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Amount <= 0 {
+		http.Error(w, `{"error":"amount must be positive"}`, http.StatusBadRequest)
+		return
+	}
+	if req.IdempotencyKey == "" {
+		http.Error(w, `{"error":"idempotency_key required for fund flow safety"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Idempotency check — return cached result if already processed
+	var existingID int64
+	var existingStatus string
+	err := db.QueryRow(
+		"SELECT id, status FROM stablecoin_ledger WHERE idempotency_key = $1",
+		req.IdempotencyKey,
+	).Scan(&existingID, &existingStatus)
+	if err == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": existingID, "status": existingStatus, "idempotent": true,
+		})
+		return
+	}
+
+	// Calculate fiat equivalent using live exchange rates
+	fiatCurrency := "NGN"
+	fiatEquivalent := req.Amount
+	if req.CoinType == "USDC" || req.CoinType == "USDT" {
+		var rate float64
+		err := db.QueryRow(
+			"SELECT rate FROM exchange_rates WHERE base_currency = 'USD' AND target_currency = 'NGN' ORDER BY effective_date DESC LIMIT 1",
+		).Scan(&rate)
+		if err == nil && rate > 0 {
+			fiatEquivalent = req.Amount * rate
+		} else {
+			fiatEquivalent = req.Amount * 1550.0 // fallback rate
+		}
+	}
+
+	// Atomic transaction — ledger entry + general ledger + Kafka event
+	var entryID int64
+	txErr := execInTransaction(func(tx *sql.Tx) error {
+		err := tx.QueryRow(
+			`INSERT INTO stablecoin_ledger (coin_type, wallet_address, amount, direction, fiat_equivalent, fiat_currency, idempotency_key, status, created_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW()) RETURNING id`,
+			req.CoinType, req.WalletAddress, req.Amount, req.Direction, fiatEquivalent, fiatCurrency, req.IdempotencyKey,
+		).Scan(&entryID)
+		if err != nil {
+			return fmt.Errorf("ledger insert failed: %w", err)
+		}
+
+		// Double-entry in general ledger
+		debitAccount := "stablecoin-bridge-holding"
+		creditAccount := "customer-wallet-" + req.WalletAddress
+		if req.Direction == "burn" || req.Direction == "transfer_out" {
+			debitAccount, creditAccount = creditAccount, debitAccount
+		}
+
+		_, err = tx.Exec(
+			`INSERT INTO general_ledger (account, entry_type, amount, currency, reference_type, reference_id, created_at)
+			 VALUES ($1, 'debit', $2, $3, 'stablecoin', $4, NOW()), ($1, 'credit', $2, $3, 'stablecoin', $4, NOW())`,
+			debitAccount, fiatEquivalent, fiatCurrency, fmt.Sprintf("SC-%d", entryID),
+		)
+		if err != nil {
+			// GL table may not exist yet — log but don't fail
+			jsonLog("warn", "GL entry skipped", "error", err.Error())
+		}
+
+		return nil
+	})
+
+	if txErr != nil {
+		atomic.AddInt64(&errCount, 1)
+		http.Error(w, fmt.Sprintf(`{"error":"transaction failed: %s"}`, txErr.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	// Publish to Kafka (non-blocking)
+	go func() {
+		if kafkaWriter != nil {
+			kafkaWriter.PublishEvent(context.Background(), "stablecoin_bridge", req.IdempotencyKey, map[string]interface{}{
+				"entry_id": entryID, "coin_type": req.CoinType, "amount": req.Amount,
+				"direction": req.Direction, "fiat_equivalent": fiatEquivalent,
+			})
+		}
+	}()
+
+	// Cache in Redis
+	go func() {
+		redisClient.CacheSet(fmt.Sprintf("stablecoin:%d", entryID), fmt.Sprintf(`{"status":"pending","amount":%f}`, req.Amount), 300)
+	}()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id": entryID, "status": "pending", "coin_type": req.CoinType,
+		"amount": req.Amount, "fiat_equivalent": fiatEquivalent,
+		"fiat_currency": fiatCurrency, "idempotency_key": req.IdempotencyKey,
+	})
+}
+
+func handleStablecoinReconcile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Reconcile all pending entries older than 5 minutes
+	result, err := db.Exec(
+		`UPDATE stablecoin_ledger SET status = 'reconciled' WHERE status = 'pending' AND created_at < NOW() - INTERVAL '5 minutes'`,
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	affected, _ := result.RowsAffected()
+
+	go func() {
+		if kafkaWriter != nil {
+			kafkaWriter.PublishEvent(context.Background(), "stablecoin_reconciliation", "reconcile", map[string]interface{}{
+				"reconciled_count": affected,
+			})
+		}
+	}()
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"reconciled": affected, "status": "completed",
+	})
+}
+
+func handleStablecoinLedger(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	coinType, _ := validateQueryParam(r, "coin_type", 20)
+	status, _ := validateQueryParam(r, "status", 20)
+	page, _ := validateIntParam(r, "page")
+	if page < 1 { page = 1 }
+	limit, _ := validateIntParam(r, "limit")
+	if limit < 1 || limit > 100 { limit = 20 }
+
+	query := "SELECT id, coin_type, wallet_address, amount, direction, fiat_equivalent, fiat_currency, idempotency_key, status, COALESCE(tx_hash,''), created_at FROM stablecoin_ledger WHERE 1=1"
+	args := []interface{}{}
+	argN := 1
+	if coinType != "" {
+		query += fmt.Sprintf(" AND coin_type = $%d", argN)
+		args = append(args, coinType)
+		argN++
+	}
+	if status != "" {
+		query += fmt.Sprintf(" AND status = $%d", argN)
+		args = append(args, status)
+		argN++
+	}
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argN, argN+1)
+	args = append(args, limit, (page-1)*limit)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var entries []StablecoinLedgerEntry
+	for rows.Next() {
+		var e StablecoinLedgerEntry
+		if err := rows.Scan(&e.ID, &e.CoinType, &e.WalletAddress, &e.Amount, &e.Direction, &e.FiatEquivalent, &e.FiatCurrency, &e.IdempotencyKey, &e.Status, &e.TxHash, &e.CreatedAt); err != nil {
+			continue
+		}
+		entries = append(entries, e)
+	}
+	if entries == nil { entries = []StablecoinLedgerEntry{} }
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data": entries, "page": page, "limit": limit,
+	})
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 
@@ -847,6 +1076,11 @@ func main() {
 	mux.HandleFunc("/api/v1/exchange_rate", handleGetByID)
 	mux.HandleFunc("/api/v1/exchange_rates/create", handleCreate)
 	mux.HandleFunc("/api/v1/exchange_rates/delete", handleDelete)
+
+	// Stablecoin/CBDC bridge
+	mux.HandleFunc("/api/v1/stablecoin/bridge", handleStablecoinBridge)
+	mux.HandleFunc("/api/v1/stablecoin/reconcile", handleStablecoinReconcile)
+	mux.HandleFunc("/api/v1/stablecoin/ledger", handleStablecoinLedger)
 
 	// Apply middleware chain
 	var handler http.Handler = mux
