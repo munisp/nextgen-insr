@@ -580,21 +580,22 @@ func handleStablecoinBridge(w http.ResponseWriter, r *http.Request) {
 			return fmt.Errorf("ledger insert failed: %w", err)
 		}
 
-		// Double-entry in general ledger
-		debitAccount := "stablecoin-bridge-holding"
-		creditAccount := "customer-wallet-" + req.WalletAddress
+		// Double-entry in general ledger (account_code varchar(32) — use generic codes)
+		debitCode := "SC-BRIDGE-HOLDING"
+		creditCode := "CUSTOMER-WALLET"
 		if req.Direction == "burn" || req.Direction == "transfer_out" {
-			debitAccount, creditAccount = creditAccount, debitAccount
+			debitCode, creditCode = creditCode, debitCode
 		}
 
+		ref := fmt.Sprintf("SC-%d", entryID)
+		desc := fmt.Sprintf("Stablecoin %s %s wallet:%s", req.Direction, req.CoinType, req.WalletAddress)
 		_, err = tx.Exec(
-			`INSERT INTO general_ledger (account, entry_type, amount, currency, reference_type, reference_id, created_at)
-			 VALUES ($1, 'debit', $2, $3, 'stablecoin', $4, NOW()), ($1, 'credit', $2, $3, 'stablecoin', $4, NOW())`,
-			debitAccount, fiatEquivalent, fiatCurrency, fmt.Sprintf("SC-%d", entryID),
+			`INSERT INTO general_ledger (account_code, account_name, debit, credit, description, reference, "createdAt")
+			 VALUES ($1, $1, $2, 0, $3, $4, NOW()), ($5, $5, 0, $2, $3, $4, NOW())`,
+			debitCode, fiatEquivalent, desc, ref, creditCode,
 		)
 		if err != nil {
-			// GL table may not exist yet — log but don't fail
-			jsonLog("warn", "GL entry skipped", "error", err.Error())
+			return fmt.Errorf("GL insert failed: %w", err)
 		}
 
 		return nil

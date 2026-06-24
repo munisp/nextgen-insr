@@ -742,7 +742,7 @@ func handleSubmitReturn(w http.ResponseWriter, r *http.Request) {
 	submissionRef := fmt.Sprintf("NAICOM-%d", time.Now().UnixNano()%100000000)
 	if db != nil {
 		db.Exec(
-			`INSERT INTO naicom_returns (return_type, reporting_period, status, data, submission_ref, submitted_at, created_at) VALUES ($1, $2, 'submitted', $3, $4, NOW(), NOW())`,
+			`INSERT INTO naicom_returns ("returnType", "reportingPeriod", status, data, "submissionRef", "submissionDate", "createdAt") VALUES ($1, $2, 'submitted', $3, $4, NOW(), NOW())`,
 			req.ReturnType, req.ReportingPeriod, string(dataJSON), submissionRef,
 		)
 	}

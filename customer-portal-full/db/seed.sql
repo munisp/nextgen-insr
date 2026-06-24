@@ -677,4 +677,25 @@ INSERT INTO ab_experiments (id, test_id, variant, "sampleSize", "trafficSplit", 
   (2, 1002, 'B', 3000, 50, 'Monthly Display', 'Annual Display', 2.8, 3.5, '2026-06-01', '2026-07-01')
 ON CONFLICT (id) DO NOTHING;
 
+-- Fix sequences after explicit-id inserts (prevents duplicate key errors)
+DO $$
+DECLARE
+    r RECORD;
+    max_val BIGINT;
+BEGIN
+    FOR r IN
+        SELECT c.table_name, pg_get_serial_sequence(c.table_name, 'id') as seq_name
+        FROM information_schema.columns c
+        JOIN information_schema.tables t ON t.table_name = c.table_name AND t.table_schema = 'public'
+        WHERE c.column_name = 'id' AND c.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+        AND pg_get_serial_sequence(c.table_name, 'id') IS NOT NULL
+    LOOP
+        BEGIN
+            EXECUTE format('SELECT COALESCE(MAX(id), 1) FROM %I', r.table_name) INTO max_val;
+            PERFORM setval(r.seq_name, max_val);
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+    END LOOP;
+END $$;
+
 COMMIT;
