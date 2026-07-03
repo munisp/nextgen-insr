@@ -11,6 +11,38 @@
  *   - Terminal enable/disable
  *   - CBN daily limit enforcement
  */
+// =============================================================================
+// NAVIGATION GUIDE — Agent Router (823 lines, 17 procedures)
+// =============================================================================
+// Agent lifecycle management: auth, CRUD, bulk operations, tier management,
+// CBN daily limit enforcement.
+//
+// ── Authentication ───────────────────────────────────────────────────────────
+//  48. login           — Agent login (JWT)
+// 152. logout          — Invalidate session
+// 158. me              — Current agent profile
+// 205. register        — Agent registration (dev/admin)
+//
+// ── CRUD Operations ──────────────────────────────────────────────────────────
+// 253. list            — Agent list (search/filter/pagination)
+// 381. getById         — Single agent details
+// 403. update          — Update agent
+// 490. delete          — Soft-delete agent
+//
+// ── Account Controls ─────────────────────────────────────────────────────────
+// 530. setFloatLock    — Lock/unlock float
+// 570. setTerminalEnabled — Enable/disable terminal
+//
+// ── Bulk Operations ──────────────────────────────────────────────────────────
+// 616. bulkActivate   — Bulk activate agents
+// 647. bulkSuspend    — Bulk suspend agents
+// 681. bulkDelete     — Bulk delete agents
+// 719. bulkSetTier    — Bulk tier assignment
+//
+// ── Limits & Stats ───────────────────────────────────────────────────────────
+// 753. getDailyLimits  — CBN daily transaction limits
+// 796. stats           — Agent statistics
+// ─────────────────────────────────────────────────────────────────────────────
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";

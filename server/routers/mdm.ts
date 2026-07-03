@@ -31,6 +31,38 @@ import { randomBytes } from "crypto";
 import { getIO } from "../socketSingleton";
 import { writeAuditLog } from "../db";
 
+// =============================================================================
+// NAVIGATION GUIDE — MDM Router (1,436 lines, 23 procedures)
+// =============================================================================
+// Mobile Device Management for 54Link POS terminals.
+//
+// ── Section Reference ────────────────────────────────────────────────────────
+//  59. listDevices            — Enrolled devices list with agent info
+// 107. getDevice              — Single device details
+// 143. issueCommand           — Remote command (UPDATE, RECONFIG, RESTART, WIPE, PING)
+// 202. pushConfig             — Push JSON config to device
+// 247. triggerOtaUpdate       — Trigger OTA firmware update
+// 318. stats                  — Device stats (online/offline/total)
+// 348. heartbeat              — Device heartbeat (public, called by mdm-agent)
+// 708. generateEnrollmentToken— Generate token for device enrollment
+// 787. enrollWithToken        — Enroll device using token (public)
+// 870. ackCommand             — Device acknowledges command
+// 917. disableTerminal        — Disable a terminal
+// 976. listPolicies           — Device compliance policies list
+//1003. upsertPolicy           — Create/update compliance policy
+//1073. listViolations         — Compliance violations list
+//1112. acknowledgeViolation   — Acknowledge a violation
+//1146. listGeofenceViolations — Geofence violation list
+//1180. listOtaReleases        — OTA release list
+//1207. createOtaRelease       — Create OTA release
+//1240. publishOtaRelease      — Publish OTA release
+//1261. archiveOtaRelease      — Archive OTA release
+//1281. listOtaUpdateLog       — OTA update log list
+//1316. recordOtaUpdate        — Record OTA update (public, called by agent)
+//1385. enableTerminal         — Enable a terminal
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Admin guard ───────────────────────────────────────────────────────────────
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin") {

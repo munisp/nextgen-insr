@@ -68,6 +68,50 @@ async function safeFetch<T>(
   }
 }
 
+// =============================================================================
+// NAVIGATION GUIDE — Resilience Router (1,352 lines, 30+ procedures)
+// =============================================================================
+// Offline queue, retry/DLQ, USSD encoding, connectivity monitoring,
+// push notification subscriptions, and telemetry.
+//
+// ── Section Reference ────────────────────────────────────────────────────────
+//  73. probe                      — System probe health check
+//  90. detectCarrier              — Carrier detection
+// 119. encodeUssd                — USSD string encoding/decoding
+// 164. queueCount                — Offline queue item count
+// 172. enqueueOffline            — Add transaction to offline queue
+// 216. dequeueOffline            — Process next offline queue item
+// 261. agentSuccessRates         — Per-agent success rates
+// 299. successRate               — Overall success rate
+// 341. systemStatus              — Full system health status
+// 470. listPendingOffline        — List pending offline transactions
+// 488. discardOfflineItem        — Remove item from offline queue
+// 514. savePushSubscription      — Save push notification subscription
+// 559. notifyPendingSync         — Notify agent of pending sync
+// 632. printUssdReceipt          — Print USSD receipt
+// 679. statsByType               — Stats grouped by transaction type
+// 705. retryDeadLetter           — Retry all DLQ messages
+// 722. logConnectivity           — Log connectivity event
+// 752. getConnectivityHistory    — Connectivity history
+// 802. alertOnPoorConnectivity   — Alert when connectivity is poor
+// 922. listDlqMessages           — DLQ message list
+// 960. createDlqMessage          — Create DLQ message entry
+// 996. resolveDlqMessage         — Mark DLQ message as resolved
+//1017. retryDlqMessage           — Retry a single DLQ message
+//1049. getPushSubscriptions      — Get all push subscriptions
+//1084. getAdaptiveFlags          — Get adaptive retry flags
+//1214. reportTerminalTelemetry   — Terminal telemetry submission
+//1282. getTierDistribution       — Device tier distribution
+//1314. getResilienceDashboard    — Resilience dashboard data
+//1334. list                      — General list (generic endpoint)
+//
+// ── Microservice Bridge ──────────────────────────────────────────────────────
+// Go  resilience-agent  :8031  → probe, carrier, retry
+// Rust offline-queue    :8032  → queue CRUD, USSD encode
+// Python analytics      :8033  → success-rate stats
+// All wrapped with 3-second timeout + safe fallbacks.
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const resilienceRouter = router({
   // ── Go: connection probe ──────────────────────────────────────────────────
   probe: protectedProcedure.query(async () => {

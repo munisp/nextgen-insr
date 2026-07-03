@@ -20,6 +20,46 @@
  * 12. PostgreSQL — commission_tiers, commission_splits, commission_payouts, commission_audit_trail
  * 13. Open Source — Drizzle ORM, tRPC, Zod
  */
+// =============================================================================
+// NAVIGATION GUIDE — Commission Engine Router (1,268 lines, 17 procedures)
+// =============================================================================
+// DB-backed tiered rates, volume bonuses, split commissions, and payout
+// management. Full audit trail, CRUD lifecycle, and middleware integration.
+//
+// ── Section Reference ────────────────────────────────────────────────────────
+// 324. tiers                     — Tier list (rate tiers)
+// 346. updateTier                — Update a rate tier
+// 431. createTier                — Create a new rate tier
+// 525. deleteTier                — Delete a rate tier
+// 578. splits                    — Split commission list
+// 617. updateSplit               — Update split commission ratios
+// 712. createSplit               — Create new split commission
+// 812. simulate                  — Simulate commission calculation
+// 904. payouts                  — Payout history list
+// 974. approvePayout             — Approve a payout
+//1063. analytics                 — Commission analytics
+//1146. auditTrail                — Full audit trail
+//1185. triggerBatchPayout        — Batch payout trigger
+//1212. initiateIlpTransfer       — ILP commission settlement (Mojaloop)
+//1243. triggerSnapshot           — Daily commission snapshot (Lakehouse)
+//1260. rateLimitConfig           — Rate limit config for commission API
+//1265. middlewareHealth          — Health of all 13 middleware integrations
+//
+// ── Middleware Integration (13/13) ───────────────────────────────────────────
+//  1. Kafka      — Domain events on credit/split/payout
+//  2. Redis      — Cache split ratios & hierarchy chains
+//  3. TigerBeetle — Double-entry ledger via Go sidecar
+//  4. Temporal   — Batch payout workflows
+//  5. Permify    — RBAC for split updates & payout approvals
+//  6. Fluvio     — Real-time commission event streaming
+//  7. Lakehouse  — Daily commission snapshot
+//  8. Dapr       — State store for calculation cache
+//  9. Keycloak   — Token validation
+// 10. APISIX     — Rate limiting metadata
+// 11. Mojaloop   — ILP cross-border commission settlement
+// 12. PostgreSQL — commission_tiers/splits/payouts/audit_trail
+// 13. Open Source — Drizzle ORM, tRPC, Zod
+// ─────────────────────────────────────────────────────────────────────────────
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";

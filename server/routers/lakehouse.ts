@@ -16,6 +16,38 @@
  *                ──► PostgreSQL (spatial fallback via haversine)
  */
 
+// =============================================================================
+// NAVIGATION GUIDE — Lakehouse Router (928 lines, 14 procedures)
+// =============================================================================
+// Data Lakehouse: snapshot management, spatial analytics, DataFusion proxy,
+// Gold-layer metrics. Architecture: Node.js tRPC → MinIO S3 → Python service.
+//
+// ── Snapshot Management ──────────────────────────────────────────────────────
+//  93. triggerTransactionSnapshot  — Snapshot transaction data
+// 141. triggerFraudSnapshot        — Snapshot fraud events
+// 183. listSnapshots               — List all snapshots
+// 222. getDownloadUrl              — Presigned download URL
+// 268. snapshotStats               — Snapshot stats (count/size)
+//
+// ── Spatial Analytics ────────────────────────────────────────────────────────
+// 298. agentDensityGrid            — Agent density heatmap grid
+// 385. transactionHeatmap          — Transaction volume heatmap
+// 492. nearestAgents               — Radius search for nearest agents
+//
+// ── DataFusion Proxy ─────────────────────────────────────────────────────────
+// 582. lakehouseQuery              — Ad-hoc query via Python DataFusion
+// 613. goldDailyAgentSummary       — Daily agent summary from Gold tables
+// 726. goldHourlyMetrics           — Hourly transaction metrics
+//
+// ── ETL Pipeline ─────────────────────────────────────────────────────────────
+// 806. triggerEtl                  — Trigger ETL pipeline
+// 879. pipelineStatus              — ETL pipeline status
+//
+// ── Architecture ─────────────────────────────────────────────────────────────
+// Node.js tRPC ──► MinIO S3 (snapshot storage)
+//                ──► Python lakehouse-service :8156 (DataFusion/Iceberg)
+//                ──► PostgreSQL (spatial fallback via haversine)
+// ─────────────────────────────────────────────────────────────────────────────
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";

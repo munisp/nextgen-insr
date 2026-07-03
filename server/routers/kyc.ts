@@ -9,6 +9,39 @@
  *  kyc.listSessions        — admin: list all KYC sessions with pagination
  */
 
+// =============================================================================
+// NAVIGATION GUIDE — KYC Router (834 lines, 17 procedures)
+// =============================================================================
+// KYC/KYB engine bridge for POS Shell: liveness checks, document verification,
+// device fingerprinting, geo-risk correlations, and admin oversight.
+//
+// ── Cooldown Management ──────────────────────────────────────────────────────
+//  64. checkCooldown          — Check KYC cooldown for agent
+//  79. adminClearCooldown     — Clear cooldown (admin)
+//  96. adminGetCooldowns      — List all cooldowns (admin)
+//
+// ── Device Fingerprinting ────────────────────────────────────────────────────
+// 165. registerDevice         — Register device fingerprint
+// 204. recordDeviceAttempt    — Record authentication attempt
+// 246. adminDeviceHistories   — Device history (admin)
+// 251. adminProblematicDevices — Flagged devices (admin)
+//
+// ── Liveness Verification ────────────────────────────────────────────────────
+// 280. startLiveness          — Create liveness challenge
+// 361. submitLivenessFrame    — Submit frame for verification
+//
+// ── Document Verification ────────────────────────────────────────────────────
+// 454. verifyDocument         — OCR document extraction
+// 572. getStatus             — KYC session status for agent
+// 623. listSessions          — All KYC sessions (admin)
+//
+// ── Additional Procedures ────────────────────────────────────────────────────
+// 690. requestDocumentUpload  — Request document upload
+// 754. geoIpCorrelate         — Geo-IP risk check
+// 813. adminGeoCorrelations   — Geo correlation data (admin)
+// 818. adminHighRiskGeo      — High-risk geos list (admin)
+// 825. adminClearGeoData     — Clear geo data (admin)
+// ─────────────────────────────────────────────────────────────────────────────
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
