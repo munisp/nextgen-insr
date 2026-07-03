@@ -152,7 +152,7 @@ export const disputeMediationAIRouter = router({
           } as any);
         } catch (e) {
           // @ts-expect-error middleware type mismatch
-          logger.warn("[DisputeMediation]", e);
+          logger.warn("[DisputeMediation]: " + e);
         }
         return {
           mediationId: `MED-${d.id}`,
@@ -213,7 +213,7 @@ export const disputeMediationAIRouter = router({
           });
         } catch (e) {
           // @ts-expect-error middleware type mismatch
-          logger.warn("[DisputeMediation]", e);
+          logger.warn("[DisputeMediation]: " + e);
         }
         return {
           success: true,
@@ -276,7 +276,7 @@ export const disputeMediationAIRouter = router({
           } as any);
         } catch (e) {
           // @ts-expect-error middleware type mismatch
-          logger.warn("[DisputeMediation]", e);
+          logger.warn("[DisputeMediation]: " + e);
         }
         return {
           success: true,

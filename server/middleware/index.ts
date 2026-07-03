@@ -261,7 +261,7 @@ export function registerGracefulShutdown(server: any) {
       if (pool) await pool.end();
       logger.info("[SHUTDOWN] Database pool closed.");
     } catch (e) {
-      logger.info("[SHUTDOWN] DB pool close error:", e);
+      logger.info("[SHUTDOWN] DB pool close error:: " + e);
     }
 
     process.exit(0);

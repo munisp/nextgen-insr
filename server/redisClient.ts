@@ -43,13 +43,13 @@ async function getDirectClient(): Promise<RedisType | null> {
       enableOfflineQueue: false,
     }) as RedisType;
     _directClient.on("error", (err: Error) => {
-      logger.error("[Redis] Connection error:", err.message);
+      logger.error("[Redis] Connection error:: " + err.message);
     });
     await _directClient.connect();
-    logger.info("[Redis] Direct connection established →", REDIS_URL);
+    logger.info("[Redis] Direct connection established →: " + REDIS_URL);
     return _directClient;
   } catch (err) {
-    logger.warn("[Redis] Could not connect directly:", (err as Error).message);
+    logger.warn("[Redis] Could not connect directly:: " + (err as Error).message);
     return null;
   }
 }

@@ -35,16 +35,13 @@ export function getRedisClient(): Redis {
     _client.on("error", err => {
       // Log but don't crash — app degrades gracefully without Redis
       if (process.env.NODE_ENV !== "test") {
-        logger.warn(
-          "[Redis] Connection error (rate-limit will use memory store):",
-          err.message
-        );
+        logger.warn("[Redis] Connection error (rate-limit will use memory store):: " + err.message);
       }
     });
 
     _client.on("connect", () => {
       if (process.env.NODE_ENV !== "test") {
-        logger.info("[Redis] Connected to", REDIS_URL);
+        logger.info("[Redis] Connected to: " + REDIS_URL);
       }
     });
   }

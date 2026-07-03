@@ -507,7 +507,7 @@ export async function writeAuditLog(data: {
       metadata: data.metadata ?? null,
     });
   } catch (err) {
-    logger.error("[AuditLog] Failed to write:", err);
+    logger.error("[AuditLog] Failed to write:: " + String(err));
   }
 }
 

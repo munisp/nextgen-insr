@@ -44,9 +44,7 @@ async function publishBillingEvent(
   topic: string,
   payload: Record<string, any>
 ) {
-  logger.info(
-    `[Kafka] Publishing to ${topic}:`,
-    JSON.stringify(payload).slice(0, 200)
+  logger.info(`[Kafka] Publishing to ${topic}:: ` + JSON.stringify(payload).slice(0, 200)
   );
   return { published: true, topic, timestamp: Date.now() };
 }
@@ -254,10 +252,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
           `[Monthly Invoice Cron] Tenant ${config.tenantId}: Invoice ${invoice.id} created for ₦${(invoiceAmount / 100).toLocaleString()}`
         );
       } catch (err: any) {
-        logger.error(
-          `[Monthly Invoice Cron] Tenant ${config.tenantId} error:`,
-          err.message
-        );
+        logger.error(`[Monthly Invoice Cron] Tenant ${config.tenantId} error:: ` + err.message);
         results.push({
           tenantId: config.tenantId,
           status: "error",
@@ -282,9 +277,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
       results,
     };
 
-    logger.info(
-      `[Monthly Invoice Cron] Complete:`,
-      JSON.stringify(summary, null, 2).slice(0, 500)
+    logger.info(`[Monthly Invoice Cron] Complete:: ` + JSON.stringify(summary, null, 2).slice(0, 500)
     );
 
     // Publish summary to Kafka
@@ -292,7 +285,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
 
     return res.json(summary);
   } catch (err: any) {
-    logger.error("[Monthly Invoice Cron] Fatal error:", err);
+    logger.error("[Monthly Invoice Cron] Fatal error:: " + String(err));
     return res.status(500).json({
       error: err.message,
       stack: err.stack?.slice(0, 500),

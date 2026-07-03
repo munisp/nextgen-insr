@@ -144,7 +144,7 @@ export const fraudRouter = router({
             })
           )
           .catch((e: unknown) =>
-            logger.error("[Fluvio] Fraud alert event failed:", e)
+            logger.error("[Fluvio] Fraud alert event failed:: " + e)
           );
 
         return { success: true, alertId: alert.id };

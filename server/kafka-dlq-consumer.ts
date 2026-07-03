@@ -106,7 +106,7 @@ async function persistToDlqLog(
       createdAt: new Date(),
     });
   } catch (e: unknown) {
-    logger.error("[DLQ] Failed to persist to DB:", e);
+    logger.error("[DLQ] Failed to persist to DB:: " + e);
   }
 }
 
@@ -117,7 +117,7 @@ async function handleTransactionDlq(payload: DlqPayload): Promise<void> {
 
   if (payload.retryCount < MAX_RETRIES) {
     await retryMessage(payload).catch((e: unknown) =>
-      logger.error("[DLQ] Retry failed:", e)
+      logger.error("[DLQ] Retry failed:: " + e)
     );
     await persistToDlqLog(payload, "pending_retry");
     return;
@@ -222,7 +222,7 @@ export async function startDlqConsumer(): Promise<void> {
             },
           ]);
         } catch (err: unknown) {
-          logger.error(`[DLQ] Error processing message from ${topic}:`, err);
+          logger.error(`[DLQ] Error processing message from ${topic}:: ` + String(err));
           // Do not commit — message will be reprocessed on next poll
         }
       },
@@ -230,7 +230,7 @@ export async function startDlqConsumer(): Promise<void> {
 
     console.info("[DLQ] ✅ DLQ consumer started — monitoring 3 topics");
   } catch (err: unknown) {
-    logger.error("[DLQ] Failed to start DLQ consumer:", err);
+    logger.error("[DLQ] Failed to start DLQ consumer:: " + String(err));
   }
 }
 

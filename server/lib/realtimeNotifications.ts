@@ -69,7 +69,7 @@ class InMemoryPubSub {
       try {
         cb(channel, message);
       } catch (e) {
-        logger.error("[PubSub] Subscriber error:", e);
+        logger.error("[PubSub] Subscriber error:: " + e);
       }
     }
     return subs.size;
@@ -295,7 +295,7 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
         }
       }
     } catch (e) {
-      logger.error("[Notifications] Failed to parse pub/sub message:", e);
+      logger.error("[Notifications] Failed to parse pub/sub message:: " + e);
     }
   };
 

@@ -302,7 +302,7 @@ async function screenCompliance(ctx: PipelineContext): Promise<void> {
     if (err.message?.startsWith("SANCTIONS_BLOCKED")) throw err;
     // Log screening failure but don't block — regulatory requirement is to screen,
     // temporary unavailability should not halt all transactions
-    logger.warn("[Compliance] Screening service unavailable:", err.message);
+    logger.warn("[Compliance] Screening service unavailable:: " + err.message);
     ctx.complianceFlags.push("SCREENING_UNAVAILABLE");
   }
 

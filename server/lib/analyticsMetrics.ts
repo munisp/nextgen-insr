@@ -119,7 +119,7 @@ export async function recordMetric(
     }
   } catch (err) {
     // Non-fatal — analytics should never break the main flow
-    logger.warn("[analytics] recordMetric error:", err);
+    logger.warn("[analytics] recordMetric error:: " + String(err));
   }
 }
 

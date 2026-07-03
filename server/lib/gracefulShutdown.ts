@@ -30,7 +30,7 @@ export function setupGracefulShutdown(server: Server) {
         logger.info("[Shutdown] Database connections closed");
       }
     } catch (e) {
-      logger.error("[Shutdown] DB close error:", (e as Error).message);
+      logger.error("[Shutdown] DB close error:: " + (e as Error).message);
     }
 
     // 3. Close Redis

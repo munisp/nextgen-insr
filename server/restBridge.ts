@@ -116,7 +116,7 @@ function ok(res: Response, data: unknown) {
 }
 
 function err(res: Response, e: unknown, status = 500) {
-  logger.error("[REST Bridge]", e);
+  logger.error("[REST Bridge]: " + e);
   return res.status(status).json({ error: String(e) });
 }
 

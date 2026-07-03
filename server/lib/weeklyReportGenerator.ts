@@ -543,7 +543,7 @@ export async function generateWeeklyReport(
       });
       logger.info(`[WeeklyReport] Report ${report.id} delivered to owner`);
     } catch (err) {
-      logger.warn("[WeeklyReport] Failed to notify owner:", err);
+      logger.warn("[WeeklyReport] Failed to notify owner:: " + String(err));
     }
   }
 
@@ -583,7 +583,7 @@ export function updateScheduleConfig(
   updates: Partial<ReportScheduleConfig>
 ): ReportScheduleConfig {
   scheduleConfig = { ...scheduleConfig, ...updates };
-  logger.info("[WeeklyReport] Schedule updated:", scheduleConfig);
+  logger.info("[WeeklyReport] Schedule updated:: " + scheduleConfig);
   return { ...scheduleConfig };
 }
 
@@ -632,7 +632,7 @@ export function startWeeklyReportCron() {
         try {
           await generateWeeklyReport(true);
         } catch (err) {
-          logger.error("[WeeklyReport] Cron generation failed:", err);
+          logger.error("[WeeklyReport] Cron generation failed:: " + String(err));
         }
       }
     },

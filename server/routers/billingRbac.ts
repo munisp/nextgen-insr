@@ -155,9 +155,7 @@ export async function checkBillingPermission(
         return result.can === "CHECK_RESULT_ALLOWED";
       }
     } catch (e) {
-      logger.warn(
-        "[BillingRBAC] Permify check failed, using local only:",
-        (e as Error).message
+      logger.warn("[BillingRBAC] Permify check failed, using local only:: " + (e as Error).message
       );
     }
   }

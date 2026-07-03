@@ -79,7 +79,7 @@ async function startServer() {
   // ── Vault secret injection (must run before any env-dependent code) ───────────
   // Falls back gracefully when Vault is unavailable (dev/test without Docker).
   await loadVaultSecrets().catch(err =>
-    logger.warn("[Vault] Secret injection skipped:", (err as Error).message)
+    logger.warn("[Vault] Secret injection skipped:: " + (err as Error).message)
   );
 
   const app = express();
@@ -92,7 +92,7 @@ async function startServer() {
     app.use(shutdownMiddleware);
     logger.info("[Shutdown] Graceful shutdown handler registered");
   } catch (e) {
-    logger.warn("[Shutdown] Setup failed:", (e as any).message);
+    logger.warn("[Shutdown] Setup failed:: " + (e as any).message);
   }
   // ── Sprint 70: DB Pool Monitor ──────────────────────────────────────
   try {
@@ -100,7 +100,7 @@ async function startServer() {
     startPoolMonitor(60000);
     logger.info("[DBPool] Connection pool monitoring started");
   } catch (e) {
-    logger.warn("[DBPool] Monitor failed:", (e as any).message);
+    logger.warn("[DBPool] Monitor failed:: " + (e as any).message);
   }
   // ── Sprint 70: Cron Jobs ──────────────────────────────────────────
   try {
@@ -115,7 +115,7 @@ async function startServer() {
       "[Cron] Dispute auto-escalation (15min) and KYC expiry check (daily) registered"
     );
   } catch (e) {
-    logger.warn("[Cron] Registration failed:", (e as any).message);
+    logger.warn("[Cron] Registration failed:: " + (e as any).message);
   }
 
   // Trust reverse proxy (nginx, Cloudflare, etc.) for accurate IP detection
@@ -314,7 +314,7 @@ async function startServer() {
         );
         return handleStripeWebhook(req, res);
       } catch (err: any) {
-        logger.error("[Stripe Webhook] Handler load error:", err.message);
+        logger.error("[Stripe Webhook] Handler load error:: " + err.message);
         return res.status(500).json({ error: "Webhook handler unavailable" });
       }
     }
@@ -334,9 +334,7 @@ async function startServer() {
       "[Security] Hardening middleware applied (CSP, HSTS, CSRF, XSS, SQLi, rate limiting, CORS)"
     );
   } catch (secErr) {
-    logger.warn(
-      "[Security] Middleware load failed (non-fatal):",
-      (secErr as any).message
+    logger.warn("[Security] Middleware load failed (non-fatal):: " + (secErr as any).message
     );
   }
 
@@ -345,7 +343,7 @@ async function startServer() {
     app.use(logMod.structuredLoggingMiddleware);
     logger.info("[Middleware] Structured logging enabled");
   } catch (e) {
-    logger.warn("[Middleware] Structured logging failed:", (e as any).message);
+    logger.warn("[Middleware] Structured logging failed:: " + (e as any).message);
   }
 
   try {
@@ -354,7 +352,7 @@ async function startServer() {
     app.use("/api", verMod.apiVersionMiddleware);
     logger.info("[Middleware] API versioning enabled");
   } catch (e) {
-    logger.warn("[Middleware] API versioning failed:", (e as any).message);
+    logger.warn("[Middleware] API versioning failed:: " + (e as any).message);
   }
 
   try {
@@ -362,9 +360,7 @@ async function startServer() {
     app.use(compMod.responseCompressionMiddleware);
     logger.info("[Middleware] Response compression enabled");
   } catch (e) {
-    logger.warn(
-      "[Middleware] Response compression failed:",
-      (e as any).message
+    logger.warn("[Middleware] Response compression failed:: " + (e as any).message
     );
   }
 
@@ -376,9 +372,7 @@ async function startServer() {
       "[Security] Multi-language security orchestrator registered (Rust DDoS, Go PBAC, Python Fraud ML)"
     );
   } catch (e) {
-    logger.warn(
-      "[Security] Orchestrator load failed (non-fatal):",
-      (e as any).message
+    logger.warn("[Security] Orchestrator load failed (non-fatal):: " + (e as any).message
     );
   }
 
@@ -390,9 +384,7 @@ async function startServer() {
       "[Security] Financial attack prevention registered (replay, card-testing, ATO, collusion, exfiltration)"
     );
   } catch (e) {
-    logger.warn(
-      "[Security] Financial attack prevention failed (non-fatal):",
-      (e as any).message
+    logger.warn("[Security] Financial attack prevention failed (non-fatal):: " + (e as any).message
     );
   }
 
@@ -500,10 +492,10 @@ async function startServer() {
     async (req, res) => {
       try {
         const { event, data } = req.body ?? {};
-        logger.info(`[Webhook/TB] event=${event}`, data);
+        logger.info(`[Webhook/TB] event=${event}: ` + data);
         res.json({ received: true });
       } catch (err) {
-        logger.error("[Webhook/TB] Handler error:", err);
+        logger.error("[Webhook/TB] Handler error:: " + String(err));
         res.status(500).json({ error: "Webhook processing failed" });
       }
     }
@@ -517,10 +509,10 @@ async function startServer() {
     async (req, res) => {
       try {
         const { event, data } = req.body ?? {};
-        logger.info(`[Webhook/Termii] event=${event}`, data);
+        logger.info(`[Webhook/Termii] event=${event}: ` + data);
         res.json({ received: true });
       } catch (err) {
-        logger.error("[Webhook/Termii] Handler error:", err);
+        logger.error("[Webhook/Termii] Handler error:: " + String(err));
         res.status(500).json({ error: "Webhook processing failed" });
       }
     }
@@ -534,10 +526,10 @@ async function startServer() {
     async (req, res) => {
       try {
         const { event, data } = req.body ?? {};
-        logger.info(`[Webhook/Partner] event=${event}`, data);
+        logger.info(`[Webhook/Partner] event=${event}: ` + data);
         res.json({ received: true });
       } catch (err) {
-        logger.error("[Webhook/Partner] Handler error:", err);
+        logger.error("[Webhook/Partner] Handler error:: " + String(err));
         res.status(500).json({ error: "Webhook processing failed" });
       }
     }
@@ -710,7 +702,7 @@ async function startServer() {
         fraudAlertBus.on("alert", onAlert);
       })
       .catch(err =>
-        logger.warn("[Fraud SSE] Could not load fraudDetectionEngine:", err)
+        logger.warn("[Fraud SSE] Could not load fraudDetectionEngine:: " + String(err))
       );
 
     // Clean up on disconnect
@@ -749,9 +741,7 @@ async function startServer() {
     // Start Temporal worker for SettlementWorkflow, FloatReplenishmentWorkflow, etc.
     // Runs in-process; in production it can also be a separate Docker container.
     startTemporalWorker().catch(err =>
-      logger.warn(
-        "[Temporal] Worker startup skipped (Temporal server not available):",
-        (err as Error).message
+      logger.warn("[Temporal] Worker startup skipped (Temporal server not available):: " + (err as Error).message
       )
     );
   });
@@ -777,7 +767,7 @@ async function startServer() {
     logger.info("[Server] Phase 2: Draining in-flight HTTP requests…");
     server.close(async err => {
       if (err) {
-        logger.error("[Server] Error during HTTP shutdown:", err);
+        logger.error("[Server] Error during HTTP shutdown:: " + String(err));
       }
       logger.info("[Server] HTTP server closed.");
 
@@ -791,7 +781,7 @@ async function startServer() {
           logger.info("[Server] Database pool closed.");
         }
       } catch (e) {
-        logger.error("[Server] Error closing DB pool:", e);
+        logger.error("[Server] Error closing DB pool:: " + e);
       }
 
       // Phase 4: Close Redis connections
@@ -804,7 +794,7 @@ async function startServer() {
           logger.info("[Server] Redis connection closed.");
         }
       } catch (e) {
-        logger.error("[Server] Error closing Redis:", e);
+        logger.error("[Server] Error closing Redis:: " + e);
       }
 
       const elapsed = Date.now() - shutdownStart;
@@ -829,7 +819,7 @@ async function startServer() {
   process.on("SIGHUP", () => {
     import("../lib/mtlsAgent.js")
       .then(({ resetMtlsAgent }) => resetMtlsAgent())
-      .catch(err => logger.error("[mTLS] SIGHUP reload failed:", err));
+      .catch(err => logger.error("[mTLS] SIGHUP reload failed:: " + String(err)));
   });
 }
 

@@ -76,7 +76,7 @@ export async function recordBillingAudit(params: {
   if (kafkaUrl) {
     try {
       // In production, use kafkajs producer
-      logger.info(`[BillingAudit] Kafka publish: billing.audit.${action}`, {
+      logger.info(`[BillingAudit] Kafka publish: billing.audit.${action}: ` + {
         auditId: entry.id,
         tenantId: ctx.tenantId,
         userId: ctx.userId,
@@ -86,9 +86,7 @@ export async function recordBillingAudit(params: {
         timestamp: entry.createdAt,
       } as any);
     } catch (e) {
-      logger.warn(
-        "[BillingAudit] Kafka publish failed:",
-        (e as Error).message
+      logger.warn("[BillingAudit] Kafka publish failed:: " + (e as Error).message
       );
     }
   }
@@ -143,7 +141,7 @@ async function sendBillingNotifications(
         .set({ notificationSent: true })
         .where(eq(billingAuditLog.id, entry.id));
     } catch (e) {
-      logger.warn("[BillingAudit] Notification failed:", (e as Error).message);
+      logger.warn("[BillingAudit] Notification failed:: " + (e as Error).message);
     }
   }
 }

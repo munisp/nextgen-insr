@@ -61,6 +61,6 @@ export async function writeEnhancedAuditLog(
       userAgent: entry.userAgent ?? null,
     });
   } catch (err) {
-    logger.error("[AuditEnhanced] Write failed:", (err as Error).message);
+    logger.error("[AuditEnhanced] Write failed:: " + (err as Error).message);
   }
 }

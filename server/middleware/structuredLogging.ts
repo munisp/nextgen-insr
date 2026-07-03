@@ -32,11 +32,11 @@ export function structuredLoggingMiddleware(
     };
 
     if (res.statusCode >= 500) {
-      logger.error("[REQ]", JSON.stringify(logEntry));
+      logger.error("[REQ]: " + JSON.stringify(logEntry));
     } else if (res.statusCode >= 400) {
-      logger.warn("[REQ]", JSON.stringify(logEntry));
+      logger.warn("[REQ]: " + JSON.stringify(logEntry));
     } else if (latency > 5000) {
-      logger.warn("[SLOW]", JSON.stringify(logEntry));
+      logger.warn("[SLOW]: " + JSON.stringify(logEntry));
     }
   });
 

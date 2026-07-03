@@ -62,12 +62,10 @@ export function startPoolMonitor(intervalMs = 60000) {
   monitorInterval = setInterval(async () => {
     const stats = await getPoolStats();
     if (stats.utilizationPercent > 80) {
-      logger.warn("[DBPool] High utilization:", JSON.stringify(stats));
+      logger.warn("[DBPool] High utilization:: " + JSON.stringify(stats));
     }
     if (stats.waitingClients > 5) {
-      logger.error(
-        "[DBPool] Connection queue building up:",
-        JSON.stringify(stats)
+      logger.error("[DBPool] Connection queue building up:: " + JSON.stringify(stats)
       );
     }
   }, intervalMs);

@@ -319,7 +319,7 @@ export const agentManagementRouter = router({
             })
           )
           .catch((e: unknown) =>
-            logger.error("[Fluvio] Float event failed:", e)
+            logger.error("[Fluvio] Float event failed:: " + e)
           );
 
         // ── VAPID push notification to agent (fire-and-forget) ──────────────────
@@ -344,7 +344,7 @@ export const agentManagementRouter = router({
               });
             }
           } catch (e) {
-            logger.error("[Push] Float approval notification failed:", e);
+            logger.error("[Push] Float approval notification failed:: " + e);
           }
         })();
 

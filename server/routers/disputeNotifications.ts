@@ -173,7 +173,7 @@ export const disputeNotificationsRouter = router({
         });
       } catch (e) {
         // @ts-expect-error auto-fix
-        logger.warn("[DisputeNotifications]", e);
+        logger.warn("[DisputeNotifications]: " + e);
       }
       return {
         success: true,

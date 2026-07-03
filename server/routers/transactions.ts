@@ -246,7 +246,7 @@ async function checkVelocityLimits(
 
     return { allowed: true };
   } catch (err) {
-    logger.error("[Velocity] Check error (fail-open):", err);
+    logger.error("[Velocity] Check error (fail-open):: " + String(err));
     return { allowed: true };
   }
 }
@@ -295,7 +295,7 @@ async function validateDeviceToken(
     }
     return { valid: true };
   } catch (err) {
-    logger.error("[DeviceToken] Validation error (fail-open):", err);
+    logger.error("[DeviceToken] Validation error (fail-open):: " + String(err));
     return { valid: true };
   }
 }
@@ -563,7 +563,7 @@ export const transactionsRouter = router({
           }
         } catch (geoErr) {
           if (geoErr instanceof TRPCError) throw geoErr;
-          logger.error("[Geofence] Check error (fail-open):", geoErr);
+          logger.error("[Geofence] Check error (fail-open):: " + geoErr);
         }
 
         // ── Core processing ────────────────────────────────────────────────────
@@ -665,9 +665,7 @@ export const transactionsRouter = router({
             });
           }
         } catch (brErr) {
-          logger.warn(
-            "[BusinessRules] Engine error (fail-open):",
-            (brErr as Error).message
+          logger.warn("[BusinessRules] Engine error (fail-open):: " + (brErr as Error).message
           );
         }
         const fee =
@@ -738,9 +736,7 @@ export const transactionsRouter = router({
               );
             }
           } catch (floatErr) {
-            logger.warn(
-              "[float] Platform settle sync failed (fail-open):",
-              (floatErr as Error).message
+            logger.warn("[float] Platform settle sync failed (fail-open):: " + (floatErr as Error).message
             );
           }
         } else if (FLOAT_DEBIT_TYPES.has(input.type)) {
@@ -761,9 +757,7 @@ export const transactionsRouter = router({
               );
             }
           } catch (floatErr) {
-            logger.warn(
-              "[float] Platform utilize sync failed (fail-open):",
-              (floatErr as Error).message
+            logger.warn("[float] Platform utilize sync failed (fail-open):: " + (floatErr as Error).message
             );
           }
         }
@@ -842,7 +836,7 @@ export const transactionsRouter = router({
                       .set({ smsSent: true })
                       .where(eq(transactions.id, tx.id))
                       .catch(e =>
-                        logger.error("[SMS] smsSent update failed:", e)
+                        logger.error("[SMS] smsSent update failed:: " + e)
                       );
                   }
                 });
@@ -880,7 +874,7 @@ export const transactionsRouter = router({
             )
           )
           .catch((e: unknown) =>
-            logger.error("[Kafka] Event publish failed:", e)
+            logger.error("[Kafka] Event publish failed:: " + e)
           );
 
         // ── Fluvio stream event (fire-and-forget, fail-open) ──────────────────────
@@ -898,7 +892,7 @@ export const transactionsRouter = router({
             })
           )
           .catch((e: unknown) =>
-            logger.error("[Fluvio] Transaction event failed:", e)
+            logger.error("[Fluvio] Transaction event failed:: " + e)
           );
 
         // ── Real-Time Fraud Detection (fire-and-forget, fail-open) ─────────────────────
@@ -923,14 +917,12 @@ export const transactionsRouter = router({
                 );
               }
             } catch (fraudErr) {
-              logger.error(
-                "[Fraud] Detection failed (fail-open):",
-                (fraudErr as Error).message
+              logger.error("[Fraud] Detection failed (fail-open):: " + (fraudErr as Error).message
               );
             }
           })
           .catch((e: unknown) =>
-            logger.error("[Fraud] Engine import failed:", e)
+            logger.error("[Fraud] Engine import failed:: " + e)
           );
 
         return {
@@ -1904,7 +1896,7 @@ export const transactionsRouter = router({
             content: `Alert #${alert.id} (${alert.severity}) escalated by ${ctx.user.name ?? String(ctx.user.id)}. Reason: ${alert.reason ?? "N/A"}. Amount: \u20a6${alert.amount ?? 0}.`,
           });
         } catch (e) {
-          logger.error("[escalateAlert] notifyOwner failed:", e);
+          logger.error("[escalateAlert] notifyOwner failed:: " + e);
         }
         await writeAuditLog({
           agentId: agent.id,
@@ -1966,7 +1958,7 @@ export const transactionsRouter = router({
               content: `Alert #${alert.id} (${alert.severity}) was snoozed but not resolved. Auto-escalated at ${now.toISOString()}.`,
             });
           } catch (e) {
-            logger.error("[autoEscalateSnoozedAlerts] notifyOwner failed:", e);
+            logger.error("[autoEscalateSnoozedAlerts] notifyOwner failed:: " + e);
           }
         }
         return { escalated: expired.length };
@@ -2383,9 +2375,7 @@ export const transactionsRouter = router({
           };
         }
       } catch (err) {
-        logger.warn(
-          "[float] Platform getBalance failed, using local DB:",
-          (err as Error).message
+        logger.warn("[float] Platform getBalance failed, using local DB:: " + (err as Error).message
         );
       }
       // Local DB fallback
@@ -2437,9 +2427,7 @@ export const transactionsRouter = router({
             return { source: "platform" as const, transactions: result };
           }
         } catch (err) {
-          logger.warn(
-            "[float] Platform getTransactions failed, using local DB:",
-            (err as Error).message
+          logger.warn("[float] Platform getTransactions failed, using local DB:: " + (err as Error).message
           );
         }
         // Local DB fallback — return agent's recent transactions
@@ -2489,9 +2477,7 @@ export const transactionsRouter = router({
             );
             return { source: "platform" as const, data: result };
           } catch (err) {
-            logger.warn(
-              "[analytics] Platform unavailable, falling back to local DB:",
-              (err as Error).message
+            logger.warn("[analytics] Platform unavailable, falling back to local DB:: " + (err as Error).message
             );
           }
         }

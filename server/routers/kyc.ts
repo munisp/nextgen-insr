@@ -574,7 +574,7 @@ export const kycRouter = router({
             })
           )
           .catch((e: unknown) =>
-            logger.error("[Fluvio] KYC event failed:", e)
+            logger.error("[Fluvio] KYC event failed:: " + e)
           );
 
         return {

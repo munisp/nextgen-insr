@@ -1,9 +1,9 @@
-// TypeScript enabled — Sprint 96 security audit
 /**
  * Threshold Alert Notification Dispatcher
  * Connects breach events from the data threshold alert system to email and SMS services.
  * Supports cooldown periods, notification history, and multi-channel dispatch.
  */
+import { logger } from '../_core/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Severity = "info" | "warning" | "critical";
@@ -246,8 +246,6 @@ async function sendSmsNotification(
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   // In production, this calls:
   // import { sendSms } from './smsService';
-  // import { sendSms } from './smsService';
-import { logger } from '../_core/logger';
   // return sendSms({ to, message, provider: 'auto' });
   logger.info(`[ThresholdDispatcher] SMS → ${to}: ${message.slice(0, 50)}...`);
   return {
@@ -269,9 +267,7 @@ async function sendWebhookNotification(
   _url: string,
   payload: object
 ): Promise<{ success: boolean }> {
-  logger.info(
-    `[ThresholdDispatcher] WEBHOOK:`,
-    JSON.stringify(payload).slice(0, 100)
+  logger.info(`[ThresholdDispatcher] WEBHOOK:: ` + JSON.stringify(payload).slice(0, 100)
   );
   return { success: true };
 }

@@ -372,7 +372,7 @@ export const developerPortalRouter = router({
           .set({ lastUsedAt: new Date() })
           .where(eq(apiKeys.id, key.id))
           .catch((e: unknown) =>
-            logger.error("[DevPortal] lastUsedAt update failed:", e)
+            logger.error("[DevPortal] lastUsedAt update failed:: " + e)
           );
 
         return {

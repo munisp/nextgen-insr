@@ -48,7 +48,7 @@ export function setupScheduledEndpoint(app: Express): void {
       const handler = scheduledHandlers.get(action);
       if (!handler) {
         // Default handler: log and acknowledge
-        logger.info(`[Scheduled] Received task: ${action}`, payload);
+        logger.info(`[Scheduled] Received task: ${action}: ` + payload);
         return res.json({
           success: true,
           message: `Scheduled task '${action}' acknowledged (no handler registered)`,
@@ -59,7 +59,7 @@ export function setupScheduledEndpoint(app: Express): void {
       const result = await handler(payload);
       return res.json(result);
     } catch (error) {
-      logger.error("[Scheduled] Task error:", error);
+      logger.error("[Scheduled] Task error:: " + String(error));
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : "Internal error",

@@ -32,7 +32,7 @@ export const posFirmwareOTARouter = router({
         if (rows[0]?.value) {
           try {
             versions = JSON.parse(String(rows[0].value));
-          } catch (err) { logger.error("[posFirmwareOTA] operation failed:", err); }
+          } catch (err) { logger.error("[posFirmwareOTA] operation failed:: " + String(err)); }
         }
 
         return { versions };
@@ -82,7 +82,7 @@ export const posFirmwareOTARouter = router({
         if (existing[0]?.value) {
           try {
             versions = JSON.parse(String(existing[0].value));
-          } catch (err) { logger.error("[posFirmwareOTA] operation failed:", err); }
+          } catch (err) { logger.error("[posFirmwareOTA] operation failed:: " + String(err)); }
         }
         versions.unshift(entry);
 
@@ -188,7 +188,7 @@ export const posFirmwareOTARouter = router({
         }> = [];
         try {
           versions = JSON.parse(String(rows[0].value));
-        } catch (err) { logger.error("[posFirmwareOTA] operation failed:", err); }
+        } catch (err) { logger.error("[posFirmwareOTA] operation failed:: " + String(err)); }
 
         const latest = versions.find(
           v => v.status === "released" || v.status === "staged"

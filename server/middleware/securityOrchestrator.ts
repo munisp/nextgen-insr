@@ -53,10 +53,7 @@ async function fetchWithTimeout(
     } else {
       // Service is down — expected in dev, logged in prod
       if (process.env.NODE_ENV === "production") {
-        logger.error(
-          `[SecurityOrchestrator] Failed to reach ${url}:`,
-          err.message
-        );
+        logger.error(`[SecurityOrchestrator] Failed to reach ${url}:: ` + err.message);
       }
     }
     return null;
@@ -265,7 +262,7 @@ function extractAmount(req: Request): number {
     if (req.body && typeof req.body === "object") {
       return parseFloat(req.body.amount || req.body.input?.amount || "0") || 0;
     }
-  } catch (err) { logger.error("[securityOrchestrator] operation failed:", err); }
+  } catch (err) { logger.error("[securityOrchestrator] operation failed:: " + err); }
   return 0;
 }
 
@@ -428,7 +425,7 @@ export function applySecurityOrchestrator(app: Express): void {
     } catch (err) {
       // Fraud scoring failure should not block transactions in fail-open mode
       if (!FAIL_OPEN) {
-        logger.error("[FraudML] Scoring failed, blocking transaction:", err);
+        logger.error("[FraudML] Scoring failed, blocking transaction:: " + err);
         return res
           .status(503)
           .json({ error: "Fraud scoring service unavailable" });

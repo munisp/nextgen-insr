@@ -18,8 +18,6 @@
  *
  * Usage:
  *   import { enqueueEmail } from "./emailQueue";
- *   import { enqueueEmail } from "./emailQueue";
-import { logger } from '../_core/logger';
  *
  *   await enqueueEmail({
  *     to: "agent@example.com",
@@ -27,6 +25,7 @@ import { logger } from '../_core/logger';
  *     html: "<p>Your transaction of ₦5,000 was successful.</p>",
  *   });
  */
+import { logger } from '../_core/logger';
 
 interface EmailJob {
   id: string;
@@ -114,7 +113,7 @@ export async function sendEmailNow(opts: {
 function startWorker() {
   workerRunning = true;
   processQueue().catch(err => {
-    logger.error("[EmailQueue] Worker crashed:", err);
+    logger.error("[EmailQueue] Worker crashed:: " + String(err));
     workerRunning = false;
   });
 }

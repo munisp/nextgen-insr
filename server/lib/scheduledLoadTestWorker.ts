@@ -134,7 +134,7 @@ export async function checkAndRunScheduledTest(
 
     return { ran: true, result };
   } catch (err: any) {
-    logger.error(`[ScheduledLoadTest] Failed:`, err.message);
+    logger.error(`[ScheduledLoadTest] Failed:: ` + err.message);
     await notifyOwner({
       title: "❌ Scheduled Load Test Failed",
       content: `Error: ${err.message}`,

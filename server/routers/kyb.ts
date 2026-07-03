@@ -67,7 +67,7 @@ async function serviceCall<T = any>(
     }
     return (await res.json()) as T;
   } catch (err) {
-    logger.warn(`[KYB] ${method} ${url} failed:`, err);
+    logger.warn(`[KYB] ${method} ${url} failed:: ` + String(err));
     return null;
   }
 }

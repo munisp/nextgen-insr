@@ -71,7 +71,7 @@ export async function emitObservabilityEvent(
       event: `${ctx.path}.${ctx.success ? "success" : "failure"}`,
       ...payload,
     });
-  } catch (err) { logger.error("[observabilityMiddleware] operation failed:", err); }
+  } catch (err) { logger.error("[observabilityMiddleware] operation failed:: " + err); }
 
   // 2. Redis — cache last-call timestamp for rate limiting and monitoring
   try {
@@ -84,14 +84,14 @@ export async function emitObservabilityEvent(
       }),
       600 // 10 min TTL
     );
-  } catch (err) { logger.error("[observabilityMiddleware] operation failed:", err); }
+  } catch (err) { logger.error("[observabilityMiddleware] operation failed:: " + err); }
 
   // 3. Fluvio — real-time streaming for dashboards and alerting
   try {
     await fluvioProduce(topic, {
       value: JSON.stringify(payload),
     });
-  } catch (err) { logger.error("[observabilityMiddleware] operation failed:", err); }
+  } catch (err) { logger.error("[observabilityMiddleware] operation failed:: " + err); }
 
   // 4. TigerBeetle — immutable audit ledger entry (zero-amount transfer for tracking)
   try {
@@ -100,7 +100,7 @@ export async function emitObservabilityEvent(
       creditAccountId: "2", // audit sink account
       amount: 0, // zero-amount = audit-only entry
     });
-  } catch (err) { logger.error("[observabilityMiddleware] operation failed:", err); }
+  } catch (err) { logger.error("[observabilityMiddleware] operation failed:: " + err); }
 }
 
 /**

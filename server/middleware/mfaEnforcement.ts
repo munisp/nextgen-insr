@@ -79,10 +79,7 @@ export const requireMfa = async ({
   } catch (err) {
     if (err instanceof TRPCError) throw err;
     // If we can't verify the session AMR, fall back to the DB flag only
-    logger.warn(
-      "[MFA] Could not verify AMR claim, relying on DB mfaEnabled flag:",
-      err
-    );
+    logger.warn("[MFA] Could not verify AMR claim, relying on DB mfaEnabled flag:: " + err);
   }
 
   return next({ ctx });
@@ -127,7 +124,7 @@ export async function requireMfaExpress(
 
     next();
   } catch (err) {
-    logger.error("[MFA] Express middleware error:", err);
+    logger.error("[MFA] Express middleware error:: " + err);
     res.status(500).json({ error: "MFA verification failed" });
   }
 }

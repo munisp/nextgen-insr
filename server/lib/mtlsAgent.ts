@@ -68,7 +68,7 @@ export function getMtlsAgent(): https.Agent | null {
     console.info(`[mTLS] Agent initialised — cert dir: ${CERT_DIR}`);
     return _agent;
   } catch (err) {
-    logger.error("[mTLS] Failed to load certificates:", err);
+    logger.error("[mTLS] Failed to load certificates:: " + String(err));
     _agent = null;
     return null;
   }

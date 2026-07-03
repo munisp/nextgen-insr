@@ -78,10 +78,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
     await db.update(agents).set({ floatLocked: true });
     logger.info("[settlement] Float locked for all agents");
   } catch (err) {
-    logger.error(
-      "[settlement] Failed to lock floats — aborting settlement:",
-      err
-    );
+    logger.error("[settlement] Failed to lock floats — aborting settlement:: " + err);
     return {
       agentCount: 0,
       smsSent: 0,
@@ -174,10 +171,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
 
       successCount++;
     } catch (err) {
-      logger.error(
-        `[settlement] Error processing agent ${agent.agentCode}:`,
-        err
-      );
+      logger.error(`[settlement] Error processing agent ${agent.agentCode}:: ` + err);
       errors.push(`${agent.agentCode}: ${String(err)}`);
     }
   }
@@ -188,10 +182,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
     logger.info("[settlement] Float unlocked for all agents");
   } catch (err) {
     // Critical: if unlock fails, agents cannot transact. Log prominently.
-    logger.error(
-      "[settlement] CRITICAL: Failed to unlock floats after settlement:",
-      err
-    );
+    logger.error("[settlement] CRITICAL: Failed to unlock floats after settlement:: " + err);
     errors.push(`Float unlock failed: ${String(err)}`);
   }
 
@@ -214,9 +205,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
     }
   } catch (platformErr) {
     // Non-fatal: local settlement already completed; platform sync is best-effort
-    logger.warn(
-      "[settlement] Platform settlement trigger failed (fail-open):",
-      (platformErr as Error).message
+    logger.warn("[settlement] Platform settlement trigger failed (fail-open):: " + (platformErr as Error).message
     );
     errors.push(`Platform trigger failed: ${(platformErr as Error).message}`);
   }
@@ -256,14 +245,14 @@ async function runAutoEscalation(): Promise<void> {
           content: `Alert #${alert.id} (${alert.severity}) was snoozed but not resolved. Auto-escalated at ${now.toISOString()}.`,
         });
       } catch (e) {
-        logger.error("[autoEscalation] notifyOwner failed:", e);
+        logger.error("[autoEscalation] notifyOwner failed:: " + e);
       }
     }
     logger.info(
       `[autoEscalation] Escalated ${expired.length} snoozed alert(s)`
     );
   } catch (err) {
-    logger.error("[autoEscalation] Error:", err);
+    logger.error("[autoEscalation] Error:: " + String(err));
   }
 }
 
@@ -340,7 +329,7 @@ async function runWeeklyComplianceReport(): Promise<void> {
       pdfUrl = uploaded.url;
       logger.info(`[complianceReport] PDF uploaded: ${pdfUrl}`);
     } catch (pdfErr) {
-      logger.error("[complianceReport] PDF generation/upload failed:", pdfErr);
+      logger.error("[complianceReport] PDF generation/upload failed:: " + pdfErr);
     }
 
     // Store in compliance_reports table
@@ -402,7 +391,7 @@ async function runWeeklyComplianceReport(): Promise<void> {
       `[complianceReport] Weekly report complete — ${allAlerts.length} alerts`
     );
   } catch (err) {
-    logger.error("[complianceReport] Error:", err);
+    logger.error("[complianceReport] Error:: " + String(err));
   }
 }
 
@@ -417,7 +406,7 @@ export function registerSettlementCron(): void {
     try {
       await runDailySettlement();
     } catch (err) {
-      logger.error("[settlement] Unhandled error in settlement cron:", err);
+      logger.error("[settlement] Unhandled error in settlement cron:: " + String(err));
     }
   });
   logger.info(
@@ -573,7 +562,7 @@ export async function runDeadLetterDigest(): Promise<void> {
       `[deadLetterDigest] Notified owner of ${failedItems.length} dead-letter item(s)`
     );
   } catch (err) {
-    logger.error("[deadLetterDigest] Error:", err);
+    logger.error("[deadLetterDigest] Error:: " + String(err));
   }
 }
 
@@ -694,7 +683,7 @@ export async function runWeeklyConnectivitySlaReport(): Promise<void> {
       `[connectivitySla] SLA report sent: ${ranked.length} agents, ${belowSla.length} below SLA`
     );
   } catch (err) {
-    logger.error("[connectivitySla] Error:", err);
+    logger.error("[connectivitySla] Error:: " + String(err));
   }
 }
 

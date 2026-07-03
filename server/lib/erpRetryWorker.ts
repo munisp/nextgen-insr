@@ -152,7 +152,7 @@ async function runRetryBatch(): Promise<void> {
             title: `ERP Sync Dead Letter: ${record.entityType} #${record.entityId}`,
             content: `ERP sync record ${record.id} (${record.entityType} #${record.entityId}) has exhausted all ${record.maxRetries} retry attempts.\n\nLast error: HTTP ${res.status}: ${errText.slice(0, 200)}\n\nAction required: Check ERP connectivity and manually re-queue this record from the ERP Config tab.`,
           }).catch((e: unknown) =>
-            logger.error("[ERP Retry] Dead letter notification failed:", e)
+            logger.error("[ERP Retry] Dead letter notification failed:: " + e)
           );
         }
       }
@@ -177,7 +177,7 @@ async function runRetryBatch(): Promise<void> {
           title: `ERP Sync Dead Letter: ${record.entityType} #${record.entityId}`,
           content: `ERP sync record ${record.id} (${record.entityType} #${record.entityId}) has exhausted all ${record.maxRetries} retry attempts.\n\nLast error: ${msg.slice(0, 200)}\n\nAction required: Check ERP connectivity and manually re-queue this record from the ERP Config tab.`,
         }).catch((e: unknown) =>
-          logger.error("[ERP Retry] Dead letter notification failed:", e)
+          logger.error("[ERP Retry] Dead letter notification failed:: " + e)
         );
       }
     }
@@ -191,12 +191,12 @@ export function startErpRetryWorker(): void {
   logger.info("[ERP Retry Worker] Started — polling every 60s");
   workerInterval = setInterval(() => {
     runRetryBatch().catch(err =>
-      logger.error("[ERP Retry Worker] Error:", err)
+      logger.error("[ERP Retry Worker] Error:: " + String(err))
     );
   }, 60_000);
   // Run once immediately on startup
   runRetryBatch().catch(err =>
-    logger.error("[ERP Retry Worker] Startup error:", err)
+    logger.error("[ERP Retry Worker] Startup error:: " + String(err))
   );
 }
 

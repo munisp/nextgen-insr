@@ -77,12 +77,10 @@ async function getProducer(): Promise<Producer | null> {
     });
     await producer.connect();
     producerConnected = true;
-    logger.info("[Kafka] Producer connected to", KAFKA_BROKERS.join(", "));
+    logger.info("[Kafka] Producer connected to: " + KAFKA_BROKERS.join(", "));
     return producer;
   } catch (err) {
-    logger.warn(
-      "[Kafka] Producer connection failed (non-critical):",
-      (err as Error).message
+    logger.warn("[Kafka] Producer connection failed (non-critical):: " + (err as Error).message
     );
     producer = null;
     producerConnected = false;
@@ -124,7 +122,7 @@ export async function kafkaPublish(
     });
     return true;
   } catch (err) {
-    logger.warn(`[Kafka] Publish to ${topic} failed:`, (err as Error).message);
+    logger.warn(`[Kafka] Publish to ${topic} failed:: ` + (err as Error).message);
     // Reset producer so next call reconnects
     producerConnected = false;
     return false;
@@ -159,9 +157,7 @@ export async function kafkaConsume(
           const value = JSON.parse(raw) as Record<string, unknown>;
           await handler(key, value);
         } catch (err) {
-          logger.warn(
-            `[Kafka] Handler error for topic ${topic}:`,
-            (err as Error).message
+          logger.warn(`[Kafka] Handler error for topic ${topic}:: ` + (err as Error).message
           );
         }
       },
@@ -174,9 +170,7 @@ export async function kafkaConsume(
       logger.info(`[Kafka] Consumer '${groupId}' disconnected`);
     };
   } catch (err) {
-    logger.warn(
-      `[Kafka] Consumer '${groupId}' failed to start:`,
-      (err as Error).message
+    logger.warn(`[Kafka] Consumer '${groupId}' failed to start:: ` + (err as Error).message
     );
     await consumer?.disconnect().catch(() => {});
     return null;

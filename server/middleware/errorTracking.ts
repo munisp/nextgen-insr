@@ -34,7 +34,7 @@ export function errorTrackingMiddleware(
   recentErrors.push(errorLog);
   if (recentErrors.length > MAX_ERROR_BUFFER) recentErrors.shift();
 
-  logger.error("[ERROR_TRACK]", JSON.stringify(errorLog));
+  logger.error("[ERROR_TRACK]: " + JSON.stringify(errorLog));
 
   // Don't swallow the error — pass to next handler
   next(err);

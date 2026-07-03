@@ -199,9 +199,7 @@ export function inputSanitizationMiddleware(
       const bodyResult = deepScanObject(req.body, "body");
       if (!bodyResult.safe) {
         if (cfg.logThreats) {
-          logger.warn(
-            `[InputSanitization] Threats detected in ${req.method} ${req.path}:`,
-            bodyResult.threats.map(t => `${t.type} at ${t.path}`)
+          logger.warn(`[InputSanitization] Threats detected in ${req.method} ${req.path}:: ` + bodyResult.threats.map(t => `${t.type} at ${t.path}`)
           );
         }
         if (cfg.blockOnDetection) {

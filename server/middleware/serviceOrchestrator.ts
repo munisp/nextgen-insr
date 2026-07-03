@@ -227,10 +227,7 @@ export async function publishEvent(
       await handler(event);
       delivered++;
     } catch (err) {
-      logger.error(
-        `[Orchestrator] Event handler failed for ${event.type}:`,
-        err
-      );
+      logger.error(`[Orchestrator] Event handler failed for ${event.type}:: ` + err);
       failed++;
     }
   }

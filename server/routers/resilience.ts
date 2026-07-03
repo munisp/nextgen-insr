@@ -943,7 +943,7 @@ export const resilienceRouter = router({
               .where(eq(agentPushSubscriptions.agentCode, input.agentCode));
           }
         } catch (err) {
-          logger.warn("[alertOnPoorConnectivity] VAPID push error:", err);
+          logger.warn("[alertOnPoorConnectivity] VAPID push error:: " + String(err));
         }
 
         logger.info(

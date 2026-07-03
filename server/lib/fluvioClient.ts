@@ -200,7 +200,7 @@ async function flushBuffer(): Promise<void> {
 function startFlushTimer(): void {
   if (_flushTimer) return;
   _flushTimer = setInterval(() => {
-    flushBuffer().catch(e => logger.error("[Fluvio] Flush error:", e));
+    flushBuffer().catch(e => logger.error("[Fluvio] Flush error:: " + e));
   }, 30_000);
   if (
     _flushTimer &&

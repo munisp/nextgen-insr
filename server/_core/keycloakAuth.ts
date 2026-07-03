@@ -236,7 +236,7 @@ export function registerKeycloakAuthRoutes(app: Express): void {
       );
       res.redirect(returnTo);
     } catch (err) {
-      logger.error("[Keycloak] Callback error:", err);
+      logger.error("[Keycloak] Callback error:: " + err);
       res.redirect("/?auth_error=callback_failed");
     }
   });

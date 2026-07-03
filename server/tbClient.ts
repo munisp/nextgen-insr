@@ -72,7 +72,7 @@ export async function tbCreateTransfer(
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      logger.warn("[tbClient] transfer rejected:", body);
+      logger.warn("[tbClient] transfer rejected:: " + body);
       return null;
     }
 
@@ -81,10 +81,7 @@ export async function tbCreateTransfer(
     if (err instanceof Error && err.name === "AbortError") {
       logger.warn("[tbClient] sidecar timeout — falling back to direct PG");
     } else {
-      logger.warn(
-        "[tbClient] sidecar unreachable — falling back to direct PG:",
-        err
-      );
+      logger.warn("[tbClient] sidecar unreachable — falling back to direct PG:: " + err);
     }
     return null;
   }

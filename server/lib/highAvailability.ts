@@ -4,7 +4,7 @@
  * Circuit breaker, retry with exponential backoff, structured health checks,
  * graceful shutdown, and connection draining
  */
-import logger from "../_core/logger";
+import { logger } from "../_core/logger";
 
 // ── 1. Circuit Breaker ────────────────────────────────────────────────────────
 type CircuitState = "closed" | "open" | "half_open";
@@ -372,7 +372,7 @@ export function setupGracefulShutdown(
           const pool = await getPool();
           if (pool) await pool.end();
           logger.info("[Shutdown] Database pool closed");
-        } catch (err) { logger.error("[highAvailability] operation failed:", err); }
+        } catch (err) { logger.error("[highAvailability] operation failed:: " + String(err)); }
 
         logger.info("[Shutdown] Graceful shutdown complete");
         process.exit(0);
@@ -411,7 +411,6 @@ export function connectionDrainingMiddleware(
 
 // ── 6. Express Health Routes ──────────────────────────────────────────────────
 import { Router } from "express";
-import { logger } from '../_core/logger';
 
 export function createHealthRouter(): Router {
   const healthRouter = Router();

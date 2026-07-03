@@ -103,10 +103,7 @@ export async function dispatchWebhookEvent(
 
     // Attempt delivery (non-blocking)
     attemptDelivery(endpoint, delivery.id, body, endpoint.secret).catch(err =>
-      logger.error(
-        `[Webhook] Delivery error for endpoint ${endpoint.id}:`,
-        err
-      )
+      logger.error(`[Webhook] Delivery error for endpoint ${endpoint.id}:: ` + err)
     );
   }
 }
@@ -240,7 +237,7 @@ export async function retryPendingDeliveries(): Promise<number> {
       body,
       endpoint.secret,
       delivery.attemptCount + 1
-    ).catch(err => logger.error(`[Webhook] Retry error:`, err));
+    ).catch(err => logger.error(`[Webhook] Retry error:: ` + String(err)));
   }
 
   return pending.length;

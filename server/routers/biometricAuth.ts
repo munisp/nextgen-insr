@@ -287,10 +287,7 @@ export const biometricAuthRouter = router({
               })
               .where(eq(kycSessions.sessionRef, input.sessionRef));
           } catch (err) {
-            logger.warn(
-              "[biometricAuth] Failed to persist to kycSessions:",
-              err
-            );
+            logger.warn("[biometricAuth] Failed to persist to kycSessions:: " + err);
           }
         }
 

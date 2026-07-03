@@ -52,7 +52,7 @@ if (!endpoint) {
   logger.info(`[OTel] Tracing initialised → ${endpoint}`);
 
   process.on("SIGTERM", () => {
-    sdk.shutdown().catch(err => logger.error("[OTel] Shutdown error:", err));
+    sdk.shutdown().catch(err => logger.error("[OTel] Shutdown error:: " + String(err)));
   });
 }
 

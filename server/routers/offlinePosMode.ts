@@ -61,7 +61,7 @@ export const offlinePosModeRouter = router({
       if (configRows[0]?.value) {
         try {
           config = { ...config, ...JSON.parse(String(configRows[0].value)) };
-        } catch (err) { logger.error("[offlinePosMode] operation failed:", err); }
+        } catch (err) { logger.error("[offlinePosMode] operation failed:: " + String(err)); }
       }
 
       const tierMultipliers: Record<string, number> = {
