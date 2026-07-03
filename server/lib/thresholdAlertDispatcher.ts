@@ -233,7 +233,7 @@ async function sendEmailNotification(
   // In production, this calls:
   // import { sendEmail } from './emailService';
   // return sendEmail({ to, subject, html, text, priority, tags: ['threshold-alert'] });
-  console.log(`[ThresholdDispatcher] EMAIL → ${to}: ${subject}`);
+  logger.info(`[ThresholdDispatcher] EMAIL → ${to}: ${subject}`);
   return {
     success: true,
     messageId: `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -246,8 +246,10 @@ async function sendSmsNotification(
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   // In production, this calls:
   // import { sendSms } from './smsService';
+  // import { sendSms } from './smsService';
+import { logger } from './_core/logger';
   // return sendSms({ to, message, provider: 'auto' });
-  console.log(`[ThresholdDispatcher] SMS → ${to}: ${message.slice(0, 50)}...`);
+  logger.info(`[ThresholdDispatcher] SMS → ${to}: ${message.slice(0, 50)}...`);
   return {
     success: true,
     messageId: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -259,7 +261,7 @@ async function sendPushNotification(
   title: string,
   _body: string
 ): Promise<{ success: boolean }> {
-  console.log(`[ThresholdDispatcher] PUSH: ${title}`);
+  logger.info(`[ThresholdDispatcher] PUSH: ${title}`);
   return { success: true };
 }
 
@@ -267,7 +269,7 @@ async function sendWebhookNotification(
   _url: string,
   payload: object
 ): Promise<{ success: boolean }> {
-  console.log(
+  logger.info(
     `[ThresholdDispatcher] WEBHOOK:`,
     JSON.stringify(payload).slice(0, 100)
   );

@@ -11,6 +11,8 @@ import { eq, desc, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
 import logger from "../_core/logger";
+import logger from "../_core/logger";
+import { logger } from './_core/logger';
 
 export const disputeResolutionRouter = router({
   dashboard: protectedProcedure.query(async () => {
@@ -54,7 +56,7 @@ export const disputeResolutionRouter = router({
     try {
       const [b] = await db.select({ cnt: count() }).from(sla_breaches);
       breachCount = b?.cnt ?? 0;
-    } catch (err) { console.error("[disputeResolution] operation failed:", err); }
+    } catch (err) { logger.error("[disputeResolution] operation failed:", err); }
     const totalD = total?.cnt ?? 0;
     const resolvedD = resolved?.cnt ?? 0;
     const sla24 =

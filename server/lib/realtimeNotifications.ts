@@ -9,6 +9,8 @@
 import type { Server as SocketIOServer, Socket } from "socket.io";
 import { jwtVerify } from "jose";
 import { getJwtSecret } from "./envValidation";
+import { getJwtSecret } from "./envValidation";
+import { logger } from './_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Event Types
@@ -68,7 +70,7 @@ class InMemoryPubSub {
       try {
         cb(channel, message);
       } catch (e) {
-        console.error("[PubSub] Subscriber error:", e);
+        logger.error("[PubSub] Subscriber error:", e);
       }
     }
     return subs.size;
@@ -90,10 +92,10 @@ async function initRedisPubSub(): Promise<boolean> {
     redisSubscriber = createClient({ url: redisUrl });
     await redisPublisher.connect();
     await redisSubscriber.connect();
-    console.log("[RealtimeNotifications] Redis pub/sub connected");
+    logger.info("[RealtimeNotifications] Redis pub/sub connected");
     return true;
   } catch (e) {
-    console.log(
+    logger.info(
       "[RealtimeNotifications] Redis unavailable, using in-memory pub/sub"
     );
     return false;
@@ -190,7 +192,7 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
     connectedUsers.get(userId)!.add(socket.id);
     socketToUser.set(socket.id, userId);
 
-    console.log(
+    logger.info(
       `[Notifications] ${userName} connected (${socket.id}), active users: ${connectedUsers.size}`
     );
 
@@ -256,7 +258,7 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
         }
       }
       socketToUser.delete(socket.id);
-      console.log(
+      logger.info(
         `[Notifications] ${userName} disconnected (${reason}), active users: ${connectedUsers.size}`
       );
     });
@@ -294,7 +296,7 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
         }
       }
     } catch (e) {
-      console.error("[Notifications] Failed to parse pub/sub message:", e);
+      logger.error("[Notifications] Failed to parse pub/sub message:", e);
     }
   };
 
@@ -315,7 +317,7 @@ export function initRealtimeNotifications(io: SocketIOServer): void {
     }
   }
 
-  console.log(
+  logger.info(
     "[RealtimeNotifications] /notifications namespace initialized with pub/sub"
   );
 }

@@ -30,6 +30,8 @@ import {
 } from "../../drizzle/schema";
 import webpush from "web-push";
 import { TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
+import { logger } from './_core/logger';
 
 // Configure VAPID keys for Web Push
 // SECURITY: Guard against empty VAPID keys (test/dev environments may not have them set)
@@ -40,7 +42,7 @@ if (ENV.vapidPublicKey && ENV.vapidPrivateKey) {
     ENV.vapidPrivateKey
   );
 } else {
-  console.warn(
+  logger.warn(
     "[WebPush] VAPID keys not configured — push notifications disabled. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in production."
   );
 }
@@ -844,7 +846,7 @@ export const resilienceRouter = router({
             s => !s.lastAlertedAt || s.lastAlertedAt < throttleWindow
           );
           if (eligibleSubs.length === 0) {
-            console.log(
+            logger.info(
               `[alertOnPoorConnectivity] Agent ${input.agentCode}: throttled — all subs alerted within 30 min`
             );
             return { alerted: false, reason: "throttled" as const, uptimePct };
@@ -898,10 +900,10 @@ export const resilienceRouter = router({
               .where(eq(agentPushSubscriptions.agentCode, input.agentCode));
           }
         } catch (err) {
-          console.warn("[alertOnPoorConnectivity] VAPID push error:", err);
+          logger.warn("[alertOnPoorConnectivity] VAPID push error:", err);
         }
 
-        console.log(
+        logger.info(
           `[alertOnPoorConnectivity] Agent ${input.agentCode}: ${uptimePct}% uptime — ` +
             `ownerNotified=${ownerNotified}, pushCount=${pushCount}`
         );

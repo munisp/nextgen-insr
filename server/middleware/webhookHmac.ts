@@ -11,6 +11,8 @@
  */
 import { createHmac, timingSafeEqual } from "crypto";
 import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { logger } from './_core/logger';
 
 /**
  * Returns an Express middleware that verifies the HMAC-SHA256 signature
@@ -27,7 +29,7 @@ export function verifyWebhookHmac(
     const secret = process.env[secretEnvKey];
     if (!secret) {
       // If no secret is configured, skip verification (dev/test mode)
-      console.warn(
+      logger.warn(
         `[WebhookHmac] ${secretEnvKey} not set — skipping signature check`
       );
       return next();
@@ -63,7 +65,7 @@ export function verifyWebhookHmac(
     }
 
     if (!valid) {
-      console.warn(
+      logger.warn(
         `[WebhookHmac] Signature mismatch for ${req.path} (env=${secretEnvKey})`
       );
       res.status(401).json({ error: "Invalid webhook signature" });

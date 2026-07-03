@@ -19,6 +19,8 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { resourceFromAttributes } from "@opentelemetry/resources";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { logger } from './_core/logger';
 import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
@@ -27,7 +29,7 @@ import {
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 
 if (!endpoint) {
-  console.warn(
+  logger.warn(
     "[OTel] OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing disabled."
   );
 } else {
@@ -48,10 +50,10 @@ if (!endpoint) {
   });
 
   sdk.start();
-  console.log(`[OTel] Tracing initialised → ${endpoint}`);
+  logger.info(`[OTel] Tracing initialised → ${endpoint}`);
 
   process.on("SIGTERM", () => {
-    sdk.shutdown().catch(err => console.error("[OTel] Shutdown error:", err));
+    sdk.shutdown().catch(err => logger.error("[OTel] Shutdown error:", err));
   });
 }
 

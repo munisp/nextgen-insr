@@ -1,5 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 import { ENV } from "./_core/env";
+import { ENV } from "./_core/env";
+import { logger } from './_core/logger';
 /**
  * TigerBeetle Sidecar Client
  *
@@ -71,16 +73,16 @@ export async function tbCreateTransfer(
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      console.warn("[tbClient] transfer rejected:", body);
+      logger.warn("[tbClient] transfer rejected:", body);
       return null;
     }
 
     return (await res.json()) as TBTransferResponse;
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
-      console.warn("[tbClient] sidecar timeout — falling back to direct PG");
+      logger.warn("[tbClient] sidecar timeout — falling back to direct PG");
     } else {
-      console.warn(
+      logger.warn(
         "[tbClient] sidecar unreachable — falling back to direct PG:",
         err
       );

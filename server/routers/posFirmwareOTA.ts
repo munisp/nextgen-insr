@@ -12,6 +12,8 @@ import { posTerminals, platformSettings } from "../../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import { logger } from './_core/logger';
 
 export const posFirmwareOTARouter = router({
   listVersions: protectedProcedure
@@ -31,7 +33,7 @@ export const posFirmwareOTARouter = router({
         if (rows[0]?.value) {
           try {
             versions = JSON.parse(String(rows[0].value));
-          } catch (err) { console.error("[posFirmwareOTA] operation failed:", err); }
+          } catch (err) { logger.error("[posFirmwareOTA] operation failed:", err); }
         }
 
         return { versions };
@@ -81,7 +83,7 @@ export const posFirmwareOTARouter = router({
         if (existing[0]?.value) {
           try {
             versions = JSON.parse(String(existing[0].value));
-          } catch (err) { console.error("[posFirmwareOTA] operation failed:", err); }
+          } catch (err) { logger.error("[posFirmwareOTA] operation failed:", err); }
         }
         versions.unshift(entry);
 
@@ -187,7 +189,7 @@ export const posFirmwareOTARouter = router({
         }> = [];
         try {
           versions = JSON.parse(String(rows[0].value));
-        } catch (err) { console.error("[posFirmwareOTA] operation failed:", err); }
+        } catch (err) { logger.error("[posFirmwareOTA] operation failed:", err); }
 
         const latest = versions.find(
           v => v.status === "released" || v.status === "staged"

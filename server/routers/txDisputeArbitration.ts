@@ -15,6 +15,8 @@ import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
 import logger from "../_core/logger";
 import { TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
+import { logger } from './_core/logger';
 
 export const txDisputeArbitrationRouter = router({
   listDisputes: protectedProcedure
@@ -195,21 +197,21 @@ export const txDisputeArbitrationRouter = router({
           disputeId: numId,
           outcome: input.outcome,
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:", err); }
       try {
         await cacheSet(
           `txDisputeArbitration:resolved:${numId}`,
           JSON.stringify({ outcome: input.outcome, ts: Date.now() }),
           600
         );
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:", err); }
       try {
         await tbCreateTransfer({
           debitAccountId: "1",
           creditAccountId: "2",
           amount: input.refundAmount ?? 0,
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:", err); }
       try {
         await fluvioProduce("pos.txdisputearbitration", {
           value: JSON.stringify({
@@ -219,7 +221,7 @@ export const txDisputeArbitrationRouter = router({
             ts: Date.now(),
           }),
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:", err); }
       try {
         await permifyCheck({
           subjectType: "user",
@@ -228,7 +230,7 @@ export const txDisputeArbitrationRouter = router({
           entityId: String(numId),
           permission: "resolve",
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:", err); }
 
       logger.info(
         `[TxDisputeArbitration] Dispute ${numId} resolved: ${input.outcome}`
@@ -289,7 +291,7 @@ export const txDisputeArbitrationRouter = router({
           disputeId: numId,
           escalateTo: input.escalateTo,
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:", err); }
 
       const slaExtension = {
         senior_investigator: 5,

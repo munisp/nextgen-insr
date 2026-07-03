@@ -13,6 +13,8 @@
  */
 
 import { notifyOwner } from "../_core/notification";
+import { notifyOwner } from "../_core/notification";
+import { logger } from './_core/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -597,7 +599,7 @@ export async function dispatchSecurityAlert(
     startEscalationTimer(event);
   }
 
-  console.log(
+  logger.info(
     `[SecurityAlertNotifier] Alert ${event.alertId} dispatched: ` +
       `${eligibleAdmins.length} recipients, ${successCount} delivered, ${failCount} failed`
   );
@@ -621,7 +623,7 @@ function startEscalationTimer(event: SecurityAlertEvent): void {
   for (const rule of applicableRules) {
     const timer = setTimeout(
       async () => {
-        console.log(
+        logger.info(
           `[SecurityAlertNotifier] Escalation triggered: ${rule.name} for alert ${event.alertId}`
         );
 

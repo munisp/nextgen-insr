@@ -112,7 +112,7 @@ export async function cachedQuery<T>(
         queryCache.set(key, parsed, ttlMs); // Populate L1
         return parsed;
       }
-    } catch (err) { console.error("[performanceTuning] operation failed:", err); }
+    } catch (err) { logger.error("[performanceTuning] operation failed:", err); }
   }
 
   // L3: Database query
@@ -123,7 +123,7 @@ export async function cachedQuery<T>(
   if (useRedis) {
     try {
       await cacheSet(key, JSON.stringify(result), Math.ceil(ttlMs / 1000));
-    } catch (err) { console.error("[performanceTuning] operation failed:", err); }
+    } catch (err) { logger.error("[performanceTuning] operation failed:", err); }
   }
 
   return result;
@@ -210,6 +210,8 @@ export const requestMetrics = new RequestMetricsCollector();
 
 // ── 4. Express Middleware: Response Time Tracking ─────────────────────────────
 import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { logger } from './_core/logger';
 
 export function responseTimeMiddleware(
   req: Request,

@@ -8,6 +8,8 @@
 import { getDb } from "../db";
 import { analyticsMetrics } from "../../drizzle/schema";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { logger } from './_core/logger';
 
 // ── In-memory SSE listener registry ──────────────────────────────────────────
 type SseListener = (data: string) => void;
@@ -118,7 +120,7 @@ export async function recordMetric(
     }
   } catch (err) {
     // Non-fatal — analytics should never break the main flow
-    console.warn("[analytics] recordMetric error:", err);
+    logger.warn("[analytics] recordMetric error:", err);
   }
 }
 

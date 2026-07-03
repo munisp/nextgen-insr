@@ -3,6 +3,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { eq, desc, and, isNull, lt, gt } from "drizzle-orm";
+import { eq, desc, and, isNull, lt, gt } from "drizzle-orm";
+import { logger } from './_core/logger';
 import {
   agents,
   users,
@@ -91,7 +93,7 @@ export async function getDb() {
   if (!_db) {
     const url = process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? "";
     if (!url) {
-      console.warn("[DB] No POSTGRES_URL or DATABASE_URL set");
+      logger.warn("[DB] No POSTGRES_URL or DATABASE_URL set");
       return _noopChain;
     }
     // P3-2: Connection pool right-sizing formula from 1B Payments article
@@ -100,7 +102,7 @@ export async function getDb() {
     const effectiveSpindleCount = 1;
     const formulaPoolSize = cpuCores * 2 + effectiveSpindleCount;
     const poolSize = Math.max(5, Math.min(50, formulaPoolSize));
-    console.log(
+    logger.info(
       `[DB] Connection pool: ${poolSize} connections (formula: ${cpuCores} cores × 2 + ${effectiveSpindleCount} spindle)`
     );
     _pool = new Pool({
@@ -122,7 +124,7 @@ export async function getDb() {
       client.release();
       _dbVerified = true;
     } catch (e: any) {
-      console.warn(`[DB] Connection failed: ${e.message}`);
+      logger.warn(`[DB] Connection failed: ${e.message}`);
       _db = null;
       _pool = null;
       return _noopChain;
@@ -506,7 +508,7 @@ export async function writeAuditLog(data: {
       metadata: data.metadata ?? null,
     });
   } catch (err) {
-    console.error("[AuditLog] Failed to write:", err);
+    logger.error("[AuditLog] Failed to write:", err);
   }
 }
 

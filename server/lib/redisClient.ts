@@ -13,6 +13,8 @@
  */
 
 import Redis from "ioredis";
+import Redis from "ioredis";
+import { logger } from './_core/logger';
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 
@@ -34,7 +36,7 @@ export function getRedisClient(): Redis {
     _client.on("error", err => {
       // Log but don't crash — app degrades gracefully without Redis
       if (process.env.NODE_ENV !== "test") {
-        console.warn(
+        logger.warn(
           "[Redis] Connection error (rate-limit will use memory store):",
           err.message
         );
@@ -43,7 +45,7 @@ export function getRedisClient(): Redis {
 
     _client.on("connect", () => {
       if (process.env.NODE_ENV !== "test") {
-        console.log("[Redis] Connected to", REDIS_URL);
+        logger.info("[Redis] Connected to", REDIS_URL);
       }
     });
   }

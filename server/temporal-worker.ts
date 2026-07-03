@@ -15,6 +15,8 @@ import {
   DefaultLogger,
 } from "@temporalio/worker";
 import * as activities from "./temporal-activities";
+import * as activities from "./temporal-activities";
+import { logger } from './_core/logger';
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";
 const TEMPORAL_NAMESPACE = process.env.TEMPORAL_NAMESPACE ?? "54link";
@@ -33,7 +35,7 @@ async function run() {
   // Set up Temporal runtime with structured logging
   Runtime.install({
     logger: new DefaultLogger("INFO", ({ level, message, meta }) => {
-      console.log(
+      logger.info(
         JSON.stringify({
           ts: new Date().toISOString(),
           level,
@@ -64,7 +66,7 @@ async function run() {
     maxConcurrentWorkflowTaskExecutions: 10,
   });
 
-  console.log(
+  logger.info(
     JSON.stringify({
       ts: new Date().toISOString(),
       level: "INFO",

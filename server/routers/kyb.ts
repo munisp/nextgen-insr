@@ -30,6 +30,8 @@ import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getDb, writeAuditLog } from "../db.js";
 import { merchantKycDocs } from "../../drizzle/schema.js";
 import { eq, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
+import { logger } from './_core/logger';
 
 // ─── Service URLs ────────────────────────────────────────────────────────────
 
@@ -61,12 +63,12 @@ async function serviceCall<T = any>(
     const res = await fetch(url, opts);
     clearTimeout(timer);
     if (!res.ok) {
-      console.warn(`[KYB] ${method} ${url} returned ${res.status}`);
+      logger.warn(`[KYB] ${method} ${url} returned ${res.status}`);
       return null;
     }
     return (await res.json()) as T;
   } catch (err) {
-    console.warn(`[KYB] ${method} ${url} failed:`, err);
+    logger.warn(`[KYB] ${method} ${url} failed:`, err);
     return null;
   }
 }

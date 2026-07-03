@@ -17,6 +17,8 @@
  */
 import type { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import crypto from "crypto";
+import { logger } from './_core/logger';
 
 // ============================================================
 // 1. SECURITY HEADERS
@@ -111,13 +113,13 @@ export function csrfProtection(
 
   if (!sessionId || !csrfToken) {
     // Don't block — just log for monitoring
-    console.warn(`[CSRF] Missing token/session on ${req.method} ${req.path}`);
+    logger.warn(`[CSRF] Missing token/session on ${req.method} ${req.path}`);
     return next();
   }
 
   const stored = csrfTokens.get(sessionId);
   if (!stored || stored.token !== csrfToken || stored.expires < Date.now()) {
-    console.warn(`[CSRF] Invalid token on ${req.method} ${req.path}`);
+    logger.warn(`[CSRF] Invalid token on ${req.method} ${req.path}`);
   }
 
   // Clean expired tokens periodically
@@ -168,7 +170,7 @@ export function xssProtection(req: Request, res: Response, next: NextFunction) {
       if (typeof value === "string") {
         for (const pattern of XSS_PATTERNS) {
           if (pattern.test(value)) {
-            console.warn(`[XSS] Blocked suspicious query param: ${key}`);
+            logger.warn(`[XSS] Blocked suspicious query param: ${key}`);
             return res.status(400).json({ error: "Invalid input detected" });
           }
           pattern.lastIndex = 0; // Reset regex state
@@ -216,7 +218,7 @@ export function sqlInjectionProtection(
 
   for (const value of checkValues) {
     if (detectSqlInjection(value)) {
-      console.warn(
+      logger.warn(
         `[SQLi] Blocked suspicious input on ${req.path}: ${value.slice(0, 50)}`
       );
       return res.status(400).json({ error: "Invalid input detected" });
@@ -403,7 +405,7 @@ export function recordFailedAttempt(ip: string) {
   if (entry.attempts >= MAX_FAILED_ATTEMPTS) {
     entry.locked = true;
     entry.lockUntil = now + LOCK_DURATION;
-    console.warn(
+    logger.warn(
       `[Security] Brute force lock triggered for ${ip} after ${entry.attempts} failed attempts`
     );
   }
@@ -456,7 +458,7 @@ export function ddosThrottling(
 
   entry.count++;
   if (entry.count > DDOS_MAX_CONNECTIONS) {
-    console.warn(
+    logger.warn(
       `[DDoS] Connection throttle triggered for ${ip} (${entry.count} connections in ${DDOS_WINDOW_MS}ms)`
     );
     return res
@@ -485,7 +487,7 @@ setInterval(() => {
 // ============================================================
 export function applySecurityMiddleware(app: any) {
   if (process.env.NODE_ENV === "development") {
-    console.log(
+    logger.info(
       "[Security] All security middleware skipped in development (CSP blocks Vite ws:// HMR, DDoS throttle blocks 400+ module requests)"
     );
     return;
@@ -509,7 +511,7 @@ export function applySecurityMiddleware(app: any) {
   app.use("/api/stripe/webhook", webhookRateLimiter);
   app.use("/api/webhooks", webhookRateLimiter);
 
-  console.log(
+  logger.info(
     "[Security] All security middleware applied (Sprint 91: +brute-force, +fingerprinting, +DDoS throttling)"
   );
 }

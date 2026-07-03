@@ -1,5 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 import { Server } from "http";
+import { Server } from "http";
+import { logger } from './_core/logger';
 
 let isShuttingDown = false;
 
@@ -11,13 +13,13 @@ export function setupGracefulShutdown(server: Server) {
   const shutdown = async (signal: string) => {
     if (isShuttingDown) return;
     isShuttingDown = true;
-    console.log(
+    logger.info(
       `[Shutdown] ${signal} received — starting graceful shutdown...`
     );
 
     // 1. Stop accepting new connections
     server.close(() => {
-      console.log("[Shutdown] HTTP server closed");
+      logger.info("[Shutdown] HTTP server closed");
     });
 
     // 2. Close database connections
@@ -26,10 +28,10 @@ export function setupGracefulShutdown(server: Server) {
       const db = await getDb();
       if (db && (db as any).end) {
         await (db as any).end();
-        console.log("[Shutdown] Database connections closed");
+        logger.info("[Shutdown] Database connections closed");
       }
     } catch (e) {
-      console.error("[Shutdown] DB close error:", (e as Error).message);
+      logger.error("[Shutdown] DB close error:", (e as Error).message);
     }
 
     // 3. Close Redis
@@ -37,7 +39,7 @@ export function setupGracefulShutdown(server: Server) {
       const redisModule = await import("../redisClient").catch(() => null);
       if (redisModule && "closeRedis" in redisModule) {
         await (redisModule as any).closeRedis?.();
-        console.log("[Shutdown] Redis connection closed");
+        logger.info("[Shutdown] Redis connection closed");
       }
     } catch {
       /* Redis may not be available */
@@ -50,7 +52,7 @@ export function setupGracefulShutdown(server: Server) {
       );
       if (kafkaModule && "closeKafka" in kafkaModule) {
         await (kafkaModule as any).closeKafka?.();
-        console.log("[Shutdown] Kafka producer closed");
+        logger.info("[Shutdown] Kafka producer closed");
       }
     } catch {
       /* Kafka may not be available */
@@ -58,11 +60,11 @@ export function setupGracefulShutdown(server: Server) {
 
     // 5. Force exit after 10s if graceful shutdown stalls
     setTimeout(() => {
-      console.error("[Shutdown] Forced exit after 10s timeout");
+      logger.error("[Shutdown] Forced exit after 10s timeout");
       process.exit(1);
     }, 10000).unref();
 
-    console.log("[Shutdown] Graceful shutdown complete");
+    logger.info("[Shutdown] Graceful shutdown complete");
     process.exit(0);
   };
 

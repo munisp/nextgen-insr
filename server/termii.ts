@@ -1,5 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 import { ENV } from "./_core/env";
+import { ENV } from "./_core/env";
+import { logger } from './_core/logger';
 /**
  * termii.ts — Shared Termii SMS helper for the 54Link platform.
  *
@@ -32,7 +34,7 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
 
   if (!apiKey) {
     // Graceful fallback — log to console when API key is not configured.
-    console.log(`[SMS Console Fallback] To: ${to}\n${message}\n`);
+    logger.info(`[SMS Console Fallback] To: ${to}\n${message}\n`);
     return { success: true, messageId: `CONSOLE-${Date.now()}` };
   }
 
@@ -52,7 +54,7 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(`[SMS] Termii error ${response.status}: ${text}`);
+      logger.error(`[SMS] Termii error ${response.status}: ${text}`);
       return { success: false, error: `Termii ${response.status}: ${text}` };
     }
 
@@ -63,7 +65,7 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
     return { success: true, messageId: data.message_id };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error(`[SMS] Network error: ${msg}`);
+    logger.error(`[SMS] Network error: ${msg}`);
     return { success: false, error: msg };
   }
 }

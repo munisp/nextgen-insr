@@ -9,6 +9,8 @@ import { agents, floatTopUpRequests } from "../../drizzle/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import { logger } from './_core/logger';
 import {
   writeAuditLog,
   updateAgentFloat,
@@ -318,7 +320,7 @@ export const agentManagementRouter = router({
             })
           )
           .catch((e: unknown) =>
-            console.error("[Fluvio] Float event failed:", e)
+            logger.error("[Fluvio] Float event failed:", e)
           );
 
         // ── VAPID push notification to agent (fire-and-forget) ──────────────────
@@ -343,7 +345,7 @@ export const agentManagementRouter = router({
               });
             }
           } catch (e) {
-            console.error("[Push] Float approval notification failed:", e);
+            logger.error("[Push] Float approval notification failed:", e);
           }
         })();
 

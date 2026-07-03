@@ -12,6 +12,8 @@ import { getDb } from "../db";
 import { fraudAlerts, fraudRules } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import { logger } from './_core/logger';
 
 export const fraudRouter = router({
   // ── List alerts (admin or agent-scoped) ───────────────────────────────────
@@ -143,7 +145,7 @@ export const fraudRouter = router({
             })
           )
           .catch((e: unknown) =>
-            console.error("[Fluvio] Fraud alert event failed:", e)
+            logger.error("[Fluvio] Fraud alert event failed:", e)
           );
 
         return { success: true, alertId: alert.id };

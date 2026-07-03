@@ -11,6 +11,8 @@ import { eq, desc, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
 import logger from "../_core/logger";
+import logger from "../_core/logger";
+import { logger } from './_core/logger';
 
 export const disputeWorkflowEngineRouter = router({
   createDispute: protectedProcedure
@@ -276,7 +278,7 @@ export const disputeWorkflowEngineRouter = router({
           .from(sla_breaches)
           .orderBy(desc(sla_breaches.createdAt))
           .limit(20);
-      } catch (err) { console.error("[disputeWorkflowEngine] operation failed:", err); }
+      } catch (err) { logger.error("[disputeWorkflowEngine] operation failed:", err); }
       return {
         items: breaches.map((b, i) => ({
           id: b.id ?? i + 1,

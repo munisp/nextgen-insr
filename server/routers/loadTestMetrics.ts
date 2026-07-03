@@ -6,6 +6,8 @@ import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { notifyOwner } from "../_core/notification";
 import { getConfig, getConfigNumber, setConfig } from "../lib/runtimeConfig";
+import { getConfig, getConfigNumber, setConfig } from "../lib/runtimeConfig";
+import { logger } from './_core/logger';
 import {
   getAllEngineMetrics,
   exportPrometheusMetrics,
@@ -186,7 +188,7 @@ async function checkP99ThresholdAndNotify(run: any) {
       content: `Run ${run.runId} has ${violations.length} threshold violation(s):\n${violations.join("\n")}`,
     });
   } else {
-    console.log(`Run ${run.runId} passed all thresholds`);
+    logger.info(`Run ${run.runId} passed all thresholds`);
   }
 }
 

@@ -11,9 +11,9 @@
  * // Frontend component
  * const transcribeMutation = trpc.voice.transcribe.useMutation({
  *   onSuccess: (data) => {
- *     console.log(data.text); // Full transcription
- *     console.log(data.language); // Detected language
- *     console.log(data.segments); // Timestamped segments
+ *     logger.info(data.text); // Full transcription
+ *     logger.info(data.language); // Detected language
+ *     logger.info(data.segments); // Timestamped segments
  *   }
  * });
  *
@@ -251,6 +251,8 @@ function getLanguageName(langCode: string): string {
  * ```ts
  * // In server/routers.ts
  * import { transcribeAudio } from "./_core/voiceTranscription";
+ * import { transcribeAudio } from "./_core/voiceTranscription";
+import { logger } from './_core/logger';
  *
  * export const voiceRouter = router({
  *   transcribe: protectedProcedure

@@ -11,6 +11,8 @@ import { getDb } from "../db";
 import { platformBillingLedger, billingAuditLog } from "../../drizzle/schema";
 import { desc, count, sql, gte, and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
+import { logger } from './_core/logger';
 
 // OpenSearch adapter (connects to opensearch-indexer Python service)
 async function queryOpenSearch(
@@ -25,7 +27,7 @@ async function queryOpenSearch(
       body: JSON.stringify(body),
     });
     if (res.ok) return await res.json();
-    console.warn(`[OpenSearch] Query failed: ${res.status}`);
+    logger.warn(`[OpenSearch] Query failed: ${res.status}`);
     return null;
   } catch {
     // OpenSearch not available — fall back to DB

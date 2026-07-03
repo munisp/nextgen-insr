@@ -66,6 +66,8 @@ import {
 } from "../drizzle/schema";
 import { eq, desc, count, sql } from "drizzle-orm";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./_core/keycloakAuth";
+import { verifySessionJwt, KC_SESSION_COOKIE } from "./_core/keycloakAuth";
+import { logger } from './_core/logger';
 
 const router = Router();
 
@@ -115,7 +117,7 @@ function ok(res: Response, data: unknown) {
 }
 
 function err(res: Response, e: unknown, status = 500) {
-  console.error("[REST Bridge]", e);
+  logger.error("[REST Bridge]", e);
   return res.status(status).json({ error: String(e) });
 }
 

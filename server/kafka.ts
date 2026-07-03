@@ -22,6 +22,8 @@
  */
 
 import { Kafka, Producer, Consumer, logLevel, CompressionTypes } from "kafkajs";
+import { Kafka, Producer, Consumer, logLevel, CompressionTypes } from "kafkajs";
+import { logger } from './_core/logger';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -76,10 +78,10 @@ async function getProducer(): Promise<Producer | null> {
     });
     await producer.connect();
     producerConnected = true;
-    console.log("[Kafka] Producer connected to", KAFKA_BROKERS.join(", "));
+    logger.info("[Kafka] Producer connected to", KAFKA_BROKERS.join(", "));
     return producer;
   } catch (err) {
-    console.warn(
+    logger.warn(
       "[Kafka] Producer connection failed (non-critical):",
       (err as Error).message
     );
@@ -123,7 +125,7 @@ export async function kafkaPublish(
     });
     return true;
   } catch (err) {
-    console.warn(`[Kafka] Publish to ${topic} failed:`, (err as Error).message);
+    logger.warn(`[Kafka] Publish to ${topic} failed:`, (err as Error).message);
     // Reset producer so next call reconnects
     producerConnected = false;
     return false;
@@ -158,7 +160,7 @@ export async function kafkaConsume(
           const value = JSON.parse(raw) as Record<string, unknown>;
           await handler(key, value);
         } catch (err) {
-          console.warn(
+          logger.warn(
             `[Kafka] Handler error for topic ${topic}:`,
             (err as Error).message
           );
@@ -166,14 +168,14 @@ export async function kafkaConsume(
       },
     });
 
-    console.log(`[Kafka] Consumer '${groupId}' subscribed to ${topic}`);
+    logger.info(`[Kafka] Consumer '${groupId}' subscribed to ${topic}`);
 
     return async () => {
       await consumer?.disconnect();
-      console.log(`[Kafka] Consumer '${groupId}' disconnected`);
+      logger.info(`[Kafka] Consumer '${groupId}' disconnected`);
     };
   } catch (err) {
-    console.warn(
+    logger.warn(
       `[Kafka] Consumer '${groupId}' failed to start:`,
       (err as Error).message
     );
@@ -188,7 +190,7 @@ export async function kafkaDisconnect(): Promise<void> {
   if (producer && producerConnected) {
     await producer.disconnect().catch(() => {});
     producerConnected = false;
-    console.log("[Kafka] Producer disconnected");
+    logger.info("[Kafka] Producer disconnected");
   }
 }
 

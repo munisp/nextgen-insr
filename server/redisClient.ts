@@ -28,6 +28,8 @@ const PLATFORM_API_KEY = ENV.platformApiKey;
 // environments that rely solely on the platform proxy.
 import type { Redis as RedisType } from "ioredis";
 import { ENV } from "./_core/env";
+import { ENV } from "./_core/env";
+import { logger } from './_core/logger';
 let _directClient: RedisType | null = null;
 
 async function getDirectClient(): Promise<RedisType | null> {
@@ -42,13 +44,13 @@ async function getDirectClient(): Promise<RedisType | null> {
       enableOfflineQueue: false,
     }) as RedisType;
     _directClient.on("error", (err: Error) => {
-      console.error("[Redis] Connection error:", err.message);
+      logger.error("[Redis] Connection error:", err.message);
     });
     await _directClient.connect();
-    console.log("[Redis] Direct connection established →", REDIS_URL);
+    logger.info("[Redis] Direct connection established →", REDIS_URL);
     return _directClient;
   } catch (err) {
-    console.warn("[Redis] Could not connect directly:", (err as Error).message);
+    logger.warn("[Redis] Could not connect directly:", (err as Error).message);
     return null;
   }
 }

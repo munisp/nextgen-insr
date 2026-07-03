@@ -18,6 +18,8 @@ import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { TrpcContext } from "../_core/context";
+import type { TrpcContext } from "../_core/context";
+import { logger } from './_core/logger';
 
 // ── Observability Middleware ──────────────────────────────────────────────────
 // Wraps every procedure call with:
@@ -70,7 +72,7 @@ export async function emitObservabilityEvent(
       event: `${ctx.path}.${ctx.success ? "success" : "failure"}`,
       ...payload,
     });
-  } catch (err) { console.error("[observabilityMiddleware] operation failed:", err); }
+  } catch (err) { logger.error("[observabilityMiddleware] operation failed:", err); }
 
   // 2. Redis — cache last-call timestamp for rate limiting and monitoring
   try {
@@ -83,14 +85,14 @@ export async function emitObservabilityEvent(
       }),
       600 // 10 min TTL
     );
-  } catch (err) { console.error("[observabilityMiddleware] operation failed:", err); }
+  } catch (err) { logger.error("[observabilityMiddleware] operation failed:", err); }
 
   // 3. Fluvio — real-time streaming for dashboards and alerting
   try {
     await fluvioProduce(topic, {
       value: JSON.stringify(payload),
     });
-  } catch (err) { console.error("[observabilityMiddleware] operation failed:", err); }
+  } catch (err) { logger.error("[observabilityMiddleware] operation failed:", err); }
 
   // 4. TigerBeetle — immutable audit ledger entry (zero-amount transfer for tracking)
   try {
@@ -99,7 +101,7 @@ export async function emitObservabilityEvent(
       creditAccountId: "2", // audit sink account
       amount: 0, // zero-amount = audit-only entry
     });
-  } catch (err) { console.error("[observabilityMiddleware] operation failed:", err); }
+  } catch (err) { logger.error("[observabilityMiddleware] operation failed:", err); }
 }
 
 /**

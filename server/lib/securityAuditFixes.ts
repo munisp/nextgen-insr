@@ -14,6 +14,8 @@
  */
 import { randomBytes, randomUUID, createHmac } from "crypto";
 import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { logger } from './_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. Cryptographically Secure Random Helpers
@@ -70,7 +72,7 @@ export function safeRedirect(
   if (isRedirectSafe(url, req)) {
     res.redirect(url);
   } else {
-    console.warn(`[Security] Blocked open redirect attempt: ${url}`);
+    logger.warn(`[Security] Blocked open redirect attempt: ${url}`);
     res.redirect(fallback);
   }
 }
@@ -148,7 +150,7 @@ export function csrfProtectionMiddleware(
   if (!validateCsrfToken(token, sessionId)) {
     // Log but don't block in non-production to avoid breaking dev workflow
     if (process.env.NODE_ENV === "production") {
-      console.warn(`[CSRF] Invalid token for ${req.method} ${req.path}`);
+      logger.warn(`[CSRF] Invalid token for ${req.method} ${req.path}`);
       // Don't block — tRPC handles its own auth
     }
   }

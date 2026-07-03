@@ -3,6 +3,8 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { logger } from './_core/logger';
 
 export const escalationChainsRouter = router({
   list: protectedProcedure
@@ -267,7 +269,7 @@ export function dispatchEscalation(
   },
   alertMessage: string
 ) {
-  console.log(
+  logger.info(
     `[Escalation] Dispatching via ${level.recipientType} to ${level.recipient}: ${alertMessage}`
   );
   return {
@@ -283,7 +285,7 @@ export function checkAndEscalate() {
     if (event.status === "escalating") escalated++;
     if (event.status === "acknowledged") acknowledged++;
   }
-  console.log(
+  logger.info(
     `[EscalationCheck] escalated=${escalated}, acknowledged=${acknowledged}`
   );
   return { escalated, acknowledged };

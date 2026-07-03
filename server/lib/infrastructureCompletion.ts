@@ -10,6 +10,8 @@
 
 import type { Request, Response, NextFunction, Express } from "express";
 import crypto from "crypto";
+import crypto from "crypto";
+import { logger } from './_core/logger';
 
 // ============================================================
 // F1: /api/scheduled endpoint for Manus periodic task updates
@@ -47,7 +49,7 @@ export function setupScheduledEndpoint(app: Express): void {
       const handler = scheduledHandlers.get(action);
       if (!handler) {
         // Default handler: log and acknowledge
-        console.log(`[Scheduled] Received task: ${action}`, payload);
+        logger.info(`[Scheduled] Received task: ${action}`, payload);
         return res.json({
           success: true,
           message: `Scheduled task '${action}' acknowledged (no handler registered)`,
@@ -58,7 +60,7 @@ export function setupScheduledEndpoint(app: Express): void {
       const result = await handler(payload);
       return res.json(result);
     } catch (error) {
-      console.error("[Scheduled] Task error:", error);
+      logger.error("[Scheduled] Task error:", error);
       return res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : "Internal error",
@@ -307,17 +309,17 @@ export function validateEnvironment(
 }
 
 export function logEnvValidation(result: EnvValidationResult): void {
-  console.log(`[Env Validation] Checked at ${result.checkedAt}`);
+  logger.info(`[Env Validation] Checked at ${result.checkedAt}`);
   if (result.errors.length > 0) {
-    console.error(`[Env Validation] ${result.errors.length} ERRORS:`);
-    result.errors.forEach(e => console.error(`  ✗ ${e}`));
+    logger.error(`[Env Validation] ${result.errors.length} ERRORS:`);
+    result.errors.forEach(e => logger.error(`  ✗ ${e}`));
   }
   if (result.warnings.length > 0) {
-    console.warn(`[Env Validation] ${result.warnings.length} warnings:`);
-    result.warnings.forEach(w => console.warn(`  ⚠ ${w}`));
+    logger.warn(`[Env Validation] ${result.warnings.length} warnings:`);
+    result.warnings.forEach(w => logger.warn(`  ⚠ ${w}`));
   }
   if (result.valid) {
-    console.log(
+    logger.info(
       "[Env Validation] ✓ All required environment variables are set"
     );
   }
@@ -418,7 +420,7 @@ export function wireInfrastructureMiddleware(app: Express): void {
   // F1: Scheduled endpoint
   setupScheduledEndpoint(app);
 
-  console.log(
+  logger.info(
     "[Infrastructure] All middleware wired: CORS, Correlation ID, API Versioning, /api/scheduled"
   );
 }

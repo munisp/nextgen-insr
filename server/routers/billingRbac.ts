@@ -14,6 +14,8 @@ import {
   tenantBillingConfig,
 } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
+import { logger } from './_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Billing Permission Definitions (Permify-compatible)
@@ -154,7 +156,7 @@ export async function checkBillingPermission(
         return result.can === "CHECK_RESULT_ALLOWED";
       }
     } catch (e) {
-      console.warn(
+      logger.warn(
         "[BillingRBAC] Permify check failed, using local only:",
         (e as Error).message
       );

@@ -43,6 +43,7 @@ import { restBridgeRouter } from "../restBridge";
 import { registry, httpRequestDurationMs } from "../metrics";
 import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
 import { enforceEnvironment } from "../lib/envValidation";
+import { logger } from "./logger";
 
 // ── Environment validation (must run before any service initialization) ────────
 enforceEnvironment();
@@ -51,7 +52,7 @@ enforceEnvironment();
 // Tracing is enabled when OTEL_EXPORTER_OTLP_ENDPOINT is set.
 if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
   import("./telemetry").catch(err =>
-    console.warn("[OTel] Failed to initialise tracing:", err)
+    logger.warn({ err: String(err) }, "[OTel] Failed to initialise tracing")
   );
 }
 
@@ -78,7 +79,7 @@ async function startServer() {
   // ── Vault secret injection (must run before any env-dependent code) ───────────
   // Falls back gracefully when Vault is unavailable (dev/test without Docker).
   await loadVaultSecrets().catch(err =>
-    console.warn("[Vault] Secret injection skipped:", (err as Error).message)
+    logger.warn("[Vault] Secret injection skipped:", (err as Error).message)
   );
 
   const app = express();
@@ -89,17 +90,17 @@ async function startServer() {
     const { setupGracefulShutdown } = require("../lib/gracefulShutdown");
     const shutdownMiddleware = setupGracefulShutdown(server);
     app.use(shutdownMiddleware);
-    console.log("[Shutdown] Graceful shutdown handler registered");
+    logger.info("[Shutdown] Graceful shutdown handler registered");
   } catch (e) {
-    console.warn("[Shutdown] Setup failed:", (e as any).message);
+    logger.warn("[Shutdown] Setup failed:", (e as any).message);
   }
   // ── Sprint 70: DB Pool Monitor ──────────────────────────────────────
   try {
     const { startPoolMonitor } = require("../lib/dbPoolMonitor");
     startPoolMonitor(60000);
-    console.log("[DBPool] Connection pool monitoring started");
+    logger.info("[DBPool] Connection pool monitoring started");
   } catch (e) {
-    console.warn("[DBPool] Monitor failed:", (e as any).message);
+    logger.warn("[DBPool] Monitor failed:", (e as any).message);
   }
   // ── Sprint 70: Cron Jobs ──────────────────────────────────────────
   try {
@@ -110,11 +111,11 @@ async function startServer() {
     const { runKycExpiryCheck } = require("../cron/kycExpiryCheck");
     cron.schedule("*/15 * * * *", runDisputeAutoEscalation); // Every 15 min
     cron.schedule("0 6 * * *", runKycExpiryCheck); // Daily at 6 AM
-    console.log(
+    logger.info(
       "[Cron] Dispute auto-escalation (15min) and KYC expiry check (daily) registered"
     );
   } catch (e) {
-    console.warn("[Cron] Registration failed:", (e as any).message);
+    logger.warn("[Cron] Registration failed:", (e as any).message);
   }
 
   // Trust reverse proxy (nginx, Cloudflare, etc.) for accurate IP detection
@@ -313,7 +314,7 @@ async function startServer() {
         );
         return handleStripeWebhook(req, res);
       } catch (err: any) {
-        console.error("[Stripe Webhook] Handler load error:", err.message);
+        logger.error("[Stripe Webhook] Handler load error:", err.message);
         return res.status(500).json({ error: "Webhook handler unavailable" });
       }
     }
@@ -329,11 +330,11 @@ async function startServer() {
   try {
     const secMod = await import("../middleware/securityHardening.js");
     secMod.applySecurityMiddleware(app);
-    console.log(
+    logger.info(
       "[Security] Hardening middleware applied (CSP, HSTS, CSRF, XSS, SQLi, rate limiting, CORS)"
     );
   } catch (secErr) {
-    console.warn(
+    logger.warn(
       "[Security] Middleware load failed (non-fatal):",
       (secErr as any).message
     );
@@ -342,26 +343,26 @@ async function startServer() {
   try {
     const logMod = await import("../middleware/structuredLogging.js");
     app.use(logMod.structuredLoggingMiddleware);
-    console.log("[Middleware] Structured logging enabled");
+    logger.info("[Middleware] Structured logging enabled");
   } catch (e) {
-    console.warn("[Middleware] Structured logging failed:", (e as any).message);
+    logger.warn("[Middleware] Structured logging failed:", (e as any).message);
   }
 
   try {
     // apiVersioningMiddleware loaded from middleware/apiVersioning
     const verMod = await import("../middleware/apiVersioning.js");
     app.use("/api", verMod.apiVersionMiddleware);
-    console.log("[Middleware] API versioning enabled");
+    logger.info("[Middleware] API versioning enabled");
   } catch (e) {
-    console.warn("[Middleware] API versioning failed:", (e as any).message);
+    logger.warn("[Middleware] API versioning failed:", (e as any).message);
   }
 
   try {
     const compMod = await import("../middleware/responseCompression.js");
     app.use(compMod.responseCompressionMiddleware);
-    console.log("[Middleware] Response compression enabled");
+    logger.info("[Middleware] Response compression enabled");
   } catch (e) {
-    console.warn(
+    logger.warn(
       "[Middleware] Response compression failed:",
       (e as any).message
     );
@@ -371,11 +372,11 @@ async function startServer() {
   try {
     const orchMod = await import("../middleware/securityOrchestrator.js");
     orchMod.applySecurityOrchestrator(app);
-    console.log(
+    logger.info(
       "[Security] Multi-language security orchestrator registered (Rust DDoS, Go PBAC, Python Fraud ML)"
     );
   } catch (e) {
-    console.warn(
+    logger.warn(
       "[Security] Orchestrator load failed (non-fatal):",
       (e as any).message
     );
@@ -385,11 +386,11 @@ async function startServer() {
   try {
     const finMod = await import("../middleware/financialAttackPrevention.js");
     finMod.applyFinancialAttackPrevention(app);
-    console.log(
+    logger.info(
       "[Security] Financial attack prevention registered (replay, card-testing, ATO, collusion, exfiltration)"
     );
   } catch (e) {
-    console.warn(
+    logger.warn(
       "[Security] Financial attack prevention failed (non-fatal):",
       (e as any).message
     );
@@ -468,7 +469,7 @@ async function startServer() {
           : "/";
       res.redirect(safeReturnTo);
     });
-    console.log(
+    logger.info(
       "[DEV] Auto-login bypass available at GET /api/dev-login?returnTo=/path"
     );
   }
@@ -499,10 +500,10 @@ async function startServer() {
     async (req, res) => {
       try {
         const { event, data } = req.body ?? {};
-        console.log(`[Webhook/TB] event=${event}`, data);
+        logger.info(`[Webhook/TB] event=${event}`, data);
         res.json({ received: true });
       } catch (err) {
-        console.error("[Webhook/TB] Handler error:", err);
+        logger.error("[Webhook/TB] Handler error:", err);
         res.status(500).json({ error: "Webhook processing failed" });
       }
     }
@@ -516,10 +517,10 @@ async function startServer() {
     async (req, res) => {
       try {
         const { event, data } = req.body ?? {};
-        console.log(`[Webhook/Termii] event=${event}`, data);
+        logger.info(`[Webhook/Termii] event=${event}`, data);
         res.json({ received: true });
       } catch (err) {
-        console.error("[Webhook/Termii] Handler error:", err);
+        logger.error("[Webhook/Termii] Handler error:", err);
         res.status(500).json({ error: "Webhook processing failed" });
       }
     }
@@ -533,10 +534,10 @@ async function startServer() {
     async (req, res) => {
       try {
         const { event, data } = req.body ?? {};
-        console.log(`[Webhook/Partner] event=${event}`, data);
+        logger.info(`[Webhook/Partner] event=${event}`, data);
         res.json({ received: true });
       } catch (err) {
-        console.error("[Webhook/Partner] Handler error:", err);
+        logger.error("[Webhook/Partner] Handler error:", err);
         res.status(500).json({ error: "Webhook processing failed" });
       }
     }
@@ -709,7 +710,7 @@ async function startServer() {
         fraudAlertBus.on("alert", onAlert);
       })
       .catch(err =>
-        console.warn("[Fraud SSE] Could not load fraudDetectionEngine:", err)
+        logger.warn("[Fraud SSE] Could not load fraudDetectionEngine:", err)
       );
 
     // Clean up on disconnect
@@ -731,12 +732,12 @@ async function startServer() {
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+    logger.info(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
   server.listen(port, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${port}/`);
-    console.log("[REDACTED]");
+    logger.info(`Server running on http://localhost:${port}/`);
+    logger.info("[REDACTED]");
     // Register settlement crons
     registerSettlementCron();
     // Register lakehouse daily snapshot crons (02:00–02:15 WAT)
@@ -748,7 +749,7 @@ async function startServer() {
     // Start Temporal worker for SettlementWorkflow, FloatReplenishmentWorkflow, etc.
     // Runs in-process; in production it can also be a separate Docker container.
     startTemporalWorker().catch(err =>
-      console.warn(
+      logger.warn(
         "[Temporal] Worker startup skipped (Temporal server not available):",
         (err as Error).message
       )
@@ -763,51 +764,51 @@ async function startServer() {
     if (shuttingDown) return;
     shuttingDown = true;
     const shutdownStart = Date.now();
-    console.log(`[Server] Received ${signal}. Starting graceful shutdown…`);
+    logger.info(`[Server] Received ${signal}. Starting graceful shutdown…`);
 
     // Phase 0: Stop background workers
-    console.log("[Server] Phase 0: Stopping background workers…");
+    logger.info("[Server] Phase 0: Stopping background workers…");
     stopArchivalCronWorker();
 
     // Phase 1: Stop accepting new connections (health checks return 503)
-    console.log("[Server] Phase 1: Stopping new connections…");
+    logger.info("[Server] Phase 1: Stopping new connections…");
 
     // Phase 2: Close HTTP server (drain in-flight requests)
-    console.log("[Server] Phase 2: Draining in-flight HTTP requests…");
+    logger.info("[Server] Phase 2: Draining in-flight HTTP requests…");
     server.close(async err => {
       if (err) {
-        console.error("[Server] Error during HTTP shutdown:", err);
+        logger.error("[Server] Error during HTTP shutdown:", err);
       }
-      console.log("[Server] HTTP server closed.");
+      logger.info("[Server] HTTP server closed.");
 
       // Phase 3: Close database connection pool
-      console.log("[Server] Phase 3: Closing database connection pool…");
+      logger.info("[Server] Phase 3: Closing database connection pool…");
       try {
         const { getPool } = await import("../db");
         const pool = await getPool();
         if (pool) {
           await pool.end();
-          console.log("[Server] Database pool closed.");
+          logger.info("[Server] Database pool closed.");
         }
       } catch (e) {
-        console.error("[Server] Error closing DB pool:", e);
+        logger.error("[Server] Error closing DB pool:", e);
       }
 
       // Phase 4: Close Redis connections
-      console.log("[Server] Phase 4: Closing Redis connections…");
+      logger.info("[Server] Phase 4: Closing Redis connections…");
       try {
         const { getRedisClient } = await import("../lib/redisClient");
         const redis = getRedisClient();
         if (redis) {
           await redis.quit();
-          console.log("[Server] Redis connection closed.");
+          logger.info("[Server] Redis connection closed.");
         }
       } catch (e) {
-        console.error("[Server] Error closing Redis:", e);
+        logger.error("[Server] Error closing Redis:", e);
       }
 
       const elapsed = Date.now() - shutdownStart;
-      console.log(
+      logger.info(
         `[Server] Graceful shutdown complete in ${elapsed}ms. Exiting.`
       );
       process.exit(0);
@@ -816,7 +817,7 @@ async function startServer() {
     // Force exit after 30 seconds if connections don't drain
     setTimeout(() => {
       const elapsed = Date.now() - shutdownStart;
-      console.error(`[Server] Forced exit after ${elapsed}ms (30s timeout).`);
+      logger.error(`[Server] Forced exit after ${elapsed}ms (30s timeout).`);
       process.exit(1);
     }, 30_000).unref();
   }
@@ -828,7 +829,7 @@ async function startServer() {
   process.on("SIGHUP", () => {
     import("../lib/mtlsAgent.js")
       .then(({ resetMtlsAgent }) => resetMtlsAgent())
-      .catch(err => console.error("[mTLS] SIGHUP reload failed:", err));
+      .catch(err => logger.error("[mTLS] SIGHUP reload failed:", err));
   });
 }
 

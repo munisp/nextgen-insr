@@ -24,6 +24,8 @@ import {
   billingAuditLog,
 } from "../../drizzle/schema";
 import { eq, and, gte, lt, sql } from "drizzle-orm";
+import { eq, and, gte, lt, sql } from "drizzle-orm";
+import { logger } from './_core/logger';
 
 let _stripe: Stripe | null = null;
 function getStripe(): Stripe {
@@ -43,7 +45,7 @@ async function publishBillingEvent(
   topic: string,
   payload: Record<string, any>
 ) {
-  console.log(
+  logger.info(
     `[Kafka] Publishing to ${topic}:`,
     JSON.stringify(payload).slice(0, 200)
   );
@@ -76,14 +78,14 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
       year: "numeric",
     });
 
-    console.log(`[Monthly Invoice Cron] Starting for period: ${periodLabel}`);
-    console.log(
+    logger.info(`[Monthly Invoice Cron] Starting for period: ${periodLabel}`);
+    logger.info(
       `[Monthly Invoice Cron] Date range: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`
     );
 
     // 1. Get all active tenant billing configs
     const tenantConfigs = await db.select().from(tenantBillingConfig);
-    console.log(
+    logger.info(
       `[Monthly Invoice Cron] Found ${tenantConfigs.length} tenant configs`
     );
 
@@ -114,7 +116,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
         // Skip if no transactions
         if (txCount === 0) {
           results.push({ tenantId: config.tenantId, status: "skipped" });
-          console.log(
+          logger.info(
             `[Monthly Invoice Cron] Tenant ${config.tenantId}: No transactions, skipping`
           );
           continue;
@@ -158,7 +160,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
         if (invoiceAmount < 5000) {
           // ₦50 in kobo
           results.push({ tenantId: config.tenantId, status: "skipped" });
-          console.log(
+          logger.info(
             `[Monthly Invoice Cron] Tenant ${config.tenantId}: Amount too low (${invoiceAmount}), skipping`
           );
           continue;
@@ -177,7 +179,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
           });
           customerId = customer.id;
           // Update tenant config with Stripe customer ID
-          console.log(
+          logger.info(
             `[Monthly Invoice Cron] Created Stripe customer ${customerId} for tenant ${config.tenantId}`
           );
         }
@@ -249,11 +251,11 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
           amount: invoiceAmount / 100,
         });
 
-        console.log(
+        logger.info(
           `[Monthly Invoice Cron] Tenant ${config.tenantId}: Invoice ${invoice.id} created for ₦${(invoiceAmount / 100).toLocaleString()}`
         );
       } catch (err: any) {
-        console.error(
+        logger.error(
           `[Monthly Invoice Cron] Tenant ${config.tenantId} error:`,
           err.message
         );
@@ -281,7 +283,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
       results,
     };
 
-    console.log(
+    logger.info(
       `[Monthly Invoice Cron] Complete:`,
       JSON.stringify(summary, null, 2).slice(0, 500)
     );
@@ -291,7 +293,7 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
 
     return res.json(summary);
   } catch (err: any) {
-    console.error("[Monthly Invoice Cron] Fatal error:", err);
+    logger.error("[Monthly Invoice Cron] Fatal error:", err);
     return res.status(500).json({
       error: err.message,
       stack: err.stack?.slice(0, 500),

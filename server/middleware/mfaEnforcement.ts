@@ -19,6 +19,8 @@ import { TRPCError } from "@trpc/server";
 import type { TrpcContext } from "../_core/context";
 import type { Request, Response, NextFunction } from "express";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "../_core/keycloakAuth";
+import { verifySessionJwt, KC_SESSION_COOKIE } from "../_core/keycloakAuth";
+import { logger } from './_core/logger';
 
 /**
  * tRPC middleware that enforces MFA.
@@ -78,7 +80,7 @@ export const requireMfa = async ({
   } catch (err) {
     if (err instanceof TRPCError) throw err;
     // If we can't verify the session AMR, fall back to the DB flag only
-    console.warn(
+    logger.warn(
       "[MFA] Could not verify AMR claim, relying on DB mfaEnabled flag:",
       err
     );
@@ -126,7 +128,7 @@ export async function requireMfaExpress(
 
     next();
   } catch (err) {
-    console.error("[MFA] Express middleware error:", err);
+    logger.error("[MFA] Express middleware error:", err);
     res.status(500).json({ error: "MFA verification failed" });
   }
 }

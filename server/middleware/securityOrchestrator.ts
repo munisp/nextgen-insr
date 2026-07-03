@@ -13,6 +13,8 @@
  */
 
 import { Request, Response, NextFunction, Express } from "express";
+import { Request, Response, NextFunction, Express } from "express";
+import { logger } from './_core/logger';
 
 // ── Service Configuration ────────────────────────────────────────────
 
@@ -48,11 +50,11 @@ async function fetchWithTimeout(
   } catch (err: any) {
     clearTimeout(timer);
     if (err.name === "AbortError") {
-      console.warn(`[SecurityOrchestrator] Timeout calling ${url}`);
+      logger.warn(`[SecurityOrchestrator] Timeout calling ${url}`);
     } else {
       // Service is down — expected in dev, logged in prod
       if (process.env.NODE_ENV === "production") {
-        console.error(
+        logger.error(
           `[SecurityOrchestrator] Failed to reach ${url}:`,
           err.message
         );
@@ -264,7 +266,7 @@ function extractAmount(req: Request): number {
     if (req.body && typeof req.body === "object") {
       return parseFloat(req.body.amount || req.body.input?.amount || "0") || 0;
     }
-  } catch (err) { console.error("[securityOrchestrator] operation failed:", err); }
+  } catch (err) { logger.error("[securityOrchestrator] operation failed:", err); }
   return 0;
 }
 
@@ -290,13 +292,13 @@ function isProtectedEndpoint(path: string): boolean {
 // ── Orchestrator Registration ────────────────────────────────────────
 
 export function applySecurityOrchestrator(app: Express): void {
-  console.log(
+  logger.info(
     "[SecurityOrchestrator] Registering multi-language security stack"
   );
-  console.log(`  → Rust DDoS Shield: ${DDOS_SHIELD_URL}`);
-  console.log(`  → Go PBAC Engine: ${PBAC_ENGINE_URL}`);
-  console.log(`  → Python Fraud ML: ${FRAUD_ML_URL}`);
-  console.log(`  → Fail-open mode: ${FAIL_OPEN}`);
+  logger.info(`  → Rust DDoS Shield: ${DDOS_SHIELD_URL}`);
+  logger.info(`  → Go PBAC Engine: ${PBAC_ENGINE_URL}`);
+  logger.info(`  → Python Fraud ML: ${FRAUD_ML_URL}`);
+  logger.info(`  → Fail-open mode: ${FAIL_OPEN}`);
 
   // ── Layer 1: DDoS Protection (Rust) ──
   app.use(async (req: Request, res: Response, next: NextFunction) => {
@@ -309,7 +311,7 @@ export function applySecurityOrchestrator(app: Express): void {
       (req as any).ddosResult = ddosResult;
 
       if (!ddosResult.allowed) {
-        console.warn(
+        logger.warn(
           `[DDoS] Blocked: ip=${req.ip} path=${req.path} reason=${ddosResult.reason}`
         );
         return res.status(429).json({
@@ -358,7 +360,7 @@ export function applySecurityOrchestrator(app: Express): void {
       (req as any).pbacResult = pbacResult;
 
       if (!pbacResult.allowed) {
-        console.warn(
+        logger.warn(
           `[PBAC] Denied: user=${user.id} path=${req.path} policy=${pbacResult.matched_policy} reason=${pbacResult.reason}`
         );
         return res.status(403).json({
@@ -407,7 +409,7 @@ export function applySecurityOrchestrator(app: Express): void {
         (req as any).fraudScore = fraudResult;
 
         if (fraudResult.decision === "block") {
-          console.warn(
+          logger.warn(
             `[FraudML] Blocked: user=${user.id} amount=${amount} score=${fraudResult.overall_score} factors=${fraudResult.risk_factors.join(", ")}`
           );
           return res.status(403).json({
@@ -427,7 +429,7 @@ export function applySecurityOrchestrator(app: Express): void {
     } catch (err) {
       // Fraud scoring failure should not block transactions in fail-open mode
       if (!FAIL_OPEN) {
-        console.error("[FraudML] Scoring failed, blocking transaction:", err);
+        logger.error("[FraudML] Scoring failed, blocking transaction:", err);
         return res
           .status(503)
           .json({ error: "Fraud scoring service unavailable" });
@@ -518,5 +520,5 @@ export function applySecurityOrchestrator(app: Express): void {
     res.json(data);
   });
 
-  console.log("[SecurityOrchestrator] ✓ All security layers registered");
+  logger.info("[SecurityOrchestrator] ✓ All security layers registered");
 }

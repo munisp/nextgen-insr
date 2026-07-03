@@ -4,6 +4,8 @@
  * when critical security events (ransomware, DDoS, exfiltration) are detected.
  */
 import type { Server as SocketIOServer, Socket } from "socket.io";
+import type { Server as SocketIOServer, Socket } from "socket.io";
+import { logger } from './_core/logger';
 
 // ── Types ──
 export interface SecurityAlertPayload {
@@ -70,7 +72,7 @@ export function initSecurityAlertSocket(io: SocketIOServer): void {
   });
 
   securityNamespace.on("connection", (socket: Socket) => {
-    console.log(`[SecurityAlertSocket] Admin connected: ${socket.id}`);
+    logger.info(`[SecurityAlertSocket] Admin connected: ${socket.id}`);
 
     // Send current active alerts on connect
     socket.emit("alert:snapshot", {
@@ -119,11 +121,11 @@ export function initSecurityAlertSocket(io: SocketIOServer): void {
     });
 
     socket.on("disconnect", () => {
-      console.log(`[SecurityAlertSocket] Admin disconnected: ${socket.id}`);
+      logger.info(`[SecurityAlertSocket] Admin disconnected: ${socket.id}`);
     });
   });
 
-  console.log("[SecurityAlertSocket] /security-alerts namespace initialized");
+  logger.info("[SecurityAlertSocket] /security-alerts namespace initialized");
 }
 
 /**

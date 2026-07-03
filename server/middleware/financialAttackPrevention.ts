@@ -7,6 +7,8 @@
  */
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import crypto from "crypto";
+import { logger } from './_core/logger';
 
 // ── Replay Attack Prevention (Nonce + Idempotency) ───────────────────
 const nonceStore = new Map<string, number>(); // nonce -> timestamp
@@ -134,7 +136,7 @@ export function cardTestingDetection(
           window.uniqueCards.size > 5 ||
           window.attempts > 20
         ) {
-          console.warn(
+          logger.warn(
             `[CardTest] Suspected card testing from ${ip}: ${window.attempts} attempts, ${window.smallAmounts} small, ${window.uniqueCards.size} unique cards`
           );
           res.status(429).json({
@@ -230,7 +232,7 @@ export function accountTakeoverPrevention(
 
   // Detect suspicious patterns
   if (record.ips.size > 5) {
-    console.warn(
+    logger.warn(
       `[ATO] Account ${identifier} accessed from ${record.ips.size} different IPs`
     );
   }
@@ -252,7 +254,7 @@ export function accountTakeoverPrevention(
             Math.floor(record!.failures / MAX_FAILED_LOGINS) - 1
           );
         record!.lockedUntil = now + Math.min(lockoutMs, 3_600_000); // Max 1 hour
-        console.warn(
+        logger.warn(
           `[ATO] Account ${identifier} locked for ${lockoutMs / 1000}s after ${record!.failures} failures`
         );
       }
@@ -487,7 +489,7 @@ export function credentialStuffingDetection(
 
   // Credential stuffing: many unique accounts from same IP
   if (window.uniqueAccounts.size > 10 && window.totalAttempts > 15) {
-    console.warn(
+    logger.warn(
       `[CredStuff] IP ${ip}: ${window.uniqueAccounts.size} unique accounts, ${window.totalAttempts} attempts`
     );
     res.status(429).json({
@@ -753,7 +755,7 @@ export function applyFinancialAttackPrevention(app: any) {
   app.use(credentialStuffingDetection);
   app.use(enumerationPrevention);
   app.use(dataExfiltrationPrevention);
-  console.log(
+  logger.info(
     "[FinSec] Financial attack prevention applied: replay, card testing, ATO, credential stuffing, enumeration, data exfiltration"
   );
 }

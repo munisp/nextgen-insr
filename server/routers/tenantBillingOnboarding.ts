@@ -19,6 +19,8 @@ import { requireBillingPermission } from "./billingRbac";
 import { recordBillingAudit } from "./billingAudit";
 import { Client, Connection } from "@temporalio/client";
 import { TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
+import { logger } from './_core/logger';
 
 // Temporal client singleton for billing provisioning
 let temporalClient: Client | null = null;
@@ -34,7 +36,7 @@ async function getTemporalClient(): Promise<Client | null> {
     });
     return temporalClient;
   } catch {
-    console.warn(
+    logger.warn(
       "[BillingOnboarding] Temporal not available, using local execution"
     );
     return null;

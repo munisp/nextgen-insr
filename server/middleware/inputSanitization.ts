@@ -12,6 +12,8 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { logger } from './_core/logger';
 
 // ─── SQL Injection Patterns ─────────────────────────────────────────────────
 
@@ -198,7 +200,7 @@ export function inputSanitizationMiddleware(
       const bodyResult = deepScanObject(req.body, "body");
       if (!bodyResult.safe) {
         if (cfg.logThreats) {
-          console.warn(
+          logger.warn(
             `[InputSanitization] Threats detected in ${req.method} ${req.path}:`,
             bodyResult.threats.map(t => `${t.type} at ${t.path}`)
           );

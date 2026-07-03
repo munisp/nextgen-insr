@@ -33,6 +33,8 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { count } from "drizzle-orm";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { notifyOwner } from "../_core/notification";
+import { notifyOwner } from "../_core/notification";
+import { logger } from './_core/logger';
 
 export const gdprRouter = router({
   /**
@@ -232,7 +234,7 @@ export const gdprRouter = router({
           title: `NDPR Erasure Request: Agent ${agent.agentCode}`,
           content: `Agent ${agent.name} (${agent.agentCode}) has submitted a data erasure request.\n\nReason: ${input.reason}\n\nAction required: Review and process within 30 days per NDPR Article 2.1(1)(c).\n\nNote: Financial transaction records must be retained for 7 years per CBN AML regulations.`,
         }).catch((e: unknown) =>
-          console.error("[GDPR] Erasure notification failed:", e)
+          logger.error("[GDPR] Erasure notification failed:", e)
         );
 
         return {

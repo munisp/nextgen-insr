@@ -16,6 +16,8 @@ import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getAgentFromCookie } from "../middleware/agentAuth.js";
 import { getDb } from "../db.js";
 import { kycSessions } from "../../drizzle/schema.js";
+import { kycSessions } from "../../drizzle/schema.js";
+import { logger } from './_core/logger';
 import {
   createLivenessChallenge,
   verifyLivenessChallenge,
@@ -540,7 +542,7 @@ export const kycRouter = router({
             })
           )
           .catch((e: unknown) =>
-            console.error("[Fluvio] KYC event failed:", e)
+            logger.error("[Fluvio] KYC event failed:", e)
           );
 
         return {

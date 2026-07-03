@@ -11,6 +11,8 @@ import {
   billingRoleAssignments,
 } from "../drizzle/schema";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
+import { logger } from './_core/logger';
 
 async function getDbInstance() {
   const instance = await getDb();
@@ -201,7 +203,7 @@ export async function notifyAgentsOfSettlement(input: {
   settlements: AgentSettlement[];
   reportUrl: string;
 }): Promise<void> {
-  console.log(
+  logger.info(
     `[Temporal] Notified ${input.settlements.length} agents of settlement. Report: ${input.reportUrl}`
   );
 }
@@ -211,7 +213,7 @@ export async function archiveSettlementBatch(input: {
   report: string;
   date: string;
 }): Promise<void> {
-  console.log(
+  logger.info(
     `[Temporal] Archived settlement batch ${input.batchId} for ${input.date}`
   );
 }
@@ -271,7 +273,7 @@ export async function notifyAgentOfFloat(input: {
   currency: string;
   transferRef: string;
 }): Promise<void> {
-  console.log(
+  logger.info(
     `[Temporal] Agent ${input.agentId} float transfer ${input.transferRef}: ${input.amount} ${input.currency}`
   );
 }
@@ -374,7 +376,7 @@ export async function configureReconciliation(input: {
   tenantId: number;
   region: string;
 }): Promise<{ schedule: string; threshold: number }> {
-  console.log(
+  logger.info(
     `[Temporal Activity] Configuring reconciliation for tenant ${input.tenantId} in ${input.region}`
   );
   return { schedule: "daily@02:00WAT", threshold: 0.01 };
@@ -401,7 +403,7 @@ export async function rollbackBillingStep(input: {
   step: string;
 }): Promise<void> {
   const _db = await getDbInstance();
-  console.log(
+  logger.info(
     `[Temporal Activity] Rolling back step '${input.step}' for tenant ${input.tenantId}`
   );
   switch (input.step) {
@@ -434,7 +436,7 @@ export async function rollbackBillingStep(input: {
         .where(eq(tenantBillingConfig.tenantId, input.tenantId));
       break;
     default:
-      console.log(
+      logger.info(
         `[Temporal Activity] No rollback action for step '${input.step}'`
       );
   }

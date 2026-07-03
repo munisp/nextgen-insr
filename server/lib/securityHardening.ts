@@ -13,6 +13,8 @@
  */
 import { randomBytes, createHash } from "crypto";
 import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { logger } from './_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Cryptographically Secure CSRF Token
@@ -172,9 +174,9 @@ export function logSecurityEvent(
   // Log to stdout in structured format
   const logLine = JSON.stringify(entry);
   if (severity === "critical") {
-    console.error(`[SECURITY:${severity.toUpperCase()}] ${logLine}`);
+    logger.error(`[SECURITY:${severity.toUpperCase()}] ${logLine}`);
   } else if (severity === "warning") {
-    console.warn(`[SECURITY:${severity.toUpperCase()}] ${logLine}`);
+    logger.warn(`[SECURITY:${severity.toUpperCase()}] ${logLine}`);
   }
 }
 

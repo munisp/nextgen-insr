@@ -6,6 +6,8 @@
  * Uses the existing emailService infrastructure.
  */
 import { notifyOwner } from "../_core/notification";
+import { notifyOwner } from "../_core/notification";
+import { logger } from './_core/logger';
 
 export interface ReportEmailPayload {
   recipientEmail: string;
@@ -59,12 +61,12 @@ export async function sendReportEmail(
       title: payload.subject,
       content: `Report Type: ${payload.reportType}\n\nRecipient: ${payload.recipientEmail}\n\n${payload.htmlBody.replace(/<[^>]*>/g, "")}`,
     });
-    console.log(
+    logger.info(
       `[ReportEmail] Sent ${payload.reportType} report to ${payload.recipientEmail}`
     );
     return true;
   } catch (err: any) {
-    console.error(`[ReportEmail] Failed to send: ${err.message}`);
+    logger.error(`[ReportEmail] Failed to send: ${err.message}`);
     return false;
   }
 }

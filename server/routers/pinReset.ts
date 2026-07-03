@@ -18,6 +18,8 @@ import { agents, otpTokens } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { sendSms } from "../termii";
 import crypto from "crypto";
+import crypto from "crypto";
+import { logger } from './_core/logger';
 const OTP_EXPIRY_MINUTES = 10;
 // SECURITY: Use crypto.randomInt for cryptographically secure OTP generation
 function generateOtp(): string {
@@ -98,7 +100,7 @@ export const pinResetRouter = router({
           // Redact phone number in logs to avoid PII exposure
           const maskedPhone =
             input.phone.slice(0, 4) + "****" + input.phone.slice(-3);
-          console.error(
+          logger.error(
             `[pinReset] SMS delivery failed for ${maskedPhone}: ${smsResult.error}`
           );
         } else {

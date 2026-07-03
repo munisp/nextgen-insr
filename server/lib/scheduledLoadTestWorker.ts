@@ -10,6 +10,8 @@
  */
 import { getConfig, setConfig } from "./runtimeConfig";
 import { notifyOwner } from "../_core/notification";
+import { notifyOwner } from "../_core/notification";
+import { logger } from './_core/logger';
 
 export interface ScheduledTestConfig {
   enabled: boolean;
@@ -107,7 +109,7 @@ export async function checkAndRunScheduledTest(
 
   if (!shouldRunNow(config.cronExpression)) return { ran: false };
 
-  console.log(
+  logger.info(
     `[ScheduledLoadTest] Triggering scheduled test: ${config.targetRps} RPS for ${config.duration}s`
   );
 
@@ -133,7 +135,7 @@ export async function checkAndRunScheduledTest(
 
     return { ran: true, result };
   } catch (err: any) {
-    console.error(`[ScheduledLoadTest] Failed:`, err.message);
+    logger.error(`[ScheduledLoadTest] Failed:`, err.message);
     await notifyOwner({
       title: "❌ Scheduled Load Test Failed",
       content: `Error: ${err.message}`,
@@ -146,7 +148,7 @@ export function startScheduledLoadTestWorker(
   executeTestFn: (config: any) => Promise<any>
 ) {
   if (workerInterval) return;
-  console.log("[ScheduledLoadTest] Worker started (checking every 60s)");
+  logger.info("[ScheduledLoadTest] Worker started (checking every 60s)");
   workerInterval = setInterval(() => {
     checkAndRunScheduledTest(executeTestFn).catch(console.error);
   }, 60_000);
@@ -156,6 +158,6 @@ export function stopScheduledLoadTestWorker() {
   if (workerInterval) {
     clearInterval(workerInterval);
     workerInterval = null;
-    console.log("[ScheduledLoadTest] Worker stopped");
+    logger.info("[ScheduledLoadTest] Worker stopped");
   }
 }

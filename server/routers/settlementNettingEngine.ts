@@ -15,6 +15,8 @@ import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
 import logger from "../_core/logger";
 import { TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
+import { logger } from './_core/logger';
 
 export const settlementNettingEngineRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -171,21 +173,21 @@ export const settlementNettingEngineRouter = router({
           "system",
           { event: "netting.session.created", timestamp: Date.now() }
         );
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:", err); }
       try {
         await cacheSet(
           "settlementNettingEngine:last",
           JSON.stringify({ ts: Date.now() }),
           300
         );
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:", err); }
       try {
         await tbCreateTransfer({
           debitAccountId: "1",
           creditAccountId: "2",
           amount: 0,
         });
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:", err); }
       try {
         await fluvioProduce("pos.settlementnettingengine", {
           value: JSON.stringify({
@@ -193,7 +195,7 @@ export const settlementNettingEngineRouter = router({
             ts: Date.now(),
           }),
         });
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:", err); }
       try {
         await permifyCheck({
           subjectType: "user",
@@ -202,7 +204,7 @@ export const settlementNettingEngineRouter = router({
           entityId: "system",
           permission: "execute",
         });
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:", err); }
       return {
         sessionId: `NET-${Date.now()}`,
         status: "calculating",
@@ -231,7 +233,7 @@ export const settlementNettingEngineRouter = router({
           "system",
           { event: "netting.session.settled", sessionId: input.sessionId }
         );
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:", err); }
       return {
         sessionId: input.sessionId,
         status: "settled",

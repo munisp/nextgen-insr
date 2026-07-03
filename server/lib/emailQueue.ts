@@ -18,6 +18,8 @@
  *
  * Usage:
  *   import { enqueueEmail } from "./emailQueue";
+ *   import { enqueueEmail } from "./emailQueue";
+import { logger } from './_core/logger';
  *
  *   await enqueueEmail({
  *     to: "agent@example.com",
@@ -71,7 +73,7 @@ export function enqueueEmail(opts: {
     nextRetryAt: Date.now(),
   };
   queue.push(job);
-  console.log(
+  logger.info(
     `[EmailQueue] Enqueued ${id} → ${Array.isArray(opts.to) ? opts.to.join(", ") : opts.to}`
   );
   if (!workerRunning) startWorker();
@@ -112,7 +114,7 @@ export async function sendEmailNow(opts: {
 function startWorker() {
   workerRunning = true;
   processQueue().catch(err => {
-    console.error("[EmailQueue] Worker crashed:", err);
+    logger.error("[EmailQueue] Worker crashed:", err);
     workerRunning = false;
   });
 }
@@ -142,15 +144,15 @@ async function processQueue() {
       // Remove successful job from queue
       const idx = queue.indexOf(job);
       if (idx !== -1) queue.splice(idx, 1);
-      console.log(`[EmailQueue] Delivered ${job.id} (attempt ${job.attempts})`);
+      logger.info(`[EmailQueue] Delivered ${job.id} (attempt ${job.attempts})`);
     } catch (err) {
       const delay = BASE_RETRY_MS * Math.pow(2, job.attempts - 1);
       job.nextRetryAt = Date.now() + delay;
-      console.warn(
+      logger.warn(
         `[EmailQueue] Delivery failed for ${job.id} (attempt ${job.attempts}/${job.maxAttempts}): ${(err as Error).message}. Retry in ${delay}ms.`
       );
       if (job.attempts >= job.maxAttempts) {
-        console.error(
+        logger.error(
           `[EmailQueue] Giving up on ${job.id} after ${job.maxAttempts} attempts.`
         );
         const idx = queue.indexOf(job);
@@ -165,7 +167,7 @@ async function deliverEmail(job: EmailJob): Promise<void> {
 
   if (!smtpHost) {
     // Dev mode: log to console instead of sending
-    console.log(
+    logger.info(
       `[EmailQueue/DEV] Would send email:\n  To: ${Array.isArray(job.to) ? job.to.join(", ") : job.to}\n  Subject: ${job.subject}\n  From: ${job.from}`
     );
     return;

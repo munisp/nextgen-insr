@@ -10,6 +10,8 @@ import { eq } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { ENV } from "../_core/env";
+import { ENV } from "../_core/env";
+import { logger } from './_core/logger';
 
 const TERMII_URL = "https://api.ng.termii.com/api/sms/send";
 
@@ -21,7 +23,7 @@ async function sendTermiiSMS(
 
   if (!apiKey) {
     // Graceful fallback — log receipt to console for demo purposes
-    console.log(`[SMS Fallback] To: ${to}\nMessage: ${message}`);
+    logger.info(`[SMS Fallback] To: ${to}\nMessage: ${message}`);
     return { success: true, messageId: `DEMO-${Date.now()}` };
   }
 

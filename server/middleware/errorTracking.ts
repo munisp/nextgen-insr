@@ -1,5 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 import { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction } from "express";
+import { logger } from './_core/logger';
 
 interface ErrorLog {
   timestamp: string;
@@ -33,7 +35,7 @@ export function errorTrackingMiddleware(
   recentErrors.push(errorLog);
   if (recentErrors.length > MAX_ERROR_BUFFER) recentErrors.shift();
 
-  console.error("[ERROR_TRACK]", JSON.stringify(errorLog));
+  logger.error("[ERROR_TRACK]", JSON.stringify(errorLog));
 
   // Don't swallow the error — pass to next handler
   next(err);

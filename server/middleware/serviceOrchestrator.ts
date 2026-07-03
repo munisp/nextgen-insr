@@ -24,6 +24,8 @@ import {
   lakehouse,
 } from "./middlewareConnectors";
 import { checkAllServices, type PlatformHealth } from "./integrationHealth";
+import { checkAllServices, type PlatformHealth } from "./integrationHealth";
+import { logger } from './_core/logger';
 
 // ─── Service Registry ────────────────────────────────────────────────────────
 export interface ServiceRegistration {
@@ -52,7 +54,7 @@ export function registerService(
     lastHeartbeat: Date.now(),
     status: "active",
   });
-  console.log(
+  logger.info(
     `[Orchestrator] Service registered: ${service.name} v${service.version} at ${service.host}:${service.port}`
   );
 }
@@ -226,7 +228,7 @@ export async function publishEvent(
       await handler(event);
       delivered++;
     } catch (err) {
-      console.error(
+      logger.error(
         `[Orchestrator] Event handler failed for ${event.type}:`,
         err
       );
@@ -309,7 +311,7 @@ export async function executeSaga(
       await step.execute();
       completedSteps.push(step.name);
     } catch (err: any) {
-      console.error(
+      logger.error(
         `[Saga] Step "${step.name}" failed in saga "${sagaName}": ${err.message}`
       );
 
@@ -319,9 +321,9 @@ export async function executeSaga(
         if (compensateStep) {
           try {
             await compensateStep.compensate();
-            console.log(`[Saga] Compensated step: ${compensateStep.name}`);
+            logger.info(`[Saga] Compensated step: ${compensateStep.name}`);
           } catch (compErr: any) {
-            console.error(
+            logger.error(
               `[Saga] Compensation failed for "${compensateStep.name}": ${compErr.message}`
             );
           }
@@ -426,7 +428,7 @@ subscribeToEvent("biometric.enrolled", async event => {
 subscribeToEvent("biometric.spoof_detected", async event => {
   await opensearch.index("security-alerts", event.id, event.payload);
   // High-priority alert
-  console.warn(
+  logger.warn(
     `[ALERT] Spoof attempt detected: ${JSON.stringify(event.payload)}`
   );
 });

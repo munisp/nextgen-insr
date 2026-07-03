@@ -26,6 +26,8 @@
 
 import { ENV } from "../_core/env.js";
 import axios from "axios";
+import axios from "axios";
+import { logger } from './_core/logger';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -189,7 +191,7 @@ async function flushBuffer(): Promise<void> {
     }
   }
   if (flushed > 0) {
-    console.log(
+    logger.info(
       `[Fluvio] Flushed ${flushed} buffered events (${failed} re-buffered)`
     );
   }
@@ -199,7 +201,7 @@ async function flushBuffer(): Promise<void> {
 function startFlushTimer(): void {
   if (_flushTimer) return;
   _flushTimer = setInterval(() => {
-    flushBuffer().catch(e => console.error("[Fluvio] Flush error:", e));
+    flushBuffer().catch(e => logger.error("[Fluvio] Flush error:", e));
   }, 30_000);
   if (
     _flushTimer &&
@@ -250,11 +252,11 @@ export async function fluvioProduce(event: FluvioEvent): Promise<void> {
     .catch(() => {});
   if (!sent) {
     bufferEvent(event);
-    console.warn(
+    logger.warn(
       `[Fluvio] Topic=${event.topic} buffered (direct+proxy unavailable). Buffer size: ${eventBuffer.length}`
     );
   } else {
-    console.log(`[Fluvio] Produced → ${event.topic} (mode=${_mode})`);
+    logger.info(`[Fluvio] Produced → ${event.topic} (mode=${_mode})`);
   }
 }
 
@@ -472,7 +474,7 @@ export async function shutdownFluvio(): Promise<void> {
     _flushTimer = null;
   }
   if (eventBuffer.length > 0) {
-    console.log(
+    logger.info(
       `[Fluvio] Shutdown flush: ${eventBuffer.length} buffered events`
     );
     await flushBuffer();

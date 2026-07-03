@@ -1,6 +1,8 @@
 // TypeScript enabled — Sprint 96 security audit
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import crypto from "crypto";
+import { logger } from './_core/logger';
 
 export function structuredLoggingMiddleware(
   req: Request,
@@ -31,11 +33,11 @@ export function structuredLoggingMiddleware(
     };
 
     if (res.statusCode >= 500) {
-      console.error("[REQ]", JSON.stringify(logEntry));
+      logger.error("[REQ]", JSON.stringify(logEntry));
     } else if (res.statusCode >= 400) {
-      console.warn("[REQ]", JSON.stringify(logEntry));
+      logger.warn("[REQ]", JSON.stringify(logEntry));
     } else if (latency > 5000) {
-      console.warn("[SLOW]", JSON.stringify(logEntry));
+      logger.warn("[SLOW]", JSON.stringify(logEntry));
     }
   });
 

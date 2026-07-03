@@ -28,6 +28,8 @@ import { notifyOwner } from "./_core/notification";
 import { sendSms } from "./termii";
 import { settlementPlatform } from "./_core/platformClient.js";
 import { ENV } from "./_core/env";
+import { ENV } from "./_core/env";
+import { logger } from './_core/logger';
 
 interface AgentSettlement {
   agentId: number;
@@ -60,10 +62,10 @@ interface SettlementResult {
 }
 
 async function runDailySettlement(): Promise<SettlementResult> {
-  console.log("[settlement] Starting daily settlement run...");
+  logger.info("[settlement] Starting daily settlement run...");
   const db = await getDb();
   if (!db) {
-    console.error("[settlement] DB unavailable — skipping settlement run");
+    logger.error("[settlement] DB unavailable — skipping settlement run");
     return {
       agentCount: 0,
       smsSent: 0,
@@ -75,9 +77,9 @@ async function runDailySettlement(): Promise<SettlementResult> {
   // ── Phase 47: Lock all agents at start of settlement ──────────────────────
   try {
     await db.update(agents).set({ floatLocked: true });
-    console.log("[settlement] Float locked for all agents");
+    logger.info("[settlement] Float locked for all agents");
   } catch (err) {
-    console.error(
+    logger.error(
       "[settlement] Failed to lock floats — aborting settlement:",
       err
     );
@@ -150,7 +152,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
       if (smsResult.success) {
         smsSent++;
       } else {
-        console.error(
+        logger.error(
           `[settlement] SMS failed for agent ${agent.agentCode}: ${smsResult.error}`
         );
       }
@@ -173,7 +175,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
 
       successCount++;
     } catch (err) {
-      console.error(
+      logger.error(
         `[settlement] Error processing agent ${agent.agentCode}:`,
         err
       );
@@ -184,10 +186,10 @@ async function runDailySettlement(): Promise<SettlementResult> {
   // ── Phase 47: Unlock all agents after settlement completes ────────────────
   try {
     await db.update(agents).set({ floatLocked: false });
-    console.log("[settlement] Float unlocked for all agents");
+    logger.info("[settlement] Float unlocked for all agents");
   } catch (err) {
     // Critical: if unlock fails, agents cannot transact. Log prominently.
-    console.error(
+    logger.error(
       "[settlement] CRITICAL: Failed to unlock floats after settlement:",
       err
     );
@@ -207,20 +209,20 @@ async function runDailySettlement(): Promise<SettlementResult> {
         `[settlement] Platform settlement trigger sent for ${settlementDate}`
       );
     } else {
-      console.warn(
+      logger.warn(
         "[settlement] PLATFORM_SERVICE_TOKEN not set — skipping platform settlement trigger"
       );
     }
   } catch (platformErr) {
     // Non-fatal: local settlement already completed; platform sync is best-effort
-    console.warn(
+    logger.warn(
       "[settlement] Platform settlement trigger failed (fail-open):",
       (platformErr as Error).message
     );
     errors.push(`Platform trigger failed: ${(platformErr as Error).message}`);
   }
 
-  console.log(
+  logger.info(
     `[settlement] Daily settlement complete — ${successCount} agents processed, ${errors.length} errors`
   );
   return { agentCount: successCount, smsSent, errors, runAt: new Date() };
@@ -255,14 +257,14 @@ async function runAutoEscalation(): Promise<void> {
           content: `Alert #${alert.id} (${alert.severity}) was snoozed but not resolved. Auto-escalated at ${now.toISOString()}.`,
         });
       } catch (e) {
-        console.error("[autoEscalation] notifyOwner failed:", e);
+        logger.error("[autoEscalation] notifyOwner failed:", e);
       }
     }
-    console.log(
+    logger.info(
       `[autoEscalation] Escalated ${expired.length} snoozed alert(s)`
     );
   } catch (err) {
-    console.error("[autoEscalation] Error:", err);
+    logger.error("[autoEscalation] Error:", err);
   }
 }
 
@@ -337,9 +339,9 @@ async function runWeeklyComplianceReport(): Promise<void> {
       pdfKey = `compliance-reports/weekly-${suffix}-${Date.now()}.pdf`;
       const uploaded = await storagePut(pdfKey, pdfBuffer, "application/pdf");
       pdfUrl = uploaded.url;
-      console.log(`[complianceReport] PDF uploaded: ${pdfUrl}`);
+      logger.info(`[complianceReport] PDF uploaded: ${pdfUrl}`);
     } catch (pdfErr) {
-      console.error("[complianceReport] PDF generation/upload failed:", pdfErr);
+      logger.error("[complianceReport] PDF generation/upload failed:", pdfErr);
     }
 
     // Store in compliance_reports table
@@ -397,11 +399,11 @@ async function runWeeklyComplianceReport(): Promise<void> {
       title: `Weekly Security Report — ${allAlerts.length} alerts (${weekStart}–${weekEnd})`,
       content,
     });
-    console.log(
+    logger.info(
       `[complianceReport] Weekly report complete — ${allAlerts.length} alerts`
     );
   } catch (err) {
-    console.error("[complianceReport] Error:", err);
+    logger.error("[complianceReport] Error:", err);
   }
 }
 
@@ -416,10 +418,10 @@ export function registerSettlementCron(): void {
     try {
       await runDailySettlement();
     } catch (err) {
-      console.error("[settlement] Unhandled error in settlement cron:", err);
+      logger.error("[settlement] Unhandled error in settlement cron:", err);
     }
   });
-  console.log(
+  logger.info(
     "[settlement] Daily settlement cron registered (16:00 UTC / 17:00 WAT, Mon–Fri)"
   );
 
@@ -427,13 +429,13 @@ export function registerSettlementCron(): void {
   cron.schedule("*/15 * * * *", async () => {
     await runAutoEscalation();
   });
-  console.log("[settlement] Auto-escalation cron registered (every 15 min)");
+  logger.info("[settlement] Auto-escalation cron registered (every 15 min)");
 
   // Weekly compliance report — Mondays at 08:00 UTC (09:00 WAT)
   cron.schedule("0 8 * * 1", async () => {
     await runWeeklyComplianceReport();
   });
-  console.log(
+  logger.info(
     "[settlement] Weekly compliance report cron registered (Mon 08:00 UTC)"
   );
 
@@ -441,14 +443,14 @@ export function registerSettlementCron(): void {
   cron.schedule("0 8 * * *", async () => {
     await runDeadLetterDigest();
   });
-  console.log(
+  logger.info(
     "[settlement] Dead-letter digest cron registered (daily 08:00 UTC)"
   );
   // Weekly connectivity SLA report — Mondays at 08:30 UTC (09:30 WAT)
   cron.schedule("30 8 * * 1", async () => {
     await runWeeklyConnectivitySlaReport();
   });
-  console.log(
+  logger.info(
     "[settlement] Weekly connectivity SLA report cron registered (Mon 08:30 UTC)"
   );
 }
@@ -462,7 +464,7 @@ export async function runDeadLetterDigest(): Promise<void> {
   try {
     const db = await getDb();
     if (!db) {
-      console.warn("[deadLetterDigest] DB unavailable — skipping");
+      logger.warn("[deadLetterDigest] DB unavailable — skipping");
       return;
     }
 
@@ -476,7 +478,7 @@ export async function runDeadLetterDigest(): Promise<void> {
       .limit(100);
 
     if (failedItems.length === 0) {
-      console.log(
+      logger.info(
         "[deadLetterDigest] No dead-letter items — nothing to report"
       );
       return;
@@ -509,7 +511,7 @@ export async function runDeadLetterDigest(): Promise<void> {
         })
         .where(eq(erpSyncLog.status, "failed" as any));
       const requeued = (retryResult as any).rowCount ?? failedItems.length;
-      console.log(
+      logger.info(
         `[deadLetterDigest] Auto-retried ${requeued} dead-letter item(s) (queue ≤ ${autoRetryThreshold})`
       );
       const today = new Date().toLocaleDateString("en-NG", {
@@ -568,11 +570,11 @@ export async function runDeadLetterDigest(): Promise<void> {
       content,
     });
 
-    console.log(
+    logger.info(
       `[deadLetterDigest] Notified owner of ${failedItems.length} dead-letter item(s)`
     );
   } catch (err) {
-    console.error("[deadLetterDigest] Error:", err);
+    logger.error("[deadLetterDigest] Error:", err);
   }
 }
 
@@ -586,7 +588,7 @@ export async function runWeeklyConnectivitySlaReport(): Promise<void> {
   try {
     const db = await getDb();
     if (!db) {
-      console.warn("[connectivitySla] DB unavailable — skipping");
+      logger.warn("[connectivitySla] DB unavailable — skipping");
       return;
     }
     const {
@@ -689,11 +691,11 @@ export async function runWeeklyConnectivitySlaReport(): Promise<void> {
       title: `[54Link POS] Weekly Connectivity SLA — ${ranked.length} agents, ${belowSla.length} below SLA`,
       content,
     });
-    console.log(
+    logger.info(
       `[connectivitySla] SLA report sent: ${ranked.length} agents, ${belowSla.length} below SLA`
     );
   } catch (err) {
-    console.error("[connectivitySla] Error:", err);
+    logger.error("[connectivitySla] Error:", err);
   }
 }
 

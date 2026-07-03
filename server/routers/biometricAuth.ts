@@ -5,6 +5,8 @@ import { getDb } from "../db";
 import { kycSessions } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
+import { logger } from './_core/logger';
 
 // ── Microservice URLs ───────────────────────────────────────────────────────
 const BIOMETRIC_SERVICE_URL =
@@ -34,7 +36,7 @@ async function callService(
     if (!resp.ok) throw new Error(`Service returned ${resp.status}`);
     return await resp.json();
   } catch (err: any) {
-    console.warn(
+    logger.warn(
       `[biometricAuth] Service call failed: ${url} — ${err.message}`
     );
     return null;
@@ -286,7 +288,7 @@ export const biometricAuthRouter = router({
               })
               .where(eq(kycSessions.sessionRef, input.sessionRef));
           } catch (err) {
-            console.warn(
+            logger.warn(
               "[biometricAuth] Failed to persist to kycSessions:",
               err
             );

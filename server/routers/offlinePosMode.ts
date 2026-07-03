@@ -11,6 +11,8 @@ import { agents, platformSettings } from "../../drizzle/schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import { logger } from './_core/logger';
 
 const OFFLINE_DEFAULTS = {
   allowedTypes: ["Cash In", "Cash Out", "Transfer", "Airtime", "Bill Payment"],
@@ -60,7 +62,7 @@ export const offlinePosModeRouter = router({
       if (configRows[0]?.value) {
         try {
           config = { ...config, ...JSON.parse(String(configRows[0].value)) };
-        } catch (err) { console.error("[offlinePosMode] operation failed:", err); }
+        } catch (err) { logger.error("[offlinePosMode] operation failed:", err); }
       }
 
       const tierMultipliers: Record<string, number> = {

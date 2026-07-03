@@ -30,6 +30,8 @@ import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
+import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
+import { logger } from './_core/logger';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -183,7 +185,7 @@ export function registerKeycloakAuthRoutes(app: Express): void {
     >;
 
     if (error) {
-      console.error(`[Keycloak] Auth error: ${error} — ${error_description}`);
+      logger.error(`[Keycloak] Auth error: ${error} — ${error_description}`);
       res.redirect(
         `/?auth_error=${encodeURIComponent(error_description ?? error)}`
       );
@@ -196,7 +198,7 @@ export function registerKeycloakAuthRoutes(app: Express): void {
     const returnTo = cookies.get(RETURN_PATH_COOKIE) ?? "/";
 
     if (!expectedState || expectedState !== state) {
-      console.error("[Keycloak] State mismatch — possible CSRF attack");
+      logger.error("[Keycloak] State mismatch — possible CSRF attack");
       res.status(400).send("Invalid state parameter");
       return;
     }
@@ -235,7 +237,7 @@ export function registerKeycloakAuthRoutes(app: Express): void {
       );
       res.redirect(returnTo);
     } catch (err) {
-      console.error("[Keycloak] Callback error:", err);
+      logger.error("[Keycloak] Callback error:", err);
       res.redirect("/?auth_error=callback_failed");
     }
   });

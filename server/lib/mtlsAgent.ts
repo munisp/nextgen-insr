@@ -23,6 +23,8 @@ import https from "https";
 import fs from "fs";
 import path from "path";
 import { ENV } from "../_core/env";
+import { ENV } from "../_core/env";
+import { logger } from './_core/logger';
 
 const CERT_DIR = ENV.mtlsCertDir;
 const MTLS_ENABLED = ENV.mtlsEnabled;
@@ -48,7 +50,7 @@ export function getMtlsAgent(): https.Agent | null {
     !fs.existsSync(keyPath) ||
     !fs.existsSync(caPath)
   ) {
-    console.warn(
+    logger.warn(
       `[mTLS] Certificate files not found in ${CERT_DIR} — falling back to plain HTTPS. ` +
         "Set MTLS_CERT_DIR or MTLS_ENABLED=false to suppress this warning."
     );
@@ -67,7 +69,7 @@ export function getMtlsAgent(): https.Agent | null {
     console.info(`[mTLS] Agent initialised — cert dir: ${CERT_DIR}`);
     return _agent;
   } catch (err) {
-    console.error("[mTLS] Failed to load certificates:", err);
+    logger.error("[mTLS] Failed to load certificates:", err);
     _agent = null;
     return null;
   }

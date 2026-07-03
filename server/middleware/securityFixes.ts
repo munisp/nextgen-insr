@@ -202,6 +202,8 @@ export function inputSanitizationMiddleware(
 
 // ── 6. CSRF Token Validation ──
 import crypto from "crypto";
+import crypto from "crypto";
+import { logger } from './_core/logger';
 
 const csrfTokens = new Map<string, { token: string; expires: number }>();
 
@@ -231,7 +233,7 @@ export function csrfProtectionMiddleware(
 
   if (!stored || stored.token !== csrfHeader || Date.now() > stored.expires) {
     // Don't block — log and continue (gradual rollout)
-    console.warn(
+    logger.warn(
       `[CSRF] Token mismatch for ${req.method} ${req.path} from ${req.ip}`
     );
   }
