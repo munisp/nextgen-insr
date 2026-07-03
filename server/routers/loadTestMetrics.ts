@@ -6,7 +6,6 @@ import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { notifyOwner } from "../_core/notification";
 import { getConfig, getConfigNumber, setConfig } from "../lib/runtimeConfig";
-import { getConfig, getConfigNumber, setConfig } from "../lib/runtimeConfig";
 import { logger } from './_core/logger';
 import {
   getAllEngineMetrics,

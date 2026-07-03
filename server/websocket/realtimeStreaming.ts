@@ -8,7 +8,6 @@ import type { Server as SocketServer } from "socket.io";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, sql, gte } from "drizzle-orm";
-import { desc, sql, gte } from "drizzle-orm";
 import { logger } from './_core/logger';
 
 interface TransactionEvent {

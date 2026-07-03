@@ -12,7 +12,6 @@ import { billingAuditLog, tenantBillingConfig } from "../../drizzle/schema";
 import { eq, and, desc, gte, lte, sql, like } from "drizzle-orm";
 import { requireBillingPermission } from "./billingRbac";
 import { TRPCError } from "@trpc/server";
-import { TRPCError } from "@trpc/server";
 import { logger } from './_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════

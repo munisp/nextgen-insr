@@ -12,7 +12,6 @@ import { notifyOwner } from "../_core/notification";
 import { erpSyncLog, erpConfig } from "../../drizzle/schema";
 import { eq, and, lte, lt } from "drizzle-orm";
 import { recordMetric } from "./analyticsMetrics";
-import { recordMetric } from "./analyticsMetrics";
 import { logger } from './_core/logger';
 
 const BASE_DELAY_MS = 30_000; // 30 seconds

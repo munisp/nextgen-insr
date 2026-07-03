@@ -6,7 +6,6 @@
  * Uses the existing emailService infrastructure.
  */
 import { notifyOwner } from "../_core/notification";
-import { notifyOwner } from "../_core/notification";
 import { logger } from './_core/logger';
 
 export interface ReportEmailPayload {

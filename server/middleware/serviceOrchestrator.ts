@@ -24,7 +24,6 @@ import {
   lakehouse,
 } from "./middlewareConnectors";
 import { checkAllServices, type PlatformHealth } from "./integrationHealth";
-import { checkAllServices, type PlatformHealth } from "./integrationHealth";
 import { logger } from './_core/logger';
 
 // ─── Service Registry ────────────────────────────────────────────────────────

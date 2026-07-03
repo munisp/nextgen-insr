@@ -11,7 +11,6 @@ import {
   billingRoleAssignments,
 } from "../drizzle/schema";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
-import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { logger } from './_core/logger';
 
 async function getDbInstance() {

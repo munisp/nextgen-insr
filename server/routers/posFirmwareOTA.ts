@@ -12,7 +12,6 @@ import { posTerminals, platformSettings } from "../../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { getAgentFromCookie } from "../middleware/agentAuth";
 import { logger } from './_core/logger';
 
 export const posFirmwareOTARouter = router({

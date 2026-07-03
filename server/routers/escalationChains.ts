@@ -3,7 +3,6 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { logger } from './_core/logger';
 
 export const escalationChainsRouter = router({

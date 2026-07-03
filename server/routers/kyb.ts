@@ -30,7 +30,6 @@ import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getDb, writeAuditLog } from "../db.js";
 import { merchantKycDocs } from "../../drizzle/schema.js";
 import { eq, desc } from "drizzle-orm";
-import { eq, desc } from "drizzle-orm";
 import { logger } from './_core/logger';
 
 // ─── Service URLs ────────────────────────────────────────────────────────────

@@ -1,7 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
-import { auditLog } from "../../drizzle/schema";
 import { logger } from './_core/logger';
 
 interface AuditSnapshot {

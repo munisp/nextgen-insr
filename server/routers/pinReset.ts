@@ -18,7 +18,6 @@ import { agents, otpTokens } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { sendSms } from "../termii";
 import crypto from "crypto";
-import crypto from "crypto";
 import { logger } from './_core/logger';
 const OTP_EXPIRY_MINUTES = 10;
 // SECURITY: Use crypto.randomInt for cryptographically secure OTP generation

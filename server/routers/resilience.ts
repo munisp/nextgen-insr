@@ -30,7 +30,6 @@ import {
 } from "../../drizzle/schema";
 import webpush from "web-push";
 import { TRPCError } from "@trpc/server";
-import { TRPCError } from "@trpc/server";
 import { logger } from './_core/logger';
 
 // Configure VAPID keys for Web Push

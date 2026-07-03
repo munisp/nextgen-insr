@@ -15,7 +15,6 @@ import {
   DefaultLogger,
 } from "@temporalio/worker";
 import * as activities from "./temporal-activities";
-import * as activities from "./temporal-activities";
 import { logger } from './_core/logger';
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";

@@ -38,7 +38,6 @@ export function auditApiKeyAge(keyId: string, createdAt: number): ApiKeyAudit {
 
 // ─── 2. Transaction Signing ─────────────────────────────────────────────────
 import crypto from "crypto";
-import crypto from "crypto";
 import { logger } from './_core/logger';
 
 const TX_SIGNING_SECRET = process.env.TX_SIGNING_SECRET || "";

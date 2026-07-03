@@ -17,7 +17,6 @@ import crypto from "crypto";
 import { getDb } from "../db";
 import { webhookEndpoints, webhookDeliveries } from "../../drizzle/schema";
 import { eq, and, lte } from "drizzle-orm";
-import { eq, and, lte } from "drizzle-orm";
 import { logger } from './_core/logger';
 
 export type WebhookEventType =

@@ -19,7 +19,6 @@ import { ENV } from "./_core/env";
 import { notifyOwner } from "./_core/notification";
 import { getDb } from "./db";
 import { dlqMessages } from "../drizzle/schema";
-import { dlqMessages } from "../drizzle/schema";
 import { logger } from './_core/logger';
 
 const MAX_RETRIES = 3;

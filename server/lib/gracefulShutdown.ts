@@ -1,6 +1,5 @@
 // TypeScript enabled — Sprint 96 security audit
 import { Server } from "http";
-import { Server } from "http";
 import { logger } from './_core/logger';
 
 let isShuttingDown = false;

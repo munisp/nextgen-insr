@@ -1,6 +1,5 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
-import { ENV } from "./env";
 import { logger } from './_core/logger';
 
 export type NotificationPayload = {

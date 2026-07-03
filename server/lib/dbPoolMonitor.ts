@@ -1,6 +1,5 @@
 // TypeScript enabled — Sprint 96 security audit
 import { getDb } from "../db";
-import { getDb } from "../db";
 import { logger } from './_core/logger';
 
 interface PoolStats {

@@ -15,7 +15,6 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 import type { User } from "../../drizzle/schema";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./keycloakAuth";
 import { getUserByKeycloakSub } from "../db";
-import { getUserByKeycloakSub } from "../db";
 import { logger } from './_core/logger';
 
 const isDev = process.env.NODE_ENV === "development";

@@ -22,7 +22,6 @@
  */
 
 import { Kafka, Producer, Consumer, logLevel, CompressionTypes } from "kafkajs";
-import { Kafka, Producer, Consumer, logLevel, CompressionTypes } from "kafkajs";
 import { logger } from './_core/logger';
 
 // ─── Configuration ────────────────────────────────────────────────────────────

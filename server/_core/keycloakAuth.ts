@@ -30,7 +30,6 @@ import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
-import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
 import { logger } from './_core/logger';
 
 // ── Constants ─────────────────────────────────────────────────────────────────

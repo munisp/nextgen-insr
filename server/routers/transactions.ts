@@ -8,6 +8,24 @@
  *  3. Velocity limits per agent tier (hourly count, single-tx amount, daily volume)
  *  4. Customer SMS confirmation on Cash Out / Transfer / Card / QR / NFC
  *  5. Reversal approval threshold — reversals > ₦10,000 require admin/supervisor approval
+ *
+ * ─── NAVIGATION GUIDE ───────────────────────────────────────────────────────────
+ * This router is split into logical sections for easy navigation:
+ *
+ * Sections:
+ *  [1] Constants & Configuration        → COMMISSION_RATES, LOYALTY_RATES, SMS_CONFIRMATION_TYPES
+ *  [2] Helper Functions                 → generateRef(), calculateCommission(), applyVelocityLimits()
+ *  [3] Transaction Procedures           → createTransaction, getTransactions, getTransactionByRef
+ *  [4] Transaction Actions              → reverseTransaction, updateStatus, bulkUpdate
+ *  [5] Float Management                 → updateAgentFloat, getAgentFloat, lockFloat
+ *  [6] Commission & Loyalty             → calculateCommission, addLoyaltyPoints, redeemLoyaltyPoints
+ *  [7] Bulk Operations                  → bulkTransactions, bulkReversal
+ *  [8] Reporting & Analytics            → getDailySummary, getTransactionStats, exportTransactions
+ *  [9] Fraud & Compliance               → createFraudAlert, checkVelocity, validateAgentTier
+ *  [10] SMS & Notifications             → sendConfirmationSms, buildConfirmationSms
+ *  [11] tRPC Router Definition          → exports: transactionsRouter
+ *
+ * Quick Jump: Search for "[1]", "[2]", etc. to navigate to each section
  */
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -46,7 +64,6 @@ import {
 import { sendSms, buildConfirmationSms } from "../termii";
 import { getIO } from "../socketSingleton";
 import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
-import crypto from "crypto";
 import crypto from "crypto";
 import { logger } from './_core/logger';
 import {

@@ -28,7 +28,6 @@ import { notifyOwner } from "./_core/notification";
 import { sendSms } from "./termii";
 import { settlementPlatform } from "./_core/platformClient.js";
 import { ENV } from "./_core/env";
-import { ENV } from "./_core/env";
 import { logger } from './_core/logger';
 
 interface AgentSettlement {

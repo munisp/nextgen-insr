@@ -5,7 +5,6 @@ import { getDb } from "../db";
 import { kycSessions } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { TRPCError } from "@trpc/server";
 import { logger } from './_core/logger';
 
 // ── Microservice URLs ───────────────────────────────────────────────────────

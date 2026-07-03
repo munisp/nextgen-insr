@@ -21,7 +21,6 @@ import {
   getUptimePercentage,
 } from "./dbHealthCheck";
 import { getSecuritySummary } from "./securityHardening";
-import { getSecuritySummary } from "./securityHardening";
 import { logger } from './_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════

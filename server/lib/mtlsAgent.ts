@@ -23,7 +23,6 @@ import https from "https";
 import fs from "fs";
 import path from "path";
 import { ENV } from "../_core/env";
-import { ENV } from "../_core/env";
 import { logger } from './_core/logger';
 
 const CERT_DIR = ENV.mtlsCertDir;

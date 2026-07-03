@@ -19,7 +19,6 @@ import { requireBillingPermission } from "./billingRbac";
 import { recordBillingAudit } from "./billingAudit";
 import { Client, Connection } from "@temporalio/client";
 import { TRPCError } from "@trpc/server";
-import { TRPCError } from "@trpc/server";
 import { logger } from './_core/logger';
 
 // Temporal client singleton for billing provisioning

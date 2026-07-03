@@ -66,7 +66,6 @@ import {
 } from "../drizzle/schema";
 import { eq, desc, count, sql } from "drizzle-orm";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./_core/keycloakAuth";
-import { verifySessionJwt, KC_SESSION_COOKIE } from "./_core/keycloakAuth";
 import { logger } from './_core/logger';
 
 const router = Router();
