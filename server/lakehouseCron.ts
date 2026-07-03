@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // TypeScript enabled — Sprint 96 security audit
 /**
  * lakehouseCron.ts — Daily lakehouse snapshot jobs

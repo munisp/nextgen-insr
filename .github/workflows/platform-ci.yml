@@ -141,6 +141,45 @@ jobs:
         working-directory: ${{ matrix.service }}
         run: find . -name "*.py" -exec python -m py_compile {} \; 2>/dev/null || true
 
+  # ── TypeScript Type Checking & Build ──
+  typescript:
+    name: TypeScript (Type Check + Build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript type check (tsc --noEmit)
+        run: pnpm run check
+        env:
+          NODE_ENV: test
+
+      - name: Verify no @ts-nocheck in production files
+        run: |
+          echo "Checking for @ts-nocheck directives in production server code..."
+          COUNT=$(grep -r "// @ts-nocheck" server/ --include="*.ts" --exclude="*.test.*" | wc -l)
+          echo "Found $COUNT @ts-nocheck in production files"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::warning::@ts-nocheck found in $COUNT production files. These should be fixed."
+            grep -rn "// @ts-nocheck" server/ --include="*.ts" --exclude="*.test.*"
+          fi
+
+      - name: Build
+        run: pnpm run build
+        env:
+          NODE_ENV: production
+
   # ── Shared Go Packages ──
   shared-packages:
     name: Shared Go Packages

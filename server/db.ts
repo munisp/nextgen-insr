@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // TypeScript enabled — Sprint 96 security audit
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";

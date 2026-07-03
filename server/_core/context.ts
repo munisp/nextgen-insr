@@ -18,8 +18,13 @@ import { getUserByKeycloakSub } from "../db";
 
 const isDev = process.env.NODE_ENV === "development";
 const isTest = process.env.NODE_ENV === "test";
+
+// CRITICAL: DEV_AUTH_BYPASS must NEVER activate in production.
+// We explicitly block it when NODE_ENV !== "development" even if the
+// env var is set — this prevents accidental leaks from CI/staging.
 const devBypassEnabled =
-  (isDev && process.env.DEV_AUTH_BYPASS === "true") || isTest;
+  isTest ||
+  (isDev && process.env.DEV_AUTH_BYPASS === "true");
 
 if (
   !isDev &&
