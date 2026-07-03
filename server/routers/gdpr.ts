@@ -33,7 +33,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { count } from "drizzle-orm";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { notifyOwner } from "../_core/notification";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 export const gdprRouter = router({
   /**

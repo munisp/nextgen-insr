@@ -15,7 +15,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 export interface FileIntegrityRecord {
   path: string;

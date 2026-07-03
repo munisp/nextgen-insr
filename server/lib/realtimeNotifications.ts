@@ -9,7 +9,7 @@
 import type { Server as SocketIOServer, Socket } from "socket.io";
 import { jwtVerify } from "jose";
 import { getJwtSecret } from "./envValidation";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Event Types

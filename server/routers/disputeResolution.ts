@@ -11,7 +11,7 @@ import { eq, desc, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
 import logger from "../_core/logger";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 export const disputeResolutionRouter = router({
   dashboard: protectedProcedure.query(async () => {

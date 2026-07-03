@@ -15,7 +15,7 @@ import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
 import logger from "../_core/logger";
 import { TRPCError } from "@trpc/server";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 export const txDisputeArbitrationRouter = router({
   listDisputes: protectedProcedure

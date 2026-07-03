@@ -19,7 +19,7 @@ import { TRPCError } from "@trpc/server";
 import type { TrpcContext } from "../_core/context";
 import type { Request, Response, NextFunction } from "express";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "../_core/keycloakAuth";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 /**
  * tRPC middleware that enforces MFA.

@@ -13,7 +13,7 @@
  */
 
 import { Request, Response, NextFunction, Express } from "express";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ── Service Configuration ────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ import { agents, platformSettings } from "../../drizzle/schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 const OFFLINE_DEFAULTS = {
   allowedTypes: ["Cash In", "Cash Out", "Transfer", "Airtime", "Bill Payment"],

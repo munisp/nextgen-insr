@@ -247,7 +247,7 @@ async function sendSmsNotification(
   // In production, this calls:
   // import { sendSms } from './smsService';
   // import { sendSms } from './smsService';
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
   // return sendSms({ to, message, provider: 'auto' });
   logger.info(`[ThresholdDispatcher] SMS → ${to}: ${message.slice(0, 50)}...`);
   return {

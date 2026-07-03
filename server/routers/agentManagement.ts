@@ -9,7 +9,7 @@ import { agents, floatTopUpRequests } from "../../drizzle/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 import {
   writeAuditLog,
   updateAgentFloat,

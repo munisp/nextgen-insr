@@ -19,7 +19,7 @@
  * Usage:
  *   import { enqueueEmail } from "./emailQueue";
  *   import { enqueueEmail } from "./emailQueue";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
  *
  *   await enqueueEmail({
  *     to: "agent@example.com",

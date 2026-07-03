@@ -12,7 +12,7 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ─── SQL Injection Patterns ─────────────────────────────────────────────────
 

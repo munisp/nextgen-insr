@@ -13,7 +13,7 @@
  */
 import { randomBytes, createHash } from "crypto";
 import type { Request, Response, NextFunction } from "express";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Cryptographically Secure CSRF Token

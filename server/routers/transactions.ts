@@ -65,7 +65,7 @@ import { sendSms, buildConfirmationSms } from "../termii";
 import { getIO } from "../socketSingleton";
 import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
 import crypto from "crypto";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 import {
   transactionsTotal,
   transactionErrorsTotal,

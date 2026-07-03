@@ -14,7 +14,7 @@ import {
   tenantBillingConfig,
 } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Billing Permission Definitions (Permify-compatible)

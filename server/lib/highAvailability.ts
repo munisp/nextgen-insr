@@ -411,7 +411,7 @@ export function connectionDrainingMiddleware(
 
 // ── 6. Express Health Routes ──────────────────────────────────────────────────
 import { Router } from "express";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 export function createHealthRouter(): Router {
   const healthRouter = Router();

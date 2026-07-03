@@ -4,7 +4,7 @@ import type { Express, Request, Response } from "express";
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
-import { logger } from './_core/logger';
+import { logger } from './logger';
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];

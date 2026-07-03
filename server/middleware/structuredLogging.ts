@@ -1,7 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 export function structuredLoggingMiddleware(
   req: Request,

@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { ENV } from "../_core/env";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 const TERMII_URL = "https://api.ng.termii.com/api/sms/send";
 

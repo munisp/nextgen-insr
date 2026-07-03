@@ -11,7 +11,7 @@
  */
 import { createHmac, timingSafeEqual } from "crypto";
 import type { Request, Response, NextFunction } from "express";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 /**
  * Returns an Express middleware that verifies the HMAC-SHA256 signature

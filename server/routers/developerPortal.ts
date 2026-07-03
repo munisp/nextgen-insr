@@ -18,7 +18,7 @@ import { eq, and, isNull, desc, gte, count, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { apiKeys, webhookSecrets, apiKeyUsage } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -30,7 +30,7 @@ import {
 } from "../../drizzle/schema";
 import webpush from "web-push";
 import { TRPCError } from "@trpc/server";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // Configure VAPID keys for Web Push
 // SECURITY: Guard against empty VAPID keys (test/dev environments may not have them set)

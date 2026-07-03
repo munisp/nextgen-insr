@@ -11,7 +11,7 @@
  */
 import type { Request, Response, NextFunction } from "express";
 import { createHash } from "crypto";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ─── Request Deduplication ───────────────────────────────────────────────────
 interface DedupeEntry {

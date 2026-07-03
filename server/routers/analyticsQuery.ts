@@ -11,7 +11,7 @@ import { getDb } from "../db";
 import { platformBillingLedger, billingAuditLog } from "../../drizzle/schema";
 import { desc, count, sql, gte, and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // OpenSearch adapter (connects to opensearch-indexer Python service)
 async function queryOpenSearch(

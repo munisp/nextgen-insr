@@ -10,7 +10,7 @@
  */
 import { getConfig, setConfig } from "./runtimeConfig";
 import { notifyOwner } from "../_core/notification";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 export interface ScheduledTestConfig {
   enabled: boolean;

@@ -12,7 +12,7 @@ import { getDb } from "../db";
 import { fraudAlerts, fraudRules } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 export const fraudRouter = router({
   // ── List alerts (admin or agent-scoped) ───────────────────────────────────

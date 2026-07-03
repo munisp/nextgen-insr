@@ -16,7 +16,7 @@ import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
 import { getAgentFromCookie } from "../middleware/agentAuth.js";
 import { getDb } from "../db.js";
 import { kycSessions } from "../../drizzle/schema.js";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 import {
   createLivenessChallenge,
   verifyLivenessChallenge,

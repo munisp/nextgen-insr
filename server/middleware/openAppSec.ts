@@ -11,7 +11,7 @@
  * - Threat intelligence feed integration
  */
 import type { Request, Response, NextFunction } from "express";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ─── Threat Classification ───────────────────────────────────────────────────
 export type ThreatCategory =

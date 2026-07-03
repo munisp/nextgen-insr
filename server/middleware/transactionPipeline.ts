@@ -17,7 +17,7 @@
  */
 
 import { z } from "zod";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

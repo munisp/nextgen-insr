@@ -10,7 +10,7 @@
 
 import type { Request, Response, NextFunction, Express } from "express";
 import crypto from "crypto";
-import { logger } from './_core/logger';
+import { logger } from '../_core/logger';
 
 // ============================================================
 // F1: /api/scheduled endpoint for Manus periodic task updates
