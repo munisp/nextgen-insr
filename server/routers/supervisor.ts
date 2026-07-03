@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Supervisor Router — read-only view of assigned agents for supervisors
  *

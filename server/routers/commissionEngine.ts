@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Commission Engine — DB-backed tiered rates, volume bonuses, split commissions
  *

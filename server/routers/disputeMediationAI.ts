@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Dispute Mediation AI — DB-backed AI-assisted dispute resolution
  * Sprint 54: Full PostgreSQL + middleware integration

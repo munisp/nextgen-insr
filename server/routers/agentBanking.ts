@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Agent Banking UI tRPC Router
  * Covers all 9 pages of the Agent Banking UI PWA:

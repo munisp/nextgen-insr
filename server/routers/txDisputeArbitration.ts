@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Transaction Dispute Arbitration — DB-backed with middleware integration
  * Sprint 56: Full PostgreSQL persistence, zero static data

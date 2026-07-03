@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * F09: Agent Gamification & Achievements — Production-Grade
  * DB-backed badges, leaderboards, XP system, achievement tracking, rewards

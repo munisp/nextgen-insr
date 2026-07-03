@@ -16,6 +16,7 @@ import { initRealtimeNotifications } from "./lib/realtimeNotifications";
 import { invokeLLM } from "./_core/llm";
 import { fraudAlerts } from "../drizzle/schema";
 import { getJwtSecret } from "./lib/envValidation";
+import { logger } from "./_core/logger";
 
 // ─── Support chat: LLM-powered auto-reply ────────────────────────────────────
 async function generateSupportReply(
@@ -39,7 +40,7 @@ async function generateSupportReply(
     const content = response?.choices?.[0]?.message?.content;
     if (typeof content === "string" && content.trim()) return content.trim();
   } catch (err) {
-    console.error("[Chat] LLM auto-reply failed, using fallback:", err);
+    logger.error({ err: String(err) }, "[Chat] LLM auto-reply failed, using fallback");
   }
   // Fallback if LLM is unavailable
   const ref = `SUP-${Date.now().toString(36).toUpperCase()}`;
@@ -124,7 +125,7 @@ export function initSocketIO(httpServer: HttpServer) {
   }, 5000);
 
   fraudNs.on("connection", socket => {
-    console.log(`[Fraud] Admin connected: ${socket.id}`);
+    logger.info({ socketId: socket.id }, "[Fraud] Admin connected");
 
     socket.on(
       "alert:updateStatus",
@@ -134,7 +135,7 @@ export function initSocketIO(httpServer: HttpServer) {
     );
 
     socket.on("disconnect", () => {
-      console.log(`[Fraud] Admin disconnected: ${socket.id}`);
+      logger.info({ socketId: socket.id }, "[Fraud] Admin disconnected");
     });
   });
 
@@ -159,7 +160,7 @@ export function initSocketIO(httpServer: HttpServer) {
 
   chatNs.on("connection", socket => {
     const agentName = (socket as any).agentName ?? "Agent";
-    console.log(`[Chat] Agent connected: ${agentName} (${socket.id})`);
+    logger.info({ socketId: socket.id, agentName }, "[Chat] Agent connected");
 
     socket.on("chat:join", (sessionRef: string) => {
       socket.join(`session:${sessionRef}`);
@@ -209,7 +210,7 @@ export function initSocketIO(httpServer: HttpServer) {
             .to(`session:${data.sessionRef}`)
             .emit("chat:stopTyping", { senderType: "support" });
         } catch (err) {
-          console.error("[Chat] Error handling message:", err);
+          logger.error({ err: String(err) }, "[Chat] Error handling message");
         }
       }
     );
@@ -228,7 +229,7 @@ export function initSocketIO(httpServer: HttpServer) {
     });
 
     socket.on("disconnect", () => {
-      console.log(`[Chat] Agent disconnected: ${agentName}`);
+      logger.info({ agentName }, "[Chat] Agent disconnected");
     });
   });
 
@@ -239,9 +240,7 @@ export function initSocketIO(httpServer: HttpServer) {
     socket.on("terminal:register", (agentCode: string) => {
       if (agentCode) {
         socket.join(`agent:${agentCode}`);
-        console.log(
-          `[Terminal] Agent ${agentCode} registered socket ${socket.id}`
-        );
+        logger.info({ agentCode, socketId: socket.id }, "[Terminal] Agent registered");
       }
     });
 
@@ -261,12 +260,12 @@ export function initSocketIO(httpServer: HttpServer) {
   const settlementNs = io.of("/settlement");
 
   settlementNs.on("connection", socket => {
-    console.log(`[Settlement] Dashboard connected: ${socket.id}`);
+    logger.info({ socketId: socket.id }, "[Settlement] Dashboard connected");
 
     // Client can subscribe to a specific batch
     socket.on("settlement:subscribe", (batchId: string) => {
       socket.join(`batch:${batchId}`);
-      console.log(`[Settlement] ${socket.id} subscribed to batch:${batchId}`);
+      logger.info({ socketId: socket.id, batchId }, "[Settlement] Subscribed to batch");
     });
 
     socket.on("settlement:unsubscribe", (batchId: string) => {
@@ -274,7 +273,7 @@ export function initSocketIO(httpServer: HttpServer) {
     });
 
     socket.on("disconnect", () => {
-      console.log(`[Settlement] Dashboard disconnected: ${socket.id}`);
+      logger.info({ socketId: socket.id }, "[Settlement] Dashboard disconnected");
     });
   });
 
@@ -284,8 +283,6 @@ export function initSocketIO(httpServer: HttpServer) {
   // Register singleton so routers can emit events
   setIO(io);
 
-  console.log(
-    "[Socket.IO] Initialized — /fraud, /chat, /terminal, /settlement, /notifications namespaces ready"
-  );
+  logger.info("[Socket.IO] Initialized — /fraud, /chat, /terminal, /settlement, /notifications namespaces ready");
   return io;
 }

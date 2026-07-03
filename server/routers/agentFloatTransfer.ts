@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Agent-to-Agent Float Transfer — peer float sharing between agents
  * with approval workflow and transfer limits.

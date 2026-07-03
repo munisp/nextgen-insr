@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Dispute Resolution — DB-backed dispute CRUD and dashboard
  * Sprint 54: Full PostgreSQL + middleware integration

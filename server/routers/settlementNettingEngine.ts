@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Settlement Netting Engine — DB-backed netting calculations using merchantSettlements
  * Sprint 54: Full PostgreSQL + middleware integration

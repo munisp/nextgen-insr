@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Dispute Workflow Engine — DB-backed multi-step resolution with SLA tracking
  * Sprint 54: Full PostgreSQL + middleware integration

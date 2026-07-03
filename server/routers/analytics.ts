@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * analytics.ts — tRPC router for real-time and historical analytics
  *

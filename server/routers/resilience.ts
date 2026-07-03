@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * resilience router
  *

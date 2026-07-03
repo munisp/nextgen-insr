@@ -16,6 +16,7 @@ import {
   users,
 } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { logger } from "../_core/logger";
 
 function getStripeKey(): string {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -56,10 +57,7 @@ export async function publishBillingEvent(
   payload: Record<string, any>
 ) {
   const kafkaBroker = process.env.KAFKA_BROKER || "localhost:9092";
-  console.log(
-    `[Kafka] Publishing to ${topic}:`,
-    JSON.stringify(payload).slice(0, 200)
-  );
+  logger.info({ topic, payload: JSON.stringify(payload).slice(0, 200) }, "[Kafka] Publishing event");
   return { published: true, topic, timestamp: Date.now() };
 }
 
@@ -98,16 +96,13 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       getWebhookSecret()
     );
   } catch (err: any) {
-    console.error(
-      "[Stripe Webhook] Signature verification failed:",
-      err.message
-    );
+    logger.error({ err: err.message }, "[Stripe Webhook] Signature verification failed");
     return res.status(400).json({ error: `Webhook Error: ${err.message}` });
   }
 
   // Handle test events
   if (event.id.startsWith("evt_test_")) {
-    console.log("[Stripe Webhook] Test event detected");
+    logger.info({ eventId: event.id }, "[Stripe Webhook] Test event detected");
     return res.json({ verified: true });
   }
 
@@ -120,9 +115,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         const invoice = event.data.object as Stripe.Invoice;
         const tenantId = parseInt(invoice.metadata?.tenant_id || "0");
         const amount = invoice.amount_paid || 0;
-        console.log(
-          `[Stripe Webhook] Invoice paid: ${invoice.id}, tenant: ${tenantId}, amount: ${amount}`
-        );
+        logger.info({ invoiceId: invoice.id, tenantId, amount }, "[Stripe Webhook] Invoice paid");
 
         if (tenantId > 0) {
           await db.insert(billingAuditLog).values({
@@ -172,9 +165,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         const failedInvoice = event.data.object as Stripe.Invoice;
         const tenantId = parseInt(failedInvoice.metadata?.tenant_id || "0");
         const attemptCount = failedInvoice.attempt_count || 1;
-        console.log(
-          `[Stripe Webhook] Invoice payment failed: ${failedInvoice.id}, attempt: ${attemptCount}`
-        );
+        logger.warn({ invoiceId: failedInvoice.id, attemptCount }, "[Stripe Webhook] Invoice payment failed");
 
         if (tenantId > 0) {
           await db.insert(billingAuditLog).values({
@@ -231,7 +222,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       case "invoice.overdue": {
         const overdueInvoice = event.data.object as Stripe.Invoice;
         const tenantId = parseInt(overdueInvoice.metadata?.tenant_id || "0");
-        console.log(`[Stripe Webhook] Invoice overdue: ${overdueInvoice.id}`);
+        logger.warn({ invoiceId: overdueInvoice.id, tenantId }, "[Stripe Webhook] Invoice overdue");
 
         if (tenantId > 0) {
           await db.insert(billingAuditLog).values({
@@ -262,9 +253,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.user_id || session.client_reference_id;
-        console.log(
-          `[Stripe Webhook] Checkout completed: ${session.id}, userId: ${userId}`
-        );
+        logger.info({ sessionId: session.id, userId }, "[Stripe Webhook] Checkout completed");
 
         // Link subscription to user if this was a subscription checkout
         if (userId && session.mode === "subscription" && session.subscription) {
@@ -286,14 +275,9 @@ export async function handleStripeWebhook(req: Request, res: Response) {
                 updatedAt: new Date(),
               })
               .where(eq(users.id, parseInt(userId)));
-            console.log(
-              `[Stripe Webhook] Linked subscription ${subId} (plan: ${planId}) to user ${userId}`
-            );
+            logger.info({ subId, planId, userId }, "[Stripe Webhook] Subscription linked to user");
           } catch (linkErr: any) {
-            console.error(
-              `[Stripe Webhook] Failed to link subscription to user ${userId}:`,
-              linkErr.message
-            );
+            logger.error({ userId, err: linkErr.message }, "[Stripe Webhook] Failed to link subscription");
           }
         }
 
@@ -309,7 +293,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       // ─── Payment Intent Succeeded ─────────────────────────────────────
       case "payment_intent.succeeded": {
         const pi = event.data.object as Stripe.PaymentIntent;
-        console.log(`[Stripe Webhook] Payment succeeded: ${pi.id}`);
+        logger.info({ paymentIntentId: pi.id }, "[Stripe Webhook] Payment succeeded");
         await publishBillingEvent("billing.payment.succeeded", {
           paymentIntentId: pi.id,
           amount: pi.amount,
@@ -320,7 +304,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       // ─── Payment Intent Failed ────────────────────────────────────────
       case "payment_intent.payment_failed": {
         const fp = event.data.object as Stripe.PaymentIntent;
-        console.log(`[Stripe Webhook] Payment failed: ${fp.id}`);
+        logger.warn({ paymentIntentId: fp.id }, "[Stripe Webhook] Payment failed");
         await publishBillingEvent("billing.payment.failed", {
           paymentIntentId: fp.id,
           error: fp.last_payment_error?.message,
@@ -333,9 +317,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
         const subUserId = sub.metadata?.user_id;
-        console.log(
-          `[Stripe Webhook] Subscription ${event.type}: ${sub.id}, userId: ${subUserId}`
-        );
+        logger.info({ eventType: event.type, subscriptionId: sub.id, userId: subUserId }, "[Stripe Webhook] Subscription event");
 
         // Update user's subscription status in DB
         if (subUserId && db) {
@@ -349,10 +331,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
               })
               .where(eq(users.id, parseInt(subUserId)));
           } catch (e: any) {
-            console.error(
-              `[Stripe Webhook] Failed to update subscription for user ${subUserId}:`,
-              e.message
-            );
+            logger.error({ userId: subUserId, err: e.message }, "[Stripe Webhook] Failed to update subscription");
           }
         }
         await publishBillingEvent("billing.subscription.updated", {
@@ -364,9 +343,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       case "customer.subscription.deleted": {
         const csub = event.data.object as Stripe.Subscription;
         const cancelUserId = csub.metadata?.user_id;
-        console.log(
-          `[Stripe Webhook] Subscription cancelled: ${csub.id}, userId: ${cancelUserId}`
-        );
+        logger.warn({ subscriptionId: csub.id, userId: cancelUserId }, "[Stripe Webhook] Subscription cancelled");
 
         // Clear user's subscription fields
         if (cancelUserId && db) {
@@ -380,10 +357,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
               })
               .where(eq(users.id, parseInt(cancelUserId)));
           } catch (e: any) {
-            console.error(
-              `[Stripe Webhook] Failed to clear subscription for user ${cancelUserId}:`,
-              e.message
-            );
+            logger.error({ userId: cancelUserId, err: e.message }, "[Stripe Webhook] Failed to clear subscription");
           }
         }
         await publishBillingEvent("billing.subscription.cancelled", {
@@ -395,7 +369,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       // ─── Dispute Events ───────────────────────────────────────────────
       case "charge.dispute.created": {
         const dispute = event.data.object as any;
-        console.log(`[Stripe Webhook] Dispute created: ${dispute.id}`);
+        logger.warn({ disputeId: dispute.id }, "[Stripe Webhook] Dispute created");
         await publishBillingEvent("billing.dispute.created", {
           disputeId: dispute.id,
           amount: dispute.amount,
@@ -404,15 +378,12 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       }
 
       default:
-        console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+        logger.info({ eventType: event.type }, "[Stripe Webhook] Unhandled event type");
     }
 
     return res.json({ received: true });
   } catch (err: any) {
-    console.error(
-      `[Stripe Webhook] Error processing event ${event.type}:`,
-      err
-    );
+    logger.error({ eventType: event.type, err: err.message }, "[Stripe Webhook] Error processing event");
     await publishBillingEvent("billing.webhook.error", {
       eventId: event.id,
       eventType: event.type,

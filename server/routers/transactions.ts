@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * transactions router — all transaction operations for the 54Link POS platform.
  *

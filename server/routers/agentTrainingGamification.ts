@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Agent Training Gamification — gamified learning modules, badges, leaderboards,
  * skill assessments, and training completion tracking.

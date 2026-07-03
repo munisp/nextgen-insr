@@ -27,14 +27,22 @@ export default defineConfig({
     include: [
       "server/**/*.test.ts",
       "server/**/*.spec.ts",
+      "client/src/**/*.test.ts",
+      "client/src/**/*.spec.ts",
       "tests/**/*.test.ts",
       "tests/**/*.spec.ts",
     ],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
-      include: ["server/**/*.ts"],
-      exclude: ["server/_core/**", "server/**/*.test.ts", "server/**/*.d.ts"],
+      include: ["server/**/*.ts", "client/src/**/*.ts", "client/src/**/*.tsx"],
+      exclude: [
+        "server/_core/**",
+        "server/**/*.test.ts",
+        "server/**/*.d.ts",
+        "client/src/**/*.test.ts",
+        "client/src/**/*.spec.ts",
+      ],
     },
   },
 });

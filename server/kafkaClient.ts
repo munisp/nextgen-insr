@@ -23,6 +23,7 @@
  *  - PLATFORM_BASE_URL    APISix gateway base URL (proxy mode fallback)
  *  - PLATFORM_API_KEY     Bearer token for the gateway
  */
+import { logger } from "./_core/logger";
 
 // Default: local Kafka broker from docker-compose.production.yml
 const KAFKA_BROKERS = process.env.KAFKA_BROKERS ?? "localhost:9092";
@@ -47,10 +48,10 @@ async function getProducer(): Promise<Producer | null> {
     });
     _producer = _kafka.producer({ allowAutoTopicCreation: false });
     await _producer.connect();
-    console.log("[Kafka] Producer connected →", KAFKA_BROKERS);
+    logger.info({ brokers: KAFKA_BROKERS }, "[Kafka] Producer connected");
     return _producer;
   } catch (err) {
-    console.warn("[Kafka] Could not connect producer:", (err as Error).message);
+    logger.warn({ err: (err as Error).message }, "[Kafka] Could not connect producer");
     return null;
   }
 }
@@ -131,10 +132,7 @@ export async function publishEvent<T>(
     await proxyPublish(topic, key, event);
     return true;
   } catch (err) {
-    console.error(
-      `[Kafka] Failed to publish ${topic}:`,
-      (err as Error).message
-    );
+    logger.error({ topic, err: (err as Error).message }, "[Kafka] Failed to publish event");
     return false;
   }
 }

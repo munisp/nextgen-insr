@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * gdpr.ts — NDPR/GDPR Data Portability & Right to Erasure
  *

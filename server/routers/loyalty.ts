@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * loyalty.ts — Full loyalty program tRPC router
  *
