@@ -1,5 +1,5 @@
 /**
- * Analytics Query Router — 54Link POS Shell (Sprint 89)
+ * Analytics Query Router — InsurePortal POS Shell (Sprint 89)
  *
  * tRPC router for querying transaction analytics from OpenSearch.
  * Provides aggregated metrics, time-series data, and search capabilities

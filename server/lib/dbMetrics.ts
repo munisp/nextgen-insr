@@ -159,7 +159,7 @@ export function getMetricsHistory(count: number = 60): DbMetrics[] {
  */
 export function exportPrometheusMetrics(metrics: DbMetrics): string {
   const health = assessPoolHealth(metrics);
-  let output = `# 54Link Database Metrics\n`;
+  let output = `# InsurePortal Database Metrics\n`;
   output += `# HELP db_connections_active Active database connections\n`;
   output += `# TYPE db_connections_active gauge\n`;
   output += `db_connections_active ${metrics.activeConnections}\n`;

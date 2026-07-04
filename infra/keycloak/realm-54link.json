@@ -1,7 +1,7 @@
 {
-  "realm": "54link",
-  "displayName": "54Link Agency Banking",
-  "displayNameHtml": "<b>54Link</b> Agency Banking Platform",
+  "realm": "insureportal",
+  "displayName": "InsurePortal Insurance",
+  "displayNameHtml": "<b>InsurePortal</b> Insurance Platform",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
@@ -35,8 +35,8 @@
   },
   "clients": [
     {
-      "clientId": "pos-shell",
-      "name": "54Link POS Shell",
+      "clientId": "insurance-portal",
+      "name": "InsurePortal POS Shell",
       "description": "Main POS Shell web application",
       "enabled": true,
       "publicClient": false,
@@ -48,13 +48,13 @@
       "authorizationServicesEnabled": false,
       "protocol": "openid-connect",
       "redirectUris": [
-        "https://54link.ng/*",
-        "https://*.54link.ng/*",
+        "https://insureportal.ng/*",
+        "https://*.insureportal.ng/*",
         "http://localhost:3000/*"
       ],
       "webOrigins": [
-        "https://54link.ng",
-        "https://*.54link.ng",
+        "https://insureportal.ng",
+        "https://*.insureportal.ng",
         "http://localhost:3000"
       ],
       "defaultClientScopes": ["web-origins", "profile", "roles", "email"],
@@ -104,8 +104,8 @@
   "smtpServer": {
     "host": "${SMTP_HOST}",
     "port": "${SMTP_PORT}",
-    "from": "noreply@54link.ng",
-    "fromDisplayName": "54Link Platform",
+    "from": "noreply@insureportal.ng",
+    "fromDisplayName": "InsurePortal Platform",
     "ssl": "false",
     "starttls": "true",
     "auth": "true",

@@ -5,7 +5,7 @@ import { logger } from '../_core/logger';
 
 interface AuditSnapshot {
   agentId: number;
-  agentCode: string;
+  agentId: string;
   action: string;
   resource: string;
   resourceId?: string;
@@ -51,7 +51,7 @@ export async function writeEnhancedAuditLog(
 
     await db.insert(auditLog).values({
       agentId: entry.agentId,
-      agentCode: entry.agentCode,
+      agentId: entry.agentId,
       action: entry.action,
       resource: entry.resource,
       resourceId: entry.resourceId ?? null,

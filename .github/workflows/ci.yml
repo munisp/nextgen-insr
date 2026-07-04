@@ -35,7 +35,7 @@ jobs:
       - name: Check for hardcoded credentials
         run: |
           echo "Checking for hardcoded credentials..."
-          if grep -rn "54link-.*-dev-\|54link.*dev_\|TLtest_\|change-me\|change_in_prod" \
+          if grep -rn "insureportal-.*-dev-\|insureportal.*dev_\|TLtest_\|change-me\|change_in_prod" \
             --include="*.ts" --include="*.js" server/ | grep -v ".test." | grep -v "node_modules"; then
             echo "ERROR: Found hardcoded default credentials!"
             echo "Please use requireEnv() for sensitive values in server/_core/env.ts"

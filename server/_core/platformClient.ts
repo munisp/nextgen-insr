@@ -20,16 +20,16 @@ import { getMtlsAgent } from "../lib/mtlsAgent.js";
 // ─── Service base URLs ────────────────────────────────────────────────────────
 
 export const PLATFORM_URLS = {
-  kyc: ENV.PLATFORM_KYC_URL ?? "https://kyc.54link.io",
-  videoKyc: ENV.PLATFORM_VIDEO_KYC_URL ?? "https://videokyc.54link.io",
-  fraud: ENV.PLATFORM_FRAUD_URL ?? "https://fraud.54link.io",
-  settlement: ENV.PLATFORM_SETTLEMENT_URL ?? "https://settlement.54link.io",
-  geofencing: ENV.PLATFORM_GEOFENCING_URL ?? "https://geofencing.54link.io",
-  loyalty: ENV.PLATFORM_LOYALTY_URL ?? "https://loyalty.54link.io",
-  float: ENV.PLATFORM_FLOAT_URL ?? "https://float.54link.io",
-  dispute: ENV.PLATFORM_DISPUTE_URL ?? "https://disputes.54link.io",
-  analytics: ENV.PLATFORM_ANALYTICS_URL ?? "https://analytics.54link.io",
-  notification: ENV.PLATFORM_NOTIFICATION_URL ?? "https://notify.54link.io",
+  kyc: ENV.PLATFORM_KYC_URL ?? "https://kyc.insureportal.io",
+  videoKyc: ENV.PLATFORM_VIDEO_KYC_URL ?? "https://videokyc.insureportal.io",
+  fraud: ENV.PLATFORM_FRAUD_URL ?? "https://fraud.insureportal.io",
+  settlement: ENV.PLATFORM_SETTLEMENT_URL ?? "https://settlement.insureportal.io",
+  geofencing: ENV.PLATFORM_GEOFENCING_URL ?? "https://geofencing.insureportal.io",
+  loyalty: ENV.PLATFORM_LOYALTY_URL ?? "https://loyalty.insureportal.io",
+  float: ENV.PLATFORM_FLOAT_URL ?? "https://float.insureportal.io",
+  dispute: ENV.PLATFORM_DISPUTE_URL ?? "https://disputes.insureportal.io",
+  analytics: ENV.PLATFORM_ANALYTICS_URL ?? "https://analytics.insureportal.io",
+  notification: ENV.PLATFORM_NOTIFICATION_URL ?? "https://notify.insureportal.io",
 } as const;
 
 // ─── Error type ───────────────────────────────────────────────────────────────
@@ -384,7 +384,7 @@ export const loyaltyPlatform = {
 // ─── Float Service ────────────────────────────────────────────────────────────
 
 export const floatPlatform = {
-  /** Get float balance for an agent (Go float-management service) */
+  /** Get premium reserve for an agent (Go float-management service) */
   getBalance: (agentId: string, token: string) =>
     platformFetch(
       "float",

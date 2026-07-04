@@ -1,9 +1,9 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link POS Shell — Fluvio Streaming Client
+ * InsurePortal POS Shell — Fluvio Streaming Client
  *
  * Fluvio is a cloud-native, Rust-based event streaming platform used by the
- * 54Link platform for:
+ * InsurePortal platform for:
  *   • Real-time transaction event streaming (pos.transactions.created)
  *   • Fraud alert fan-out (fraud-alerts)
  *   • Float balance change events (float-events)
@@ -19,7 +19,7 @@
  *   unavailable, events are buffered in-memory and flushed on reconnect.
  *
  * Environment variables:
- *   FLUVIO_ENDPOINT   — WebSocket endpoint, e.g. wss://fluvio.54link.ng:9003
+ *   FLUVIO_ENDPOINT   — WebSocket endpoint, e.g. wss://fluvio.insureportal.ng:9003
  *   FLUVIO_API_KEY    — Bearer token for the Fluvio HTTP gateway
  *   FLUVIO_TLS        — "true" to enable TLS verification (default: false in dev)
  */
@@ -285,7 +285,7 @@ export async function publishTransactionEvent(tx: {
       status: tx.status,
       channel: tx.channel ?? "POS",
       customerId: tx.customerId ?? null,
-      source: "pos-shell",
+      source: "insurance-portal",
     },
     timestamp: new Date().toISOString(),
   });
@@ -311,14 +311,14 @@ export async function publishFraudAlertEvent(alert: {
       severity: alert.severity,
       agentId: alert.agentId,
       transactionRef: alert.transactionRef ?? null,
-      source: "pos-shell",
+      source: "insurance-portal",
     },
     timestamp: new Date().toISOString(),
   });
 }
 
 /**
- * Convenience: publish a float balance change event.
+ * Convenience: publish a premium reserve change event.
  */
 export async function publishFloatEvent(data: {
   agentId: number;
@@ -334,7 +334,7 @@ export async function publishFloatEvent(data: {
     payload: {
       event: "float.balance.changed",
       ...data,
-      source: "pos-shell",
+      source: "insurance-portal",
     },
     timestamp: new Date().toISOString(),
   });
@@ -356,7 +356,7 @@ export async function publishKycEvent(data: {
     payload: {
       event: "kyc.session.updated",
       ...data,
-      source: "pos-shell",
+      source: "insurance-portal",
     },
     timestamp: new Date().toISOString(),
   });

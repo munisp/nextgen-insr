@@ -225,10 +225,10 @@ export function generateOpenAPISpec(
   } = {}
 ): APIDocumentation {
   const {
-    title = "54Link NextGen API",
+    title = "InsurePortal NextGen API",
     version = "1.0.0",
-    description = "Insurance Agency Banking Platform API",
-    serverUrl = process.env.API_URL || "https://api.54link.com",
+    description = "Insurance Insurance Platform API",
+    serverUrl = process.env.API_URL || "https://api.insureportal.com",
   } = options;
 
   const paths: Record<string, Record<string, Record<string, unknown>>> = {};

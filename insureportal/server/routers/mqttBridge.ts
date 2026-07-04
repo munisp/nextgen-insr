@@ -237,7 +237,7 @@ export const mqttBridgeRouter = router({
         const testPayload = input.payload ?? {
           type: "MQTT_BRIDGE_TEST",
           ref: `TEST-${Date.now()}`,
-          agentCode: ctx.user?.keycloakSub
+          agentId: ctx.user?.keycloakSub
             ? `AGT-${ctx.user.keycloakSub.slice(0, 8)}`
             : "AGT-TEST",
           amount: 0,

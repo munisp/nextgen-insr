@@ -7,12 +7,12 @@
  * provided via Vault or environment variables at runtime. Dev/test
  * services should set minimal required variables only.
  *
- * Default URLs follow the 54Link Docker Compose service name convention:
+ * Default URLs follow the InsurePortal Docker Compose service name convention:
  *   http://<service>:<port>  — internal Docker network (production default)
- *   https://<service>.54link.io  — public-facing microservices
- *   https://api.54link.io        — APISix gateway
- *   https://auth.54link.io       — Keycloak OIDC
- *   mqtt://broker.54link.io:1883 — MQTT broker (TLS: 8883)
+ *   https://<service>.insureportal.io  — public-facing microservices
+ *   https://api.insureportal.io        — APISix gateway
+ *   https://auth.insureportal.io       — Keycloak OIDC
+ *   mqtt://broker.insureportal.io:1883 — MQTT broker (TLS: 8883)
  */
 
 // ── Helper: required env var with suspicious-value detection ────────────────
@@ -73,7 +73,7 @@ export const ENV = {
 
   // ── Kafka ───────────────────────────────────────────────────────────────────
   kafkaBrokers: optEnv("KAFKA_BROKERS", "kafka:9092"),
-  kafkaClientId: optEnv("KAFKA_CLIENT_ID", "pos-shell"),
+  kafkaClientId: optEnv("KAFKA_CLIENT_ID", "insurance-portal"),
   kafkaEnabled: optEnv("KAFKA_ENABLED", "false"),
   kafkaSsl: optEnv("KAFKA_SSL", "false"),
   kafkaSaslUsername: process.env.KAFKA_SASL_USERNAME ?? "",
@@ -89,20 +89,20 @@ export const ENV = {
 
   // ── Keycloak OIDC ───────────────────────────────────────────────────────────
   keycloakUrl: optEnv("KEYCLOAK_URL", "http://keycloak:8080"),
-  keycloakRealm: optEnv("KEYCLOAK_REALM", "54link"),
-  keycloakClientId: optEnv("KEYCLOAK_CLIENT_ID", "pos-shell"),
+  keycloakRealm: optEnv("KEYCLOAK_REALM", "insureportal"),
+  keycloakClientId: optEnv("KEYCLOAK_CLIENT_ID", "insurance-portal"),
   keycloakClientSecret: requireEnv("KEYCLOAK_CLIENT_SECRET"),
 
   // ── Temporal workflow engine ─────────────────────────────────────────────────
   temporalAddress: optEnv("TEMPORAL_ADDRESS", "temporal:7233"),
-  temporalNamespace: optEnv("TEMPORAL_NAMESPACE", "54link-production"),
+  temporalNamespace: optEnv("TEMPORAL_NAMESPACE", "insureportal-production"),
   temporalTaskQueue: optEnv("TEMPORAL_TASK_QUEUE", "settlement-queue"),
 
   // ── HashiCorp Vault ──────────────────────────────────────────────────────────
   vaultAddr: optEnv("VAULT_ADDR", "http://vault:8200"),
   vaultRoleId: process.env.VAULT_ROLE_ID ?? "",
   vaultSecretId: process.env.VAULT_SECRET_ID ?? "",
-  vaultSecretPath: optEnv("VAULT_SECRET_PATH", "secret/data/pos-shell-demo"),
+  vaultSecretPath: optEnv("VAULT_SECRET_PATH", "secret/data/insurance-portal-demo"),
 
   // ── Permify authorization service ───────────────────────────────────────────
   permifyUrl: optEnv("PERMIFY_URL", "http://permify:3476"),
@@ -110,9 +110,9 @@ export const ENV = {
 
   // ── MinIO / Lakehouse ────────────────────────────────────────────────────────
   minioEndpoint: optEnv("MINIO_ENDPOINT", "http://minio:9000"),
-  minioAccessKey: optEnv("MINIO_ACCESS_KEY", "54link_admin"),
+  minioAccessKey: optEnv("MINIO_ACCESS_KEY", "insureportal_admin"),
   minioSecretKey: requireEnv("MINIO_SECRET_KEY"),
-  minioBucket: optEnv("MINIO_BUCKET", "54link-screenshots"),
+  minioBucket: optEnv("MINIO_BUCKET", "insureportal-screenshots"),
 
   // ── APISix gateway admin API ────────────────────────────────────────────────
   apisixAdminUrl: optEnv("APISIX_ADMIN_URL", "http://apisix:9180"),
@@ -131,12 +131,12 @@ export const ENV = {
   // ── Resilience / offline sub-services ──────────────────────────────────────
   resilienceAgentUrl: optEnv(
     "RESILIENCE_AGENT_URL",
-    "https://resilience.54link.io"
+    "https://resilience.insureportal.io"
   ),
-  offlineQueueUrl: optEnv("OFFLINE_QUEUE_URL", "https://queue.54link.io"),
+  offlineQueueUrl: optEnv("OFFLINE_QUEUE_URL", "https://queue.insureportal.io"),
   analyticsServiceUrl: optEnv(
     "ANALYTICS_SERVICE_URL",
-    "https://analytics.54link.io"
+    "https://analytics.insureportal.io"
   ),
 
   // ── POS Printer sidecar (Rust ESC/POS service) ──────────────────────────────
@@ -144,14 +144,14 @@ export const ENV = {
 
   // ── mTLS ────────────────────────────────────────────────────────────────────
   mtlsEnabled: optEnv("MTLS_ENABLED", "false") === "true",
-  mtlsCertDir: optEnv("MTLS_CERT_DIR", "/etc/54link/certs"),
+  mtlsCertDir: optEnv("MTLS_CERT_DIR", "/etc/insureportal/certs"),
 
   // ── OpenTelemetry ───────────────────────────────────────────────────────────
   otelEndpoint: optEnv(
     "OTEL_EXPORTER_OTLP_ENDPOINT",
     "http://otel-collector:4318"
   ),
-  otelServiceName: optEnv("OTEL_SERVICE_NAME", "pos-shell"),
+  otelServiceName: optEnv("OTEL_SERVICE_NAME", "insurance-portal"),
   otelServiceVersion: optEnv("OTEL_SERVICE_VERSION", "1.0.0"),
 
   // ── Termii SMS / OTP ────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ export const ENV = {
   // committed to source control.
   vapidPublicKey: optEnv("VAPID_PUBLIC_KEY", ""),
   vapidPrivateKey: optEnv("VAPID_PRIVATE_KEY", ""),
-  vapidSubject: optEnv("VAPID_SUBJECT", "mailto:admin@54link.io"),
+  vapidSubject: optEnv("VAPID_SUBJECT", "mailto:admin@insureportal.io"),
 
   // ── Platform microservice URLs (override per deployment) ───────────────────
   PLATFORM_KYC_URL: optEnv("PLATFORM_KYC_URL", "http://kyc-service:8070"),
@@ -209,8 +209,8 @@ export const ENV = {
 
   // ── MQTT broker (InfinyOn MQTT Source Connector) ─────────────────────────────
   mqttBrokerUrl: optEnv("MQTT_BROKER_URL", "mqtt://mosquitto:1883"),
-  mqttClientId: optEnv("MQTT_CLIENT_ID", "54link-fluvio-bridge"),
-  mqttUsername: optEnv("MQTT_USERNAME", "54link_mqtt"),
+  mqttClientId: optEnv("MQTT_CLIENT_ID", "insureportal-fluvio-bridge"),
+  mqttUsername: optEnv("MQTT_USERNAME", "insureportal_mqtt"),
   mqttPassword: optEnv("MQTT_PASSWORD", ""),
 
   // ── S3 presigned URL signing ─────────────────────────────────────────────────

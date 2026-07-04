@@ -12,7 +12,7 @@ import { getDb } from "../db";
 import {
   agents,
   transactions,
-  floatTopUpRequests,
+  premiumTopUpRequests,
   qrCodes,
   disputes,
   loyaltyHistory,
@@ -44,12 +44,12 @@ export const agentBankingRouter = router({
             return {
               txCount: 0,
               volume: "0",
-              floatBalance: "0",
+              premiumReserve: "0",
               loyaltyPoints: 0,
             };
           const [agent] = await db
             .select({
-              floatBalance: agents.floatBalance,
+              premiumReserve: agents.premiumReserve,
               commissionBalance: agents.commissionBalance,
               loyaltyPoints: agents.loyaltyPoints,
               tier: agents.tier,
@@ -260,7 +260,7 @@ export const agentBankingRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [agent] = await db
             .select({
-              floatBalance: agents.floatBalance,
+              premiumReserve: agents.premiumReserve,
               commissionBalance: agents.commissionBalance,
             })
             .from(agents)
@@ -290,16 +290,16 @@ export const agentBankingRouter = router({
           const db = (await getDb())!;
           if (!db) return { items: [], total: 0 };
           const offset = (input.page - 1) * input.limit;
-          const where = eq(floatTopUpRequests.agentId, input.agentId);
+          const where = eq(premiumTopUpRequests.agentId, input.agentId);
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(floatTopUpRequests)
+              .from(premiumTopUpRequests)
               .where(where)
-              .orderBy(desc(floatTopUpRequests.createdAt))
+              .orderBy(desc(premiumTopUpRequests.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(floatTopUpRequests).where(where),
+            db.select({ total: count() }).from(premiumTopUpRequests).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -325,7 +325,7 @@ export const agentBankingRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [req] = await db
-            .insert(floatTopUpRequests)
+            .insert(premiumTopUpRequests)
             .values({
               agentId: input.agentId,
               requestedAmount: input.amount,

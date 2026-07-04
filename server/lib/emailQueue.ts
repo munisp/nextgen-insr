@@ -13,7 +13,7 @@
  *   SMTP_PORT        - SMTP port (default: 587)
  *   SMTP_USER        - SMTP username / API key
  *   SMTP_PASS        - SMTP password / API key
- *   SMTP_FROM        - From address (e.g., "54Link POS <noreply@54link.io>")
+ *   SMTP_FROM        - From address (e.g., "InsurePortal POS <noreply@insureportal.io>")
  *   SMTP_SECURE      - "true" for TLS on port 465 (default: false)
  *
  * Usage:
@@ -44,7 +44,7 @@ interface EmailJob {
 const queue: EmailJob[] = [];
 let workerRunning = false;
 
-const DEFAULT_FROM = process.env.SMTP_FROM ?? "54Link POS <noreply@54link.io>";
+const DEFAULT_FROM = process.env.SMTP_FROM ?? "InsurePortal POS <noreply@insureportal.io>";
 const MAX_ATTEMPTS = 3;
 const BASE_RETRY_MS = 5_000; // 5s base, doubles each retry
 
@@ -209,7 +209,7 @@ function sleep(ms: number): Promise<void> {
 
 export function buildTransactionReceiptEmail(opts: {
   agentName: string;
-  agentCode: string;
+  agentId: string;
   ref: string;
   type: string;
   amount: number;
@@ -225,7 +225,7 @@ export function buildTransactionReceiptEmail(opts: {
 
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:8px;">
-      <h2 style="color:#1d4ed8;margin-bottom:4px;">54Link POS</h2>
+      <h2 style="color:#1d4ed8;margin-bottom:4px;">InsurePortal POS</h2>
       <p style="color:#6b7280;margin-top:0;">Transaction Receipt</p>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;" />
       <table style="width:100%;border-collapse:collapse;">
@@ -235,15 +235,15 @@ export function buildTransactionReceiptEmail(opts: {
         <tr><td style="padding:6px 0;color:#6b7280;">Fee</td><td style="padding:6px 0;">${feeStr}</td></tr>
         <tr><td style="padding:6px 0;color:#6b7280;">Commission</td><td style="padding:6px 0;color:#16a34a;">${commStr}</td></tr>
         ${opts.customerName ? `<tr><td style="padding:6px 0;color:#6b7280;">Customer</td><td style="padding:6px 0;">${opts.customerName}</td></tr>` : ""}
-        <tr><td style="padding:6px 0;color:#6b7280;">Agent</td><td style="padding:6px 0;">${opts.agentName} (${opts.agentCode})</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280;">Agent</td><td style="padding:6px 0;">${opts.agentName} (${opts.agentId})</td></tr>
         <tr><td style="padding:6px 0;color:#6b7280;">Date</td><td style="padding:6px 0;">${opts.timestamp.toLocaleString("en-NG")}</td></tr>
       </table>
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;" />
-      <p style="color:#6b7280;font-size:12px;margin:0;">This is an automated receipt from 54Link POS. Do not reply to this email.</p>
+      <p style="color:#6b7280;font-size:12px;margin:0;">This is an automated receipt from InsurePortal POS. Do not reply to this email.</p>
     </div>
   `;
 
-  const text = `54Link POS — Transaction Receipt\n\nRef: ${opts.ref}\nType: ${opts.type}\nAmount: ${amountStr}\nFee: ${feeStr}\nCommission: ${commStr}\nAgent: ${opts.agentName} (${opts.agentCode})\nDate: ${opts.timestamp.toLocaleString("en-NG")}`;
+  const text = `InsurePortal POS — Transaction Receipt\n\nRef: ${opts.ref}\nType: ${opts.type}\nAmount: ${amountStr}\nFee: ${feeStr}\nCommission: ${commStr}\nAgent: ${opts.agentName} (${opts.agentId})\nDate: ${opts.timestamp.toLocaleString("en-NG")}`;
 
   return { subject, html, text };
 }
@@ -280,31 +280,31 @@ export function buildAlertEmail(opts: {
 
 export function buildKycApprovalEmail(opts: {
   agentName: string;
-  agentCode: string;
+  agentId: string;
   tier: string;
   approvedAt: Date;
 }): { subject: string; html: string; text: string } {
   const subject = `KYC Approved — Welcome to ${opts.tier} Tier, ${opts.agentName}`;
-  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #d1fae5;border-radius:8px;background:#f0fdf4;"><h2 style="color:#065f46;">✅ KYC Approved</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentCode}), your KYC has been approved. Tier: <strong>${opts.tier}</strong>.</p><p style="color:#6b7280;font-size:12px;">Approved: ${opts.approvedAt.toLocaleString("en-NG")}</p></div>`;
-  const text = `KYC Approved\n\nDear ${opts.agentName} (${opts.agentCode}),\nYour KYC has been approved. Tier: ${opts.tier}\nApproved: ${opts.approvedAt.toLocaleString("en-NG")}`;
+  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #d1fae5;border-radius:8px;background:#f0fdf4;"><h2 style="color:#065f46;">✅ KYC Approved</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentId}), your KYC has been approved. Tier: <strong>${opts.tier}</strong>.</p><p style="color:#6b7280;font-size:12px;">Approved: ${opts.approvedAt.toLocaleString("en-NG")}</p></div>`;
+  const text = `KYC Approved\n\nDear ${opts.agentName} (${opts.agentId}),\nYour KYC has been approved. Tier: ${opts.tier}\nApproved: ${opts.approvedAt.toLocaleString("en-NG")}`;
   return { subject, html, text };
 }
 
 export function buildKycRejectionEmail(opts: {
   agentName: string;
-  agentCode: string;
+  agentId: string;
   reason: string;
   rejectedAt: Date;
 }): { subject: string; html: string; text: string } {
   const subject = `KYC Verification Update — Action Required`;
-  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #fee2e2;border-radius:8px;background:#fff7f7;"><h2 style="color:#991b1b;">⚠️ KYC Requires Attention</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentCode}),</p><p>Reason: ${opts.reason}</p><p style="color:#6b7280;font-size:12px;">Reviewed: ${opts.rejectedAt.toLocaleString("en-NG")}</p></div>`;
-  const text = `KYC Update\n\nDear ${opts.agentName} (${opts.agentCode}),\nReason: ${opts.reason}\nReviewed: ${opts.rejectedAt.toLocaleString("en-NG")}`;
+  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #fee2e2;border-radius:8px;background:#fff7f7;"><h2 style="color:#991b1b;">⚠️ KYC Requires Attention</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentId}),</p><p>Reason: ${opts.reason}</p><p style="color:#6b7280;font-size:12px;">Reviewed: ${opts.rejectedAt.toLocaleString("en-NG")}</p></div>`;
+  const text = `KYC Update\n\nDear ${opts.agentName} (${opts.agentId}),\nReason: ${opts.reason}\nReviewed: ${opts.rejectedAt.toLocaleString("en-NG")}`;
   return { subject, html, text };
 }
 
 export function buildFloatAlertEmail(opts: {
   agentName: string;
-  agentCode: string;
+  agentId: string;
   currentBalance: number;
   threshold: number;
   currency?: string;
@@ -312,15 +312,15 @@ export function buildFloatAlertEmail(opts: {
   const cur = opts.currency ?? "NGN";
   const fmt = (n: number) =>
     `${cur} ${n.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
-  const subject = `Float Balance Alert — ${opts.agentCode} below threshold`;
-  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:2px solid #d97706;border-radius:8px;background:#fffbeb;"><h2 style="color:#92400e;">⚠️ Low Float Balance</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentCode}),</p><p>Current: <strong style="color:#dc2626;">${fmt(opts.currentBalance)}</strong> | Threshold: ${fmt(opts.threshold)}</p><p>Please top up immediately.</p></div>`;
-  const text = `Float Alert\n\n${opts.agentName} (${opts.agentCode})\nCurrent: ${fmt(opts.currentBalance)}\nThreshold: ${fmt(opts.threshold)}`;
+  const subject = `Float Balance Alert — ${opts.agentId} below threshold`;
+  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:2px solid #d97706;border-radius:8px;background:#fffbeb;"><h2 style="color:#92400e;">⚠️ Low Float Balance</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentId}),</p><p>Current: <strong style="color:#dc2626;">${fmt(opts.currentBalance)}</strong> | Threshold: ${fmt(opts.threshold)}</p><p>Please top up immediately.</p></div>`;
+  const text = `Float Alert\n\n${opts.agentName} (${opts.agentId})\nCurrent: ${fmt(opts.currentBalance)}\nThreshold: ${fmt(opts.threshold)}`;
   return { subject, html, text };
 }
 
 export function buildCommissionPayoutEmail(opts: {
   agentName: string;
-  agentCode: string;
+  agentId: string;
   amount: number;
   period: string;
   payoutRef: string;
@@ -331,18 +331,18 @@ export function buildCommissionPayoutEmail(opts: {
   const fmt = (n: number) =>
     `${cur} ${n.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
   const subject = `Commission Payout — ${fmt(opts.amount)} for ${opts.period}`;
-  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #d1fae5;border-radius:8px;background:#f0fdf4;"><h2 style="color:#065f46;">💰 Commission Payout Processed</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentCode}),</p><p>Ref: ${opts.payoutRef} | Amount: <strong>${fmt(opts.amount)}</strong> | Period: ${opts.period}</p><p style="color:#6b7280;font-size:12px;">Processed: ${opts.paidAt.toLocaleString("en-NG")}</p></div>`;
-  const text = `Commission Payout\n\n${opts.agentName} (${opts.agentCode})\nRef: ${opts.payoutRef}\nAmount: ${fmt(opts.amount)}\nPeriod: ${opts.period}`;
+  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #d1fae5;border-radius:8px;background:#f0fdf4;"><h2 style="color:#065f46;">💰 Commission Payout Processed</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentId}),</p><p>Ref: ${opts.payoutRef} | Amount: <strong>${fmt(opts.amount)}</strong> | Period: ${opts.period}</p><p style="color:#6b7280;font-size:12px;">Processed: ${opts.paidAt.toLocaleString("en-NG")}</p></div>`;
+  const text = `Commission Payout\n\n${opts.agentName} (${opts.agentId})\nRef: ${opts.payoutRef}\nAmount: ${fmt(opts.amount)}\nPeriod: ${opts.period}`;
   return { subject, html, text };
 }
 
 export function buildOnboardingCompleteEmail(opts: {
   agentName: string;
-  agentCode: string;
+  agentId: string;
   completedAt: Date;
 }): { subject: string; html: string; text: string } {
-  const subject = `Welcome to 54Link — Onboarding Complete, ${opts.agentName}!`;
-  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #ddd6fe;border-radius:8px;background:#faf5ff;"><h2 style="color:#5b21b6;">🎉 Onboarding Complete!</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentCode}),</p><p>All 5 onboarding steps completed. You are now fully activated.</p><p style="color:#6b7280;font-size:12px;">Completed: ${opts.completedAt.toLocaleString("en-NG")}</p></div>`;
-  const text = `Onboarding Complete!\n\nDear ${opts.agentName} (${opts.agentCode}),\nAll 5 steps completed.\nCompleted: ${opts.completedAt.toLocaleString("en-NG")}`;
+  const subject = `Welcome to InsurePortal — Onboarding Complete, ${opts.agentName}!`;
+  const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #ddd6fe;border-radius:8px;background:#faf5ff;"><h2 style="color:#5b21b6;">🎉 Onboarding Complete!</h2><p>Dear <strong>${opts.agentName}</strong> (${opts.agentId}),</p><p>All 5 onboarding steps completed. You are now fully activated.</p><p style="color:#6b7280;font-size:12px;">Completed: ${opts.completedAt.toLocaleString("en-NG")}</p></div>`;
+  const text = `Onboarding Complete!\n\nDear ${opts.agentName} (${opts.agentId}),\nAll 5 steps completed.\nCompleted: ${opts.completedAt.toLocaleString("en-NG")}`;
   return { subject, html, text };
 }

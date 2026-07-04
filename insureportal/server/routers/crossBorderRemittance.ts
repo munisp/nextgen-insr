@@ -141,14 +141,14 @@ export const crossBorderRemittanceRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        if (!agent || Number(agent.premiumReserve) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Insufficient float balance",
+            message: "Insufficient premium reserve",
           });
 
         const fee = Math.max(500, Math.round(input.amount * 0.02));
@@ -185,14 +185,14 @@ export const crossBorderRemittanceRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(input.amount)}`,
             // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "CROSS_BORDER_REMITTANCE_SENT",
           resource: "remittance",
           resourceId: ref,

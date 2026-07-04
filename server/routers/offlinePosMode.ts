@@ -35,7 +35,7 @@ export const offlinePosModeRouter = router({
 
       const db = (await getDb())!;
       if (!db)
-        return { config: OFFLINE_DEFAULTS, tier: "Bronze", floatBalance: 0 };
+        return { config: OFFLINE_DEFAULTS, tier: "Bronze", premiumReserve: 0 };
 
       const configRows = await db
         .select({ value: platformSettings.value })
@@ -49,13 +49,13 @@ export const offlinePosModeRouter = router({
         .limit(1);
 
       const agentRows = await db
-        .select({ tier: agents.tier, floatBalance: agents.floatBalance })
+        .select({ tier: agents.tier, premiumReserve: agents.premiumReserve })
         .from(agents)
         .where(eq(agents.id, session.id))
         .limit(1);
 
       const tier = agentRows[0]?.tier ?? "Bronze";
-      const floatBalance = Number(agentRows[0]?.floatBalance ?? 0);
+      const premiumReserve = Number(agentRows[0]?.premiumReserve ?? 0);
 
       let config = { ...OFFLINE_DEFAULTS };
       if (configRows[0]?.value) {
@@ -76,7 +76,7 @@ export const offlinePosModeRouter = router({
       );
       config.maxQueueSize = Math.round(config.maxQueueSize * multiplier);
 
-      return { config, tier, floatBalance };
+      return { config, tier, premiumReserve };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
       throw new TRPCError({
@@ -111,7 +111,7 @@ export const offlinePosModeRouter = router({
           });
 
         const agentRows = await db
-          .select({ floatBalance: agents.floatBalance, tier: agents.tier })
+          .select({ premiumReserve: agents.premiumReserve, tier: agents.tier })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
@@ -122,12 +122,12 @@ export const offlinePosModeRouter = router({
             message: "Agent not found",
           });
 
-        const floatSnapshot = Number(agentRows[0].floatBalance);
+        const floatSnapshot = Number(agentRows[0].premiumReserve);
         const sessionId = `OFS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "OFFLINE_SESSION_STARTED",
           resource: "offline_session",
           resourceId: sessionId,
@@ -175,7 +175,7 @@ export const offlinePosModeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "OFFLINE_SESSION_ENDED",
           resource: "offline_session",
           resourceId: input.sessionId,
@@ -233,7 +233,7 @@ export const offlinePosModeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "OFFLINE_CONFIG_UPDATED",
           resource: "offline_config",
           status: "success",

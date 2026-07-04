@@ -1,5 +1,5 @@
 /**
- * 54Link POS — Temporal Activities
+ * InsurePortal POS — Temporal Activities
  * All activities run in the worker process with full access to DB, Redis, and external APIs.
  */
 import { getDb } from "./db";
@@ -136,14 +136,14 @@ export async function validateSettlementAmounts(
 export async function executeSettlementTransfers(
   settlements: AgentSettlement[]
 ): Promise<void> {
-  // Update agent float balance using SQL expression (no db.raw)
+  // Update agent premium reserve using SQL expression (no db.raw)
   for (const s of settlements) {
     const _db = await getDbInstance();
 
     await _db
       .update(agents)
       .set({
-        floatBalance: sql`${agents.floatBalance} + ${String(s.netAmount)}`,
+        premiumReserve: sql`${agents.premiumReserve} + ${String(s.netAmount)}`,
         updatedAt: new Date(),
       })
       .where(eq(agents.id, s.agentId));
@@ -224,14 +224,14 @@ export async function checkAgentFloatBalance(
 ): Promise<FloatBalance> {
   const _db = await getDbInstance();
   const agent = await _db
-    .select({ floatBalance: agents.floatBalance })
+    .select({ premiumReserve: agents.premiumReserve })
     .from(agents)
     .where(eq(agents.id, agentId))
     .limit(1);
 
   return {
     agentId,
-    currentBalance: Number(agent[0]?.floatBalance ?? 0),
+    currentBalance: Number(agent[0]?.premiumReserve ?? 0),
     minBalance: 50_000,
     pendingRequests: 0,
   };
@@ -259,7 +259,7 @@ export async function executeFloatTransfer(input: {
   await _db
     .update(agents)
     .set({
-      floatBalance: sql`${agents.floatBalance} + ${String(input.amount)}`,
+      premiumReserve: sql`${agents.premiumReserve} + ${String(input.amount)}`,
       updatedAt: new Date(),
     })
     .where(eq(agents.id, input.agentId));

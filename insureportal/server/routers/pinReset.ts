@@ -2,7 +2,7 @@
  * PIN Reset Router
  *
  * Flow:
- *   1. Agent submits their agent code + registered phone number
+ *   1. Agent submits their agent ID + registered phone number
  *   2. Server verifies the phone matches the DB record
  *   3. A 6-digit OTP is generated, hashed, and stored in the otp_tokens table
  *   4. OTP is sent via Termii SMS (falls back to console.log when key absent)
@@ -28,12 +28,12 @@ function generateOtp(): string {
 export const pinResetRouter = router({
   /**
    * Step 1: Request OTP
-   * Verifies agent code + phone, generates OTP, sends SMS.
+   * Verifies agent ID + phone, generates OTP, sends SMS.
    */
   requestOtp: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string().min(3),
+        agentId: z.string().min(3),
         phone: z.string().min(10).max(15),
       })
     )
@@ -50,11 +50,11 @@ export const pinResetRouter = router({
         const agentRows = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
 
         if (agentRows.length === 0) {
-          // Return generic message to avoid agent code enumeration
+          // Return generic message to avoid agent ID enumeration
           return {
             success: true,
             message: "If the details match, an OTP has been sent.",
@@ -129,7 +129,7 @@ export const pinResetRouter = router({
   resetPin: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string().min(3),
+        agentId: z.string().min(3),
         otp: z.string().length(6),
         newPin: z.string().min(4).max(6),
       })
@@ -147,13 +147,13 @@ export const pinResetRouter = router({
         const agentRows = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
 
         if (agentRows.length === 0) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Invalid OTP or agent code",
+            message: "Invalid OTP or agent ID",
           });
         }
 

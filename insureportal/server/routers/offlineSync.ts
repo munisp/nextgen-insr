@@ -106,7 +106,7 @@ export const offlineSyncRouter = router({
               await db
                 .update(agents)
                 .set({
-                  floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(tx.amount)}`,
+                  premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(tx.amount)}`,
                 })
                 .where(eq(agents.id, session.id));
             }
@@ -114,7 +114,7 @@ export const offlineSyncRouter = router({
               await db
                 .update(agents)
                 .set({
-                  floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(tx.amount)}`,
+                  premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) + ${String(tx.amount)}`,
                 })
                 .where(eq(agents.id, session.id));
             }
@@ -144,7 +144,7 @@ export const offlineSyncRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "OFFLINE_SYNC_BATCH",
           resource: "offline_sync",
           resourceId: input.sessionId,
@@ -297,7 +297,7 @@ export const offlineSyncRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "OFFLINE_SYNC_RETRY",
           resource: "offline_sync",
           resourceId: input.sessionId,

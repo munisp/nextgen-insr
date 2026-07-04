@@ -32,24 +32,24 @@ import { logger } from './_core/logger';
 
 interface AgentSettlement {
   agentId: number;
-  agentCode: string;
+  agentId: string;
   name: string;
   phone: string;
   txCount: number;
   totalVolume: number;
   totalCommission: number;
-  floatBalance: number;
+  premiumReserve: number;
 }
 
 function buildSettlementSms(data: AgentSettlement): string {
   return (
-    `54Link Daily Settlement - ${new Date().toLocaleDateString("en-NG")}\n` +
-    `Agent: ${data.agentCode}\n` +
+    `InsurePortal Daily Settlement - ${new Date().toLocaleDateString("en-NG")}\n` +
+    `Agent: ${data.agentId}\n` +
     `Transactions: ${data.txCount}\n` +
     `Volume: ₦${data.totalVolume.toLocaleString("en-NG", { minimumFractionDigits: 2 })}\n` +
     `Commission: ₦${data.totalCommission.toLocaleString("en-NG", { minimumFractionDigits: 2 })}\n` +
-    `Float Balance: ₦${data.floatBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 })}\n` +
-    `Thank you for using 54Link.`
+    `Float Balance: ₦${data.premiumReserve.toLocaleString("en-NG", { minimumFractionDigits: 2 })}\n` +
+    `Thank you for using InsurePortal.`
   );
 }
 
@@ -96,10 +96,10 @@ async function runDailySettlement(): Promise<SettlementResult> {
   const activeAgents = await db
     .select({
       id: agents.id,
-      agentCode: agents.agentCode,
+      agentId: agents.agentId,
       name: agents.name,
       phone: agents.phone,
-      floatBalance: agents.floatBalance,
+      premiumReserve: agents.premiumReserve,
     })
     .from(agents)
     .where(eq(agents.isActive, true));
@@ -134,13 +134,13 @@ async function runDailySettlement(): Promise<SettlementResult> {
 
       const settlementData: AgentSettlement = {
         agentId: agent.id,
-        agentCode: agent.agentCode,
+        agentId: agent.agentId,
         name: agent.name,
         phone: agent.phone,
         txCount,
         totalVolume,
         totalCommission,
-        floatBalance: Number(agent.floatBalance),
+        premiumReserve: Number(agent.premiumReserve),
       };
 
       const message = buildSettlementSms(settlementData);
@@ -149,13 +149,13 @@ async function runDailySettlement(): Promise<SettlementResult> {
         smsSent++;
       } else {
         logger.error(
-          `[settlement] SMS failed for agent ${agent.agentCode}: ${smsResult.error}`
+          `[settlement] SMS failed for agent ${agent.agentId}: ${smsResult.error}`
         );
       }
 
       await db.insert(auditLog).values({
         agentId: agent.id,
-        agentCode: agent.agentCode,
+        agentId: agent.agentId,
         action: "DAILY_SETTLEMENT_SENT",
         resource: "settlement",
         resourceId: today.toISOString().split("T")[0],
@@ -164,15 +164,15 @@ async function runDailySettlement(): Promise<SettlementResult> {
           txCount,
           totalVolume,
           totalCommission,
-          floatBalance: Number(agent.floatBalance),
+          premiumReserve: Number(agent.premiumReserve),
           date: today.toISOString().split("T")[0],
         },
       });
 
       successCount++;
     } catch (err) {
-      logger.error(`[settlement] Error processing agent ${agent.agentCode}:: ` + err);
-      errors.push(`${agent.agentCode}: ${String(err)}`);
+      logger.error(`[settlement] Error processing agent ${agent.agentId}:: ` + err);
+      errors.push(`${agent.agentId}: ${String(err)}`);
     }
   }
 
@@ -506,7 +506,7 @@ export async function runDeadLetterDigest(): Promise<void> {
         dateStyle: "full",
       });
       await notifyOwner({
-        title: `[54Link POS] Auto-retried ${requeued} ERP dead-letter item(s)`,
+        title: `[InsurePortal POS] Auto-retried ${requeued} ERP dead-letter item(s)`,
         content: [
           `Dead-Letter Auto-Retry — ${today}`,
           ``,
@@ -554,7 +554,7 @@ export async function runDeadLetterDigest(): Promise<void> {
     ].join("\n");
 
     await notifyOwner({
-      title: `[54Link POS] ${failedItems.length} ERP dead-letter item(s) require attention`,
+      title: `[InsurePortal POS] ${failedItems.length} ERP dead-letter item(s) require attention`,
       content,
     });
 
@@ -590,28 +590,28 @@ export async function runWeeklyConnectivitySlaReport(): Promise<void> {
     // Aggregate per agent: total pings and avg latency
     const rows = await db
       .select({
-        agentCode: connectivityLog.agentCode,
+        agentId: connectivityLog.agentId,
         totalPings: count(connectivityLog.id),
         avgLatencyMs: avg(connectivityLog.latencyMs),
       })
       .from(connectivityLog)
       .where(gteOp(connectivityLog.recordedAt, sevenDaysAgo))
-      .groupBy(connectivityLog.agentCode);
+      .groupBy(connectivityLog.agentId);
 
     // For uptime: count pings where quality != 'offline'
     const onlineRows = await db
       .select({
-        agentCode: connectivityLog.agentCode,
+        agentId: connectivityLog.agentId,
         onlinePings: count(connectivityLog.id),
       })
       .from(connectivityLog)
       .where(
         sqlExpr`${connectivityLog.recordedAt} >= ${sevenDaysAgo} AND ${connectivityLog.quality} != 'offline'`
       )
-      .groupBy(connectivityLog.agentCode);
+      .groupBy(connectivityLog.agentId);
 
     const onlineMap = new Map(
-      onlineRows.map(r => [r.agentCode, Number(r.onlinePings)])
+      onlineRows.map(r => [r.agentId, Number(r.onlinePings)])
     );
 
     if (rows.length === 0) {
@@ -625,11 +625,11 @@ export async function runWeeklyConnectivitySlaReport(): Promise<void> {
     const ranked = rows
       .map(r => {
         const total = Number(r.totalPings);
-        const online = onlineMap.get(r.agentCode) ?? 0;
+        const online = onlineMap.get(r.agentId) ?? 0;
         const uptimePct = total > 0 ? (online / total) * 100 : 0;
         const avgLat =
           r.avgLatencyMs != null ? Math.round(Number(r.avgLatencyMs)) : null;
-        return { agentCode: r.agentCode, uptimePct, avgLat, total, online };
+        return { agentId: r.agentId, uptimePct, avgLat, total, online };
       })
       .sort((a, b) => b.uptimePct - a.uptimePct); // best uptime first
 
@@ -642,7 +642,7 @@ export async function runWeeklyConnectivitySlaReport(): Promise<void> {
 
     const tableLines = ranked.map((r, i) => {
       const rank = String(i + 1).padStart(3);
-      const code = r.agentCode.padEnd(12);
+      const code = r.agentId.padEnd(12);
       const uptime = `${r.uptimePct.toFixed(1)}%`.padStart(7);
       const lat = r.avgLat != null ? `${r.avgLat}ms`.padStart(7) : "   N/A";
       const pings = `${r.online}/${r.total}`.padStart(10);
@@ -671,12 +671,12 @@ export async function runWeeklyConnectivitySlaReport(): Promise<void> {
       ...tableLines,
       ``,
       belowSla.length > 0
-        ? `ACTION REQUIRED: ${belowSla.map(r => r.agentCode).join(", ")} are below the 80% SLA threshold. Consider replacing terminals.`
+        ? `ACTION REQUIRED: ${belowSla.map(r => r.agentId).join(", ")} are below the 80% SLA threshold. Consider replacing terminals.`
         : `All agents are meeting the 80% SLA threshold.`,
     ].join("\n");
 
     await notifyOwner({
-      title: `[54Link POS] Weekly Connectivity SLA — ${ranked.length} agents, ${belowSla.length} below SLA`,
+      title: `[InsurePortal POS] Weekly Connectivity SLA — ${ranked.length} agents, ${belowSla.length} below SLA`,
       content,
     });
     logger.info(

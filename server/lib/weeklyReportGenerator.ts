@@ -266,7 +266,7 @@ function collectErrorMetrics(): WeeklyReportMetrics["errors"] {
       {
         endpoint: "/api/trpc/transactions.create",
         count: Math.floor(totalErrors * 0.3),
-        message: "Insufficient float balance",
+        message: "Insufficient premium reserve",
       },
       {
         endpoint: "/api/trpc/agent.login",

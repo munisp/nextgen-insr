@@ -48,14 +48,14 @@ export const splitPaymentsRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.totalAmount)
+        if (!agent || Number(agent.premiumReserve) < input.totalAmount)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Insufficient float balance",
+            message: "Insufficient premium reserve",
           });
 
         const groupRef = `SPL-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
@@ -96,13 +96,13 @@ export const splitPaymentsRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.totalAmount)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(input.totalAmount)}`,
           })
           .where(eq(agents.id, session.id));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "SPLIT_PAYMENT_CREATED",
           resource: "split_payment",
           resourceId: groupRef,

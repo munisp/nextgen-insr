@@ -453,7 +453,7 @@ const navGroups: NavGroup[] = [
   },
   // ── 12. Nigerian Insurance ──
   {
-    id: "agency-banking",
+    id: "insurance",
     label: "Insurance",
     icon: Banknote,
     items: [

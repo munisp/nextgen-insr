@@ -63,7 +63,7 @@ function buildReceiptSMS(data: {
   type: string;
   amount: number;
   fee: number;
-  agentCode: string;
+  agentId: string;
   agentName: string;
   customerName?: string | null;
 }): string {
@@ -75,7 +75,7 @@ function buildReceiptSMS(data: {
   ];
   if (data.fee > 0) lines.push(`Fee: NGN ${data.fee.toFixed(2)}`);
   if (data.customerName) lines.push(`Customer: ${data.customerName}`);
-  lines.push(`Agent: ${data.agentName} (${data.agentCode})`);
+  lines.push(`Agent: ${data.agentName} (${data.agentId})`);
   lines.push(
     `Time: ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })}`
   );
@@ -128,7 +128,7 @@ export const smsReceiptRouter = router({
           type: tx.type,
           amount: Number(tx.amount),
           fee: Number(tx.fee ?? 0),
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           agentName: session.name,
           customerName: tx.customerName,
         });
@@ -145,7 +145,7 @@ export const smsReceiptRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: smsResult.success ? "SMS_RECEIPT_SENT" : "SMS_RECEIPT_FAILED",
           resource: "transaction",
           resourceId: tx.ref,
@@ -181,7 +181,7 @@ export const smsReceiptRouter = router({
       z.object({
         transactionRef: z.string(),
         phone: z.string().min(10).max(15),
-        agentCode: z.string(),
+        agentId: z.string(),
         agentName: z.string(),
         type: z.string(),
         amount: z.number(),
@@ -203,7 +203,7 @@ export const smsReceiptRouter = router({
           type: input.type,
           amount: input.amount,
           fee: input.fee,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           agentName: input.agentName,
           customerName: input.customerName,
         });
@@ -238,7 +238,7 @@ export const smsReceiptRouter = router({
         ussdCode: z.string().min(1).max(50),
         transactionRef: z.string().optional(),
         amount: z.number().optional(),
-        agentCode: z.string().optional(),
+        agentId: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -257,7 +257,7 @@ export const smsReceiptRouter = router({
             `Amount: NGN ${input.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`
           );
         }
-        if (input.agentCode) lines.push(`Agent: ${input.agentCode}`);
+        if (input.agentId) lines.push(`Agent: ${input.agentId}`);
         lines.push(
           `Time: ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })}`
         );
@@ -313,7 +313,7 @@ export const smsReceiptRouter = router({
   getRankings: protectedProcedure.query(async () => {
     return {
       rankings: [] as Array<{
-        agentCode: string;
+        agentId: string;
         rank: number;
         score: number;
         transactions: number;

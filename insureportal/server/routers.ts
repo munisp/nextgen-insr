@@ -9,7 +9,7 @@ import { loyaltyRouter } from "./routers/loyalty";
 import { chatRouter } from "./routers/chat";
 import { auditLogRouter } from "./routers/auditLog";
 import { agentManagementRouter } from "./routers/agentManagement";
-import { floatTopUpRouter } from "./routers/floatTopUp";
+import { premiumTopUpRouter } from "./routers/premiumTopUp";
 import { smsReceiptRouter } from "./routers/smsReceipt";
 import { exportRouter } from "./routers/export";
 import { pinResetRouter } from "./routers/pinReset";
@@ -547,7 +547,7 @@ export const appRouter = router({
   chat: chatRouter,
   auditLog: auditLogRouter,
   agentMgmt: agentManagementRouter,
-  floatTopUp: floatTopUpRouter,
+  premiumTopUp: premiumTopUpRouter,
   smsReceipt: smsReceiptRouter,
   export: exportRouter,
   pinReset: pinResetRouter,

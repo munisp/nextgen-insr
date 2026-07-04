@@ -218,7 +218,7 @@ export const managementRouter = router({
     create: adminProcedure
       .input(
         z.object({
-          agentCode: z.string(),
+          agentId: z.string(),
           name: z.string(),
           phone: z.string(),
           email: z.string().email().optional(),
@@ -339,7 +339,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [agent] = await db
             .select({
-              floatBalance: agents.floatBalance,
+              premiumReserve: agents.premiumReserve,
               commissionBalance: agents.commissionBalance,
               loyaltyPoints: agents.loyaltyPoints,
             })
@@ -1286,7 +1286,7 @@ export const managementRouter = router({
       api: { status: "up", latency: 12 },
       database: { status: "up", connections: 5 },
       tigerbeetle: { status: "up", ledgerVersion: "0.16.11" },
-      keycloak: { status: "up", realm: process.env.KEYCLOAK_REALM || "54link" },
+      keycloak: { status: "up", realm: process.env.KEYCLOAK_REALM || "insureportal" },
       redis: { status: "up" },
       kafka: { status: "up", topics: 12 },
       timestamp: new Date(),
@@ -1881,7 +1881,7 @@ export const managementRouter = router({
   // ── Settings ─────────────────────────────────────────────────────
   settings: router({
     get: adminProcedure.query(() => ({
-      platformName: "54Link Agency Banking",
+      platformName: "InsurePortal Insurance",
       defaultCurrency: "NGN",
       defaultCountry: "NGA",
       maxTransactionAmount: 500000,

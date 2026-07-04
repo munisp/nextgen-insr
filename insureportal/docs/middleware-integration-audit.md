@@ -158,8 +158,8 @@ The InsurePortal Insurance Platform comprises a React/Node.js InsurePortal (`ins
 | **InsurePortal sidecar**     | `tb-sidecar/` — Go binary (18 MB), SQLite WAL offline ledger, HTTP API on `:8030`                                                                                                                               |
 | **InsurePortal integration** | **Wired (sidecar pattern).** `server/tbClient.ts` calls the sidecar's `POST /transfer` endpoint with a 200ms timeout. On sidecar unavailability, falls back to PostgreSQL-only persistence.                     |
 | **Status**                | **Fully wired.** The sidecar handles offline double-entry ledger writes and syncs to TigerBeetle Zig + PostgreSQL when connectivity is restored.                                                                |
-| **Gap**                   | The sidecar's `GET /balance/:id` endpoint is not yet called from the InsurePortal. Float balance could be sourced from TigerBeetle (authoritative ledger) rather than the PostgreSQL `agents.floatBalance` column. |
-| **Recommendation**        | Add `tbClient.getBalance(accountId)` helper. In `transactions.agentDayStats`, attempt TB balance lookup first; fall back to PostgreSQL. This makes TigerBeetle the single source of truth for float balances.   |
+| **Gap**                   | The sidecar's `GET /balance/:id` endpoint is not yet called from the InsurePortal. Float balance could be sourced from TigerBeetle (authoritative ledger) rather than the PostgreSQL `agents.premiumReserve` column. |
+| **Recommendation**        | Add `tbClient.getBalance(accountId)` helper. In `transactions.agentDayStats`, attempt TB balance lookup first; fall back to PostgreSQL. This makes TigerBeetle the single source of truth for premium reserves.   |
 
 ---
 
@@ -198,13 +198,13 @@ The following table summarises which platform services are wired via `platformCl
 
 ## 4. Float Platform 2-Phase Commit — Remaining Work
 
-The float platform uses a `utilize`/`settle` pattern (not `reserve`/`commit`/`release` as originally planned). The current `transactions.create` procedure performs float checks and updates against the local PostgreSQL `agents.floatBalance` column. The remaining integration steps are:
+The float platform uses a `utilize`/`settle` pattern (not `reserve`/`commit`/`release` as originally planned). The current `transactions.create` procedure performs float checks and updates against the local PostgreSQL `agents.premiumReserve` column. The remaining integration steps are:
 
 1. **Claim Payout / Transfer / Card / QR / NFC payments** — call `floatPlatform.utilize()` after the local float sufficiency check passes. On platform success, proceed with the local DB transaction. On platform failure (503/unreachable), proceed with local DB only (fail-open).
 
 2. **Premium Payment** — call `floatPlatform.settle()` after the local DB insert succeeds.
 
-3. **Float balance display** — call `floatPlatform.getBalance(agentId)` in `agentDayStats` and `agent.me` procedures, falling back to `agents.floatBalance` from PostgreSQL.
+3. **Float balance display** — call `floatPlatform.getBalance(agentId)` in `agentDayStats` and `agent.me` procedures, falling back to `agents.premiumReserve` from PostgreSQL.
 
 4. **TigerBeetle balance** — call `tbClient.getBalance(accountId)` as an additional source of truth, with PostgreSQL as the final fallback.
 
@@ -229,7 +229,7 @@ The following table prioritises the remaining middleware integration work by imp
 | **P4**   | Temporal           | Wrap `runDailySettlement()` as a Temporal workflow                      | 4h     |
 | **P4**   | Temporal           | Wrap KYC session as a Temporal child workflow                           | 4h     |
 | **P5**   | Dapr               | Add Dapr sidecar annotation to Kubernetes deployment                    | 2h     |
-| **P5**   | TigerBeetle        | Wire `tbClient.getBalance()` as primary float balance source            | 1h     |
+| **P5**   | TigerBeetle        | Wire `tbClient.getBalance()` as primary premium reserve source            | 1h     |
 
 ---
 

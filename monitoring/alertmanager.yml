@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Alertmanager Configuration — 54Link POS Shell
+# Alertmanager Configuration — InsurePortal POS Shell
 # ─────────────────────────────────────────────────────────────────────────────
 # Incident escalation stack (all open-source):
 #   critical  → Grafana OnCall webhook (on-call rotation + escalation chains)
@@ -18,9 +18,9 @@
 
 global:
   resolve_timeout: 5m
-  smtp_smarthost: "smtp.54link.io:587"
-  smtp_from: "alerts@54link.io"
-  smtp_auth_username: "alerts@54link.io"
+  smtp_smarthost: "smtp.insureportal.io:587"
+  smtp_from: "alerts@insureportal.io"
+  smtp_auth_username: "alerts@insureportal.io"
   smtp_auth_password: "smtp-password-change-in-production"
   smtp_require_tls: true
 
@@ -72,7 +72,7 @@ receivers:
   # Self-hosted OnCall runs on port 8080 (see docker-compose.monitoring.yml).
   - name: "grafana-oncall-critical"
     webhook_configs:
-      - url: "http://oncall:8080/integrations/v1/alertmanager/pos-shell-integration-token-change-in-production/"
+      - url: "http://oncall:8080/integrations/v1/alertmanager/insurance-portal-integration-token-change-in-production/"
         send_resolved: true
         http_config:
           # Optional: add a Bearer token if OnCall is behind auth
@@ -88,9 +88,9 @@ receivers:
         channel: "#pos-alerts-critical"
         send_resolved: true
         icon_emoji: ":rotating_light:"
-        username: "54Link POS Alertmanager"
+        username: "InsurePortal POS Alertmanager"
         title: '{{ template "slack.default.title" . }}'
-        title_link: "https://grafana.54link.io/d/pos-shell-prod-v1"
+        title_link: "https://grafana.insureportal.io/d/insurance-portal-prod-v1"
         text: |
           {{ range .Alerts }}
           *Alert:* {{ .Annotations.summary }}
@@ -103,13 +103,13 @@ receivers:
         actions:
           - type: button
             text: "View Dashboard"
-            url: "https://grafana.54link.io/d/pos-shell-prod-v1"
+            url: "https://grafana.insureportal.io/d/insurance-portal-prod-v1"
           - type: button
             text: "Grafana OnCall"
             url: "http://oncall:3000/a/grafana-oncall-app/incidents"
           - type: button
             text: "Runbook"
-            url: "https://wiki.54link.io/runbooks/pos-shell"
+            url: "https://wiki.insureportal.io/runbooks/insurance-portal"
 
   # ── Slack: warning channel ──────────────────────────────────────────────────
   - name: "slack-warning"
@@ -118,9 +118,9 @@ receivers:
         channel: "#pos-alerts-warning"
         send_resolved: true
         icon_emoji: ":warning:"
-        username: "54Link POS Alertmanager"
+        username: "InsurePortal POS Alertmanager"
         title: '{{ template "slack.default.title" . }}'
-        title_link: "https://grafana.54link.io/d/pos-shell-prod-v1"
+        title_link: "https://grafana.insureportal.io/d/insurance-portal-prod-v1"
         text: |
           {{ range .Alerts }}
           *Alert:* {{ .Annotations.summary }}
@@ -137,9 +137,9 @@ receivers:
         channel: "#pos-fraud-alerts"
         send_resolved: true
         icon_emoji: ":shield:"
-        username: "54Link Fraud Monitor"
-        title: ":shield: Fraud Alert Spike — 54Link POS"
-        title_link: "https://grafana.54link.io/d/pos-shell-prod-v1"
+        username: "InsurePortal Fraud Monitor"
+        title: ":shield: Fraud Alert Spike — InsurePortal POS"
+        title_link: "https://grafana.insureportal.io/d/insurance-portal-prod-v1"
         text: |
           {{ range .Alerts }}
           *{{ .Annotations.summary }}*
@@ -155,7 +155,7 @@ receivers:
         channel: "#pos-alerts-info"
         send_resolved: true
         icon_emoji: ":information_source:"
-        username: "54Link POS Alertmanager"
+        username: "InsurePortal POS Alertmanager"
         title: '{{ template "slack.default.title" . }}'
         text: '{{ template "slack.default.text" . }}'
 

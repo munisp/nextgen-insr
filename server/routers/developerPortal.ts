@@ -1,7 +1,7 @@
 /**
  * developerPortal.ts — P3-C Developer Portal Router
  *
- * Provides API key management for third-party developers integrating with 54Link.
+ * Provides API key management for third-party developers integrating with InsurePortal.
  *
  * Procedures:
  *  - devPortal.createKey    — create a new API key (protected)

@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Security Hardening Module — 54Link Agency Banking Platform
+ * Security Hardening Module — InsurePortal Insurance Platform
  *
  * Implements:
  * - Cryptographically secure CSRF token generation

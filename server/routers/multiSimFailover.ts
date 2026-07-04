@@ -78,7 +78,7 @@ export const multiSimFailoverRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "SIM_FAILOVER_TRIGGERED",
           resource: "sim_failover",
           resourceId: String(input.terminalId),
@@ -137,7 +137,7 @@ export const multiSimFailoverRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "SIM_CONFIG_UPDATED",
           resource: "sim_config",
           resourceId: String(input.terminalId),

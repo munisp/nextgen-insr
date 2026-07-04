@@ -2,7 +2,7 @@
 /**
  * Kafka Event Bus Integration
  *
- * Provides a KafkaJS producer and consumer for the 54Link platform.
+ * Provides a KafkaJS producer and consumer for the InsurePortal platform.
  * All transaction, fraud, settlement, and SIM failover events are published
  * to Kafka topics for downstream processing.
  *
@@ -14,7 +14,7 @@
  *
  * Configuration:
  *   KAFKA_BROKERS   — comma-separated broker list (default: localhost:9092)
- *   KAFKA_CLIENT_ID — client identifier (default: pos-shell-demo)
+ *   KAFKA_CLIENT_ID — client identifier (default: insurance-portal-demo)
  *   KAFKA_ENABLED   — set to "false" to disable (default: true)
  *
  * When KAFKA_ENABLED=false or brokers are unreachable, all publish calls
@@ -30,7 +30,7 @@ const KAFKA_ENABLED = process.env.KAFKA_ENABLED !== "false";
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS ?? "localhost:9092")
   .split(",")
   .map(b => b.trim());
-const KAFKA_CLIENT_ID = process.env.KAFKA_CLIENT_ID ?? "pos-shell-demo";
+const KAFKA_CLIENT_ID = process.env.KAFKA_CLIENT_ID ?? "insurance-portal-demo";
 
 // ─── Topic definitions ────────────────────────────────────────────────────────
 
@@ -191,7 +191,7 @@ export async function kafkaDisconnect(): Promise<void> {
 
 export interface TxCreatedEvent {
   txRef: string;
-  agentCode: string;
+  agentId: string;
   terminalId?: string;
   type: string;
   amount: number;
@@ -214,7 +214,7 @@ export async function publishTxCreated(
 
 export interface TxSettledEvent {
   settlementDate: string;
-  agentCode: string;
+  agentId: string;
   txCount: number;
   totalVolume: number;
   totalCommission: number;
@@ -226,14 +226,14 @@ export async function publishTxSettled(
 ): Promise<boolean> {
   return kafkaPublish(
     TOPICS.TX_SETTLED,
-    `${event.settlementDate}-${event.agentCode}`,
+    `${event.settlementDate}-${event.agentId}`,
     event as unknown as Record<string, unknown>
   );
 }
 
 export interface FraudAlertEvent {
   alertId: number;
-  agentCode: string;
+  agentId: string;
   txRef?: string;
   severity: string;
   type: string;
@@ -254,7 +254,7 @@ export async function publishFraudAlert(
 
 export interface SimFailoverEvent {
   terminalId: string;
-  agentCode: string;
+  agentId: string;
   fromSlot: number;
   toSlot: number;
   reason: string;

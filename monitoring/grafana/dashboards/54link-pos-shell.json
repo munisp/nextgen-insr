@@ -46,7 +46,7 @@
       }
     ]
   },
-  "description": "54Link POS Shell — Agency Banking Platform Observability Dashboard",
+  "description": "InsurePortal POS Shell — Insurance Platform Observability Dashboard",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -963,7 +963,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["pos-shell", "54link", "agency-banking", "nigeria"],
+  "tags": ["insurance-portal", "insureportal", "insurance", "nigeria"],
   "templating": {
     "list": [
       {
@@ -1012,8 +1012,8 @@
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "Africa/Lagos",
-  "title": "54Link POS Shell — Agency Banking",
-  "uid": "54link-pos-shell-v1",
+  "title": "InsurePortal POS Shell — Insurance",
+  "uid": "insureportal-insurance-portal-v1",
   "version": 1,
   "weekStart": "monday"
 }

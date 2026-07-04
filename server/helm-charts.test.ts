@@ -30,7 +30,7 @@ describe("Kubernetes Helm Charts", () => {
     });
 
     it("should have the umbrella chart", () => {
-      const umbrella = path.join(CHARTS_DIR, "pos-54link-umbrella");
+      const umbrella = path.join(CHARTS_DIR, "pos-insureportal-umbrella");
       expect(fs.existsSync(umbrella)).toBe(true);
     });
 
@@ -129,7 +129,7 @@ describe("Kubernetes Helm Charts", () => {
   describe("Umbrella Chart", () => {
     it("should have Chart.yaml with all 13 dependencies", () => {
       const content = fs.readFileSync(
-        path.join(CHARTS_DIR, "pos-54link-umbrella", "Chart.yaml"),
+        path.join(CHARTS_DIR, "pos-insureportal-umbrella", "Chart.yaml"),
         "utf-8"
       );
       for (const chart of EXPECTED_CHARTS) {
@@ -139,7 +139,7 @@ describe("Kubernetes Helm Charts", () => {
 
     it("should have values.yaml with all component sections", () => {
       const content = fs.readFileSync(
-        path.join(CHARTS_DIR, "pos-54link-umbrella", "values.yaml"),
+        path.join(CHARTS_DIR, "pos-insureportal-umbrella", "values.yaml"),
         "utf-8"
       );
       for (const chart of EXPECTED_CHARTS) {
@@ -150,7 +150,7 @@ describe("Kubernetes Helm Charts", () => {
     it("should have values-production.yaml with production overrides", () => {
       const prodValues = path.join(
         CHARTS_DIR,
-        "pos-54link-umbrella",
+        "pos-insureportal-umbrella",
         "values-production.yaml"
       );
       expect(fs.existsSync(prodValues)).toBe(true);
@@ -161,7 +161,7 @@ describe("Kubernetes Helm Charts", () => {
     it("should have namespace template", () => {
       const ns = path.join(
         CHARTS_DIR,
-        "pos-54link-umbrella",
+        "pos-insureportal-umbrella",
         "templates",
         "namespace.yaml"
       );
@@ -171,7 +171,7 @@ describe("Kubernetes Helm Charts", () => {
     it("should have network policy template", () => {
       const np = path.join(
         CHARTS_DIR,
-        "pos-54link-umbrella",
+        "pos-insureportal-umbrella",
         "templates",
         "networkpolicy.yaml"
       );

@@ -282,7 +282,7 @@ export const loyaltyRouter = router({
           db
             .select({
               id: agents.id,
-              agentCode: agents.agentCode,
+              agentId: agents.agentId,
               name: agents.name,
               tier: agents.tier,
               loyaltyPoints: agents.loyaltyPoints,
@@ -535,7 +535,7 @@ export const loyaltyRouter = router({
         );
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "LOYALTY_CHALLENGE_CLAIMED",
           resource: "loyalty",
           resourceId: input.challengeId,
@@ -625,7 +625,7 @@ export const loyaltyRouter = router({
         );
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "LOYALTY_REWARD_REDEEMED",
           resource: "loyalty",
           resourceId: input.rewardId,
@@ -680,7 +680,7 @@ export const loyaltyRouter = router({
           db
             .select({
               id: agents.id,
-              agentCode: agents.agentCode,
+              agentId: agents.agentId,
               name: agents.name,
               tier: agents.tier,
               loyaltyPoints: agents.loyaltyPoints,

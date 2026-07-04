@@ -131,7 +131,7 @@ function seedDefaults() {
   adminPreferences.set("admin-001", {
     adminId: "admin-001",
     adminName: "System Administrator",
-    adminEmail: "admin@pos-shell.ng",
+    adminEmail: "admin@insurance-portal.ng",
     adminPhone: "+2348012345678",
     channels: {
       push: true,
@@ -163,7 +163,7 @@ function seedDefaults() {
   adminPreferences.set("admin-002", {
     adminId: "admin-002",
     adminName: "Security Officer",
-    adminEmail: "security@pos-shell.ng",
+    adminEmail: "security@insurance-portal.ng",
     adminPhone: "+2348098765432",
     channels: {
       push: true,
@@ -180,7 +180,7 @@ function seedDefaults() {
       overrideForCritical: true,
     },
     categories: ["ransomware", "exfiltration", "deepfake", "canary_trigger"],
-    webhookUrl: "https://hooks.pos-shell.ng/security-alerts",
+    webhookUrl: "https://hooks.insurance-portal.ng/security-alerts",
     slackWebhookUrl: "https://hooks.slack.com/services/T00/B00/xxx",
   });
 

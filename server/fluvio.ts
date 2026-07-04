@@ -1,7 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
 // SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 /**
- * 54Link Fluvio Client
+ * InsurePortal Fluvio Client
  * Connects to Fluvio via its HTTP gateway (no native SDK required).
  * Used for real-time fraud stream processing.
  *
@@ -52,14 +52,14 @@ export async function fluvioProduce(
  */
 export async function publishTxToFluvio(tx: {
   txRef: string;
-  agentCode: string;
+  agentId: string;
   amount: number;
   type: string;
   customerPhone?: string;
   timestamp: number;
 }): Promise<void> {
   await fluvioProduce(FLUVIO_TOPIC_TX, {
-    key: tx.agentCode,
+    key: tx.agentId,
     value: JSON.stringify(tx),
   });
 }
@@ -69,13 +69,13 @@ export async function publishTxToFluvio(tx: {
  */
 export async function publishFraudAlert(alert: {
   txRef: string;
-  agentCode: string;
+  agentId: string;
   severity: string;
   reason: string;
   amount: number;
 }): Promise<void> {
   await fluvioProduce(FLUVIO_TOPIC_FRAUD, {
-    key: alert.agentCode,
+    key: alert.agentId,
     value: JSON.stringify({ ...alert, timestamp: Date.now() }),
   });
 }

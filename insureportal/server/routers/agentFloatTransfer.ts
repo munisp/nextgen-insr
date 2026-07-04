@@ -37,27 +37,27 @@ export const agentFloatTransferRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        if (input.recipientAgentCode === session.agentCode)
+        if (input.recipientAgentCode === session.agentId)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Cannot transfer to yourself",
           });
 
         const [sender] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
-        if (!sender || Number(sender.floatBalance) < input.amount)
+        if (!sender || Number(sender.premiumReserve) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Insufficient float balance",
+            message: "Insufficient premium reserve",
           });
 
         const [recipient] = await db
-          .select({ id: agents.id, agentCode: agents.agentCode })
+          .select({ id: agents.id, agentId: agents.agentId })
           .from(agents)
-          .where(eq(agents.agentCode, input.recipientAgentCode))
+          .where(eq(agents.agentId, input.recipientAgentCode))
           .limit(1);
         if (!recipient)
           throw new TRPCError({
@@ -69,7 +69,7 @@ export const agentFloatTransferRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(input.amount)}`,
           })
           .where(eq(agents.id, session.id));
 
@@ -77,7 +77,7 @@ export const agentFloatTransferRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(input.amount)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) + ${String(input.amount)}`,
           })
           .where(eq(agents.id, recipient.id));
 
@@ -85,7 +85,7 @@ export const agentFloatTransferRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "AGENT_FLOAT_TRANSFERRED",
           resource: "agent_float_transfer",
           resourceId: ref,

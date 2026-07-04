@@ -1,5 +1,5 @@
 /**
- * Global Search Router — 54Link Agency Banking Platform
+ * Global Search Router — InsurePortal Insurance Platform
  *
  * Unified search across agents, transactions, customers, disputes.
  * Features:
@@ -82,7 +82,7 @@ export const globalSearchRouter = router({
           const agentResults = await db
             .select({
               id: agents.id,
-              agentCode: agents.agentCode,
+              agentId: agents.agentId,
               name: agents.name,
               phone: agents.phone,
               tier: agents.tier,
@@ -91,7 +91,7 @@ export const globalSearchRouter = router({
             .from(agents)
             .where(
               or(
-                ilike(agents.agentCode, pattern),
+                ilike(agents.agentId, pattern),
                 ilike(agents.name, pattern),
                 ilike(agents.phone, pattern),
                 ilike(agents.location ?? sql`''`, pattern)
@@ -102,15 +102,15 @@ export const globalSearchRouter = router({
 
           for (const a of agentResults) {
             let matchField = "name";
-            if (a.agentCode?.toLowerCase().includes(query.toLowerCase()))
-              matchField = "agentCode";
+            if (a.agentId?.toLowerCase().includes(query.toLowerCase()))
+              matchField = "agentId";
             else if (a.phone?.toLowerCase().includes(query.toLowerCase()))
               matchField = "phone";
 
             results.push({
               id: a.id,
               entityType: "agent",
-              title: `${a.name} (${a.agentCode})`,
+              title: `${a.name} (${a.agentId})`,
               subtitle: `${a.tier} tier | ${a.phone}`,
               matchField,
               createdAt: a.createdAt?.toISOString() ?? "",
@@ -122,7 +122,7 @@ export const globalSearchRouter = router({
             .from(agents)
             .where(
               or(
-                ilike(agents.agentCode, pattern),
+                ilike(agents.agentId, pattern),
                 ilike(agents.name, pattern),
                 ilike(agents.phone, pattern)
               )

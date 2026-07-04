@@ -20,7 +20,7 @@ import KeyboardShortcutsHelp, {
 import { ErrorBoundaryRoute } from "./components/ErrorBoundaryRoute";
 import AnnouncementBanner from "./components/AnnouncementBanner";
 import { AccessibilityProvider } from "@/components/AccessibilityProvider";
-// Sprint 28: Nigerian Agency Banking Features
+// Sprint 28: Nigerian Insurance Features
 // Sprint 29: AI/ML/DL/GNN Integrations
 // Sprint 30: AI/ML Follow-ups
 // Sprint 31: Data Pipelines, Security, Production Features
@@ -1244,10 +1244,10 @@ function isAdminDashboardPath(path: string): boolean {
 
 function AuthenticatedApp() {
   const isLoggedIn = usePosStore(s => s.isLoggedIn);
-  const agentCode = usePosStore(s => s.agent?.agentCode);
+  const agentId = usePosStore(s => s.agent?.agentId);
   const [location] = useLocation();
   // Always mount terminal socket (tracks online status + receives fraud alerts)
-  useTerminalSocket(agentCode);
+  useTerminalSocket(agentId);
   // Sync offline queue when back online
   useOfflineSync();
 
@@ -1422,7 +1422,7 @@ function AuthenticatedApp() {
         <Route path="/api-docs" component={ApiDocs} />
         <Route path="/system-status" component={SystemStatus} />
         <Route path="/audit-trail" component={AuditTrailPage} />
-        {/* Sprint 28: Nigerian Agency Banking Features */}
+        {/* Sprint 28: Nigerian Insurance Features */}
         <Route path="/ussd-gateway" component={UssdGateway} />
         <Route path="/mobile-money" component={MobileMoneyPage} />
         <Route path="/agent-hierarchy" component={AgentHierarchyPage} />

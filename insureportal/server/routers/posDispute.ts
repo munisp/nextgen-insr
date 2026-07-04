@@ -78,7 +78,7 @@ export const posDisputeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "POS_DISPUTE_FILED",
           resource: "dispute",
           resourceId: String(dispute.id),

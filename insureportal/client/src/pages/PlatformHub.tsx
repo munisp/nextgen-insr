@@ -230,7 +230,7 @@ export default function PlatformHub() {
             {agent && (
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-foreground">
-                  {agent.agentCode}
+                  {agent.agentId}
                 </p>
                 <p className="text-xs text-muted-foreground capitalize">
                   {role}
@@ -261,7 +261,7 @@ export default function PlatformHub() {
           </h2>
           <p className="text-muted-foreground text-sm">
             Select a portal to navigate to. Access is based on your role
-            {agent ? ` (${agent.agentCode} · ${role})` : ""}.
+            {agent ? ` (${agent.agentId} · ${role})` : ""}.
           </p>
         </div>
 
@@ -311,7 +311,7 @@ export default function PlatformHub() {
             {[
               {
                 label: "Float Balance",
-                value: `₦${(agent.floatBalance ?? 0).toLocaleString()}`,
+                value: `₦${(agent.premiumReserve ?? 0).toLocaleString()}`,
                 icon: "💰",
               },
               {

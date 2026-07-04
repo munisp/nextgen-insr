@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * metrics.ts — Prometheus metrics registry for the 54Link POS Shell
+ * metrics.ts — Prometheus metrics registry for the InsurePortal POS Shell
  * ─────────────────────────────────────────────────────────────────────────────
  * Exposes a single shared prom-client Registry.  All instrumentation points
  * import from this module so they share the same registry instance.
@@ -176,9 +176,9 @@ export const activeAgentsGauge = new Gauge({
   registers: [registry],
 });
 
-export const floatBalanceTotalGauge = new Gauge({
+export const premiumReserveTotalGauge = new Gauge({
   name: "pos_float_balance_total_ngn",
-  help: "Total float balance across all active agents in NGN",
+  help: "Total premium reserve across all active agents in NGN",
   registers: [registry],
 });
 

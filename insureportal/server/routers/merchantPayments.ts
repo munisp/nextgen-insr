@@ -60,14 +60,14 @@ export const merchantPaymentsRouter = router({
           });
 
         const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        if (!agent || Number(agent.premiumReserve) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Insufficient float balance",
+            message: "Insufficient premium reserve",
           });
 
         const agentCommission = Math.round(input.amount * 0.01);
@@ -116,7 +116,7 @@ export const merchantPaymentsRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "MERCHANT_PAYMENT_PROCESSED",
           resource: "merchant_payment",
           resourceId: ref,

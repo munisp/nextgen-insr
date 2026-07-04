@@ -23,7 +23,7 @@ const FEATURES = [
   {
     icon: <CreditCard className="w-6 h-6" />,
     title: "Multi-Channel Payments",
-    desc: "Cash-in, cash-out, transfers, NFC, QR, card — all from one terminal.",
+    desc: "Cash-in, claim payout, transfers, NFC, QR, card — all from one terminal.",
   },
   {
     icon: <Shield className="w-6 h-6" />,

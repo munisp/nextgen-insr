@@ -180,7 +180,7 @@ export const agentLoanFacilityRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`"floatBalance" + ${loan.principalAmount}`,
+            premiumReserve: sql`"premiumReserve" + ${loan.principalAmount}`,
           })
           .where(eq(agents.id, loan.agentId));
         await db
@@ -362,7 +362,7 @@ async function calculateCreditScore(db: any, agentId: number): Promise<number> {
   // Float utilization (0-150)
   const floatScore = agent
     ? Math.min(
-        (parseFloat(String(agent.floatBalance || "0")) /
+        (parseFloat(String(agent.premiumReserve || "0")) /
           parseFloat(String(agent.floatLimit || "1000000"))) *
           150,
         150

@@ -5,7 +5,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb } from "../db";
-import { agents, floatTopUpRequests } from "../../drizzle/schema";
+import { agents, premiumTopUpRequests } from "../../drizzle/schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -56,10 +56,10 @@ export const agentManagementRouter = router({
       const rows = await db
         .select()
         .from(agents)
-        .orderBy(asc(agents.agentCode));
+        .orderBy(asc(agents.agentId));
       return rows.map((a: any) => ({
         id: a.id,
-        agentCode: a.agentCode,
+        agentId: a.agentId,
         name: a.name,
         phone: a.phone,
         email: a.email,
@@ -67,7 +67,7 @@ export const agentManagementRouter = router({
         tier: a.tier,
         role: a.role,
         isActive: a.isActive,
-        floatBalance: Number(a.floatBalance),
+        premiumReserve: Number(a.premiumReserve),
         floatLimit: Number(a.floatLimit),
         commissionBalance: Number(a.commissionBalance),
         loyaltyPoints: a.loyaltyPoints,
@@ -117,7 +117,7 @@ export const agentManagementRouter = router({
           .where(eq(agents.id, input.agentId));
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "AGENT_ROLE_CHANGED",
           resource: "agent",
           resourceId: String(input.agentId),
@@ -164,7 +164,7 @@ export const agentManagementRouter = router({
           .where(eq(agents.id, input.agentId));
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: input.isActive ? "AGENT_ACTIVATED" : "AGENT_SUSPENDED",
           resource: "agent",
           resourceId: String(input.agentId),
@@ -197,22 +197,22 @@ export const agentManagementRouter = router({
         if (!db) throw new Error("Database connection unavailable");
         const rows = await db
           .select({
-            id: floatTopUpRequests.id,
-            agentId: floatTopUpRequests.agentId,
-            requestedAmount: floatTopUpRequests.requestedAmount,
-            status: floatTopUpRequests.status,
-            approvedBy: floatTopUpRequests.approvedBy,
-            notes: floatTopUpRequests.notes,
-            createdAt: floatTopUpRequests.createdAt,
-            updatedAt: floatTopUpRequests.updatedAt,
-            agentCode: agents.agentCode,
+            id: premiumTopUpRequests.id,
+            agentId: premiumTopUpRequests.agentId,
+            requestedAmount: premiumTopUpRequests.requestedAmount,
+            status: premiumTopUpRequests.status,
+            approvedBy: premiumTopUpRequests.approvedBy,
+            notes: premiumTopUpRequests.notes,
+            createdAt: premiumTopUpRequests.createdAt,
+            updatedAt: premiumTopUpRequests.updatedAt,
+            agentId: agents.agentId,
             agentName: agents.name,
-            agentFloat: agents.floatBalance,
+            agentFloat: agents.premiumReserve,
             agentTier: agents.tier,
           })
-          .from(floatTopUpRequests)
-          .leftJoin(agents, eq(floatTopUpRequests.agentId, agents.id))
-          .orderBy(desc(floatTopUpRequests.createdAt));
+          .from(premiumTopUpRequests)
+          .leftJoin(agents, eq(premiumTopUpRequests.agentId, agents.id))
+          .orderBy(desc(premiumTopUpRequests.createdAt));
         const filtered =
           input.status === "all"
             ? rows
@@ -251,8 +251,8 @@ export const agentManagementRouter = router({
           });
         const result = await db
           .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.id, input.requestId))
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.id, input.requestId))
           .limit(1);
         const req = result[0];
         if (!req)
@@ -268,12 +268,12 @@ export const agentManagementRouter = router({
         }
         // P0-A: Wrap float credit + status update in an atomic DB transaction
         await withTransaction(async tx => {
-          // Credit agent float (updates agents.floatBalance)
+          // Credit agent float (updates agents.premiumReserve)
           await tx
             .update(require("../../drizzle/schema").agents)
             .set({
-              floatBalance: require("drizzle-orm")
-                .sql`"floatBalance" + ${Number(req.requestedAmount)}`,
+              premiumReserve: require("drizzle-orm")
+                .sql`"premiumReserve" + ${Number(req.requestedAmount)}`,
               updatedAt: new Date(),
             })
             .where(
@@ -284,18 +284,18 @@ export const agentManagementRouter = router({
             );
           // Update request status
           await tx
-            .update(floatTopUpRequests)
+            .update(premiumTopUpRequests)
             .set({
               status: "approved",
-              approvedBy: session.agentCode,
+              approvedBy: session.agentId,
               notes: input.notes ?? null,
               updatedAt: new Date(),
             })
-            .where(eq(floatTopUpRequests.id, input.requestId));
+            .where(eq(premiumTopUpRequests.id, input.requestId));
         });
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "FLOAT_TOPUP_APPROVED",
           resource: "float_topup",
           resourceId: String(input.requestId),
@@ -336,10 +336,10 @@ export const agentManagementRouter = router({
             const targetAgent = agentRows[0];
             if (targetAgent) {
               await notifyFloatApproval({
-                agentCode: targetAgent.agentCode,
+                agentId: targetAgent.agentId,
                 amount: Number(req.requestedAmount),
                 newBalance:
-                  Number(targetAgent.floatBalance) +
+                  Number(targetAgent.premiumReserve) +
                   Number(req.requestedAmount),
               });
             }
@@ -378,8 +378,8 @@ export const agentManagementRouter = router({
           });
         const result = await db
           .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.id, input.requestId))
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.id, input.requestId))
           .limit(1);
         const req = result[0];
         if (!req)
@@ -394,17 +394,17 @@ export const agentManagementRouter = router({
           });
         }
         await db
-          .update(floatTopUpRequests)
+          .update(premiumTopUpRequests)
           .set({
             status: "rejected",
-            approvedBy: session.agentCode,
+            approvedBy: session.agentId,
             notes: input.reason,
             updatedAt: new Date(),
           })
-          .where(eq(floatTopUpRequests.id, input.requestId));
+          .where(eq(premiumTopUpRequests.id, input.requestId));
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "FLOAT_TOPUP_REJECTED",
           resource: "float_topup",
           resourceId: String(input.requestId),
@@ -447,8 +447,8 @@ export const agentManagementRouter = router({
         // Prevent duplicate pending requests
         const existing = await db
           .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.agentId, session.id))
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.agentId, session.id))
           .limit(10);
         const hasPending = existing.some((r: any) => r.status === "pending");
         if (hasPending) {
@@ -457,7 +457,7 @@ export const agentManagementRouter = router({
             message: "You already have a pending top-up request",
           });
         }
-        await db.insert(floatTopUpRequests).values({
+        await db.insert(premiumTopUpRequests).values({
           agentId: session.id,
           requestedAmount: String(input.amount),
           status: "pending",
@@ -467,10 +467,10 @@ export const agentManagementRouter = router({
         });
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "FLOAT_TOPUP_REQUESTED",
           resource: "float_topup",
-          resourceId: session.agentCode,
+          resourceId: session.agentId,
           status: "success",
           metadata: { amount: input.amount, notes: input.notes },
         });

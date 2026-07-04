@@ -190,12 +190,12 @@ export function accountTakeoverPrevention(
   const userAgent = req.headers["user-agent"] || "unknown";
   const now = Date.now();
 
-  // Extract identifier (agentCode, email, etc.)
+  // Extract identifier (agentId, email, etc.)
   let identifier = "unknown";
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     identifier =
-      body?.agentCode || body?.email || body?.["0"]?.json?.agentCode || ip;
+      body?.agentId || body?.email || body?.["0"]?.json?.agentId || ip;
   } catch (e) {
     identifier = ip;
   }
@@ -478,7 +478,7 @@ export function credentialStuffingDetection(
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
     const account =
-      body?.agentCode || body?.email || body?.["0"]?.json?.agentCode;
+      body?.agentId || body?.email || body?.["0"]?.json?.agentId;
     if (account) window.uniqueAccounts.add(account);
   } catch (e) {
     /* ignore */
@@ -502,7 +502,7 @@ export function credentialStuffingDetection(
 }
 
 // ── Enumeration Attack Prevention ────────────────────────────────────
-// Prevents attackers from discovering valid usernames/agent codes
+// Prevents attackers from discovering valid usernames/agent IDs
 export function enumerationPrevention(
   req: Request,
   res: Response,

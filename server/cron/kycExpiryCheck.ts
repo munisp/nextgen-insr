@@ -44,14 +44,14 @@ export async function runKycExpiryCheck() {
       if (isExpired) {
         // Mark agent as KYC-expired — restrict transaction limits
         expired++;
-        logger.warn({ agentCode: agent.agentCode, expiryDate: expiryDate.toISOString() }, "[KYC] Agent KYC expired");
+        logger.warn({ agentId: agent.agentId, expiryDate: expiryDate.toISOString() }, "[KYC] Agent KYC expired");
       } else {
         // Send warning notification
         flagged++;
         const daysUntilExpiry = Math.ceil(
           (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
         );
-        logger.info({ agentCode: agent.agentCode, daysUntilExpiry }, "[KYC] Agent KYC expiring soon");
+        logger.info({ agentId: agent.agentId, daysUntilExpiry }, "[KYC] Agent KYC expiring soon");
       }
     }
 

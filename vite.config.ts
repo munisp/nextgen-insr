@@ -239,7 +239,7 @@ const plugins = [
       type: "module",
     },
     manifest: {
-      name: "InsurePortal — Insurance Agency Banking Platform",
+      name: "InsurePortal — Insurance Insurance Platform",
       short_name: "InsurePortal",
       description:
         "Comprehensive Insurance Management Platform for the Nigerian Market",

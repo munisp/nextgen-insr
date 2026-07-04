@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# 54Link POS — TigerBeetle Sidecar One-Command Installer
+# InsurePortal POS — TigerBeetle Sidecar One-Command Installer
 # Run as root on the POS terminal:
 #   sudo bash install-sidecar.sh
 # ============================================================
@@ -21,14 +21,14 @@ section() { echo -e "\n${BOLD}── $* ──${NC}"; }
 [[ "${EUID}" -eq 0 ]] || error "This script must be run as root (sudo bash install-sidecar.sh)"
 
 section "1. Create system user and directories"
-if ! id -u 54link &>/dev/null; then
-  useradd --system --no-create-home --shell /sbin/nologin 54link
-  info "Created system user: 54link"
+if ! id -u insureportal &>/dev/null; then
+  useradd --system --no-create-home --shell /sbin/nologin insureportal
+  info "Created system user: insureportal"
 else
-  info "System user 54link already exists."
+  info "System user insureportal already exists."
 fi
-mkdir -p /var/lib/54link/tb-data /var/log/54link /etc/54link
-chown -R 54link:54link /var/lib/54link /var/log/54link
+mkdir -p /var/lib/insureportal/tb-data /var/log/insureportal /etc/insureportal
+chown -R insureportal:insureportal /var/lib/insureportal /var/log/insureportal
 
 section "2. Install TigerBeetle binary"
 if [[ ! -x /usr/local/bin/tigerbeetle ]]; then
@@ -48,22 +48,22 @@ section "3. Install sidecar binary"
 if [[ ! -f "${SIDECAR_BINARY}" ]]; then
   error "Sidecar binary not found at ${SIDECAR_BINARY}. Build it first: cd tb-sidecar && go build ./cmd/sidecar"
 fi
-install -m 0755 "${SIDECAR_BINARY}" /usr/local/bin/54link-tb-sidecar
-info "Sidecar binary installed at /usr/local/bin/54link-tb-sidecar"
+install -m 0755 "${SIDECAR_BINARY}" /usr/local/bin/insureportal-tb-sidecar
+info "Sidecar binary installed at /usr/local/bin/insureportal-tb-sidecar"
 
 section "4. Install start script"
-install -m 0755 "${SCRIPT_DIR}/start-sidecar.sh" /usr/local/bin/54link-start-sidecar.sh
-info "Start script installed at /usr/local/bin/54link-start-sidecar.sh"
+install -m 0755 "${SCRIPT_DIR}/start-sidecar.sh" /usr/local/bin/insureportal-start-sidecar.sh
+info "Start script installed at /usr/local/bin/insureportal-start-sidecar.sh"
 
 section "5. Create environment file"
-ENV_FILE="/etc/54link/sidecar.env"
+ENV_FILE="/etc/insureportal/sidecar.env"
 if [[ ! -f "${ENV_FILE}" ]]; then
   cat > "${ENV_FILE}" << 'EOF'
-# 54Link TigerBeetle Sidecar Environment
+# InsurePortal TigerBeetle Sidecar Environment
 # Edit this file to configure the sidecar on this terminal.
 
 # PostgreSQL connection string for metadata sync
-# POSTGRES_URL=postgresql://posadmin:pos54link2026@localhost:5432/pos54link
+# POSTGRES_URL=postgresql://posadmin:posinsureportal2026@localhost:5432/posinsureportal
 
 # TigerBeetle Zig cluster address (if running on a separate host)
 # TB_REPLICA_ADDR=3000
@@ -72,33 +72,33 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 # SIDECAR_PORT=8030
 EOF
   chmod 640 "${ENV_FILE}"
-  chown root:54link "${ENV_FILE}"
+  chown root:insureportal "${ENV_FILE}"
   info "Environment file created at ${ENV_FILE}"
 else
   warn "Environment file already exists at ${ENV_FILE} — not overwriting."
 fi
 
 section "6. Register systemd service"
-install -m 0644 "${SCRIPT_DIR}/54link-tb-sidecar.service" /etc/systemd/system/
+install -m 0644 "${SCRIPT_DIR}/insureportal-tb-sidecar.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable 54link-tb-sidecar
+systemctl enable insureportal-tb-sidecar
 info "Service registered and enabled."
 
 section "7. Start service"
-systemctl restart 54link-tb-sidecar
+systemctl restart insureportal-tb-sidecar
 sleep 2
-if systemctl is-active --quiet 54link-tb-sidecar; then
+if systemctl is-active --quiet insureportal-tb-sidecar; then
   info "Service is running."
-  systemctl status 54link-tb-sidecar --no-pager -l | tail -8
+  systemctl status insureportal-tb-sidecar --no-pager -l | tail -8
 else
   warn "Service did not start cleanly. Check logs:"
-  warn "  journalctl -u 54link-tb-sidecar -n 50 --no-pager"
+  warn "  journalctl -u insureportal-tb-sidecar -n 50 --no-pager"
 fi
 
 section "Done"
-echo -e "${GREEN}54Link TigerBeetle Sidecar installed successfully.${NC}"
+echo -e "${GREEN}InsurePortal TigerBeetle Sidecar installed successfully.${NC}"
 echo ""
 echo "  Health check : curl http://localhost:8030/health"
-echo "  Logs         : journalctl -u 54link-tb-sidecar -f"
+echo "  Logs         : journalctl -u insureportal-tb-sidecar -f"
 echo "  Config       : ${ENV_FILE}"
 echo ""

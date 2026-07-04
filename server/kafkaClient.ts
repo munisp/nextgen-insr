@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * kafkaClient.ts — Kafka integration for 54Link POS Shell
+ * kafkaClient.ts — Kafka integration for InsurePortal POS Shell
  * ─────────────────────────────────────────────────────────────────────────────
  * Provides a thin wrapper for publishing domain events to Kafka topics.
  * Two modes:
@@ -18,8 +18,8 @@
  *
  * Environment variables:
  *  - KAFKA_BROKERS        Comma-separated list e.g. kafka:9092,kafka2:9092
- *  - KAFKA_CLIENT_ID      Defaults to "pos-shell"
- *  - KAFKA_GROUP_ID       Consumer group ID, defaults to "pos-shell-group"
+ *  - KAFKA_CLIENT_ID      Defaults to "insurance-portal"
+ *  - KAFKA_GROUP_ID       Consumer group ID, defaults to "insurance-portal-group"
  *  - PLATFORM_BASE_URL    APISix gateway base URL (proxy mode fallback)
  *  - PLATFORM_API_KEY     Bearer token for the gateway
  */
@@ -94,7 +94,7 @@ export interface KafkaEvent<T = unknown> {
   eventId: string;
   eventType: KafkaTopic;
   timestamp: string; // ISO 8601
-  agentCode?: string;
+  agentId?: string;
   tenantId?: string;
   payload: T;
 }
@@ -109,13 +109,13 @@ export async function publishEvent<T>(
   topic: KafkaTopic,
   key: string,
   payload: T,
-  metadata?: { agentCode?: string; tenantId?: string }
+  metadata?: { agentId?: string; tenantId?: string }
 ): Promise<boolean> {
   const event: KafkaEvent<T> = {
     eventId: crypto.randomUUID(),
     eventType: topic,
     timestamp: new Date().toISOString(),
-    agentCode: metadata?.agentCode,
+    agentId: metadata?.agentId,
     tenantId: metadata?.tenantId,
     payload,
   };

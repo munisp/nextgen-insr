@@ -1,11 +1,11 @@
 {
-  "title": "54Link POS — CBN Regulatory Compliance",
-  "uid": "54link-cbn-compliance",
+  "title": "InsurePortal POS — CBN Regulatory Compliance",
+  "uid": "insureportal-cbn-compliance",
   "version": 1,
   "schemaVersion": 38,
   "refresh": "5m",
   "time": { "from": "now-30d", "to": "now" },
-  "tags": ["cbn", "compliance", "regulatory", "54link"],
+  "tags": ["cbn", "compliance", "regulatory", "insureportal"],
   "panels": [
     {
       "id": 1,

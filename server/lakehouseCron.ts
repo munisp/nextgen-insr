@@ -9,8 +9,8 @@
  *   02:10 WAT daily — agent metrics snapshot for previous day
  *   02:15 WAT daily — settlement summary snapshot for previous day
  *
- * All uploads go to MinIO buckets (54link-transactions, 54link-fraud-events,
- * 54link-agent-metrics, 54link-settlements) as JSON/Parquet files organized
+ * All uploads go to MinIO buckets (insureportal-transactions, insureportal-fraud-events,
+ * insureportal-agent-metrics, insureportal-settlements) as JSON/Parquet files organized
  * by YYYY/MM/DD partition keys.
  *
  * Failures are logged but do not crash the server — the lakehouse is a
@@ -104,7 +104,7 @@ async function snapshotAgentMetrics(date: string): Promise<void> {
   const rows = await db
     .select({
       agentId: transactions.agentId,
-      agentCode: agents.agentCode,
+      agentId: agents.agentId,
       tier: agents.tier,
       txCount: sql<number>`count(*)::int`,
       txVolume: sql<number>`sum(${transactions.amount})::float`,
@@ -120,12 +120,12 @@ async function snapshotAgentMetrics(date: string): Promise<void> {
     .where(
       and(gte(transactions.createdAt, start), lte(transactions.createdAt, end))
     )
-    .groupBy(transactions.agentId, agents.agentCode, agents.tier);
+    .groupBy(transactions.agentId, agents.agentId, agents.tier);
 
   const metrics = rows.map(r => ({
     date,
     agentId: r.agentId,
-    agentCode: r.agentCode,
+    agentId: r.agentId,
     tier: r.tier,
     txCount: r.txCount ?? 0,
     txVolume: r.txVolume ?? 0,

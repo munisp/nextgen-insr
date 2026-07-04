@@ -134,14 +134,14 @@ export const billPaymentsRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        if (!agent || Number(agent.premiumReserve) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Insufficient float balance",
+            message: "Insufficient premium reserve",
           });
 
         const commission = Math.round(input.amount * 0.015);
@@ -172,14 +172,14 @@ export const billPaymentsRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(input.amount)}`,
             // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "BILL_PAID",
           resource: "bill_payment",
           resourceId: ref,

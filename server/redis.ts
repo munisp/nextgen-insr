@@ -1,11 +1,11 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link Redis Client
+ * InsurePortal Redis Client
  * Provides connection-pooled ioredis client with typed cache helpers.
  *
  * Cache namespaces:
- *   agent:session:{agentCode}  → agent profile (TTL 12h)
- *   agent:float:{agentCode}    → float balance string (TTL 30s, write-through)
+ *   agent:session:{agentId}  → agent profile (TTL 12h)
+ *   agent:float:{agentId}    → premium reserve string (TTL 30s, write-through)
  *   fraud:rules                → serialized fraud rules array (TTL 5min)
  *   probe:latest:{terminalId}  → latest connectivity reading (TTL 60s)
  */
@@ -56,14 +56,14 @@ const TTL = {
 // ── Agent session cache ────────────────────────────────────────────────────────
 
 export async function cacheAgentSession(
-  agentCode: string,
+  agentId: string,
   profile: object
 ): Promise<void> {
   const redis = getRedisClient();
   if (!redis) return;
   try {
     await redis.setex(
-      `agent:session:${agentCode}`,
+      `agent:session:${agentId}`,
       TTL.SESSION,
       JSON.stringify(profile)
     );
@@ -73,12 +73,12 @@ export async function cacheAgentSession(
 }
 
 export async function getCachedAgentSession<T>(
-  agentCode: string
+  agentId: string
 ): Promise<T | null> {
   const redis = getRedisClient();
   if (!redis) return null;
   try {
-    const raw = await redis.get(`agent:session:${agentCode}`);
+    const raw = await redis.get(`agent:session:${agentId}`);
     return raw ? (JSON.parse(raw) as T) : null;
   } catch (err) {
     logger.warn({ err }, "[Redis] getCachedAgentSession failed");
@@ -86,11 +86,11 @@ export async function getCachedAgentSession<T>(
   }
 }
 
-export async function invalidateAgentSession(agentCode: string): Promise<void> {
+export async function invalidateAgentSession(agentId: string): Promise<void> {
   const redis = getRedisClient();
   if (!redis) return;
   try {
-    await redis.del(`agent:session:${agentCode}`);
+    await redis.del(`agent:session:${agentId}`);
   } catch (err) {
     logger.warn({ err }, "[Redis] invalidateAgentSession failed");
   }
@@ -99,14 +99,14 @@ export async function invalidateAgentSession(agentCode: string): Promise<void> {
 // ── Float balance cache (write-through) ───────────────────────────────────────
 
 export async function cacheAgentFloat(
-  agentCode: string,
+  agentId: string,
   balanceKobo: number
 ): Promise<void> {
   const redis = getRedisClient();
   if (!redis) return;
   try {
     await redis.setex(
-      `agent:float:${agentCode}`,
+      `agent:float:${agentId}`,
       TTL.FLOAT,
       String(balanceKobo)
     );
@@ -116,12 +116,12 @@ export async function cacheAgentFloat(
 }
 
 export async function getCachedAgentFloat(
-  agentCode: string
+  agentId: string
 ): Promise<number | null> {
   const redis = getRedisClient();
   if (!redis) return null;
   try {
-    const raw = await redis.get(`agent:float:${agentCode}`);
+    const raw = await redis.get(`agent:float:${agentId}`);
     return raw !== null ? Number(raw) : null;
   } catch (err) {
     logger.warn({ err }, "[Redis] getCachedAgentFloat failed");

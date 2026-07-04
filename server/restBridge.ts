@@ -292,7 +292,7 @@ router.get("/agents/:id/scorecard", async (req, res) => {
     ok(res, {
       agentId: req.params.id,
       period: req.query.period ?? "month",
-      floatBalance: agent?.floatBalance ?? 0,
+      premiumReserve: agent?.premiumReserve ?? 0,
       commissionBalance: agent?.commissionBalance ?? 0,
       loyaltyPoints: agent?.loyaltyPoints ?? 0,
       kycStatus: "pending",
@@ -311,7 +311,7 @@ router.get("/agents/:id/wallet", async (req, res) => {
       .from(agents)
       .where(eq(agents.id, parseInt(req.params.id)));
     ok(res, {
-      floatBalance: agent?.floatBalance ?? 0,
+      premiumReserve: agent?.premiumReserve ?? 0,
       commissionBalance: agent?.commissionBalance ?? 0,
     });
   } catch (e) {
@@ -1087,7 +1087,7 @@ router.get("/health", async (_req, res) => {
 router.get("/settings", async (_req, res) => {
   ok(res, {
     keycloakUrl: process.env.KEYCLOAK_URL ?? "",
-    keycloakRealm: process.env.KEYCLOAK_REALM ?? "54link",
+    keycloakRealm: process.env.KEYCLOAK_REALM ?? "insureportal",
     apiVersion: process.env.API_VERSION ?? "1.0.0",
     environment: process.env.NODE_ENV ?? "development",
   });

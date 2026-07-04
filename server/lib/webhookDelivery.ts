@@ -4,7 +4,7 @@
  * Webhook Delivery Service
  *
  * Delivers outbound webhook events to registered endpoints with:
- * - HMAC-SHA256 signature (X-54Link-Signature header)
+ * - HMAC-SHA256 signature (X-InsurePortal-Signature header)
  * - Exponential backoff retry (up to 3 attempts)
  * - Delivery log persisted to webhook_deliveries table
  * - Configurable per-endpoint event filtering
@@ -131,10 +131,10 @@ async function attemptDelivery(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-54Link-Signature": signature,
-        "X-54Link-Event": body ? JSON.parse(body).event : "",
-        "X-54Link-Delivery": String(deliveryId),
-        "User-Agent": "54Link-Webhook/1.0",
+        "X-InsurePortal-Signature": signature,
+        "X-InsurePortal-Event": body ? JSON.parse(body).event : "",
+        "X-InsurePortal-Delivery": String(deliveryId),
+        "User-Agent": "InsurePortal-Webhook/1.0",
       },
       body,
       signal: controller.signal,

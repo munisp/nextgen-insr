@@ -1,5 +1,5 @@
 /**
- * index.ts — 54Link POS Shell Server Entry Point
+ * index.ts — InsurePortal POS Shell Server Entry Point
  *
  * Production-hardened Express server with:
  *  - Keycloak OIDC authentication (replaces Manus OAuth)
@@ -252,7 +252,7 @@ async function startServer() {
               call: (...a: unknown[]) => Promise<number>;
             }
           ).call(...args),
-        prefix: `rl:54link:${prefix}:`,
+        prefix: `rl:insureportal:${prefix}:`,
       });
     } catch {
       return undefined;
@@ -429,7 +429,7 @@ async function startServer() {
       const sessionJwt = await new SignJWT({
         sub: "dev-admin-001",
         name: "Dev Admin",
-        email: "admin@54link.dev",
+        email: "admin@insureportal.dev",
         role: "admin",
         accessToken: "dev-access-token",
         refreshToken: "dev-refresh-token",

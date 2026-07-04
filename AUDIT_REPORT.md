@@ -162,8 +162,8 @@ Any UI change can silently break the entire application.
 | File | Claims | Reality |
 |------|--------|---------|
 | `README.md` | NGApp (Nigerian Insurance Platform) | Matches |
-| `ARCHITECTURE.md` | 54Link Agency Banking Platform | Mismatch |
-| `package.json` | 54Link Agency Banking POS | Mismatch |
+| `ARCHITECTURE.md` | InsurePortal Insurance Platform | Mismatch |
+| `package.json` | InsurePortal Insurance POS | Mismatch |
 
 ### 12. 🟡 Customer Portal .env Removed
 

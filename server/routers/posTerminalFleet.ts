@@ -166,7 +166,7 @@ export const posTerminalFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "TERMINAL_PROVISIONED",
           resource: "pos_terminal",
           resourceId: String(terminal.id),
@@ -224,7 +224,7 @@ export const posTerminalFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "TERMINAL_ASSIGNED",
           resource: "pos_terminal",
           resourceId: String(input.terminalId),
@@ -319,7 +319,7 @@ export const posTerminalFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "TERMINAL_COMMAND_SENT",
           resource: "pos_terminal",
           resourceId: String(input.terminalId),
@@ -364,7 +364,7 @@ export const posTerminalFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "TERMINAL_DECOMMISSIONED",
           resource: "pos_terminal",
           resourceId: String(input.terminalId),
@@ -455,7 +455,7 @@ export const posTerminalFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "TERMINAL_GROUP_CREATED",
           resource: "terminal_group",
           resourceId: String(group.id),

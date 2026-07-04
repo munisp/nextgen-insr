@@ -6,7 +6,7 @@ import { desc, eq, sql, count } from "drizzle-orm";
 
 /**
  * Float Reconciliation Router
- * Matches agent float balances against transaction records to detect discrepancies.
+ * Matches agent premium reserves against transaction records to detect discrepancies.
  *
  * Business Rules:
  * - Auto-resolve: Discrepancy ≤ ₦50 (rounding/float tolerance)

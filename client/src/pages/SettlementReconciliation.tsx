@@ -229,7 +229,7 @@ export default function SettlementReconciliation() {
                           {r.settlementDate}
                         </td>
                         <td className="py-2 px-3 text-xs font-mono">
-                          {r.agentCode}
+                          {r.agentId}
                         </td>
                         <td className="py-2 px-3 text-right font-mono">
                           ₦{Number(r.expectedAmount).toLocaleString()}

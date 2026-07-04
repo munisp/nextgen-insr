@@ -97,7 +97,7 @@ export const ussdGatewayRouter = router({
   processInput: publicProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         phoneNumber: z.string(),
         input: z.string(),
         sessionId: z.string().optional(),
@@ -107,7 +107,7 @@ export const ussdGatewayRouter = router({
       return {
         text: "Welcome to AgentPOS\n1. Premium Payment\n2. Claim Payout\n3. Balance",
         sessionId: input.sessionId || "USSD-" + Date.now(),
-        agentCode: input.agentCode,
+        agentId: input.agentId,
         end: false,
       };
     }),
@@ -132,7 +132,7 @@ export const ussdGatewayRouter = router({
           type: "premium_payment",
           amount: 50000,
           status: "completed",
-          agentCode: "AGT001",
+          agentId: "AGT001",
         },
       ],
       total: 1,

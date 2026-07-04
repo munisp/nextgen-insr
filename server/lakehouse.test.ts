@@ -204,9 +204,9 @@ describe("Nearby agent haversine filter", () => {
   interface AgentRow {
     id: number;
     name: string;
-    agentCode: string;
+    agentId: string;
     tier: string;
-    floatBalance: string;
+    premiumReserve: string;
     lat: number | null;
     lon: number | null;
   }
@@ -235,36 +235,36 @@ describe("Nearby agent haversine filter", () => {
     {
       id: 1,
       name: "Agent A",
-      agentCode: "AGT001",
+      agentId: "AGT001",
       tier: "Gold",
-      floatBalance: "500000",
+      premiumReserve: "500000",
       lat: 6.5244,
       lon: 3.3792,
     },
     {
       id: 2,
       name: "Agent B",
-      agentCode: "AGT002",
+      agentId: "AGT002",
       tier: "Silver",
-      floatBalance: "200000",
+      premiumReserve: "200000",
       lat: 6.525,
       lon: 3.38,
     },
     {
       id: 3,
       name: "Agent C",
-      agentCode: "AGT003",
+      agentId: "AGT003",
       tier: "Bronze",
-      floatBalance: "100000",
+      premiumReserve: "100000",
       lat: 9.0579,
       lon: 7.4951,
     },
     {
       id: 4,
       name: "Agent D",
-      agentCode: "AGT004",
+      agentId: "AGT004",
       tier: "Bronze",
-      floatBalance: "50000",
+      premiumReserve: "50000",
       lat: null,
       lon: null,
     },
@@ -272,14 +272,14 @@ describe("Nearby agent haversine filter", () => {
 
   it("finds agents within 1km of Lagos centre", () => {
     const nearby = findNearby(AGENTS, 6.5244, 3.3792, 1_000, 10);
-    expect(nearby.map(a => a.agentCode)).toContain("AGT001");
-    expect(nearby.map(a => a.agentCode)).toContain("AGT002");
-    expect(nearby.map(a => a.agentCode)).not.toContain("AGT003");
+    expect(nearby.map(a => a.agentId)).toContain("AGT001");
+    expect(nearby.map(a => a.agentId)).toContain("AGT002");
+    expect(nearby.map(a => a.agentId)).not.toContain("AGT003");
   });
 
   it("excludes agents with null coordinates", () => {
     const nearby = findNearby(AGENTS, 6.5244, 3.3792, 100_000, 10);
-    expect(nearby.map(a => a.agentCode)).not.toContain("AGT004");
+    expect(nearby.map(a => a.agentId)).not.toContain("AGT004");
   });
 
   it("sorts by distance ascending", () => {
@@ -305,7 +305,7 @@ describe("Nearby agent haversine filter", () => {
 describe("Gold-layer daily summary aggregation", () => {
   interface TxRow {
     agentId: number;
-    agentCode: string;
+    agentId: string;
     agentTier: string;
     amount: string;
     fee: string;
@@ -319,7 +319,7 @@ describe("Gold-layer daily summary aggregation", () => {
       number,
       {
         agentId: number;
-        agentCode: string;
+        agentId: string;
         agentTier: string;
         txCount: number;
         txVolume: number;
@@ -335,7 +335,7 @@ describe("Gold-layer daily summary aggregation", () => {
       if (!map.has(row.agentId)) {
         map.set(row.agentId, {
           agentId: row.agentId,
-          agentCode: row.agentCode,
+          agentId: row.agentId,
           agentTier: row.agentTier,
           txCount: 0,
           txVolume: 0,
@@ -366,7 +366,7 @@ describe("Gold-layer daily summary aggregation", () => {
     const rows: TxRow[] = [
       {
         agentId: 1,
-        agentCode: "AGT001",
+        agentId: "AGT001",
         agentTier: "Gold",
         amount: "5000",
         fee: "50",
@@ -376,7 +376,7 @@ describe("Gold-layer daily summary aggregation", () => {
       },
       {
         agentId: 1,
-        agentCode: "AGT001",
+        agentId: "AGT001",
         agentTier: "Gold",
         amount: "3000",
         fee: "30",
@@ -386,7 +386,7 @@ describe("Gold-layer daily summary aggregation", () => {
       },
       {
         agentId: 2,
-        agentCode: "AGT002",
+        agentId: "AGT002",
         agentTier: "Silver",
         amount: "2000",
         fee: "20",
@@ -398,7 +398,7 @@ describe("Gold-layer daily summary aggregation", () => {
     const summary = buildDailySummary(rows);
     expect(summary).toHaveLength(2);
 
-    const agt1 = summary.find(s => s.agentCode === "AGT001")!;
+    const agt1 = summary.find(s => s.agentId === "AGT001")!;
     expect(agt1.txCount).toBe(2);
     expect(agt1.txVolume).toBe(8000);
     expect(agt1.successRate).toBe(0.5);
@@ -409,7 +409,7 @@ describe("Gold-layer daily summary aggregation", () => {
     const rows: TxRow[] = [
       {
         agentId: 1,
-        agentCode: "AGT001",
+        agentId: "AGT001",
         agentTier: "Gold",
         amount: "5000",
         fee: "50",
@@ -419,7 +419,7 @@ describe("Gold-layer daily summary aggregation", () => {
       },
       {
         agentId: 1,
-        agentCode: "AGT001",
+        agentId: "AGT001",
         agentTier: "Gold",
         amount: "3000",
         fee: "30",
@@ -463,7 +463,7 @@ describe("DataFusion SQL validation", () => {
 
   it("accepts valid SELECT queries", () => {
     expect(
-      validateSql("SELECT * FROM 54link.silver.transactions LIMIT 100").valid
+      validateSql("SELECT * FROM insureportal.silver.transactions LIMIT 100").valid
     ).toBe(true);
   });
 
@@ -497,7 +497,7 @@ describe("DataFusion SQL validation", () => {
              count(*) as tx_count,
              sum(amount) as volume,
              avg(fraud_score) as avg_fraud
-      FROM 54link.silver.transactions
+      FROM insureportal.silver.transactions
       WHERE tx_date >= '2026-01-01'
       GROUP BY agent_code, agent_tier
       ORDER BY volume DESC
@@ -510,15 +510,15 @@ describe("DataFusion SQL validation", () => {
 describe("Lakehouse bucket constants", () => {
   it("defines expected bucket names", () => {
     const BUCKETS = {
-      TRANSACTIONS: "54link-transactions",
-      SETTLEMENTS: "54link-settlements",
-      FRAUD_EVENTS: "54link-fraud-events",
-      AGENT_METRICS: "54link-agent-metrics",
+      TRANSACTIONS: "insureportal-transactions",
+      SETTLEMENTS: "insureportal-settlements",
+      FRAUD_EVENTS: "insureportal-fraud-events",
+      AGENT_METRICS: "insureportal-agent-metrics",
     };
-    expect(BUCKETS.TRANSACTIONS).toBe("54link-transactions");
-    expect(BUCKETS.SETTLEMENTS).toBe("54link-settlements");
-    expect(BUCKETS.FRAUD_EVENTS).toBe("54link-fraud-events");
-    expect(BUCKETS.AGENT_METRICS).toBe("54link-agent-metrics");
+    expect(BUCKETS.TRANSACTIONS).toBe("insureportal-transactions");
+    expect(BUCKETS.SETTLEMENTS).toBe("insureportal-settlements");
+    expect(BUCKETS.FRAUD_EVENTS).toBe("insureportal-fraud-events");
+    expect(BUCKETS.AGENT_METRICS).toBe("insureportal-agent-metrics");
   });
 });
 

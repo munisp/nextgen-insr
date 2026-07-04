@@ -49,7 +49,7 @@ describe("F1: Go Africa's Talking USSD Handler", () => {
     expect(fileContains(filePath, "CON ", "END ")).toBe(true);
   });
 
-  it("should support cash-in, cash-out, balance, and transfer operations", () => {
+  it("should support premium collection, claim payout, balance, and transfer operations", () => {
     expect(
       fileContains(filePath, "Cash In", "Cash Out", "Balance", "Transfer")
     ).toBe(true);

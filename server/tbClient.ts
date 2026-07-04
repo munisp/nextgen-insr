@@ -26,7 +26,7 @@ export interface TBTransferRequest {
   code?: number;
   ref?: string;
   txType?: string;
-  agentCode?: string;
+  agentId?: string;
 }
 
 export interface TBTransferResponse {
@@ -38,7 +38,7 @@ export interface TBTransferResponse {
 
 export interface TBAccountRequest {
   id?: string;
-  agentCode: string;
+  agentId: string;
   ledger: number;
   code: number;
 }
@@ -92,7 +92,7 @@ export async function tbCreateTransfer(
  * Called once on agent login / first transaction.
  */
 export async function tbEnsureAgentAccount(
-  agentCode: string
+  agentId: string
 ): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -102,8 +102,8 @@ export async function tbEnsureAgentAccount(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        id: `float-${agentCode}`,
-        agentCode,
+        id: `float-${agentId}`,
+        agentId,
         ledger: 2000, // LedgerAgentAccounts
         code: 300, // CodeAgentFloat
       }),
@@ -118,17 +118,17 @@ export async function tbEnsureAgentAccount(
 }
 
 /**
- * Get the agent's float balance from the sidecar ledger (in NGN).
+ * Get the agent's premium reserve from the sidecar ledger (in NGN).
  * Returns null if sidecar is unavailable.
  */
 export async function tbGetAgentBalance(
-  agentCode: string
+  agentId: string
 ): Promise<{ balanceNGN: number; balanceKobo: number } | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TB_TIMEOUT_MS);
 
-    const res = await fetch(`${TB_SIDECAR_URL}/agent/${agentCode}/balance`, {
+    const res = await fetch(`${TB_SIDECAR_URL}/agent/${agentId}/balance`, {
       signal: controller.signal,
     });
 

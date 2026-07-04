@@ -25,7 +25,7 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   float_low: {
     subject: "Low Float Alert",
-    body: "Your float balance is {{balance}}. Please top up.",
+    body: "Your premium reserve is {{balance}}. Please top up.",
   },
   kyc_approved: {
     subject: "KYC Approved",

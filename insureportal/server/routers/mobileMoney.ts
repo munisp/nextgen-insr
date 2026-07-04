@@ -1,6 +1,6 @@
 /**
  * Mobile Money Integration — Mojaloop connector for P2P transfers,
- * cash-in/cash-out via agents, wallet management, and provider interop.
+ * premium collection/claim payout via agents, wallet management, and provider interop.
  *
  * Middleware: Mojaloop (ILP connector), Kafka (transfer events), Redis (session cache),
  * PostgreSQL (wallet persistence), TigerBeetle (double-entry ledger),
@@ -65,14 +65,14 @@ export const mobileMoneyRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        if (!agent || Number(agent.premiumReserve) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Insufficient float balance",
+            message: "Insufficient premium reserve",
           });
 
         const fee = calculateFee(input.amount);
@@ -103,14 +103,14 @@ export const mobileMoneyRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount + fee)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(input.amount + fee)}`,
             // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "MOBILE_MONEY_SENT",
           resource: "mobile_money",
           resourceId: ref,
@@ -158,11 +158,11 @@ export const mobileMoneyRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        if (!agent || Number(agent.premiumReserve) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Insufficient float to dispense cash",
@@ -184,21 +184,21 @@ export const mobileMoneyRouter = router({
             customerPhone: input.phone,
             status: "success",
             channel: "App",
-            metadata: { channel: "mobile_money_cashout" },
+            metadata: { channel: "mobile_money_claimPayout" },
           })
           .returning();
 
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(input.amount)}`,
             // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "MOBILE_MONEY_CASHOUT",
           resource: "mobile_money",
           resourceId: ref,
@@ -261,14 +261,14 @@ export const mobileMoneyRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(input.amount)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) + ${String(input.amount)}`,
             // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "MOBILE_MONEY_CASHIN",
           resource: "mobile_money",
           resourceId: ref,
@@ -305,14 +305,14 @@ export const mobileMoneyRouter = router({
         if (!db) return { phone: input.phone, balance: 0, currency: "NGN" };
 
         const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
 
         return {
           phone: input.phone,
-          agentFloat: Number(agent?.floatBalance ?? 0),
+          agentFloat: Number(agent?.premiumReserve ?? 0),
           currency: "NGN",
         };
       } catch (error) {

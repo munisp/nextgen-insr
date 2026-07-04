@@ -69,7 +69,7 @@ export const terminalLeasingRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "TERMINAL_LEASE_CREATED",
           resource: "terminal_lease",
           resourceId: leaseId,
@@ -160,7 +160,7 @@ export const terminalLeasingRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "TERMINAL_LEASE_TERMINATED",
           resource: "terminal_lease",
           resourceId: input.leaseId,

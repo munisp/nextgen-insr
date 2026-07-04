@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link Temporal Client
+ * InsurePortal Temporal Client
  * Provides a Temporal client for scheduling and triggering workflows.
  *
  * Workflows:
@@ -54,7 +54,7 @@ export async function getTemporalClient(): Promise<Client | null> {
 
 export interface SettlementInput {
   date: string; // ISO date string e.g. "2025-01-15"
-  triggeredBy?: string; // "cron" | "manual" | agentCode
+  triggeredBy?: string; // "cron" | "manual" | agentId
 }
 
 export interface SettlementResult {

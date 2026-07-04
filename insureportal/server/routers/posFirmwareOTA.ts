@@ -67,7 +67,7 @@ export const posFirmwareOTARouter = router({
         const entry = {
           ...input,
           publishedAt: new Date().toISOString(),
-          publishedBy: session.agentCode,
+          publishedBy: session.agentId,
           status: "staged",
         };
 
@@ -95,7 +95,7 @@ export const posFirmwareOTARouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "FIRMWARE_PUBLISHED",
           resource: "firmware",
           resourceId: input.version,
@@ -134,7 +134,7 @@ export const posFirmwareOTARouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "FIRMWARE_ROLLOUT_STARTED",
           resource: "firmware_rollout",
           resourceId: rolloutId,
@@ -238,7 +238,7 @@ export const posFirmwareOTARouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: input.success
             ? "FIRMWARE_UPDATE_SUCCESS"
             : "FIRMWARE_UPDATE_FAILED",

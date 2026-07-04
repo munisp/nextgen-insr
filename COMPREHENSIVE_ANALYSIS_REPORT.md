@@ -2,14 +2,14 @@
 
 **Analysis Date:** July 3, 2026  
 **Repository:** munisp/nextgen-insr  
-**Platform:** 54Link Agency Banking Platform (Nigerian Fintech)  
+**Platform:** InsurePortal Insurance Platform (Nigerian Fintech)  
 **Version:** Phase 163+ | Multi-language Monorepo
 
 ---
 
 ## Executive Summary
 
-This is a **massive, ambitious fintech platform** covering the complete spectrum of agency banking: POS terminals, multi-portal admin systems, mobile apps (Flutter + React Native), microservices (Go/Python/Rust), regulatory compliance (CBN, NDPR), and real-time transaction processing. The architecture is impressively comprehensive but suffers from **monorepo sprawl**, **type safety erosion**, and **operational complexity** that will become critical as the team scales.
+This is a **massive, ambitious fintech platform** covering the complete spectrum of insurance: POS terminals, multi-portal admin systems, mobile apps (Flutter + React Native), microservices (Go/Python/Rust), regulatory compliance (CBN, NDPR), and real-time transaction processing. The architecture is impressively comprehensive but suffers from **monorepo sprawl**, **type safety erosion**, and **operational complexity** that will become critical as the team scales.
 
 **Key Metrics:**
 - **1,426 TypeScript files** (769 in server/)
@@ -73,22 +73,22 @@ Strong architectural vision, but technical debt is accumulating rapidly due to s
 // BAD: Single monolithic router
 // server/routers/transactions.ts (2,535 lines)
 export const transactionRouter = router({
-  cashIn: protectedProcedure.input(cashInSchema).mutation(...),
-  cashOut: protectedProcedure.input(cashOutSchema).mutation(...),
+  premiumCollection: protectedProcedure.input(premiumCollectionSchema).mutation(...),
+  claimPayout: protectedProcedure.input(claimPayoutSchema).mutation(...),
   transfer: protectedProcedure.input(transferSchema).mutation(...),
   // ... 200+ more procedures
 });
 
 // GOOD: Domain-structured routers
-// server/routers/transactions/cashIn.ts
-// server/routers/transactions/cashOut.ts
+// server/routers/transactions/premiumCollection.ts
+// server/routers/transactions/claimPayout.ts
 // server/routers/transactions/transfer.ts
 // server/routers/transactions/index.ts (exports consolidated router)
 ```
 
 | Priority | Action | Effort | Impact |
 |----------|--------|--------|--------|
-| **P0** | Split routers by subdomain (cashIn, cashOut, transfer, billPayment, etc.) | High | High |
+| **P0** | Split routers by subdomain (premiumCollection, claimPayout, transfer, billPayment, etc.) | High | High |
 | **P1** | Extract business logic to service layer (`server/services/*.ts`) | High | High |
 | **P1** | Implement router composition pattern (max 100 procedures per router) | Medium | Medium |
 | **P2** | Add router size metrics to CI pipeline | Low | Low |
@@ -215,22 +215,22 @@ return (db as any).transaction(fn);
 **Current State:**
 - `server/_core/env.ts` contains **dozens of hardcoded default credentials**:
   ```typescript
-  platformApiKey: "54link-platform-dev-api-key"
-  platformServiceToken: "54link-service-token-dev"
-  keycloakClientSecret: "54link-keycloak-dev-secret"
-  minioSecretKey: "54link_minio_dev_secret"
-  apisixAdminKey: "54link-apisix-dev-admin-key"
-  termiiApiKey: "TLtest_54link_dev_key"
+  platformApiKey: "insureportal-platform-dev-api-key"
+  platformServiceToken: "insureportal-service-token-dev"
+  keycloakClientSecret: "insureportal-keycloak-dev-secret"
+  minioSecretKey: "insureportal_minio_dev_secret"
+  apisixAdminKey: "insureportal-apisix-dev-admin-key"
+  termiiApiKey: "TLtest_insureportal_dev_key"
   vapidPrivateKey: "vBqalBipE6mu4a592N8c1wucdpun-RaKemy8gZDa99M"
-  mqttPassword: "54link_mqtt_dev_pass"
-  fluvioApiKey: "54link-fluvio-dev-key"
+  mqttPassword: "insureportal_mqtt_dev_pass"
+  fluvioApiKey: "insureportal-fluvio-dev-key"
   ```
 - `envValidation.ts` warns about defaults but doesn't prevent them
 - Vault integration exists but falls back to env vars silently
 
 **Critical Issues:**
 1. **Hardcoded Secrets in Source:** Default credentials in env.ts are checked into Git
-2. **Weak Dev Credentials:** Dev keys use predictable naming patterns (`54link-*`)
+2. **Weak Dev Credentials:** Dev keys use predictable naming patterns (`insureportal-*`)
 3. **Silent Fallback:** Vault failures silently fall back to env vars without security checks
 4. **VAPID Private Key Exposed:** Web push private key is hardcoded
 
@@ -451,7 +451,7 @@ server/sprint3.test.ts
 // AFTER: Feature-based
 server/tests/auth/login.test.ts
 server/tests/auth/fido2.test.ts
-server/tests/transactions/cashIn.test.ts
+server/tests/transactions/premiumCollection.test.ts
 server/tests/transactions/transfer.test.ts
 server/tests/fraud/rules.test.ts
 server/tests/fraud/detection.test.ts
@@ -480,7 +480,7 @@ server/tests/fraud/detection.test.ts
 
 **Current State:**
 - Multi-stage build (builder → runtime)
-- Non-root user (`posshell`)
+- Non-root user (`insureportal`)
 - Health check with `wget`
 - 146 Dockerfiles across the monorepo
 

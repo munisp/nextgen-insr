@@ -179,10 +179,10 @@ function applyEvent(state: Record<string, unknown>, event: Event): Record<string
     case "transaction.cancelled":
       return { ...newState, ...event.data, status: "cancelled" };
     case "agent.float.deposited":
-      newState.floatBalance = (Number(newState.floatBalance) || 0) + Number(event.data.amount);
+      newState.premiumReserve = (Number(newState.premiumReserve) || 0) + Number(event.data.amount);
       return newState;
     case "agent.float.withdrawn":
-      newState.floatBalance = (Number(newState.floatBalance) || 0) - Number(event.data.amount);
+      newState.premiumReserve = (Number(newState.premiumReserve) || 0) - Number(event.data.amount);
       return newState;
     case "agent.commission.earned":
       newState.commissionBalance = (Number(newState.commissionBalance) || 0) + Number(event.data.amount);

@@ -29,7 +29,7 @@ async function generateSupportReply(
         {
           role: "system",
           content:
-            "You are a helpful 54Link agency banking support agent. " +
+            "You are a helpful InsurePortal insurance support agent. " +
             "Respond concisely (1-3 sentences) to agent queries about transactions, float, " +
             "disputes, and account issues. Be professional and empathetic. " +
             "If you cannot resolve the issue immediately, acknowledge it and provide a reference number.",
@@ -74,7 +74,7 @@ export function initSocketIO(httpServer: HttpServer) {
   // In production, set ALLOWED_ORIGINS env var to comma-separated list.
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim())
-    : ["https://54link.io", "https://app.54link.io", "https://admin.54link.io"];
+    : ["https://insureportal.io", "https://app.insureportal.io", "https://admin.insureportal.io"];
   const isDev = process.env.NODE_ENV !== "production";
 
   const io = new SocketIOServer(httpServer, {
@@ -115,7 +115,7 @@ export function initSocketIO(httpServer: HttpServer) {
         severity: alert.severity ?? "high",
         reason: alert.reason ?? "",
         amount: Number(alert.amount ?? 0),
-        agentCode: alert.agentCode ?? "",
+        agentId: alert.agentId ?? "",
         customerName: alert.customerName ?? "Unknown",
         timestamp: alert.createdAt?.toISOString() ?? new Date().toISOString(),
         fraudScore: alert.riskScore ?? "75.0",
@@ -237,10 +237,10 @@ export function initSocketIO(httpServer: HttpServer) {
   const terminalNs = io.of("/terminal");
 
   terminalNs.on("connection", socket => {
-    socket.on("terminal:register", (agentCode: string) => {
-      if (agentCode) {
-        socket.join(`agent:${agentCode}`);
-        logger.info({ agentCode, socketId: socket.id }, "[Terminal] Agent registered");
+    socket.on("terminal:register", (agentId: string) => {
+      if (agentId) {
+        socket.join(`agent:${agentId}`);
+        logger.info({ agentId, socketId: socket.id }, "[Terminal] Agent registered");
       }
     });
 

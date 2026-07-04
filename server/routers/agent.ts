@@ -70,7 +70,7 @@ import {
   ne,
 } from "drizzle-orm";
 
-// ── CBN Agency Banking Limits ──────────────────────────────────────────────────
+// ── CBN Insurance Limits ──────────────────────────────────────────────────
 const CBN_DAILY_TX_LIMIT = 3000000; // NGN 3M per day per agent
 const CBN_SINGLE_TX_LIMIT = 1000000; // NGN 1M per single transaction
 const CBN_MIN_FLOAT = 5000; // NGN 5K minimum float
@@ -80,17 +80,17 @@ export const agentRouter = router({
   login: publicProcedure
     .input(
       z.object({
-        agentCode: z.string().min(3).max(32),
+        agentId: z.string().min(3).max(32),
         pin: z.string().min(4).max(8),
       })
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const agent = await getAgentByCode(input.agentCode.toUpperCase());
+        const agent = await getAgentByCode(input.agentId.toUpperCase());
         if (!agent) {
           throw new TRPCError({
             code: "UNAUTHORIZED",
-            message: "Invalid agent code or PIN",
+            message: "Invalid agent ID or PIN",
           });
         }
         if (!agent.isActive) {
@@ -104,7 +104,7 @@ export const agentRouter = router({
         if (!valid) {
           await writeAuditLog({
             agentId: agent.id,
-            agentCode: agent.agentCode,
+            agentId: agent.agentId,
             action: "LOGIN_FAILED",
             resource: "agent",
             resourceId: String(agent.id),
@@ -113,14 +113,14 @@ export const agentRouter = router({
           });
           throw new TRPCError({
             code: "UNAUTHORIZED",
-            message: "Invalid agent code or PIN",
+            message: "Invalid agent ID or PIN",
           });
         }
 
         await updateAgentLastLogin(agent.id);
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "LOGIN_SUCCESS",
           resource: "agent",
           resourceId: String(agent.id),
@@ -133,7 +133,7 @@ export const agentRouter = router({
         const secret = new TextEncoder().encode(getJwtSecret());
         const token = await new SignJWT({
           sub: String(agent.id),
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           name: agent.name,
           tier: agent.tier,
           role: "agent",
@@ -155,14 +155,14 @@ export const agentRouter = router({
           success: true,
           agent: {
             id: agent.id,
-            agentCode: agent.agentCode,
+            agentId: agent.agentId,
             name: agent.name,
             tier: agent.tier,
             phone: agent.phone,
             location: agent.location,
             terminalModel: agent.terminalModel,
             terminalSerial: agent.terminalSerial,
-            floatBalance: Number(agent.floatBalance),
+            premiumReserve: Number(agent.premiumReserve),
             floatLimit: Number(agent.floatLimit),
             commissionBalance: Number(agent.commissionBalance),
             loyaltyPoints: agent.loyaltyPoints,
@@ -202,7 +202,7 @@ export const agentRouter = router({
         if (!agent) return null;
         return {
           id: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           name: agent.name,
           role: (agent.role ?? "agent") as "agent" | "admin" | "supervisor",
           tier: agent.tier,
@@ -210,7 +210,7 @@ export const agentRouter = router({
           location: agent.location,
           terminalModel: agent.terminalModel,
           terminalSerial: agent.terminalSerial,
-          floatBalance: Number(agent.floatBalance),
+          premiumReserve: Number(agent.premiumReserve),
           floatLimit: Number(agent.floatLimit),
           commissionBalance: Number(agent.commissionBalance),
           loyaltyPoints: agent.loyaltyPoints,
@@ -237,7 +237,7 @@ export const agentRouter = router({
   register: publicProcedure
     .input(
       z.object({
-        agentCode: z.string().min(3).max(32),
+        agentId: z.string().min(3).max(32),
         name: z.string().min(2),
         phone: z.string().min(10),
         pin: z.string().min(4).max(8),
@@ -247,7 +247,7 @@ export const agentRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        const existing = await getAgentByCode(input.agentCode.toUpperCase());
+        const existing = await getAgentByCode(input.agentId.toUpperCase());
         if (existing) {
           throw new TRPCError({
             code: "CONFLICT",
@@ -256,13 +256,13 @@ export const agentRouter = router({
         }
         const pinHash = await bcrypt.hash(input.pin, 10);
         const agent = await createAgent({
-          agentCode: input.agentCode.toUpperCase(),
+          agentId: input.agentId.toUpperCase(),
           name: input.name,
           phone: input.phone,
           email: input.email ?? null,
           location: input.location ?? "Lagos, Nigeria",
           pinHash,
-          floatBalance: "0.00",
+          premiumReserve: "0.00",
           commissionBalance: "0.00",
           loyaltyPoints: 0,
           streak: 0,
@@ -297,7 +297,7 @@ export const agentRouter = router({
           .enum([
             "name",
             "createdAt",
-            "floatBalance",
+            "premiumReserve",
             "loyaltyPoints",
             "lastLoginAt",
           ])
@@ -335,7 +335,7 @@ export const agentRouter = router({
           conditions.push(
             or(
               ilike(agents.name, `%${input.search}%`),
-              ilike(agents.agentCode, `%${input.search}%`),
+              ilike(agents.agentId, `%${input.search}%`),
               ilike(agents.phone, `%${input.search}%`),
               ilike(agents.email, `%${input.search}%`)
             )!
@@ -346,8 +346,8 @@ export const agentRouter = router({
         const orderCol =
           input.sortBy === "name"
             ? agents.name
-            : input.sortBy === "floatBalance"
-              ? agents.floatBalance
+            : input.sortBy === "premiumReserve"
+              ? agents.premiumReserve
               : input.sortBy === "loyaltyPoints"
                 ? agents.loyaltyPoints
                 : input.sortBy === "lastLoginAt"
@@ -359,14 +359,14 @@ export const agentRouter = router({
           db
             .select({
               id: agents.id,
-              agentCode: agents.agentCode,
+              agentId: agents.agentId,
               name: agents.name,
               phone: agents.phone,
               email: agents.email,
               location: agents.location,
               tier: agents.tier,
               isActive: agents.isActive,
-              floatBalance: agents.floatBalance,
+              premiumReserve: agents.premiumReserve,
               floatLimit: agents.floatLimit,
               commissionBalance: agents.commissionBalance,
               loyaltyPoints: agents.loyaltyPoints,
@@ -500,7 +500,7 @@ export const agentRouter = router({
           .where(eq(agents.id, id));
         await writeAuditLog({
           agentId: id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "AGENT_UPDATED",
           resource: "agent",
           resourceId: String(id),
@@ -540,7 +540,7 @@ export const agentRouter = router({
           .where(eq(agents.id, input.id));
         await writeAuditLog({
           agentId: input.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "AGENT_DELETED",
           resource: "agent",
           resourceId: String(input.id),
@@ -580,7 +580,7 @@ export const agentRouter = router({
           .where(eq(agents.id, input.id));
         await writeAuditLog({
           agentId: input.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: input.locked ? "FLOAT_LOCKED" : "FLOAT_UNLOCKED",
           resource: "agent",
           resourceId: String(input.id),
@@ -626,7 +626,7 @@ export const agentRouter = router({
           .where(eq(agents.id, input.id));
         await writeAuditLog({
           agentId: input.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: input.enabled ? "TERMINAL_ENABLED" : "TERMINAL_DISABLED",
           resource: "agent",
           resourceId: String(input.id),

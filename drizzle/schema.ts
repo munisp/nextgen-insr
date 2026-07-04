@@ -282,7 +282,7 @@ export const agents = pgTable(
   "agents",
   {
     id: serial("id").primaryKey(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull().unique(),
+    agentId: varchar("agentId", { length: 32 }).notNull().unique(),
     name: varchar("name", { length: 128 }).notNull(),
     phone: varchar("phone", { length: 20 }).notNull(),
     email: varchar("email", { length: 320 }),
@@ -294,7 +294,7 @@ export const agents = pgTable(
     tier: agentTierEnum("tier").default("Bronze").notNull(),
     role: varchar("role", { length: 32 }).default("agent").notNull(),
     pinHash: varchar("pinHash", { length: 128 }).notNull(),
-    floatBalance: numeric("floatBalance", { precision: 15, scale: 2 })
+    premiumReserve: numeric("premiumReserve", { precision: 15, scale: 2 })
       .default("0.00")
       .notNull(),
     floatLimit: numeric("floatLimit", { precision: 15, scale: 2 })
@@ -333,7 +333,7 @@ export const agents = pgTable(
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    agentCodeIdx: uniqueIndex("agents_agentCode_idx").on(t.agentCode),
+    agentIdIdx: uniqueIndex("agents_agentId_idx").on(t.agentId),
     isActiveIdx: index("agents_isActive_idx").on(t.isActive),
     deletedAtIdx: index("agents_deletedAt_idx").on(t.deletedAt),
     tenantIdIdx: index("agents_tenantId_idx").on(t.tenantId),
@@ -519,7 +519,7 @@ export const auditLog = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     agentId: integer("agentId"),
-    agentCode: varchar("agentCode", { length: 32 }),
+    agentId: varchar("agentId", { length: 32 }),
     action: varchar("action", { length: 128 }).notNull(),
     resource: varchar("resource", { length: 64 }),
     resourceId: varchar("resourceId", { length: 64 }),
@@ -544,7 +544,7 @@ export const auditLog = pgTable(
 export type AuditLog = typeof auditLog.$inferSelect;
 
 // ─── Float Top-Up Requests ────────────────────────────────────────────────────
-export const floatTopUpRequests = pgTable(
+export const premiumTopUpRequests = pgTable(
   "float_topup_requests",
   {
     id: serial("id").primaryKey(),
@@ -572,7 +572,7 @@ export const floatTopUpRequests = pgTable(
   })
 );
 
-export type FloatTopUpRequest = typeof floatTopUpRequests.$inferSelect;
+export type FloatTopUpRequest = typeof premiumTopUpRequests.$inferSelect;
 
 // ─── OTP Tokens (PIN Reset) ───────────────────────────────────────────────────
 export const otpTokens = pgTable(
@@ -1515,13 +1515,13 @@ export const mqttBridgeConfig = pgTable(
     name: varchar("name", { length: 128 }).notNull().default("POS MQTT Bridge"),
     brokerUrl: text("brokerUrl")
       .notNull()
-      .default("mqtt://broker.54link.io:1883"),
+      .default("mqtt://broker.insureportal.io:1883"),
     port: integer("port").default(1883).notNull(),
     useTls: boolean("useTls").default(false).notNull(),
     username: varchar("username", { length: 128 }).default(""),
     password: text("password").default(""),
     clientId: varchar("clientId", { length: 128 }).default(
-      "54link-fluvio-bridge"
+      "insureportal-fluvio-bridge"
     ),
     topicMappings: json("topicMappings")
       .$type<
@@ -2008,7 +2008,7 @@ export const agentPushSubscriptions = pgTable(
   "agent_push_subscriptions",
   {
     id: serial("id").primaryKey(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull(),
+    agentId: varchar("agentId", { length: 32 }).notNull(),
     endpoint: text("endpoint").notNull().unique(),
     p256dhKey: text("p256dhKey").notNull(),
     authKey: text("authKey").notNull(),
@@ -2019,8 +2019,8 @@ export const agentPushSubscriptions = pgTable(
     lastAlertedAt: timestamp("lastAlertedAt"),
   },
   t => ({
-    agentCodeIdx: index("agent_push_subscriptions_agent_code_idx").on(
-      t.agentCode
+    agentIdIdx: index("agent_push_subscriptions_agent_code_idx").on(
+      t.agentId
     ),
   })
 );
@@ -2039,14 +2039,14 @@ export const connectivityLog = pgTable(
   "connectivity_log",
   {
     id: serial("id").primaryKey(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull(),
+    agentId: varchar("agentId", { length: 32 }).notNull(),
     quality: connectivityQualityEnum("quality").notNull(),
     latencyMs: integer("latencyMs"),
     recordedAt: timestamp("recordedAt").defaultNow().notNull(),
   },
   t => ({
     agentRecordedIdx: index("connectivity_log_agent_recorded_idx").on(
-      t.agentCode,
+      t.agentId,
       t.recordedAt
     ),
   })
@@ -2080,12 +2080,12 @@ export type InsertSystemConfig = typeof systemConfig.$inferInsert;
 // ── SIM Probe Log (SIM Orchestrator analytics) ────────────────────────────────
 // One row per SIM slot per probe cycle. The orchestrator daemon posts a batch
 // of 4 readings (one per slot) every probe interval.
-// Indexed by agentCode + probedAt for time-series queries.
+// Indexed by agentId + probedAt for time-series queries.
 export const simProbeLog = pgTable(
   "sim_probe_log",
   {
     id: serial("id").primaryKey(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull(),
+    agentId: varchar("agentId", { length: 32 }).notNull(),
     terminalId: varchar("terminalId", { length: 32 }).notNull(),
     slot: varchar("slot", { length: 8 }).notNull(), // Phys1|Phys2|ESim1|ESim2
     carrier: varchar("carrier", { length: 32 }).notNull(),
@@ -2104,7 +2104,7 @@ export const simProbeLog = pgTable(
   },
   t => ({
     agentProbedIdx: index("sim_probe_log_agent_probed_idx").on(
-      t.agentCode,
+      t.agentId,
       t.probedAt
     ),
     slotProbedIdx: index("sim_probe_log_slot_probed_idx").on(
@@ -2125,10 +2125,10 @@ export const simOrchestratorConfig = pgTable(
     probeIntervalMs: integer("probeIntervalMs").notNull().default(30000),
     relayEndpoint: varchar("relayEndpoint", { length: 256 })
       .notNull()
-      .default("https://api.54link.io/api/trpc/simOrchestrator.ingestProbe"),
+      .default("https://api.insureportal.io/api/trpc/simOrchestrator.ingestProbe"),
     apiKey: varchar("apiKey", { length: 128 })
       .notNull()
-      .default("54link-sim-orchestrator-default-key"),
+      .default("insureportal-sim-orchestrator-default-key"),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -2151,7 +2151,7 @@ export const simFailoverLog = pgTable(
   {
     id: serial("id").primaryKey(),
     terminalId: varchar("terminalId", { length: 32 }).notNull(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull(),
+    agentId: varchar("agentId", { length: 32 }).notNull(),
     fromSlot: integer("fromSlot").notNull(), // 0=Phys1, 1=Phys2, 2=ESim1, 3=ESim2
     toSlot: integer("toSlot").notNull(),
     reason: varchar("reason", { length: 32 }).notNull(), // high_latency | high_packet_loss
@@ -2167,7 +2167,7 @@ export const simFailoverLog = pgTable(
       t.switchedAt
     ),
     agentSwitchedIdx: index("sim_failover_log_agent_switched_idx").on(
-      t.agentCode,
+      t.agentId,
       t.switchedAt
     ),
   })
@@ -2225,7 +2225,7 @@ export const deviceComplianceViolations = pgTable(
     deviceId: integer("deviceId").notNull(),
     policyId: integer("policyId").notNull(),
     serialNumber: varchar("serialNumber", { length: 64 }).notNull(),
-    agentCode: varchar("agentCode", { length: 32 }),
+    agentId: varchar("agentId", { length: 32 }),
     violationType: varchar("violationType", { length: 64 }).notNull(), // low_battery|outdated_app|outdated_os|missing_pin|geofence_breach|inactive|disallowed_network
     severity: varchar("severity", { length: 16 }).notNull(), // low|medium|high|critical
     details: json("details"), // { actual, expected, threshold }
@@ -2258,7 +2258,7 @@ export const mdmGeofenceViolations = pgTable(
     id: serial("id").primaryKey(),
     deviceId: integer("deviceId").notNull(),
     serialNumber: varchar("serialNumber", { length: 64 }).notNull(),
-    agentCode: varchar("agentCode", { length: 32 }),
+    agentId: varchar("agentId", { length: 32 }),
     zoneId: integer("zoneId"), // geofenceZones.id if matched
     zoneName: varchar("zoneName", { length: 128 }),
     violationType: varchar("violationType", { length: 32 }).notNull(), // outside_zone|inside_exclusion|boundary
@@ -2325,7 +2325,7 @@ export const commissionPayouts = pgTable(
     agentId: integer("agent_id")
       .notNull()
       .references(() => agents.id),
-    agentCode: varchar("agent_code", { length: 32 }).notNull(),
+    agentId: varchar("agent_code", { length: 32 }).notNull(),
     amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
     currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
     status: commissionPayoutStatusEnum("status").default("pending").notNull(),
@@ -2464,7 +2464,7 @@ export const agentOnboardingProgress = pgTable(
       .notNull()
       .references(() => agents.id)
       .unique(),
-    agentCode: varchar("agent_code", { length: 32 }).notNull(),
+    agentId: varchar("agent_code", { length: 32 }).notNull(),
     currentStep: onboardingStepEnum("current_step")
       .default("profile")
       .notNull(),
@@ -2498,7 +2498,7 @@ export const settlementReconciliation = pgTable(
     id: serial("id").primaryKey(),
     settlementDate: varchar("settlement_date", { length: 10 }).notNull(),
     agentId: integer("agent_id").references(() => agents.id),
-    agentCode: varchar("agent_code", { length: 32 }),
+    agentId: varchar("agent_code", { length: 32 }),
     expectedAmount: numeric("expected_amount", {
       precision: 18,
       scale: 2,

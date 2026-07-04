@@ -27,13 +27,13 @@ describe("Auth Utilities", () => {
 
   describe("URL construction", () => {
     it("should build a valid authorization URL", () => {
-      const baseUrl = "https://auth.test.54link.io";
+      const baseUrl = "https://auth.test.insureportal.io";
       const realm = "ngapp";
-      const clientId = "pos-shell";
+      const clientId = "insurance-portal";
 
       const authUrl = `${baseUrl}/realms/${realm}/protocol/openid-connect/auth?client_id=${clientId}&response_type=code`;
       expect(authUrl).toContain("realms/ngapp");
-      expect(authUrl).toContain("client_id=pos-shell");
+      expect(authUrl).toContain("client_id=insurance-portal");
     });
 
     it("should handle URL encoding for special characters", () => {

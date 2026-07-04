@@ -8,7 +8,7 @@ import {
   chatSessions,
   chatMessages,
   auditLog,
-  floatTopUpRequests,
+  premiumTopUpRequests,
   otpTokens,
   devices,
   deviceCommands,
@@ -132,7 +132,7 @@ export const agentsRelations = relations(agents, ({ one, many }) => ({
   transactions: many(transactions),
   fraudAlerts: many(fraudAlerts),
   loyaltyHistory: many(loyaltyHistory),
-  floatTopUpRequests: many(floatTopUpRequests),
+  premiumTopUpRequests: many(premiumTopUpRequests),
   devices: many(devices),
   disputes: many(disputes),
   posTerminals: many(posTerminals),
@@ -503,11 +503,11 @@ export const fraudMlScoresRelations = relations(fraudMlScores, ({ one }) => ({
 }));
 
 // ─── Float & Loan Relations ────────────────────────────────────────
-export const floatTopUpRequestsRelations = relations(
-  floatTopUpRequests,
+export const premiumTopUpRequestsRelations = relations(
+  premiumTopUpRequests,
   ({ one }) => ({
     agent: one(agents, {
-      fields: [floatTopUpRequests.agentId],
+      fields: [premiumTopUpRequests.agentId],
       references: [agents.id],
     }),
   })
@@ -725,8 +725,8 @@ export const chatMessagesRelations = relations(chatMessages, () => ({}));
 
 export const auditLogRelations = relations(auditLog, () => ({}));
 
-export const floatTopUpRequestsRelations = relations(
-  floatTopUpRequests,
+export const premiumTopUpRequestsRelations = relations(
+  premiumTopUpRequests,
   () => ({})
 );
 

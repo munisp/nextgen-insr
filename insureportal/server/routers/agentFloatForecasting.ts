@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agents, floatTopUpRequests, transactions } from "../../drizzle/schema";
+import { agents, premiumTopUpRequests, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count, avg, sum } from "drizzle-orm";
 
 /**
@@ -14,7 +14,7 @@ import { desc, eq, sql, and, gte, lte, count, avg, sum } from "drizzle-orm";
  * - Stockout risk threshold: < 20% remaining float = HIGH risk
  * - Seasonal multiplier: Month-end (25th-5th) = 1.4x, Friday = 1.2x
  * - Agent tier adjustments: Super agents get 1.5x buffer recommendation
- * - Alert when predicted demand exceeds 80% of current float balance
+ * - Alert when predicted demand exceeds 80% of current premium reserve
  */
 
 const SEASONAL_MULTIPLIERS = {
@@ -64,7 +64,7 @@ export const agentFloatForecastingRouter = router({
       const totalRows = await database.select({ total: count() }).from(agents);
 
       const forecasts = results.map((agent: any) => {
-        const currentFloat = agent.floatBalance ?? 50000;
+        const currentFloat = agent.premiumReserve ?? 50000;
         const avgDaily = (agent.monthlyTarget ?? 200000) / 30;
         const multiplier = getSeasonalMultiplier(new Date());
         const adjustedDemand = avgDaily * multiplier;
@@ -102,7 +102,7 @@ export const agentFloatForecastingRouter = router({
       if (!agent) throw new Error(`Agent ${input.agentId} not found`);
 
       const horizonDays = parseInt(input.horizon);
-      const currentFloat = (agent as any).floatBalance ?? 50000;
+      const currentFloat = (agent as any).premiumReserve ?? 50000;
       const avgDaily = ((agent as any).monthlyTarget ?? 200000) / 30;
       const tierBuffer = TIER_BUFFERS[(agent as any).tier ?? "standard"] ?? 1.0;
 

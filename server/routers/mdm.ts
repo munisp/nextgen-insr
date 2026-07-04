@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * MDM Router — Mobile Device Management for 54Link POS terminals
+ * MDM Router — Mobile Device Management for InsurePortal POS terminals
  *
  * Provides admin-only procedures for:
  *   - Device registry (enroll, list, get, update status)
@@ -34,7 +34,7 @@ import { writeAuditLog } from "../db";
 // =============================================================================
 // NAVIGATION GUIDE — MDM Router (1,436 lines, 23 procedures)
 // =============================================================================
-// Mobile Device Management for 54Link POS terminals.
+// Mobile Device Management for InsurePortal POS terminals.
 //
 // ── Section Reference ────────────────────────────────────────────────────────
 //  59. listDevices            — Enrolled devices list with agent info
@@ -107,7 +107,7 @@ export const mdmRouter = router({
         const rows = await db
           .select({
             device: devices,
-            agentCode: agents.agentCode,
+            agentId: agents.agentId,
             agentName: agents.name,
             agentLocation: agents.location,
           })
@@ -144,7 +144,7 @@ export const mdmRouter = router({
         const [row] = await db
           .select({
             device: devices,
-            agentCode: agents.agentCode,
+            agentId: agents.agentId,
             agentName: agents.name,
           })
           .from(devices)
@@ -381,7 +381,7 @@ export const mdmRouter = router({
     .input(
       z.object({
         serialNumber: z.string().min(1),
-        agentCode: z.string().min(1),
+        agentId: z.string().min(1),
         model: z.string().optional(),
         osVersion: z.string().optional(),
         appVersion: z.string().optional(),
@@ -414,7 +414,7 @@ export const mdmRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode));
+          .where(eq(agents.agentId, input.agentId));
 
         const telemetryFields = {
           batteryLevel: input.batteryLevel ?? null,
@@ -575,7 +575,7 @@ export const mdmRouter = router({
                 await db.insert(mdmGeofenceViolations).values({
                   deviceId: device.id,
                   serialNumber: input.serialNumber,
-                  agentCode: input.agentCode,
+                  agentId: input.agentId,
                   zoneId: zone.id,
                   zoneName: zone.name,
                   violationType: "outside_zone",
@@ -589,7 +589,7 @@ export const mdmRouter = router({
                 if (io) {
                   io.of("/admin").emit("mdm:geofence-violation", {
                     serialNumber: input.serialNumber,
-                    agentCode: input.agentCode,
+                    agentId: input.agentId,
                     zoneName: zone.name,
                     distanceMeters: Math.round(distM),
                     detectedAt: new Date().toISOString(),
@@ -682,7 +682,7 @@ export const mdmRouter = router({
                   deviceId: device.id,
                   policyId: policy.id,
                   serialNumber: input.serialNumber,
-                  agentCode: input.agentCode,
+                  agentId: input.agentId,
                   violationType: v.type,
                   severity: policy.severity,
                   details: v.details,
@@ -740,7 +740,7 @@ export const mdmRouter = router({
   generateEnrollmentToken: adminProcedure
     .input(
       z.object({
-        agentCode: z.string().min(1),
+        agentId: z.string().min(1),
         serialNumber: z.string().min(1).optional(),
       })
     )
@@ -750,7 +750,7 @@ export const mdmRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(100);
         if (!agent)
           throw new TRPCError({
@@ -763,7 +763,7 @@ export const mdmRouter = router({
 
         // Store enrollment token on existing device record, or pre-register a new device record
         const serial =
-          input.serialNumber ?? `PENDING-${agent.agentCode}-${Date.now()}`;
+          input.serialNumber ?? `PENDING-${agent.agentId}-${Date.now()}`;
         const existing = await db
           .select()
           .from(devices)
@@ -793,7 +793,7 @@ export const mdmRouter = router({
         const qrPayload = JSON.stringify({
           action: "enroll",
           token,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           serial,
           apiBase: "/api/trpc",
         });
@@ -802,7 +802,7 @@ export const mdmRouter = router({
           token,
           expiresAt,
           qrPayload,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           serial,
         };
       } catch (error) {
@@ -820,7 +820,7 @@ export const mdmRouter = router({
     .input(
       z.object({
         token: z.string().min(1),
-        agentCode: z.string().min(1),
+        agentId: z.string().min(1),
         serialNumber: z.string().min(1),
         model: z.string().optional(),
         osVersion: z.string().optional(),
@@ -848,11 +848,11 @@ export const mdmRouter = router({
           });
         }
 
-        // Verify agent code matches
+        // Verify agent ID matches
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(100);
         if (!agent || agent.id !== device.agentId) {
           throw new TRPCError({
@@ -885,7 +885,7 @@ export const mdmRouter = router({
         return {
           deviceId: device.id,
           enrolled: true,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           deviceToken: persistentToken,
         };
       } catch (error) {
@@ -949,7 +949,7 @@ export const mdmRouter = router({
   disableTerminal: adminProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         reason: z.string().min(5, "Reason must be at least 5 characters"),
       })
     )
@@ -959,7 +959,7 @@ export const mdmRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode));
+          .where(eq(agents.agentId, input.agentId));
         if (!agent)
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -972,11 +972,11 @@ export const mdmRouter = router({
             terminalDisabledReason: input.reason,
             updatedAt: new Date(),
           })
-          .where(eq(agents.agentCode, input.agentCode));
+          .where(eq(agents.agentId, input.agentId));
         const io = getIO();
         if (io) {
           io.of("/terminal")
-            .to(`agent:${input.agentCode}`)
+            .to(`agent:${input.agentId}`)
             .emit("terminal:kill-switch", {
               reason: input.reason,
               disabledBy: ctx.user.name ?? ctx.user.keycloakSub,
@@ -985,14 +985,14 @@ export const mdmRouter = router({
         }
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           action: "TERMINAL_DISABLED",
           resource: "agent",
           resourceId: String(agent.id),
           status: "success",
           metadata: { reason: input.reason, disabledBy: ctx.user.keycloakSub },
         });
-        return { ok: true, agentCode: input.agentCode, terminalEnabled: false };
+        return { ok: true, agentId: input.agentId, terminalEnabled: false };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -1417,7 +1417,7 @@ export const mdmRouter = router({
   enableTerminal: adminProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -1434,7 +1434,7 @@ export const mdmRouter = router({
       const [agent] = await db
         .select()
         .from(agents)
-        .where(eq(agents.agentCode, input.agentCode));
+        .where(eq(agents.agentId, input.agentId));
       if (!agent)
         throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       await db
@@ -1444,11 +1444,11 @@ export const mdmRouter = router({
           terminalDisabledReason: null,
           updatedAt: new Date(),
         })
-        .where(eq(agents.agentCode, input.agentCode));
+        .where(eq(agents.agentId, input.agentId));
       const io = getIO();
       if (io) {
         io.of("/terminal")
-          .to(`agent:${input.agentCode}`)
+          .to(`agent:${input.agentId}`)
           .emit("terminal:kill-switch-lift", {
             enabledBy: ctx.user.name ?? ctx.user.keycloakSub,
             enabledAt: new Date().toISOString(),
@@ -1456,13 +1456,13 @@ export const mdmRouter = router({
       }
       await writeAuditLog({
         agentId: agent.id,
-        agentCode: input.agentCode,
+        agentId: input.agentId,
         action: "TERMINAL_ENABLED",
         resource: "agent",
         resourceId: String(agent.id),
         status: "success",
         metadata: { enabledBy: ctx.user.keycloakSub },
       });
-      return { ok: true, agentCode: input.agentCode, terminalEnabled: true };
+      return { ok: true, agentId: input.agentId, terminalEnabled: true };
     }),
 });

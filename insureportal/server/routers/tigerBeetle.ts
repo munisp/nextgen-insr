@@ -3,7 +3,7 @@
  *
  * Exposes live TigerBeetle sidecar data:
  *   - Account list with balances (float, settlement, escrow)
- *   - Agent float balance lookup
+ *   - Agent premium reserve lookup
  *   - Transfer history from sidecar
  *   - Sync status (pending/synced/failed)
  *   - Manual sync trigger
@@ -78,7 +78,7 @@ export const tigerBeetleRouter = router({
     .input(
       z.object({
         ledger: z.number().optional(),
-        agentCode: z.string().optional(),
+        agentId: z.string().optional(),
         limit: z.number().min(1).max(200).default(50),
         offset: z.number().min(0).default(0),
       })
@@ -87,13 +87,13 @@ export const tigerBeetleRouter = router({
       try {
         const params = new URLSearchParams();
         if (input.ledger) params.set("ledger", String(input.ledger));
-        if (input.agentCode) params.set("agentCode", input.agentCode);
+        if (input.agentId) params.set("agentId", input.agentId);
         params.set("limit", String(input.limit));
         params.set("offset", String(input.offset));
         const data = (await tbFetch(`/accounts?${params}`)) as {
           accounts: Array<{
             id: string;
-            agentCode?: string;
+            agentId?: string;
             ledger: number;
             code: number;
             debitsPending: number;
@@ -112,14 +112,14 @@ export const tigerBeetleRouter = router({
       }
     }),
 
-  /** Get a single agent's float balance */
+  /** Get a single agent's premium reserve */
   agentBalance: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .query(async ({ input }) => {
       try {
-        const balance = await tbGetAgentBalance(input.agentCode);
+        const balance = await tbGetAgentBalance(input.agentId);
         if (!balance) {
-          // Fall back to PostgreSQL float balance
+          // Fall back to PostgreSQL premium reserve
           const db = (await getDb())!;
           if (!db)
             return {
@@ -128,13 +128,13 @@ export const tigerBeetleRouter = router({
               source: "unavailable" as const,
             };
           const [agent] = await db
-            .select({ floatBalance: agents.floatBalance })
+            .select({ premiumReserve: agents.premiumReserve })
             .from(agents)
-            .where(eq(agents.agentCode, input.agentCode))
+            .where(eq(agents.agentId, input.agentId))
             .limit(1);
           return {
-            balanceNGN: agent ? Number(agent.floatBalance) : 0,
-            balanceKobo: agent ? Number(agent.floatBalance) * 100 : 0,
+            balanceNGN: agent ? Number(agent.premiumReserve) : 0,
+            balanceKobo: agent ? Number(agent.premiumReserve) * 100 : 0,
             source: "postgres" as const,
           };
         }
@@ -153,7 +153,7 @@ export const tigerBeetleRouter = router({
   transfers: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string().optional(),
+        agentId: z.string().optional(),
         limit: z.number().min(1).max(200).default(50),
         offset: z.number().min(0).default(0),
       })
@@ -161,7 +161,7 @@ export const tigerBeetleRouter = router({
     .query(async ({ input }) => {
       try {
         const params = new URLSearchParams();
-        if (input.agentCode) params.set("agentCode", input.agentCode);
+        if (input.agentId) params.set("agentId", input.agentId);
         params.set("limit", String(input.limit));
         params.set("offset", String(input.offset));
         const data = (await tbFetch(`/transfers?${params}`)) as {
@@ -173,7 +173,7 @@ export const tigerBeetleRouter = router({
             amountNGN: number;
             ref?: string;
             txType?: string;
-            agentCode?: string;
+            agentId?: string;
             syncStatus: "pending" | "synced" | "failed";
             createdAt: string;
           }>;
@@ -202,10 +202,10 @@ export const tigerBeetleRouter = router({
 
   /** Trigger a manual sync of pending transfers */
   triggerSync: protectedProcedure
-    .input(z.object({ agentCode: z.string().optional() }))
+    .input(z.object({ agentId: z.string().optional() }))
     .mutation(async ({ input }) => {
       try {
-        const body = input.agentCode ? { agentCode: input.agentCode } : {};
+        const body = input.agentId ? { agentId: input.agentId } : {};
         await tbFetch("/sync/trigger", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -223,11 +223,11 @@ export const tigerBeetleRouter = router({
 
   /** Ensure an agent's float account exists in the ledger */
   ensureAccount: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .mutation(async ({ input }) => {
       try {
-        const created = await tbEnsureAgentAccount(input.agentCode);
-        return { created, agentCode: input.agentCode };
+        const created = await tbEnsureAgentAccount(input.agentId);
+        return { created, agentId: input.agentId };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

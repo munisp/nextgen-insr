@@ -2,7 +2,7 @@
 import { ENV } from "./_core/env";
 import { logger } from './_core/logger';
 /**
- * termii.ts — Shared Termii SMS helper for the 54Link platform.
+ * termii.ts — Shared Termii SMS helper for the InsurePortal platform.
  *
  * All SMS-sending logic is centralised here so every router (transactions,
  * pinReset, settlement, smsReceipt, disputes) uses the same API client and
@@ -43,7 +43,7 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to,
-        from: "54Link",
+        from: "InsurePortal",
         sms: message,
         type: "plain",
         channel: "generic",
@@ -79,7 +79,7 @@ export function buildConfirmationSms(data: {
   ref: string;
   type: string;
   amount: number;
-  agentCode: string;
+  agentId: string;
   agentName: string;
   customerName?: string | null;
   timestamp?: Date;
@@ -93,13 +93,13 @@ export function buildConfirmationSms(data: {
     minute: "2-digit",
   });
   const lines = [
-    `54Link Agency Banking`,
+    `InsurePortal Insurance`,
     `Ref: ${data.ref}`,
     `Type: ${data.type}`,
     `Amount: NGN ${data.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
   ];
   if (data.customerName) lines.push(`Customer: ${data.customerName}`);
-  lines.push(`Agent: ${data.agentName} (${data.agentCode})`);
+  lines.push(`Agent: ${data.agentName} (${data.agentId})`);
   lines.push(`Time: ${ts}`);
   lines.push(`To dispute, call 0700-54LINK or reply DISPUTE to this number.`);
   return lines.join("\n");
@@ -113,22 +113,22 @@ export function buildReceiptSms(data: {
   type: string;
   amount: number;
   fee: number;
-  agentCode: string;
+  agentId: string;
   agentName: string;
   customerName?: string | null;
 }): string {
   const lines = [
-    `54Link Receipt`,
+    `InsurePortal Receipt`,
     `Ref: ${data.ref}`,
     `Type: ${data.type}`,
     `Amount: NGN ${data.amount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}`,
   ];
   if (data.fee > 0) lines.push(`Fee: NGN ${data.fee.toFixed(2)}`);
   if (data.customerName) lines.push(`Customer: ${data.customerName}`);
-  lines.push(`Agent: ${data.agentName} (${data.agentCode})`);
+  lines.push(`Agent: ${data.agentName} (${data.agentId})`);
   lines.push(
     `Time: ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })}`
   );
-  lines.push(`Powered by 54Link Agency Banking`);
+  lines.push(`Powered by InsurePortal Insurance`);
   return lines.join("\n");
 }

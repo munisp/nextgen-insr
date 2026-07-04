@@ -1,5 +1,5 @@
 /**
- * AdminPanel — 54Link Supervisor / Back-Office Dashboard
+ * AdminPanel — InsurePortal Supervisor / Back-Office Dashboard
  * Route: /admin  (protected — requires agent.role === "admin" OR Manus OAuth admin role)
  *
  * Sections:
@@ -186,7 +186,7 @@ function FraudFeedTab() {
                 <span>
                   Agent:{" "}
                   <span className="text-white font-semibold">
-                    {evt.agentCode}
+                    {evt.agentId}
                   </span>
                 </span>
                 <span>
@@ -347,7 +347,7 @@ function AuditLogTab() {
                         className="px-3 py-2 font-semibold text-white"
                         style={{ fontFamily: DISP }}
                       >
-                        {log.agentCode}
+                        {log.agentId}
                       </td>
                       <td className="px-3 py-2" style={{ fontFamily: DISP }}>
                         <span
@@ -474,7 +474,7 @@ function AnalyticsTab() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `54link-transactions-${fromDate}-to-${toDate}.csv`;
+      a.download = `insureportal-transactions-${fromDate}-to-${toDate}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1159,7 +1159,7 @@ function SettlementHistoryTab() {
                       className="px-3 py-2 font-bold"
                       style={{ color: BLUE, fontFamily: MONO }}
                     >
-                      {row.agentCode}
+                      {row.agentId}
                     </td>
                     <td
                       className="px-3 py-2 text-gray-300"
@@ -1578,7 +1578,7 @@ export default function AdminPanel() {
               className="text-sm font-black text-white"
               style={{ fontFamily: DISP }}
             >
-              54Link Admin
+              InsurePortal Admin
             </div>
             <div className="text-xs text-gray-500" style={{ fontFamily: MONO }}>
               Supervisor Dashboard
@@ -1600,7 +1600,7 @@ export default function AdminPanel() {
           </div>
           <div className="text-xs text-gray-500" style={{ fontFamily: DISP }}>
             Logged in as{" "}
-            <span className="text-white font-semibold">{agent.agentCode}</span>
+            <span className="text-white font-semibold">{agent.agentId}</span>
           </div>
           <a
             href="/"

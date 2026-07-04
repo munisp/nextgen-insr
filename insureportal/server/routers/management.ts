@@ -187,7 +187,7 @@ export const managementRouter = router({
     create: adminProcedure
       .input(
         z.object({
-          agentCode: z.string(),
+          agentId: z.string(),
           name: z.string(),
           phone: z.string(),
           email: z.string().email().optional(),
@@ -308,7 +308,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [agent] = await db
             .select({
-              floatBalance: agents.floatBalance,
+              premiumReserve: agents.premiumReserve,
               commissionBalance: agents.commissionBalance,
               loyaltyPoints: agents.loyaltyPoints,
             })

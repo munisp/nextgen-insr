@@ -31,7 +31,7 @@ export const fraudRouter = router({
         const filtered = search
           ? alerts.filter(
               (a: any) =>
-                (a.agentCode ?? "").toLowerCase().includes(search) ||
+                (a.agentId ?? "").toLowerCase().includes(search) ||
                 (a.customerName ?? "").toLowerCase().includes(search) ||
                 (a.reason ?? "").toLowerCase().includes(search)
             )
@@ -82,7 +82,7 @@ export const fraudRouter = router({
         await updateFraudAlertStatus(input.id, input.status);
         await writeAuditLog({
           agentId: agent?.id,
-          agentCode: agent?.agentCode,
+          agentId: agent?.agentId,
           action: `FRAUD_ALERT_${input.status.toUpperCase()}`,
           resource: "fraud_alert",
           resourceId: String(input.id),
@@ -475,7 +475,7 @@ export const fraudRouter = router({
         .returning({ id: fraudRules.id });
       await writeAuditLog({
         agentId: agent.id,
-        agentCode: agent.agentCode,
+        agentId: agent.agentId,
         action: "FRAUD_RULES_SEEDED",
         resource: "fraud_rules",
         resourceId: "default",

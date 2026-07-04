@@ -517,7 +517,7 @@ export const lakehouseRouter = router({
             agents: Array<{
               id: number;
               name: string;
-              agentCode: string;
+              agentId: string;
               distanceMetres: number;
               tier: string;
             }>;
@@ -535,9 +535,9 @@ export const lakehouseRouter = router({
           .select({
             id: agents.id,
             name: agents.name,
-            agentCode: agents.agentCode,
+            agentId: agents.agentId,
             tier: agents.tier,
-            floatBalance: agents.floatBalance,
+            premiumReserve: agents.premiumReserve,
             lat: deviceLocations.latitude,
             lon: deviceLocations.longitude,
           })
@@ -551,9 +551,9 @@ export const lakehouseRouter = router({
           .map((a: any) => ({
             id: a.id,
             name: a.name,
-            agentCode: a.agentCode,
+            agentId: a.agentId,
             tier: a.tier,
-            floatBalance: a.floatBalance,
+            premiumReserve: a.premiumReserve,
             distanceMetres: Math.round(
               haversineMetres(
                 input.latitude,
@@ -638,7 +638,7 @@ export const lakehouseRouter = router({
             rows: Array<{
               summaryDate: string;
               agentId: number;
-              agentCode: string;
+              agentId: string;
               agentTier: string;
               txCount: number;
               txVolume: number;
@@ -669,7 +669,7 @@ export const lakehouseRouter = router({
         const rows = await db
           .select({
             agentId: transactions.agentId,
-            agentCode: agents.agentCode,
+            agentId: agents.agentId,
             agentTier: agents.tier,
             txCount: sql<number>`count(*)::int`,
             txVolume: sql<number>`sum(${transactions.amount})::float`,
@@ -690,7 +690,7 @@ export const lakehouseRouter = router({
                 : [])
             )
           )
-          .groupBy(transactions.agentId, agents.agentCode, agents.tier)
+          .groupBy(transactions.agentId, agents.agentId, agents.tier)
           .orderBy(desc(sql`sum(${transactions.amount})`))
           .limit(input.limit);
 
@@ -698,7 +698,7 @@ export const lakehouseRouter = router({
           rows: rows.map((r: any) => ({
             summaryDate: date,
             agentId: r.agentId ?? 0,
-            agentCode: r.agentCode,
+            agentId: r.agentId,
             agentTier: r.agentTier ?? "bronze",
             txCount: r.txCount ?? 0,
             txVolume: r.txVolume ?? 0,

@@ -146,7 +146,7 @@ export const kybRouter = router({
 
         await writeAuditLog({
           agentId: 0,
-          agentCode: "system",
+          agentId: "system",
           action: "kyb_verification_started",
           resource: "kyb_verification",
           resourceId: result.id || "unknown",
@@ -354,7 +354,7 @@ export const kybRouter = router({
 
         await writeAuditLog({
           agentId: 0,
-          agentCode: "system",
+          agentId: "system",
           action: "kyb_verification_approved",
           resource: "kyb_verification",
           resourceId: input.verification_id,
@@ -398,7 +398,7 @@ export const kybRouter = router({
 
         await writeAuditLog({
           agentId: 0,
-          agentCode: "system",
+          agentId: "system",
           action: "kyb_verification_rejected",
           resource: "kyb_verification",
           resourceId: input.verification_id,

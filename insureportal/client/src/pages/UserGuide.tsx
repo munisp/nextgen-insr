@@ -95,12 +95,12 @@ const guideSections: GuideSection[] = [
         id: "first-login",
         title: "First Login & Setup",
         content:
-          "To access the platform, navigate to the login page and enter your agent code and PIN provided by your supervisor. On first login, you'll be prompted to change your PIN for security.",
+          "To access the platform, navigate to the login page and enter your agent ID and PIN provided by your supervisor. On first login, you'll be prompted to change your PIN for security.",
         steps: [
           {
             title: "Enter Agent Code",
             description:
-              "Type your assigned agent code (e.g., AGT001) in the Agent Code field",
+              "Type your assigned agent ID (e.g., AGT001) in the Agent Code field",
           },
           {
             title: "Enter PIN",
@@ -302,7 +302,7 @@ const guideSections: GuideSection[] = [
         id: "float-management",
         title: "Float Management",
         content:
-          "Float is the working capital agents use to settle premium collections. Monitor your float balance on the Agent Dashboard. Request top-ups from the Agent Portal when running low.\n\nBest practices:\n- Maintain at least 20% of your daily average as buffer\n- Request top-ups before your balance drops below ₦50,000\n- Reconcile your float daily against premium collection records\n- Report any discrepancies immediately to your supervisor",
+          "Float is the working capital agents use to settle premium collections. Monitor your premium reserve on the Agent Dashboard. Request top-ups from the Agent Portal when running low.\n\nBest practices:\n- Maintain at least 20% of your daily average as buffer\n- Request top-ups before your balance drops below ₦50,000\n- Reconcile your float daily against premium collection records\n- Report any discrepancies immediately to your supervisor",
         relatedPage: "/agent",
         tags: ["float", "balance", "top-up"],
       },
@@ -453,7 +453,7 @@ const guideSections: GuideSection[] = [
         id: "common-issues",
         title: "Common Issues",
         content:
-          "Frequently encountered problems and solutions:\n\n**Transaction Timeout**: Check your internet connection. If the issue persists, check System Health for service outages. The transaction may have been processed — verify in Transaction History before retrying.\n\n**Insufficient Float**: Request a float top-up from the Agent Portal. Emergency top-ups can be requested from your supervisor.\n\n**Login Failed**: Verify your agent code and PIN. After 5 failed attempts, your account is locked for 30 minutes. Contact your supervisor for PIN reset.\n\n**Receipt Not Printing**: Check printer connection and paper. You can reprint receipts from Transaction History.\n\n**Slow Performance**: Clear your browser cache, close unnecessary tabs, and ensure a stable internet connection.",
+          "Frequently encountered problems and solutions:\n\n**Transaction Timeout**: Check your internet connection. If the issue persists, check System Health for service outages. The transaction may have been processed — verify in Transaction History before retrying.\n\n**Insufficient Float**: Request a float top-up from the Agent Portal. Emergency top-ups can be requested from your supervisor.\n\n**Login Failed**: Verify your agent ID and PIN. After 5 failed attempts, your account is locked for 30 minutes. Contact your supervisor for PIN reset.\n\n**Receipt Not Printing**: Check printer connection and paper. You can reprint receipts from Transaction History.\n\n**Slow Performance**: Clear your browser cache, close unnecessary tabs, and ensure a stable internet connection.",
         tags: ["troubleshooting", "issues", "problems"],
       },
       {

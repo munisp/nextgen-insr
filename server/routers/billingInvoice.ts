@@ -393,7 +393,7 @@ export const billingInvoiceRouter = router({
             metadata: {
               tenant_id: String(input.tenantId),
               client_id: input.clientId,
-              platform: "54link",
+              platform: "insureportal",
             },
           });
         }
@@ -411,7 +411,7 @@ export const billingInvoiceRouter = router({
             period_end: input.periodEnd,
             user_id: String(ctx.user.id),
           },
-          description: `54Link billing for period ${input.periodStart} to ${input.periodEnd}`,
+          description: `InsurePortal billing for period ${input.periodStart} to ${input.periodEnd}`,
         });
         for (const item of input.lineItems) {
           await getStripe().invoiceItems.create({
@@ -520,7 +520,7 @@ export const billingInvoiceRouter = router({
               price_data: {
                 currency: input.currency,
                 product_data: {
-                  name: `54Link Invoice: ${input.invoiceId}`,
+                  name: `InsurePortal Invoice: ${input.invoiceId}`,
                   description: input.description,
                 },
                 unit_amount: input.amount,

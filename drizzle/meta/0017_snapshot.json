@@ -74,8 +74,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true
@@ -138,8 +138,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "floatBalance": {
-          "name": "floatBalance",
+        "premiumReserve": {
+          "name": "premiumReserve",
           "type": "numeric(15, 2)",
           "primaryKey": false,
           "notNull": true,
@@ -263,11 +263,11 @@
         }
       },
       "indexes": {
-        "agents_agentCode_idx": {
-          "name": "agents_agentCode_idx",
+        "agents_agentId_idx": {
+          "name": "agents_agentId_idx",
           "columns": [
             {
-              "expression": "agentCode",
+              "expression": "agentId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -342,10 +342,10 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "agents_agentCode_unique": {
-          "name": "agents_agentCode_unique",
+        "agents_agentId_unique": {
+          "name": "agents_agentId_unique",
           "nullsNotDistinct": false,
-          "columns": ["agentCode"]
+          "columns": ["agentId"]
         }
       },
       "policies": {},
@@ -699,8 +699,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": false
@@ -4719,7 +4719,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'mqtt://broker.54link.io:1883'"
+          "default": "'mqtt://broker.insureportal.io:1883'"
         },
         "port": {
           "name": "port",
@@ -4754,7 +4754,7 @@
           "type": "varchar(128)",
           "primaryKey": false,
           "notNull": false,
-          "default": "'54link-fluvio-bridge'"
+          "default": "'insureportal-fluvio-bridge'"
         },
         "topicMappings": {
           "name": "topicMappings",

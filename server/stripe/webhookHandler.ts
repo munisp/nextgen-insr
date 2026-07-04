@@ -1,5 +1,5 @@
 /**
- * Stripe Webhook Handler — 54Link POS Shell
+ * Stripe Webhook Handler — InsurePortal POS Shell
  *
  * Handles incoming Stripe webhook events for payment confirmations,
  * subscription updates, invoice processing, dunning workflows,

@@ -20,7 +20,7 @@ function normaliseSseFraudAlert(raw: Record<string, unknown>): FraudEvent {
     severity: (raw.severity as FraudEvent["severity"]) ?? "medium",
     reason: String(raw.reason ?? ""),
     amount: Number(raw.amount ?? 0),
-    agentCode: String(raw.agentId ?? ""),
+    agentId: String(raw.agentId ?? ""),
     customerName: raw.customerName ? String(raw.customerName) : "",
     timestamp: raw.createdAt
       ? new Date(raw.createdAt as string).toISOString()
@@ -152,7 +152,7 @@ export function useChatSocket(sessionRef: string | null) {
 }
 
 // ─── Terminal heartbeat socket ────────────────────────────────────────────────
-export function useTerminalSocket(agentCode?: string) {
+export function useTerminalSocket(agentId?: string) {
   const setOnline = usePosStore(s => s.setOnline);
   const addFraudEvent = usePosStore(s => s.addFraudEvent);
   const socketRef = useRef<Socket | null>(null);
@@ -169,8 +169,8 @@ export function useTerminalSocket(agentCode?: string) {
     socket.on("connect", () => {
       setOnline(true);
       // Register agent room so server can target fraud alerts to this terminal
-      if (agentCode) {
-        socket.emit("terminal:register", agentCode);
+      if (agentId) {
+        socket.emit("terminal:register", agentId);
       }
     });
 
@@ -198,7 +198,7 @@ export function useTerminalSocket(agentCode?: string) {
             | "critical",
           reason: alert.reason,
           amount: alert.amount,
-          agentCode: agentCode ?? "",
+          agentId: agentId ?? "",
           customerName: "",
           timestamp: alert.timestamp,
           fraudScore: "0.90",
@@ -277,7 +277,7 @@ export function useTerminalSocket(agentCode?: string) {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [setOnline, addFraudEvent, agentCode]);
+  }, [setOnline, addFraudEvent, agentId]);
 
   return socketRef;
 }

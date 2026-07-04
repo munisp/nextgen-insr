@@ -17,7 +17,7 @@ const REFERRAL_BONUS_CASH = 1000; // ₦1,000
 export const referralsRouter = router({
   // ── Generate a referral code for an agent ────────────────────────────────
   generateCode: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
@@ -26,7 +26,7 @@ export const referralsRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
         if (!agent)
           throw new TRPCError({
@@ -58,7 +58,7 @@ export const referralsRouter = router({
           .insert(referrals)
           .values({
             referrerAgentId: agent.id,
-            referrerCode: input.agentCode,
+            referrerCode: input.agentId,
             referralCode,
             bonusPoints: REFERRAL_BONUS_POINTS,
             bonusCash: String(REFERRAL_BONUS_CASH),
@@ -121,7 +121,7 @@ export const referralsRouter = router({
         const [referee] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.refereeAgentCode))
+          .where(eq(agents.agentId, input.refereeAgentCode))
           .limit(1);
         if (!referee)
           throw new TRPCError({
@@ -223,7 +223,7 @@ export const referralsRouter = router({
 
   // ── Get referral stats for an agent ──────────────────────────────────────
   agentStats: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .query(async ({ input }) => {
       try {
         const db = (await getDb())!;
@@ -239,7 +239,7 @@ export const referralsRouter = router({
         const rows = await db
           .select()
           .from(referrals)
-          .where(eq(referrals.referrerCode, input.agentCode));
+          .where(eq(referrals.referrerCode, input.agentId));
 
         const total = rows.length;
         const pending = rows.filter((r: any) => r.status === "pending").length;

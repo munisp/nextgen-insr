@@ -451,10 +451,10 @@ const navGroups: NavGroup[] = [
       { icon: Shield, label: "Audit Trail", path: "/audit-trail" },
     ],
   },
-  // ── 12. Nigerian Agency Banking ──
+  // ── 12. Nigerian Insurance ──
   {
-    id: "agency-banking",
-    label: "Agency Banking",
+    id: "insurance",
+    label: "Insurance",
     icon: Banknote,
     items: [
       { icon: Phone, label: "USSD Gateway", path: "/ussd-gateway" },

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Deep Health Check & Circuit Breaker — 54Link Agency Banking Platform
+ * Deep Health Check & Circuit Breaker — InsurePortal Insurance Platform
  *
  * F13: Health check with deep dependency checks (DB, Redis, TB sidecar)
  * F14: Circuit breaker pattern for external services
