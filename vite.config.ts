@@ -239,8 +239,8 @@ const plugins = [
       type: "module",
     },
     manifest: {
-      name: "54Link POS Shell — Insurance Agency Banking Platform",
-      short_name: "54Link POS",
+      name: "InsurePortal — Insurance Agency Banking Platform",
+      short_name: "InsurePortal",
       description:
         "Comprehensive Insurance Management Platform for the Nigerian Market",
       theme_color: "#3b82f6",
@@ -338,14 +338,14 @@ const plugins = [
           sizes: "1280x720",
           type: "image/png",
           form_factor: "wide",
-          label: "54Link POS Dashboard",
+          label: "InsurePortal Dashboard",
         },
         {
           src: "/screenshot-narrow.png",
           sizes: "390x844",
           type: "image/png",
           form_factor: "narrow",
-          label: "54Link POS Mobile",
+          label: "InsurePortal Mobile",
         },
       ],
       related_applications: [],
