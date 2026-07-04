@@ -1,4 +1,4 @@
-// TypeScript enabled — Sprint 96 security audit
+// @ts-check
 /**
  * Sprint 9: SMS Notification Service
  *
@@ -6,7 +6,7 @@
  *   1. Twilio (primary) — global coverage, reliable delivery
  *   2. Africa's Talking (secondary) — optimized for African markets
  *   3. Termii (tertiary) — existing integration for Nigerian numbers
- *   4. Console (dev fallback) — logs to stdout
+ *   4. Console (dev fallback) — logs to structured logger
  *
  * Features:
  *   - Automatic failover between providers
@@ -26,6 +26,7 @@
  *   TERMII_API_KEY         — Termii API key (existing)
  *   TERMII_SENDER_ID       — Termii sender ID (default: "54Link")
  */
+import { logger } from "../_core/logger";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -287,8 +288,9 @@ async function sendViaTermii(msg: SmsMessage): Promise<{ messageId: string }> {
 }
 
 async function sendViaConsole(msg: SmsMessage): Promise<{ messageId: string }> {
-  console.log(
-    `[SmsService/DEV] Would send SMS:\n  To: ${msg.to}\n  Body: ${msg.body.substring(0, 100)}${msg.body.length > 100 ? "..." : ""}`
+  logger.info(
+    { service: "sms", provider: "console", to: msg.to, bodyPreview: msg.body.substring(0, 100) },
+    `[SmsService/DEV] Would send SMS to ${msg.to}`
   );
   return { messageId: `sms_console_${Date.now()}` };
 }
@@ -350,7 +352,8 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
 
   for (const provider of sortedProviders) {
     if (!checkProviderRateLimit(provider)) {
-      console.warn(
+      logger.info(
+        { service: "sms", provider: provider.name },
         `[SmsService] ${provider.name} rate limited, trying next provider`
       );
       continue;
@@ -374,7 +377,8 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
       };
       logDelivery(logEntry);
 
-      console.log(
+      logger.info(
+        { service: "sms", provider: provider.name, messageId: result.messageId },
         `[SmsService] Sent via ${provider.name}: ${result.messageId}`
       );
       return {
@@ -385,8 +389,10 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
         timestamp: new Date(),
       };
     } catch (err) {
-      console.warn(
-        `[SmsService] ${provider.name} failed: ${(err as Error).message}, trying next`
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { service: "sms", provider: provider.name, error: message },
+        `[SmsService] ${provider.name} failed: ${message}, trying next`
       );
       continue;
     }

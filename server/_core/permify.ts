@@ -70,7 +70,7 @@ export async function permifyCheck(params: {
 
     if (!res.ok) {
       logger.warn(
-        `[Permify] Check failed: ${res.status} — falling back to deny`
+        `[Permify] Check failed: ${res.status} — denying access`
       );
       return false;
     }
@@ -78,13 +78,15 @@ export async function permifyCheck(params: {
     const json = (await res.json()) as PermifyCheckResponse;
     return json.can === "CHECK_RESULT_ALLOWED";
   } catch (err) {
-    // Fail-open: when Permify is unavailable (e.g. dev without Docker), allow access.
-    // In production, Permify is always running via docker-compose.production.yml.
+    // Fail-closed: when Permify is unavailable, deny access.
+    // This is the safe default — if authorization is down, access is denied.
+    // In development, use the role-based fallback in the caller instead.
+    const message = err instanceof Error ? err.message : String(err);
     logger.warn(
-      { err },
-      "[Permify] Service unavailable — failing open (allow)"
+      { err: message },
+      "[Permify] Service unavailable — denying access (fail-closed)"
     );
-    return true;
+    return false;
   }
 }
 

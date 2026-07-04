@@ -2,11 +2,182 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev, devin/**]
   pull_request:
     branches: [main]
 
 jobs:
+  # ── TypeScript/Node.js Quality Checks (NEW) ──────────────────────────
+  node-quality:
+    name: Node.js Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint || true
+
+      - name: Run TypeScript type check
+        run: pnpm type-check || true
+
+      - name: Check for hardcoded credentials
+        run: |
+          echo "Checking for hardcoded credentials..."
+          if grep -rn "54link-.*-dev-\|54link.*dev_\|TLtest_\|change-me\|change_in_prod" \
+            --include="*.ts" --include="*.js" server/ | grep -v ".test." | grep -v "node_modules"; then
+            echo "ERROR: Found hardcoded default credentials!"
+            echo "Please use requireEnv() for sensitive values in server/_core/env.ts"
+            exit 1
+          fi
+          echo "No hardcoded credentials found."
+
+      - name: Check for console.log in production code
+        run: |
+          echo "Checking for console.log in server code..."
+          count=$(grep -rn "console\.log" server/ --include="*.ts" | grep -v "\.test\." | grep -v "node_modules" | wc -l)
+          if [ "$count" -gt 0 ]; then
+            echo "WARNING: Found $count console.log statements in server code"
+            echo "Please replace with structured logger calls"
+            echo "Use: import { logger } from './_core/logger'"
+          fi
+
+      - name: Analyze router file sizes
+        run: |
+          echo "=== Router File Size Analysis ==="
+          echo "Total router files:"
+          find server/routers -name "*.ts" | wc -l
+          echo ""
+          echo "Largest router files (>10KB):"
+          find server/routers -name "*.ts" -size +10k -exec ls -lh {} \; | awk '{print $5, $9}' | sort -rh | head -10
+          echo ""
+          echo "Router file size distribution:"
+          echo "  <1KB:   $(find server/routers -name '*.ts' -size -1k | wc -l)"
+          echo "  1-10KB: $(find server/routers -name '*.ts' -size +1k -size -10k | wc -l)"
+          echo "  10-50KB: $(find server/routers -name '*.ts' -size +10k -size -50k | wc -l)"
+          echo "  >50KB:  $(find server/routers -name '*.ts' -size +50k | wc -l)"
+          echo ""
+          echo "⚠️  Recommendation: Consider consolidating routers larger than 10KB"
+          echo "   into domain-organized files (max ~500 lines per file)"
+          echo "   See server/lib/routerConventions.ts for guidelines"
+
+  node-tests:
+    name: Node.js Tests
+    runs-on: ubuntu-latest
+    needs: node-quality
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        env:
+          POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+        run: pnpm test -- --reporter=verbose --coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+  node-build:
+    name: Node.js Build
+    runs-on: ubuntu-latest
+    needs: [node-quality, node-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '9'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build project
+        run: pnpm build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: dist/
+          retention-days: 7
+
+  # ── Security Scanning (NEW) ────────────────────────────────────────
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for secrets with TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified --fail
+
+      - name: Check for sensitive files
+        run: |
+          echo "Checking for sensitive files..."
+          if [ -f ".env" ] || [ -f ".env.local" ] || [ -f ".env.production" ]; then
+            echo "ERROR: Found .env files in repository!"
+            exit 1
+          fi
+          echo "No sensitive files found."
+
+  # ── Existing Jobs Below ────────────────────────────────────────────
   go-build:
     name: Go Build & Vet
     runs-on: ubuntu-latest

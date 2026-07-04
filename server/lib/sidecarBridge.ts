@@ -1,4 +1,4 @@
-// TypeScript enabled — Sprint 96 security audit
+// @ts-check
 /**
  * sidecarBridge.ts — Unified client for Rust, Go, and Python sidecars.
  *
@@ -10,6 +10,7 @@
  *   Go    → GO_LEDGER_URL    (default http://localhost:9200)
  *   Python → PYTHON_ML_URL   (default http://localhost:9300)
  */
+import { logger } from "../_core/logger";
 
 const RUST_URL = process.env.RUST_BRIDGE_URL ?? "http://localhost:9100";
 const GO_URL = process.env.GO_LEDGER_URL ?? "http://localhost:9200";
@@ -17,7 +18,7 @@ const PYTHON_URL = process.env.PYTHON_ML_URL ?? "http://localhost:9300";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function sidecarPost<T = any>(
+async function sidecarPost<T>(
   baseUrl: string,
   path: string,
   body: unknown,
@@ -32,15 +33,17 @@ async function sidecarPost<T = any>(
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return (await res.json()) as T;
-  } catch (err: any) {
-    console.warn(
-      `[sidecarBridge] ${baseUrl}${path} unreachable: ${err.message}`
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(
+      { service: "sidecar", baseUrl, path, error: message },
+      `[sidecarBridge] ${baseUrl}${path} unreachable: ${message}`
     );
     return fallback;
   }
 }
 
-async function sidecarGet<T = any>(
+async function sidecarGet<T>(
   baseUrl: string,
   path: string,
   fallback: T
@@ -51,9 +54,11 @@ async function sidecarGet<T = any>(
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return (await res.json()) as T;
-  } catch (err: any) {
-    console.warn(
-      `[sidecarBridge] ${baseUrl}${path} unreachable: ${err.message}`
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(
+      { service: "sidecar", baseUrl, path, error: message },
+      `[sidecarBridge] ${baseUrl}${path} unreachable: ${message}`
     );
     return fallback;
   }

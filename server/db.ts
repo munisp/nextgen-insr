@@ -1,9 +1,14 @@
 // @ts-check
-// TypeScript enabled — Sprint 96 security audit
-import { drizzle } from "drizzle-orm/node-postgres";
+/**
+ * Database connection and query helpers
+ * Uses Drizzle ORM with PostgreSQL connection pooling.
+ * Provides noop fallback for environments without a database URL (tests).
+ */
+import { drizzle, type DrizzleQueryResult, type PostgresTransaction } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import type { NodePgDatabase, NodePgQueryResultHKT, NodePgTransaction } from "drizzle-orm/node-postgres";
 import { eq, desc, and, isNull, lt, gt } from "drizzle-orm";
-import { logger } from './_core/logger';
+import { logger } from "./_core/logger";
 import {
   agents,
   users,
@@ -43,49 +48,67 @@ const _noopRow = {
   max: 0,
 };
 
-function makeNoopChain(): any {
-  const handler: ProxyHandler<any> = {
-    get(_target, prop) {
+/**
+ * Noop DB proxy — returns empty results for any query method.
+ * Used as a safe fallback when no database URL is configured (tests/dev).
+ */
+interface NoopChain {
+  [key: string]: NoopChain | Array<{ total: number; count: number; value: number; avg: number; sum: number; min: number; max: number }> | number | Generator<{ total: number; count: number; value: number; avg: number; sum: number; min: number; max: number }, void, unknown> | (() => NoopChain);
+  then?: (fn: (rows: { total: number }[]) => Promise<{ total: number }[]>) => Promise<{ total: number }[]>;
+  _isNoop?: boolean;
+  [key: number]: unknown;
+}
+
+function makeNoopChain(): NoopChain {
+  const handler: ProxyHandler<NoopChain> = {
+    get(_target, prop: string | number) {
+      const propStr = String(prop);
       if (prop === "then")
-        return (fn: any) => Promise.resolve([_noopRow]).then(fn);
+        return (fn: (rows: { total: number }[]) => Promise<{ total: number }[]>) => Promise.resolve([{ total: 0 }]).then(fn);
       if (prop === Symbol.iterator)
-        return function* () {
-          yield _noopRow;
+        return function* (): Generator<{ total: number; count: number; value: number; avg: number; sum: number; min: number; max: number }, void, unknown> {
+          yield { total: 0, count: 0, value: 0, avg: 0, sum: 0, min: 0, max: 0 };
         };
       if (prop === "length") return 1;
       if (
-        prop === "map" ||
-        prop === "filter" ||
-        prop === "forEach" ||
-        prop === "reduce" ||
-        prop === "some" ||
-        prop === "every" ||
-        prop === "find"
-      )
-        return [][prop as any].bind([_noopRow]);
-      if (prop === 0 || prop === "0") return _noopRow;
+        propStr === "map" ||
+        propStr === "filter" ||
+        propStr === "forEach" ||
+        propStr === "reduce" ||
+        propStr === "some" ||
+        propStr === "every" ||
+        propStr === "find"
+      ) {
+        const arr = [{ total: 0, count: 0, value: 0, avg: 0, sum: 0, min: 0, max: 0 }];
+        const method = arr[propStr as keyof typeof arr];
+        if (typeof method === "function") {
+          return method.bind(arr);
+        }
+      }
+      if (prop === 0 || propStr === "0") return { total: 0, count: 0, value: 0, avg: 0, sum: 0, min: 0, max: 0 };
       // Any property access returns a function that returns another chainable proxy
-      return (..._args: any[]) => makeNoopChain();
+      return () => makeNoopChain();
     },
   };
-  return new Proxy(function () {}, handler);
+  return new Proxy(function noop() {}, handler) as NoopChain;
 }
 
-const _noopChain: any = new Proxy(
+const _noopChain: NoopChain = new Proxy(
   {},
   {
-    get(_target, prop) {
+    get(_target, prop: string | number) {
+      const propStr = String(prop);
       if (prop === "then") return undefined; // db itself is NOT thenable
-      if (prop === "_isNoop") return true; // marker for in-memory fallback checks
+      if (propStr === "_isNoop") return true; // marker for in-memory fallback checks
       if (prop === Symbol.iterator)
-        return function* () {
-          yield _noopRow;
+        return function* (): Generator<{ total: number; count: number; value: number; avg: number; sum: number; min: number; max: number }, void, unknown> {
+          yield { total: 0, count: 0, value: 0, avg: 0, sum: 0, min: 0, max: 0 };
         };
       // Any method on db (select, insert, update, delete, etc.) returns a chainable
-      return (..._args: any[]) => makeNoopChain();
+      return () => makeNoopChain();
     },
   }
-);
+) as unknown as NoopChain;
 
 export async function getDb() {
   if (_db && _dbVerified) return _db;
@@ -106,14 +129,17 @@ export async function getDb() {
     );
     _pool = new Pool({
       connectionString: url,
-      ssl: false,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
       max: poolSize,
       min: Math.max(2, Math.floor(poolSize / 4)),
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
       maxUses: 7500,
       statement_timeout: 30_000,
-    } as any);
+      // Connection lifecycle management
+      maxLifetimeSeconds: 3600, // Rotate connections every hour
+      reapIntervalMillis: 1000, // Check every second for dead connections
+    });
     _db = drizzle(_pool);
   }
   // Verify connectivity on first use
@@ -122,8 +148,9 @@ export async function getDb() {
       const client = await _pool!.connect();
       client.release();
       _dbVerified = true;
-    } catch (e: any) {
-      logger.warn(`[DB] Connection failed: ${e.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(`[DB] Connection failed: ${message}`);
       _db = null;
       _pool = null;
       return _noopChain;
@@ -339,7 +366,7 @@ export async function updateTransactionStatus(
   if (!db) return;
   await db
     .update(transactions)
-    .set({ status: status as any, failureReason: notes ?? null })
+    .set({ status: status as "pending" | "completed" | "failed" | "reversed" | "cancelled", failureReason: notes ?? null })
     .where(eq(transactions.id, id));
 }
 
@@ -528,13 +555,16 @@ export async function getAuditLog(agentId?: number, limit = 50, offset = 0) {
  * Soft-deletes a row by setting its deletedAt timestamp.
  * Use this instead of hard-deletes for auditable entities.
  */
-export async function softDelete(table: any, id: number): Promise<void> {
+export async function softDelete(
+  table: { id: number; deletedAt?: Date | null },
+  id: number
+): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db
     .update(table)
-    .set({ deletedAt: new Date() } as any)
-    .where(eq((table as any).id, id));
+    .set({ deletedAt: new Date() })
+    .where(eq(table.id, id));
 }
 
 /**
@@ -546,5 +576,9 @@ export async function withTransaction<T>(
 ): Promise<T> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return (db as any).transaction(fn);
+  const transaction = db.transaction;
+  if (typeof transaction !== "function") {
+    throw new Error("Database does not support transactions");
+  }
+  return transaction.call(db, fn);
 }

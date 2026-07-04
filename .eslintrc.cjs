@@ -18,8 +18,17 @@ module.exports = {
     es2022: true,
   },
   rules: {
-    // TypeScript rules
-    "@typescript-eslint/no-explicit-any": "warn",
+    // TypeScript rules — STRICT enforcement
+    "@typescript-eslint/no-explicit-any": "error",
+    "@typescript-eslint/no-unsafe-assignment": "error",
+    "@typescript-eslint/no-unsafe-member-access": "error",
+    "@typescript-eslint/no-unsafe-call": "error",
+    "@typescript-eslint/no-unsafe-return": "error",
+    "@typescript-eslint/no-unsafe-argument": "error",
+    "@typescript-eslint/no-implied-eval": "error",
+    "@typescript-eslint/require-await": "error",
+    "@typescript-eslint/await-thenable": "error",
+    "@typescript-eslint/no-floating-promises": "error",
     "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     "@typescript-eslint/consistent-type-imports": "error",
     
@@ -36,7 +45,7 @@ module.exports = {
       },
     ],
     
-    // Restrict console.log in production
+    // Restrict console.log in production — all console methods banned in server/
     "no-console": [
       "error",
       {
