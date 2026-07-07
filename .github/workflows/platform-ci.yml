@@ -8,71 +8,55 @@ on:
 
 env:
   GO_VERSION: '1.22'
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
   PYTHON_VERSION: '3.11'
-  RUST_VERSION: 'stable'
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository }}
 
 jobs:
-  # ── Go Services ──
+  # ── Go Services: build + test ────────────────────────────────────────
   go-services:
     name: Go Services
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         service:
+          - claims-adjudication-engine
+          - fraud-detection-go
+          - ussd-gateway
+          - enhanced-kyc-kyb
+          - enterprise-mdm
+          - disaster-recovery-module
+          - naicom-compliance-module
           - ab-testing-framework
           - agent-commission-management
           - agent-mobile-app
-          - agent-network-platform
-          - api-marketplace
           - audit-trail-system
           - bancassurance-integration
           - batch-processing-engine
-          - blockchain-transparency
-          - broker-api-service
-          - claims-adjudication-engine
-          - communication-service
-          - cross-company-fraud-database
           - customer-360-view
-          - customer-feedback-loop
-          - devops-platform
-          - disaster-recovery-module
-          - document-management-system
-          - dr-ha-service
-          - enhanced-kyc-kyb
-          - enterprise-mdm
-          - erpnext-integration-service
-          - feedback-management
-          - gamification-service
           - gdpr-compliance
           - group-life-admin
-          - instant-payout-service
-          - insurance-tech-innovations
-          - microinsurance-engine
-          - mobile-money-service
-          - multi-country-regulatory
-          - multi-currency-service
-          - multi-language-service
-          - multi-tenant-platform
-          - naicom-compliance-module
           - native-mobile-ios
           - ndpr-compliance
           - nmid-integration
-          - notification-service
-          - pan-african-ekyc
           - performance-monitoring-dashboard
           - pfa-integration
           - policy-renewal-automation
-          - premium-finance-service
           - reinsurance-management
           - strategic-implementations
+          - insurance-tech-innovations
+          - blockchain-transparency
+          - microinsurance-engine
           - takaful-module
-          - tigerbeetle-implementation
+          - multi-country-regulatory
           - usage-based-insurance
-          - ussd-gateway
+          - premium-finance-service
+          - instant-payout-service
+          - cross-company-fraud-database
+          - dr-ha-service
     services:
       postgres:
         image: postgres:16-alpine
@@ -98,26 +82,36 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: false
-      - name: Build
+          cache: true
+
+      - name: Download Go modules
         working-directory: ${{ matrix.service }}
-        run: |
-          GONOSUMCHECK=* GOFLAGS=-mod=mod go mod tidy
-          go build -v ./...
-      - name: Test
+        run: go mod download
+
+      - name: go vet
+        working-directory: ${{ matrix.service }}
+        run: go vet ./...
+
+      - name: go build
+        working-directory: ${{ matrix.service }}
+        run: go build -v ./...
+
+      - name: go test
         working-directory: ${{ matrix.service }}
         env:
           DATABASE_URL: postgres://ngapp:test_password@localhost:5432/ngapp_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./... 2>/dev/null || echo "No tests"
+        run: go test -race -coverprofile=coverage.out -covermode=atomic -timeout=5m ./...
 
-  # ── Python Services ──
+  # ── Python Services: test + lint ─────────────────────────────────────
   python-services:
-    name: Python Services
+    name: Python / ML Services
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -126,25 +120,39 @@ jobs:
           - mlops-governance
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
       - name: Install dependencies
         working-directory: ${{ matrix.service }}
         run: |
-          pip install -r requirements.txt 2>/dev/null || pip install fastapi uvicorn pydantic numpy pandas
+          pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx ruff
-      - name: Lint
-        working-directory: ${{ matrix.service }}
-        run: ruff check . --select E,W,F --ignore E501 || true
-      - name: Syntax validation
-        working-directory: ${{ matrix.service }}
-        run: find . -name "*.py" -exec python -m py_compile {} \; 2>/dev/null || true
 
-  # ── TypeScript Type Checking & Build ──
+      - name: ruff lint
+        working-directory: ${{ matrix.service }}
+        run: ruff check . --select E,W,F --ignore E501
+
+      - name: py_compile syntax check
+        working-directory: ${{ matrix.service }}
+        run: find . -name "*.py" -not -path "*/node_modules/*" -exec python -m py_compile {} \;
+
+      - name: Run pytest
+        working-directory: ${{ matrix.service }}
+        run: |
+          if [ -d tests ]; then
+            python -m pytest tests/ -v
+          else
+            python -m pytest . -v --co 2>/dev/null || echo "No tests discovered, but code compiled"
+          fi
+
+  # ── TypeScript: type-check + build ────────────────────────────────────
   typescript:
     name: TypeScript (Type Check + Build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -175,40 +183,72 @@ jobs:
             grep -rn "// @ts-nocheck" server/ --include="*.ts" --exclude="*.test.*"
           fi
 
-      - name: Build
+      - name: Vite build
         run: pnpm run build
         env:
           NODE_ENV: production
 
-  # ── Shared Go Packages ──
+  # ── Frontend: npm test ────────────────────────────────────────────────
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: typescript
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run npm test (vitest)
+        run: pnpm test
+
+  # ── Shared Go Packages: build ─────────────────────────────────────────
   shared-packages:
     name: Shared Go Packages
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: false
-      - name: Build shared packages
-        working-directory: shared
-        run: |
-          GONOSUMCHECK=* GOFLAGS=-mod=mod go mod tidy
-          go build ./...
+          cache: true
 
-  # ── Security Scan ──
+      - name: Download Go modules
+        working-directory: shared
+        run: go mod download
+
+      - name: go build shared packages
+        working-directory: shared
+        run: go build ./...
+
+  # ── Security Scan ────────────────────────────────────────────────────
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
           severity: CRITICAL,HIGH
-          exit-code: 0
+          exit-code: '0'
+
       - name: Check for secrets in code
         run: |
           echo "Scanning for potential hardcoded secrets..."

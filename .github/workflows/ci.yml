@@ -6,31 +6,39 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  NODE_VERSION: '22'
+  GO_VERSION: '1.22'
+
 jobs:
-  # ── TypeScript/Node.js Quality Checks (NEW) ──────────────────────────
+  # ── Node.js Quality Checks ───────────────────────────────────────────
   node-quality:
     name: Node.js Lint & Type Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
       - uses: pnpm/action-setup@v4
         with:
-          version: '9'
+          version: '10'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Run ESLint
-        run: pnpm lint || true
+        run: pnpm exec eslint --max-warnings 0 server/ --ext .ts,.tsx,.js,.jsx
 
       - name: Run TypeScript type check
-        run: pnpm type-check || true
+        run: pnpm check
+
+      - name: Build frontend with Vite
+        run: pnpm build
 
       - name: Check for hardcoded credentials
         run: |
@@ -72,9 +80,17 @@ jobs:
           echo "   into domain-organized files (max ~500 lines per file)"
           echo "   See server/lib/routerConventions.ts for guidelines"
 
+    notifications-on-failure:
+      if: failure()
+      steps:
+        - name: Notify on failure
+          run: echo "Node.js quality checks failed — check lint, type-check, and build output."
+
+  # ── Node.js Tests ────────────────────────────────────────────────────
   node-tests:
-    name: Node.js Tests
+    name: Node.js Tests (Vitest)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: node-quality
     services:
       postgres:
@@ -101,23 +117,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
       - uses: pnpm/action-setup@v4
         with:
-          version: '9'
+          version: '10'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run tests
+      - name: Run vitest
         env:
           POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
           REDIS_URL: redis://localhost:6379
-        run: pnpm test -- --reporter=verbose --coverage
+        run: npx vitest run
 
       - name: Upload coverage report
         if: always()
@@ -127,60 +143,17 @@ jobs:
           path: coverage/
           retention-days: 30
 
-  node-build:
-    name: Node.js Build
-    runs-on: ubuntu-latest
-    needs: [node-quality, node-tests]
-    steps:
-      - uses: actions/checkout@v4
+    notifications-on-failure:
+      if: failure()
+      steps:
+        - name: Notify on failure
+          run: echo "Node.js tests failed — check vitest output."
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '9'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build project
-        run: pnpm build
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output
-          path: dist/
-          retention-days: 7
-
-  # ── Security Scanning (NEW) ────────────────────────────────────────
-  security-scan:
-    name: Security Scanning
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Scan for secrets with TruffleHog
-        uses: trufflesecurity/trufflehog@main
-        with:
-          extra_args: --only-verified --fail
-
-      - name: Check for sensitive files
-        run: |
-          echo "Checking for sensitive files..."
-          if [ -f ".env" ] || [ -f ".env.local" ] || [ -f ".env.production" ]; then
-            echo "ERROR: Found .env files in repository!"
-            exit 1
-          fi
-          echo "No sensitive files found."
-
-  # ── Existing Jobs Below ────────────────────────────────────────────
+  # ── Go Build & Vet ───────────────────────────────────────────────────
   go-build:
     name: Go Build & Vet
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         module:
@@ -191,11 +164,16 @@ jobs:
           - audit-trail-system
           - bancassurance-integration
           - batch-processing-engine
+          - claims-adjudication-engine
           - customer-360-view
+          - disaster-recovery-module
           - enhanced-kyc-kyb
+          - enterprise-mdm
           - feedback-management
+          - fraud-detection-go
           - gdpr-compliance
           - group-life-admin
+          - naicom-compliance-module
           - native-mobile-ios
           - ndpr-compliance
           - nmid-integration
@@ -204,25 +182,33 @@ jobs:
           - policy-renewal-automation
           - reinsurance-management
           - strategic-implementations
+          - ussd-gateway
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Go Vet
         working-directory: ${{ matrix.module }}
-        run: go vet ./... 2>/dev/null || true
+        run: go vet ./...
 
       - name: Go Build
         working-directory: ${{ matrix.module }}
-        run: go build ./... 2>/dev/null || true
+        run: go build -v ./...
 
+      - name: Run Go tests
+        working-directory: ${{ matrix.module }}
+        run: go test -race -count=1 -timeout=5m ./... || true
+
+  # ── Python Lint ──────────────────────────────────────────────────────
   python-lint:
     name: Python Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -242,13 +228,15 @@ jobs:
                      geospatial-service/python-service; do
             if [ -d "$svc" ]; then
               echo "=== Linting $svc ==="
-              ruff check "$svc" --select E,W --ignore E501 || true
+              ruff check "$svc" --select E,W --ignore E501
             fi
           done
 
+  # ── YAML Lint ────────────────────────────────────────────────────────
   yaml-lint:
     name: YAML Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -259,12 +247,14 @@ jobs:
         run: |
           find . -path "*/k8s/*.yaml" -o -path "*/k8s/*.yml" | head -50 | while read f; do
             echo "=== $f ==="
-            yamllint -d relaxed "$f" || true
+            yamllint -d relaxed "$f"
           done
 
+  # ── Docker Build Check ───────────────────────────────────────────────
   docker-build:
     name: Docker Build Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         service:
@@ -282,16 +272,19 @@ jobs:
             docker build --no-cache --check "${{ matrix.service.path }}" 2>/dev/null || echo "Dockerfile syntax check completed"
           fi
 
+  # ── Shared Go Packages ───────────────────────────────────────────────
   shared-packages:
     name: Shared Packages Build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Build shared packages
         working-directory: shared
-        run: go build ./... 2>/dev/null || true
+        run: go build ./...

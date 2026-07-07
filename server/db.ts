@@ -2,7 +2,7 @@
 /**
  * Database connection and query helpers
  * Uses Drizzle ORM with PostgreSQL connection pooling.
- * Provides noop fallback for environments without a database URL (tests).
+ * Production mode requires a valid database URL. Test mode allows noop fallback.
  */
 import { drizzle, type DrizzleQueryResult, type PostgresTransaction } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -29,95 +29,48 @@ import {
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Pool | null = null;
-
-export async function getPool(): Promise<Pool | null> {
-  await getDb(); // ensure pool is initialized
-  return _pool;
-}
-
+let _dbError: Error | null = null;
 let _dbVerified = false;
-
-// No-op DB proxy for when no database URL is configured (safe for tests)
-const _noopRow = {
-  total: 0,
-  count: 0,
-  value: 0,
-  avg: 0,
-  sum: 0,
-  min: 0,
-  max: 0,
-};
+let _poolReady = false;
 
 /**
- * Noop DB proxy — returns empty results for any query method.
- * Used as a safe fallback when no database URL is configured (tests/dev).
+ * DatabaseError is thrown when a required database operation fails in production.
  */
-interface NoopChain {
-  [key: string]: NoopChain | Array<{ total: number; count: number; value: number; avg: number; sum: number; min: number; max: number }> | number | Generator<{ total: number; count: number; value: number; avg: number; sum: number; min: number; max: number }, void, unknown> | (() => NoopChain);
-  then?: (fn: (rows: { total: number }[]) => Promise<{ total: number }[]>) => Promise<{ total: number }[]>;
-  _isNoop?: boolean;
-  [key: number]: unknown;
-}
-
-function makeNoopChain(): NoopChain {
-  const handler: ProxyHandler<NoopChain> = {
-    get(_target, prop: string | number) {
-      const propStr = String(prop);
-      if (prop === "then")
-        return (fn: (rows: { total: number }[]) => Promise<{ total: number }[]>) => Promise.resolve([{ total: 0 }]).then(fn);
-      if (prop === Symbol.iterator)
-        return function* (): Generator<{ total: number; count: number; value: number; avg: number; sum: number; min: number; max: number }, void, unknown> {
-          yield { total: 0, count: 0, value: 0, avg: 0, sum: 0, min: 0, max: 0 };
-        };
-      if (prop === "length") return 1;
-      if (
-        propStr === "map" ||
-        propStr === "filter" ||
-        propStr === "forEach" ||
-        propStr === "reduce" ||
-        propStr === "some" ||
-        propStr === "every" ||
-        propStr === "find"
-      ) {
-        const arr = [{ total: 0, count: 0, value: 0, avg: 0, sum: 0, min: 0, max: 0 }];
-        const method = arr[propStr as keyof typeof arr];
-        if (typeof method === "function") {
-          return method.bind(arr);
-        }
-      }
-      if (prop === 0 || propStr === "0") return { total: 0, count: 0, value: 0, avg: 0, sum: 0, min: 0, max: 0 };
-      // Any property access returns a function that returns another chainable proxy
-      return () => makeNoopChain();
-    },
-  };
-  return new Proxy(function noop() {}, handler) as NoopChain;
-}
-
-const _noopChain: NoopChain = new Proxy(
-  {},
-  {
-    get(_target, prop: string | number) {
-      const propStr = String(prop);
-      if (prop === "then") return undefined; // db itself is NOT thenable
-      if (propStr === "_isNoop") return true; // marker for in-memory fallback checks
-      if (prop === Symbol.iterator)
-        return function* (): Generator<{ total: number; count: number; value: number; avg: number; sum: number; min: number; max: number }, void, unknown> {
-          yield { total: 0, count: 0, value: 0, avg: 0, sum: 0, min: 0, max: 0 };
-        };
-      // Any method on db (select, insert, update, delete, etc.) returns a chainable
-      return () => makeNoopChain();
-    },
+export class DatabaseError extends Error {
+  constructor(message: string, public code: string = "DATABASE_UNAVAILABLE") {
+    super(message);
+    this.name = "DatabaseError";
   }
-) as unknown as NoopChain;
+}
 
-export async function getDb() {
+/**
+ * Returns true if the database is available and connected.
+ * In test mode (POSTGRES_URL not set), returns false without throwing.
+ * In production mode, throws DatabaseError if unavailable.
+ */
+export async function getDb(): Promise<ReturnType<typeof drizzle> | null> {
   if (_db && _dbVerified) return _db;
+
+  // Check if already failed (fail-fast without re-attempting)
+  if (_dbError) {
+    if (process.env.NODE_ENV === "test") return null;
+    throw _dbError;
+  }
+
   if (!_db) {
     const url = process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? "";
     if (!url) {
-      logger.warn("[DB] No POSTGRES_URL or DATABASE_URL set");
-      return _noopChain;
+      // Test mode: return null without throwing
+      if (process.env.NODE_ENV === "test") {
+        logger.debug("[DB] Test mode: no database configured");
+        return null;
+      }
+      const err = new DatabaseError("POSTGRES_URL or DATABASE_URL is required but not set");
+      logger.error(`[DB] ${err.message}`);
+      _dbError = err;
+      throw err;
     }
+
     // P3-2: Connection pool right-sizing formula from 1B Payments article
     const cpuCores =
       typeof require !== "undefined" ? (await import("os")).cpus().length : 4;
@@ -125,8 +78,9 @@ export async function getDb() {
     const formulaPoolSize = cpuCores * 2 + effectiveSpindleCount;
     const poolSize = Math.max(5, Math.min(50, formulaPoolSize));
     logger.info(
-      `[DB] Connection pool: ${poolSize} connections (formula: ${cpuCores} cores × 2 + ${effectiveSpindleCount} spindle)`
+      `[DB] Initializing connection pool: ${poolSize} connections (formula: ${cpuCores} cores × 2 + ${effectiveSpindleCount} spindle)`
     );
+
     _pool = new Pool({
       connectionString: url,
       ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
@@ -136,27 +90,109 @@ export async function getDb() {
       connectionTimeoutMillis: 5_000,
       maxUses: 7500,
       statement_timeout: 30_000,
-      // Connection lifecycle management
       maxLifetimeSeconds: 3600, // Rotate connections every hour
       reapIntervalMillis: 1000, // Check every second for dead connections
     });
+
+    _pool.on("error", (err) => {
+      logger.error(`[DB] Pool error: ${err.message}`);
+      _dbError = new DatabaseError(`Pool error: ${err.message}`, "POOL_ERROR");
+    });
+
+    _pool.on("connect", () => {
+      logger.debug("[DB] New connection acquired");
+    });
+
+    _pool.on("remove", () => {
+      logger.debug("[DB] Connection released back to pool");
+    });
+
     _db = drizzle(_pool);
   }
+
   // Verify connectivity on first use
   if (!_dbVerified) {
     try {
       const client = await _pool!.connect();
+      // Verify PostgreSQL is actually responsive
+      await client.query("SELECT 1");
       client.release();
       _dbVerified = true;
+      _poolReady = true;
+      logger.info("[DB] Database connection verified");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn(`[DB] Connection failed: ${message}`);
+      logger.error(`[DB] Connection failed: ${message}`);
+      const dbErr = new DatabaseError(`Database connection failed: ${message}`, "CONNECTION_FAILED");
+      _dbError = dbErr;
       _db = null;
       _pool = null;
-      return _noopChain;
+      _poolReady = false;
+      if (process.env.NODE_ENV === "test") return null;
+      throw dbErr;
     }
   }
+
   return _db;
+}
+
+/**
+ * Returns the connection pool. Must be called after getDb() has succeeded.
+ */
+export async function getPool(): Promise<Pool | null> {
+  await getDb(); // ensure pool is initialized
+  return _pool;
+}
+
+/**
+ * Checks if the database pool is ready and healthy.
+ */
+export async function isDbHealthy(): Promise<boolean> {
+  try {
+    const pool = await getPool();
+    if (!pool) return false;
+
+    const client = await pool.connect();
+    await client.query("SELECT 1");
+    client.release();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Gets database status for health checks.
+ */
+export async function getDbStatus(): Promise<{
+  connected: boolean;
+  poolSize: number;
+  poolIdle: number;
+  verified: boolean;
+  error: string | null;
+}> {
+  return {
+    connected: _dbVerified,
+    poolSize: _pool ? _pool.options.max : 0,
+    poolIdle: _pool ? _pool.idleCount : 0,
+    verified: _dbVerified,
+    error: _dbError ? _dbError.message : null,
+  };
+}
+
+/**
+ * Gracefully closes the database connection pool.
+ */
+export async function closeDb(): Promise<void> {
+  if (_pool) {
+    logger.info("[DB] Closing connection pool...");
+    await _pool.end();
+    _pool = null;
+    _db = null;
+    _dbVerified = false;
+    _poolReady = false;
+    logger.info("[DB] Connection pool closed");
+  }
 }
 
 /// ─── Users (Keycloak OIDC) ───────────────────────────────────────────────────
