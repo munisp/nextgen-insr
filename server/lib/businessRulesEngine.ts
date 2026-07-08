@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Business Rules Engine — InsurePortal Insurance Platform

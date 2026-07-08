@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Commission Clawback — DB-backed clawback management
  * Sprint 54: Full PostgreSQL + middleware integration

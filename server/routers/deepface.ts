@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 96: DeepFace integration — multi-model face recognition & attribute analysis
 // Wraps serengil/deepface microservice (port 8133) with tRPC procedures
 import { z } from "zod";

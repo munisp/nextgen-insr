@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * amlScreening.ts — Anti-Money Laundering screening router
  * Provides CRUD for AML screening records and risk assessments.

@@ -1,3 +1,5 @@
+// @ts-check
+
 // @ts-nocheck — Sprint 82 Tests
 /**
  * Sprint 82: Temporal Workflows, Stripe Invoice Integration, Tenant Billing Portal

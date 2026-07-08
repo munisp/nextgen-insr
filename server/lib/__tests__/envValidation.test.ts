@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { validateEnvironment, getJwtSecret } from "../envValidation";
 

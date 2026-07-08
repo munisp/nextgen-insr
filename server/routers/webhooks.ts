@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Webhooks Router
  * CRUD for outbound webhook endpoints + delivery history + manual retry.

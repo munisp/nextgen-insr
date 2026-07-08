@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Scheduled Load Test Worker — InsurePortal Insurance Platform

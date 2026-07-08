@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Agent Onboarding Router
  * 5-step wizard: Profile → KYC → Float → Terminal → Training → Activated

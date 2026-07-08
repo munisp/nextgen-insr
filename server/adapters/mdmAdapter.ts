@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * MDM Compliance Engine Adapter (S88-04)
  * Bridges Node.js to Go mdm-compliance-engine for device management

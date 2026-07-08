@@ -1,3 +1,5 @@
+// @ts-check
+
 // Adapt response payload size based on detected bandwidth tier
 /**
  * connectionAware — Connection-Aware Middleware

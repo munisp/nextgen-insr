@@ -1,3 +1,5 @@
+// @ts-check
+
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getAuditLog } from "../db";

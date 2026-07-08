@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal MDM Router — Comprehensive Unit Tests
  *

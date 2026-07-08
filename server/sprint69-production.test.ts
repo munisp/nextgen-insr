@@ -1,3 +1,5 @@
+// @ts-check
+
 // @ts-nocheck — Sprint 69: Production features test
 import { describe, it, expect } from "vitest";
 

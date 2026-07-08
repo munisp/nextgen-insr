@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Business Rules Validation — InsurePortal Insurance Platform
  *

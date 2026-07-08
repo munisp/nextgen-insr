@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 65 F6-F10: Business Rules & Domain Logic Completion

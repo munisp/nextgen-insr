@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Quick example (matches curl usage):
  *   await callDataApi("Youtube/search", {

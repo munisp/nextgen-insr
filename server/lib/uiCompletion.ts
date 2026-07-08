@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 65 F11-F15: UI/UX Completion Backend Support

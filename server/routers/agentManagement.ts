@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * agentManagement router — admin-only procedures for managing agents.
  * Requires agent_session cookie with role === "admin".

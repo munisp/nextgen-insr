@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * observabilityMiddleware.ts — tRPC middleware that automatically instruments

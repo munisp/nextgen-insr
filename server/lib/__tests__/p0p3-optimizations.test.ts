@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * P0-P3 Optimization Tests
  * Tests for: bulkInsert, runtimeConfig, batchProgressReporter, observability, parquetArchival

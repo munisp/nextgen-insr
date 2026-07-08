@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Offline POS Mode Controller — manages offline transaction processing rules,
  * offline session lifecycle, and risk limits for offline mode.

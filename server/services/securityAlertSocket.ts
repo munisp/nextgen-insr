@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * S94-01: Real-time WebSocket Push for Security Alerts
  * Uses Socket.IO to deliver instant notifications to admin dashboards

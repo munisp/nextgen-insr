@@ -1,3 +1,5 @@
+// @ts-check
+
 // SECURITY-AUDIT-TOOL: This test file references security patterns for validation purposes only.
 // SECURITY-AUDIT-TOOL: This file is a security scanner. References to eval/XSS/CORS are detection patterns, not vulnerabilities.
 /**

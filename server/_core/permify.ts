@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal Permify Client
  * HTTP client for Permify authorization service.

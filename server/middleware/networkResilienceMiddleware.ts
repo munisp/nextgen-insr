@@ -1,3 +1,5 @@
+// @ts-check
+
 // Network Resilience Middleware — Sprint 76
 // Adaptive compression, request coalescing, graceful degradation for African networks
 // Handles: WebSocket → SSE → Long-Poll → Offline queue transitions

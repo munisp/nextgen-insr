@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 
 // ─── Sprint 16: Multi-Tenant White-Label Tests ─────────────────────────────

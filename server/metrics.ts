@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * metrics.ts — Prometheus metrics registry for the InsurePortal POS Shell

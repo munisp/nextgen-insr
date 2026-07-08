@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * POS Firmware OTA Management — staged firmware rollouts, version tracking,
  * rollback capability, checksum verification.

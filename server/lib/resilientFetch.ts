@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Resilient HTTP Client — Production-grade inter-service communication
  *

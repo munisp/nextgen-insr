@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Management PWA tRPC Router
  * Covers all 24 API groups consumed by the Management PWA (29 pages).

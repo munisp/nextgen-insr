@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 92 Tests — Offline Queue, Ransomware Alerts, PBAC Management
  */

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * smsReceipt router — sends SMS transaction receipts via Termii API.
  * Falls back to console log when TERMII_API_KEY is not configured.

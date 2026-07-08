@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * F08: Compliance Filing & Regulatory Reporting
  * CBN/NDIC/FIRS filings, SAR generation, CTR reports, regulatory calendar

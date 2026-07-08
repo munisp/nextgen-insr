@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * pushNotifications.test.ts
  *

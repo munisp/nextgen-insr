@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Fluvio Streaming Adapter (S88-16b)
  * Bridges Node.js to Go fluvio-streaming for event streaming

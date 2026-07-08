@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Environment Validation — Production Readiness Guard
  *

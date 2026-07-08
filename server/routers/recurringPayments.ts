@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Recurring Payments — scheduled automatic bill payments and transfers
  * with configurable frequency, retry logic, and notification.

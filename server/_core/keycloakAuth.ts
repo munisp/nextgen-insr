@@ -1,3 +1,5 @@
+// @ts-check
+
 // SECURITY: Rate limiting is handled by the API gateway/reverse proxy (nginx/cloudflare) in production.
 /**
  * keycloakAuth.ts — Express route handlers for Keycloak Authorization Code flow

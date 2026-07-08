@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Integration Tests — Critical Business Flows
  *

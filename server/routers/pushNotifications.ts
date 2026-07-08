@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Push Notifications Router
  * Handles VAPID push subscription management for agents and admins.

@@ -1,3 +1,5 @@
+// @ts-check
+
 import { TRPCError } from "@trpc/server";
 /**
  * F16: General Ledger & Double-Entry Accounting

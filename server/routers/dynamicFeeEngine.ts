@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * F05: Dynamic Fee Engine
  * Fee rules, tiered pricing, volume discounts, fee audit trail, fee simulation

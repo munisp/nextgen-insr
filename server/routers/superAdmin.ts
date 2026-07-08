@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Super Admin Portal tRPC Router
  * Covers the 49 components of the Super Admin Portal:

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * middleware-integration.test.ts — Verify all 13 middleware are wired into
  * Commission Engine, Settlement System, and Dispute/Refund System.

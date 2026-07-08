@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Global Search Router — InsurePortal Insurance Platform
  *

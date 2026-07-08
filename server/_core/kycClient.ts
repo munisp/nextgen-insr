@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * KYC Client — HTTP proxy helpers for KYC/KYB microservices
  *

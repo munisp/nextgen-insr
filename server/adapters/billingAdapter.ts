@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Billing Aggregator Adapter (S88-07)
  * Bridges Node.js to Go billing-aggregator for billing period management

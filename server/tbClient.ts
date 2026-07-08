@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 import { ENV } from "./_core/env";
 import { logger } from './_core/logger';

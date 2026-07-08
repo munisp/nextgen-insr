@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal POS Shell — OWASP Top 10 Security Test Suite
  *

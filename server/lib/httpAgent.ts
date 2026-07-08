@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * HTTP Agent Pool — Connection reuse for microservice calls
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 87: Theme validation, asset management, preview generation
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

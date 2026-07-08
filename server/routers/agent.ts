@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * agent.ts — tRPC router for agent management
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Item 24: API Documentation Generation
  * Provides OpenAPI/Swagger spec for all tRPC endpoints and microservices.

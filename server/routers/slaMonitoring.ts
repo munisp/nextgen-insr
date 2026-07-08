@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * F18: SLA Monitoring
  * SLA definitions, breach detection, uptime tracking, incident management

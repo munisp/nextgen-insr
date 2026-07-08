@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Compliance Screening — Sanctions & PEP Verification
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 8: Email Notification Service + Rate Alerts Tests
  */

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Invite Code Router — Generate, validate, list, and revoke partner invite codes.
  * Only admins/super-admins can generate codes; public validation is allowed for onboarding.

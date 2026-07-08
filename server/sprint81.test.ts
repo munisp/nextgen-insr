@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 81 — Production Hardening Tests
  * Tests: Security Hardening, Resilience, Billing Lifecycle, Invoice Generation,

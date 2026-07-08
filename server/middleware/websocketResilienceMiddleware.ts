@@ -1,3 +1,5 @@
+// @ts-check
+
 // WebSocket Resilience Middleware — Sprint 77
 // Adaptive protocol selection, offline queue, reconnection with backoff
 // Designed for unreliable connectivity in rural African environments

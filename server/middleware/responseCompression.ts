@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 import { Request, Response, NextFunction } from "express";
 import zlib from "zlib";

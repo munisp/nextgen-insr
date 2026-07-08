@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Sprint 65 F1-F5: Infrastructure Completion Module

@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 import { fraudRealtimeVizRouter } from "./routers/fraudRealtimeViz";
 import { pipelineMonitoringRouter } from "./routers/pipelineMonitoring";

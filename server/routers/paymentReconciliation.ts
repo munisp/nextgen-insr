@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 87: Upgraded from mock data to real DB queries — paymentReconciliation
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

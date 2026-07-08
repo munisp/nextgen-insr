@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 85 Phase 2 Tests — H2-H5, M1-M6
  *

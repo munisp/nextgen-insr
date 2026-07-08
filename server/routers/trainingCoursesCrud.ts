@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 87: Curriculum sequencing, prerequisite validation, completion tracking
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

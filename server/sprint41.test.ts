@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 const sprint41Routers = [
   { name: "agentKycDocVault", file: "./routers/agentKycDocVault" },

@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 // Sprint 40: Enterprise Scaling & Operational Excellence Tests
 const sprint40Routers = [

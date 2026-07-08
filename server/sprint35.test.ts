@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 
 // Sprint 35: Test all 20 new routers

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * USSD Transaction Processor Adapter (S88-10)
  * Bridges Node.js to Go ussd-tx-processor for USSD transaction processing

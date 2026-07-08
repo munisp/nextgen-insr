@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Multi-SIM Failover — manages multiple SIM slots in POS terminals,
  * automatic failover on network loss, and SIM health monitoring.

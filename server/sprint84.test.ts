@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 84 Tests — Stripe Invoice Webhooks, Billing Analytics Dashboard, Monthly Invoice Cron
  *

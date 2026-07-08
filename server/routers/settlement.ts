@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Settlement router — manual trigger, last-run query, history, and outstanding.
  *

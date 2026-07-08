@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Shared test utilities for creating tRPC callers with proper auth context.
  */

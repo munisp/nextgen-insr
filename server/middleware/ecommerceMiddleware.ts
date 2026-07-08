@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * E-Commerce Middleware
  * Integrates e-commerce operations with existing platform middleware:

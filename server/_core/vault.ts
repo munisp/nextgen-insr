@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal Vault Client
  * Loads secrets from HashiCorp Vault via AppRole auth on startup.

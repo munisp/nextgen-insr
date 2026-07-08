@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 47 — Sidecar Integration Tests
  *

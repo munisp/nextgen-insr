@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 91 — Policy-Based Access Control (PBAC) Enforcement
  *

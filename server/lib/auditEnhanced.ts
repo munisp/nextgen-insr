@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";

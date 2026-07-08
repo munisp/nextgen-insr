@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Workflow Orchestrator Adapter (S88-02)
  * Bridges Node.js tRPC to Go workflow-orchestrator service

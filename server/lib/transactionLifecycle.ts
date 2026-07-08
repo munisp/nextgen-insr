@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Transaction Lifecycle State Machine — InsurePortal Insurance Platform

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Connectivity Resilience Adapter (S88-06)
  * Bridges Node.js to Go connectivity-resilience for offline queue management

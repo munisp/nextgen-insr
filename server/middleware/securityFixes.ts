@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * S94-06: Security Vulnerability Fixes
  * Addresses all vulnerabilities found in the Sprint 94 security audit:

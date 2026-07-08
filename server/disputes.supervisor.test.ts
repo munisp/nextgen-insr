@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * disputes.supervisor.test.ts
  * Tests for disputes router (raise, resolve, reject, addMessage, adminList)

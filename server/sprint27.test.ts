@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 27 Tests — Final Production Sprint
  * Covers: i18n, email delivery, webhook signatures, rate limit config,

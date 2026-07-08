@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Item 15: API versioning middleware
  * Adds /api/v1/ prefix support for all external endpoints.

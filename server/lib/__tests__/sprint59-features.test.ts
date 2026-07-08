@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 59 Tests
  * S59-1: Owner notifications for archival jobs

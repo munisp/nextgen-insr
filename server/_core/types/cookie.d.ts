@@ -1,3 +1,5 @@
+// @ts-check
+
 declare module "cookie" {
   export function parse(
     str: string,

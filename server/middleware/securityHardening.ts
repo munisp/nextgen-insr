@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Security Hardening Middleware — InsurePortal POS Shell
  * Sprint 91: Upgraded — removed @ts-nocheck, added brute-force protection,

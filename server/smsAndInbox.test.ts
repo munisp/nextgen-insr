@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 9: SMS Service + Notification Inbox Tests
  */

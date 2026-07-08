@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 77 — Comprehensive Tests
 // Covers: carrier cost, SLA, USSD analytics, network diagnostics, connection quality,
 // USSD localization, security hardening, WebSocket resilience, orphan wiring

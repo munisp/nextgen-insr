@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * KYB (Know Your Business) Router
  * tRPC procedures bridging POS Shell to the Go KYB Engine, Rust Risk Engine,

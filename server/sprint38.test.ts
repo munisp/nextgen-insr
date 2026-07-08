@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 
 // Sprint 38: Advanced Platform Capabilities & Enhancements — 20 Routers

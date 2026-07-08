@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 95 Bug Fix: KYC Face Motion Check — Noise Tolerance Tests
  *

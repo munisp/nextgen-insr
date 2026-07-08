@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Tests for simOrchestrator.reportFailover and simOrchestrator.getFailoverHistory
  */

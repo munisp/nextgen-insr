@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * metrics.test.ts
  * Tests for the Prometheus metrics registry and all exported counters/histograms.

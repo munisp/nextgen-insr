@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 88 Integration Tests
  *

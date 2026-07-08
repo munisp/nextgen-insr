@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Item 8: Request logging middleware integration
  * Wires the structured JSON logger into the Express pipeline.

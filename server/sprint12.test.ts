@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 12 Tests — Chart Export, Scheduled Reports, Dashboard Layout,
  * Broadcast Announcements, User Notification Preferences

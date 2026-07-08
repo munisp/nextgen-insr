@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Kafka Consumer Status tRPC Router
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Hierarchy Engine Adapter (S88-11)
  * Bridges Node.js to Go hierarchy-engine for organizational tree management

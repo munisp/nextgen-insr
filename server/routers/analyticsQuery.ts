@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Analytics Query Router — InsurePortal POS Shell (Sprint 89)
  *

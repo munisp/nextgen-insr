@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 75 Tests — USSD Integration, Carrier Switching, Network Status Dashboard
  * Tests all 3 new tRPC routers and 6 new microservices

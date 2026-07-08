@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Item 17: Unified Platform Health Monitoring Dashboard
  * Aggregates health checks from all microservices into a single endpoint.

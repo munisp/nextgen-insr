@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 61 Tests: Threshold Config UI, CSV/PDF Export, Compare Button
  *

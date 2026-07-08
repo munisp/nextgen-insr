@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * lakehouse.ts — tRPC router for the InsurePortal Data Lakehouse
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 import { TRPCError } from "@trpc/server";
 /**
  * F01: Real-Time Transaction Monitoring Dashboard

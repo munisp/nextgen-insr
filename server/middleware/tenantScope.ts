@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Tenant Scope Middleware — Production-Grade Tenant Data Isolation

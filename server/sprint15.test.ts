@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── Escalation Chains Tests ─────────────────────────────────────────────────

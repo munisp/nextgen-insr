@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Customer Onboarding Pipeline Router
  * 7-stage pipeline: Registration → KYC Submission → KYC Review → Account Setup → Training → Activation → Live

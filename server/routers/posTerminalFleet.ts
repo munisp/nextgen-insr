@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * POS Terminal Fleet Management — provisioning, heartbeat monitoring,
  * remote commands, group management, and fleet analytics.

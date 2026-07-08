@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 95 — Adaptive Bandwidth Management
  *

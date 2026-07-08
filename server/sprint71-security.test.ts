@@ -1,3 +1,5 @@
+// @ts-check
+
 // @ts-nocheck
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync, existsSync } from "fs";

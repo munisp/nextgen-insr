@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 91 — Middleware Integration Health Verification
  *

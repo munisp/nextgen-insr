@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Africa's Talking USSD Handler Adapter (S88-13)
  * Bridges Node.js to Go at-ussd-handler for AT USSD integration

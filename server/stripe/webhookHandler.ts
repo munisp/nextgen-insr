@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Stripe Webhook Handler — InsurePortal POS Shell
  *

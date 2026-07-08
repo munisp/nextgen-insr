@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Voice transcription helper using internal Speech-to-Text service
  *

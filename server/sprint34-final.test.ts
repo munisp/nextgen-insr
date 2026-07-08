@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 import { realtimeNotificationsRouter } from "./routers/realtimeNotifications";
 import { dragDropReportBuilderRouter } from "./routers/dragDropReportBuilder";

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 30 — AI/ML Follow-ups Tests
  * Tests for: aiMonitoring, fraudReportGenerator, complianceChatbot

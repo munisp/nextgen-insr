@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * receiptTemplates.ts — Receipt template management router
  * Provides CRUD for receipt templates used in POS transactions.

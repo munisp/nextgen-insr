@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 76 — Comprehensive Production Hardening Tests
 // Security, Resilience, Cost, Analytics, SLA, Receipts, Microservices
 import { describe, it, expect } from "vitest";

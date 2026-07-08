@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 86 — Deep Audit & Production Hardening Tests
  * Validates: orphan table CRUD, middleware services, security, resilience

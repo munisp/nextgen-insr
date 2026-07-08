@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 87: Full domain logic — suspension workflow (warn→suspend→reinstate), auto-escalation
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * USSD Gateway Adapter (S88-09)
  * Bridges Node.js to Go ussd-gateway for USSD session management

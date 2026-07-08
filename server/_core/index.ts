@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * index.ts — InsurePortal POS Shell Server Entry Point
  *

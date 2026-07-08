@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 60 Tests
  * S60-1: Load test comparison view (compareRuns query)

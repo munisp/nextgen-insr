@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 24 Tests — Real-Time Notifications, Live Chat, User Guide, Stripe
  */

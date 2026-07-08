@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Notification Event Triggers — InsurePortal Agent Banking Platform

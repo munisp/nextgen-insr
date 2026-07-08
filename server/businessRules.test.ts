@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal Insurance Platform — Business Rules Engine Tests
  * ─────────────────────────────────────────────────────────────────────────────

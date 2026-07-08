@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * redisClient.ts — Redis integration for InsurePortal POS Shell

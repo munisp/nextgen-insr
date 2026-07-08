@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Tests for VAPID push notification service (server/push.ts)
  */

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 80 — Billing Engine Hardening Tests
  * Tests: RBAC, Audit, Tenant Onboarding, Real DB Queries

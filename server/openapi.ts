@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * OpenAPI 3.1 Documentation Generator for NGApp tRPC API
  *

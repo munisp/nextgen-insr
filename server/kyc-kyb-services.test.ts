@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 
 // ── KYC/KYB Service Architecture Tests ───────────────────────────────────────

@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * mtlsAgent.ts — Mutual TLS HTTPS Agent for platform microservice calls

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Stripe Integration Router — InsurePortal POS Shell
  *

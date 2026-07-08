@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Environment Variable Validation — Fail-fast startup checks
  *

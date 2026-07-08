@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 
 // ─── F1-F5: Chat System Complete ────────────────────────────────────────────

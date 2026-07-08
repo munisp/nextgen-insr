@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Settlement Reconciliation Router
  * Matches merchant settlement batches against transaction records.

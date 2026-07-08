@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { resilientFetch, getCircuitBreakerStatus } from "../resilientFetch";
 

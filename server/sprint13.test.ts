@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 13 Tests — Banner, Shared Layouts, Report Designer, Threshold Alerts, Reactions
  */

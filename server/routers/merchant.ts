@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * merchant.ts — P3-A Merchant Portal Router
  *

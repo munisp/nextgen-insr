@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Dispute from POS — agent-initiated dispute filing directly from the POS terminal,
  * with evidence upload and real-time status tracking.

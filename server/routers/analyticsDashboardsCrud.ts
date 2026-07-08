@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 87: Widget computation, real-time aggregation, caching
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

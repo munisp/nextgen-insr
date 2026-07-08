@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * tbClient.test.ts — Vitest coverage for the TigerBeetle sidecar HTTP client.
  *

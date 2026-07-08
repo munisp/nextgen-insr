@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 
 describe("Sprint 49: Production Readiness Features", () => {

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal Structured Logger
  * Uses pino for JSON-structured logging with request ID correlation.

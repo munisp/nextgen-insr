@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Revenue Reconciler Adapter (S88-15)
  * Bridges Node.js to Go revenue-reconciler for revenue reconciliation

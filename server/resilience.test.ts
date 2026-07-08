@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Resilience router integration tests
  *

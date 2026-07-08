@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * restBridge.ts — REST API Bridge for Management PWA & Mobile Clients

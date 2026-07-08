@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 87: Full domain logic — document verification workflow, expiry tracking, compliance scoring
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 66: Deep Audit & Production Readiness Final
  * Tests verify:

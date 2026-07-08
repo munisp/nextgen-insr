@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * gracefulDegradation — Progressive Feature Degradation Manager
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * TigerBeetle Integrated Adapter (S88-03)
  * Bridges Node.js to Go tigerbeetle-integrated ledger service

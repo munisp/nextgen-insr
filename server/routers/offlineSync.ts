@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Offline Sync Engine — accepts queued offline transactions from POS terminals,
  * validates, deduplicates, and reconciles them against the ledger.

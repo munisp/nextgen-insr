@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * F07: Merchant Payout Settlement
  * Batch payouts, settlement cycles, reconciliation, payout tracking

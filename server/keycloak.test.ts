@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * keycloak.test.ts — Vitest coverage for Keycloak OIDC integration
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 73 — Offline-First Resilience & Low-Bandwidth Optimization Tests
  *

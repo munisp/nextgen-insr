@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Commission Payouts Router
  * Full lifecycle: request → approve/reject → process → complete

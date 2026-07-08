@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Auto-Refresh Polling Module — InsurePortal Insurance Platform

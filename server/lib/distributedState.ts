@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Distributed State Store — Redis-backed with in-memory fallback
  *

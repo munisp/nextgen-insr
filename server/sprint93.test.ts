@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 93 Tests — Security Alert Notifications, Role-Based Nav, Network Quality Heatmap
  */

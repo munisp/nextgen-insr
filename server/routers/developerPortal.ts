@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * developerPortal.ts — P3-C Developer Portal Router
  *

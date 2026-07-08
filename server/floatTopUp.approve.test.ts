@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * P1-B: Business Logic Tests — premiumTopUp.approve
  *

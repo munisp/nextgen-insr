@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * telemetry.ts — OpenTelemetry distributed tracing for InsurePortal POS Shell
  *

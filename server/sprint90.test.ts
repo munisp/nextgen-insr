@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 90 — Biometric/Liveness Upgrade Tests
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 14 Tests — Threshold Alert Dispatcher + Banner Reactions Wire
  */

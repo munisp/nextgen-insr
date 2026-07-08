@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 63: Live Chat Support Widget & Admin Support Inbox Tests
  */

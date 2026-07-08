@@ -1,3 +1,5 @@
+// @ts-check
+
 import { z } from "zod";
 import { publicProcedure, router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";

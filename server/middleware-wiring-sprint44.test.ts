@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 44: Middleware Wiring Verification Tests
  * Verifies that all 29 critical financial routers properly import and reference

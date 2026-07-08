@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 91 — Connectivity Resilience for Rural Africa
  *

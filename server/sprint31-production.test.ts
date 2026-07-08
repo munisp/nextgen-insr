@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect, vi } from "vitest";
 
 // ── Apache NiFi ──

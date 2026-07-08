@@ -1,3 +1,5 @@
+// @ts-check
+
 // resolve conflicts using last-write-wins or server-priority strategy
 // Track sync status per item: pending | synced | failed | conflict
 /**

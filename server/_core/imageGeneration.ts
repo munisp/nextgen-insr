@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Image generation helper using internal ImageService
  *

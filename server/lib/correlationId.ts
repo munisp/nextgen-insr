@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Request Correlation ID & Structured Logging — InsurePortal Insurance Platform

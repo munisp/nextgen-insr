@@ -1,3 +1,5 @@
+// @ts-check
+
 import { z } from "zod";
 import { notifyOwner } from "./notification";
 import { ENV } from "./env";

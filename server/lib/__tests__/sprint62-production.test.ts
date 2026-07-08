@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 62: Production Readiness — Comprehensive Tests
  * Tests all 20 features: F1-F20

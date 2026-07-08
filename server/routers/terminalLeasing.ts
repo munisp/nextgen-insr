@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Terminal Leasing — manage POS terminal lease agreements, billing cycles,
  * insurance, and return processing.

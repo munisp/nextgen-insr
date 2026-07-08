@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Settlement Gateway Adapter (S88-12)
  * Bridges Node.js to Go settlement-gateway for settlement processing

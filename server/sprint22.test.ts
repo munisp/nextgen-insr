@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 22 Tests — Weekly Report Enhancements
  *

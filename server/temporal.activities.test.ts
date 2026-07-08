@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Tests for Temporal workflow activities (server/temporal-activities.ts)
  * Tests pure business logic without requiring a live Temporal server.

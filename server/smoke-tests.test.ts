@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal POS Shell — Comprehensive Smoke Tests
  * Covers: Settlement Engine, Dispute Resolution, Commission Engine

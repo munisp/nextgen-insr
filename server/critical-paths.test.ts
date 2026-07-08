@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Item 4: Unit tests for critical paths
  * Tests transaction validation, KYC enforcement, settlement logic,

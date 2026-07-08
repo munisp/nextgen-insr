@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── 1. Socket.IO Settlement Namespace Wiring ────────────────────────────────

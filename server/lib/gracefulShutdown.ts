@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 import { Server } from "http";
 import { logger } from '../_core/logger';

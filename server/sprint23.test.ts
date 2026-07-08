@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 23 — Final Production Features — Vitest Tests
  *

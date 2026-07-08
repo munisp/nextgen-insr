@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 74 — Telco Integration, Network Telemetry & Offline UI Tests
  * 16 features: Africa's Talking SMS/USSD (F1-F4), Telemetry (F5-F9), Offline UI (F10-F16)

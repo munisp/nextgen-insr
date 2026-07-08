@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * MQTT Bridge Router — InsurePortal Fluvio MQTT Source Connector management
  * Manages InfinyOn MQTT Source Connector configuration for bridging

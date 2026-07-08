@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Production Readiness Tests — Sprint 56
  * Covers: Performance Tuning, HA Patterns, Circuit Breakers, Retry Logic, Health Checks

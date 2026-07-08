@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal POS Shell — Production Readiness Tests
  * Tests: agent auth, transaction creation, loyalty, fraud, chat, audit log

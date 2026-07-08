@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 import { openTelemetryRouter } from "./routers/openTelemetry";
 import { advancedBiReportingRouter } from "./routers/advancedBiReporting";

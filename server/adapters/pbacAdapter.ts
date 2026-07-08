@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * PBAC Engine Adapter (S88-05)
  * Bridges Node.js to Go pbac-engine for policy-based access control

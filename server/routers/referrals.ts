@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Referral Program Router
  * Agents earn bonus points + cash when they refer new agents who activate.

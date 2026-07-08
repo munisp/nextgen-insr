@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 29 — AI/ML/DL/GNN/LLM Integration Tests
  * Tests all 8 new routers: Qdrant, FalkorDB, CocoIndex, Ollama, ART,

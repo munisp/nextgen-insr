@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 18 Tests: Security Hardening + System Health Monitor
  */

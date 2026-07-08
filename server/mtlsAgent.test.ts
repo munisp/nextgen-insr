@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * mtlsAgent.test.ts
  * Tests for the getMtlsAgent() / resetMtlsAgent() helpers.

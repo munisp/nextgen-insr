@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * observability-middleware.test.ts — Sprint 45 smoke tests
  *

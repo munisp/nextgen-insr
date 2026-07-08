@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 11 Tests — WebSocket Notifications + Analytics Dashboard
  */

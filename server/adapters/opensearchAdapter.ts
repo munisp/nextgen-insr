@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * OpenSearch Analytics Adapter (S88-14)
  * Bridges Node.js to Go opensearch-analytics for search and analytics

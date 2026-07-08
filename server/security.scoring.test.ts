@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * InsurePortal POS Shell — Security Vulnerability Scoring
  *

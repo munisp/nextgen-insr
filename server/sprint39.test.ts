@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 
 // Sprint 39: Platform Maturity & Infrastructure Hardening Tests

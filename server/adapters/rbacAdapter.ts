@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * RBAC Service Adapter (S88-08)
  * Bridges Node.js to Go rbac-service for role-based access control

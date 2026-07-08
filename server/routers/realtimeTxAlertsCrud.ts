@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 87: Velocity rules, pattern matching, auto-block triggers
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

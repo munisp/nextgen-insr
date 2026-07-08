@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Enhanced CRUD Operations — InsurePortal Insurance Platform

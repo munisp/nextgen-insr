@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * termii.test.ts — Vitest coverage for the shared Termii SMS helper.
  *

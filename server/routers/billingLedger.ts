@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Billing Ledger tRPC Router — Sprint 81 + Sprint 79 test-compatible
  */

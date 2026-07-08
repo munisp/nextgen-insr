@@ -1,3 +1,5 @@
+// @ts-check
+
 // Seed announcements: ann_001 (Welcome), ann_002 (Update), ann_003 (Maintenance), ann_004 (Feature), ann_005 (Policy)
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 79: Real-Time Billing Engine Tests
  * Tests for billingLedger, revenueReconciliation, and liveBillingDashboard routers

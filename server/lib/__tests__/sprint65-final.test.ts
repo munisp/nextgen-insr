@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 65 — Final Production Readiness Tests
  * Tests for: infrastructureCompletion, businessRulesCompletion, uiCompletion, platformHardening, chatSecurityAudit

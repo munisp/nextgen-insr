@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Offline Queue Middleware — Sprint 78
  * Enhanced offline transaction queuing with priority-based processing,

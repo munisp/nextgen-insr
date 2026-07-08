@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Customer Portal tRPC Router
  * Covers all 13 pages of the Customer Portal:

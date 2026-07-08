@@ -1,3 +1,5 @@
+// @ts-check
+
 // Sprint 87: Polygon validation, overlap detection, agent assignment
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

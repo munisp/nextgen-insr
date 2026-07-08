@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Liveness Security Enhancements — Sprint 95 Phase 3 + Phase 4
  *

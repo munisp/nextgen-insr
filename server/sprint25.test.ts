@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 25 Tests — Proactive Help, Video Tutorials, Guide Feedback, Skill
  */

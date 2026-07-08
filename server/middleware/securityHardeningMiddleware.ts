@@ -1,3 +1,5 @@
+// @ts-check
+
 // Security Hardening Middleware — Sprint 77
 // Input sanitization, CSRF protection, rate limiting, JWT rotation, PCI-DSS checks
 

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * KYC Router Tests
  * Tests for startLiveness, submitLivenessFrame, verifyDocument, getStatus, listSessions

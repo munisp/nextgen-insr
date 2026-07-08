@@ -1,3 +1,5 @@
+// @ts-check
+
 // TypeScript enabled — Sprint 96 security audit
 /**
  * sidecarIntegration.ts — tRPC middleware that automatically integrates

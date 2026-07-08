@@ -1,3 +1,5 @@
+// @ts-check
+
 // @ts-nocheck — Sprint 83 tests
 import { describe, it, expect } from "vitest";
 

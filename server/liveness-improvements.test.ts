@@ -1,3 +1,5 @@
+// @ts-check
+
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 93 — Security Alert Notification Service
  *

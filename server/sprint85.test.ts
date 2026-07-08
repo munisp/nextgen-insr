@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 85 Tests — InsurePortal POS Shell
  *

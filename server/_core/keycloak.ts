@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * keycloak.ts — Keycloak OIDC integration for InsurePortal POS Shell
  *

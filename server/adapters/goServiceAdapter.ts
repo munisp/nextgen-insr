@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Go Service REST Adapter Framework (S88-01)
  *

@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * lakehouse.test.ts — Unit tests for the Data Lakehouse layer
  *

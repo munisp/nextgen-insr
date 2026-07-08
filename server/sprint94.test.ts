@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * Sprint 94 Tests — Security Fixes, WebSocket Alerts, Bulk Role Import,
  * Network Trends, UI/UX Audit, Middleware Verification
