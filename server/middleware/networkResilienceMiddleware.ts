@@ -1,3 +1,4 @@
+import { logger } from '../_core/logger.js';
 // @ts-check
 
 // Network Resilience Middleware — Sprint 76

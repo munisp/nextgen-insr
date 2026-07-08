@@ -114,7 +114,7 @@ eventHandlers.set("payment.completed", async event => {
 
 eventHandlers.set("payment.failed", async event => {
   const { transactionId, reason, agentId } = event.payload as any;
-  console.log(`[Kafka] Payment failed: tx=${transactionId} reason=${reason}`);
+  logger.info(`[Kafka] Payment failed: tx=${transactionId} reason=${reason}`);
   // Reverse pending balance, alert agent, log to fraud system
 });
 
@@ -129,7 +129,7 @@ eventHandlers.set("agent.registered", async event => {
 
 eventHandlers.set("agent.suspended", async event => {
   const { agentId, reason, suspendedBy } = event.payload as any;
-  console.log(`[Kafka] Agent suspended: ${agentId} reason=${reason}`);
+  logger.info(`[Kafka] Agent suspended: ${agentId} reason=${reason}`);
   // Lock float, disable terminal, notify compliance
 });
 
@@ -249,7 +249,7 @@ export class PosEventConsumer {
         `[Kafka Consumer] Started - topics: ${this.config.topics.join(", ")}`
       );
     } catch (error) {
-      console.error("[Kafka Consumer] Failed to start:", error);
+      logger.error("[Kafka Consumer] Failed to start:", error);
       // Graceful degradation - consumer will retry
     }
   }
@@ -337,7 +337,7 @@ export class PosEventConsumer {
       });
       this.metrics.messagesDLQ++;
     } catch (dlqError) {
-      console.error("[Kafka Consumer] Failed to send to DLQ:", dlqError);
+      logger.error("[Kafka Consumer] Failed to send to DLQ:", dlqError);
     }
   }
 
@@ -352,7 +352,7 @@ export class PosEventConsumer {
     this.running = false;
     if (this.consumer) await this.consumer.disconnect();
     if (this.producer) await this.producer.disconnect();
-    console.log("[Kafka Consumer] Stopped");
+    logger.info("[Kafka Consumer] Stopped");
   }
 }
 

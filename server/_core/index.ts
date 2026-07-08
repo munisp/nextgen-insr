@@ -16,6 +16,8 @@
  */
 
 import "dotenv/config";
+import { logger } from '../_core/logger.js';
+
 import crypto from "crypto";
 import express from "express";
 import { loadVaultSecrets } from "../_core/vault";

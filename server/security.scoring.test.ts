@@ -10,6 +10,8 @@
  * Score < 70 = Needs remediation
  */
 import { describe, it, expect } from "vitest";
+import { logger } from '../_core/logger.js';
+
 import fs from "fs";
 import path from "path";
 

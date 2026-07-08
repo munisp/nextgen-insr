@@ -150,7 +150,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
     console.log(
       `[Email] SMTP not configured — would send to: ${recipients.join(", ")}`
     );
-    console.log(`[Email] Subject: ${options.subject}`);
+    logger.info(`[Email] Subject: ${options.subject}`);
     console.log(
       `[Email] Body preview: ${options.text || options.html.substring(0, 200)}...`
     );
@@ -181,7 +181,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
     );
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
-    console.error(`[Email] Failed to send: ${error.message}`);
+    logger.error(`[Email] Failed to send: ${error.message}`);
     return { success: false, error: error.message };
   }
 }

@@ -1,3 +1,4 @@
+import { logger } from '../_core/logger.js';
 // @ts-check
 
 // TypeScript enabled — Sprint 96 security audit
@@ -122,7 +123,7 @@ export class ResilientWebSocket {
       this.ws = new WebSocket(this.config.url);
       this.setupEventHandlers();
     } catch (error) {
-      console.error("[WS Resilience] Connection failed:", error);
+      logger.error("[WS Resilience] Connection failed:", error);
       this.scheduleReconnect();
     }
   }
@@ -135,7 +136,7 @@ export class ResilientWebSocket {
       this.metrics.state = ConnectionState.OPEN;
       this.reconnectAttempts = 0;
       this.metrics.reconnectAttempts = 0;
-      console.log("[WS Resilience] Connected");
+      logger.info("[WS Resilience] Connected");
       this.startHeartbeat();
       this.flushQueue();
     };
@@ -187,13 +188,13 @@ export class ResilientWebSocket {
       this.stopHeartbeat();
 
       if (!event.wasClean) {
-        console.warn(`[WS Resilience] Unexpected close (code: ${event.code})`);
+        logger.warn(`[WS Resilience] Unexpected close (code: ${event.code})`);
         this.scheduleReconnect();
       }
     };
 
     this.ws.onerror = error => {
-      console.error("[WS Resilience] Error:", error);
+      logger.error("[WS Resilience] Error:", error);
     };
   }
 
@@ -210,7 +211,7 @@ export class ResilientWebSocket {
             Date.now() - this.metrics.lastHeartbeat >
             this.config.heartbeatTimeout
           ) {
-            console.warn("[WS Resilience] Heartbeat timeout, reconnecting...");
+            logger.warn("[WS Resilience] Heartbeat timeout, reconnecting...");
             this.ws?.close();
           }
         }, this.config.heartbeatTimeout);

@@ -1,3 +1,4 @@
+import { logger } from '../_core/logger.js';
 // @ts-check
 
 /**
@@ -119,7 +120,7 @@ export class KafkaConnector {
     handler: (message: any) => Promise<void>
   ): Promise<void> {
     // In production: consumer.subscribe + consumer.run
-    console.log(`[Kafka] Consumer registered for topic: ${topic}`);
+    logger.info(`[Kafka] Consumer registered for topic: ${topic}`);
   }
 }
 

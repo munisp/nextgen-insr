@@ -1,3 +1,4 @@
+import { logger } from '../_core/logger.js';
 // @ts-check
 
 // TypeScript enabled — Sprint 96 security audit
@@ -170,14 +171,14 @@ export function startHealthMonitor(intervalMs = 60_000) {
       // Errors are captured in the health status
     }
   }, intervalMs);
-  console.log(`[DB Health] Monitor started (${intervalMs / 1000}s interval)`);
+  logger.info(`[DB Health] Monitor started (${intervalMs / 1000}s interval)`);
 }
 
 export function stopHealthMonitor() {
   if (healthInterval) {
     clearInterval(healthInterval);
     healthInterval = null;
-    console.log("[DB Health] Monitor stopped");
+    logger.info("[DB Health] Monitor stopped");
   }
 }
 

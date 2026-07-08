@@ -1,3 +1,4 @@
+import { logger } from '../_core/logger.js';
 // @ts-check
 
 // TypeScript enabled — Sprint 96 security audit
@@ -28,7 +29,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
   const smtpUser = process.env.SMTP_USER;
   if (!smtpHost || !smtpUser) {
     const to = Array.isArray(options.to) ? options.to.join(", ") : options.to;
-    console.log(`[Email] (console) To: ${to} | Subject: ${options.subject}`);
+    logger.info(`[Email] (console) To: ${to} | Subject: ${options.subject}`);
     return {
       success: true,
       messageId: `console_local-${Date.now()}`,

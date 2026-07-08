@@ -2,6 +2,8 @@
 
 // @ts-nocheck
 import { describe, it, expect } from "vitest";
+import { logger } from '../_core/logger.js';
+
 import {
   detectConnectionQuality,
   getBandwidthBudget,

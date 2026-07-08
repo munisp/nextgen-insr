@@ -10,6 +10,8 @@
  * A07-Auth Failures, A08-Software Integrity, A09-Logging Failures, A10-SSRF
  */
 import { describe, it, expect } from "vitest";
+import { logger } from '../_core/logger.js';
+
 import * as fs from "fs";
 import * as path from "path";
 
@@ -480,12 +482,12 @@ describe("Security Score Summary", () => {
       deductions.push("No security scanning (-5)");
     }
 
-    console.log(`\n═══ SECURITY SCORE: ${score}/100 ═══`);
+    logger.info(`\n═══ SECURITY SCORE: ${score}/100 ═══`);
     if (deductions.length > 0) {
-      console.log("Deductions:");
-      deductions.forEach(d => console.log(`  - ${d}`));
+      logger.info("Deductions:");
+      deductions.forEach(d => logger.info(`  - ${d}`));
     } else {
-      console.log("No deductions — all checks passed!");
+      logger.info("No deductions — all checks passed!");
     }
 
     expect(score).toBeGreaterThanOrEqual(90);
