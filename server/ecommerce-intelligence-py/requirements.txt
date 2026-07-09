@@ -1,8 +1,0 @@
-fastapi==0.111.0
-uvicorn==0.30.1
-pydantic==2.7.4
-numpy==1.26.4
-scikit-learn==1.5.0
-psycopg2-binary==2.9.9
-redis==5.0.7
-httpx==0.27.0

@@ -1,5 +1,5 @@
 /**
- * Dispute from POS — agent-initiated dispute filing directly from the POS terminal,
+ * Dispute from POS — agent-initiated dispute filing directly from the insurance service,
  * with evidence upload and real-time status tracking.
  *
  * Middleware: Kafka (dispute events), PostgreSQL (dispute records), Redis (status cache)

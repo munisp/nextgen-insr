@@ -154,7 +154,7 @@ export default function Home() {
                     : (window.location.href = getLoginUrl())
                 }
               >
-                <Smartphone className="w-5 h-5 mr-2" /> Launch POS Terminal
+                <Smartphone className="w-5 h-5 mr-2" /> Launch Insurance Service
               </Button>
               <Button
                 size="lg"

@@ -1,8 +1,0 @@
-github.com/go-chi/chi/v5 v5.0.12 h1:7wroAA=
-github.com/go-chi/chi/v5 v5.0.12/go.mod h1:7wroAA=
-github.com/jackc/pgx/v5 v5.5.5 h1:8BTOAR=
-github.com/jackc/pgx/v5 v5.5.5/go.mod h1:8BTOAR=
-github.com/redis/go-redis/v9 v9.5.1 h1:9FGHIJ=
-github.com/redis/go-redis/v9 v9.5.1/go.mod h1:9FGHIJ=
-github.com/segmentio/kafka-go v0.4.47 h1:0KLMNOP=
-github.com/segmentio/kafka-go v0.4.47/go.mod h1:0KLMNOP=

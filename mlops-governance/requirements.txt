@@ -5,3 +5,4 @@ scikit-learn==1.4.0
 numpy==1.26.4
 pandas==2.2.0
 shap==0.44.0
+psycopg2-binary>=2.9.0

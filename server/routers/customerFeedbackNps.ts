@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { tenantFeeOverrides } from "../../drizzle/schema";
+import { customerFeedbackNps as customerFeedbackNpsTable } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
@@ -21,13 +21,13 @@ const getNpsScore = protectedProcedure
       const offset = ((input.page ?? 1) - 1) * lim;
       const rows = await db
         .select()
-        .from(tenantFeeOverrides)
-        .orderBy(desc(tenantFeeOverrides.id))
+        .from(customerFeedbackNpsTable)
+        .orderBy(desc(customerFeedbackNpsTable.id))
         .limit(lim)
         .offset(offset);
       const [{ total }] = await db
         .select({ total: count() })
-        .from(tenantFeeOverrides)
+        .from(customerFeedbackNpsTable)
         .limit(100);
       return { items: rows, total, page: input.page ?? 1, limit: lim };
     } catch (error) {
@@ -54,13 +54,13 @@ const getFeedbackList = protectedProcedure
       const offset = ((input.page ?? 1) - 1) * lim;
       const rows = await db
         .select()
-        .from(tenantFeeOverrides)
-        .orderBy(desc(tenantFeeOverrides.id))
+        .from(customerFeedbackNpsTable)
+        .orderBy(desc(customerFeedbackNpsTable.id))
         .limit(lim)
         .offset(offset);
       const [{ total }] = await db
         .select({ total: count() })
-        .from(tenantFeeOverrides)
+        .from(customerFeedbackNpsTable)
         .limit(100);
       return { items: rows, total, page: input.page ?? 1, limit: lim };
     } catch (error) {
@@ -87,13 +87,13 @@ const getSentimentAnalysis = protectedProcedure
       const offset = ((input.page ?? 1) - 1) * lim;
       const rows = await db
         .select()
-        .from(tenantFeeOverrides)
-        .orderBy(desc(tenantFeeOverrides.id))
+        .from(customerFeedbackNpsTable)
+        .orderBy(desc(customerFeedbackNpsTable.id))
         .limit(lim)
         .offset(offset);
       const [{ total }] = await db
         .select({ total: count() })
-        .from(tenantFeeOverrides)
+        .from(customerFeedbackNpsTable)
         .limit(100);
       return { items: rows, total, page: input.page ?? 1, limit: lim };
     } catch (error) {
@@ -120,12 +120,12 @@ const getStats = publicProcedure
       const db = (await getDb())!;
       const [{ total }] = await db
         .select({ total: count() })
-        .from(tenantFeeOverrides)
+        .from(customerFeedbackNpsTable)
         .limit(100);
       const recent = await db
         .select()
-        .from(tenantFeeOverrides)
-        .orderBy(desc(tenantFeeOverrides.id))
+        .from(customerFeedbackNpsTable)
+        .orderBy(desc(customerFeedbackNpsTable.id))
         .limit(5);
       return {
         npsScore: 72,
@@ -160,13 +160,13 @@ const respondToFeedback = protectedProcedure
       const offset = ((input.page ?? 1) - 1) * lim;
       const rows = await db
         .select()
-        .from(tenantFeeOverrides)
-        .orderBy(desc(tenantFeeOverrides.id))
+        .from(customerFeedbackNpsTable)
+        .orderBy(desc(customerFeedbackNpsTable.id))
         .limit(lim)
         .offset(offset);
       const [{ total }] = await db
         .select({ total: count() })
-        .from(tenantFeeOverrides)
+        .from(customerFeedbackNpsTable)
         .limit(100);
       return { items: rows, total, page: input.page ?? 1, limit: lim };
     } catch (error) {
@@ -191,8 +191,8 @@ const submitFeedback = protectedProcedure
       if (input.id) {
         const [existing] = await db
           .select()
-          .from(tenantFeeOverrides)
-          .where(eq(tenantFeeOverrides.id, input.id))
+          .from(customerFeedbackNpsTable)
+          .where(eq(customerFeedbackNpsTable.id, input.id))
           .limit(100);
         if (!existing)
           throw new TRPCError({
@@ -207,7 +207,7 @@ const submitFeedback = protectedProcedure
         };
       }
       const [row] = await db
-        .insert(tenantFeeOverrides)
+        .insert(customerFeedbackNpsTable)
         .values(input.data || ({} as any))
         .returning();
       return { success: true, ...row, message: "submitFeedback completed" };

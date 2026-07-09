@@ -310,7 +310,7 @@ describe("PostgreSQL Performance Configuration", () => {
         "fraud_alerts",
         "disputes",
         "kyc_sessions",
-        "pos_terminals",
+        "insurance_services",
         "merchants",
         "customers",
       ];

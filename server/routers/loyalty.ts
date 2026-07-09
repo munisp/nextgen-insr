@@ -106,7 +106,7 @@ const REWARD_CATALOG = [
   },
   {
     id: "RWD-007",
-    name: "POS Terminal Upgrade",
+    name: "Insurance Service Upgrade",
     category: "hardware",
     pointsCost: 25000,
     description: "Upgrade to PAX A920 MAX terminal",

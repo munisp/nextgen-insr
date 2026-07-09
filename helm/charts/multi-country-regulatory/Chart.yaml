@@ -1,0 +1,6 @@
+apiVersion: v2
+name: multi-country-regulatory
+description: Helm chart for Multi Country Regulatory
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

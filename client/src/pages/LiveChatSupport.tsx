@@ -109,7 +109,7 @@ const CANNED_RESPONSES = [
   },
   {
     label: "Terminal issue",
-    text: "My POS terminal is showing an error and cannot process transactions. Error code: ",
+    text: "My insurance service is showing an error and cannot process transactions. Error code: ",
   },
   {
     label: "Reversal needed",

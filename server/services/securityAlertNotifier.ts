@@ -339,7 +339,7 @@ async function deliverViaEmail(
         formatAlertContent(event),
         "",
         "---",
-        "This is an automated security alert from POS Shell Platform.",
+        "This is an automated security alert from Insurance Portal Platform.",
         "To manage your notification preferences, visit the Security Alert Preferences page.",
       ].join("\n"),
     });
@@ -484,7 +484,7 @@ async function deliverViaSlack(
             color: colorMap[event.severity],
             title: formatAlertTitle(event),
             text: formatAlertContent(event),
-            footer: "POS Shell Security Alert System",
+            footer: "Insurance Portal Security Alert System",
             ts: Math.floor(event.timestamp / 1000),
           },
         ],

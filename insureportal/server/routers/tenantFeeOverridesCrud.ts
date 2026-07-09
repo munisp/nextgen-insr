@@ -1,19 +1,21 @@
-// Sprint 87: Fee schedule validation, effective date logic, approval workflow
+// Premium fee schedule management — insurance product fee configuration
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { tenantFeeOverrides } from "../../drizzle/schema";
+import { premiumFeeSchedules } from "../../drizzle/schema";
 import { eq, desc, and, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-const TX_TYPES = [
-  "transfer",
-  "premium_payment",
-  "claim_payout",
-  "airtime",
-  "bills",
-  "card_payment",
-  "qr_payment",
+const PRODUCT_TYPES = [
+  "motor",
+  "health",
+  "life",
+  "property",
+  "travel",
+  "marine",
+  "liability",
+  "group_life",
+  "microinsurance",
 ];
 const MAX_FEE_PERCENT = 10; // 10% max fee
 
@@ -22,7 +24,7 @@ export const tenantFeeOverridesRouter = router({
     .input(
       z.object({
         tenantId: z.number().optional(),
-        txType: z.string().optional(),
+        productType: z.string().optional(),
         limit: z.number().default(20),
         offset: z.number().default(0),
       })
@@ -32,19 +34,19 @@ export const tenantFeeOverridesRouter = router({
         const db = (await getDb())!;
         const conditions: any[] = [];
         if (input.tenantId)
-          conditions.push(eq(tenantFeeOverrides.tenantId, input.tenantId));
-        if (input.txType)
-          conditions.push(eq(tenantFeeOverrides.txType, input.txType));
+          conditions.push(eq(premiumFeeSchedules.tenantId, input.tenantId));
+        if (input.productType)
+          conditions.push(eq(premiumFeeSchedules.productType, input.productType));
         const rows = await db
           .select()
-          .from(tenantFeeOverrides)
+          .from(premiumFeeSchedules)
           .where(conditions.length ? and(...conditions) : undefined)
-          .orderBy(desc(tenantFeeOverrides.id))
+          .orderBy(desc(premiumFeeSchedules.id))
           .limit(input.limit)
           .offset(input.offset);
         const [{ total }] = await db
           .select({ total: count() })
-          .from(tenantFeeOverrides)
+          .from(premiumFeeSchedules)
           .where(conditions.length ? and(...conditions) : undefined)
           .limit(100);
         return { items: rows, total };
@@ -64,13 +66,13 @@ export const tenantFeeOverridesRouter = router({
         const db = (await getDb())!;
         const [row] = await db
           .select()
-          .from(tenantFeeOverrides)
-          .where(eq(tenantFeeOverrides.id, input.id))
+          .from(premiumFeeSchedules)
+          .where(eq(premiumFeeSchedules.id, input.id))
           .limit(100);
         if (!row)
           throw new TRPCError({
             code: "NOT_FOUND",
-            message: "Fee override not found",
+            message: "Fee schedule not found",
           });
         return row;
       } catch (error) {
@@ -86,7 +88,7 @@ export const tenantFeeOverridesRouter = router({
     .input(
       z.object({
         tenantId: z.number(),
-        txType: z.string(),
+        productType: z.string(),
         feeType: z.enum(["percentage", "flat"]).default("percentage"),
         feeValue: z.string(),
         minFee: z.string().optional(),
@@ -97,10 +99,10 @@ export const tenantFeeOverridesRouter = router({
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
-        if (!TX_TYPES.includes(input.txType))
+        if (!PRODUCT_TYPES.includes(input.productType))
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `Invalid tx type. Must be one of: ${TX_TYPES.join(", ")}`,
+            message: `Invalid product type. Must be one of: ${PRODUCT_TYPES.join(", ")}`,
           });
         const feeVal = parseFloat(input.feeValue);
         if (input.feeType === "percentage" && feeVal > MAX_FEE_PERCENT)
@@ -117,28 +119,27 @@ export const tenantFeeOverridesRouter = router({
             code: "BAD_REQUEST",
             message: "Minimum fee cannot exceed maximum fee",
           });
-        // Check for duplicate override
         const [existing] = await db
           .select()
-          .from(tenantFeeOverrides)
+          .from(premiumFeeSchedules)
           .where(
             and(
-              eq(tenantFeeOverrides.tenantId, input.tenantId),
-              eq(tenantFeeOverrides.txType, input.txType),
-              eq(tenantFeeOverrides.isActive, true)
+              eq(premiumFeeSchedules.tenantId, input.tenantId),
+              eq(premiumFeeSchedules.productType, input.productType),
+              eq(premiumFeeSchedules.isActive, true)
             )
           )
           .limit(100);
         if (existing)
           throw new TRPCError({
             code: "CONFLICT",
-            message: `Active fee override already exists for ${input.txType}. Deactivate it first.`,
+            message: `Active fee schedule already exists for ${input.productType}. Deactivate it first.`,
           });
         const [row] = await db
-          .insert(tenantFeeOverrides)
+          .insert(premiumFeeSchedules)
           .values(input as any)
           .returning();
-        return { ...row, message: "Fee override created" };
+        return { ...row, message: "Fee schedule created" };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -150,40 +151,40 @@ export const tenantFeeOverridesRouter = router({
     }),
   calculateFee: protectedProcedure
     .input(
-      z.object({ tenantId: z.number(), txType: z.string(), amount: z.number() })
+      z.object({ tenantId: z.number(), productType: z.string(), amount: z.number() })
     )
     .query(async ({ input }) => {
       try {
         const db = (await getDb())!;
-        const [override] = await db
+        const [schedule] = await db
           .select()
-          .from(tenantFeeOverrides)
+          .from(premiumFeeSchedules)
           .where(
             and(
-              eq(tenantFeeOverrides.tenantId, input.tenantId),
-              eq(tenantFeeOverrides.txType, input.txType),
-              eq(tenantFeeOverrides.isActive, true)
+              eq(premiumFeeSchedules.tenantId, input.tenantId),
+              eq(premiumFeeSchedules.productType, input.productType),
+              eq(premiumFeeSchedules.isActive, true)
             )
           )
           .limit(100);
-        if (!override)
+        if (!schedule)
           return {
             amount: input.amount,
             fee: 0,
-            feeSource: "no_override",
+            feeSource: "no_schedule",
             total: input.amount,
           };
         let fee =
-          override.feeType === "percentage"
-            ? (input.amount * Number(override.feeValue)) / 100
-            : Number(override.feeValue);
-        fee = Math.max(fee, Number(override.minFee));
-        fee = Math.min(fee, Number(override.maxFee));
+          schedule.feeType === "percentage"
+            ? (input.amount * Number(schedule.feeValue)) / 100
+            : Number(schedule.feeValue);
+        fee = Math.max(fee, Number(schedule.minFee));
+        fee = Math.min(fee, Number(schedule.maxFee));
         return {
           amount: input.amount,
           fee: Math.round(fee * 100) / 100,
-          feeSource: "tenant_override",
-          feeType: override.feeType,
+          feeSource: "premium_schedule",
+          feeType: schedule.feeType,
           total: input.amount + Math.round(fee * 100) / 100,
         };
       } catch (error) {
@@ -201,8 +202,8 @@ export const tenantFeeOverridesRouter = router({
       try {
         const db = (await getDb())!;
         await db
-          .delete(tenantFeeOverrides)
-          .where(eq(tenantFeeOverrides.id, input.id));
+          .delete(premiumFeeSchedules)
+          .where(eq(premiumFeeSchedules.id, input.id));
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

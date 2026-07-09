@@ -130,7 +130,7 @@ CREATE TABLE "multi_sim_profiles" (
 	"updatedAt" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "pos_terminals" (
+CREATE TABLE "field_agent_devicess" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"serialNumber" varchar(64) NOT NULL,
 	"model" varchar(64) DEFAULT 'PAX A920 MAX' NOT NULL,
@@ -150,7 +150,7 @@ CREATE TABLE "pos_terminals" (
 	"notes" text,
 	"createdAt" timestamp DEFAULT now() NOT NULL,
 	"updatedAt" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "pos_terminals_serialNumber_unique" UNIQUE("serialNumber")
+	CONSTRAINT "field_agent_devicess_serialNumber_unique" UNIQUE("serialNumber")
 );
 --> statement-breakpoint
 CREATE TABLE "qr_codes" (
@@ -228,7 +228,7 @@ CREATE TABLE "software_updates" (
 	"createdAt" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "storefront_ads" (
+CREATE TABLE "insurance_product_promotions" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"title" varchar(128) NOT NULL,
 	"body" text,
@@ -291,14 +291,14 @@ CREATE TABLE "vat_records" (
 ALTER TABLE "users" DROP CONSTRAINT "users_openId_unique";--> statement-breakpoint
 ALTER TABLE "users" ADD COLUMN "keycloakSub" varchar(128) NOT NULL;--> statement-breakpoint
 ALTER TABLE "customers" ADD CONSTRAINT "customers_preferredAgentId_agents_id_fk" FOREIGN KEY ("preferredAgentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "multi_sim_profiles" ADD CONSTRAINT "multi_sim_profiles_terminalId_pos_terminals_id_fk" FOREIGN KEY ("terminalId") REFERENCES "public"."pos_terminals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pos_terminals" ADD CONSTRAINT "pos_terminals_agentId_agents_id_fk" FOREIGN KEY ("agentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "multi_sim_profiles" ADD CONSTRAINT "multi_sim_profiles_terminalId_field_agent_devicess_id_fk" FOREIGN KEY ("terminalId") REFERENCES "public"."field_agent_devicess"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ADD CONSTRAINT "field_agent_devicess_agentId_agents_id_fk" FOREIGN KEY ("agentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "qr_codes" ADD CONSTRAINT "qr_codes_agentId_agents_id_fk" FOREIGN KEY ("agentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reversal_requests" ADD CONSTRAINT "reversal_requests_agentId_agents_id_fk" FOREIGN KEY ("agentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reversal_requests" ADD CONSTRAINT "reversal_requests_reviewedBy_users_id_fk" FOREIGN KEY ("reviewedBy") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "service_records" ADD CONSTRAINT "service_records_terminalId_pos_terminals_id_fk" FOREIGN KEY ("terminalId") REFERENCES "public"."pos_terminals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "service_records" ADD CONSTRAINT "service_records_terminalId_field_agent_devicess_id_fk" FOREIGN KEY ("terminalId") REFERENCES "public"."field_agent_devicess"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "shareable_links" ADD CONSTRAINT "shareable_links_agentId_agents_id_fk" FOREIGN KEY ("agentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "storefront_ads" ADD CONSTRAINT "storefront_ads_agentId_agents_id_fk" FOREIGN KEY ("agentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "insurance_product_promotions" ADD CONSTRAINT "insurance_product_promotions_agentId_agents_id_fk" FOREIGN KEY ("agentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "vat_records" ADD CONSTRAINT "vat_records_agentId_agents_id_fk" FOREIGN KEY ("agentId") REFERENCES "public"."agents"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "users" DROP COLUMN "openId";--> statement-breakpoint
 ALTER TABLE "users" ADD CONSTRAINT "users_keycloakSub_unique" UNIQUE("keycloakSub");
