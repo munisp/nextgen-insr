@@ -8,12 +8,12 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { posTerminals, platformSettings } from "../../drizzle/schema";
+import { insuranceServices, platformSettings } from "../../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
-export const posFirmwareOTARouter = router({
+export const posServiceUpdateRouter = router({
   listVersions: protectedProcedure
     .input(z.object({ limit: z.number().default(20) }))
     .query(async ({ input }) => {
@@ -31,7 +31,7 @@ export const posFirmwareOTARouter = router({
         if (rows[0]?.value) {
           try {
             versions = JSON.parse(String(rows[0].value));
-          } catch (err) { console.error("[posFirmwareOTA] operation failed:", err); }
+          } catch (err) { console.error("[posServiceUpdate] operation failed:", err); }
         }
 
         return { versions };
@@ -81,7 +81,7 @@ export const posFirmwareOTARouter = router({
         if (existing[0]?.value) {
           try {
             versions = JSON.parse(String(existing[0].value));
-          } catch (err) { console.error("[posFirmwareOTA] operation failed:", err); }
+          } catch (err) { console.error("[posServiceUpdate] operation failed:", err); }
         }
         versions.unshift(entry);
 
@@ -187,7 +187,7 @@ export const posFirmwareOTARouter = router({
         }> = [];
         try {
           versions = JSON.parse(String(rows[0].value));
-        } catch (err) { console.error("[posFirmwareOTA] operation failed:", err); }
+        } catch (err) { console.error("[posServiceUpdate] operation failed:", err); }
 
         const latest = versions.find(
           v => v.status === "released" || v.status === "staged"
@@ -231,9 +231,9 @@ export const posFirmwareOTARouter = router({
 
         if (input.success) {
           await db
-            .update(posTerminals)
+            .update(insuranceServices)
             .set({ firmwareVersion: input.version, updatedAt: new Date() })
-            .where(eq(posTerminals.id, input.terminalId));
+            .where(eq(insuranceServices.id, input.terminalId));
         }
 
         await writeAuditLog({
@@ -279,24 +279,24 @@ export const posFirmwareOTARouter = router({
 
         const items = await db
           .select({
-            id: posTerminals.id,
-            serialNumber: posTerminals.serialNumber,
-            firmwareVersion: posTerminals.firmwareVersion,
-            appVersion: posTerminals.appVersion,
-            model: posTerminals.model,
-            status: posTerminals.status,
-            lastSeenAt: posTerminals.lastSeenAt,
+            id: insuranceServices.id,
+            serialNumber: insuranceServices.serialNumber,
+            firmwareVersion: insuranceServices.firmwareVersion,
+            appVersion: insuranceServices.appVersion,
+            model: insuranceServices.model,
+            status: insuranceServices.status,
+            lastSeenAt: insuranceServices.lastSeenAt,
           })
-          .from(posTerminals)
-          .where(sql`${posTerminals.deletedAt} IS NULL`)
-          .orderBy(desc(posTerminals.updatedAt))
+          .from(insuranceServices)
+          .where(sql`${insuranceServices.deletedAt} IS NULL`)
+          .orderBy(desc(insuranceServices.updatedAt))
           .limit(input.limit)
           .offset(input.offset);
 
         const [{ total }] = await db
           .select({ total: sql<number>`count(*)::int` })
-          .from(posTerminals)
-          .where(sql`${posTerminals.deletedAt} IS NULL`);
+          .from(insuranceServices)
+          .where(sql`${insuranceServices.deletedAt} IS NULL`);
 
         return { items, total, limit: input.limit, offset: input.offset };
       } catch (error) {
@@ -315,12 +315,12 @@ export const posFirmwareOTARouter = router({
 
     const rows = await db
       .select({
-        version: posTerminals.firmwareVersion,
+        version: insuranceServices.firmwareVersion,
         cnt: sql<number>`count(*)::int`,
       })
-      .from(posTerminals)
-      .where(sql`${posTerminals.deletedAt} IS NULL`)
-      .groupBy(posTerminals.firmwareVersion);
+      .from(insuranceServices)
+      .where(sql`${insuranceServices.deletedAt} IS NULL`)
+      .groupBy(insuranceServices.firmwareVersion);
 
     const dist: Record<string, number> = {};
     let total = 0;

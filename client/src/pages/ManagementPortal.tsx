@@ -271,7 +271,7 @@ export default function ManagementPortal() {
                       icon: <AlertTriangle size={20} />,
                     },
                     {
-                      label: "POS Terminals",
+                      label: "Insurance Services",
                       value: stats.terminals ?? 0,
                       icon: <Database size={20} />,
                     },

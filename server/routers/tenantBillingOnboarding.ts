@@ -71,7 +71,7 @@ export const BILLING_TEMPLATES = {
     revenueShareConfig: null,
     subscriptionConfig: {
       perAgentFee: 15000, // NGN per agent per month
-      perPosFee: 5000, // NGN per POS terminal per month
+      perPosFee: 5000, // NGN per insurance service per month
       implementationFee: 5000000, // NGN one-time implementation
       billingCycle: "monthly" as const,
     },

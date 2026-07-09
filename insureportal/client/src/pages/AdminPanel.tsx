@@ -1495,7 +1495,7 @@ export default function AdminPanel() {
             className="px-6 py-3 rounded-xl font-bold text-white"
             style={{ background: BLUE, fontFamily: DISP }}
           >
-            ← Return to POS Terminal
+            ← Return to Insurance Service
           </a>
         </div>
       </div>
@@ -1611,7 +1611,7 @@ export default function AdminPanel() {
               fontFamily: DISP,
             }}
           >
-            ← POS Terminal
+            ← Insurance Service
           </a>
         </div>
       </div>

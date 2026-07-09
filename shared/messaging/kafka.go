@@ -19,7 +19,7 @@ type KafkaConfig struct {
 func KafkaConfigFromEnv() KafkaConfig {
 	broker := os.Getenv("KAFKA_BROKERS")
 	if broker == "" {
-		broker = "localhost:9092"
+		log.Fatal("FATAL: KAFKA_BROKERS environment variable is required")
 	}
 	return KafkaConfig{
 		Brokers: []string{broker},

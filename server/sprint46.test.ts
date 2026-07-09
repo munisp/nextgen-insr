@@ -183,7 +183,7 @@ describe("Sprint 46: Procedure Structure", () => {
     expect(procedures).toContain("getHistory");
     expect(procedures).toContain("getStats");
     expect(procedures).toContain("setSpread");
-    expect(procedures).toContain("getCorridors");
+    expect(procedures).toContain("getInsuranceRegions");
     expect(procedures.length).toBe(6);
   });
 
@@ -300,8 +300,8 @@ describe("Sprint 46: Data Integrity", () => {
     const stats = await caller.getStats({});
     expect(stats.supportedCurrencies).toBe(15);
     expect(stats.activePairs).toBe(42);
-    expect(stats.corridors).toContain("NGN-USD");
-    expect(stats.corridors).toContain("NGN-GBP");
+    expect(stats.insurance_regions).toContain("NGN-USD");
+    expect(stats.insurance_regions).toContain("NGN-GBP");
   });
 
   it("compliance reporting should have valid compliance score", async () => {

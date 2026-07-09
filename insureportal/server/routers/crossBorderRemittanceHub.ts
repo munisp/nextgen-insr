@@ -184,7 +184,7 @@ export const crossBorderRemittanceHubRouter = router({
       }
     }),
 
-  listCorridors: protectedProcedure.query(async () => {
+  listInsuranceRegions: protectedProcedure.query(async () => {
     try {
       return { data: [], total: 0 };
     } catch (error) {

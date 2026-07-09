@@ -1,4 +1,4 @@
-//! pos-middleware-bridge — Rust sidecar for 54Link POS Shell
+//! insureportal-middleware-bridge — Rust sidecar for InsurePortal InsurePortal
 //!
 //! High-performance middleware bridge providing:
 //! 1. Kafka event publishing (batch + single)
@@ -294,7 +294,7 @@ async fn health(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let now = Utc::now().timestamp();
     let audit_len = state.audit_log.read().await.len();
     HttpResponse::Ok().json(HealthResponse {
-        status: "healthy".into(), service: "pos-middleware-bridge".into(), version: "1.0.0".into(),
+        status: "healthy".into(), service: "insureportal-middleware-bridge".into(), version: "1.0.0".into(),
         uptime_seconds: (now - state.start_time) as u64, events_processed: state.kafka_count.load(Ordering::Relaxed),
         cache_entries: state.cache.len(), audit_entries: audit_len,
         rate_limit_keys: state.rate_limits.len(), timestamp: now,
@@ -317,7 +317,7 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into())).json().init();
     let port: u16 = env::var("RUST_BRIDGE_PORT").unwrap_or_else(|_| "9100".into()).parse().unwrap_or(9100);
     let state = Arc::new(AppState::new());
-    info!(port = port, "Starting pos-middleware-bridge (Rust sidecar)");
+    info!(port = port, "Starting insureportal-middleware-bridge (Rust sidecar)");
     let cache_state = state.clone();
     tokio::spawn(async move { loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
@@ -326,14 +326,23 @@ async fn main() -> std::io::Result<()> {
         for k in &expired { cache_state.cache.remove(k); }
         if !expired.is_empty() { info!(count = expired.len(), "Evicted expired cache entries"); }
     }});
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new().app_data(web::Data::new(state.clone())).app_data(web::JsonConfig::default().limit(10*1024*1024))
             .route("/kafka/publish", web::post().to(kafka_publish)).route("/kafka/batch", web::post().to(kafka_batch)).route("/kafka/drain", web::get().to(kafka_drain))
             .route("/cache/set", web::post().to(cache_set_handler)).route("/cache/get/{key}", web::get().to(cache_get_handler)).route("/cache/invalidate/{key}", web::delete().to(cache_invalidate_handler))
             .route("/audit/log", web::post().to(audit_log_handler)).route("/audit/batch", web::post().to(audit_batch_handler)).route("/audit/query", web::get().to(audit_query_handler))
             .route("/webhook/verify", web::post().to(webhook_verify)).route("/ratelimit/check", web::post().to(ratelimit_check)).route("/sanitize", web::post().to(sanitize_handler))
             .route("/health", web::get().to(health)).route("/stats", web::get().to(stats))
-    }).bind(("0.0.0.0", port))?.workers(4).run().await
+    }).bind(("0.0.0.0", port))?.workers(4).shutdown_timeout(30).run();
+
+    let srv = server.handle();
+    actix_web::rt::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        info!("Received shutdown signal, draining...");
+        srv.stop(true).await;
+    });
+
+    server.await
 }
 
 #[cfg(test)]

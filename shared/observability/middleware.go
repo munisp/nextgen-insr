@@ -8,18 +8,18 @@ import (
 	"encoding/hex"
 )
 
-type responseWriter struct {
+type loggingResponseWriter struct {
 	http.ResponseWriter
 	status int
 	size   int
 }
 
-func (rw *responseWriter) WriteHeader(status int) {
+func (rw *loggingResponseWriter) WriteHeader(status int) {
 	rw.status = status
 	rw.ResponseWriter.WriteHeader(status)
 }
 
-func (rw *responseWriter) Write(b []byte) (int, error) {
+func (rw *loggingResponseWriter) Write(b []byte) (int, error) {
 	n, err := rw.ResponseWriter.Write(b)
 	rw.size += n
 	return n, err
@@ -37,7 +37,7 @@ func RequestLogging(logger *Logger) func(http.Handler) http.Handler {
 			}
 			w.Header().Set("X-Request-ID", requestID)
 
-			wrapped := &responseWriter{ResponseWriter: w, status: 200}
+			wrapped := &loggingResponseWriter{ResponseWriter: w, status: 200}
 			next.ServeHTTP(wrapped, r)
 
 			duration := time.Since(start)

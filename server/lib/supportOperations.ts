@@ -216,7 +216,7 @@ const kbArticles: KBArticle[] = [
     id: "kb-001",
     title: "How to process a premium collection transaction",
     content:
-      "Navigate to Cash In on the POS terminal. Enter the customer phone number, amount, and confirm. The transaction will be processed and a receipt generated automatically. Float will be deducted from your agent balance.",
+      "Navigate to Cash In on the insurance service. Enter the customer phone number, amount, and confirm. The transaction will be processed and a receipt generated automatically. Float will be deducted from your agent balance.",
     category: "Transactions",
     tags: ["premium collection", "deposit", "float"],
     helpfulness: 92,

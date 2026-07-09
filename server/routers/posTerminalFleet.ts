@@ -1,5 +1,5 @@
 /**
- * POS Terminal Fleet Management — provisioning, heartbeat monitoring,
+ * Insurance Service Fleet Management — provisioning, heartbeat monitoring,
  * remote commands, group management, and fleet analytics.
  *
  * Middleware: Redis (heartbeat cache), Kafka (fleet events), PostgreSQL (fleet state),
@@ -9,7 +9,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import {
-  posTerminals,
+  insuranceServices,
   terminalGroups,
   serviceRecords,
   agents,
@@ -18,7 +18,7 @@ import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
-export const posTerminalFleetRouter = router({
+export const insuranceServiceFleetRouter = router({
   list: protectedProcedure
     .input(
       z.object({
@@ -48,30 +48,30 @@ export const posTerminalFleetRouter = router({
             offset: input.offset,
           };
 
-        const conditions = [sql`${posTerminals.deletedAt} IS NULL`];
+        const conditions = [sql`${insuranceServices.deletedAt} IS NULL`];
         if (input.status)
-          conditions.push(eq(posTerminals.status, input.status));
+          conditions.push(eq(insuranceServices.status, input.status));
         if (input.groupId)
-          conditions.push(eq(posTerminals.groupId, input.groupId));
+          conditions.push(eq(insuranceServices.groupId, input.groupId));
         if (input.search)
           conditions.push(
             or(
-              like(posTerminals.serialNumber, `%${input.search}%`),
-              like(posTerminals.model, `%${input.search}%`)
+              like(insuranceServices.serialNumber, `%${input.search}%`),
+              like(insuranceServices.model, `%${input.search}%`)
             )!
           );
 
         const items = await db
           .select()
-          .from(posTerminals)
+          .from(insuranceServices)
           .where(and(...conditions))
-          .orderBy(desc(posTerminals.createdAt))
+          .orderBy(desc(insuranceServices.createdAt))
           .limit(input.limit)
           .offset(input.offset);
 
         const [{ total }] = await db
           .select({ total: sql<number>`count(*)::int` })
-          .from(posTerminals)
+          .from(insuranceServices)
           .where(and(...conditions));
 
         return { items, total, limit: input.limit, offset: input.offset };
@@ -94,8 +94,8 @@ export const posTerminalFleetRouter = router({
 
         const [terminal] = await db
           .select()
-          .from(posTerminals)
-          .where(eq(posTerminals.id, input.id))
+          .from(insuranceServices)
+          .where(eq(insuranceServices.id, input.id))
           .limit(1);
         if (!terminal)
           throw new TRPCError({
@@ -141,9 +141,9 @@ export const posTerminalFleetRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const existing = await db
-          .select({ id: posTerminals.id })
-          .from(posTerminals)
-          .where(eq(posTerminals.serialNumber, input.serialNumber))
+          .select({ id: insuranceServices.id })
+          .from(insuranceServices)
+          .where(eq(insuranceServices.serialNumber, input.serialNumber))
           .limit(1);
         if (existing[0])
           throw new TRPCError({
@@ -152,7 +152,7 @@ export const posTerminalFleetRouter = router({
           });
 
         const [terminal] = await db
-          .insert(posTerminals)
+          .insert(insuranceServices)
           .values({
             serialNumber: input.serialNumber,
             model: input.model,
@@ -168,7 +168,7 @@ export const posTerminalFleetRouter = router({
           agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_PROVISIONED",
-          resource: "pos_terminal",
+          resource: "insurance_service",
           resourceId: String(terminal.id),
           status: "success",
           metadata: { serialNumber: input.serialNumber, model: input.model },
@@ -207,13 +207,13 @@ export const posTerminalFleetRouter = router({
           });
 
         const [updated] = await db
-          .update(posTerminals)
+          .update(insuranceServices)
           .set({
             agentId: input.agentId,
             status: "active",
             updatedAt: new Date(),
           })
-          .where(eq(posTerminals.id, input.terminalId))
+          .where(eq(insuranceServices.id, input.terminalId))
           .returning();
 
         if (!updated)
@@ -226,7 +226,7 @@ export const posTerminalFleetRouter = router({
           agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_ASSIGNED",
-          resource: "pos_terminal",
+          resource: "insurance_service",
           resourceId: String(input.terminalId),
           status: "success",
           metadata: { assignedTo: input.agentId },
@@ -269,9 +269,9 @@ export const posTerminalFleetRouter = router({
         if (input.appVersion) updateData.appVersion = input.appVersion;
 
         await db
-          .update(posTerminals)
+          .update(insuranceServices)
           .set(updateData)
-          .where(eq(posTerminals.id, input.terminalId));
+          .where(eq(insuranceServices.id, input.terminalId));
 
         return { acknowledged: true, serverTime: new Date().toISOString() };
       } catch (error) {
@@ -309,19 +309,19 @@ export const posTerminalFleetRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         await db
-          .update(posTerminals)
+          .update(insuranceServices)
           .set({
             lastCommand: input.command,
             lastCommandAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(eq(posTerminals.id, input.terminalId));
+          .where(eq(insuranceServices.id, input.terminalId));
 
         await writeAuditLog({
           agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_COMMAND_SENT",
-          resource: "pos_terminal",
+          resource: "insurance_service",
           resourceId: String(input.terminalId),
           status: "success",
           metadata: { command: input.command, params: input.params },
@@ -354,19 +354,19 @@ export const posTerminalFleetRouter = router({
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         await db
-          .update(posTerminals)
+          .update(insuranceServices)
           .set({
             status: "decommissioned",
             deletedAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(eq(posTerminals.id, input.terminalId));
+          .where(eq(insuranceServices.id, input.terminalId));
 
         await writeAuditLog({
           agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_DECOMMISSIONED",
-          resource: "pos_terminal",
+          resource: "insurance_service",
           resourceId: String(input.terminalId),
           status: "success",
           metadata: { reason: input.reason },
@@ -396,12 +396,12 @@ export const posTerminalFleetRouter = router({
 
     const rows = await db
       .select({
-        status: posTerminals.status,
+        status: insuranceServices.status,
         cnt: sql<number>`count(*)::int`,
       })
-      .from(posTerminals)
-      .where(sql`${posTerminals.deletedAt} IS NULL`)
-      .groupBy(posTerminals.status);
+      .from(insuranceServices)
+      .where(sql`${insuranceServices.deletedAt} IS NULL`)
+      .groupBy(insuranceServices.status);
 
     const counts: Record<string, number> = {};
     for (const r of rows) counts[r.status] = r.cnt;

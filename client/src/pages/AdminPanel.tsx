@@ -42,7 +42,7 @@ import { FailoverHistoryTab } from "../components/admin/FailoverHistoryTab";
 import { MQTTBridgeTab } from "../components/admin/MQTTBridgeTab";
 import { CoverageMap } from "../components/admin/CoverageMap";
 
-// ─── Design tokens (match POS Shell) ─────────────────────────────────────────
+// ─── Design tokens (match Insurance Portal) ─────────────────────────────────────────
 const BG = "#0a0e1a";
 const CARD = "oklch(0.14 0.02 240)";
 const BORDER = "oklch(0.22 0.02 240)";
@@ -1495,7 +1495,7 @@ export default function AdminPanel() {
             className="px-6 py-3 rounded-xl font-bold text-white"
             style={{ background: BLUE, fontFamily: DISP }}
           >
-            ← Return to POS Terminal
+            ← Return to Insurance Service
           </a>
         </div>
       </div>
@@ -1611,7 +1611,7 @@ export default function AdminPanel() {
               fontFamily: DISP,
             }}
           >
-            ← POS Terminal
+            ← Insurance Service
           </a>
         </div>
       </div>
