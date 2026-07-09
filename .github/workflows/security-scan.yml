@@ -68,11 +68,11 @@ jobs:
 
       - name: golangci-lint
         working-directory: ${{ matrix.module }}
-        run: golangci-lint run --timeout=5m --enable=errcheck,gosimple,go vet staticcheck || true
+        run: golangci-lint run --timeout=5m --enable=errcheck,gosimple,go vet staticcheck
 
       - name: gosec (SAST)
         working-directory: ${{ matrix.module }}
-        run: gosec -exclude-generated -severity=high -confidence=high ./... || true
+        run: gosec -exclude-generated -severity=high -confidence=high ./...
 
   # ── Dependency Vulnerability Scanning ─────────────────────────────────
   dependency-audit:
@@ -145,7 +145,7 @@ jobs:
             --exclude vendor \
             --exclude .git \
             --sarif -o semgrep-results.sarif \
-            . || true
+            . 
 
       - name: Upload Semgrep SARIF
         if: always()
@@ -170,10 +170,10 @@ jobs:
           gitleaks version
 
       - name: gitleaks detect (full repo scan)
-        run: gitleaks detect --report-path=gitleaks-results.json --report-format=json --verbose --no-git || true
+        run: gitleaks detect --report-path=gitleaks-results.json --report-format=json --verbose --no-git 
 
       - name: gitleaks protect (on recent changes)
-        run: gitleaks protect --report-path=gitleaks-protect-results.json --report-format=json --verbose --no-git || true
+        run: gitleaks protect --report-path=gitleaks-protect-results.json --report-format=json --verbose --no-git 
 
       - name: Custom secret patterns fallback
         run: |

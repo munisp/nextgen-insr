@@ -202,7 +202,7 @@ jobs:
 
       - name: Run Go tests
         working-directory: ${{ matrix.module }}
-        run: go test -race -count=1 -timeout=5m ./... || true
+        run: go test -race -count=1 -timeout=5m ./...
 
   # ── Python Lint ──────────────────────────────────────────────────────
   python-lint:
@@ -269,7 +269,7 @@ jobs:
       - name: Validate Dockerfile
         run: |
           if [ -f "${{ matrix.service.path }}/Dockerfile" ]; then
-            docker build --no-cache --check "${{ matrix.service.path }}" 2>/dev/null || echo "Dockerfile syntax check completed"
+            docker build --no-cache --check "${{ matrix.service.path }}"
           fi
 
   # ── Shared Go Packages ───────────────────────────────────────────────
