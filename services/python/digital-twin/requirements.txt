@@ -1,0 +1,7 @@
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+numpy>=1.25.0
+scipy>=1.11.0
+redis>=5.0.0
+confluent-kafka>=2.3.0
