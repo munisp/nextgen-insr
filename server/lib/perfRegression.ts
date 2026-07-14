@@ -324,13 +324,13 @@ export function initializePerformanceTracking(
   logger.info("[PerfRegression] Performance tracking initialized");
 
   // Add default budgets for critical endpoints
-  defaults.forEach(default => {
+  defaults.forEach(budgetDef => {
     addPerformanceBudget({
-      endpoint: default.endpoint!,
-      method: default.method || "GET",
-      maxP95: default.maxP95 || 500,
-      maxP99: default.maxP99 || 1000,
-      tags: default.tags,
+      endpoint: budgetDef.endpoint!,
+      method: budgetDef.method || "GET",
+      maxP95: budgetDef.maxP95 || 500,
+      maxP99: budgetDef.maxP99 || 1000,
+      tags: budgetDef.tags,
     });
   });
 }
