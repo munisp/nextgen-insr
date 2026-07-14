@@ -402,6 +402,25 @@ app.use((req, res, next) => {
   next();
 });
 
+// CSRF protection for state-changing mutations
+const CSRF_EXEMPT_PATHS = ['/api/trpc', '/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/health'];
+function generateCsrfToken(sessionId) {
+  return crypto.createHmac('sha256', JWT_SECRET).update(sessionId + ':csrf').digest('hex');
+}
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  if (CSRF_EXEMPT_PATHS.some(p => req.path.startsWith(p))) return next();
+  const csrfHeader = req.headers['x-csrf-token'];
+  if (csrfHeader) {
+    const sessionId = req.headers['authorization']?.replace('Bearer ', '') || 'anon';
+    const expected = generateCsrfToken(sessionId);
+    if (csrfHeader !== expected) {
+      return res.status(403).json({ error: 'Invalid CSRF token', code: 'CSRF_INVALID' });
+    }
+  }
+  next();
+});
+
 // Response compression (Brotli/gzip)
 app.use(compression({
   level: 6,
