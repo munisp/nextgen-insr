@@ -20,6 +20,10 @@ import KeyboardShortcutsHelp, {
 import { ErrorBoundaryRoute } from "./components/ErrorBoundaryRoute";
 import AnnouncementBanner from "./components/AnnouncementBanner";
 import { AccessibilityProvider } from "@/components/AccessibilityProvider";
+import { OfflineIndicator } from "./components/OfflineIndicator";
+import { RoleOnboarding } from "./components/RoleOnboarding";
+import { KpiLiveRegion } from "./components/KpiLiveRegion";
+import { SkeletonDashboard } from "./components/SkeletonDashboard";
 // Sprint 28: Nigerian Insurance Features
 // Sprint 29: AI/ML/DL/GNN Integrations
 // Sprint 30: AI/ML Follow-ups
@@ -48,6 +52,19 @@ import { AccessibilityProvider } from "@/components/AccessibilityProvider";
 const FraudDashboard = lazy(() => import("./pages/FraudDashboard"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const SupervisorDashboard = lazy(() => import("./pages/SupervisorDashboard"));
+// ─── Insurance Role Dashboards ───────────────────────────────────────────────
+const UnderwriterDashboard = lazy(() => import("./pages/UnderwriterDashboard"));
+const ActuaryDashboard = lazy(() => import("./pages/ActuaryDashboard"));
+const ClaimsDashboard = lazy(() => import("./pages/ClaimsDashboard"));
+const BrokerDashboard = lazy(() => import("./pages/BrokerDashboard"));
+const PolicyholderDashboard = lazy(() => import("./pages/PolicyholderDashboard"));
+const ComplianceDashboard = lazy(() => import("./pages/ComplianceDashboard"));
+const RegulatorDashboard = lazy(() => import("./pages/RegulatorDashboard"));
+const ReinsurerDashboard = lazy(() => import("./pages/ReinsurerDashboard"));
+const BillingAdminDashboard = lazy(() => import("./pages/BillingAdminDashboard"));
+const BeneficiaryDashboard = lazy(() => import("./pages/BeneficiaryDashboard"));
+const Ifrs17Dashboard = lazy(() => import("./pages/Ifrs17Dashboard"));
+
 const ManagementPortal = lazy(() => import("./pages/ManagementPortal"));
 const AgentPortal = lazy(() => import("./pages/AgentPortal"));
 const CustomerPortal = lazy(() => import("./pages/CustomerPortal"));
@@ -2115,6 +2132,40 @@ function AuthenticatedApp() {
           component={AlertNotificationPreferences}
         />
         <Route path="/network-heatmap" component={NetworkQualityHeatmap} />
+        {/* ─── Insurance Role Dashboards ─────────────────────────────────── */}
+        <Route path="/underwriter-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><UnderwriterDashboard /></Suspense>
+        </Route>
+        <Route path="/actuary-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><ActuaryDashboard /></Suspense>
+        </Route>
+        <Route path="/claims-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><ClaimsDashboard /></Suspense>
+        </Route>
+        <Route path="/broker-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><BrokerDashboard /></Suspense>
+        </Route>
+        <Route path="/policyholder-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><PolicyholderDashboard /></Suspense>
+        </Route>
+        <Route path="/compliance-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><ComplianceDashboard /></Suspense>
+        </Route>
+        <Route path="/regulator-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><RegulatorDashboard /></Suspense>
+        </Route>
+        <Route path="/reinsurer-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><ReinsurerDashboard /></Suspense>
+        </Route>
+        <Route path="/billing-admin-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><BillingAdminDashboard /></Suspense>
+        </Route>
+        <Route path="/beneficiary-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><BeneficiaryDashboard /></Suspense>
+        </Route>
+        <Route path="/ifrs17-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><Ifrs17Dashboard /></Suspense>
+        </Route>
         {/* Fallback — InsurancePortal handles named screens */}
         <Route path="/:screen" component={InsurancePortal} />
       </Switch>
@@ -2143,6 +2194,9 @@ export default function App() {
               shortcuts={shortcuts}
             />
             <PWAInstallBanner />
+        <OfflineIndicator />
+        <RoleOnboarding />
+        <KpiLiveRegion />
             <GdprConsentBanner />
             <LiveChatWidget />
             <ProactiveHelp />

@@ -492,6 +492,8 @@ import { promotionsRouter } from "./routers/promotions";
 import { kycEnforcementRouter } from "./routers/kycEnforcement";
 // ── Insurance Domain Workflows (Sprint 98) ──
 import { insuranceWorkflowsRouter } from "./routers/insuranceWorkflows";
+// ── Insurance KPI Dashboards (all 16 roles) ──
+import { insuranceKpiDashboardRouter } from "./routers/insuranceKpiDashboard";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -1088,6 +1090,8 @@ export const appRouter = router({
   promotions: promotionsRouter,
   // KYC/KYB Enforcement & Compliance
   kycEnforcement: kycEnforcementRouter,
+  // Insurance KPI Dashboards — all 16 roles
+  insuranceKpiDashboard: insuranceKpiDashboardRouter,
 });
 
 export type AppRouter = typeof appRouter;

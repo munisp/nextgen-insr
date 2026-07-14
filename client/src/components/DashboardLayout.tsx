@@ -151,6 +151,7 @@ import {
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -1669,13 +1670,13 @@ export default function DashboardLayout({
         } as CSSProperties
       }
     >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
+            <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
         {children}
       </DashboardLayoutContent>
+      <MobileBottomNav />
     </SidebarProvider>
   );
 }
-
 type DashboardLayoutContentProps = {
   children: React.ReactNode;
   setSidebarWidth: (width: number) => void;
