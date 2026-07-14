@@ -7,7 +7,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { notificationDispatchLog } from "../../drizzle/schema";
+import { notificationDispatchLog } from "@schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
 
 const MAX_RETRIES = 3;
@@ -25,7 +25,7 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   float_low: {
     subject: "Low Float Alert",
-    body: "Your float balance is {{balance}}. Please top up.",
+    body: "Your premium reserve is {{balance}}. Please top up.",
   },
   kyc_approved: {
     subject: "KYC Approved",

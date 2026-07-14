@@ -1,5 +1,5 @@
 /**
- * 54Link MDM Router — Comprehensive Unit Tests
+ * InsurePortal MDM Router — Comprehensive Unit Tests
  *
  * Tests: heartbeat auto-enrollment, compliance policy evaluation, geofence
  * violation detection, kill-switch audit logging, OTA lifecycle, enrollment
@@ -100,7 +100,7 @@ vi.mock("jose", () => ({
   jwtVerify: vi.fn().mockResolvedValue({
     payload: {
       sub: "1",
-      agentCode: "AGT001",
+      agentId: "AGT001",
       name: "Emeka Obi",
       tier: "Gold",
       role: "agent",
@@ -119,7 +119,7 @@ function makeAdminCtx(): TrpcContext {
       id: 1,
       keycloakSub: "admin-sub-001",
       name: "Admin User",
-      email: "admin@54link.ng",
+      email: "admin@insureportal.ng",
       loginMethod: "keycloak",
       role: "admin",
       mfaEnabled: false,
@@ -140,7 +140,7 @@ function makeUserCtx(): TrpcContext {
       id: 2,
       keycloakSub: "user-sub-002",
       name: "Regular User",
-      email: "user@54link.ng",
+      email: "user@insureportal.ng",
       loginMethod: "keycloak",
       role: "user",
       mfaEnabled: false,
@@ -206,7 +206,7 @@ describe("mdm.stats", () => {
 describe("mdm.heartbeat", () => {
   const baseHeartbeat = {
     serialNumber: "SN-TEST-001",
-    agentCode: "AGT001",
+    agentId: "AGT001",
     model: "PAX A920 MAX",
     osVersion: "Android 12",
     appVersion: "4.2.1",
@@ -250,7 +250,7 @@ describe("mdm.heartbeat", () => {
     try {
       await caller.mdm.heartbeat({
         serialNumber: "SN-MINIMAL",
-        agentCode: "AGT002",
+        agentId: "AGT002",
       });
     } catch (e: any) {
       expect(e.code).not.toBe("UNAUTHORIZED");
@@ -305,14 +305,14 @@ describe("mdm.generateEnrollmentToken", () => {
   it("requires admin role", async () => {
     const caller = appRouter.createCaller(makeUserCtx());
     await expect(
-      caller.mdm.generateEnrollmentToken({ agentCode: "AGT001" })
+      caller.mdm.generateEnrollmentToken({ agentId: "AGT001" })
     ).rejects.toThrow(/admin|forbidden/i);
   });
 
-  it("validates agentCode is non-empty", async () => {
+  it("validates agentId is non-empty", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(
-      caller.mdm.generateEnrollmentToken({ agentCode: "" })
+      caller.mdm.generateEnrollmentToken({ agentId: "" })
     ).rejects.toThrow();
   });
 });
@@ -348,7 +348,7 @@ describe("mdm.disableTerminal", () => {
     const caller = appRouter.createCaller(makeUserCtx());
     await expect(
       caller.mdm.disableTerminal({
-        agentCode: "AGT001",
+        agentId: "AGT001",
         reason: "Suspected fraud",
       })
     ).rejects.toThrow(/admin|forbidden/i);
@@ -357,15 +357,15 @@ describe("mdm.disableTerminal", () => {
   it("requires reason of at least 5 characters", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(
-      caller.mdm.disableTerminal({ agentCode: "AGT001", reason: "abc" })
+      caller.mdm.disableTerminal({ agentId: "AGT001", reason: "abc" })
     ).rejects.toThrow();
   });
 
-  it("validates agentCode is non-empty", async () => {
+  it("validates agentId is non-empty", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(
       caller.mdm.disableTerminal({
-        agentCode: "",
+        agentId: "",
         reason: "Suspected fraud — under investigation",
       })
     ).rejects.toThrow();
@@ -376,7 +376,7 @@ describe("mdm.enableTerminal", () => {
   it("requires admin role", async () => {
     const caller = appRouter.createCaller(makeUserCtx());
     await expect(
-      caller.mdm.enableTerminal({ agentCode: "AGT001" })
+      caller.mdm.enableTerminal({ agentId: "AGT001" })
     ).rejects.toThrow(/admin|forbidden/i);
   });
 });
@@ -391,7 +391,7 @@ describe("mdm.createOtaRelease", () => {
       caller.mdm.createOtaRelease({
         version: "5.0.0",
         s3Key: "ota/5.0.0.apk",
-        downloadUrl: "https://cdn.54link.ng/ota/5.0.0.apk",
+        downloadUrl: "https://cdn.insureportal.ng/ota/5.0.0.apk",
         checksum: "sha256:abc123",
         fileSize: 52428800,
       })
@@ -404,7 +404,7 @@ describe("mdm.createOtaRelease", () => {
       caller.mdm.createOtaRelease({
         version: "",
         s3Key: "ota/5.0.0.apk",
-        downloadUrl: "https://cdn.54link.ng/ota/5.0.0.apk",
+        downloadUrl: "https://cdn.insureportal.ng/ota/5.0.0.apk",
         checksum: "sha256:abc123",
         fileSize: 52428800,
       })
@@ -417,7 +417,7 @@ describe("mdm.createOtaRelease", () => {
       caller.mdm.createOtaRelease({
         version: "5.0.0",
         s3Key: "ota/5.0.0.apk",
-        downloadUrl: "https://cdn.54link.ng/ota/5.0.0.apk",
+        downloadUrl: "https://cdn.insureportal.ng/ota/5.0.0.apk",
         checksum: "sha256:abc123",
         fileSize: -1,
       })
@@ -608,21 +608,21 @@ describe("mdm input validation", () => {
   it("rejects heartbeat with empty serialNumber", async () => {
     const caller = appRouter.createCaller(makePublicCtx());
     await expect(
-      caller.mdm.heartbeat({ serialNumber: "", agentCode: "AGT001" } as any)
+      caller.mdm.heartbeat({ serialNumber: "", agentId: "AGT001" } as any)
     ).rejects.toThrow();
   });
 
-  it("rejects heartbeat with empty agentCode", async () => {
+  it("rejects heartbeat with empty agentId", async () => {
     const caller = appRouter.createCaller(makePublicCtx());
     await expect(
-      caller.mdm.heartbeat({ serialNumber: "SN001", agentCode: "" } as any)
+      caller.mdm.heartbeat({ serialNumber: "SN001", agentId: "" } as any)
     ).rejects.toThrow();
   });
 
   it("rejects disableTerminal with short reason", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(
-      caller.mdm.disableTerminal({ agentCode: "AGT001", reason: "ab" })
+      caller.mdm.disableTerminal({ agentId: "AGT001", reason: "ab" })
     ).rejects.toThrow();
   });
 
@@ -632,7 +632,7 @@ describe("mdm input validation", () => {
       caller.mdm.createOtaRelease({
         version: "5.0.0",
         s3Key: "ota/5.0.0.apk",
-        downloadUrl: "https://cdn.54link.ng/ota/5.0.0.apk",
+        downloadUrl: "https://cdn.insureportal.ng/ota/5.0.0.apk",
         checksum: "sha256:abc123",
         fileSize: 0,
       })

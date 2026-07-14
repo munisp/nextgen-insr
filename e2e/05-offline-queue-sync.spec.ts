@@ -11,7 +11,7 @@ test.describe("Offline Queue and Auto-Sync", () => {
   }) => {
     // Login
     await page.goto("/");
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal POS")).toBeVisible({
       timeout: 10_000,
     });
     await page.locator('input[placeholder*="AGT"]').fill("AGT001");

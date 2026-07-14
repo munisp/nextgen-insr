@@ -1,0 +1,88 @@
+version: '3.8'
+# InsurePortal Lakehouse — Iceberg + Trino + Hive Metastore
+# Provides ACID tables on object storage for analytics/reporting
+
+services:
+  # Hive Metastore (Iceberg catalog)
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: hive-metastore
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://metastore-db:5432/metastore
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=${HIVE_METASTORE_PASSWORD:-hive_password}
+    ports:
+      - "9083:9083"
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+    volumes:
+      - warehouse:/user/hive/warehouse
+    healthcheck:
+      test: ["CMD", "bash", "-c", "cat < /dev/null > /dev/tcp/localhost/9083"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL for Hive Metastore catalog
+  metastore-db:
+    image: postgres:16-alpine
+    container_name: metastore-db
+    environment:
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: ${HIVE_METASTORE_PASSWORD:-hive_password}
+      POSTGRES_DB: metastore
+    volumes:
+      - metastore-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Trino — distributed SQL query engine
+  trino:
+    image: trinodb/trino:440
+    container_name: trino
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino/config.properties:/etc/trino/config.properties:ro
+      - warehouse:/user/hive/warehouse
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO — S3-compatible object storage (local dev)
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  warehouse:
+  metastore-data:
+  minio-data:

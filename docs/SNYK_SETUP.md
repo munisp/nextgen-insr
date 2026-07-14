@@ -1,7 +1,7 @@
 # Snyk CVE Scanning — Setup Guide
 
 This guide explains how to activate the `snyk-scan` CI job in `.github/workflows/ci.yml`
-for the 54Link POS Shell platform.
+for the InsurePortal POS Shell platform.
 
 ---
 
@@ -32,7 +32,7 @@ artifacts for 30 days.
 
 ```bash
 # Option A: GitHub CLI (recommended)
-gh secret set SNYK_TOKEN --repo YOUR_ORG/pos-shell --body "YOUR_SNYK_TOKEN"
+gh secret set SNYK_TOKEN --repo YOUR_ORG/insurance-portal --body "YOUR_SNYK_TOKEN"
 
 # Option B: GitHub web UI
 # Repository → Settings → Secrets and variables → Actions → New repository secret

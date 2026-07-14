@@ -2,7 +2,7 @@
 name = "fraud-enricher"
 version = "1.0.0"
 edition = "2021"
-description = "54Link Fluvio SmartModule: enriches fraud alert events with agent metadata and risk score"
+description = "InsurePortal Fluvio SmartModule: enriches fraud alert events with agent metadata and risk score"
 
 [lib]
 name = "fraud_enricher"

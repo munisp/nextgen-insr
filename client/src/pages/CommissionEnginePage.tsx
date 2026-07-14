@@ -923,7 +923,7 @@ export default function CommissionEnginePage() {
                           <td className="p-2 font-mono text-xs">{p.id}</td>
                           <td className="p-2">{p.agentName}</td>
                           <td className="p-2 font-mono text-xs">
-                            {p.agentCode}
+                            {p.agentId}
                           </td>
                           <td className="p-2 text-right font-bold">
                             ₦{p.totalCommission?.toLocaleString()}

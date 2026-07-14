@@ -32,7 +32,7 @@ const tenantRegistry = new Map<
 // Seed some default tenants
 tenantRegistry.set("tenant-default", {
   id: "tenant-default",
-  name: "54Link Default",
+  name: "InsurePortal Default",
   status: "active",
   plan: "enterprise",
   createdAt: Date.now(),

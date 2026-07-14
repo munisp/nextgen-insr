@@ -4,7 +4,7 @@ groups:
     rules:
       # ── High fraud alert rate ───────────────────────────────────────────────
       - alert: HighFraudAlertRate
-        expr: rate(pos54link_fraud_alerts_total[5m]) > 0.1
+        expr: rate(posinsureportal_fraud_alerts_total[5m]) > 0.1
         for: 2m
         labels:
           severity: critical
@@ -12,11 +12,11 @@ groups:
         annotations:
           summary: "High fraud alert rate detected"
           description: "Fraud alert rate is {{ $value | humanize }} alerts/second over the last 5 minutes. Possible coordinated attack."
-          runbook: "https://wiki.54link.ng/runbooks/fraud-spike"
+          runbook: "https://wiki.insureportal.ng/runbooks/fraud-spike"
 
       # ── Agent with multiple fraud flags ────────────────────────────────────
       - alert: AgentMultipleFraudFlags
-        expr: increase(pos54link_fraud_alerts_total{agent_code!=""}[1h]) > 5
+        expr: increase(posinsureportal_fraud_alerts_total{agent_code!=""}[1h]) > 5
         for: 1m
         labels:
           severity: critical
@@ -27,7 +27,7 @@ groups:
 
       # ── High risk score transactions ────────────────────────────────────────
       - alert: HighRiskScoreTransactions
-        expr: rate(pos54link_transactions_total{risk_score="high"}[5m]) > 0.05
+        expr: rate(posinsureportal_transactions_total{risk_score="high"}[5m]) > 0.05
         for: 3m
         labels:
           severity: warning
@@ -38,7 +38,7 @@ groups:
 
       # ── Blacklisted terminal activity ───────────────────────────────────────
       - alert: BlacklistedTerminalActivity
-        expr: increase(pos54link_fraud_alerts_total{rule="blacklist"}[5m]) > 0
+        expr: increase(posinsureportal_fraud_alerts_total{rule="blacklist"}[5m]) > 0
         for: 0m
         labels:
           severity: critical
@@ -49,7 +49,7 @@ groups:
 
       # ── Velocity rule violations ────────────────────────────────────────────
       - alert: VelocityRuleViolations
-        expr: rate(pos54link_fraud_alerts_total{rule="velocity"}[1m]) > 0.5
+        expr: rate(posinsureportal_fraud_alerts_total{rule="velocity"}[1m]) > 0.5
         for: 2m
         labels:
           severity: warning

@@ -230,7 +230,7 @@ export default function KycVerificationWorkflow() {
                       documentType: docType as any,
                       documentUrl:
                         docUrl ||
-                        "https://storage.54link.com/kyc/sample-doc.pdf",
+                        "https://storage.insureportal.com/kyc/sample-doc.pdf",
                     })
                   }
                   disabled={submitMutation.isPending}

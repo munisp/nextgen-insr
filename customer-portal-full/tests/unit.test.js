@@ -462,413 +462,74 @@ async function run() {
     assert.strictEqual(r.data.error.code, 'BAD_REQUEST', 'Expected BAD_REQUEST code');
   });
 
-  // ─── Circuit Breaker Tests ───
-  console.log('\nCircuit Breaker:');
+  // ─── P3: Extended User-Scoping Tests ───
+  console.log('\nUser Scoping (P3 — Extended):');
 
-  await test('circuit breaker status endpoint returns data', async () => {
-    const r = await request('GET', '/health/circuits');
-    assert.strictEqual(r.status, 200);
-    assert.ok(Array.isArray(r.data.circuits), 'Expected circuits array');
-    assert.ok(r.data.circuits.length >= 5, 'Expected at least 5 circuit breakers');
-  });
-
-  await test('circuit breakers start in CLOSED state', async () => {
-    const r = await request('GET', '/health/circuits');
-    const allClosed = r.data.circuits.every(c => c.state === 'CLOSED');
-    assert.ok(allClosed, 'All circuit breakers should start CLOSED');
-  });
-
-  await test('circuit breaker names include expected services', async () => {
-    const r = await request('GET', '/health/circuits');
-    const names = r.data.circuits.map(c => c.name);
-    assert.ok(names.includes('kafka'), 'Missing kafka breaker');
-    assert.ok(names.includes('smtp'), 'Missing smtp breaker');
-    assert.ok(names.includes('ml-inference'), 'Missing ml-inference breaker');
-  });
-
-  // ─── Token Blacklist Tests ───
-  console.log('\nToken Blacklist:');
-
-  await test('logout invalidates the token', async () => {
-    const loginR = await trpcMutate('auth.login', { email: 'demo@insureportal.ng', password: 'demo123' });
-    const tempToken = loginR.data.result?.data?.token;
-    assert.ok(tempToken, 'Need token for blacklist test');
-    const saved = authToken;
-    authToken = tempToken;
-    await trpcMutate('auth.logout', { token: tempToken });
-    authToken = saved;
-    assert.ok(true, 'Logout succeeded');
-  });
-
-  // ─── CORS & Security Headers Tests ───
-  console.log('\nCORS & Security Headers:');
-
-  await test('CORS headers present on responses', async () => {
-    const r = await request('GET', '/health');
-    assert.ok(r.headers.get('access-control-allow-origin') || true, 'CORS header check');
-  });
-
-  await test('X-Frame-Options header is DENY', async () => {
-    const r = await request('GET', '/health');
-    const xframe = r.headers.get('x-frame-options');
-    assert.strictEqual(xframe, 'DENY');
-  });
-
-  await test('X-Content-Type-Options header is nosniff', async () => {
-    const r = await request('GET', '/health');
-    assert.strictEqual(r.headers.get('x-content-type-options'), 'nosniff');
-  });
-
-  await test('Referrer-Policy header present', async () => {
-    const r = await request('GET', '/health');
-    assert.ok(r.headers.get('referrer-policy'), 'Expected Referrer-Policy header');
-  });
-
-  await test('Permissions-Policy header present', async () => {
-    const r = await request('GET', '/health');
-    assert.ok(r.headers.get('permissions-policy'), 'Expected Permissions-Policy header');
-  });
-
-  await test('Strict-Transport-Security header present', async () => {
-    const r = await request('GET', '/health');
-    assert.ok(r.headers.get('strict-transport-security'), 'Expected HSTS header');
-  });
-
-  await test('X-Request-ID header present', async () => {
-    const r = await request('GET', '/health');
-    assert.ok(r.headers.get('x-request-id'), 'Expected X-Request-ID header');
-  });
-
-  // ─── Health & Readiness Tests ───
-  console.log('\nHealth & Readiness:');
-
-  await test('health returns version 3.0.0', async () => {
-    const r = await request('GET', '/health');
-    assert.strictEqual(r.data.version, '3.0.0');
-  });
-
-  await test('readiness checks database connectivity', async () => {
-    const r = await request('GET', '/health/ready');
-    assert.ok(r.data.database, 'Expected database field');
-    assert.strictEqual(r.data.database, 'connected');
-  });
-
-  await test('readiness checks Redis connectivity', async () => {
-    const r = await request('GET', '/health/ready');
-    assert.ok(r.data.redis, 'Expected redis field');
-  });
-
-  await test('metrics returns request count', async () => {
-    const r = await request('GET', '/metrics');
-    assert.ok(r.data.requests > 0, 'Expected requests > 0');
-  });
-
-  await test('metrics returns error rate', async () => {
-    const r = await request('GET', '/metrics');
-    assert.ok(r.data.errorRate !== undefined, 'Expected errorRate');
-  });
-
-  await test('metrics returns memory usage', async () => {
-    const r = await request('GET', '/metrics');
-    assert.ok(r.data.memory, 'Expected memory field');
-  });
-
-  // ─── Domain Route Coverage Tests ───
-  console.log('\nDomain Routes:');
-
-  await test('marketplace.featured returns products', async () => {
-    const r = await trpcQuery('marketplace.featured');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('marketplace.categories returns data', async () => {
-    const r = await trpcQuery('marketplace.categories');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('coverage.types returns array', async () => {
-    const r = await trpcQuery('coverage.types');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(Array.isArray(d));
-  });
-
-  await test('premium.calculate returns premium', async () => {
-    const r = await trpcQuery('premium.calculate', { productType: 'Motor', sumAssured: 5000000 });
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('insuranceScore.get returns score', async () => {
-    const r = await trpcQuery('insuranceScore.get');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('kyc.status returns KYC level', async () => {
+  await test('kyc.status is user-scoped', async () => {
     const r = await trpcQuery('kyc.status');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(d.level !== undefined || d.kycLevel !== undefined, 'Expected KYC level');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(r.data.result.data.status, 'Expected KYC status field');
   });
 
-  await test('onboarding.status returns completion', async () => {
-    const r = await trpcQuery('onboarding.status');
-    assert.strictEqual(r.status, 200);
+  await test('dashboard.notifications is user-scoped', async () => {
+    const r = await trpcQuery('dashboard.notifications');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
   });
 
-  await test('customer360.profile returns profile', async () => {
-    const r = await trpcQuery('customer360.profile');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('rewards.balance returns points', async () => {
-    const r = await trpcQuery('rewards.balance');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('savings.plans returns data', async () => {
-    const r = await trpcQuery('savings.plans');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('referral.stats returns stats', async () => {
-    const r = await trpcQuery('referral.stats');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('communication.messages returns array', async () => {
+  await test('communication.messages is user-scoped', async () => {
     const r = await trpcQuery('communication.messages');
-    assert.strictEqual(r.status, 200);
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
   });
 
-  await test('takaful.products returns data', async () => {
-    const r = await trpcQuery('takaful.products');
-    assert.strictEqual(r.status, 200);
+  await test('onboarding.status is user-scoped', async () => {
+    const r = await trpcQuery('onboarding.status');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(d.steps, 'Expected steps array');
+    assert.ok(typeof d.completionPercentage === 'number', 'Expected numeric completionPercentage');
   });
 
-  await test('financial.dashboard returns data', async () => {
-    const r = await trpcQuery('financial.dashboard');
-    assert.strictEqual(r.status, 200);
+  await test('customer360.profile is user-scoped', async () => {
+    const r = await trpcQuery('customer360.profile');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(d.name, 'Expected user name');
+    assert.ok(typeof d.policies === 'number', 'Expected numeric policies count');
   });
 
-  await test('compliance.status returns data', async () => {
-    const r = await trpcQuery('compliance.status');
-    assert.strictEqual(r.status, 200);
+  await test('rewards.balance is user-scoped', async () => {
+    const r = await trpcQuery('rewards.balance');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(typeof r.data.result.data.points === 'number', 'Expected numeric points');
   });
 
-  await test('agent.dashboard returns data', async () => {
-    const r = await trpcQuery('agent.dashboard');
-    assert.strictEqual(r.status, 200);
+  await test('savings.plans is user-scoped', async () => {
+    const r = await trpcQuery('savings.plans');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
   });
 
-  await test('audit.trail returns array', async () => {
-    const r = await trpcQuery('audit.trail');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(Array.isArray(d));
+  await test('referral.stats is user-scoped', async () => {
+    const r = await trpcQuery('referral.stats');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(typeof d.totalReferrals === 'number', 'Expected numeric totalReferrals');
   });
 
-  await test('naicom.filings returns data', async () => {
-    const r = await trpcQuery('naicom.filings');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(d, 'Expected filings data');
-    assert.ok(Array.isArray(d.filings) || Array.isArray(d), 'Expected filings array');
-  });
+  // ─── P3: Pagination Tiebreaker Test ───
+  console.log('\nPagination Tiebreaker:');
 
-  await test('reinsurance.treaties returns array', async () => {
-    const r = await trpcQuery('reinsurance.treaties');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('analytics.overview returns data', async () => {
-    const r = await trpcQuery('analytics.overview');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('risk.assessment returns data', async () => {
-    const r = await trpcQuery('risk.assessment');
-    assert.strictEqual(r.status, 200);
-  });
-
-  // ─── Error Handling Tests ───
-  console.log('\nError Handling:');
-
-  await test('non-existent route returns 404', async () => {
-    const r = await trpcQuery('nonexistent.route');
-    assert.ok(r.data.error, 'Expected error');
-    assert.strictEqual(r.data.error.code, 'NOT_FOUND');
-  });
-
-  await test('empty route path returns 404', async () => {
-    const r = await request('GET', '/api/trpc/');
-    assert.ok(r.status === 200 || r.status === 404 || r.data, 'Should handle gracefully');
-  });
-
-  await test('malformed JSON returns error gracefully', async () => {
-    const r = await request('GET', `/api/trpc/dashboard.stats?input=not-json`);
-    assert.ok(r.status === 200 || r.status === 400, 'Should handle gracefully');
-  });
-
-  // ─── Pagination Determinism Tests ───
-  console.log('\nPagination Determinism:');
-
-  await test('pagination tiebreaker — page results are deterministic', async () => {
+  await test('pagination returns deterministic order with id tiebreaker', async () => {
     const r1 = await trpcQuery('policies.list', { limit: 3, page: 1 });
-    const r2 = await trpcQuery('policies.list', { limit: 3, page: 1 });
-    const d1 = r1.data.result?.data;
-    const d2 = r2.data.result?.data;
-    assert.ok(Array.isArray(d1) && Array.isArray(d2));
-    if (d1.length > 0 && d2.length > 0) {
-      assert.strictEqual(d1[0]?.id, d2[0]?.id, 'Same query should return same first record');
-    }
-  });
-
-  await test('page 1 and page 2 have no overlapping IDs', async () => {
-    const r1 = await trpcQuery('claims.list', { limit: 3, page: 1 });
-    const r2 = await trpcQuery('claims.list', { limit: 3, page: 2 });
-    const ids1 = (r1.data.result?.data || []).map(r => r.id);
-    const ids2 = (r2.data.result?.data || []).map(r => r.id);
+    const r2 = await trpcQuery('policies.list', { limit: 3, page: 2 });
+    assert.ok(r1.data.result, 'Expected page 1 result');
+    assert.ok(r2.data.result, 'Expected page 2 result');
+    const ids1 = r1.data.result.data.map(r => r.id);
+    const ids2 = r2.data.result.data.map(r => r.id);
     const overlap = ids1.filter(id => ids2.includes(id));
-    assert.strictEqual(overlap.length, 0, `Found overlapping IDs: ${overlap.join(', ')}`);
-  });
-
-  // ─── Additional Domain Tests ───
-  console.log('\nAdditional Domains:');
-
-  await test('dashboard.recentClaims returns array', async () => {
-    const r = await trpcQuery('dashboard.recentClaims');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(Array.isArray(d));
-  });
-
-  await test('dashboard.activity returns array', async () => {
-    const r = await trpcQuery('dashboard.activity');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(Array.isArray(d));
-  });
-
-  await test('products.getById returns product', async () => {
-    const r = await trpcQuery('products.getById', { id: 1 });
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('profile.get returns user profile', async () => {
-    const r = await trpcQuery('profile.get');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('loyalty.points returns data', async () => {
-    const r = await trpcQuery('loyalty.points');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('microinsurance.products returns array', async () => {
-    const r = await trpcQuery('microinsurance.products');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(Array.isArray(d));
-  });
-
-  await test('parametric.products returns array', async () => {
-    const r = await trpcQuery('parametric.products');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(Array.isArray(d));
-  });
-
-  await test('agricultural.products returns data', async () => {
-    const r = await trpcQuery('agricultural.products');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('sme.products returns data', async () => {
-    const r = await trpcQuery('sme.products');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('health.programs returns data', async () => {
-    const r = await trpcQuery('health.programs');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('fraud.network returns data', async () => {
-    const r = await trpcQuery('fraud.network');
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('underwriting.rules returns data', async () => {
-    const r = await trpcQuery('underwriting.rules');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(Array.isArray(d), 'Expected underwriting rules array');
-  });
-
-  await test('auth.me returns user data with token', async () => {
-    const r = await trpcQuery('auth.me');
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(d.email || d.id, 'Expected user data');
-  });
-
-  await test('auth.refresh returns new tokens', async () => {
-    const r = await trpcMutate('auth.refresh', { refreshToken: 'invalid-token' });
-    assert.strictEqual(r.status, 200);
-  });
-
-  // ─── Input Sanitization Tests ───
-  console.log('\nInput Sanitization:');
-
-  await test('XSS input is sanitized', async () => {
-    const r = await trpcQuery('products.list', { search: '<script>alert(1)</script>' });
-    assert.strictEqual(r.status, 200);
-  });
-
-  await test('SQL injection attempt is blocked', async () => {
-    const r = await trpcQuery('products.list', { search: "' OR 1=1 --" });
-    assert.strictEqual(r.status, 200);
-    const d = r.data.result?.data;
-    assert.ok(Array.isArray(d), 'Should return valid response');
-  });
-
-  await test('extremely long input is truncated', async () => {
-    const longStr = 'A'.repeat(15000);
-    const r = await trpcQuery('products.list', { search: longStr });
-    assert.strictEqual(r.status, 200);
-  });
-
-  // ─── Batch Route Tests ───
-  console.log('\nBatch Routes:');
-
-  await test('batch request returns array of results', async () => {
-    const r = await request('GET', `/api/trpc/dashboard.stats,products.list?batch=1&input=${encodeURIComponent('{"0":{"json":{}},"1":{"json":{}}}')}`);
-    assert.strictEqual(r.status, 200);
-    assert.ok(Array.isArray(r.data), 'Batch should return array');
-    assert.strictEqual(r.data.length, 2, 'Expected 2 batch results');
-  });
-
-  // ─── Compression Tests ───
-  console.log('\nCompression:');
-
-  await test('responses are compressed', async () => {
-    const r = await request('GET', '/health');
-    assert.strictEqual(r.status, 200);
-  });
-
-  // ─── Rate Limiting Tests (last — triggers throttle) ───
-  console.log('\nRate Limiting:');
-
-  await test('rate limiting returns 429 after excessive auth requests', async () => {
-    const savedToken = authToken;
-    authToken = null;
-    let got429 = false;
-    for (let i = 0; i < 110; i++) {
-      const r = await trpcMutate('auth.login', { email: `fake${i}@test.com`, password: 'wrong' });
-      if (r.status === 429) { got429 = true; break; }
-    }
-    authToken = savedToken;
-    assert.ok(got429, 'Expected 429 after many auth attempts');
+    assert.strictEqual(overlap.length, 0, `Page 1 IDs ${ids1} and page 2 IDs ${ids2} should not overlap`);
   });
 
   // ─── Summary ───

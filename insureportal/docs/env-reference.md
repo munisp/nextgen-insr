@@ -14,7 +14,7 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 
 | Variable       | Default                                                     | Description                  |
 | -------------- | ----------------------------------------------------------- | ---------------------------- |
-| `POSTGRES_URL` | `postgresql://posshell:changeme@localhost:5432/posshell_db` | PostgreSQL connection string |
+| `POSTGRES_URL` | `postgresql://insureportal:changeme@localhost:5432/insureportal_db` | PostgreSQL connection string |
 
 ## Redis
 

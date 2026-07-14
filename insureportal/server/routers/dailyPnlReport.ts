@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { pnlReports, transactions } from "../../drizzle/schema";
+import { pnlReports, transactions } from "@schema";
 import { desc, eq, sql, and, gte, lte, count, sum } from "drizzle-orm";
 
 /**

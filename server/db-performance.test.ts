@@ -105,7 +105,7 @@ describe("PostgreSQL Performance Configuration", () => {
 
     it("configures readonly replica pool", () => {
       const content = fs.readFileSync(pgbouncerPath, "utf-8");
-      expect(content).toMatch(/54link_readonly/);
+      expect(content).toMatch(/insureportal_readonly/);
     });
   });
 
@@ -310,7 +310,7 @@ describe("PostgreSQL Performance Configuration", () => {
         "fraud_alerts",
         "disputes",
         "kyc_sessions",
-        "pos_terminals",
+        "insurance_services",
         "merchants",
         "customers",
       ];

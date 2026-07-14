@@ -1,4 +1,4 @@
-# 54Link Agency Banking Platform — Changelog
+# InsurePortal Insurance Platform — Changelog
 
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
@@ -152,10 +152,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Agent registration and onboarding workflow
 - Float management with TigerBeetle double-entry ledger
-- Cash-in/cash-out transaction processing
+- Cash-in/claim payout transaction processing
 - P2P transfer with daily limits
 - Bill payment integration
-- Agent dashboard with real-time float balance
+- Agent dashboard with real-time premium reserve
 - Admin panel with agent management
 
 ---

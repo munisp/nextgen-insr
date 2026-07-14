@@ -2,8 +2,8 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: 'pos54link-production'
-    region: 'ng-west'
+    cluster: 'ngapp-staging'
+    region: 'staging'
 
 # ── Alert manager ─────────────────────────────────────────────────────────────
 alerting:
@@ -25,49 +25,352 @@ rule_files:
 
 # ── Scrape configs ────────────────────────────────────────────────────────────
 scrape_configs:
-  # POS Shell application
-  - job_name: 'pos-shell-app'
+  # ── Core Application Services ──
+  - job_name: 'insurance-portal-app'
     static_configs:
-      - targets: ['pos-shell-app:3000']
+      - targets: ['portal:3000']
     metrics_path: '/api/metrics'
     scrape_interval: 15s
 
-  # Workflow orchestrator (Go)
-  - job_name: 'workflow-orchestrator'
+  # ── Claims & Adjudication ──
+  - job_name: 'claims-adjudication-engine'
     static_configs:
-      - targets: ['workflow-orchestrator:8090']
+      - targets: ['claims-adjudication-engine:8090']
     metrics_path: '/metrics'
 
-  # Fraud engine (Rust)
+  - job_name: 'claims-adjudication'
+    static_configs:
+      - targets: ['claims-adjudication:8001']
+    metrics_path: '/metrics'
+
+  # ── Fraud Detection ──
   - job_name: 'fraud-engine'
     static_configs:
       - targets: ['fraud-engine:8085']
     metrics_path: '/metrics'
 
-  # TX validator (Rust)
+  - job_name: 'fraud-detection-go'
+    static_configs:
+      - targets: ['fraud-detection-go:8102']
+    metrics_path: '/metrics'
+
+  # ── KYC/KYB ──
+  - job_name: 'kyc-service'
+    static_configs:
+      - targets: ['kyc-service:8070']
+    metrics_path: '/metrics'
+
+  - job_name: 'enhanced-kyc-kyb'
+    static_configs:
+      - targets: ['enhanced-kyc-kyb:8101']
+    metrics_path: '/metrics'
+
+  - job_name: 'pan-african-ekyc'
+    static_configs:
+      - targets: ['pan-african-ekyc:8121']
+    metrics_path: '/metrics'
+
+  # ── USSD Gateway ──
+  - job_name: 'ussd-gateway'
+    static_configs:
+      - targets: ['ussd-gateway:8093']
+    metrics_path: '/metrics'
+
+  # ── MDM ──
+  - job_name: 'enterprise-mdm'
+    static_configs:
+      - targets: ['enterprise-mdm:8094']
+    metrics_path: '/metrics'
+
+  - job_name: 'mdm-compliance-engine'
+    static_configs:
+      - targets: ['mdm-compliance-engine:8091']
+    metrics_path: '/metrics'
+
+  - job_name: 'mdm-geofence-service'
+    static_configs:
+      - targets: ['mdm-geofence-service:8092']
+    metrics_path: '/metrics'
+
+  # ── Policy Workflow ──
+  - job_name: 'workflow-orchestrator'
+    static_configs:
+      - targets: ['workflow-orchestrator:8090']
+    metrics_path: '/metrics'
+
+  - job_name: 'policy-workflow-go'
+    static_configs:
+      - targets: ['policy-workflow-go:8106']
+    metrics_path: '/metrics'
+
+  # ── Notification Service ──
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification-service:8122']
+    metrics_path: '/metrics'
+
+  # ── Payment & Finance ──
+  - job_name: 'payment-service'
+    static_configs:
+      - targets: ['payment-service:8020']
+    metrics_path: '/metrics'
+
+  - job_name: 'settlement-service'
+    static_configs:
+      - targets: ['settlement-service:8073']
+    metrics_path: '/metrics'
+
+  - job_name: 'premium-finance-service'
+    static_configs:
+      - targets: ['premium-finance-service:8108']
+    metrics_path: '/metrics'
+
+  - job_name: 'premium-collection-service'
+    static_configs:
+      - targets: ['premium-collection-service:8135']
+    metrics_path: '/metrics'
+
+  # ── Reinsurance ──
+  - job_name: 'reinsurance-service'
+    static_configs:
+      - targets: ['reinsurance-service:8109']
+    metrics_path: '/metrics'
+
+  # ── Microinsurance ──
+  - job_name: 'microinsurance-engine'
+    static_configs:
+      - targets: ['microinsurance-engine:8105']
+    metrics_path: '/metrics'
+
+  - job_name: 'microinsurance-service'
+    static_configs:
+      - targets: ['microinsurance-service:8028']
+    metrics_path: '/metrics'
+
+  # ── Takaful ──
+  - job_name: 'takaful-module'
+    static_configs:
+      - targets: ['takaful-module:8128']
+    metrics_path: '/metrics'
+
+  # ── Compliance ──
+  - job_name: 'naicom-compliance-module'
+    static_configs:
+      - targets: ['naicom-compliance-module:8092']
+    metrics_path: '/metrics'
+
+  - job_name: 'ndpr-compliance'
+    static_configs:
+      - targets: ['ndpr-compliance:8120']
+    metrics_path: '/metrics'
+
+  - job_name: 'gdpr-compliance'
+    static_configs:
+      - targets: ['gdpr-compliance:8116']
+    metrics_path: '/metrics'
+
+  - job_name: 'cbn-reporting-engine'
+    static_configs:
+      - targets: ['cbn-reporting-engine:8095']
+    metrics_path: '/metrics'
+
+  # ── Agent Operations ──
+  - job_name: 'agent-network-platform'
+    static_configs:
+      - targets: ['agent-network-platform:8097']
+    metrics_path: '/metrics'
+
+  - job_name: 'agent-commission-management'
+    static_configs:
+      - targets: ['agent-commission-management:8098']
+    metrics_path: '/metrics'
+
+  - job_name: 'agent-operations'
+    static_configs:
+      - targets: ['agent-operations:8110']
+    metrics_path: '/metrics'
+
+  # ── Communication ──
+  - job_name: 'communication-service'
+    static_configs:
+      - targets: ['communication-service:8100']
+    metrics_path: '/metrics'
+
+  # ── Gamification ──
+  - job_name: 'gamification-service'
+    static_configs:
+      - targets: ['gamification-service:8103']
+    metrics_path: '/metrics'
+
+  # ── Disaster Recovery ──
+  - job_name: 'disaster-recovery-module'
+    static_configs:
+      - targets: ['disaster-recovery-module:8091']
+    metrics_path: '/metrics'
+
+  - job_name: 'dr-ha-service'
+    static_configs:
+      - targets: ['dr-ha-service:8115']
+    metrics_path: '/metrics'
+
+  # ── Multi-Currency & Tenant ──
+  - job_name: 'multi-currency-service'
+    static_configs:
+      - targets: ['multi-currency-service:8118']
+    metrics_path: '/metrics'
+
+  - job_name: 'multi-tenant-platform'
+    static_configs:
+      - targets: ['multi-tenant-platform:8119']
+    metrics_path: '/metrics'
+
+  # ── Batch Processing ──
+  - job_name: 'batch-processing-engine'
+    static_configs:
+      - targets: ['batch-processing-engine:8112']
+    metrics_path: '/metrics'
+
+  # ── Customer Services ──
+  - job_name: 'customer-360-service'
+    static_configs:
+      - targets: ['customer-360-service:8113']
+    metrics_path: '/metrics'
+
+  # ── Reconciliation ──
+  - job_name: 'reconciliation-engine'
+    static_configs:
+      - targets: ['reconciliation-engine:8122']
+    metrics_path: '/metrics'
+
+  # ── Instant Payout ──
+  - job_name: 'instant-payout-service'
+    static_configs:
+      - targets: ['instant-payout-service:8104']
+    metrics_path: '/metrics'
+
+  # ── Mobile Money ──
+  - job_name: 'mobile-money-service'
+    static_configs:
+      - targets: ['mobile-money-service:8124']
+    metrics_path: '/metrics'
+
+  # ── API Marketplace ──
+  - job_name: 'api-marketplace'
+    static_configs:
+      - targets: ['api-marketplace:8095']
+    metrics_path: '/metrics'
+
+  # ── Telco Integration ──
+  - job_name: 'telco-integration'
+    static_configs:
+      - targets: ['telco-integration:8010']
+    metrics_path: '/metrics'
+
+  # ── Underwriting ──
+  - job_name: 'underwriting-service'
+    static_configs:
+      - targets: ['underwriting-service:8026']
+    metrics_path: '/metrics'
+
+  # ── Geospatial ──
+  - job_name: 'geospatial-service'
+    static_configs:
+      - targets: ['geospatial-service:8009']
+    metrics_path: '/metrics'
+
+  # ── Security Services ──
+  - job_name: 'security-operations'
+    static_configs:
+      - targets: ['security-operations:8130']
+    metrics_path: '/metrics'
+
+  - job_name: 'zero-trust-network'
+    static_configs:
+      - targets: ['zero-trust-network:8131']
+    metrics_path: '/metrics'
+
+  # ── Blockchain ──
+  - job_name: 'blockchain-transparency'
+    static_configs:
+      - targets: ['blockchain-transparency:8099']
+    metrics_path: '/metrics'
+
+  # ── IT Governance ──
+  - job_name: 'it-governance-itsm'
+    static_configs:
+      - targets: ['it-governance-itsm:8096']
+    metrics_path: '/metrics'
+
+  # ── Group Life ──
+  - job_name: 'group-life-admin'
+    static_configs:
+      - targets: ['group-life-admin:8117']
+    metrics_path: '/metrics'
+
+  # ── Usage-Based Insurance ──
+  - job_name: 'usage-based-insurance'
+    static_configs:
+      - targets: ['usage-based-insurance:8111']
+    metrics_path: '/metrics'
+
+  # ── Risk & Actuarial ──
+  - job_name: 'risk-scoring-engine'
+    static_configs:
+      - targets: ['risk-scoring-engine:8142']
+    metrics_path: '/metrics'
+
+  - job_name: 'actuarial-calculator'
+    static_configs:
+      - targets: ['actuarial-calculator:8143']
+    metrics_path: '/metrics'
+
+  # ── DevOps ──
+  - job_name: 'devops-platform'
+    static_configs:
+      - targets: ['devops-platform:8114']
+    metrics_path: '/metrics'
+
+  # ── IFRS 17 & MLOps ──
+  - job_name: 'ifrs17-engine'
+    static_configs:
+      - targets: ['ifrs17-engine:8140']
+    metrics_path: '/metrics'
+
+  - job_name: 'mlops-governance'
+    static_configs:
+      - targets: ['mlops-governance:8141']
+    metrics_path: '/metrics'
+
+  # ── TX Validators ──
   - job_name: 'tx-validator'
     static_configs:
       - targets: ['tx-validator:8086']
     metrics_path: '/metrics'
 
-  # Ledger bridge (Rust)
   - job_name: 'ledger-bridge'
     static_configs:
       - targets: ['ledger-bridge:8087']
     metrics_path: '/metrics'
 
-  # POS Printer service (Rust)
+  # ── POS Printer ──
   - job_name: 'pos-printer'
     static_configs:
       - targets: ['pos-printer:8088']
     metrics_path: '/metrics'
 
-  # i18n Currency service (Rust)
+  # ── i18n Currency ──
   - job_name: 'i18n-currency'
     static_configs:
       - targets: ['i18n-currency:8089']
     metrics_path: '/metrics'
 
+  # ── OTA Service ──
+  - job_name: 'ota-service'
+    static_configs:
+      - targets: ['ota-service:8081']
+    metrics_path: '/metrics'
+
+  # ── Infrastructure Services ──
   # PostgreSQL (via postgres_exporter)
   - job_name: 'postgres'
     static_configs:
@@ -110,7 +413,19 @@ scrape_configs:
       - targets: ['temporal:7233']
     metrics_path: '/metrics'
 
-  # nginx
+  # TigerBeetle
+  - job_name: 'tigerbeetle'
+    static_configs:
+      - targets: ['tigerbeetle:3000']
+    metrics_path: '/metrics'
+
+  # APISIX
+  - job_name: 'apisix'
+    static_configs:
+      - targets: ['apisix:9080']
+    metrics_path: '/metrics'
+
+  # Nginx
   - job_name: 'nginx'
     static_configs:
       - targets: ['nginx-exporter:9113']
@@ -126,44 +441,14 @@ scrape_configs:
       - targets: ['cadvisor:8080']
     metrics_path: '/metrics'
 
-  # OTA service
-  - job_name: 'ota-service'
-    static_configs:
-      - targets: ['ota-service:8081']
-    metrics_path: '/metrics'
-
-  # MDM Compliance Engine
-  - job_name: 'mdm-compliance-engine'
-    static_configs:
-      - targets: ['mdm-compliance-engine:8091']
-    metrics_path: '/metrics'
-
-  # MDM Geofence Service
-  - job_name: 'mdm-geofence-service'
-    static_configs:
-      - targets: ['mdm-geofence-service:8092']
-    metrics_path: '/metrics'
-
-  # CBN Reporting Engine
-  - job_name: 'cbn-reporting-engine'
-    static_configs:
-      - targets: ['cbn-reporting-engine:8095']
-    metrics_path: '/metrics'
-
-  # Settlement Service
-  - job_name: 'settlement-service'
-    static_configs:
-      - targets: ['settlement-service:8073']
-    metrics_path: '/metrics'
-
-  # KYC Service
-  - job_name: 'kyc-service'
-    static_configs:
-      - targets: ['kyc-service:8070']
-    metrics_path: '/metrics'
-
   # Fluvio
   - job_name: 'fluvio'
     static_configs:
       - targets: ['fluvio:9003']
     metrics_path: '/metrics'
+
+  # OpenSearch
+  - job_name: 'opensearch'
+    static_configs:
+      - targets: ['opensearch:9200']
+    metrics_path: '/_prometheus/metrics'

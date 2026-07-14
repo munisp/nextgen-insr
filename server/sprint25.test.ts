@@ -106,7 +106,7 @@ describe("Sprint 25: Video Tutorials Page", () => {
     );
     expect(content).toContain("tutorials");
     // 5 most complex features
-    expect(content).toContain("POS Terminal");
+    expect(content).toContain("Insurance Service");
     expect(content).toContain("Fraud");
     expect(content).toContain("KYC");
     expect(content).toContain("Settlement");
@@ -167,28 +167,28 @@ describe("Sprint 25: User Guide Feedback Integration", () => {
 });
 
 // ─── Reusable Skill Tests ───────────────────────────────────────────────────
-describe("Sprint 25: Reusable Skill (54link-pos-builder)", () => {
+describe("Sprint 25: Reusable Skill (insureportal-pos-builder)", () => {
   it("should have valid SKILL.md", () => {
     const exists = fs.existsSync(
-      "/home/ubuntu/skills/54link-pos-builder/SKILL.md"
+      "/home/ubuntu/skills/insureportal-pos-builder/SKILL.md"
     );
     expect(exists).toBe(true);
     const content = fs.readFileSync(
-      "/home/ubuntu/skills/54link-pos-builder/SKILL.md",
+      "/home/ubuntu/skills/insureportal-pos-builder/SKILL.md",
       "utf-8"
     );
-    expect(content).toContain("name: 54link-pos-builder");
+    expect(content).toContain("name: insureportal-pos-builder");
     expect(content).toContain("description:");
     expect(content).not.toContain("[TODO");
   });
 
   it("should have schema-patterns reference", () => {
     const exists = fs.existsSync(
-      "/home/ubuntu/skills/54link-pos-builder/references/schema-patterns.md"
+      "/home/ubuntu/skills/insureportal-pos-builder/references/schema-patterns.md"
     );
     expect(exists).toBe(true);
     const content = fs.readFileSync(
-      "/home/ubuntu/skills/54link-pos-builder/references/schema-patterns.md",
+      "/home/ubuntu/skills/insureportal-pos-builder/references/schema-patterns.md",
       "utf-8"
     );
     expect(content).toContain("agents");
@@ -198,11 +198,11 @@ describe("Sprint 25: Reusable Skill (54link-pos-builder)", () => {
 
   it("should have router-patterns reference", () => {
     const exists = fs.existsSync(
-      "/home/ubuntu/skills/54link-pos-builder/references/router-patterns.md"
+      "/home/ubuntu/skills/insureportal-pos-builder/references/router-patterns.md"
     );
     expect(exists).toBe(true);
     const content = fs.readFileSync(
-      "/home/ubuntu/skills/54link-pos-builder/references/router-patterns.md",
+      "/home/ubuntu/skills/insureportal-pos-builder/references/router-patterns.md",
       "utf-8"
     );
     expect(content).toContain("CRUD Router");
@@ -212,11 +212,11 @@ describe("Sprint 25: Reusable Skill (54link-pos-builder)", () => {
 
   it("should cover core modules in SKILL.md", () => {
     const content = fs.readFileSync(
-      "/home/ubuntu/skills/54link-pos-builder/SKILL.md",
+      "/home/ubuntu/skills/insureportal-pos-builder/SKILL.md",
       "utf-8"
     );
     expect(content).toContain("Agent Authentication");
-    expect(content).toContain("POS Terminal");
+    expect(content).toContain("Insurance Service");
     expect(content).toContain("Float Management");
     expect(content).toContain("Transaction Processing");
     expect(content).toContain("Fraud Detection");

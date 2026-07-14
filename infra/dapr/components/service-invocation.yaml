@@ -1,0 +1,20 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: insure-service-invocation
+  namespace: insureportal
+spec:
+  type: nameresolution.kubernetes
+  version: v1
+  metadata:
+    - name: clusterDomain
+      value: "cluster.local"
+---
+# App-to-App invocation configuration
+# Each Dapr-enabled service registers with its app-id:
+#   underwriting, policy-lifecycle, premium-collection,
+#   claims-adjudication, fraud-detection, instant-payout,
+#   communication, notification, mobile-money,
+#   bank-integrations, reinsurance, agent-commission
+# 
+# Usage: daprClient.InvokeService(ctx, "fraud-detection", "api/v1/score", payload)

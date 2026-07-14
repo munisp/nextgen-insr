@@ -2,10 +2,10 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
-  ecommerceCarts,
-  ecommerceCartItems,
-  ecommerceInventory,
-  type EcommerceCartItem,
+  insuranceCarts,
+  insuranceCartItems,
+  insuranceInventory,
+  type InsuranceCartItem,
 } from "../../drizzle/schema";
 import { eq, and, sql, count } from "drizzle-orm";
 
@@ -18,7 +18,7 @@ const CART_SERVICE_URL =
  * Falls back to direct Drizzle queries when Rust service is unavailable.
  * Supports offline-to-online cart synchronization.
  */
-export const ecommerceCartRouter = router({
+export const insuranceCartRouter = router({
   // ── Cart Operations ──────────────────────────────────────────────────────
   getCart: protectedProcedure
     .input(z.object({ customerId: z.number() }))
@@ -28,8 +28,8 @@ export const ecommerceCartRouter = router({
 
       const [cart] = await database
         .select()
-        .from(ecommerceCarts)
-        .where(eq(ecommerceCarts.customerId, input.customerId))
+        .from(insuranceCarts)
+        .where(eq(insuranceCarts.customerId, input.customerId))
         .limit(1);
 
       if (!cart) {
@@ -45,11 +45,11 @@ export const ecommerceCartRouter = router({
 
       const items = await database
         .select()
-        .from(ecommerceCartItems)
-        .where(eq(ecommerceCartItems.cartId, cart.id));
+        .from(insuranceCartItems)
+        .where(eq(insuranceCartItems.cartId, cart.id));
 
       const subTotal = items.reduce(
-        (sum: number, item: EcommerceCartItem) =>
+        (sum: number, item: InsuranceCartItem) =>
           sum + parseFloat(item.unitPrice) * item.quantity,
         0
       );
@@ -60,7 +60,7 @@ export const ecommerceCartRouter = router({
         items,
         subTotal,
         itemCount: items.reduce(
-          (sum: number, i: EcommerceCartItem) => sum + i.quantity,
+          (sum: number, i: InsuranceCartItem) => sum + i.quantity,
           0
         ),
         couponCode: cart.couponCode,
@@ -88,8 +88,8 @@ export const ecommerceCartRouter = router({
       // Check inventory availability (fail-closed)
       const [inv] = await database
         .select()
-        .from(ecommerceInventory)
-        .where(eq(ecommerceInventory.sku, input.sku))
+        .from(insuranceInventory)
+        .where(eq(insuranceInventory.sku, input.sku))
         .limit(1);
 
       if (inv) {
@@ -104,13 +104,13 @@ export const ecommerceCartRouter = router({
       // Get or create cart
       let [cart] = await database
         .select()
-        .from(ecommerceCarts)
-        .where(eq(ecommerceCarts.customerId, input.customerId))
+        .from(insuranceCarts)
+        .where(eq(insuranceCarts.customerId, input.customerId))
         .limit(1);
 
       if (!cart) {
         [cart] = await database
-          .insert(ecommerceCarts)
+          .insert(insuranceCarts)
           .values({ customerId: input.customerId })
           .returning();
       }
@@ -118,22 +118,22 @@ export const ecommerceCartRouter = router({
       // Check if item already in cart
       const [existing] = await database
         .select()
-        .from(ecommerceCartItems)
+        .from(insuranceCartItems)
         .where(
           and(
-            eq(ecommerceCartItems.cartId, cart.id),
-            eq(ecommerceCartItems.sku, input.sku)
+            eq(insuranceCartItems.cartId, cart.id),
+            eq(insuranceCartItems.sku, input.sku)
           )
         )
         .limit(1);
 
       if (existing) {
         await database
-          .update(ecommerceCartItems)
+          .update(insuranceCartItems)
           .set({ quantity: existing.quantity + input.quantity })
-          .where(eq(ecommerceCartItems.id, existing.id));
+          .where(eq(insuranceCartItems.id, existing.id));
       } else {
-        await database.insert(ecommerceCartItems).values({
+        await database.insert(insuranceCartItems).values({
           cartId: cart.id,
           productId: input.productId,
           sku: input.sku,
@@ -146,9 +146,9 @@ export const ecommerceCartRouter = router({
 
       // Update cart timestamp
       await database
-        .update(ecommerceCarts)
+        .update(insuranceCarts)
         .set({ updatedAt: new Date() })
-        .where(eq(ecommerceCarts.id, cart.id));
+        .where(eq(insuranceCarts.id, cart.id));
 
       return { status: "added" };
     }),
@@ -167,29 +167,29 @@ export const ecommerceCartRouter = router({
 
       const [cart] = await database
         .select()
-        .from(ecommerceCarts)
-        .where(eq(ecommerceCarts.customerId, input.customerId))
+        .from(insuranceCarts)
+        .where(eq(insuranceCarts.customerId, input.customerId))
         .limit(1);
 
       if (!cart) throw new Error("Cart not found");
 
       if (input.quantity === 0) {
         await database
-          .delete(ecommerceCartItems)
+          .delete(insuranceCartItems)
           .where(
             and(
-              eq(ecommerceCartItems.cartId, cart.id),
-              eq(ecommerceCartItems.sku, input.sku)
+              eq(insuranceCartItems.cartId, cart.id),
+              eq(insuranceCartItems.sku, input.sku)
             )
           );
       } else {
         await database
-          .update(ecommerceCartItems)
+          .update(insuranceCartItems)
           .set({ quantity: input.quantity })
           .where(
             and(
-              eq(ecommerceCartItems.cartId, cart.id),
-              eq(ecommerceCartItems.sku, input.sku)
+              eq(insuranceCartItems.cartId, cart.id),
+              eq(insuranceCartItems.sku, input.sku)
             )
           );
       }
@@ -205,18 +205,18 @@ export const ecommerceCartRouter = router({
 
       const [cart] = await database
         .select()
-        .from(ecommerceCarts)
-        .where(eq(ecommerceCarts.customerId, input.customerId))
+        .from(insuranceCarts)
+        .where(eq(insuranceCarts.customerId, input.customerId))
         .limit(1);
 
       if (!cart) throw new Error("Cart not found");
 
       await database
-        .delete(ecommerceCartItems)
+        .delete(insuranceCartItems)
         .where(
           and(
-            eq(ecommerceCartItems.cartId, cart.id),
-            eq(ecommerceCartItems.sku, input.sku)
+            eq(insuranceCartItems.cartId, cart.id),
+            eq(insuranceCartItems.sku, input.sku)
           )
         );
 
@@ -231,17 +231,17 @@ export const ecommerceCartRouter = router({
 
       const [cart] = await database
         .select()
-        .from(ecommerceCarts)
-        .where(eq(ecommerceCarts.customerId, input.customerId))
+        .from(insuranceCarts)
+        .where(eq(insuranceCarts.customerId, input.customerId))
         .limit(1);
 
       if (cart) {
         await database
-          .delete(ecommerceCartItems)
-          .where(eq(ecommerceCartItems.cartId, cart.id));
+          .delete(insuranceCartItems)
+          .where(eq(insuranceCartItems.cartId, cart.id));
         await database
-          .delete(ecommerceCarts)
-          .where(eq(ecommerceCarts.id, cart.id));
+          .delete(insuranceCarts)
+          .where(eq(insuranceCarts.id, cart.id));
       }
 
       return { status: "cleared" };
@@ -281,13 +281,13 @@ export const ecommerceCartRouter = router({
       // Get or create online cart
       let [cart] = await database
         .select()
-        .from(ecommerceCarts)
-        .where(eq(ecommerceCarts.customerId, input.customerId))
+        .from(insuranceCarts)
+        .where(eq(insuranceCarts.customerId, input.customerId))
         .limit(1);
 
       if (!cart) {
         [cart] = await database
-          .insert(ecommerceCarts)
+          .insert(insuranceCarts)
           .values({
             customerId: input.customerId,
             offlineCreated: true,
@@ -299,11 +299,11 @@ export const ecommerceCartRouter = router({
       // Merge items using specified strategy
       const existingItems = await database
         .select()
-        .from(ecommerceCartItems)
-        .where(eq(ecommerceCartItems.cartId, cart.id));
+        .from(insuranceCartItems)
+        .where(eq(insuranceCartItems.cartId, cart.id));
 
-      const existingMap = new Map<string, EcommerceCartItem>(
-        existingItems.map((i: EcommerceCartItem) => [i.sku, i])
+      const existingMap = new Map<string, InsuranceCartItem>(
+        existingItems.map((i: InsuranceCartItem) => [i.sku, i])
       );
 
       for (const offlineItem of input.items) {
@@ -328,12 +328,12 @@ export const ecommerceCartRouter = router({
 
           if (newQty !== existing.quantity) {
             await database
-              .update(ecommerceCartItems)
+              .update(insuranceCartItems)
               .set({ quantity: newQty })
-              .where(eq(ecommerceCartItems.id, existing.id));
+              .where(eq(insuranceCartItems.id, existing.id));
           }
         } else {
-          await database.insert(ecommerceCartItems).values({
+          await database.insert(insuranceCartItems).values({
             cartId: cart.id,
             productId: offlineItem.productId,
             sku: offlineItem.sku,

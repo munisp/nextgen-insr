@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Dispute Notifications — DB-backed notification management for dispute status changes
  * Sprint 54: Full PostgreSQL + middleware integration
@@ -57,7 +57,7 @@ export const disputeNotificationsRouter = router({
         disputeRef: d.ref,
         disputeId: d.id,
         channel: ["email", "sms", "push"][i % 3],
-        recipient: `agent-${d.agentId}@54link.com`,
+        recipient: `agent-${d.agentId}@insureportal.com`,
         subject: `Dispute ${d.ref} status: ${d.status}`,
         status: "delivered",
         sentAt: d.updatedAt?.toISOString() ?? new Date().toISOString(),
@@ -147,7 +147,7 @@ export const disputeNotificationsRouter = router({
         disputeId: input.disputeId,
         disputeRef: dispute.ref,
         channel: input.channel ?? "email",
-        recipient: `agent-${dispute.agentId}@54link.com`,
+        recipient: `agent-${dispute.agentId}@insureportal.com`,
         subject: input.message ?? `Dispute ${dispute.ref} update`,
         status: "delivered",
         sentAt: new Date().toISOString(),
@@ -173,7 +173,7 @@ export const disputeNotificationsRouter = router({
         });
       } catch (e) {
         // @ts-expect-error auto-fix
-        logger.warn("[DisputeNotifications]", e);
+        logger.warn("[DisputeNotifications]: " + e);
       }
       return {
         success: true,
