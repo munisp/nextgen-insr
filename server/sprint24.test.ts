@@ -17,7 +17,7 @@ describe("AI Chat Support Router", () => {
       id: "msg-1",
       sessionId: session.id,
       role: "assistant",
-      content: "Hello! I'm the 54Link AI Support Assistant.",
+      content: "Hello! I'm the InsurePortal AI Support Assistant.",
       timestamp: new Date().toISOString(),
     };
     session.messages.push(welcomeMsg as any);
@@ -32,7 +32,7 @@ describe("AI Chat Support Router", () => {
     const userMsg = {
       id: "msg-2",
       role: "user",
-      content: "How do I process a cash-out transaction?",
+      content: "How do I process a claim payout transaction?",
       timestamp: new Date().toISOString(),
     };
 
@@ -46,7 +46,7 @@ describe("AI Chat Support Router", () => {
       { input: "transaction failed", expectContains: "transaction" },
       { input: "kyc verification", expectContains: "KYC" },
       { input: "commission payout", expectContains: "commission" },
-      { input: "float balance", expectContains: "float" },
+      { input: "premium reserve", expectContains: "float" },
       { input: "password reset", expectContains: "PIN" },
       { input: "fraud suspicious", expectContains: "fraud" },
     ];
@@ -253,7 +253,7 @@ describe("User Guide", () => {
   it("should have all required guide sections", () => {
     const requiredSections = [
       "getting-started",
-      "pos-terminal",
+      "insurance-service",
       "agent-management",
       "transactions",
       "fraud-detection",
@@ -274,12 +274,12 @@ describe("User Guide", () => {
   it("should support search across all sections", () => {
     const content = [
       {
-        id: "cash-in",
+        id: "premium collection",
         title: "Cash-In (Deposits)",
         content: "Cash-in allows customers to deposit money",
       },
       {
-        id: "cash-out",
+        id: "claim payout",
         title: "Cash-Out (Withdrawals)",
         content: "Cash-out enables customers to withdraw",
       },
@@ -298,12 +298,12 @@ describe("User Guide", () => {
     );
 
     expect(results).toHaveLength(2);
-    expect(results[0].id).toBe("cash-in");
-    expect(results[1].id).toBe("cash-out");
+    expect(results[0].id).toBe("premium collection");
+    expect(results[1].id).toBe("claim payout");
   });
 
   it("should have step-by-step guides for POS operations", () => {
-    const cashInSteps = [
+    const premiumCollectionSteps = [
       "Select Cash-In",
       "Enter Customer Details",
       "Enter Amount",
@@ -311,8 +311,8 @@ describe("User Guide", () => {
       "Confirm Transaction",
     ];
 
-    expect(cashInSteps).toHaveLength(5);
-    cashInSteps.forEach(step => expect(step).toBeTruthy());
+    expect(premiumCollectionSteps).toHaveLength(5);
+    premiumCollectionSteps.forEach(step => expect(step).toBeTruthy());
   });
 
   it("should have error codes reference", () => {
@@ -336,14 +336,14 @@ describe("User Guide", () => {
 describe("LiveChatWidget", () => {
   it("should define page context mappings", () => {
     const pageContextMap: Record<string, string> = {
-      "/": "POS Terminal",
+      "/": "Insurance Service",
       "/hub": "Platform Hub",
       "/agent": "Agent Portal",
       "/admin": "Admin Panel",
       "/admin/fraud": "Fraud Dashboard",
     };
 
-    expect(pageContextMap["/"]).toBe("POS Terminal");
+    expect(pageContextMap["/"]).toBe("Insurance Service");
     expect(pageContextMap["/admin/fraud"]).toBe("Fraud Dashboard");
   });
 
@@ -362,7 +362,7 @@ describe("LiveChatWidget", () => {
 
   it("should validate message length constraints", () => {
     const maxLength = 2000;
-    const validMsg = "Hello, I need help with my POS terminal";
+    const validMsg = "Hello, I need help with my insurance service";
     const invalidMsg = "x".repeat(2001);
 
     expect(validMsg.length).toBeLessThanOrEqual(maxLength);

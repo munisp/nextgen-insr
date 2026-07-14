@@ -187,7 +187,7 @@ function TransactionVolumeChart() {
               <Legend />
               <Line
                 type="monotone"
-                dataKey="cashIn"
+                dataKey="premiumCollection"
                 stroke="#3b82f6"
                 strokeWidth={2}
                 dot={false}
@@ -195,7 +195,7 @@ function TransactionVolumeChart() {
               />
               <Line
                 type="monotone"
-                dataKey="cashOut"
+                dataKey="claimPayout"
                 stroke="#10b981"
                 strokeWidth={2}
                 dot={false}

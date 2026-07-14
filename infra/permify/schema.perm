@@ -1,114 +1,246 @@
-// 54Link POS — Permify Authorization Schema
-// Version: 1.0.0
-// Enforces role-based and relationship-based access control
-// across all POS platform resources.
+// ═══════════════════════════════════════════════════════════════════════════════
+// InsurePortal — Permify Authorization Schema
+// Version: 3.0.0 | 16 Keycloak roles mapped to 13 insurance domain entities
+// ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Entity: User ──────────────────────────────────────────────────────────────
 entity user {}
 
 // ── Entity: Tenant ────────────────────────────────────────────────────────────
 entity tenant {
-    // Relations
-    relation owner   @user
-    relation admin   @user
-    relation member  @user
+    // All 16 role relations
+    relation super_admin        @user
+    relation admin              @user
+    relation supervisor         @user
+    relation underwriter        @user
+    relation actuary            @user
+    relation claims_adjuster    @user
+    relation broker             @user
+    relation agent              @user
+    relation compliance_officer @user
+    relation reinsurer          @user
+    relation policyholder       @user
+    relation beneficiary        @user
+    relation regulator          @user
+    relation billing_admin      @user
+    relation billing_analyst    @user
+    relation member             @user
 
-    // Permissions
-    action view_dashboard    = owner or admin or member
-    action manage_agents     = owner or admin
-    action manage_settings   = owner or admin
-    action view_reports      = owner or admin
-    action export_data       = owner or admin
-    action manage_users      = owner
-    action delete_tenant     = owner
+    // Tenant-level permissions
+    action manage_tenant        = super_admin or admin
+    action view_tenant          = super_admin or admin or supervisor or member
+    action manage_users         = super_admin or admin
+    action manage_products      = super_admin or admin or underwriter
+    action view_reports         = super_admin or admin or supervisor or actuary or compliance_officer or regulator or billing_admin or billing_analyst
+    action export_data          = super_admin or admin or actuary or compliance_officer
+    action manage_settings      = super_admin or admin
+    action delete_tenant        = super_admin
+    action manage_agents        = super_admin or admin or supervisor
+    action view_billing         = super_admin or admin or billing_admin or billing_analyst
+    action manage_billing       = super_admin or admin or billing_admin
+}
+
+// ── Entity: InsuranceProduct ──────────────────────────────────────────────────
+entity insurance_product {
+    relation tenant     @tenant
+    relation creator    @user
+
+    action view         = tenant.super_admin or tenant.admin or tenant.underwriter or tenant.actuary or tenant.broker or tenant.agent or tenant.compliance_officer or tenant.regulator or tenant.policyholder
+    action create       = tenant.super_admin or tenant.admin or tenant.underwriter
+    action edit         = tenant.super_admin or tenant.admin or tenant.underwriter
+    action publish      = tenant.super_admin or tenant.admin
+    action archive      = tenant.super_admin or tenant.admin
+    action set_pricing  = tenant.super_admin or tenant.admin or tenant.underwriter or tenant.actuary
+    action view_pricing = tenant.super_admin or tenant.admin or tenant.underwriter or tenant.actuary or tenant.broker
+}
+
+// ── Entity: Policy ────────────────────────────────────────────────────────────
+entity policy {
+    relation tenant             @tenant
+    relation policyholder_user  @user
+    relation broker_user        @user
+    relation agent_user         @user
+    relation underwriter_user   @user
+
+    action view                 = tenant.super_admin or tenant.admin or tenant.supervisor or policyholder_user or broker_user or agent_user or underwriter_user or tenant.actuary or tenant.compliance_officer or tenant.regulator
+    action bind                 = tenant.super_admin or tenant.admin or policyholder_user or broker_user or agent_user
+    action pay_premium          = policyholder_user or broker_user or agent_user or tenant.admin
+    action cancel               = policyholder_user or broker_user or tenant.admin or tenant.super_admin
+    action renew                = policyholder_user or broker_user or agent_user or tenant.admin
+    action endorse              = policyholder_user or broker_user or tenant.admin or underwriter_user
+    action view_documents       = policyholder_user or broker_user or agent_user or underwriter_user or tenant.admin or tenant.compliance_officer
+    action upload_documents     = policyholder_user or broker_user or agent_user or underwriter_user or tenant.admin
+    action view_premium_history = policyholder_user or broker_user or agent_user or tenant.admin or tenant.actuary
+    action void                 = tenant.super_admin or tenant.admin
+}
+
+// ── Entity: UnderwritingApplication ──────────────────────────────────────────
+entity underwriting_application {
+    relation tenant           @tenant
+    relation applicant        @user
+    relation assigned_uw      @user
+
+    action view               = tenant.super_admin or tenant.admin or tenant.supervisor or applicant or assigned_uw or tenant.actuary or tenant.compliance_officer
+    action submit             = applicant or tenant.broker or tenant.agent
+    action assign             = tenant.super_admin or tenant.admin or tenant.supervisor
+    action assess_risk        = assigned_uw or tenant.underwriter or tenant.super_admin or tenant.admin
+    action approve            = assigned_uw or tenant.underwriter or tenant.super_admin or tenant.admin
+    action decline            = assigned_uw or tenant.underwriter or tenant.super_admin or tenant.admin
+    action refer              = assigned_uw or tenant.underwriter
+    action set_conditions     = assigned_uw or tenant.underwriter
+    action request_documents  = assigned_uw or tenant.underwriter or tenant.admin
+    action view_risk_score    = assigned_uw or tenant.underwriter or tenant.actuary or tenant.super_admin or tenant.admin
+}
+
+// ── Entity: Claim ─────────────────────────────────────────────────────────────
+entity claim {
+    relation tenant            @tenant
+    relation claimant          @user
+    relation assigned_adjuster @user
+    relation broker_user       @user
+
+    action view                = tenant.super_admin or tenant.admin or tenant.supervisor or claimant or assigned_adjuster or broker_user or tenant.actuary or tenant.compliance_officer or tenant.regulator
+    action file                = claimant or broker_user or tenant.agent or tenant.admin
+    action assign              = tenant.super_admin or tenant.admin or tenant.supervisor
+    action investigate         = assigned_adjuster or tenant.claims_adjuster or tenant.super_admin or tenant.admin
+    action adjudicate          = assigned_adjuster or tenant.claims_adjuster or tenant.super_admin or tenant.admin
+    action approve_settlement  = assigned_adjuster or tenant.claims_adjuster or tenant.super_admin or tenant.admin
+    action reject              = assigned_adjuster or tenant.claims_adjuster or tenant.super_admin or tenant.admin
+    action settle_payment      = assigned_adjuster or tenant.claims_adjuster or tenant.super_admin or tenant.admin
+    action request_documents   = assigned_adjuster or tenant.claims_adjuster or tenant.admin
+    action escalate            = assigned_adjuster or tenant.claims_adjuster or tenant.supervisor or tenant.admin
+    action view_settlement     = claimant or broker_user or assigned_adjuster or tenant.admin or tenant.actuary
+    action void                = tenant.super_admin or tenant.admin
+}
+
+// ── Entity: ActuarialReport ───────────────────────────────────────────────────
+entity actuarial_report {
+    relation tenant   @tenant
+    relation author   @user
+
+    action view         = tenant.super_admin or tenant.admin or tenant.actuary or tenant.compliance_officer or tenant.regulator or author
+    action create       = tenant.actuary or tenant.super_admin or tenant.admin
+    action edit         = author or tenant.actuary or tenant.super_admin
+    action publish      = tenant.actuary or tenant.super_admin or tenant.admin
+    action export       = tenant.actuary or tenant.super_admin or tenant.admin or tenant.compliance_officer or tenant.regulator
+    action delete       = tenant.super_admin or tenant.admin
+    action run_ifrs17   = tenant.actuary or tenant.super_admin
+    action run_reserves = tenant.actuary or tenant.super_admin
+}
+
+// ── Entity: ComplianceFiling ──────────────────────────────────────────────────
+entity compliance_filing {
+    relation tenant   @tenant
+    relation author   @user
+
+    action view           = tenant.super_admin or tenant.admin or tenant.compliance_officer or tenant.regulator or author
+    action create         = tenant.compliance_officer or tenant.actuary or tenant.super_admin or tenant.admin
+    action edit           = author or tenant.compliance_officer or tenant.super_admin
+    action submit         = tenant.compliance_officer or tenant.super_admin or tenant.admin
+    action approve        = tenant.super_admin or tenant.admin
+    action reject         = tenant.super_admin or tenant.admin
+    action export         = tenant.compliance_officer or tenant.super_admin or tenant.admin or tenant.regulator
+    action run_aml        = tenant.compliance_officer or tenant.super_admin
+    action run_kyc        = tenant.compliance_officer or tenant.super_admin
+    action freeze_account = tenant.compliance_officer or tenant.super_admin
+}
+
+// ── Entity: ReinsuranceTreaty ─────────────────────────────────────────────────
+entity reinsurance_treaty {
+    relation tenant     @tenant
+    relation owner      @user
+
+    action view                    = tenant.super_admin or tenant.admin or tenant.reinsurer or tenant.actuary or tenant.compliance_officer or tenant.regulator or owner
+    action create                  = tenant.reinsurer or tenant.super_admin or tenant.admin
+    action edit                    = owner or tenant.reinsurer or tenant.super_admin or tenant.admin
+    action activate                = tenant.super_admin or tenant.admin
+    action terminate               = tenant.super_admin or tenant.admin
+    action cede_policy             = tenant.reinsurer or tenant.underwriter or tenant.super_admin or tenant.admin
+    action view_cessions           = tenant.reinsurer or tenant.actuary or tenant.super_admin or tenant.admin
+    action submit_recovery         = tenant.reinsurer or tenant.super_admin or tenant.admin
+    action view_premium_accounting = tenant.reinsurer or tenant.actuary or tenant.super_admin or tenant.admin
+}
+
+// ── Entity: BrokerProfile ─────────────────────────────────────────────────────
+entity broker_profile {
+    relation tenant       @tenant
+    relation owner_user   @user
+    relation supervisor   @user
+
+    action view            = tenant.super_admin or tenant.admin or tenant.supervisor or owner_user or supervisor
+    action edit            = owner_user or tenant.admin or tenant.super_admin
+    action view_portfolio  = owner_user or tenant.admin or tenant.supervisor or tenant.super_admin
+    action view_commission = owner_user or tenant.admin or tenant.super_admin
+    action suspend         = tenant.admin or tenant.super_admin
+    action reactivate      = tenant.admin or tenant.super_admin
+    action view_license    = owner_user or tenant.admin or tenant.compliance_officer or tenant.super_admin
 }
 
 // ── Entity: Agent ─────────────────────────────────────────────────────────────
 entity agent {
-    // Relations
-    relation tenant      @tenant
-    relation supervisor  @user
-    relation owner_user  @user
+    relation tenant       @tenant
+    relation supervisor   @user
+    relation owner_user   @user
 
-    // Permissions
-    action view          = tenant.admin or tenant.owner or supervisor or owner_user
-    action edit          = tenant.admin or tenant.owner or supervisor
-    action suspend       = tenant.admin or tenant.owner or supervisor
-    action delete        = tenant.owner
-    action view_balance  = tenant.admin or tenant.owner or supervisor or owner_user
-    action top_up_float  = tenant.admin or tenant.owner or supervisor
-    action process_tx    = owner_user
+    action view            = tenant.super_admin or tenant.admin or supervisor or owner_user
+    action edit            = tenant.super_admin or tenant.admin or supervisor
+    action suspend         = tenant.super_admin or tenant.admin or supervisor
+    action delete          = tenant.super_admin
+    action view_balance    = tenant.super_admin or tenant.admin or supervisor or owner_user
+    action top_up_float    = tenant.super_admin or tenant.admin or supervisor
+    action process_tx      = owner_user
+    action view_commission = owner_user or tenant.admin or tenant.super_admin or supervisor
 }
 
 // ── Entity: Transaction ───────────────────────────────────────────────────────
 entity transaction {
-    // Relations
     relation tenant    @tenant
     relation agent     @agent
     relation initiator @user
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner or agent.supervisor or initiator
-    action void        = tenant.admin or tenant.owner or agent.supervisor
-    action reverse     = tenant.admin or tenant.owner
-    action export      = tenant.admin or tenant.owner
-    action view_fraud  = tenant.admin or tenant.owner
+    action view       = tenant.super_admin or tenant.admin or agent.supervisor or initiator
+    action void       = tenant.super_admin or tenant.admin or agent.supervisor
+    action reverse    = tenant.super_admin or tenant.admin
+    action export     = tenant.super_admin or tenant.admin
+    action view_fraud = tenant.super_admin or tenant.admin or tenant.compliance_officer
 }
 
 // ── Entity: FraudAlert ────────────────────────────────────────────────────────
 entity fraud_alert {
-    // Relations
     relation tenant    @tenant
     relation agent     @agent
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner or agent.supervisor
-    action resolve     = tenant.admin or tenant.owner
-    action escalate    = tenant.admin or tenant.owner or agent.supervisor
-    action dismiss     = tenant.admin or tenant.owner
+    action view      = tenant.super_admin or tenant.admin or agent.supervisor or tenant.compliance_officer
+    action resolve   = tenant.super_admin or tenant.admin or tenant.compliance_officer
+    action escalate  = tenant.super_admin or tenant.admin or agent.supervisor or tenant.compliance_officer
+    action dismiss   = tenant.super_admin or tenant.admin
 }
 
 // ── Entity: FloatRequest ──────────────────────────────────────────────────────
 entity float_request {
-    // Relations
     relation tenant    @tenant
     relation requester @agent
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner or requester.owner_user
-    action approve     = tenant.admin or tenant.owner
-    action reject      = tenant.admin or tenant.owner
-    action cancel      = requester.owner_user
-}
-
-// ── Entity: Report ────────────────────────────────────────────────────────────
-entity report {
-    // Relations
-    relation tenant    @tenant
-
-    // Permissions
-    action view        = tenant.admin or tenant.owner
-    action download    = tenant.admin or tenant.owner
-    action schedule    = tenant.owner
-}
-
-// ── Entity: SimCard ───────────────────────────────────────────────────────────
-entity sim_card {
-    // Relations
-    relation tenant    @tenant
-
-    // Permissions
-    action view        = tenant.admin or tenant.owner
-    action manage      = tenant.admin or tenant.owner
-    action view_probes = tenant.admin or tenant.owner
+    action view    = tenant.super_admin or tenant.admin or requester.owner_user
+    action approve = tenant.super_admin or tenant.admin or tenant.supervisor
+    action reject  = tenant.super_admin or tenant.admin or tenant.supervisor
+    action cancel  = requester.owner_user
 }
 
 // ── Entity: AuditLog ─────────────────────────────────────────────────────────
 entity audit_log {
-    // Relations
     relation tenant    @tenant
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner
-    action export      = tenant.owner
+    action view   = tenant.super_admin or tenant.admin or tenant.compliance_officer or tenant.regulator
+    action export = tenant.super_admin or tenant.admin or tenant.compliance_officer or tenant.regulator
+}
+
+// ── Entity: BillingLedger ─────────────────────────────────────────────────────
+entity billing_ledger {
+    relation tenant    @tenant
+
+    action view       = tenant.super_admin or tenant.admin or tenant.billing_admin or tenant.billing_analyst
+    action record     = tenant.super_admin or tenant.billing_admin
+    action reconcile  = tenant.super_admin or tenant.billing_admin
+    action export     = tenant.super_admin or tenant.admin or tenant.billing_admin or tenant.billing_analyst
 }

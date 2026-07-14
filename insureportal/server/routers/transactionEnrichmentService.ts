@@ -15,7 +15,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { transactions, auditLog, systemConfig } from "../../drizzle/schema";
+import { transactions, auditLog, systemConfig } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const transactionEnrichmentServiceRouter = router({

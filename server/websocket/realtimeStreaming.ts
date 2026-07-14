@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Real-Time Streaming Module
  * Emits live transaction and reconciliation events via Socket.IO
@@ -8,6 +8,7 @@ import type { Server as SocketServer } from "socket.io";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, sql, gte } from "drizzle-orm";
+import { logger } from '../_core/logger';
 
 interface TransactionEvent {
   id: string;
@@ -66,7 +67,7 @@ export function initRealtimeStreaming(io: SocketServer) {
 
   settlementNs.on("connection", socket => {
     settlementClients++;
-    console.log(
+    logger.info(
       `[RealTime] Settlement client connected (${settlementClients} total)`
     );
 
@@ -75,7 +76,7 @@ export function initRealtimeStreaming(io: SocketServer) {
 
     socket.on("disconnect", () => {
       settlementClients--;
-      console.log(
+      logger.info(
         `[RealTime] Settlement client disconnected (${settlementClients} total)`
       );
     });
@@ -91,13 +92,13 @@ export function initRealtimeStreaming(io: SocketServer) {
   });
 
   notificationsNs.on("connection", socket => {
-    console.log("[RealTime] Notifications client connected");
+    logger.info("[RealTime] Notifications client connected");
 
     // Send initial service health
     emitServiceHealth(socket);
 
     socket.on("disconnect", () => {
-      console.log("[RealTime] Notifications client disconnected");
+      logger.info("[RealTime] Notifications client disconnected");
     });
   });
 
@@ -186,7 +187,7 @@ export function initRealtimeStreaming(io: SocketServer) {
     }
   }, 60_000);
 
-  console.log(
+  logger.info(
     "[RealTime] Streaming initialized on /settlement and /notifications"
   );
 }

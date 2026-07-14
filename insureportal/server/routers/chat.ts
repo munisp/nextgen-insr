@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
-import { chatSessions, chatMessages, auditLog } from "../../drizzle/schema";
+import { chatSessions, chatMessages, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 import { getIO } from "../socketSingleton";
 

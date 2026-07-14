@@ -11,7 +11,7 @@ groups:
           team: operations
         annotations:
           summary: "Agent {{ $labels.agent_code }} float critically low"
-          description: "Agent {{ $labels.agent_code }} has a float balance of ₦{{ $value | humanize }} which is below the ₦1,000 minimum threshold. Transactions will fail."
+          description: "Agent {{ $labels.agent_code }} has a premium reserve of ₦{{ $value | humanize }} which is below the ₦1,000 minimum threshold. Transactions will fail."
           runbook: "https://wiki.insureportal.ng/runbooks/float-low"
           webhook: "https://api.insureportal.ng/api/trpc/system.notifyOwner"
 
@@ -24,7 +24,7 @@ groups:
           team: operations
         annotations:
           summary: "Agent {{ $labels.agent_code }} float low"
-          description: "Agent {{ $labels.agent_code }} has a float balance of ₦{{ $value | humanize }}. Consider topping up soon."
+          description: "Agent {{ $labels.agent_code }} has a premium reserve of ₦{{ $value | humanize }}. Consider topping up soon."
           runbook: "https://wiki.insureportal.ng/runbooks/float-low"
 
       # ── Float top-up request pending too long ───────────────────────────────
@@ -47,4 +47,4 @@ groups:
           team: finance
         annotations:
           summary: "Total float pool below ₦1,000,000"
-          description: "The aggregate float balance across all agents is ₦{{ $value | humanize }}. Immediate replenishment required."
+          description: "The aggregate premium reserve across all agents is ₦{{ $value | humanize }}. Immediate replenishment required."

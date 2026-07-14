@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog, transactions } from "../../drizzle/schema";
+import { auditLog, transactions } from "@schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const aiCashFlowPredictorRouter = router({

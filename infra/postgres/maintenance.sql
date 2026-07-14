@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 54Link — PostgreSQL Maintenance & Monitoring Queries
+-- InsurePortal — PostgreSQL Maintenance & Monitoring Queries
 -- Schedule via pg_cron or external cron job.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
@@ -44,7 +44,7 @@ SELECT
   ROUND(max_exec_time::numeric, 2) AS max_ms,
   rows
 FROM pg_stat_statements
-WHERE userid = (SELECT usesysid FROM pg_user WHERE usename = '54link')
+WHERE userid = (SELECT usesysid FROM pg_user WHERE usename = 'insureportal')
 ORDER BY mean_exec_time DESC
 LIMIT 20;
 
@@ -67,7 +67,7 @@ SELECT
   COUNT(*) AS connections,
   MAX(EXTRACT(EPOCH FROM (NOW() - backend_start))) AS max_age_seconds
 FROM pg_stat_activity
-WHERE datname = '54link'
+WHERE datname = 'insureportal'
 GROUP BY datname, usename, state
 ORDER BY connections DESC;
 

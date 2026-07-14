@@ -109,7 +109,7 @@ export const aiMonitoringRouter = router({
         timestamp: string;
         score: number;
         type: string;
-        agentCode: string;
+        agentId: string;
       }>,
       total: 0,
     };

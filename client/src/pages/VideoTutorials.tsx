@@ -71,14 +71,14 @@ const tutorials: Tutorial[] = [
     id: "cash-transactions",
     title: "Processing Cash-In & Cash-Out Transactions",
     description:
-      "Master the complete cash-in and cash-out workflow, including customer verification, float management, receipt generation, and error handling.",
+      "Master the complete premium collection and claim payout workflow, including customer verification, float management, receipt generation, and error handling.",
     icon: Wallet,
     difficulty: "beginner",
     duration: "12 min",
-    tags: ["cash-in", "cash-out", "transactions", "float", "receipt"],
+    tags: ["premium collection", "claim payout", "transactions", "float", "receipt"],
     prerequisites: [
       "Active agent account with valid KYC",
-      "Sufficient float balance",
+      "Sufficient premium reserve",
     ],
     relatedPages: [
       { label: "POS Terminal", path: "/" },
@@ -91,23 +91,23 @@ const tutorials: Tutorial[] = [
         timestamp: "00:00",
         duration: "2 min",
         content:
-          "Cash-in (deposits) and cash-out (withdrawals) are the most common POS operations. Cash-in adds money to a customer's account while cash-out allows them to withdraw. Both operations require proper customer identification and affect your float balance.",
+          "Cash-in (deposits) and claim payout (withdrawals) are the most common POS operations. Cash-in adds money to a customer's account while claim payout allows them to withdraw. Both operations require proper customer identification and affect your premium reserve.",
         steps: [
           "Navigate to the POS Terminal from the Hub",
           "Select either 'Cash In' or 'Cash Out' from the transaction menu",
-          "The system will check your current float balance before proceeding",
+          "The system will check your current premium reserve before proceeding",
         ],
         tips: [
           "Always verify the customer's identity before processing any transaction",
         ],
       },
       {
-        id: "cash-in-process",
+        id: "premium collection-process",
         title: "Processing a Cash-In (Deposit)",
         timestamp: "02:00",
         duration: "3 min",
         content:
-          "A cash-in transaction involves collecting physical cash from the customer and crediting their account. The amount is deducted from your float balance and the customer receives a deposit confirmation.",
+          "A premium collection transaction involves collecting physical cash from the customer and crediting their account. The amount is deducted from your premium reserve and the customer receives a deposit confirmation.",
         steps: [
           "Select 'Cash In' from the POS Terminal menu",
           "Enter the customer's account number or phone number",
@@ -119,16 +119,16 @@ const tutorials: Tutorial[] = [
         ],
         tips: [
           "Count the cash in front of the customer to avoid disputes",
-          "The commission rate for cash-in is typically 0.5% of the transaction amount",
+          "The commission rate for premium collection is typically 0.5% of the transaction amount",
         ],
       },
       {
-        id: "cash-out-process",
+        id: "claim payout-process",
         title: "Processing a Cash-Out (Withdrawal)",
         timestamp: "05:00",
         duration: "3 min",
         content:
-          "A cash-out transaction involves debiting the customer's account and dispensing physical cash. This increases your float balance. Ensure you have sufficient physical cash before starting.",
+          "A claim payout transaction involves debiting the customer's account and dispensing physical cash. This increases your premium reserve. Ensure you have sufficient physical cash before starting.",
         steps: [
           "Select 'Cash Out' from the POS Terminal menu",
           "Enter the customer's account number or phone number",
@@ -149,13 +149,13 @@ const tutorials: Tutorial[] = [
         timestamp: "08:00",
         duration: "2 min",
         content:
-          "Your float balance determines how many cash-in transactions you can process. Cash-in reduces float, cash-out increases it. Monitor your float regularly and request top-ups when running low.",
+          "Your premium reserve determines how many premium collection transactions you can process. Cash-in reduces float, claim payout increases it. Monitor your float regularly and request top-ups when running low.",
         steps: [
           "Check your current float in the POS Terminal header bar",
           "Navigate to Admin Panel > Float Requests to request a top-up",
           "Enter the desired top-up amount and submit",
           "Wait for supervisor approval (you'll receive a notification)",
-          "Once approved, your float balance updates automatically",
+          "Once approved, your premium reserve updates automatically",
         ],
         tips: [
           "Request float top-ups before your balance drops below ₦50,000",
@@ -205,7 +205,7 @@ const tutorials: Tutorial[] = [
         timestamp: "00:00",
         duration: "3 min",
         content:
-          "The 54Link fraud detection system uses AI and rule-based engines to monitor transactions in real-time. It assigns fraud scores (0-100) and categorizes alerts by severity: Critical (80+), High (60-79), Medium (40-59), and Low (0-39).",
+          "The InsurePortal fraud detection system uses AI and rule-based engines to monitor transactions in real-time. It assigns fraud scores (0-100) and categorizes alerts by severity: Critical (80+), High (60-79), Medium (40-59), and Low (0-39).",
         steps: [
           "Navigate to Admin Panel > Fraud tab or the dedicated Fraud Dashboard",
           "Review the overview panel showing active alerts by severity",
@@ -402,7 +402,7 @@ const tutorials: Tutorial[] = [
     id: "float-settlement",
     title: "Agent Float Management & Settlement",
     description:
-      "Comprehensive guide to float balance management, top-up requests, daily settlement processes, reconciliation, and commission payouts.",
+      "Comprehensive guide to premium reserve management, top-up requests, daily settlement processes, reconciliation, and commission payouts.",
     icon: BarChart2,
     difficulty: "intermediate",
     duration: "14 min",
@@ -426,9 +426,9 @@ const tutorials: Tutorial[] = [
         timestamp: "00:00",
         duration: "3 min",
         content:
-          "Float is the working capital that enables agents to process transactions. Cash-in transactions reduce your float (you give the customer credit and collect cash), while cash-out transactions increase it (customer's account is debited and you dispense cash).",
+          "Float is the working capital that enables agents to process transactions. Cash-in transactions reduce your float (you give the customer credit and collect cash), while claim payout transactions increase it (customer's account is debited and you dispense cash).",
         steps: [
-          "View your current float balance in the POS Terminal header",
+          "View your current premium reserve in the POS Terminal header",
           "Monitor float changes in real-time as you process transactions",
           "Set up low-float alerts in Settings > Notifications",
           "Understand the float formula: Starting Float + Cash-Outs - Cash-Ins = Current Float",
@@ -500,7 +500,7 @@ const tutorials: Tutorial[] = [
           "Commissions are calculated per transaction based on type and amount. They accumulate daily and are paid out during settlement.",
         steps: [
           "View your commission breakdown on the Commission Payouts page",
-          "Commission rates vary by transaction type (cash-in: 0.5%, cash-out: 0.3%, etc.)",
+          "Commission rates vary by transaction type (premium collection: 0.5%, claim payout: 0.3%, etc.)",
           "Daily commissions are calculated during settlement",
           "Payouts are credited to your registered bank account",
           "View historical payouts and download statements",

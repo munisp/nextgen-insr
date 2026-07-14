@@ -1,5 +1,5 @@
 ##
-## 54Link POS Shell — Kubernetes Network Policies
+## InsurePortal POS Shell — Kubernetes Network Policies
 ## 20+ policies for zero-trust network segmentation
 ##
 
@@ -8,7 +8,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny-ingress
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector: {}
   policyTypes:
@@ -20,7 +20,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny-egress
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector: {}
   policyTypes:
@@ -40,7 +40,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-api-gateway-ingress
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -62,7 +62,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-gateway-to-trpc
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -84,7 +84,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-trpc-to-postgres
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -106,7 +106,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-trpc-to-tigerbeetle
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -128,7 +128,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-backend-to-kafka
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -152,7 +152,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-backend-to-redis
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -174,7 +174,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-temporal-access
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -199,7 +199,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-stripe-webhook
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -218,7 +218,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-egress-stripe
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -239,7 +239,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-backend-to-permify
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -263,7 +263,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-dapr-sidecar
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -298,7 +298,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-fluvio-access
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -322,7 +322,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-prometheus-scrape
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -347,7 +347,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-otel-collector
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -369,7 +369,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-settlement-to-mojaloop
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -393,7 +393,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-billing-aggregation
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -424,7 +424,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-ledger-validator
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -453,7 +453,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-websocket-access
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:
@@ -475,7 +475,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-cronjob-access
-  namespace: 54link-billing
+  namespace: insureportal-billing
 spec:
   podSelector:
     matchLabels:

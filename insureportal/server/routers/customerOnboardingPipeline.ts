@@ -8,7 +8,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { users, kycSessions } from "../../drizzle/schema";
+import { users, kycSessions } from "@schema";
 import { sql, desc, eq, and } from "drizzle-orm";
 
 const STAGES = [
@@ -162,7 +162,6 @@ export const customerOnboardingPipelineRouter = router({
 
         await writeAuditLog({
           agentId: 0,
-          agentCode: "system",
           action: "customer_onboarding_stage_advanced",
           resource: "customer_onboarding",
           resourceId: input.userId,

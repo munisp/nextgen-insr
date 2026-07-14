@@ -176,7 +176,7 @@ export default function OllamaLLMPage() {
                     amount: 950000,
                     channel: "POS",
                     customer: "John Doe",
-                    agentCode: "AGT-001",
+                    agentId: "AGT-001",
                     fraudScore: 0.87,
                     ruleTriggered: "velocity_limit_exceeded",
                   })

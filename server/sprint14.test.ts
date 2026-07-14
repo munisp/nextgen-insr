@@ -30,7 +30,7 @@ function makeBreachEvent(overrides?: Partial<BreachEvent>): BreachEvent {
     unit: "",
     severity: "critical",
     channels: ["email", "sms", "push", "webhook", "in-app"],
-    recipients: ["admin@54link.com", "+2348000000000"],
+    recipients: ["admin@insureportal.com", "+2348000000000"],
     message: "Daily Transaction Volume is 15000, exceeded threshold of 10000",
     createdAt: new Date().toISOString(),
     ...overrides,

@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 telco_service = TelcoService()
 
-# Database dependency (in production, use proper DB session management)
+# Database dependency
 def get_db():
+    import os
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    # In production, use environment variable
-    engine = create_engine("sqlite:///./telco_data.db")
+    database_url = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/insureportal")
+    engine = create_engine(database_url)
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
     try:

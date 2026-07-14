@@ -710,7 +710,7 @@ export function DisputesAdminTab() {
                   48-hour SLA deadline
                 </p>
                 <p className="text-xs text-slate-400">
-                  CBN agency banking requires resolution within 48 hours. Filter
+                  CBN insurance requires resolution within 48 hours. Filter
                   by "Open" to prioritise.
                 </p>
               </div>
@@ -809,7 +809,7 @@ export function DisputesAdminTab() {
               ) : (
                 (data?.disputes ?? []).map(
                   // @ts-ignore
-                  ({ dispute, agentName, agentCode }) => (
+                  ({ dispute, agentName, agentId }) => (
                     <div
                       key={dispute.id}
                       onClick={() => setSelectedRef(dispute.ref)}
@@ -831,7 +831,7 @@ export function DisputesAdminTab() {
                             {dispute.reason}
                           </p>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            {agentName ?? "Unknown"} ({agentCode ?? "—"}) · Tx:{" "}
+                            {agentName ?? "Unknown"} ({agentId ?? "—"}) · Tx:{" "}
                             {dispute.transactionRef}
                           </p>
                         </div>

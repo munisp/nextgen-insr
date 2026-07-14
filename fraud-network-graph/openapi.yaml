@@ -1,0 +1,34 @@
+openapi: 3.0.3
+info:
+  title: Fraud Network Graph
+  version: 1.0.0
+  description: Graph-based fraud ring detection
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service healthy
+  /api/v1/analyze:
+    post:
+      summary: Analyze entity network for fraud patterns
+      responses:
+        '200':
+          description: Fraud ring analysis
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: getReady
+      responses:
+        '200':
+          description: Service is ready
+        '503':
+          description: Service not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        '200':
+          description: Service is alive

@@ -1,6 +1,6 @@
 {
-  "title": "54Link POS — Agent Operations",
-  "uid": "54link-agent-ops",
+  "title": "InsurePortal POS — Agent Operations",
+  "uid": "insureportal-agent-ops",
   "version": 1,
   "schemaVersion": 38,
   "refresh": "60s",

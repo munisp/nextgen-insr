@@ -9,7 +9,7 @@ import {
   merchants,
   disputes,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { gte, lte, and, desc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

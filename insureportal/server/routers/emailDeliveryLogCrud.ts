@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { emailDeliveryLog } from "../../drizzle/schema";
+import { emailDeliveryLog } from "@schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
