@@ -1,0 +1,172 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "ngapp-platform-overview",
+    "title": "NGApp Platform - Service Overview",
+    "tags": ["ngapp", "insurance", "platform"],
+    "timezone": "UTC",
+    "schemaVersion": 30,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Service Health Status",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(up{job=~\"ngapp-.*\"})",
+            "legendFormat": "Healthy Services"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": 0},
+                {"color": "yellow", "value": 15},
+                {"color": "green", "value": 30}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Request Rate by Service",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=~\"ngapp-.*\"}[5m])) by (job)",
+            "legendFormat": "{{ job }}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Error Rate by Service",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=~\"ngapp-.*\",status=~\"5..\"}[5m])) by (job)",
+            "legendFormat": "{{ job }} 5xx"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Latency P95 by Service",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\"ngapp-.*\"}[5m])) by (le, job))",
+            "legendFormat": "{{ job }} p95"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Active Connections by Service",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {
+            "expr": "sum(http_connections_active{job=~\"ngapp-.*\"}) by (job)",
+            "legendFormat": "{{ job }}"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "CPU Usage by Service",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+        "targets": [
+          {
+            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"ngapp.*\",container=~\"ngapp-.*\"}[5m])) by (container) * 100",
+            "legendFormat": "{{ container }}"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Memory Usage by Service",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+        "targets": [
+          {
+            "expr": "sum(container_memory_working_set_bytes{namespace=~\"ngapp.*\",container=~\"ngapp-.*\"}) by (container) / 1024 / 1024",
+            "legendFormat": "{{ container }} MB"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Kafka Consumer Lag",
+        "type": "graph",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+        "targets": [
+          {
+            "expr": "kafka_consumer_lag_sum",
+            "legendFormat": "{{ consumer_group }} - {{ topic }}"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Database Connection Pool",
+        "type": "gauge",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 28},
+        "targets": [
+          {
+            "expr": "pg_stat_activity_count{datname=~\"ngapp.*\"}",
+            "legendFormat": "{{ state }}"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Redis Memory & Keys",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 28},
+        "targets": [
+          {
+            "expr": "redis_memory_used_bytes / 1024 / 1024",
+            "legendFormat": "Used MB"
+          },
+          {
+            "expr": "redis_db_keys",
+            "legendFormat": "Keys"
+          }
+        ]
+      }
+    ],
+    "time": {"from": "now-1h", "to": "now"},
+    "templating": {
+      "list": [
+        {
+          "name": "service",
+          "type": "query",
+          "datasource": "Prometheus",
+          "query": "label_values(up{job=~\"ngapp-.*\"}, job)",
+          "multi": true,
+          "includeAll": true
+        }
+      ]
+    }
+  }
+}

@@ -23,7 +23,7 @@ const FEATURES = [
   {
     icon: <CreditCard className="w-6 h-6" />,
     title: "Multi-Channel Payments",
-    desc: "Cash-in, cash-out, transfers, NFC, QR, card — all from one terminal.",
+    desc: "Cash-in, claim payout, transfers, NFC, QR, card — all from one terminal.",
   },
   {
     icon: <Shield className="w-6 h-6" />,
@@ -83,7 +83,7 @@ export default function Home() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center font-bold text-sm text-black">
               54
             </div>
-            <span className="text-lg font-semibold tracking-tight">54Link</span>
+            <span className="text-lg font-semibold tracking-tight">InsurePortal</span>
             <Badge
               variant="outline"
               className="text-[10px] border-emerald-500/40 text-emerald-400 ml-1"
@@ -129,17 +129,17 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 pt-24 pb-20 relative">
           <div className="max-w-3xl">
             <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 mb-6">
-              <Zap className="w-3 h-3 mr-1" /> Nigeria's Premier Agency Banking
+              <Zap className="w-3 h-3 mr-1" /> Nigeria's Premier Insurance
               Platform
             </Badge>
             <h1 className="text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
               The Operating System for{" "}
               <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-                Agency Banking
+                Insurance
               </span>
             </h1>
             <p className="text-lg text-gray-400 leading-relaxed mb-8 max-w-2xl">
-              54Link powers 50,000+ POS agents across Nigeria with real-time
+              InsurePortal powers 50,000+ POS agents across Nigeria with real-time
               fraud detection, offline-first transactions, TigerBeetle
               double-entry ledger, and CBN-compliant reporting — all from a
               single terminal.
@@ -188,7 +188,7 @@ export default function Home() {
         <div className="text-center mb-16">
           <h2 className="text-3xl font-bold mb-4">Enterprise-Grade Features</h2>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            Built for the unique challenges of Nigerian agency banking —
+            Built for the unique challenges of Nigerian insurance —
             unreliable networks, regulatory compliance, and massive scale.
           </p>
         </div>
@@ -248,8 +248,8 @@ export default function Home() {
             Ready to Transform Your Agent Network?
           </h2>
           <p className="text-gray-400 max-w-xl mx-auto mb-8">
-            Join thousands of financial institutions using 54Link to power their
-            agency banking operations.
+            Join thousands of financial institutions using InsurePortal to power their
+            insurance operations.
           </p>
           <Button
             size="lg"
@@ -272,7 +272,7 @@ export default function Home() {
             <div className="w-5 h-5 rounded bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center font-bold text-[8px] text-black">
               54
             </div>
-            54Link Agency Banking Platform &copy; {new Date().getFullYear()}
+            InsurePortal Insurance Platform &copy; {new Date().getFullYear()}
           </div>
           <div className="flex gap-6 text-sm text-gray-500">
             <a href="/privacy" className="hover:text-white transition-colors">

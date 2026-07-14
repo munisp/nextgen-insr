@@ -809,7 +809,7 @@ export function DisputesAdminTab() {
               ) : (
                 (data?.disputes ?? []).map(
                   // @ts-ignore
-                  ({ dispute, agentName, agentCode }) => (
+                  ({ dispute, agentName, agentId }) => (
                     <div
                       key={dispute.id}
                       onClick={() => setSelectedRef(dispute.ref)}
@@ -831,7 +831,7 @@ export function DisputesAdminTab() {
                             {dispute.reason}
                           </p>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            {agentName ?? "Unknown"} ({agentCode ?? "—"}) · Tx:{" "}
+                            {agentName ?? "Unknown"} ({agentId ?? "—"}) · Tx:{" "}
                             {dispute.transactionRef}
                           </p>
                         </div>

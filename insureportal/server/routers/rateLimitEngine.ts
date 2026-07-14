@@ -7,7 +7,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { rateLimitRules } from "../../drizzle/schema";
+import { rateLimitRules } from "@schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 
 export const rateLimitEngineRouter = router({

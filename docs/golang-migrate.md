@@ -2,7 +2,7 @@
 
 ## Overview
 
-The 54Link platform includes three Go microservices — **Fraud Service**, **Float Service**, and **Geofencing Service** — each with their own PostgreSQL schemas. This document describes how to integrate [golang-migrate](https://github.com/golang-migrate/migrate) for schema versioning and safe zero-downtime migrations.
+The InsurePortal platform includes three Go microservices — **Fraud Service**, **Float Service**, and **Geofencing Service** — each with their own PostgreSQL schemas. This document describes how to integrate [golang-migrate](https://github.com/golang-migrate/migrate) for schema versioning and safe zero-downtime migrations.
 
 ---
 

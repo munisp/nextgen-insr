@@ -1,14 +1,14 @@
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: 54link-email
+  name: insureportal-email
   namespace: default
 spec:
   type: bindings.smtp
   version: v1
   metadata:
     - name: host
-      value: "smtp.54link.io"
+      value: "smtp.insureportal.io"
     - name: port
       value: "587"
     - name: user
@@ -22,4 +22,4 @@ spec:
     - name: skipTLSVerify
       value: "false"
     - name: emailFrom
-      value: "noreply@54link.io"
+      value: "noreply@insureportal.io"

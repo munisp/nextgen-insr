@@ -181,6 +181,7 @@ export const vatRateTypeEnum = pgEnum("vat_rate_type", [
   "zero",
   "exempt",
 ]);
+export const feeTypeEnum = pgEnum("fee_type", ["percentage", "flat", "tiered", "hybrid"]);
 export const erpTypeEnum = pgEnum("erp_type", [
   "odoo",
   "sap",
@@ -282,7 +283,7 @@ export const agents = pgTable(
   "agents",
   {
     id: serial("id").primaryKey(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull().unique(),
+    agentId: varchar("agentId", { length: 32 }).notNull().unique(),
     name: varchar("name", { length: 128 }).notNull(),
     phone: varchar("phone", { length: 20 }).notNull(),
     email: varchar("email", { length: 320 }),
@@ -294,7 +295,7 @@ export const agents = pgTable(
     tier: agentTierEnum("tier").default("Bronze").notNull(),
     role: varchar("role", { length: 32 }).default("agent").notNull(),
     pinHash: varchar("pinHash", { length: 128 }).notNull(),
-    floatBalance: numeric("floatBalance", { precision: 15, scale: 2 })
+    premiumReserve: numeric("premiumReserve", { precision: 15, scale: 2 })
       .default("0.00")
       .notNull(),
     floatLimit: numeric("floatLimit", { precision: 15, scale: 2 })
@@ -333,7 +334,7 @@ export const agents = pgTable(
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    agentCodeIdx: uniqueIndex("agents_agentCode_idx").on(t.agentCode),
+    agentIdIdx: uniqueIndex("agents_agentId_idx").on(t.agentId),
     isActiveIdx: index("agents_isActive_idx").on(t.isActive),
     deletedAtIdx: index("agents_deletedAt_idx").on(t.deletedAt),
     tenantIdIdx: index("agents_tenantId_idx").on(t.tenantId),
@@ -519,7 +520,7 @@ export const auditLog = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     agentId: integer("agentId"),
-    agentCode: varchar("agentCode", { length: 32 }),
+    userId: varchar("userId", { length: 32 }),
     action: varchar("action", { length: 128 }).notNull(),
     resource: varchar("resource", { length: 64 }),
     resourceId: varchar("resourceId", { length: 64 }),
@@ -544,7 +545,7 @@ export const auditLog = pgTable(
 export type AuditLog = typeof auditLog.$inferSelect;
 
 // ─── Float Top-Up Requests ────────────────────────────────────────────────────
-export const floatTopUpRequests = pgTable(
+export const premiumTopUpRequests = pgTable(
   "float_topup_requests",
   {
     id: serial("id").primaryKey(),
@@ -572,7 +573,7 @@ export const floatTopUpRequests = pgTable(
   })
 );
 
-export type FloatTopUpRequest = typeof floatTopUpRequests.$inferSelect;
+export type FloatTopUpRequest = typeof premiumTopUpRequests.$inferSelect;
 
 // ─── OTP Tokens (PIN Reset) ───────────────────────────────────────────────────
 export const otpTokens = pgTable(
@@ -1030,13 +1031,13 @@ export const kycSessions = pgTable(
 
 export type KycSession = typeof kycSessions.$inferSelect;
 
-// ─── POS Terminals ────────────────────────────────────────────────────────────
-export const posTerminals = pgTable(
-  "pos_terminals",
+// ─── Field Agent Devices ──────────────────────────────────────────────────────
+export const fieldAgentDevices = pgTable(
+  "field_agent_devices",
   {
     id: serial("id").primaryKey(),
     serialNumber: varchar("serialNumber", { length: 64 }).notNull().unique(),
-    model: varchar("model", { length: 64 }).default("PAX A920 MAX"),
+    model: varchar("model", { length: 64 }).default("Standard Tablet"),
     agentId: integer("agentId"),
     status: varchar("status", { length: 32 }).default("unassigned").notNull(),
     firmwareVersion: varchar("firmwareVersion", { length: 32 }),
@@ -1048,24 +1049,22 @@ export const posTerminals = pgTable(
     lastLocation: json("lastLocation"),
     configJson: json("configJson"),
     groupId: integer("groupId"),
-    // Legacy fields used by routers
     lastCommand: varchar("lastCommand", { length: 64 }),
     lastCommandAt: timestamp("lastCommandAt"),
-    // P0-B: Soft delete + tenant isolation
     deletedAt: timestamp("deletedAt"),
     tenantId: integer("tenantId"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    serialNumberIdx: uniqueIndex("pos_serialNumber_idx").on(t.serialNumber),
-    agentIdIdx: index("pos_agentId_idx").on(t.agentId),
-    statusIdx: index("pos_status_idx").on(t.status),
-    tenantIdIdx: index("pos_tenantId_idx").on(t.tenantId),
+    serialNumberIdx: uniqueIndex("device_serialNumber_idx").on(t.serialNumber),
+    agentIdIdx: index("device_agentId_idx").on(t.agentId),
+    statusIdx: index("device_status_idx").on(t.status),
+    tenantIdIdx: index("device_tenantId_idx").on(t.tenantId),
   })
 );
 
-export type PosTerminal = typeof posTerminals.$inferSelect;
+export type FieldAgentDevice = typeof fieldAgentDevices.$inferSelect;
 
 // ─── Terminal Groups ──────────────────────────────────────────────────────────
 export const terminalGroups = pgTable(
@@ -1090,7 +1089,7 @@ export const serviceRecords = pgTable(
   {
     id: serial("id").primaryKey(),
     terminalId: integer("terminalId")
-      .references(() => posTerminals.id)
+      .references(() => fieldAgentDevices.id)
       .notNull(),
     technicianName: varchar("technicianName", { length: 128 }),
     issueDescription: text("issueDescription").notNull(),
@@ -1219,7 +1218,7 @@ export const multiSimProfiles = pgTable(
   {
     id: serial("id").primaryKey(),
     terminalId: integer("terminalId")
-      .references(() => posTerminals.id)
+      .references(() => fieldAgentDevices.id)
       .notNull(),
     simSlot: integer("simSlot").default(1).notNull(),
     carrier: varchar("carrier", { length: 64 }).notNull(),
@@ -1412,35 +1411,6 @@ export const erpSyncLog = pgTable(
 
 export type ErpSyncLog = typeof erpSyncLog.$inferSelect;
 
-// ─── Storefront Ads ───────────────────────────────────────────────────────────
-export const storefrontAds = pgTable(
-  "storefront_ads",
-  {
-    id: serial("id").primaryKey(),
-    title: varchar("title", { length: 128 }).notNull(),
-    body: text("body"),
-    imageUrl: text("imageUrl"),
-    targetUrl: text("targetUrl"),
-    agentId: integer("agentId").references(() => agents.id),
-    status: adStatusEnum("status").default("draft").notNull(),
-    impressions: integer("impressions").default(0).notNull(),
-    clicks: integer("clicks").default(0).notNull(),
-    budget: numeric("budget", { precision: 12, scale: 2 }),
-    spent: numeric("spent", { precision: 12, scale: 2 })
-      .default("0.00")
-      .notNull(),
-    startsAt: timestamp("startsAt"),
-    endsAt: timestamp("endsAt"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  },
-  t => ({
-    sa_status_idx: index("sa_status_idx").on(t.status),
-    sa_createdAt_idx: index("sa_createdAt_idx").on(t.createdAt),
-  })
-);
-
-export type StorefrontAd = typeof storefrontAds.$inferSelect;
 
 // ─── VAT Records ──────────────────────────────────────────────────────────────
 export const vatRecords = pgTable(
@@ -2008,7 +1978,7 @@ export const agentPushSubscriptions = pgTable(
   "agent_push_subscriptions",
   {
     id: serial("id").primaryKey(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull(),
+    agentId: varchar("agentId", { length: 32 }).notNull(),
     endpoint: text("endpoint").notNull().unique(),
     p256dhKey: text("p256dhKey").notNull(),
     authKey: text("authKey").notNull(),
@@ -2019,8 +1989,8 @@ export const agentPushSubscriptions = pgTable(
     lastAlertedAt: timestamp("lastAlertedAt"),
   },
   t => ({
-    agentCodeIdx: index("agent_push_subscriptions_agent_code_idx").on(
-      t.agentCode
+    agentIdIdx: index("agent_push_subscriptions_agent_code_idx").on(
+      t.agentId
     ),
   })
 );
@@ -2039,14 +2009,14 @@ export const connectivityLog = pgTable(
   "connectivity_log",
   {
     id: serial("id").primaryKey(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull(),
+    agentId: varchar("agentId", { length: 32 }).notNull(),
     quality: connectivityQualityEnum("quality").notNull(),
     latencyMs: integer("latencyMs"),
     recordedAt: timestamp("recordedAt").defaultNow().notNull(),
   },
   t => ({
     agentRecordedIdx: index("connectivity_log_agent_recorded_idx").on(
-      t.agentCode,
+      t.agentId,
       t.recordedAt
     ),
   })
@@ -2080,12 +2050,12 @@ export type InsertSystemConfig = typeof systemConfig.$inferInsert;
 // ── SIM Probe Log (SIM Orchestrator analytics) ────────────────────────────────
 // One row per SIM slot per probe cycle. The orchestrator daemon posts a batch
 // of 4 readings (one per slot) every probe interval.
-// Indexed by agentCode + probedAt for time-series queries.
+// Indexed by agentId + probedAt for time-series queries.
 export const simProbeLog = pgTable(
   "sim_probe_log",
   {
     id: serial("id").primaryKey(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull(),
+    agentId: varchar("agentId", { length: 32 }).notNull(),
     terminalId: varchar("terminalId", { length: 32 }).notNull(),
     slot: varchar("slot", { length: 8 }).notNull(), // Phys1|Phys2|ESim1|ESim2
     carrier: varchar("carrier", { length: 32 }).notNull(),
@@ -2104,7 +2074,7 @@ export const simProbeLog = pgTable(
   },
   t => ({
     agentProbedIdx: index("sim_probe_log_agent_probed_idx").on(
-      t.agentCode,
+      t.agentId,
       t.probedAt
     ),
     slotProbedIdx: index("sim_probe_log_slot_probed_idx").on(
@@ -2151,7 +2121,7 @@ export const simFailoverLog = pgTable(
   {
     id: serial("id").primaryKey(),
     terminalId: varchar("terminalId", { length: 32 }).notNull(),
-    agentCode: varchar("agentCode", { length: 32 }).notNull(),
+    agentId: varchar("agentId", { length: 32 }).notNull(),
     fromSlot: integer("fromSlot").notNull(), // 0=Phys1, 1=Phys2, 2=ESim1, 3=ESim2
     toSlot: integer("toSlot").notNull(),
     reason: varchar("reason", { length: 32 }).notNull(), // high_latency | high_packet_loss
@@ -2167,7 +2137,7 @@ export const simFailoverLog = pgTable(
       t.switchedAt
     ),
     agentSwitchedIdx: index("sim_failover_log_agent_switched_idx").on(
-      t.agentCode,
+      t.agentId,
       t.switchedAt
     ),
   })
@@ -2225,7 +2195,7 @@ export const deviceComplianceViolations = pgTable(
     deviceId: integer("deviceId").notNull(),
     policyId: integer("policyId").notNull(),
     serialNumber: varchar("serialNumber", { length: 64 }).notNull(),
-    agentCode: varchar("agentCode", { length: 32 }),
+    agentId: varchar("agentId", { length: 32 }),
     violationType: varchar("violationType", { length: 64 }).notNull(), // low_battery|outdated_app|outdated_os|missing_pin|geofence_breach|inactive|disallowed_network
     severity: varchar("severity", { length: 16 }).notNull(), // low|medium|high|critical
     details: json("details"), // { actual, expected, threshold }
@@ -2258,7 +2228,7 @@ export const mdmGeofenceViolations = pgTable(
     id: serial("id").primaryKey(),
     deviceId: integer("deviceId").notNull(),
     serialNumber: varchar("serialNumber", { length: 64 }).notNull(),
-    agentCode: varchar("agentCode", { length: 32 }),
+    agentId: varchar("agentId", { length: 32 }),
     zoneId: integer("zoneId"), // geofenceZones.id if matched
     zoneName: varchar("zoneName", { length: 128 }),
     violationType: varchar("violationType", { length: 32 }).notNull(), // outside_zone|inside_exclusion|boundary
@@ -2689,95 +2659,6 @@ export const tenantBranding = pgTable(
 export type TenantBranding = typeof tenantBranding.$inferSelect;
 export type InsertTenantBranding = typeof tenantBranding.$inferInsert;
 
-// ─── Tenant Corridors (Remittance Routes) ───────────────────────────────────
-export const corridorStatusEnum = pgEnum("corridor_status", [
-  "active",
-  "paused",
-  "disabled",
-]);
-
-export const tenantCorridors = pgTable(
-  "tenant_corridors",
-  {
-    id: serial("id").primaryKey(),
-    tenantId: integer("tenantId").notNull(),
-    sourceCountry: varchar("sourceCountry", { length: 3 }).notNull(),
-    sourceCurrency: varchar("sourceCurrency", { length: 3 }).notNull(),
-    destinationCountry: varchar("destinationCountry", { length: 3 }).notNull(),
-    destinationCurrency: varchar("destinationCurrency", {
-      length: 3,
-    }).notNull(),
-    status: corridorStatusEnum("status").default("active").notNull(),
-    minAmount: numeric("minAmount", { precision: 20, scale: 2 })
-      .default("10.00")
-      .notNull(),
-    maxAmount: numeric("maxAmount", { precision: 20, scale: 2 })
-      .default("1000000.00")
-      .notNull(),
-    dailyLimit: numeric("dailyLimit", { precision: 20, scale: 2 })
-      .default("5000000.00")
-      .notNull(),
-    estimatedDeliveryMinutes: integer("estimatedDeliveryMinutes")
-      .default(30)
-      .notNull(),
-    paymentMethods: json("paymentMethods")
-      .$type<string[]>()
-      .default(["bank_transfer", "mobile_money"]),
-    deliveryMethods: json("deliveryMethods")
-      .$type<string[]>()
-      .default(["bank_deposit", "mobile_wallet"]),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  },
-  t => ({
-    tenantIdIdx: index("tenant_corridors_tenantId_idx").on(t.tenantId),
-    routeIdx: index("tenant_corridors_route_idx").on(
-      t.sourceCountry,
-      t.destinationCountry
-    ),
-  })
-);
-
-export type TenantCorridor = typeof tenantCorridors.$inferSelect;
-export type InsertTenantCorridor = typeof tenantCorridors.$inferInsert;
-
-// ─── Tenant Fee Overrides ───────────────────────────────────────────────────
-export const feeTypeEnum = pgEnum("fee_type", ["percentage", "flat", "tiered"]);
-
-export const tenantFeeOverrides = pgTable(
-  "tenant_fee_overrides",
-  {
-    id: serial("id").primaryKey(),
-    tenantId: integer("tenantId").notNull(),
-    corridorId: integer("corridorId"),
-    txType: varchar("txType", { length: 64 }).default("transfer").notNull(),
-    feeType: feeTypeEnum("feeType").default("percentage").notNull(),
-    feeValue: numeric("feeValue", { precision: 10, scale: 4 })
-      .default("1.5000")
-      .notNull(),
-    minFee: numeric("minFee", { precision: 20, scale: 2 })
-      .default("100.00")
-      .notNull(),
-    maxFee: numeric("maxFee", { precision: 20, scale: 2 })
-      .default("50000.00")
-      .notNull(),
-    tieredRules:
-      json("tieredRules").$type<
-        Array<{ minAmount: number; maxAmount: number; fee: number }>
-      >(),
-    description: text("description"),
-    isActive: boolean("isActive").default(true).notNull(),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
-  },
-  t => ({
-    tenantIdIdx: index("tenant_fee_overrides_tenantId_idx").on(t.tenantId),
-    corridorIdx: index("tenant_fee_overrides_corridorId_idx").on(t.corridorId),
-  })
-);
-
-export type TenantFeeOverride = typeof tenantFeeOverrides.$inferSelect;
-export type InsertTenantFeeOverride = typeof tenantFeeOverrides.$inferInsert;
 
 // ─── Tenant Sub-Users ───────────────────────────────────────────────────────
 export const tenantUserRoleEnum = pgEnum("tenant_user_role", [
@@ -2812,6 +2693,58 @@ export const tenantUsers = pgTable(
 
 export type TenantUser = typeof tenantUsers.$inferSelect;
 export type InsertTenantUser = typeof tenantUsers.$inferInsert;
+
+// ─── Premium Fee Schedules (Insurance Fee Configuration) ─────────────────────
+export const premiumFeeSchedules = pgTable(
+  "premium_fee_schedules",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    productType: varchar("productType", { length: 64 }).default("motor").notNull(),
+    feeType: feeTypeEnum("feeType").default("percentage").notNull(),
+    feeValue: numeric("feeValue", { precision: 10, scale: 4 })
+      .default("2.5000")
+      .notNull(),
+    minFee: numeric("minFee", { precision: 20, scale: 2 })
+      .default("500.00")
+      .notNull(),
+    maxFee: numeric("maxFee", { precision: 20, scale: 2 })
+      .default("100000.00")
+      .notNull(),
+    description: text("description"),
+    isActive: boolean("isActive").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tenantIdIdx: index("pfs_tenantId_idx").on(t.tenantId),
+    productTypeIdx: index("pfs_productType_idx").on(t.productType),
+  })
+);
+
+export type PremiumFeeSchedule = typeof premiumFeeSchedules.$inferSelect;
+export type InsertPremiumFeeSchedule = typeof premiumFeeSchedules.$inferInsert;
+
+// ─── Customer Feedback NPS ───────────────────────────────────────────────────
+export const customerFeedbackNps = pgTable(
+  "customer_feedback_nps",
+  {
+    id: serial("id").primaryKey(),
+    customerId: integer("customerId"),
+    score: integer("score").notNull(),
+    feedback: text("feedback"),
+    channel: varchar("channel", { length: 64 }).default("web").notNull(),
+    policyId: integer("policyId"),
+    claimId: integer("claimId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    customerIdx: index("cfn_customerId_idx").on(t.customerId),
+    scoreIdx: index("cfn_score_idx").on(t.score),
+  })
+);
+
+export type CustomerFeedbackNps = typeof customerFeedbackNps.$inferSelect;
 
 // ─── Sprint 48: Commission Cascade History ──────────────────────────────────
 export const commissionCascadeHistory = pgTable(
@@ -3080,6 +3013,7 @@ export const complianceChecks = pgTable(
     result: text("result").notNull(), // pass, fail, flag
     details: text("details"),
     flaggedAmount: numeric("flagged_amount", { precision: 15, scale: 2 }),
+    status: varchar("status", { length: 32 }).default("open").notNull(),
     reportedToRegulator: boolean("reported_to_regulator").default(false),
     reportedAt: timestamp("reported_at"),
     createdAt: timestamp("created_at").defaultNow(),
@@ -4195,7 +4129,7 @@ export const platformBillingLedger = pgTable(
     transactionRef: varchar("transaction_ref", { length: 64 }).notNull(),
     transactionType: varchar("transaction_type", { length: 32 }).notNull(),
     agentId: integer("agent_id").notNull(),
-    posTerminalId: integer("pos_terminal_id"),
+    policyTransactionId: integer("policy_transaction_id"),
     grossAmount: numeric("gross_amount", { precision: 15, scale: 2 }).notNull(),
     grossFee: numeric("gross_fee", { precision: 12, scale: 2 }).notNull(),
     agentCommission: numeric("agent_commission", {
@@ -4228,6 +4162,9 @@ export const platformBillingLedger = pgTable(
     carrier: varchar("carrier", { length: 32 }),
     tigerBeetleTransferId: varchar("tigerbeetle_transfer_id", { length: 64 }),
     kafkaOffset: varchar("kafka_offset", { length: 64 }),
+    platformShare: numeric("platform_share", { precision: 12, scale: 2 }),
+    clientShare: numeric("client_share", { precision: 12, scale: 2 }),
+    tenantId: integer("tenant_id"),
     processedAt: timestamp("processed_at").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -4288,7 +4225,7 @@ export const billingRevenuePeriods = pgTable(
     breakdownByType: json("breakdown_by_type"),
     breakdownByRegion: json("breakdown_by_region"),
     activeAgents: integer("active_agents").notNull().default(0),
-    activePosTerminals: integer("active_pos_terminals").notNull().default(0),
+    activeFieldAgents: integer("active_field_agents").notNull().default(0),
     avgTxPerAgent: numeric("avg_tx_per_agent", {
       precision: 8,
       scale: 2,
@@ -4661,250 +4598,1046 @@ export const guideFeedback = pgTable(
 );
 export type GuideFeedback = typeof guideFeedback.$inferSelect;
 
-// ─── E-Commerce: Product Categories ──────────────────────────────────────────
-export const ecommerceCategories = pgTable(
-  "ecommerce_categories",
-  {
-    id: serial("id").primaryKey(),
-    name: varchar("name", { length: 128 }).notNull(),
-    slug: varchar("slug", { length: 128 }).notNull().unique(),
-    description: text("description"),
-    parentId: integer("parent_id"),
-    imageUrl: varchar("image_url", { length: 512 }),
-    sortOrder: integer("sort_order").default(0).notNull(),
-    isActive: boolean("is_active").default(true).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  t => ({
-    slugIdx: uniqueIndex("ecom_cat_slug_idx").on(t.slug),
-    parentIdx: index("ecom_cat_parent_idx").on(t.parentId),
-  })
-);
-export type EcommerceCategory = typeof ecommerceCategories.$inferSelect;
 
-// ─── E-Commerce: Products ────────────────────────────────────────────────────
-export const ecommerceProductStatusEnum = pgEnum("ecommerce_product_status", [
-  "active",
+// ─────────────────────────────────────────────────────────────────────────────
+// INSURANCE DOMAIN ENUMS & TABLES (ported from main schema)
+// These 25 tables + 7 enums complete the insurance domain in insureportal.
+// ─────────────────────────────────────────────────────────────────────────────
+export const insuranceStakeholderRoleEnum = pgEnum("insurance_stakeholder_role", [
+  "policyholder",
+  "beneficiary",
+  "broker",
+  "underwriter",
+  "claims_adjuster",
+  "actuary",
+  "compliance_officer",
+  "regulator",
+  "reinsurer",
+  "agent",
+  "supervisor",
+  "admin",
+  "super_admin",
+]);
+
+export const policyStatusEnum = pgEnum("policy_status", [
   "draft",
-  "archived",
-  "out_of_stock",
+  "quoted",
+  "bound",
+  "active",
+  "endorsed",
+  "renewed",
+  "cancelled",
+  "lapsed",
+  "expired",
+  "suspended",
 ]);
 
-export const ecommerceProducts = pgTable(
-  "ecommerce_products",
+export const claimStatusEnum = pgEnum("claim_status", [
+  "submitted",
+  "under_review",
+  "investigation",
+  "approved",
+  "partially_approved",
+  "rejected",
+  "paid",
+  "closed",
+  "appealed",
+  "escalated",
+]);
+
+export const underwritingDecisionEnum = pgEnum("underwriting_decision", [
+  "pending",
+  "approved",
+  "approved_with_conditions",
+  "referred",
+  "declined",
+  "counter_offered",
+]);
+
+export const endorsementTypeEnum = pgEnum("endorsement_type", [
+  "addition",
+  "deletion",
+  "modification",
+  "extension",
+  "reduction",
+  "cancellation",
+  "reinstatement",
+]);
+
+export const reinsuranceTypeEnum = pgEnum("reinsurance_type", [
+  "proportional",
+  "non_proportional",
+  "quota_share",
+  "surplus",
+  "excess_of_loss",
+  "stop_loss",
+  "catastrophe",
+]);
+
+export const coverageTypeEnum = pgEnum("coverage_type", [
+  "life",
+  "health",
+  "motor",
+  "property",
+  "liability",
+  "marine",
+  "aviation",
+  "agriculture",
+  "credit",
+  "travel",
+  "micro",
+  "group_life",
+  "annuity",
+  "pension",
+]);
+
+export const actuarialReserves = pgTable(
+  "actuarial_reserves",
   {
     id: serial("id").primaryKey(),
-    sku: varchar("sku", { length: 64 }).notNull().unique(),
+    reserveType: varchar("reserveType", { length: 64 }).notNull(),
+    productId: integer("productId"),
+    coverageType: coverageTypeEnum("coverageType"),
+    calculationDate: timestamp("calculationDate").notNull(),
+    grossReserve: numeric("grossReserve", { precision: 18, scale: 2 }).notNull(),
+    netReserve: numeric("netReserve", { precision: 18, scale: 2 }).notNull(),
+    ibrnReserve: numeric("ibrnReserve", { precision: 18, scale: 2 }),
+    unearnedPremiumReserve: numeric("unearnedPremiumReserve", { precision: 18, scale: 2 }),
+    claimsReserve: numeric("claimsReserve", { precision: 18, scale: 2 }),
+    methodology: varchar("methodology", { length: 128 }),
+    assumptions: json("assumptions"),
+    calculatedBy: integer("calculatedBy"),
+    approvedBy: integer("approvedBy"),
+    approvedAt: timestamp("approvedAt"),
+    reportingPeriod: varchar("reportingPeriod", { length: 16 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    calcDateIdx: index("ar_calcDate_idx").on(t.calculationDate),
+    reserveTypeIdx: index("ar_reserveType_idx").on(t.reserveType),
+  })
+);
+
+export const actuarialTables = pgTable(
+  "actuarial_tables",
+  {
+    id: serial("id").primaryKey(),
+    tableCode: varchar("tableCode", { length: 32 }).notNull().unique(),
+    tableName: varchar("tableName", { length: 256 }).notNull(),
+    tableType: varchar("tableType", { length: 64 }).notNull(),
+    gender: varchar("gender", { length: 16 }),
+    smokerStatus: varchar("smokerStatus", { length: 16 }),
+    validFrom: timestamp("validFrom").notNull(),
+    validTo: timestamp("validTo"),
+    data: json("data").notNull(),
+    source: varchar("source", { length: 256 }),
+    approvedBy: integer("approvedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    tableCodeIdx: uniqueIndex("at_tableCode_idx").on(t.tableCode),
+  })
+);
+
+export const beneficiaries = pgTable(
+  "beneficiaries",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    relationship: varchar("relationship", { length: 64 }).notNull(),
+    percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull().default("100"),
+    dateOfBirth: timestamp("dateOfBirth"),
+    nationalId: varchar("nationalId", { length: 64 }),
+    phone: varchar("phone", { length: 32 }),
+    email: varchar("email", { length: 320 }),
+    address: text("address"),
+    isMinor: boolean("isMinor").default(false),
+    guardianName: varchar("guardianName", { length: 256 }),
+    guardianId: varchar("guardianId", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("ben_policy_idx").on(t.policyId),
+  })
+);
+
+export const brokers = pgTable(
+  "brokers",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("userId"),
+    brokerCode: varchar("brokerCode", { length: 32 }).notNull().unique(),
+    companyName: varchar("companyName", { length: 256 }).notNull(),
+    licenseNumber: varchar("licenseNumber", { length: 128 }).notNull(),
+    licenseExpiry: timestamp("licenseExpiry"),
+    naicomRegNumber: varchar("naicomRegNumber", { length: 64 }),
+    commissionRate: numeric("commissionRate", { precision: 5, scale: 4 }),
+    contactEmail: varchar("contactEmail", { length: 320 }),
+    contactPhone: varchar("contactPhone", { length: 32 }),
+    address: text("address"),
+    isActive: boolean("isActive").default(true),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    brokerCodeIdx: uniqueIndex("br_brokerCode_idx").on(t.brokerCode),
+    licenseIdx: index("br_license_idx").on(t.licenseNumber),
+    tenantIdx: index("br_tenant_idx").on(t.tenantId),
+  })
+);
+
+export const claimDocuments = pgTable(
+  "claim_documents",
+  {
+    id: serial("id").primaryKey(),
+    claimId: integer("claimId").notNull(),
+    documentType: varchar("documentType", { length: 64 }).notNull(),
+    fileName: varchar("fileName", { length: 256 }).notNull(),
+    fileUrl: text("fileUrl").notNull(),
+    fileSize: integer("fileSize"),
+    mimeType: varchar("mimeType", { length: 128 }),
+    uploadedBy: integer("uploadedBy"),
+    isVerified: boolean("isVerified").default(false),
+    verifiedBy: integer("verifiedBy"),
+    verifiedAt: timestamp("verifiedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    claimIdx: index("cd_claim_idx").on(t.claimId),
+  })
+);
+
+export const claimWorkflowEvents = pgTable(
+  "claim_workflow_events",
+  {
+    id: serial("id").primaryKey(),
+    claimId: integer("claimId").notNull(),
+    workflowId: varchar("workflowId", { length: 256 }),
+    temporalRunId: varchar("temporalRunId", { length: 256 }),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    fromStatus: claimStatusEnum("fromStatus"),
+    toStatus: claimStatusEnum("toStatus"),
+    triggeredBy: integer("triggeredBy"),
+    triggeredByRole: insuranceStakeholderRoleEnum("triggeredByRole"),
+    payload: json("payload"),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    claimIdx: index("cwe_claim_idx").on(t.claimId),
+    workflowIdx: index("cwe_workflow_idx").on(t.workflowId),
+  })
+);
+
+export const claims = pgTable(
+  "claims",
+  {
+    id: serial("id").primaryKey(),
+    claimNumber: varchar("claimNumber", { length: 64 }).notNull().unique(),
+    policyId: integer("policyId").notNull(),
+    claimantId: integer("claimantId").notNull(),
+    assignedAdjusterId: integer("assignedAdjusterId"),
+    status: claimStatusEnum("status").default("submitted").notNull(),
+    claimType: varchar("claimType", { length: 64 }).notNull(),
+    incidentDate: timestamp("incidentDate").notNull(),
+    reportedDate: timestamp("reportedDate").defaultNow().notNull(),
+    claimedAmount: numeric("claimedAmount", { precision: 18, scale: 2 }).notNull(),
+    approvedAmount: numeric("approvedAmount", { precision: 18, scale: 2 }),
+    paidAmount: numeric("paidAmount", { precision: 18, scale: 2 }),
+    deductible: numeric("deductible", { precision: 18, scale: 2 }),
+    incidentDescription: text("incidentDescription").notNull(),
+    investigationNotes: text("investigationNotes"),
+    rejectionReason: text("rejectionReason"),
+    settlementDate: timestamp("settlementDate"),
+    isFraudSuspected: boolean("isFraudSuspected").default(false),
+    fraudScore: numeric("fraudScore", { precision: 5, scale: 4 }),
+    documents: json("documents").$type<string[]>(),
+    metadata: json("metadata"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    claimNumberIdx: uniqueIndex("cl_claimNumber_idx").on(t.claimNumber),
+    policyIdx: index("cl_policy_idx").on(t.policyId),
+    statusIdx: index("cl_status_idx").on(t.status),
+    adjusterIdx: index("cl_adjuster_idx").on(t.assignedAdjusterId),
+    tenantIdx: index("cl_tenant_idx").on(t.tenantId),
+  })
+);
+
+export const coverageItems = pgTable(
+  "coverage_items",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    coverageType: coverageTypeEnum("coverageType").notNull(),
+    coverageName: varchar("coverageName", { length: 256 }).notNull(),
+    sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }).notNull(),
+    deductible: numeric("deductible", { precision: 18, scale: 2 }).default("0"),
+    premium: numeric("premium", { precision: 18, scale: 2 }).notNull(),
+    isExcluded: boolean("isExcluded").default(false),
+    exclusionReason: text("exclusionReason"),
+    startDate: timestamp("startDate"),
+    endDate: timestamp("endDate"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("ci_policy_idx").on(t.policyId),
+    coverageTypeIdx: index("ci_coverageType_idx").on(t.coverageType),
+  })
+);
+
+export const daprWorkflowState = pgTable(
+  "dapr_workflow_state",
+  {
+    id: serial("id").primaryKey(),
+    workflowName: varchar("workflowName", { length: 128 }).notNull(),
+    instanceId: varchar("instanceId", { length: 256 }).notNull().unique(),
+    status: varchar("status", { length: 32 }).notNull(),
+    input: json("input"),
+    output: json("output"),
+    errorMessage: text("errorMessage"),
+    startedAt: timestamp("startedAt").defaultNow().notNull(),
+    completedAt: timestamp("completedAt"),
+    lastUpdatedAt: timestamp("lastUpdatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    instanceIdIdx: uniqueIndex("dws_instanceId_idx").on(t.instanceId),
+    workflowNameIdx: index("dws_workflowName_idx").on(t.workflowName),
+    statusIdx: index("dws_status_idx").on(t.status),
+  })
+);
+
+export const endorsements = pgTable(
+  "endorsements",
+  {
+    id: serial("id").primaryKey(),
+    endorsementNumber: varchar("endorsementNumber", { length: 64 }).notNull().unique(),
+    policyId: integer("policyId").notNull(),
+    type: endorsementTypeEnum("type").notNull(),
+    effectiveDate: timestamp("effectiveDate").notNull(),
+    description: text("description").notNull(),
+    premiumAdjustment: numeric("premiumAdjustment", { precision: 18, scale: 2 }).default("0"),
+    sumInsuredAdjustment: numeric("sumInsuredAdjustment", { precision: 18, scale: 2 }).default("0"),
+    changesDetail: json("changesDetail"),
+    approvedBy: integer("approvedBy"),
+    approvedAt: timestamp("approvedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    endorsementNumberIdx: uniqueIndex("end_number_idx").on(t.endorsementNumber),
+    policyIdx: index("end_policy_idx").on(t.policyId),
+  })
+);
+
+export const fluvioEventLog = pgTable(
+  "fluvio_event_log",
+  {
+    id: serial("id").primaryKey(),
+    topic: varchar("topic", { length: 128 }).notNull(),
+    partition: integer("partition"),
+    offset: integer("offset"),
+    key: varchar("key", { length: 256 }),
+    payload: json("payload"),
+    processedAt: timestamp("processedAt").defaultNow().notNull(),
+    status: varchar("status", { length: 32 }).default("processed").notNull(),
+    errorMessage: text("errorMessage"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    topicIdx: index("fel_topic_idx").on(t.topic),
+    statusIdx: index("fel_status_idx").on(t.status),
+  })
+);
+
+export const ifrs17MeasurementGroups = pgTable(
+  "ifrs17_measurement_groups",
+  {
+    id: serial("id").primaryKey(),
+    groupCode: varchar("groupCode", { length: 64 }).notNull().unique(),
+    productId: integer("productId"),
+    coverageType: coverageTypeEnum("coverageType"),
+    measurementModel: varchar("measurementModel", { length: 64 }).notNull(),
+    reportingPeriod: varchar("reportingPeriod", { length: 16 }).notNull(),
+    csm: numeric("csm", { precision: 18, scale: 2 }),
+    ra: numeric("ra", { precision: 18, scale: 2 }),
+    lrc: numeric("lrc", { precision: 18, scale: 2 }),
+    lrc_remaining: numeric("lrc_remaining", { precision: 18, scale: 2 }),
+    calculatedAt: timestamp("calculatedAt").defaultNow().notNull(),
+    calculatedBy: integer("calculatedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    groupCodeIdx: uniqueIndex("img_groupCode_idx").on(t.groupCode),
+    periodIdx: index("img_period_idx").on(t.reportingPeriod),
+  })
+);
+
+export const insuranceProducts = pgTable(
+  "insurance_products",
+  {
+    id: serial("id").primaryKey(),
+    productCode: varchar("productCode", { length: 32 }).notNull().unique(),
     name: varchar("name", { length: 256 }).notNull(),
     description: text("description"),
-    categoryId: integer("category_id").notNull(),
-    price: numeric("price", { precision: 12, scale: 2 }).notNull(),
-    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
-    imageUrl: varchar("image_url", { length: 512 }),
-    isActive: boolean("is_active").default(true).notNull(),
-    status: ecommerceProductStatusEnum("status").default("active").notNull(),
-    merchantId: integer("merchant_id").notNull(),
-    agentId: integer("agent_id"),
-    weight: numeric("weight", { precision: 8, scale: 2 }),
-    dimensions: varchar("dimensions", { length: 64 }),
-    tags: json("tags").$type<string[]>().default([]),
-    attributes: json("attributes").$type<Record<string, string>>().default({}),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    coverageType: coverageTypeEnum("coverageType").notNull(),
+    minPremium: numeric("minPremium", { precision: 18, scale: 2 }),
+    maxCoverageAmount: numeric("maxCoverageAmount", { precision: 18, scale: 2 }),
+    minAge: integer("minAge"),
+    maxAge: integer("maxAge"),
+    waitingPeriodDays: integer("waitingPeriodDays").default(0),
+    policyTermMonths: integer("policyTermMonths").default(12),
+    isActive: boolean("isActive").default(true).notNull(),
+    categoryId: integer("categoryId"),
+    sku: varchar("sku", { length: 64 }),
+    regulatoryApprovalRef: varchar("regulatoryApprovalRef", { length: 128 }),
+    naicomProductCode: varchar("naicomProductCode", { length: 64 }),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    skuIdx: uniqueIndex("ecom_prod_sku_idx").on(t.sku),
-    categoryIdx: index("ecom_prod_category_idx").on(t.categoryId),
-    merchantIdx: index("ecom_prod_merchant_idx").on(t.merchantId),
-    activeIdx: index("ecom_prod_active_idx").on(t.isActive),
-  })
-);
-export type EcommerceProduct = typeof ecommerceProducts.$inferSelect;
-
-// ─── E-Commerce: Inventory ───────────────────────────────────────────────────
-export const ecommerceInventory = pgTable(
-  "ecommerce_inventory",
-  {
-    id: serial("id").primaryKey(),
-    sku: varchar("sku", { length: 64 }).notNull().unique(),
-    productId: integer("product_id").notNull(),
-    quantity: integer("quantity").default(0).notNull(),
-    reserved: integer("reserved").default(0).notNull(),
-    reorderPoint: integer("reorder_point").default(10).notNull(),
-    warehouseId: varchar("warehouse_id", { length: 64 })
-      .default("default")
-      .notNull(),
-    lastRestocked: timestamp("last_restocked").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  t => ({
-    skuIdx: uniqueIndex("ecom_inv_sku_idx").on(t.sku),
-    productIdx: index("ecom_inv_product_idx").on(t.productId),
-    lowStockIdx: index("ecom_inv_low_stock_idx").on(t.quantity, t.reorderPoint),
-  })
-);
-export type EcommerceInventoryRecord = typeof ecommerceInventory.$inferSelect;
-
-// ─── E-Commerce: Inventory Reservations ──────────────────────────────────────
-export const ecommerceInventoryReservations = pgTable(
-  "ecommerce_inventory_reservations",
-  {
-    id: serial("id").primaryKey(),
-    sku: varchar("sku", { length: 64 }).notNull(),
-    orderId: integer("order_id").notNull(),
-    quantity: integer("quantity").notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  t => ({
-    skuIdx: index("ecom_res_sku_idx").on(t.sku),
-    orderIdx: index("ecom_res_order_idx").on(t.orderId),
-    expiryIdx: index("ecom_res_expiry_idx").on(t.expiresAt),
+    productCodeIdx: index("ip_productCode_idx").on(t.productCode),
+    coverageTypeIdx: index("ip_coverageType_idx").on(t.coverageType),
+    tenantIdx: index("ip_tenant_idx").on(t.tenantId),
   })
 );
 
-// ─── E-Commerce: Orders ──────────────────────────────────────────────────────
-export const ecommerceOrderStatusEnum = pgEnum("ecommerce_order_status", [
-  "pending",
-  "confirmed",
-  "processing",
-  "shipped",
-  "delivered",
-  "cancelled",
-  "refunded",
-]);
-
-export const ecommerceOrders = pgTable(
-  "ecommerce_orders",
+export const naicomReports = pgTable(
+  "naicom_reports",
   {
     id: serial("id").primaryKey(),
-    orderNumber: varchar("order_number", { length: 32 }).notNull().unique(),
-    customerId: integer("customer_id").notNull(),
-    merchantId: integer("merchant_id").notNull(),
-    agentId: integer("agent_id"),
-    status: ecommerceOrderStatusEnum("status").default("pending").notNull(),
-    subTotal: numeric("sub_total", { precision: 12, scale: 2 }).notNull(),
-    tax: numeric("tax", { precision: 12, scale: 2 }).default("0").notNull(),
-    shippingFee: numeric("shipping_fee", { precision: 12, scale: 2 })
-      .default("0")
-      .notNull(),
-    discount: numeric("discount", { precision: 12, scale: 2 })
-      .default("0")
-      .notNull(),
-    total: numeric("total", { precision: 12, scale: 2 }).notNull(),
-    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
-    paymentMethod: varchar("payment_method", { length: 32 }).notNull(),
-    paymentRef: varchar("payment_ref", { length: 128 }),
-    shippingAddress: json("shipping_address").$type<{
-      street: string;
-      city: string;
-      state: string;
-      country: string;
-      zipCode: string;
-      phone: string;
-    }>(),
+    reportType: varchar("reportType", { length: 64 }).notNull(),
+    reportingPeriod: varchar("reportingPeriod", { length: 16 }).notNull(),
+    submissionDate: timestamp("submissionDate"),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    reportData: json("reportData"),
+    submittedBy: integer("submittedBy"),
+    naicomAcknowledgement: varchar("naicomAcknowledgement", { length: 256 }),
+    dueDate: timestamp("dueDate"),
     notes: text("notes"),
-    offlineCreated: boolean("offline_created").default(false).notNull(),
-    syncedAt: timestamp("synced_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-    fulfilledAt: timestamp("fulfilled_at"),
-    cancelledAt: timestamp("cancelled_at"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    orderNumIdx: uniqueIndex("ecom_order_num_idx").on(t.orderNumber),
-    customerIdx: index("ecom_order_customer_idx").on(t.customerId),
-    merchantIdx: index("ecom_order_merchant_idx").on(t.merchantId),
-    statusIdx: index("ecom_order_status_idx").on(t.status),
-    offlineIdx: index("ecom_order_offline_idx").on(t.offlineCreated),
+    reportTypeIdx: index("nr_reportType_idx").on(t.reportType),
+    periodIdx: index("nr_period_idx").on(t.reportingPeriod),
+    statusIdx: index("nr_status_idx").on(t.status),
   })
 );
-export type EcommerceOrder = typeof ecommerceOrders.$inferSelect;
 
-// ─── E-Commerce: Order Items ─────────────────────────────────────────────────
-export const ecommerceOrderItems = pgTable(
-  "ecommerce_order_items",
+export const permifyRelationshipCache = pgTable(
+  "permify_relationship_cache",
   {
     id: serial("id").primaryKey(),
-    orderId: integer("order_id").notNull(),
-    productId: integer("product_id").notNull(),
+    subjectType: varchar("subjectType", { length: 64 }).notNull(),
+    subjectId: varchar("subjectId", { length: 128 }).notNull(),
+    entityType: varchar("entityType", { length: 64 }).notNull(),
+    entityId: varchar("entityId", { length: 128 }).notNull(),
+    permission: varchar("permission", { length: 64 }).notNull(),
+    allowed: boolean("allowed").notNull(),
+    cachedAt: timestamp("cachedAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt"),
+  },
+  t => ({
+    lookupIdx: index("prc_lookup_idx").on(t.subjectType, t.subjectId, t.entityType, t.entityId, t.permission),
+  })
+);
+
+export const policies = pgTable(
+  "policies",
+  {
+    id: serial("id").primaryKey(),
+    policyNumber: varchar("policyNumber", { length: 64 }).notNull().unique(),
+    productId: integer("productId").notNull(),
+    customerId: integer("customerId").notNull(),
+    agentId: integer("agentId"),
+    brokerId: integer("brokerId"),
+    underwriterId: integer("underwriterId"),
+    status: policyStatusEnum("status").default("draft").notNull(),
+    coverageType: coverageTypeEnum("coverageType").notNull(),
+    sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }).notNull(),
+    annualPremium: numeric("annualPremium", { precision: 18, scale: 2 }).notNull(),
+    startDate: timestamp("startDate"),
+    endDate: timestamp("endDate"),
+    renewalDate: timestamp("renewalDate"),
+    cancellationDate: timestamp("cancellationDate"),
+    cancellationReason: text("cancellationReason"),
+    policyDocument: text("policyDocument"),
+    certificateNumber: varchar("certificateNumber", { length: 64 }),
+    naicomRef: varchar("naicomRef", { length: 128 }),
+    termsAndConditions: json("termsAndConditions"),
+    metadata: json("metadata"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyNumberIdx: uniqueIndex("pol_policyNumber_idx").on(t.policyNumber),
+    customerIdx: index("pol_customer_idx").on(t.customerId),
+    agentIdx: index("pol_agent_idx").on(t.agentId),
+    statusIdx: index("pol_status_idx").on(t.status),
+    renewalIdx: index("pol_renewal_idx").on(t.renewalDate),
+    tenantIdx: index("pol_tenant_idx").on(t.tenantId),
+  })
+);
+
+export const policyRenewals = pgTable(
+  "policy_renewals",
+  {
+    id: serial("id").primaryKey(),
+    originalPolicyId: integer("originalPolicyId").notNull(),
+    renewedPolicyId: integer("renewedPolicyId"),
+    renewalNoticeDate: timestamp("renewalNoticeDate"),
+    renewalDueDate: timestamp("renewalDueDate").notNull(),
+    renewalPremium: numeric("renewalPremium", { precision: 18, scale: 2 }),
+    isAutoRenewal: boolean("isAutoRenewal").default(false),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    notificationSent: boolean("notificationSent").default(false),
+    notificationSentAt: timestamp("notificationSentAt"),
+    completedAt: timestamp("completedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    originalPolicyIdx: index("pr_original_idx").on(t.originalPolicyId),
+    dueDateIdx: index("pr_dueDate_idx").on(t.renewalDueDate),
+  })
+);
+
+export const policyWorkflowEvents = pgTable(
+  "policy_workflow_events",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    workflowId: varchar("workflowId", { length: 256 }),
+    temporalRunId: varchar("temporalRunId", { length: 256 }),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    fromStatus: policyStatusEnum("fromStatus"),
+    toStatus: policyStatusEnum("toStatus"),
+    triggeredBy: integer("triggeredBy"),
+    triggeredByRole: insuranceStakeholderRoleEnum("triggeredByRole"),
+    payload: json("payload"),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("pwe_policy_idx").on(t.policyId),
+    workflowIdx: index("pwe_workflow_idx").on(t.workflowId),
+    eventTypeIdx: index("pwe_eventType_idx").on(t.eventType),
+  })
+);
+
+export const premiumPayments = pgTable(
+  "premium_payments",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    paymentReference: varchar("paymentReference", { length: 128 }).notNull().unique(),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    paymentDate: timestamp("paymentDate").defaultNow().notNull(),
+    dueDate: timestamp("dueDate"),
+    paymentMethod: varchar("paymentMethod", { length: 64 }),
+    channel: varchar("channel", { length: 64 }),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    gatewayRef: varchar("gatewayRef", { length: 256 }),
+    receiptNumber: varchar("receiptNumber", { length: 64 }),
+    periodStart: timestamp("periodStart"),
+    periodEnd: timestamp("periodEnd"),
+    isInstallment: boolean("isInstallment").default(false),
+    installmentNumber: integer("installmentNumber"),
+    totalInstallments: integer("totalInstallments"),
+    tigerBeetleRef: varchar("tigerBeetleRef", { length: 128 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("pp_policy_idx").on(t.policyId),
+    paymentRefIdx: uniqueIndex("pp_paymentRef_idx").on(t.paymentReference),
+    statusIdx: index("pp_status_idx").on(t.status),
+    dueDateIdx: index("pp_dueDate_idx").on(t.dueDate),
+  })
+);
+
+export const reinsuranceCessions = pgTable(
+  "reinsurance_cessions",
+  {
+    id: serial("id").primaryKey(),
+    treatyId: integer("treatyId").notNull(),
+    policyId: integer("policyId").notNull(),
+    cededPremium: numeric("cededPremium", { precision: 18, scale: 2 }).notNull(),
+    cededSumInsured: numeric("cededSumInsured", { precision: 18, scale: 2 }).notNull(),
+    retainedPremium: numeric("retainedPremium", { precision: 18, scale: 2 }).notNull(),
+    retainedSumInsured: numeric("retainedSumInsured", { precision: 18, scale: 2 }).notNull(),
+    cessionDate: timestamp("cessionDate").defaultNow().notNull(),
+    settlementDate: timestamp("settlementDate"),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    treatyIdx: index("rc_treaty_idx").on(t.treatyId),
+    policyIdx: index("rc_policy_idx").on(t.policyId),
+  })
+);
+
+export const reinsuranceTreaties = pgTable(
+  "reinsurance_treaties",
+  {
+    id: serial("id").primaryKey(),
+    treatyNumber: varchar("treatyNumber", { length: 64 }).notNull().unique(),
+    reinsurerId: integer("reinsurerId"),
+    reinsurerName: varchar("reinsurerName", { length: 256 }).notNull(),
+    type: reinsuranceTypeEnum("type").notNull(),
+    coverageType: coverageTypeEnum("coverageType"),
+    retentionLimit: numeric("retentionLimit", { precision: 18, scale: 2 }),
+    cessionLimit: numeric("cessionLimit", { precision: 18, scale: 2 }),
+    cessionPercentage: numeric("cessionPercentage", { precision: 5, scale: 4 }),
+    premiumRate: numeric("premiumRate", { precision: 5, scale: 4 }),
+    startDate: timestamp("startDate").notNull(),
+    endDate: timestamp("endDate"),
+    isActive: boolean("isActive").default(true),
+    terms: json("terms"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    treatyNumberIdx: uniqueIndex("rt_treatyNumber_idx").on(t.treatyNumber),
+    reinsurerIdx: index("rt_reinsurer_idx").on(t.reinsurerId),
+    typeIdx: index("rt_type_idx").on(t.type),
+  })
+);
+
+export const riskAssessments = pgTable(
+  "risk_assessments",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId"),
+    customerId: integer("customerId"),
+    assessmentType: varchar("assessmentType", { length: 64 }).notNull(),
+    overallRiskScore: numeric("overallRiskScore", { precision: 5, scale: 2 }),
+    riskCategory: varchar("riskCategory", { length: 32 }),
+    factors: json("factors"),
+    recommendations: json("recommendations").$type<string[]>(),
+    assessedBy: integer("assessedBy"),
+    assessedAt: timestamp("assessedAt").defaultNow().notNull(),
+    validUntil: timestamp("validUntil"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("ra_policy_idx").on(t.policyId),
+    customerIdx: index("ra_customer_idx").on(t.customerId),
+  })
+);
+
+export const stakeholderProfiles = pgTable(
+  "stakeholder_profiles",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("userId").notNull().unique(),
+    role: insuranceStakeholderRoleEnum("role").notNull(),
+    licenseNumber: varchar("licenseNumber", { length: 128 }),
+    licenseExpiry: timestamp("licenseExpiry"),
+    specializations: json("specializations").$type<string[]>(),
+    maxClaimAuthority: numeric("maxClaimAuthority", { precision: 18, scale: 2 }),
+    isActive: boolean("isActive").default(true),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    userIdx: uniqueIndex("sp_user_idx").on(t.userId),
+    roleIdx: index("sp_role_idx").on(t.role),
+    tenantIdx: index("sp_tenant_idx").on(t.tenantId),
+  })
+);
+
+export const tigerBeetleSyncLog = pgTable(
+  "tigerbeetle_sync_log",
+  {
+    id: serial("id").primaryKey(),
+    transferId: varchar("transferId", { length: 128 }).notNull(),
+    debitAccountId: varchar("debitAccountId", { length: 128 }).notNull(),
+    creditAccountId: varchar("creditAccountId", { length: 128 }).notNull(),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    ledger: integer("ledger"),
+    code: integer("code"),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    syncedAt: timestamp("syncedAt"),
+    errorMessage: text("errorMessage"),
+    retryCount: integer("retryCount").default(0),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    transferIdIdx: index("tbsl_transferId_idx").on(t.transferId),
+    statusIdx: index("tbsl_status_idx").on(t.status),
+  })
+);
+
+export const underwritingAssessments = pgTable(
+  "underwriting_assessments",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    underwriterId: integer("underwriterId"),
+    decision: underwritingDecisionEnum("decision").default("pending").notNull(),
+    riskScore: numeric("riskScore", { precision: 5, scale: 2 }),
+    riskCategory: varchar("riskCategory", { length: 32 }),
+    premiumLoading: numeric("premiumLoading", { precision: 5, scale: 4 }),
+    exclusions: json("exclusions").$type<string[]>(),
+    conditions: json("conditions").$type<string[]>(),
+    notes: text("notes"),
+    decisionDate: timestamp("decisionDate"),
+    expiryDate: timestamp("expiryDate"),
+    referralReason: text("referralReason"),
+    counterOfferDetails: json("counterOfferDetails"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("ua_policy_idx").on(t.policyId),
+    underwriterIdx: index("ua_underwriter_idx").on(t.underwriterId),
+    decisionIdx: index("ua_decision_idx").on(t.decision),
+  })
+);
+
+// ============================================================
+// MISSING TABLES — Added to resolve TS2305 missing export errors
+// ============================================================
+
+// POS Terminals
+export const posTerminals = pgTable(
+  "pos_terminals",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    agentId: integer("agentId"),
+    terminalId: varchar("terminalId", { length: 64 }).notNull().unique(),
+    serialNumber: varchar("serialNumber", { length: 64 }),
+    model: varchar("model", { length: 64 }),
+    manufacturer: varchar("manufacturer", { length: 64 }),
+    firmwareVersion: varchar("firmwareVersion", { length: 32 }),
+    status: varchar("status", { length: 32 }).default("active").notNull(),
+    lastSeenAt: timestamp("lastSeenAt"),
+    location: json("location"),
+    simSlots: json("simSlots"),
+    capabilities: json("capabilities"),
+    simIccid: varchar("simIccid", { length: 22 }),
+    configJson: json("configJson"),
+    appVersion: varchar("appVersion", { length: 32 }),
+    groupId: integer("groupId"),
+    deletedAt: timestamp("deletedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tenantIdx: index("pt_tenant_idx").on(t.tenantId),
+    agentIdx: index("pt_agent_idx").on(t.agentId),
+    terminalIdIdx: uniqueIndex("pt_terminal_id_uidx").on(t.terminalId),
+    statusIdx: index("pt_status_idx").on(t.status),
+  })
+);
+
+// Insurance Services (service catalogue)
+export const insuranceServices = pgTable(
+  "insurance_services",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    slug: varchar("slug", { length: 128 }).notNull(),
+    description: text("description"),
+    category: varchar("category", { length: 64 }),
+    productType: varchar("productType", { length: 64 }),
+    premiumFrom: numeric("premiumFrom", { precision: 18, scale: 2 }),
+    premiumTo: numeric("premiumTo", { precision: 18, scale: 2 }),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    coverageAmount: numeric("coverageAmount", { precision: 18, scale: 2 }),
+    durationDays: integer("durationDays"),
+    agentId: integer("agentId"),
+    groupId: integer("groupId"),
+    status: varchar("status", { length: 32 }).default("active").notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    serialNumber: varchar("serialNumber", { length: 64 }),
+    model: varchar("model", { length: 64 }),
+    deletedAt: timestamp("deletedAt"),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tenantIdx: index("is_tenant_idx").on(t.tenantId),
+    slugIdx: index("is_slug_idx").on(t.slug),
+    categoryIdx: index("is_category_idx").on(t.category),
+    activeIdx: index("is_active_idx").on(t.isActive),
+  })
+);
+
+// Insurance Categories
+export const insuranceCategories = pgTable(
+  "insurance_categories",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    slug: varchar("slug", { length: 128 }).notNull(),
+    description: text("description"),
+    parentId: integer("parentId"),
+    iconUrl: varchar("iconUrl", { length: 512 }),
+    sortOrder: integer("sortOrder").default(0),
+    isActive: boolean("isActive").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tenantIdx: index("ic_tenant_idx").on(t.tenantId),
+    slugIdx: index("ic_slug_idx").on(t.slug),
+    parentIdx: index("ic_parent_idx").on(t.parentId),
+  })
+);
+
+// Insurance Inventory
+export const insuranceInventory = pgTable(
+  "insurance_inventory",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    serviceId: integer("serviceId").notNull(),
+    categoryId: integer("categoryId"),
     sku: varchar("sku", { length: 64 }).notNull(),
     name: varchar("name", { length: 256 }).notNull(),
-    quantity: integer("quantity").notNull(),
-    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
-    total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+    description: text("description"),
+    price: numeric("price", { precision: 18, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    stock: integer("stock").default(0),
+    quantity: integer("quantity").default(0),
+    reserved: integer("reserved").default(0),
+    reorderPoint: integer("reorderPoint").default(10),
+    isUnlimited: boolean("isUnlimited").default(false),
+    isActive: boolean("isActive").default(true).notNull(),
+    metadata: json("metadata"),
+    imageUrl: varchar("imageUrl", { length: 512 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    orderIdx: index("ecom_oi_order_idx").on(t.orderId),
-    productIdx: index("ecom_oi_product_idx").on(t.productId),
+    tenantIdx: index("ii_tenant_idx").on(t.tenantId),
+    serviceIdx: index("ii_service_idx").on(t.serviceId),
+    skuIdx: index("ii_sku_idx").on(t.sku),
+    activeIdx: index("ii_active_idx").on(t.isActive),
   })
 );
-export type EcommerceOrderItem = typeof ecommerceOrderItems.$inferSelect;
 
-// ─── E-Commerce: Shopping Carts ──────────────────────────────────────────────
-export const ecommerceCarts = pgTable(
-  "ecommerce_carts",
+// Insurance Carts
+export const insuranceCarts = pgTable(
+  "insurance_carts",
   {
     id: serial("id").primaryKey(),
-    customerId: integer("customer_id").notNull(),
-    couponCode: varchar("coupon_code", { length: 32 }),
-    discountAmount: numeric("discount_amount", { precision: 12, scale: 2 })
-      .default("0")
-      .notNull(),
-    currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
-    offlineCreated: boolean("offline_created").default(false).notNull(),
-    deviceId: varchar("device_id", { length: 128 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-    expiresAt: timestamp("expires_at"),
+    tenantId: integer("tenantId").notNull(),
+    userId: integer("userId"),
+    customerId: integer("customerId"),
+    sessionId: varchar("sessionId", { length: 128 }),
+    status: varchar("status", { length: 32 }).default("active").notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    subtotal: numeric("subtotal", { precision: 18, scale: 2 }).default("0"),
+    discount: numeric("discount", { precision: 18, scale: 2 }).default("0"),
+    total: numeric("total", { precision: 18, scale: 2 }).default("0"),
+    promoCode: varchar("promoCode", { length: 64 }),
+    expiresAt: timestamp("expiresAt"),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    customerIdx: uniqueIndex("ecom_cart_customer_idx").on(t.customerId),
+    tenantIdx: index("ica_tenant_idx").on(t.tenantId),
+    userIdx: index("ica_user_idx").on(t.userId),
+    sessionIdx: index("ica_session_idx").on(t.sessionId),
+    statusIdx: index("ica_status_idx").on(t.status),
   })
 );
-export type EcommerceCart = typeof ecommerceCarts.$inferSelect;
 
-// ─── E-Commerce: Cart Items ──────────────────────────────────────────────────
-export const ecommerceCartItems = pgTable(
-  "ecommerce_cart_items",
+// Insurance Cart Items
+export const insuranceCartItems = pgTable(
+  "insurance_cart_items",
   {
     id: serial("id").primaryKey(),
-    cartId: integer("cart_id").notNull(),
-    productId: integer("product_id").notNull(),
-    sku: varchar("sku", { length: 64 }).notNull(),
-    name: varchar("name", { length: 256 }).notNull(),
-    quantity: integer("quantity").notNull(),
-    unitPrice: numeric("unit_price", { precision: 12, scale: 2 }).notNull(),
-    merchantId: integer("merchant_id").notNull(),
-    addedAt: timestamp("added_at").defaultNow().notNull(),
+    cartId: integer("cartId").notNull(),
+    inventoryId: integer("inventoryId").notNull(),
+    serviceId: integer("serviceId"),
+    sku: varchar("sku", { length: 64 }),
+    quantity: integer("quantity").default(1).notNull(),
+    unitPrice: numeric("unitPrice", { precision: 18, scale: 2 }).notNull(),
+    discount: numeric("discount", { precision: 18, scale: 2 }).default("0"),
+    subtotal: numeric("subtotal", { precision: 18, scale: 2 }).notNull(),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    cartIdx: index("ecom_ci_cart_idx").on(t.cartId),
-    skuIdx: index("ecom_ci_sku_idx").on(t.sku),
+    cartIdx: index("ici_cart_idx").on(t.cartId),
+    inventoryIdx: index("ici_inventory_idx").on(t.inventoryId),
   })
 );
-export type EcommerceCartItem = typeof ecommerceCartItems.$inferSelect;
 
-// ─── E-Commerce: Customer Interactions (for recommendations) ─────────────────
-export const ecommerceInteractionTypeEnum = pgEnum(
-  "ecommerce_interaction_type",
-  ["view", "add_to_cart", "purchase", "review", "wishlist"]
-);
-
-export const ecommerceInteractions = pgTable(
-  "ecommerce_interactions",
+// Policy Orders
+export const policyOrders = pgTable(
+  "policy_orders",
   {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    customerId: integer("customer_id").notNull(),
-    productId: integer("product_id").notNull(),
-    interactionType: ecommerceInteractionTypeEnum("interaction_type").notNull(),
-    metadata: json("metadata").$type<Record<string, unknown>>().default({}),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    userId: integer("userId"),
+    agentId: integer("agentId"),
+    customerId: integer("customerId"),
+    merchantId: integer("merchantId"),
+    cartId: integer("cartId"),
+    orderRef: varchar("orderRef", { length: 64 }).notNull().unique(),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    subtotal: numeric("subtotal", { precision: 18, scale: 2 }).notNull(),
+    discount: numeric("discount", { precision: 18, scale: 2 }).default("0"),
+    total: numeric("total", { precision: 18, scale: 2 }).notNull(),
+    paymentMethod: varchar("paymentMethod", { length: 64 }),
+    paymentRef: varchar("paymentRef", { length: 128 }),
+    paidAt: timestamp("paidAt"),
+    metadata: json("metadata"),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
   t => ({
-    customerIdx: index("ecom_interact_customer_idx").on(t.customerId),
-    productIdx: index("ecom_interact_product_idx").on(t.productId),
-    typeIdx: index("ecom_interact_type_idx").on(t.interactionType),
+    tenantIdx: index("po_tenant_idx").on(t.tenantId),
+    userIdx: index("po_user_idx").on(t.userId),
+    agentIdx: index("po_agent_idx").on(t.agentId),
+    orderRefIdx: uniqueIndex("po_order_ref_uidx").on(t.orderRef),
+    statusIdx: index("po_status_idx").on(t.status),
   })
 );
-export type EcommerceInteraction = typeof ecommerceInteractions.$inferSelect;
+
+// Insurance Order Items
+export const insuranceOrderItems = pgTable(
+  "insurance_order_items",
+  {
+    id: serial("id").primaryKey(),
+    orderId: integer("orderId").notNull(),
+    inventoryId: integer("inventoryId").notNull(),
+    serviceId: integer("serviceId"),
+    policyId: integer("policyId"),
+    quantity: integer("quantity").default(1).notNull(),
+    unitPrice: numeric("unitPrice", { precision: 18, scale: 2 }).notNull(),
+    discount: numeric("discount", { precision: 18, scale: 2 }).default("0"),
+    subtotal: numeric("subtotal", { precision: 18, scale: 2 }).notNull(),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    orderIdx: index("ioi_order_idx").on(t.orderId),
+    inventoryIdx: index("ioi_inventory_idx").on(t.inventoryId),
+    policyIdx: index("ioi_policy_idx").on(t.policyId),
+  })
+);
+
+// Type exports for cart items
+export type InsuranceCartItem = typeof insuranceCartItems.$inferSelect;
+export type InsuranceCartItemInsert = typeof insuranceCartItems.$inferInsert;
+export type InsuranceOrderItem = typeof insuranceOrderItems.$inferSelect;
+export type PolicyOrder = typeof policyOrders.$inferSelect;
+export type PosTerminal = typeof posTerminals.$inferSelect;
+
+
+// ─── Portal Ads ──────────────────────────────────────────────────────────────
+export const insurance_portalAds = pgTable(
+  "insurance_portal_ads",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    title: varchar("title", { length: 256 }).notNull(),
+    imageUrl: text("imageUrl"),
+    targetUrl: text("targetUrl"),
+    placement: varchar("placement", { length: 64 }).default("dashboard"),
+    isActive: boolean("isActive").default(true).notNull(),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    impressions: integer("impressions").default(0),
+    clicks: integer("clicks").default(0),
+    status: varchar("status", { length: 32 }).default("active").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tenantIdx: index("ipa_tenant_idx").on(t.tenantId),
+    activeIdx: index("ipa_active_idx").on(t.isActive),
+  })
+);
+
+// ─── Promotions ───────────────────────────────────────────────────────────────
+export const promotions = pgTable(
+  "promotions",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    code: varchar("code", { length: 64 }).notNull(),
+    description: text("description"),
+    discountType: varchar("discountType", { length: 32 }).default("percentage"),
+    discountValue: numeric("discountValue", { precision: 10, scale: 2 }),
+    minPurchaseAmount: numeric("minPurchaseAmount", { precision: 12, scale: 2 }),
+    maxUsageCount: integer("maxUsageCount"),
+    usageCount: integer("usageCount").default(0),
+    isActive: boolean("isActive").default(true).notNull(),
+    startsAt: timestamp("startsAt"),
+    endsAt: timestamp("endsAt"),
+    endDate: timestamp("endDate"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tenantIdx: index("promo_tenant_idx").on(t.tenantId),
+    codeIdx: index("promo_code_idx").on(t.code),
+  })
+);
+
+// ─── Loyalty Accounts ─────────────────────────────────────────────────────────
+export const loyaltyAccounts = pgTable(
+  "loyalty_accounts",
+  {
+    id: serial("id").primaryKey(),
+    tenantId: integer("tenantId").notNull(),
+    userId: integer("userId").notNull(),
+    points: integer("points").default(0).notNull(),
+    tier: varchar("tier", { length: 32 }).default("bronze"),
+    lifetimePoints: integer("lifetimePoints").default(0),
+    customerId: integer("customerId"),
+    referralCode: varchar("referralCode", { length: 32 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    tenantUserIdx: index("la_tenant_user_idx").on(t.tenantId, t.userId),
+  })
+);
+
+// ─── Loyalty Transactions ─────────────────────────────────────────────────────
+export const loyaltyTransactions = pgTable(
+  "loyalty_transactions",
+  {
+    id: serial("id").primaryKey(),
+    accountId: integer("accountId").notNull(),
+    tenantId: integer("tenantId").notNull(),
+    type: varchar("type", { length: 32 }).notNull(), // earn, redeem, expire
+    points: integer("points").notNull(),
+    referenceType: varchar("referenceType", { length: 64 }),
+    referenceId: integer("referenceId"),
+    description: text("description"),
+    expiresAt: timestamp("expiresAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    accountIdx: index("lt_account_idx").on(t.accountId),
+    tenantIdx: index("lt_tenant_idx").on(t.tenantId),
+  })
+);

@@ -51,7 +51,7 @@ function rssiLabel(rssiDbm: number | null): string {
 
 type GeoPoint = {
   id: number;
-  agentCode: string;
+  agentId: string;
   terminalId: string;
   slot: string;
   carrier: string;
@@ -211,7 +211,7 @@ function LeafletMap({
         circle.bindPopup(
           `<div style="font-family: monospace; font-size: 12px; line-height: 1.6;">
             <strong style="color: ${fillColor}">${pt.carrier}</strong> — ${pt.slot}<br/>
-            <strong>Agent:</strong> ${pt.agentCode}<br/>
+            <strong>Agent:</strong> ${pt.agentId}<br/>
             <strong>Terminal:</strong> ${pt.terminalId}<br/>
             <strong>RSSI:</strong> ${pt.rssiDbm !== null ? `${pt.rssiDbm} dBm` : "Unknown"} (${rssiLabel(pt.rssiDbm)})<br/>
             <strong>Latency:</strong> ${pt.latencyMs} ms<br/>

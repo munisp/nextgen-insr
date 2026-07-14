@@ -24,7 +24,7 @@ services:
     volumes:
       - tigerbeetle_data_0:/data
     networks:
-      - 54link-net
+      - insureportal-net
     healthcheck:
       test: ["CMD-SHELL", "echo 'ping' | nc -q1 localhost 3000 || exit 1"]
       interval: 10s
@@ -50,7 +50,7 @@ services:
     volumes:
       - tigerbeetle_data_1:/data
     networks:
-      - 54link-net
+      - insureportal-net
     healthcheck:
       test: ["CMD-SHELL", "echo 'ping' | nc -q1 localhost 3001 || exit 1"]
       interval: 10s
@@ -76,7 +76,7 @@ services:
     volumes:
       - tigerbeetle_data_2:/data
     networks:
-      - 54link-net
+      - insureportal-net
     healthcheck:
       test: ["CMD-SHELL", "echo 'ping' | nc -q1 localhost 3002 || exit 1"]
       interval: 10s
@@ -97,5 +97,5 @@ volumes:
     driver: local
 
 networks:
-  54link-net:
+  insureportal-net:
     external: true

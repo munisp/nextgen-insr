@@ -1,7 +1,7 @@
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: 54link-sms
+  name: insureportal-sms
   namespace: default
 spec:
   type: bindings.http

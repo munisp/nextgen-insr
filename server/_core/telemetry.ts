@@ -1,5 +1,5 @@
 /**
- * telemetry.ts — OpenTelemetry distributed tracing for 54Link POS Shell
+ * telemetry.ts — OpenTelemetry distributed tracing for InsurePortal POS Shell
  *
  * Instruments:
  *  - HTTP requests (Express)
@@ -11,7 +11,7 @@
  *
  * Environment variables:
  *  - OTEL_EXPORTER_OTLP_ENDPOINT  e.g. http://jaeger:4318
- *  - OTEL_SERVICE_NAME             defaults to "pos-shell"
+ *  - OTEL_SERVICE_NAME             defaults to "insurance-portal"
  *  - OTEL_SERVICE_VERSION          defaults to "1.0.0"
  */
 
@@ -19,6 +19,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { resourceFromAttributes } from "@opentelemetry/resources";
+import { logger } from './logger';
 import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
@@ -27,13 +28,13 @@ import {
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 
 if (!endpoint) {
-  console.warn(
+  logger.warn(
     "[OTel] OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing disabled."
   );
 } else {
   const sdk = new NodeSDK({
     resource: resourceFromAttributes({
-      [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? "pos-shell",
+      [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? "insurance-portal",
       [ATTR_SERVICE_VERSION]: process.env.OTEL_SERVICE_VERSION ?? "1.0.0",
     }),
     traceExporter: new OTLPTraceExporter({
@@ -48,10 +49,10 @@ if (!endpoint) {
   });
 
   sdk.start();
-  console.log(`[OTel] Tracing initialised → ${endpoint}`);
+  logger.info(`[OTel] Tracing initialised → ${endpoint}`);
 
   process.on("SIGTERM", () => {
-    sdk.shutdown().catch(err => console.error("[OTel] Shutdown error:", err));
+    sdk.shutdown().catch(err => logger.error("[OTel] Shutdown error:: " + String(err)));
   });
 }
 

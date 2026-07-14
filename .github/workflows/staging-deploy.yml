@@ -1,0 +1,116 @@
+name: Staging Deploy
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service:
+          - claims-adjudication-engine
+          - policy-renewal-automation
+          - agent-commission-management
+          - enhanced-kyc-kyb
+          - notification-service
+          - audit-trail-system
+          - naicom-compliance-module
+          - microinsurance-engine
+          - takaful-module
+          - ussd-gateway
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:staging-${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:staging-latest
+
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
+
+      - name: Deploy to staging
+        run: |
+          for svc in claims-adjudication-engine policy-renewal-automation agent-commission-management enhanced-kyc-kyb notification-service audit-trail-system naicom-compliance-module microinsurance-engine takaful-module ussd-gateway; do
+            kubectl set image deployment/${svc} ${svc}=${IMAGE_PREFIX}/${svc}:staging-${{ github.sha }} \
+              -n insureportal-staging --record || true
+          done
+
+      - name: Wait for rollout
+        run: |
+          for svc in claims-adjudication-engine policy-renewal-automation agent-commission-management; do
+            kubectl rollout status deployment/${svc} -n insureportal-staging --timeout=300s || true
+          done
+
+      - name: Run smoke tests
+        run: |
+          STAGING_URL=$(kubectl get svc claims-adjudication-engine -n insureportal-staging -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          curl -sf "http://${STAGING_URL}/health" | jq .
+          curl -sf "http://${STAGING_URL}/ready" | jq .
+
+  e2e-tests:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run E2E tests
+        env:
+          E2E_BASE_URL: ${{ secrets.STAGING_URL }}
+          CLAIMS_URL: ${{ secrets.STAGING_CLAIMS_URL }}
+          RENEWAL_URL: ${{ secrets.STAGING_RENEWAL_URL }}
+        run: |
+          cd tests/e2e
+          go test -v -timeout 5m ./...
+
+  load-test:
+    needs: e2e-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          curl https://github.com/grafana/k6/releases/download/v0.47.0/k6-v0.47.0-linux-amd64.tar.gz -L | tar xz
+          sudo mv k6-v0.47.0-linux-amd64/k6 /usr/local/bin/
+
+      - name: Run load test (light)
+        env:
+          BASE_URL: ${{ secrets.STAGING_URL }}
+          AUTH_TOKEN: ${{ secrets.STAGING_AUTH_TOKEN }}
+        run: |
+          k6 run --vus 20 --duration 2m tests/load/k6_load_test.js

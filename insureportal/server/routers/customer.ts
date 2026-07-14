@@ -23,7 +23,7 @@ import {
   fido2Challenges,
   creditScoreHistory,
   creditApplications,
-} from "../../drizzle/schema";
+} from "@schema";
 import crypto from "crypto";
 import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
 

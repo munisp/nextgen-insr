@@ -1,14 +1,14 @@
-# 54Link Agency Banking Platform — Production Readiness Scorecard
+# InsurePortal Insurance Platform — Production Readiness Scorecard
 
 **Date:** 1 April 2026  
 **Version:** Phase 105 (Post-Production Completions)  
-**Repository:** `pos-shell-demo` (54Link Agency Banking Platform)
+**Repository:** `insurance-portal-demo` (InsurePortal Insurance Platform)
 
 ---
 
 ## Executive Summary
 
-The 54Link Agency Banking Platform is a full-stack, multi-service agency banking solution built for the Nigerian fintech market. It covers the complete lifecycle of an agent banking operation: POS terminal transactions, fraud detection, compliance, settlement, merchant management, developer API access, and regulatory reporting.
+The InsurePortal Insurance Platform is a full-stack, multi-service insurance solution built for the Nigerian fintech market. It covers the complete lifecycle of an agent banking operation: POS terminal transactions, fraud detection, compliance, settlement, merchant management, developer API access, and regulatory reporting.
 
 ---
 
@@ -16,7 +16,7 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 
 | Layer                   | Technology                         | Purpose                                       |
 | ----------------------- | ---------------------------------- | --------------------------------------------- |
-| Frontend                | React 19 + Vite + Tailwind CSS 4   | SPA with POS shell, admin dashboards, portals |
+| Frontend                | React 19 + Vite + Tailwind CSS 4   | SPA with insurance portal, admin dashboards, portals |
 | API Layer               | tRPC 11 + Express 4 + Node.js      | Type-safe RPC with superjson serialisation    |
 | Database                | PostgreSQL (Drizzle ORM)           | Primary data store with 55 tables             |
 | Real-time               | Socket.IO + SSE                    | Live fraud alerts, terminal presence          |
@@ -146,7 +146,7 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 | Compliance   | audit_log, gdpr_consent_log                 |
 | KYC          | kyc_documents, kyc_verifications            |
 | Loyalty      | loyalty_history, loyalty_challenges         |
-| Float        | float_top_up_requests                       |
+| Float        | premium_top_up_requests                       |
 | Settlement   | settlements, settlement_items               |
 | Disputes     | disputes, dispute_evidence                  |
 | Chat         | chat_sessions, chat_messages                |
@@ -211,7 +211,7 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 
 | Regulation                    | Coverage                                               |
 | ----------------------------- | ------------------------------------------------------ |
-| CBN Agency Banking Guidelines | Agent onboarding, KYC, transaction limits              |
+| CBN Insurance Guidelines | Agent onboarding, KYC, transaction limits              |
 | NDPR 2019 / NDPA 2023         | Consent management, data rights, privacy policy        |
 | NFIU AML Reporting            | Fraud alert escalation, audit trail                    |
 | FIRS Tax Reporting            | Transaction records with 7-year retention              |
@@ -264,4 +264,4 @@ The 54Link Agency Banking Platform is a full-stack, multi-service agency banking
 
 ---
 
-_Generated: 1 April 2026 | 54Link Financial Services Limited_
+_Generated: 1 April 2026 | InsurePortal Financial Services Limited_

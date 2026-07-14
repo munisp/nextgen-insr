@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog } from "@schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const aiMonitoringRouter = router({
@@ -109,7 +109,7 @@ export const aiMonitoringRouter = router({
         timestamp: string;
         score: number;
         type: string;
-        agentCode: string;
+        agentId: string;
       }>,
       total: 0,
     };

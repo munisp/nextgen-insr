@@ -1,8 +1,8 @@
 global:
   resolve_timeout: 5m
   smtp_smarthost: "smtp.gmail.com:587"
-  smtp_from: "alerts@54link.io"
-  smtp_auth_username: "alerts@54link.io"
+  smtp_from: "alerts@insureportal.io"
+  smtp_auth_username: "alerts@insureportal.io"
   smtp_auth_password: "${SMTP_PASSWORD}"
   smtp_require_tls: true
 
@@ -41,7 +41,7 @@ receivers:
   - name: "default"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_URL}"
-        channel: "#54link-alerts"
+        channel: "#insureportal-alerts"
         title: "{{ .GroupLabels.alertname }}"
         text: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}"
         send_resolved: true
@@ -55,7 +55,7 @@ receivers:
   - name: "slack-critical"
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_URL}"
-        channel: "#54link-critical"
+        channel: "#insureportal-critical"
         title: "🚨 CRITICAL: {{ .GroupLabels.alertname }}"
         text: "{{ range .Alerts }}*Summary:* {{ .Annotations.summary }}\n*Description:* {{ .Annotations.description }}\n{{ end }}"
         send_resolved: true
@@ -63,34 +63,34 @@ receivers:
 
   - name: "ops-email"
     email_configs:
-      - to: "ops@54link.io"
-        subject: "[54Link Alert] {{ .GroupLabels.alertname }}"
+      - to: "ops@insureportal.io"
+        subject: "[InsurePortal Alert] {{ .GroupLabels.alertname }}"
         body: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
         send_resolved: true
 
   - name: "fraud-team"
     email_configs:
-      - to: "fraud@54link.io"
-        subject: "[54Link Fraud Alert] {{ .GroupLabels.alertname }}"
+      - to: "fraud@insureportal.io"
+        subject: "[InsurePortal Fraud Alert] {{ .GroupLabels.alertname }}"
         body: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
         send_resolved: true
     slack_configs:
       - api_url: "${SLACK_WEBHOOK_URL}"
-        channel: "#54link-fraud"
+        channel: "#insureportal-fraud"
         title: "⚠️ Fraud Alert: {{ .GroupLabels.alertname }}"
         text: "{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}"
 
   - name: "network-team"
     email_configs:
-      - to: "network@54link.io"
-        subject: "[54Link Network Alert] {{ .GroupLabels.alertname }}"
+      - to: "network@insureportal.io"
+        subject: "[InsurePortal Network Alert] {{ .GroupLabels.alertname }}"
         body: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
         send_resolved: true
 
   - name: "finance-team"
     email_configs:
-      - to: "finance@54link.io"
-        subject: "[54Link Finance Alert] {{ .GroupLabels.alertname }}"
+      - to: "finance@insureportal.io"
+        subject: "[InsurePortal Finance Alert] {{ .GroupLabels.alertname }}"
         body: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
         send_resolved: true
 

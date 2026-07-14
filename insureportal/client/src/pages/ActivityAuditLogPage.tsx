@@ -80,7 +80,7 @@ const MOCK_AUDIT_LOGS = [
     action: "LOGIN",
     resource: "session",
     resourceId: "SES-44521",
-    details: "Agent login from Lagos POS terminal",
+    details: "Agent login from Lagos insurance service",
     ip: "197.210.55.12",
     status: "success",
   },

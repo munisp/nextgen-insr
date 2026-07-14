@@ -56,7 +56,7 @@ export default function OnboardingWizard() {
     return items.filter(
       (a: any) =>
         a.fullName?.toLowerCase().includes(q) ||
-        a.agentCode?.toLowerCase().includes(q) ||
+        a.agentId?.toLowerCase().includes(q) ||
         a.phone?.includes(q)
     );
   }, [items, search]);
@@ -154,7 +154,7 @@ export default function OnboardingWizard() {
                       {app.fullName ?? `Agent #${app.id}`}
                     </div>
                     <div className="text-[10px] text-slate-500">
-                      {app.agentCode ?? app.phone ?? `ID: ${app.id}`}
+                      {app.agentId ?? app.phone ?? `ID: ${app.id}`}
                     </div>
                   </div>
                   <Badge

@@ -27,7 +27,7 @@ const MOCK_AUDIT_LOGS = [
   {
     id: 1,
     timestamp: "2026-04-22T03:45:00Z",
-    actor: "admin@54link.com",
+    actor: "admin@insureportal.com",
     actorRole: "admin",
     action: "CREATE",
     resource: "agent",
@@ -39,7 +39,7 @@ const MOCK_AUDIT_LOGS = [
   {
     id: 2,
     timestamp: "2026-04-22T03:42:00Z",
-    actor: "ops@54link.com",
+    actor: "ops@insureportal.com",
     actorRole: "admin",
     action: "UPDATE",
     resource: "commission_tier",
@@ -63,7 +63,7 @@ const MOCK_AUDIT_LOGS = [
   {
     id: 4,
     timestamp: "2026-04-22T03:35:00Z",
-    actor: "fraud@54link.com",
+    actor: "fraud@insureportal.com",
     actorRole: "admin",
     action: "FLAG",
     resource: "transaction",
@@ -80,14 +80,14 @@ const MOCK_AUDIT_LOGS = [
     action: "LOGIN",
     resource: "session",
     resourceId: "SES-44521",
-    details: "Agent login from Lagos POS terminal",
+    details: "Agent login from Lagos insurance service",
     ip: "197.210.55.12",
     status: "success",
   },
   {
     id: 6,
     timestamp: "2026-04-22T03:25:00Z",
-    actor: "kyc@54link.com",
+    actor: "kyc@insureportal.com",
     actorRole: "admin",
     action: "APPROVE",
     resource: "kyc_application",
@@ -111,7 +111,7 @@ const MOCK_AUDIT_LOGS = [
   {
     id: 8,
     timestamp: "2026-04-22T03:15:00Z",
-    actor: "admin@54link.com",
+    actor: "admin@insureportal.com",
     actorRole: "admin",
     action: "DELETE",
     resource: "fee_rule",
@@ -135,7 +135,7 @@ const MOCK_AUDIT_LOGS = [
   {
     id: 10,
     timestamp: "2026-04-22T03:05:00Z",
-    actor: "ops@54link.com",
+    actor: "ops@insureportal.com",
     actorRole: "admin",
     action: "TOGGLE",
     resource: "feature_flag",

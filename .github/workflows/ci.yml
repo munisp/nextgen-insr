@@ -2,14 +2,158 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev, devin/**]
   pull_request:
     branches: [main]
 
+env:
+  NODE_VERSION: '22'
+  GO_VERSION: '1.22'
+
 jobs:
+  # ── Node.js Quality Checks ───────────────────────────────────────────
+  node-quality:
+    name: Node.js Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm exec eslint --max-warnings 0 server/ --ext .ts,.tsx,.js,.jsx
+
+      - name: Run TypeScript type check
+        run: pnpm check
+
+      - name: Build frontend with Vite
+        run: pnpm build
+
+      - name: Check for hardcoded credentials
+        run: |
+          echo "Checking for hardcoded credentials..."
+          if grep -rn "insureportal-.*-dev-\|insureportal.*dev_\|TLtest_\|change-me\|change_in_prod" \
+            --include="*.ts" --include="*.js" server/ | grep -v ".test." | grep -v "node_modules"; then
+            echo "ERROR: Found hardcoded default credentials!"
+            echo "Please use requireEnv() for sensitive values in server/_core/env.ts"
+            exit 1
+          fi
+          echo "No hardcoded credentials found."
+
+      - name: Check for console.log in production code
+        run: |
+          echo "Checking for console.log in server code..."
+          count=$(grep -rn "console\.log" server/ --include="*.ts" | grep -v "\.test\." | grep -v "node_modules" | wc -l)
+          if [ "$count" -gt 0 ]; then
+            echo "WARNING: Found $count console.log statements in server code"
+            echo "Please replace with structured logger calls"
+            echo "Use: import { logger } from './_core/logger'"
+          fi
+
+      - name: Analyze router file sizes
+        run: |
+          echo "=== Router File Size Analysis ==="
+          echo "Total router files:"
+          find server/routers -name "*.ts" | wc -l
+          echo ""
+          echo "Largest router files (>10KB):"
+          find server/routers -name "*.ts" -size +10k -exec ls -lh {} \; | awk '{print $5, $9}' | sort -rh | head -10
+          echo ""
+          echo "Router file size distribution:"
+          echo "  <1KB:   $(find server/routers -name '*.ts' -size -1k | wc -l)"
+          echo "  1-10KB: $(find server/routers -name '*.ts' -size +1k -size -10k | wc -l)"
+          echo "  10-50KB: $(find server/routers -name '*.ts' -size +10k -size -50k | wc -l)"
+          echo "  >50KB:  $(find server/routers -name '*.ts' -size +50k | wc -l)"
+          echo ""
+          echo "⚠️  Recommendation: Consider consolidating routers larger than 10KB"
+          echo "   into domain-organized files (max ~500 lines per file)"
+          echo "   See server/lib/routerConventions.ts for guidelines"
+
+    notifications-on-failure:
+      if: failure()
+      steps:
+        - name: Notify on failure
+          run: echo "Node.js quality checks failed — check lint, type-check, and build output."
+
+  # ── Node.js Tests ────────────────────────────────────────────────────
+  node-tests:
+    name: Node.js Tests (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: node-quality
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run vitest
+        env:
+          POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+        run: npx vitest run
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+    notifications-on-failure:
+      if: failure()
+      steps:
+        - name: Notify on failure
+          run: echo "Node.js tests failed — check vitest output."
+
+  # ── Go Build & Vet ───────────────────────────────────────────────────
   go-build:
     name: Go Build & Vet
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         module:
@@ -20,11 +164,16 @@ jobs:
           - audit-trail-system
           - bancassurance-integration
           - batch-processing-engine
+          - claims-adjudication-engine
           - customer-360-view
+          - disaster-recovery-module
           - enhanced-kyc-kyb
+          - enterprise-mdm
           - feedback-management
+          - fraud-detection-go
           - gdpr-compliance
           - group-life-admin
+          - naicom-compliance-module
           - native-mobile-ios
           - ndpr-compliance
           - nmid-integration
@@ -33,25 +182,33 @@ jobs:
           - policy-renewal-automation
           - reinsurance-management
           - strategic-implementations
+          - ussd-gateway
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Go Vet
         working-directory: ${{ matrix.module }}
-        run: go vet ./... 2>/dev/null || true
+        run: go vet ./...
 
       - name: Go Build
         working-directory: ${{ matrix.module }}
-        run: go build ./... 2>/dev/null || true
+        run: go build -v ./...
 
+      - name: Run Go tests
+        working-directory: ${{ matrix.module }}
+        run: go test -race -count=1 -timeout=5m ./...
+
+  # ── Python Lint ──────────────────────────────────────────────────────
   python-lint:
     name: Python Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -71,13 +228,15 @@ jobs:
                      geospatial-service/python-service; do
             if [ -d "$svc" ]; then
               echo "=== Linting $svc ==="
-              ruff check "$svc" --select E,W --ignore E501 || true
+              ruff check "$svc" --select E,W --ignore E501
             fi
           done
 
+  # ── YAML Lint ────────────────────────────────────────────────────────
   yaml-lint:
     name: YAML Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -88,12 +247,14 @@ jobs:
         run: |
           find . -path "*/k8s/*.yaml" -o -path "*/k8s/*.yml" | head -50 | while read f; do
             echo "=== $f ==="
-            yamllint -d relaxed "$f" || true
+            yamllint -d relaxed "$f"
           done
 
+  # ── Docker Build Check ───────────────────────────────────────────────
   docker-build:
     name: Docker Build Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         service:
@@ -108,19 +269,22 @@ jobs:
       - name: Validate Dockerfile
         run: |
           if [ -f "${{ matrix.service.path }}/Dockerfile" ]; then
-            docker build --no-cache --check "${{ matrix.service.path }}" 2>/dev/null || echo "Dockerfile syntax check completed"
+            docker build --no-cache --check "${{ matrix.service.path }}"
           fi
 
+  # ── Shared Go Packages ───────────────────────────────────────────────
   shared-packages:
     name: Shared Packages Build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
 
       - name: Build shared packages
         working-directory: shared
-        run: go build ./... 2>/dev/null || true
+        run: go build ./...

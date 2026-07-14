@@ -1,6 +1,6 @@
 ###############################################################################
 # Mojaloop HA — Central Ledger (2 replicas), ML-API-Adapter, Account Lookup
-# Production-tuned for POS-54Link: P2P transfers, agent float, settlement
+# Production-tuned for POS-InsurePortal: P2P transfers, agent float, settlement
 ###############################################################################
 version: "3.9"
 
