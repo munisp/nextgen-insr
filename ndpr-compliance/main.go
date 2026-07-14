@@ -1,75 +1,110 @@
 package main
 
 import (
-	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
-	"sync/atomic"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"context"
-	"math"
-	"os/signal"
-	"sync"
-	"syscall"
+	"github.com/go-chi/cors"
+	"github.com/insureportal/ndpr_compliance/config"
+	"github.com/insureportal/ndpr_compliance/db"
+	"github.com/insureportal/ndpr_compliance/models"
+	"go.uber.org/zap"
 )
 
-// NDPR Compliance — Nigeria Data Protection Regulation implementation
-// Business Rules:
-// - Consent management: Explicit opt-in for each data processing purpose
-// - Data subject rights: Access (30 days), Rectification (14 days), Erasure (30 days), Portability (30 days)
-// - Breach notification: NITDA within 72 hours, affected persons "without undue delay"
-// - Data Protection Impact Assessment: Required for high-risk processing
-// - Annual audit: Mandatory filing with NITDA
-// - Lawful basis: Consent, Contract, Legal Obligation, Vital Interest, Public Interest, Legitimate Interest
-
-
-// Prometheus-compatible metrics
+// package-level state accessible to handlers
 var (
-	metricsRequestCount    int64
-	metricsErrorCount      int64
-	metricsStartTime       = time.Now()
+	pkgCfg  *config.Config
+	pkgPg   *db.Postgres
+	pkgRedis *db.RedisCache
+	pkgLog  *zap.Logger
 )
 
-func metricsMiddleware(next http.Handler) http.Handler {
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for ndpr_compliance")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS ndpr_compliance (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
+func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&metricsRequestCount, 1)
-		wrapped := &metricsResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		if wrapped.statusCode >= 400 {
-			atomic.AddInt64(&metricsErrorCount, 1)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
 		}
+		next.ServeHTTP(w, r)
 	})
 }
 
-type metricsResponseWriter struct {
+func tracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+		}
+		w.Header().Set("X-Request-ID", requestID)
+		start := time.Now()
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
+	})
+}
+
+type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
 }
 
-func (mrw *metricsResponseWriter) WriteHeader(code int) {
-	mrw.statusCode = code
-	mrw.ResponseWriter.WriteHeader(code)
-}
-
-func metricsHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(metricsStartTime).Seconds()
-	reqCount := atomic.LoadInt64(&metricsRequestCount)
-	errCount := atomic.LoadInt64(&metricsErrorCount)
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
 }
 
 var kafkaRestURL string
@@ -105,218 +140,1027 @@ func publishEvent(topic string, key string, payload interface{}) {
 	defer resp.Body.Close()
 }
 
-// --- Production Middleware ---
-
-type statusResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.statusCode = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-// Tracing middleware - adds X-Request-ID to all requests
-func prodTracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqID := r.Header.Get("X-Request-Id")
-		if reqID == "" {
-			reqID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-Id", reqID)
-		start := time.Now()
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
-	})
-}
-
-// CORS middleware - handles preflight and sets headers
-func prodCorsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Rate limiting - token bucket per IP, 100 req/min
 var (
-	prodRateLimitMu      sync.Mutex
-	prodRateLimitBuckets = make(map[string]*prodTokenBucket)
+	rateLimitMu    sync.Mutex
+	rateLimitStore = make(map[string][]time.Time)
 )
 
-type prodTokenBucket struct {
-	tokens     float64
-	lastRefill time.Time
-}
-
-func prodRateLimitMiddleware(next http.Handler) http.Handler {
+func rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := r.RemoteAddr
 		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 			ip = fwd
 		}
-		prodRateLimitMu.Lock()
-		bucket, ok := prodRateLimitBuckets[ip]
-		if !ok {
-			bucket = &prodTokenBucket{tokens: 100, lastRefill: time.Now()}
-			prodRateLimitBuckets[ip] = bucket
+		rateLimitMu.Lock()
+		now := time.Now()
+		window := now.Add(-1 * time.Minute)
+		var recent []time.Time
+		for _, t := range rateLimitStore[ip] {
+			if t.After(window) {
+				recent = append(recent, t)
+			}
 		}
-		elapsed := time.Since(bucket.lastRefill).Seconds()
-		bucket.tokens = math.Min(100, bucket.tokens+elapsed*(100.0/60.0))
-		bucket.lastRefill = time.Now()
-		if bucket.tokens < 1 {
-			prodRateLimitMu.Unlock()
+		if len(recent) >= 100 {
+			rateLimitMu.Unlock()
 			w.Header().Set("Retry-After", "60")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
+			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
 			return
 		}
-		bucket.tokens--
-		prodRateLimitMu.Unlock()
+		recent = append(recent, now)
+		rateLimitStore[ip] = recent
+		rateLimitMu.Unlock()
 		next.ServeHTTP(w, r)
 	})
 }
 
-// Prometheus-compatible metrics
-var (
-	prodMetricsReqCount   int64
-	prodMetricsErrCount   int64
-	prodMetricsStartTime  = time.Now()
-)
-
-func prodMetricsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&prodMetricsReqCount, 1)
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		if wrapped.statusCode >= 400 {
-			atomic.AddInt64(&prodMetricsErrCount, 1)
-		}
-	})
-}
-
-func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(prodMetricsStartTime).Seconds()
-	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
-	errCount := atomic.LoadInt64(&prodMetricsErrCount)
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
-}
-
 func main() {
-	initKafka()
-	r := chi.NewRouter()
-	r.Use(middleware.Logger, middleware.Recoverer)
-	r.Use(metricsMiddleware)
-	r.Get("/metrics", metricsHandler)
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "ndpr-compliance"})
-	})
-	r.Post("/api/v1/consent", recordConsent)
-	r.Post("/api/v1/dsar", submitDSAR)
-	r.Get("/api/v1/dsar/{id}", getDSARStatus)
-	r.Post("/api/v1/breach/report", reportBreach)
-	r.Get("/api/v1/audit/annual", annualAudit)
-	r.Get("/metrics", prodMetricsHandler)
+	cfg := config.NewConfig()
 
-	port := os.Getenv("PORT")
-	if port == "" { port = "8126" }
-	log.Printf("NDPR Compliance starting on :%s", port)
-	handler := prodMetricsMiddleware(prodTracingMiddleware(prodCorsMiddleware(prodRateLimitMiddleware(r))))
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer logger.Sync()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pg, err := db.NewPostgres(ctx, &cfg.Postgres)
+	if err != nil {
+		logger.Fatal("Failed to connect to postgres", zap.Error(err))
+	}
+	if err := pg.RunMigrations(ctx); err != nil {
+		logger.Fatal("Failed to run migrations", zap.Error(err))
+	}
+	logger.Info("PostgreSQL migrations completed")
+
+	redis, err := db.NewRedisCache(ctx, &cfg.Redis)
+	if err != nil {
+		logger.Warn("Redis not available (non-fatal)", zap.Error(err))
+	}
+
+	pkgCfg, pkgPg, pkgRedis, pkgLog = cfg, pg, redis, logger
+
+	router := buildRouter(cfg, pg, redis, logger)
+
 	srv := &http.Server{
-		Addr:         ":"+port,
-		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:         fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port),
+		Handler:      router,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  60 * time.Second,
 	}
 
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+		logger.Info("NDPR Compliance Service starting",
+			zap.String("addr", srv.Addr),
+			zap.String("service", "ndpr-compliance"))
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Fatal("Server failed", zap.Error(err))
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Println("Shutting down gracefully...")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+	<-shutdownCh
+	logger.Info("Shutting down server...")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownGrace)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Error("Server forced shutdown", zap.Error(err))
 	}
-	log.Println("Server stopped")
+
+	redis.Close()
+	pg.Close()
+	logger.Info("Server exited properly")
 }
 
-func recordConsent(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		CustomerID string   `json:"customer_id"`
-		Purposes   []string `json:"purposes"`
-		Method     string   `json:"method"`
+func buildRouter(cfg *config.Config, pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.Handler {
+	r := chi.NewRouter()
+
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   cfg.CORS.AllowedOrigins,
+		AllowedMethods:   cfg.CORS.AllowedMethods,
+		AllowedHeaders:   cfg.CORS.AllowedHeaders,
+		AllowCredentials: cfg.CORS.AllowCredentials,
+		MaxAge:           int(cfg.CORS.MaxAge.Seconds()),
+	}))
+
+	r.Get("/health", healthHandler(logger))
+	r.Get("/ready", readinessHandler(pg, redis, logger))
+
+	r.Group(func(r chi.Router) {
+		r.Post("/api/v1/consent", recordConsentHandler(pg, redis, logger))
+		r.Get("/api/v1/consent/{subjectId}", getConsentsBySubjectHandler(pg, redis, logger))
+		r.Get("/api/v1/consent/{consentId}", getConsentHandler(pg, redis, logger))
+		r.Put("/api/v1/consent/{consentId}/withdraw", withdrawConsentHandler(pg, redis, logger))
+
+		r.Post("/api/v1/dsar", submitDSARHandler(pg, redis, logger))
+		r.Get("/api/v1/dsar/{id}", getDSARHandler(pg, redis, logger))
+		r.Put("/api/v1/dsar/{id}/execute", executeDSARHandler(pg, redis, logger))
+		r.Get("/api/v1/dsar/reporting", dsarReportingHandler(pg, redis, logger))
+
+		r.Post("/api/v1/breach", reportBreachHandler(logger))
+		r.Get("/api/v1/breach/{id}", getBreachHandler(pg, redis, logger))
+		r.Put("/api/v1/breach/{id}/nitda-notify", markNITDANotifiedHandler(pg, redis, logger))
+		r.Put("/api/v1/breach/{id}/complete", markBreachResolvedHandler(pg, redis, logger))
+
+		r.Get("/api/v1/dpia", listDPIAsHandler(pg, redis, logger))
+		r.Post("/api/v1/dpia", createDPIAHandler(pg, redis, logger))
+		r.Put("/api/v1/dpia/{id}", updateDPIAHandler(pg, redis, logger))
+
+		r.Get("/api/v1/retention/policies", listRetentionPoliciesHandler(pg, redis, logger))
+		r.Put("/api/v1/retention/policies", upsertRetentionPolicyHandler(pg, redis, logger))
+
+		r.Get("/api/v1/audit/report", auditReportHandler(pg, redis, logger))
+
+		r.Get("/api/v1/metrics", metricsHandler(pg, redis, logger))
+	})
+
+	return r
+}
+
+// ========== Health & Readiness ==========
+
+func healthHandler(logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":    "healthy",
+			"service":   "ndpr-compliance",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		})
 	}
-	json.NewDecoder(r.Body).Decode(&body)
-	w.WriteHeader(201)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"consent_id": "CON-" + time.Now().Format("20060102150405"),
-		"customer_id": body.CustomerID, "purposes": body.Purposes,
-		"lawful_basis": "consent", "recorded_at": time.Now().Format(time.RFC3339),
-		"withdrawal_available": true,
-	})
 }
 
-func submitDSAR(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		CustomerID string `json:"customer_id"`
-		Type       string `json:"type"` // access, rectification, erasure, portability
+func readinessHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := pg.Pool.Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "postgres_unavailable"})
+			return
+		}
+		if redis != nil && redis.Client.Ping(r.Context()).Err() != nil {
+			logger.Warn("Redis not available at readiness", zap.Error(redis.Client.Ping(r.Context()).Err()))
+		}
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":    "ready",
+			"service":   "ndpr-compliance",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		})
 	}
-	json.NewDecoder(r.Body).Decode(&body)
-	sla := map[string]int{"access": 30, "rectification": 14, "erasure": 30, "portability": 30}
-	w.WriteHeader(201)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"dsar_id": "DSAR-" + time.Now().Format("20060102150405"),
-		"type": body.Type, "status": "received", "sla_days": sla[body.Type],
-		"deadline": time.Now().AddDate(0, 0, sla[body.Type]).Format("2006-01-02"),
-	})
 }
 
-func getDSARStatus(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"dsar_id": chi.URLParam(r, "id"), "type": "access", "status": "in_progress",
-		"progress_pct": 60, "estimated_completion": time.Now().AddDate(0, 0, 5).Format("2006-01-02"),
-	})
+// ========== Consent Handlers ==========
+
+func recordConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			SubjectID     string            `json:"subject_id"`
+			FullName      string            `json:"full_name"`
+			Email         string            `json:"email"`
+			Purposes      []string          `json:"purposes"`
+			Method        string            `json:"method"`
+			LawfulBasis   string            `json:"lawful_basis"`
+			IPAddress     string            `json:"ip_address"`
+			UserAgent     string            `json:"user_agent"`
+			Version       string            `json:"version"`
+			ConsentText   string            `json:"consent_text"`
+			Metadata      map[string]any    `json:"metadata,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body", logger)
+			return
+		}
+		if err := validateConsent(req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error(), logger)
+			return
+		}
+
+		now := time.Now().UTC()
+		consent := &models.Consent{
+			ID:            generateID(),
+			ConsentID:     fmt.Sprintf("CON-%s", generateID()),
+			SubjectID:     req.SubjectID,
+			Purposes:      parseStringSliceToPurposes(req.Purposes),
+			Method:        parseConsentMethod(req.Method),
+			LawfulBasis:   parseLawfulBasis(req.LawfulBasis),
+			IPAddress:     req.IPAddress,
+			UserAgent:     req.UserAgent,
+			Version:       req.Version,
+			ConsentText:   req.ConsentText,
+			Withdrawn:     false,
+			Metadata:      req.Metadata,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
+
+		if err := pg.InsertConsent(r.Context(), consent); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to record consent: %v", err), logger)
+			return
+		}
+		if redis != nil {
+			redis.InvalidateConsents(r.Context(), req.SubjectID)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(consent)
+	}
 }
 
-func reportBreach(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"breach_id": "BRH-" + time.Now().Format("20060102150405"),
-		"nitda_notification_deadline": time.Now().Add(72 * time.Hour).Format(time.RFC3339),
-		"status": "reported", "severity": "high", "affected_persons": 0,
-	})
+func getConsentsBySubjectHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		subjectID := chi.URLParam(r, "subjectId")
+		if redis != nil {
+			if data, err := redis.GetConsents(r.Context(), subjectID); err == nil && len(data) > 0 {
+				json.NewEncoder(w).Encode(json.RawMessage(data))
+				return
+			}
+		}
+		consents, err := pg.GetConsentsBySubject(r.Context(), subjectID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "no consents found for subject", logger)
+			return
+		}
+		if redis != nil {
+			data, _ := json.Marshal(consents)
+			redis.CacheConsents(r.Context(), subjectID, data, db.TCacheMedium)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"subject_id": subjectID,
+			"consents":   consents,
+			"total":      len(consents),
+			"active":     countField(consents, false),
+			"withdrawn":  countField(consents, true),
+		})
+	}
 }
 
-func annualAudit(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"audit_year": 2026, "status": "compliant",
-		"consent_records": 45000, "dsar_requests": 120, "breaches": 0,
-		"dpia_completed": 5, "nitda_filing": "submitted",
-	})
+func getConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		consentID := chi.URLParam(r, "consentId")
+		consent, err := pg.GetConsent(r.Context(), consentID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "consent not found", logger)
+			return
+		}
+		json.NewEncoder(w).Encode(consent)
+	}
+}
+
+func withdrawConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			WithdrawnBy    string `json:"withdrawn_by"`
+			WithdrawalReason string `json:"withdrawal_reason"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+
+		consentID := chi.URLParam(r, "consentId")
+		consent, err := pg.GetConsent(r.Context(), consentID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "consent not found", logger)
+			return
+		}
+		if consent.Withdrawn {
+			writeError(w, http.StatusBadRequest, "consent already withdrawn", logger)
+			return
+		}
+		if err := pg.WithdrawConsent(r.Context(), consentID, req.WithdrawnBy, req.WithdrawalReason); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to withdraw consent", logger)
+			return
+		}
+
+		consent.Withdrawn = true
+		now := time.Now().UTC()
+		consent.WithdrawnAt = &now
+		consent.WithdrawnBy = req.WithdrawnBy
+		consent.WithdrawalReason = req.WithdrawalReason
+		consent.UpdatedAt = now
+
+		if redis != nil {
+			redis.InvalidateConsents(r.Context(), consent.SubjectID)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"consent":    consent,
+			"withdrawn":  true,
+			"withdrawn_at": now.Format(time.RFC3339),
+		})
+	}
+}
+
+// ========== DSAR Handlers ==========
+
+func submitDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			SubjectID   string   `json:"subject_id"`
+			FullName    string   `json:"full_name"`
+			Email       string   `json:"email"`
+			Type        string   `json:"type"`
+			Description string   `json:"description"`
+			AssignedTo  string   `json:"assigned_to"`
+			DataSources []string `json:"data_sources"`
+			Metadata    map[string]any `json:"metadata,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body", logger)
+			return
+		}
+		if req.SubjectID == "" || req.Type == "" {
+			writeError(w, http.StatusBadRequest, "subject_id and type are required", logger)
+			return
+		}
+
+		slaDays := getSlaDays(req.Type)
+		receivedAt := time.Now().UTC()
+		dsar := &models.DSAR{
+			ID:            generateID(),
+			DSARID:        fmt.Sprintf("DSAR-%s", generateID()),
+			SubjectID:     req.SubjectID,
+			FullName:      req.FullName,
+			Email:         req.Email,
+			Type:          parseDSARType(req.Type),
+			Description:   req.Description,
+			Status:        models.DSARReceived,
+			SLADays:       slaDays,
+			ReceivedAt:    receivedAt,
+			Deadline:      receivedAt.AddDate(0, 0, slaDays),
+			AssignedTo:    req.AssignedTo,
+			DataSources:   req.DataSources,
+			Metadata:      req.Metadata,
+			CreatedAt:     receivedAt,
+			UpdatedAt:     receivedAt,
+		}
+
+		if err := pg.InsertDSAR(r.Context(), dsar); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to submit DSAR", logger)
+			return
+		}
+		if redis != nil {
+			redis.InvalidateDSAR(r.Context(), dsar.DSARID)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"dsar":    dsar,
+			"sla_days": slaDays,
+			"deadline": dsar.Deadline.Format("2006-01-02"),
+		})
+	}
+}
+
+func getDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		id := chi.URLParam(r, "id")
+		if redis != nil {
+			if data, err := redis.GetDSAR(r.Context(), id); err == nil && len(data) > 0 {
+				json.NewEncoder(w).Encode(json.RawMessage(data))
+				return
+			}
+		}
+		dsar, err := pg.GetDSAR(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "DSAR not found", logger)
+			return
+		}
+		slaUsage := float64(0)
+		totalHrs := dsar.Deadline.Sub(dsar.ReceivedAt).Hours()
+		if totalHrs > 0 {
+			slaUsage = (time.Since(dsar.ReceivedAt).Hours() / totalHrs) * 100
+		}
+		if redis != nil {
+			data, _ := json.Marshal(dsar)
+			redis.CacheDSAR(r.Context(), id, data, db.TCacheShort)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"dsar":          dsar,
+			"sla_days":      dsar.SLADays,
+			"sla_usage_pct": fmt.Sprintf("%.1f", slaUsage),
+			"days_left":     max(0, int(time.Until(dsar.Deadline).Hours()/24)),
+		})
+	}
+}
+
+func executeDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			Action        string `json:"action"`
+			DataExportURL string `json:"data_export_url,omitempty"`
+			RecordsFound  int    `json:"records_found"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body", logger)
+			return
+		}
+		dsarID := chi.URLParam(r, "id")
+		dsar, err := pg.GetDSAR(r.Context(), dsarID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "DSAR not found", logger)
+			return
+		}
+		if dsar.Status == string(models.DSARCompleted) {
+			writeError(w, http.StatusBadRequest, "DSAR already completed", logger)
+			return
+		}
+
+		updates := map[string]interface{}{"records_found": req.RecordsFound}
+		switch req.Action {
+		case "export", "delete":
+			updates["status"] = string(models.DSARCompleted)
+			updates["completed_at"] = time.Now().UTC()
+			if req.Action == "export" && req.DataExportURL != "" {
+				updates["data_export_url"] = req.DataExportURL
+			}
+		case "rectify":
+			updates["status"] = string(models.DSARInReview)
+		default:
+			writeError(w, http.StatusBadRequest, "unknown action: "+req.Action, logger)
+			return
+		}
+
+		if err := pg.UpdateDSAR(r.Context(), dsarID, updates); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to execute DSAR", logger)
+			return
+		}
+		dsar.UpdatedAt = time.Now().UTC()
+		if redis != nil {
+			redis.InvalidateDSAR(r.Context(), dsarID)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"dsar": dsar, "action": req.Action, "status": string(dsar.Status)})
+	}
+}
+
+func dsarReportingHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		stats, err := pg.GetDSARReporting(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to get DSAR stats", logger)
+			return
+		}
+		rows, err := pg.Pool.Query(r.Context(), `
+			SELECT type, COUNT(*),
+				COUNT(CASE WHEN status = 'completed' THEN 1 END),
+				COUNT(CASE WHEN deadline < NOW() AND status NOT IN ('completed','denied') THEN 1 END)
+			FROM dsars GROUP BY type`)
+		if err != nil {
+			rows.Close()
+		} else {
+			defer rows.Close()
+		}
+		typeBreakdown := []map[string]any{}
+		for rows != nil && rows.Next() {
+			var t string
+			var total, completed, overdue int64
+			if err := rows.Scan(&t, &total, &completed, &overdue); err == nil {
+				typeBreakdown = append(typeBreakdown, map[string]any{"type": t, "total": total, "completed": completed, "overdue": overdue})
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"dsar_stats": stats, "type_breakdown": typeBreakdown, "generated_at": time.Now().UTC().Format(time.RFC3339)})
+	}
+}
+
+// ========== Breach Handlers ==========
+
+func reportBreachHandler(logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			Title            string   `json:"title"`
+			Description      string   `json:"description"`
+			Severity         string   `json:"severity"`
+			DetectionDate    string   `json:"detection_date"`
+			Reporter         string   `json:"reported_by"`
+			AffectedPersons  int64    `json:"affected_persons"`
+			DataTypes        []string `json:"data_types_affected"`
+			Cause            string   `json:"cause"`
+			RemediationSteps []string `json:"remediation_steps"`
+			ImpactAssessment string   `json:"impact_assessment"`
+			Metadata         map[string]any `json:"metadata,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body", logger)
+			return
+		}
+		if req.Title == "" || req.Severity == "" {
+			writeError(w, http.StatusBadRequest, "title and severity are required", logger)
+			return
+		}
+
+		now := time.Now().UTC()
+		detectionDate := now
+		if req.DetectionDate != "" {
+			if d, err := time.Parse("2006-01-02", req.DetectionDate); err == nil {
+				detectionDate = d
+			}
+		}
+		nitdaHrs := pkgCfg.NDPR.BreachNotificationHours
+		breach := &models.Breach{
+			ID:               generateID(),
+			BreachID:         fmt.Sprintf("BRH-%s", generateID()),
+			Title:            req.Title,
+			Description:      req.Description,
+			Severity:         parseBreachSeverity(req.Severity),
+			Status:           models.BreachReported,
+			DetectionDate:    detectionDate,
+			ReportedAt:       now,
+			Reporter:         req.Reporter,
+			AffectedPersons:  req.AffectedPersons,
+			DataTypes:        req.DataTypes,
+			Cause:            req.Cause,
+			NITDADeadline:    now.Add(time.Duration(nitdaHrs) * time.Hour),
+			RemediationSteps: req.RemediationSteps,
+			ImpactAssessment: req.ImpactAssessment,
+			Metadata:         req.Metadata,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+
+		if pkgPg != nil {
+			if err := pkgPg.InsertBreach(r.Context(), breach); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to report breach", logger)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"breach":                   breach,
+			"nitda_notification_deadline": breach.NITDADeadline.Format(time.RFC3339),
+			"hours_to_notify":          nitdaHrs,
+		})
+	}
+}
+
+func getBreachHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		id := chi.URLParam(r, "id")
+		if redis != nil {
+			if data, err := redis.GetBreach(r.Context(), id); err == nil && len(data) > 0 {
+				json.NewEncoder(w).Encode(json.RawMessage(data))
+				return
+			}
+		}
+		breach, err := pg.GetBreach(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "breach not found", logger)
+			return
+		}
+		if redis != nil {
+			data, _ := json.Marshal(breach)
+			redis.CacheBreach(r.Context(), id, data, db.TCacheShort)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"breach":              breach,
+			"nitda_deadline":      breach.NITDADeadline.Format(time.RFC3339),
+			"hours_until_deadline": max(0, int(time.Until(breach.NITDADeadline).Hours())),
+			"sla_at_risk":         time.Until(breach.NITDADeadline).Hours() < 24,
+		})
+	}
+}
+
+func markNITDANotifiedHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			NotificationID string `json:"nitda_notification_id"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		breachID := chi.URLParam(r, "id")
+		_, err := pg.GetBreach(r.Context(), breachID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "breach not found", logger)
+			return
+		}
+		now := time.Now().UTC()
+		if err := pg.UpdateBreach(r.Context(), breachID, map[string]interface{}{
+			"nitda_notified_at":     now,
+			"nitda_notification_id": req.NotificationID,
+			"status":                string(models.BreachNITDANotified),
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to mark NITDA notified", logger)
+			return
+		}
+		if redis != nil {
+			redis.InvalidateBreach(r.Context(), breachID)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"breach_id":         breachID,
+			"nitda_notified":    true,
+			"notified_at":       now.Format(time.RFC3339),
+			"notification_id":   req.NotificationID,
+		})
+	}
+}
+
+func markBreachResolvedHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		breachID := chi.URLParam(r, "id")
+		_, err := pg.GetBreach(r.Context(), breachID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "breach not found", logger)
+			return
+		}
+		now := time.Now().UTC()
+		if err := pg.UpdateBreach(r.Context(), breachID, map[string]interface{}{
+			"remediation_complete": true,
+			"resolution_date":      now,
+			"status":               string(models.BreachResolved),
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to mark breach resolved", logger)
+			return
+		}
+		if redis != nil {
+			redis.InvalidateBreach(r.Context(), breachID)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"breach_id": breachID, "resolved": true, "resolved_at": now.Format(time.RFC3339)})
+	}
+}
+
+// ========== DPIA Handlers ==========
+
+func listDPIAsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := r.URL.Query().Get("status")
+		riskLevel := r.URL.Query().Get("risk_level")
+		limit := parseIntQuery(r.URL.Query().Get("limit"), 20)
+		offset := parseIntQuery(r.URL.Query().Get("offset"), 0)
+		if limit > 100 {
+			limit = 100
+		}
+		dpias, total, err := pkgPg.ListDPIAs(r.Context(), status, riskLevel, limit, offset)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list DPIAs", logger)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"dpias": dpias, "total": total, "limit": limit, "offset": offset})
+	}
+}
+
+func createDPIAHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			Title                     string            `json:"title"`
+			Description               string            `json:"description"`
+			ProcessingPurpose         string            `json:"processing_purpose"`
+			DataController            string            `json:"data_controller"`
+			DataProcessor             string            `json:"data_processor"`
+			RiskLevel                 string            `json:"risk_level"`
+			DataCategories            []string          `json:"data_categories"`
+			Subjects                  []string          `json:"data_subjects"`
+			NecessityAssessment       string            `json:"necessity_assessment"`
+			ProportionalityAssessment string            `json:"proportionality_assessment"`
+			Risks                     []string          `json:"risks"`
+			Mitigations               []models.DPIAMitigation `json:"mitigations"`
+			Metadata                  map[string]any    `json:"metadata,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body", logger)
+			return
+		}
+		if req.Title == "" || req.ProcessingPurpose == "" || req.DataController == "" {
+			writeError(w, http.StatusBadRequest, "title, processing_purpose, and data_controller are required", logger)
+			return
+		}
+
+		reviewMonths := pkgCfg.NDPR.DPIAReviewMonths
+		if req.RiskLevel == string(models.RiskHigh) {
+			reviewMonths = 6
+		}
+
+		now := time.Now().UTC()
+		reviewDue := now.AddDate(0, reviewMonths, 0)
+
+		dpia := &models.DPIA{
+			ID:                        generateID(),
+			DPIAID:                    fmt.Sprintf("DPIA-%s", generateID()),
+			Title:                     req.Title,
+			Description:               req.Description,
+			ProcessingPurpose:         req.ProcessingPurpose,
+			DataController:            req.DataController,
+			DataProcessor:             req.DataProcessor,
+			RiskLevel:                 parseDPiARiskLevel(req.RiskLevel),
+			Status:                    models.DPIADraft,
+			DataCategories:            req.DataCategories,
+			Subjects:                  req.Subjects,
+			NecessityAssessment:       req.NecessityAssessment,
+			ProportionalityAssessment: req.ProportionalityAssessment,
+			Risks:                     req.Risks,
+			Mitigations:               req.Mitigations,
+			ReviewDueDate:             &reviewDue,
+			Metadata:                  req.Metadata,
+			CreatedAt:                 now,
+			UpdatedAt:                 now,
+		}
+
+		if err := pkgPg.InsertDPIA(r.Context(), dpia); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create DPIA", logger)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(dpia)
+	}
+}
+
+func updateDPIAHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		id := chi.URLParam(r, "id")
+		dpia, err := pkgPg.GetDPIA(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "DPIA not found", logger)
+			return
+		}
+
+		var req struct {
+			Title, Description, RiskLevel, Status string
+			DataCategories, Risks                 []string
+			DPOReviewed                           bool
+			DPOReviewedAt, DPOComments            string
+			ReviewDueDate                         string
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+
+		if req.Title != "" {
+			dpia.Title = req.Title
+		}
+		if req.Description != "" {
+			dpia.Description = req.Description
+		}
+		if req.RiskLevel != "" {
+			dpia.RiskLevel = parseDPiARiskLevel(req.RiskLevel)
+		}
+		if req.Status != "" {
+			dpia.Status = parseDPIAStatus(req.Status)
+		}
+		if req.DataCategories != nil {
+			dpia.DataCategories = req.DataCategories
+		}
+		if req.Risks != nil {
+			dpia.Risks = req.Risks
+		}
+		if req.DPOReviewed {
+			dpia.DPOReviewed = true
+			t := time.Now().UTC()
+			dpia.DPOReviewedAt = &t
+		}
+		if req.DPOComments != "" {
+			dpia.DPOComments = req.DPOComments
+		}
+		if req.ReviewDueDate != "" {
+			if d, err := time.Parse("2006-01-02", req.ReviewDueDate); err == nil {
+				dpia.ReviewDueDate = &d
+			}
+		}
+
+		dpia.UpdatedAt = time.Now().UTC()
+		if err := pkgPg.UpdateDPIA(r.Context(), dpia); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update DPIA", logger)
+			return
+		}
+		json.NewEncoder(w).Encode(dpia)
+	}
+}
+
+// ========== Retention Policy Handlers ==========
+
+func listRetentionPoliciesHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		policies, err := pkgPg.ListRetentionPolicies(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list retention policies", logger)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"policies": policies, "total": len(policies)})
+	}
+}
+
+func upsertRetentionPolicyHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			Name, Description, DataCategory, RetentionPeriod, Action string
+			AutoExecute                                              bool
+			Exceptions                                               []string
+			IsActive                                                 bool
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body", logger)
+			return
+		}
+		if req.DataCategory == "" || req.RetentionPeriod == "" {
+			writeError(w, http.StatusBadRequest, "data_category and retention_period are required", logger)
+			return
+		}
+		action := req.Action
+		if action == "" {
+			action = "delete"
+		}
+		policy := &models.RetentionPolicy{
+			ID:              generateID(),
+			Name:            req.Name,
+			Description:     req.Description,
+			DataCategory:    req.DataCategory,
+			RetentionPeriod: req.RetentionPeriod,
+			Action:          action,
+			AutoExecute:     req.AutoExecute,
+			Exceptions:      req.Exceptions,
+			IsActive:        req.IsActive,
+			CreatedAt:       time.Now().UTC(),
+			UpdatedAt:       time.Now().UTC(),
+		}
+		if err := pkgPg.UpsertRetentionPolicy(r.Context(), policy); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save retention policy", logger)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(policy)
+	}
+}
+
+// ========== Audit Report Handler ==========
+
+func auditReportHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		year := r.URL.Query().GetInt("year", 0)
+		if year == 0 {
+			year = time.Now().Year()
+		}
+		report, err := pkgPg.GenerateAuditReportData(r.Context(), year)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to generate audit report", logger)
+			return
+		}
+		if err := pkgPg.CreateAuditReport(r.Context(), report); err != nil {
+			logger.Warn("Failed to persist audit report", zap.Error(err))
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"report":           report,
+			"overall_status":   report.OverallStatus,
+			"compliance_score": report.OverallStatus,
+			"generated_at":     time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+}
+
+// ========== Metrics Handler ==========
+
+func metricsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if redis != nil {
+			if data, err := redis.GetMetrics(r.Context()); err == nil && len(data) > 0 {
+				json.NewEncoder(w).Encode(json.RawMessage(data))
+				return
+			}
+		}
+		metrics, err := pkgPg.GetComplianceMetrics(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to get compliance metrics", logger)
+			return
+		}
+		if redis != nil {
+			data, _ := json.Marshal(metrics)
+			redis.CacheMetrics(r.Context(), data, db.TCacheMedium)
+		}
+		json.NewEncoder(w).Encode(metrics)
+	}
+}
+
+// ========== Helpers ==========
+
+func writeError(w http.ResponseWriter, code int, message string, logger *zap.Logger) {
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+func validateConsent(req struct {
+	SubjectID, Method, LawfulBasis, IPAddress, UserAgent, Version, ConsentText string
+	Purposes                                   []string
+	Metadata                                   map[string]any
+}) error {
+	if req.SubjectID == "" {
+		return errors.New("subject_id is required")
+	}
+	if len(req.Purposes) == 0 {
+		return errors.New("at least one purpose is required")
+	}
+	if req.ConsentText == "" {
+		return errors.New("consent_text is required")
+	}
+	return nil
+}
+
+func generateID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func parseStringSliceToPurposes(src []string) []models.ConsentPurpose {
+	dst := make([]models.ConsentPurpose, 0, len(src))
+	for _, s := range src {
+		dst = append(dst, models.ConsentPurpose(s))
+	}
+	return dst
+}
+
+func parseConsentMethod(s string) models.ConsentMethod {
+	if s == "" {
+		return models.ConsentWeb
+	}
+	return models.ConsentMethod(s)
+}
+
+func parseLawfulBasis(s string) models.LawfulBasis {
+	if s == "" {
+		return models.BasisConsent
+	}
+	return models.LawfulBasis(s)
+}
+
+func parseDSARType(s string) models.DSARType {
+	return models.DSARType(s)
+}
+
+func parseBreachSeverity(s string) models.BreachSeverity {
+	return models.BreachSeverity(s)
+}
+
+func parseDPiARiskLevel(s string) models.DPiARiskLevel {
+	if s == "" {
+		return models.RiskLow
+	}
+	return models.DPiARiskLevel(s)
+}
+
+func parseDPIAStatus(s string) models.DPIAStatus {
+	if s == "" {
+		return models.DPIADraft
+	}
+	return models.DPIAStatus(s)
+}
+
+func getSlaDays(dsarType string) int {
+	switch dsarType {
+	case "access":
+		return 30
+	case "rectification":
+		return 14
+	case "erasure":
+		return 30
+	case "portability":
+		return 30
+	default:
+		return 30
+	}
+}
+
+func countField(consents []*models.Consent, value bool) int {
+	n := 0
+	for _, c := range consents {
+		if c.Withdrawn == value {
+			n++
+		}
+	}
+	return n
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func parseIntQuery(val string, fallback int) int {
+	if val == "" {
+		return fallback
+	}
+	var n int
+	fmt.Sscanf(val, "%d", &n)
+	if n < 0 {
+		return fallback
+	}
+	return n
 }

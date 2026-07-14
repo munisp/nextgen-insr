@@ -66,7 +66,7 @@ describe("Transaction Pipeline", () => {
     expect(result.success).toBe(false);
   });
 
-  it("should process a valid cash-in transaction", async () => {
+  it("should process a valid premium collection transaction", async () => {
     const { processTransaction } = await import(
       "./middleware/transactionPipeline"
     );

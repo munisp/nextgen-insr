@@ -423,7 +423,7 @@ export default function ERPConfigTab() {
                   color: WHITE,
                   fontFamily: MONO,
                 }}
-                placeholder={`https://erp.54link.ng${selectedErp ? `:${selectedErp.defaultPort}` : ""}`}
+                placeholder={`https://erp.insureportal.ng${selectedErp ? `:${selectedErp.defaultPort}` : ""}`}
               />
             </div>
           </div>
@@ -488,7 +488,7 @@ export default function ERPConfigTab() {
                   color: WHITE,
                   fontFamily: MONO,
                 }}
-                placeholder="54link_prod"
+                placeholder="insureportal_prod"
               />
             </div>
           </div>
@@ -580,7 +580,7 @@ export default function ERPConfigTab() {
               className="text-xs mb-4"
               style={{ color: GRAY, fontFamily: DISP }}
             >
-              Map 54Link transaction fields to {selectedErp?.label ?? "ERP"}{" "}
+              Map InsurePortal transaction fields to {selectedErp?.label ?? "ERP"}{" "}
               account codes and dimensions.
             </div>
             <div className="grid grid-cols-2 gap-4">

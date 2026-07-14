@@ -21,7 +21,7 @@ describe("Observability Module", () => {
     expect(span.traceId).toHaveLength(32);
     expect(span.spanId).toHaveLength(16);
     expect(span.operationName).toBe("processBatch");
-    expect(span.serviceName).toBe("54link.settlement");
+    expect(span.serviceName).toBe("insureportal.settlement");
     expect(span.attributes["engine"]).toBe("settlement");
     expect(span.attributes["batchSize"]).toBe(100);
     expect(span.status).toBe("unset");
@@ -85,7 +85,7 @@ describe("Observability Module", () => {
     const result = await observability.settlementTracer.withSpan(
       "testOp",
       async span => {
-        expect(span.serviceName).toBe("54link.settlement");
+        expect(span.serviceName).toBe("insureportal.settlement");
         return 42;
       }
     );

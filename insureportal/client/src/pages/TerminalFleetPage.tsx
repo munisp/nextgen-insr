@@ -14,10 +14,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
-export default function TerminalFleetPage() {
+export default function ServiceFleetPage() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
-  const statsQuery = trpc.posTerminalFleet.getStats.useQuery();
+  const statsQuery = trpc.insuranceServiceFleet.getStats.useQuery();
 
   return (
     <DashboardLayout>
@@ -28,7 +28,7 @@ export default function TerminalFleetPage() {
               Terminal Fleet
             </h1>
             <p className="text-muted-foreground mt-1">
-              POS terminal fleet management, diagnostics, and firmware
+              insurance service fleet management, diagnostics, and firmware
             </p>
           </div>
           <div className="flex gap-2">

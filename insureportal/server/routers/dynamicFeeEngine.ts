@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { feeRules, feeAuditTrail } from "../../drizzle/schema";
+import { feeRules, feeAuditTrail } from "@schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
 
 export const dynamicFeeEngineRouter = router({

@@ -1,25 +1,44 @@
 package main
 
 import (
-	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestHealthEndpoint(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "agent-mobile-app", "database": "true"})
-	})
-	req := httptest.NewRequest("GET", "/health", nil)
+func testRouter() *chi.Mux {
+	r := chi.NewRouter()
+	r.Get("/api/v1/agent/{id}/dashboard", agentDashboard)
+	r.Post("/api/v1/agent/{id}/checkin", agentCheckin)
+	r.Get("/api/v1/agent/{id}/commission", agentCommission)
+	return r
+}
+
+func Test_AgentA001Dashboard(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agent/A001/dashboard", nil)
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+	testRouter().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+		t.Errorf("Expected 200, got %d", w.Code)
 	}
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["status"] != "healthy" {
-		t.Errorf("expected healthy status, got %v", resp["status"])
+}
+func Test_AgentA001Checkin(t *testing.T) {
+	body := strings.NewReader(`{"lat":6.45,"lng":3.40}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agent/A001/checkin", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	testRouter().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
+}
+func Test_AgentA001Commission(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agent/A001/commission", nil)
+	w := httptest.NewRecorder()
+	testRouter().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
 	}
 }

@@ -1,21 +1,21 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { floatTopUpRequests, agents, transactions } from "../../drizzle/schema";
+import { premiumTopUpRequests, agents, transactions } from "@schema";
 import { desc, eq, sql, and, count, sum } from "drizzle-orm";
 
 /**
  * Float Management Router
  * 
- * Manages agent float balances, top-up requests, and threshold monitoring.
+ * Manages agent premium reserves, top-up requests, and threshold monitoring.
  * Float is the working capital agents use to process transactions.
  * 
  * Business Rules:
- * - Minimum float balance: ₦50,000 (below = restricted operations)
+ * - Minimum premium reserve: ₦50,000 (below = restricted operations)
  * - Maximum single top-up: ₦5,000,000
  * - Auto-approve top-ups ≤ ₦200,000 for agents with clean history
  * - Top-ups > ₦1,000,000 require manager approval
- * - Daily transaction limit: 3x float balance
+ * - Daily transaction limit: 3x premium reserve
  * - Low float alert: when balance drops below 20% of average daily volume
  */
 export const floatManagementRouter = router({
@@ -34,11 +34,11 @@ export const floatManagementRouter = router({
       if (!database) return { data: [], total: 0 };
 
       const conditions = [];
-      if (input.status) conditions.push(eq(floatTopUpRequests.status, input.status));
-      if (input.agentId) conditions.push(eq(floatTopUpRequests.agentId, input.agentId));
+      if (input.status) conditions.push(eq(premiumTopUpRequests.status, input.status as any));
+      if (input.agentId) conditions.push(eq(premiumTopUpRequests.agentId, Number(input.agentId)));
 
-      const query = database.select().from(floatTopUpRequests)
-        .orderBy(desc(floatTopUpRequests.id))
+      const query = database.select().from(premiumTopUpRequests)
+        .orderBy(desc(premiumTopUpRequests.id))
         .limit(input.limit)
         .offset(input.offset);
 
@@ -46,7 +46,7 @@ export const floatManagementRouter = router({
         ? await query.where(and(...conditions))
         : await query;
 
-      const [{ total }] = await database.select({ total: count() }).from(floatTopUpRequests);
+      const [{ total }] = await database.select({ total: count() }).from(premiumTopUpRequests);
 
       return { data: results, total: total ?? 0 };
     }),
@@ -72,7 +72,7 @@ export const floatManagementRouter = router({
       }
 
       const [request] = await database
-        .insert(floatTopUpRequests)
+        .insert(premiumTopUpRequests)
         .values({
           agentId: input.agentId,
           requestedAmount: input.amount.toString(),
@@ -105,8 +105,8 @@ export const floatManagementRouter = router({
 
       const [request] = await database
         .select()
-        .from(floatTopUpRequests)
-        .where(eq(floatTopUpRequests.id, input.id))
+        .from(premiumTopUpRequests)
+        .where(eq(premiumTopUpRequests.id, input.id))
         .limit(1);
 
       if (!request) throw new Error("Top-up request not found");
@@ -115,12 +115,12 @@ export const floatManagementRouter = router({
       }
 
       await database
-        .update(floatTopUpRequests)
+        .update(premiumTopUpRequests)
         .set({
           status: input.decision,
           approvedBy: input.note ?? null,
         })
-        .where(eq(floatTopUpRequests.id, input.id));
+        .where(eq(premiumTopUpRequests.id, input.id));
 
       return { success: true, newStatus: input.decision };
     }),
@@ -130,14 +130,14 @@ export const floatManagementRouter = router({
     const database = await getDb();
     if (!database) return null;
 
-    const [total] = await database.select({ total: count() }).from(floatTopUpRequests);
-    const [pending] = await database.select({ total: count() }).from(floatTopUpRequests).where(eq(floatTopUpRequests.status, "pending"));
-    const [approved] = await database.select({ total: count() }).from(floatTopUpRequests).where(eq(floatTopUpRequests.status, "approved"));
+    const [total] = await database.select({ total: count() }).from(premiumTopUpRequests);
+    const [pending] = await database.select({ total: count() }).from(premiumTopUpRequests).where(eq(premiumTopUpRequests.status, "pending"));
+    const [approved] = await database.select({ total: count() }).from(premiumTopUpRequests).where(eq(premiumTopUpRequests.status, "approved"));
 
     const [totalVolume] = await database
-      .select({ total: sum(floatTopUpRequests.requestedAmount) })
-      .from(floatTopUpRequests)
-      .where(eq(floatTopUpRequests.status, "approved"));
+      .select({ total: sum(premiumTopUpRequests.requestedAmount) })
+      .from(premiumTopUpRequests)
+      .where(eq(premiumTopUpRequests.status, "approved"));
 
     return {
       totalRequests: total?.total ?? 0,
@@ -160,8 +160,8 @@ export const floatManagementRouter = router({
 
       const [request] = await database
         .select()
-        .from(floatTopUpRequests)
-        .where(eq(floatTopUpRequests.id, input.id))
+        .from(premiumTopUpRequests)
+        .where(eq(premiumTopUpRequests.id, input.id))
         .limit(1);
 
       if (!request) throw new Error(`Float request #${input.id} not found`);

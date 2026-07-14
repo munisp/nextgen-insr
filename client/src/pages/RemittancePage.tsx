@@ -7,13 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Send, Globe, ArrowLeftRight, TrendingUp } from "lucide-react";
 
 export default function RemittancePage() {
-  const [tab, setTab] = useState<"transfers" | "corridors" | "rates">(
+  const [tab, setTab] = useState<"transfers" | "insurance_regions" | "rates">(
     "transfers"
   );
   // @ts-ignore Sprint 85
   const transfers = trpc.remittanceDedicated.history.useQuery({ limit: 20 });
   // @ts-ignore Sprint 85
-  const corridors = trpc.remittanceDedicated.partners.useQuery();
+  const insurance_regions = trpc.remittanceDedicated.partners.useQuery();
   // @ts-ignore Sprint 85
   const rates = trpc.remittanceDedicated.analytics.useQuery();
   // @ts-ignore Sprint 85
@@ -63,7 +63,7 @@ export default function RemittancePage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {corridors.data?.partners?.length ?? 0}
+                {insurance_regions.data?.partners?.length ?? 0}
               </p>
             </CardContent>
           </Card>
@@ -90,11 +90,11 @@ export default function RemittancePage() {
             Transfers
           </Button>
           <Button
-            variant={tab === "corridors" ? "default" : "outline"}
-            onClick={() => setTab("corridors")}
+            variant={tab === "insurance_regions" ? "default" : "outline"}
+            onClick={() => setTab("insurance_regions")}
           >
             <Globe className="h-4 w-4 mr-1" />
-            Corridors
+            InsuranceRegions
           </Button>
           <Button
             variant={tab === "rates" ? "default" : "outline"}
@@ -118,7 +118,7 @@ export default function RemittancePage() {
                       <th className="text-left p-2">Ref</th>
                       <th className="text-left p-2">Sender</th>
                       <th className="text-left p-2">Recipient</th>
-                      <th className="text-left p-2">Corridor</th>
+                      <th className="text-left p-2">InsuranceRegion</th>
                       <th className="text-right p-2">Send Amt</th>
                       <th className="text-right p-2">Receive Amt</th>
                       <th className="text-left p-2">Status</th>
@@ -131,7 +131,7 @@ export default function RemittancePage() {
                         <td className="p-2">{t.senderName}</td>
                         <td className="p-2">{t.recipientName}</td>
                         <td className="p-2">
-                          <Badge>{t.corridor}</Badge>
+                          <Badge>{t.insurance_region}</Badge>
                         </td>
                         <td className="p-2 text-right">
                           {t.sendCurrency} {t.sendAmount?.toLocaleString()}
@@ -162,14 +162,14 @@ export default function RemittancePage() {
           </Card>
         )}
 
-        {tab === "corridors" && (
+        {tab === "insurance_regions" && (
           <Card>
             <CardHeader>
-              <CardTitle>Transfer Corridors</CardTitle>
+              <CardTitle>Transfer InsuranceRegions</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {corridors.data?.partners?.map((c: any) => (
+                {insurance_regions.data?.partners?.map((c: any) => (
                   <div key={c.id} className="border rounded p-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-bold">{c.name}</span>

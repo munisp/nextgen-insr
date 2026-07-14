@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# 54Link APISix Bootstrap Script
+# InsurePortal APISix Bootstrap Script
 # Seeds all routes, upstreams, plugins, and consumers via the APISix Admin API.
 #
 # Usage:

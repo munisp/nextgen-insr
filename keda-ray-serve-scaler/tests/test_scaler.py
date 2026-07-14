@@ -1,3 +1,24 @@
+import os
+import psycopg2
+import psycopg2.extras
+import logging
+
+logger = logging.getLogger(__name__)
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+_db_conn = None
+
+def get_db():
+    global _db_conn
+    if _db_conn is None or _db_conn.closed:
+        try:
+            _db_conn = psycopg2.connect(DATABASE_URL)
+            _db_conn.autocommit = True
+        except Exception as e:
+            logger.warning(f"Database connection failed: {e}")
+            return None
+    return _db_conn
+
 """
 Unit tests for KEDA Ray Serve External Scaler
 """

@@ -1,0 +1,111 @@
+# APISIX Route Definitions for InsurePortal
+
+routes:
+  # Auth service routes
+  - uri: /api/auth/*
+    name: auth-routes
+    upstream:
+      type: roundrobin
+      nodes:
+        "auth-service:5010": 1
+    plugins:
+      limit-req:
+        rate: 10
+        burst: 5
+        key: remote_addr
+      cors:
+        allow_origins: "${CORS_ORIGINS}"
+        allow_methods: "GET,POST,PUT,DELETE,OPTIONS"
+        allow_headers: "Content-Type,Authorization,X-Request-ID"
+        allow_credential: true
+
+  # Payment service routes (JWT required)
+  - uri: /api/payments/*
+    name: payment-routes
+    upstream:
+      type: roundrobin
+      nodes:
+        "payment-service:5011": 1
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 100
+        time_window: 60
+        key: consumer_name
+        rejected_code: 429
+
+  # NAICOM service routes (JWT required, admin only)
+  - uri: /api/naicom/*
+    name: naicom-routes
+    upstream:
+      type: roundrobin
+      nodes:
+        "naicom-service:5012": 1
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 50
+        time_window: 60
+
+  # Main portal (monolith — tRPC routes)
+  - uri: /trpc/*
+    name: trpc-routes
+    upstream:
+      type: roundrobin
+      nodes:
+        "portal:5002": 1
+    plugins:
+      limit-req:
+        rate: 100
+        burst: 50
+        key: remote_addr
+
+  # Static assets (no auth)
+  - uri: /assets/*
+    name: static-assets
+    upstream:
+      nodes:
+        "portal:5002": 1
+    plugins:
+      proxy-cache:
+        cache_ttl: 3600
+
+  # Health check aggregator
+  - uri: /api/health
+    name: health-aggregator
+    upstream:
+      type: roundrobin
+      nodes:
+        "portal:5002": 1
+    plugins:
+      serverless-pre-function:
+        phase: rewrite
+        functions:
+          - "return function(conf, ctx) ngx.say('{\"gateway\":\"healthy\"}') end"
+
+  # Webhook routes (no JWT — signature verified by services)
+  - uri: /api/webhooks/*
+    name: webhook-routes
+    upstream:
+      type: roundrobin
+      nodes:
+        "payment-service:5011": 1
+    plugins:
+      ip-restriction:
+        whitelist:
+          - "52.31.139.75"   # Paystack IPs
+          - "52.49.173.169"
+          - "52.214.14.220"
+      limit-req:
+        rate: 50
+        burst: 20
+        key: remote_addr
+
+# Global plugins
+global_rules:
+  - id: 1
+    plugins:
+      prometheus: {}
+      cors:
+        allow_origins: "${CORS_ORIGINS}"
+        allow_credential: true

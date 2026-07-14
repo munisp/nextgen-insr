@@ -1,252 +1,209 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"log"
-	"net/http"
-	"os"
-	"time"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"context"
 	"fmt"
-	"math"
+	"net/http"
+	"os"
 	"os/signal"
-	"sync"
-	"sync/atomic"
 	"syscall"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/insureportal/disaster_recovery_module/config"
+	"github.com/insureportal/disaster_recovery_module/db"
+	"github.com/insureportal/disaster_recovery_module/internal/handlers"
+	"github.com/insureportal/disaster_recovery_module/internal/middleware"
+	"github.com/insureportal/disaster_recovery_module/internal/service"
+	"go.uber.org/zap"
 )
-
-// Disaster Recovery Module — RTO/RPO automation with failover orchestration
-// Business Rules:
-// - RTO target: < 4 hours (NAICOM requirement)
-// - RPO target: < 1 hour (max data loss)
-// - Failover: Automated for Tier 1 services, manual approval for financial operations
-// - DR drills: Quarterly (NAICOM), full failover test annually
-// - Backup: Real-time replication to secondary DC + hourly snapshots to S3
-// - Communication: Auto-notify NAICOM within 2 hours of any outage > 30 minutes
-
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
-// --- Production Middleware ---
-
-type statusResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.statusCode = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-// Tracing middleware - adds X-Request-ID to all requests
-func prodTracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqID := r.Header.Get("X-Request-Id")
-		if reqID == "" {
-			reqID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-Id", reqID)
-		start := time.Now()
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
-	})
-}
-
-// CORS middleware - handles preflight and sets headers
-func prodCorsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Rate limiting - token bucket per IP, 100 req/min
-var (
-	prodRateLimitMu      sync.Mutex
-	prodRateLimitBuckets = make(map[string]*prodTokenBucket)
-)
-
-type prodTokenBucket struct {
-	tokens     float64
-	lastRefill time.Time
-}
-
-func prodRateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		prodRateLimitMu.Lock()
-		bucket, ok := prodRateLimitBuckets[ip]
-		if !ok {
-			bucket = &prodTokenBucket{tokens: 100, lastRefill: time.Now()}
-			prodRateLimitBuckets[ip] = bucket
-		}
-		elapsed := time.Since(bucket.lastRefill).Seconds()
-		bucket.tokens = math.Min(100, bucket.tokens+elapsed*(100.0/60.0))
-		bucket.lastRefill = time.Now()
-		if bucket.tokens < 1 {
-			prodRateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
-			return
-		}
-		bucket.tokens--
-		prodRateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Prometheus-compatible metrics
-var (
-	prodMetricsReqCount   int64
-	prodMetricsErrCount   int64
-	prodMetricsStartTime  = time.Now()
-)
-
-func prodMetricsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&prodMetricsReqCount, 1)
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		if wrapped.statusCode >= 400 {
-			atomic.AddInt64(&prodMetricsErrCount, 1)
-		}
-	})
-}
-
-func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(prodMetricsStartTime).Seconds()
-	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
-	errCount := atomic.LoadInt64(&prodMetricsErrCount)
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
-}
 
 func main() {
-	initKafka()
+	// Initialize logger
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
+	}
+	defer logger.Sync()
+
+	zap.ReplaceGlobals(logger)
+	log := zap.L()
+
+	log.Info("Disaster Recovery Module starting up")
+
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal("Failed to load configuration", zap.Error(err))
+	}
+
+	log.Info("Configuration loaded",
+		zap.String("environment", cfg.Env),
+		zap.Int("port", cfg.Port),
+		zap.String("primary_dc", cfg.PrimaryDC),
+		zap.String("secondary_dc", cfg.SecondaryDC),
+	)
+
+	// Initialize database
+	pg, err := db.NewPostgreSQL(cfg)
+	if err != nil {
+		log.Fatal("Failed to initialize PostgreSQL", zap.Error(err))
+	}
+	defer pg.Close()
+	log.Info("PostgreSQL initialized")
+
+	// Initialize Redis
+	rdb, err := db.NewRedisCache(cfg)
+	if err != nil {
+		log.Warn("Redis not available, running without cache", zap.Error(err))
+		// Create a no-op Redis cache for graceful degradation
+		rdb = &db.RedisCache{}
+	}
+	defer rdb.Close()
+	log.Info("Redis initialized")
+
+	// Initialize services
+	drService := service.NewDRService(pg, rdb, cfg)
+	h := handlers.NewHandlers(drService)
+
+	// Build router
 	r := chi.NewRouter()
-	r.Use(middleware.Logger, middleware.Recoverer)
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "disaster-recovery-module"})
+
+	// Core middleware
+	r.Use(middleware.RequestID)
+	r.Use(middleware.CORSMiddleware())
+	r.Use(middleware.RecovererWithLogger(log))
+	r.Use(middleware.LoggerWithConfig(log))
+	r.Use(middleware.RealIP)
+	r.Use(middleware.RequestID)
+
+	// Health endpoints (no auth required)
+	r.Get(cfg.HealthCheckPath, h.HealthCheck)
+	r.Get("/ready", h.ReadinessCheck)
+
+	// API v1 routes
+	r.Group(func(api chi.Router) {
+		api.Use(middleware.APIKeyAuth)
+
+		// Dashboard
+		api.Get("/api/v1/dashboard", h.GetDashboard)
+		api.Get("/api/v1/status", h.GetDRStatus)
+		api.Get("/api/v1/health-sync", h.SyncHealthSync)
+
+		// Service registration
+		api.Post("/api/v1/services/register", h.RegisterService)
+		api.Post("/api/v1/services/heartbeat", h.UpdateHeartbeat)
+		api.Get("/api/v1/services/protected", h.GetProtectedServices)
+
+		// Failover
+		api.Post("/api/v1/failover", h.TriggerFailover)
+		api.Post("/api/v1/failover/complete", h.CompleteFailover)
+		api.Get("/api/v1/failover/history", h.GetFailoverHistory)
+
+		// DR Drills
+		api.Post("/api/v1/drills", h.CreateDRDrill)
+		api.Post("/api/v1/drills/complete", h.CompleteDRDrill)
+		api.Get("/api/v1/drills/history", h.GetDRDrillHistory)
+
+		// Backups
+		api.Post("/api/v1/backups", h.CreateBackupStatus)
+		api.Get("/api/v1/backups", h.GetBackupStatus)
+		api.Get("/api/v1/backups/latest", h.GetLatestBackup)
+
+		// RTO/RPO tracking
+		api.Get("/api/v1/rto-rpo", h.GetRTOCompliance)
+		api.Post("/api/v1/rto-rpo/metrics", h.RecordRTOMetric)
+
+		// NAICOM notifications
+		api.Post("/api/v1/naicom/notify", h.SendNAICOMNotification)
+		api.Get("/api/v1/naicom/notifications", h.GetNAICOMNotifications)
 	})
-	r.Get("/api/v1/status", drStatus)
-	r.Post("/api/v1/failover", triggerFailover)
-	r.Get("/api/v1/drills", drillHistory)
-	r.Get("/api/v1/rto-rpo", rtoRpoStatus)
-	r.Get("/metrics", prodMetricsHandler)
-	port := os.Getenv("PORT")
-	if port == "" { port = "8090" }
-	log.Printf("Disaster Recovery Module starting on :%s", port)
-	handler := prodMetricsMiddleware(prodTracingMiddleware(prodCorsMiddleware(prodRateLimitMiddleware(r))))
+
+	// Metrics endpoint for Prometheus
+	r.Get("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		// Simplified metrics endpoint
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprintf(w, "# HELP dr_services_total Total registered services\n")
+		fmt.Fprintf(w, "# TYPE dr_services_total gauge\n")
+		fmt.Fprintf(w, "dr_services_total 0\n")
+		fmt.Fprintf(w, "# HELP dr_failovers_total Total failover events\n")
+		fmt.Fprintf(w, "# TYPE dr_failovers_total counter\n")
+		fmt.Fprintf(w, "dr_failovers_total 0\n")
+	})
+
+	// Graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	srv := &http.Server{
-		Addr:         ":"+port,
-		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
+		Handler:      r,
+		ReadTimeout:  cfg.ReadTimeout,
+		WriteTimeout: cfg.WriteTimeout,
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start server in goroutine
 	go func() {
+		log.Info("Starting disaster recovery server",
+			zap.String("address", srv.Addr),
+			zap.String("environment", cfg.Env),
+		)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			log.Fatal("Server failed to start", zap.Error(err))
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Println("Shutting down gracefully...")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+	// Wait for interrupt signal
+	<-ctx.Done()
+	log.Info("Shutting down disaster recovery server...")
+
+	// Graceful shutdown with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("Server forced to shutdown", zap.Error(err))
 	}
-	log.Println("Server stopped")
+
+	log.Info("Disaster recovery server stopped gracefully")
 }
 
-func drStatus(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"primary_dc": "Lagos-1", "secondary_dc": "Abuja-1", "replication_lag_seconds": 2,
-		"last_backup": time.Now().Add(-45 * time.Minute).Format(time.RFC3339),
-		"failover_ready": true, "services_protected": 35,
-	})
+// RecovererWithLogger returns chi middleware that logs panics
+func RecovererWithLogger(log *zap.Logger) func(http.Handler) http.Handler {
+	return middleware.Recoverer
 }
 
-func triggerFailover(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"failover_id": "FO-" + time.Now().Format("20060102150405"),
-		"status": "initiated", "from": "Lagos-1", "to": "Abuja-1",
-		"estimated_completion": "< 4 hours", "naicom_notified": true,
-	})
+// LoggerWithConfig returns chi middleware that logs with zap
+func LoggerWithConfig(log *zap.Logger) func(http.Handler) http.Handler {
+	return middleware.RequestLogger(&DefaultLogFormatter{log: log})
 }
 
-func drillHistory(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"drills": []map[string]interface{}{
-			{"id": "DRL-001", "type": "full_failover", "date": "2026-03-15", "result": "pass", "rto_achieved": "3h 15m", "rpo_achieved": "45m"},
-			{"id": "DRL-002", "type": "partial_failover", "date": "2026-01-10", "result": "pass", "rto_achieved": "1h 30m", "rpo_achieved": "20m"},
-		},
-		"next_drill": time.Now().AddDate(0, 2, 0).Format("2006-01-02"), "naicom_requirement": "quarterly",
-	})
+// DefaultLogFormatter implements middleware.LogFormatter
+type DefaultLogFormatter struct {
+	log *zap.Logger
 }
 
-func rtoRpoStatus(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"rto_target": "4 hours", "rto_current_capability": "3h 15m", "rto_compliant": true,
-		"rpo_target": "1 hour", "rpo_current_capability": "45 minutes", "rpo_compliant": true,
-	})
+func (l *DefaultLogFormatter) NewLogEntry(r *http.Request) middleware.LogEntry {
+	return &DefaultLogEntry{log: l.log, request: r}
+}
+
+type DefaultLogEntry struct {
+	log     *zap.Logger
+	request *http.Request
+}
+
+func (e *DefaultLogEntry) Write(keys, values []interface{}) {
+	// Simple key-value logging
+	l := e.log.With(zap.String("request_id", e.request.Context().Value("request_id")))
+	// Log format: method path status remote_ip
+	l.Info("request",
+		zap.String("method", e.request.Method),
+		zap.String("path", e.request.URL.Path),
+	)
+}
+
+func (e *DefaultLogEntry) Panic(v interface{}, stack []byte) {
+	e.log.Error("panic recovered", zap.Any("value", v), zap.ByteString("stack", stack))
 }

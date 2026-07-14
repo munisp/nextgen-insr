@@ -1,0 +1,127 @@
+{
+  "index_templates": [
+    {
+      "name": "insureportal-claims",
+      "index_patterns": ["insureportal-claims-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 1,
+          "index.lifecycle.name": "insureportal-90d-retention"
+        },
+        "mappings": {
+          "properties": {
+            "claimId": { "type": "long" },
+            "userId": { "type": "long" },
+            "policyId": { "type": "long" },
+            "policyType": { "type": "keyword" },
+            "amount": { "type": "float" },
+            "status": { "type": "keyword" },
+            "fraudScore": { "type": "float" },
+            "riskLevel": { "type": "keyword" },
+            "description": { "type": "text", "analyzer": "standard" },
+            "location": { "type": "geo_point" },
+            "createdAt": { "type": "date" },
+            "processedAt": { "type": "date" },
+            "adjudicator": { "type": "keyword" },
+            "processingTimeMs": { "type": "long" }
+          }
+        }
+      }
+    },
+    {
+      "name": "insureportal-policies",
+      "index_patterns": ["insureportal-policies-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 1
+        },
+        "mappings": {
+          "properties": {
+            "policyId": { "type": "long" },
+            "userId": { "type": "long" },
+            "policyNumber": { "type": "keyword" },
+            "type": { "type": "keyword" },
+            "status": { "type": "keyword" },
+            "premium": { "type": "float" },
+            "sumInsured": { "type": "float" },
+            "startDate": { "type": "date" },
+            "endDate": { "type": "date" },
+            "region": { "type": "keyword" },
+            "createdAt": { "type": "date" }
+          }
+        }
+      }
+    },
+    {
+      "name": "insureportal-transactions",
+      "index_patterns": ["insureportal-transactions-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 6,
+          "number_of_replicas": 1,
+          "index.lifecycle.name": "insureportal-365d-retention"
+        },
+        "mappings": {
+          "properties": {
+            "transactionId": { "type": "keyword" },
+            "type": { "type": "keyword" },
+            "fromAccount": { "type": "keyword" },
+            "toAccount": { "type": "keyword" },
+            "amount": { "type": "float" },
+            "currency": { "type": "keyword" },
+            "status": { "type": "keyword" },
+            "reference": { "type": "keyword" },
+            "createdAt": { "type": "date" }
+          }
+        }
+      }
+    },
+    {
+      "name": "insureportal-audit-logs",
+      "index_patterns": ["insureportal-audit-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 2,
+          "index.lifecycle.name": "insureportal-365d-retention"
+        },
+        "mappings": {
+          "properties": {
+            "userId": { "type": "long" },
+            "action": { "type": "keyword" },
+            "resource": { "type": "keyword" },
+            "resourceId": { "type": "keyword" },
+            "ip": { "type": "ip" },
+            "userAgent": { "type": "text" },
+            "result": { "type": "keyword" },
+            "timestamp": { "type": "date" }
+          }
+        }
+      }
+    },
+    {
+      "name": "insureportal-telematics",
+      "index_patterns": ["insureportal-telematics-*"],
+      "template": {
+        "settings": {
+          "number_of_shards": 12,
+          "number_of_replicas": 1,
+          "index.lifecycle.name": "insureportal-30d-retention"
+        },
+        "mappings": {
+          "properties": {
+            "userId": { "type": "long" },
+            "tripId": { "type": "keyword" },
+            "location": { "type": "geo_point" },
+            "speed": { "type": "float" },
+            "acceleration": { "type": "float" },
+            "braking": { "type": "float" },
+            "timestamp": { "type": "date" }
+          }
+        }
+      }
+    }
+  ]
+}

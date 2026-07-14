@@ -1,0 +1,98 @@
+# Fluvio Streaming Platform Configuration
+# High-performance, Rust-based event streaming (alternative to Kafka for real-time)
+# Used for: WebSocket fan-out, real-time dashboards, IoT telematics ingestion
+
+cluster:
+  name: insureportal-fluvio
+  replicas: 3
+
+topics:
+  # Real-time user notifications (WebSocket fan-out)
+  - name: notifications.realtime
+    partitions: 12
+    replication: 3
+    retention:
+      time: 1h
+    compression: lz4
+    max_partition_size: 1GB
+
+  # Telematics high-frequency events (GPS, accelerometer, gyroscope)
+  - name: telematics.raw-events
+    partitions: 24
+    replication: 2
+    retention:
+      time: 6h
+    compression: zstd
+    max_partition_size: 5GB
+    deduplication:
+      enabled: true
+      window: 5s
+
+  # Weather data streaming (from NIMET and OpenWeatherMap)
+  - name: weather.measurements
+    partitions: 6
+    replication: 3
+    retention:
+      time: 24h
+    compression: lz4
+
+  # Parametric trigger evaluations (high priority)
+  - name: parametric.evaluations
+    partitions: 3
+    replication: 3
+    retention:
+      time: 7d
+    compression: none
+
+  # Real-time fraud signals (sub-second latency required)
+  - name: fraud.realtime-signals
+    partitions: 6
+    replication: 3
+    retention:
+      time: 24h
+    compression: lz4
+
+  # WebSocket connection state
+  - name: websocket.connections
+    partitions: 6
+    replication: 2
+    retention:
+      time: 1h
+    cleanup_policy: compact
+
+  # P2P pool voting (real-time vote counting)
+  - name: p2p.votes.realtime
+    partitions: 3
+    replication: 3
+    retention:
+      time: 72h
+
+# SmartModules (Fluvio serverless data transformations)
+smart_modules:
+  - name: telematics-aggregator
+    type: map
+    description: "Aggregate raw GPS points into trip segments"
+    input: telematics.raw-events
+    output: telematics.trip-segments
+
+  - name: fraud-signal-filter
+    type: filter
+    description: "Filter low-confidence fraud signals"
+    input: fraud.realtime-signals
+    parameters:
+      min_confidence: 0.7
+
+  - name: weather-anomaly-detector
+    type: filter-map
+    description: "Detect weather anomalies for parametric triggers"
+    input: weather.measurements
+    output: parametric.evaluations
+    parameters:
+      rainfall_threshold_mm: 200
+      temperature_threshold_c: 45
+      wind_speed_threshold_kmh: 120
+
+  - name: notification-enricher
+    type: map
+    description: "Enrich notifications with user preferences"
+    input: notifications.realtime

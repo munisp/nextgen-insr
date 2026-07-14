@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agents } from "../../drizzle/schema";
+import { agents } from "@schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const agentDeviceFingerprintRouter = router({

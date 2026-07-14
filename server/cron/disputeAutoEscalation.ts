@@ -1,16 +1,17 @@
-// @ts-nocheck
+// @ts-check
 import { getDb } from "../db";
 import { disputes } from "../../drizzle/schema";
 import { eq, and, lt, isNull } from "drizzle-orm";
+import { logger } from "../_core/logger";
 
 /**
  * Runs every 15 minutes — auto-escalates disputes that have exceeded their SLA deadline.
  */
 export async function runDisputeAutoEscalation() {
-  console.log("[Cron] Running dispute auto-escalation...");
+  logger.info("[Cron] Running dispute auto-escalation");
   const db = await getDb();
   if (!db) {
-    console.warn("[Cron] No DB — skipping dispute escalation");
+    logger.warn("[Cron] No DB — skipping dispute escalation");
     return { escalated: 0 };
   }
 
@@ -50,18 +51,14 @@ export async function runDisputeAutoEscalation() {
           })
           .where(eq(disputes.id, dispute.id));
         escalated++;
-        console.log(
-          `[Cron] Escalated dispute #${dispute.id}: ${escalationResult.reasons.join(", ")}`
-        );
+        logger.info({ disputeId: dispute.id, reasons: escalationResult.reasons }, "[Cron] Escalated dispute");
       }
     }
 
-    console.log(
-      `[Cron] Dispute auto-escalation complete: ${escalated}/${overdueDisputes.length} escalated`
-    );
+    logger.info({ escalated, checked: overdueDisputes.length }, "[Cron] Dispute auto-escalation complete");
     return { escalated, checked: overdueDisputes.length };
   } catch (err) {
-    console.error("[Cron] Dispute escalation error:", (err as Error).message);
+    logger.error({ err: (err as Error).message }, "[Cron] Dispute escalation error");
     return { escalated: 0, error: (err as Error).message };
   }
 }

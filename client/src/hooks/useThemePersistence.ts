@@ -5,7 +5,7 @@
  */
 import { useState, useEffect, useCallback } from "react";
 
-const THEME_KEY = "pos-shell-theme";
+const THEME_KEY = "insurance-portal-theme";
 
 type Theme = "dark" | "light" | "system";
 

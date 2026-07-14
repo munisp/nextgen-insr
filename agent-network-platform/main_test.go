@@ -1,25 +1,18 @@
 package main
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
-func TestHealthEndpoint(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "agent-network-platform", "database": "true"})
-	})
-	req := httptest.NewRequest("GET", "/health", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
-	}
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["status"] != "healthy" {
-		t.Errorf("expected healthy status, got %v", resp["status"])
+func TestInitDB_NoEnv(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	initDB()
+}
+
+func TestKafkaInit(t *testing.T) {
+	t.Setenv("KAFKA_REST_URL", "http://localhost:9999")
+	initKafka()
+	if kafkaRestURL != "http://localhost:9999" {
+		t.Errorf("Expected kafka URL from env, got %s", kafkaRestURL)
 	}
 }

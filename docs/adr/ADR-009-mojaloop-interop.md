@@ -6,7 +6,7 @@
 
 ## Context
 
-The 54Link platform operates across multiple African markets where interoperability between mobile money providers, banks, and agent networks is critical. Each market has different payment rails, regulatory requirements, and settlement mechanisms. Building point-to-point integrations with each provider is unsustainable.
+The InsurePortal platform operates across multiple African markets where interoperability between mobile money providers, banks, and agent networks is critical. Each market has different payment rails, regulatory requirements, and settlement mechanisms. Building point-to-point integrations with each provider is unsustainable.
 
 ## Decision
 

@@ -1,21 +1,23 @@
 package main
 
 import (
+	"fmt"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"context"
-	"math"
+	"database/sql"
+
+	_ "github.com/lib/pq"
+		"context"
 	"os/signal"
-	"sync"
 	"syscall"
 )
 
@@ -27,48 +29,79 @@ import (
 // - Commission: Real-time calculation and wallet credit
 // - KPI tracking: Policies sold, renewals, claims filed, customer satisfaction
 
+var db *sql.DB
 
-// Prometheus-compatible metrics
-var (
-	metricsRequestCount    int64
-	metricsErrorCount      int64
-	metricsStartTime       = time.Now()
-)
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for agent_mobile_app")
 
-func metricsMiddleware(next http.Handler) http.Handler {
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_mobile_app (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
+func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&metricsRequestCount, 1)
-		wrapped := &metricsResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		if wrapped.statusCode >= 400 {
-			atomic.AddInt64(&metricsErrorCount, 1)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
 		}
+		next.ServeHTTP(w, r)
 	})
 }
 
-type metricsResponseWriter struct {
+func tracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+		}
+		w.Header().Set("X-Request-ID", requestID)
+		start := time.Now()
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
+	})
+}
+
+type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
 }
 
-func (mrw *metricsResponseWriter) WriteHeader(code int) {
-	mrw.statusCode = code
-	mrw.ResponseWriter.WriteHeader(code)
-}
-
-func metricsHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(metricsStartTime).Seconds()
-	reqCount := atomic.LoadInt64(&metricsRequestCount)
-	errCount := atomic.LoadInt64(&metricsErrorCount)
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
 }
 
 var kafkaRestURL string
@@ -104,130 +137,54 @@ func publishEvent(topic string, key string, payload interface{}) {
 	defer resp.Body.Close()
 }
 
-// --- Production Middleware ---
-
-type statusResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.statusCode = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-// Tracing middleware - adds X-Request-ID to all requests
-func prodTracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqID := r.Header.Get("X-Request-Id")
-		if reqID == "" {
-			reqID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-Id", reqID)
-		start := time.Now()
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
-	})
-}
-
-// CORS middleware - handles preflight and sets headers
-func prodCorsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Rate limiting - token bucket per IP, 100 req/min
 var (
-	prodRateLimitMu      sync.Mutex
-	prodRateLimitBuckets = make(map[string]*prodTokenBucket)
+	rateLimitMu    sync.Mutex
+	rateLimitStore = make(map[string][]time.Time)
 )
 
-type prodTokenBucket struct {
-	tokens     float64
-	lastRefill time.Time
-}
-
-func prodRateLimitMiddleware(next http.Handler) http.Handler {
+func rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := r.RemoteAddr
 		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 			ip = fwd
 		}
-		prodRateLimitMu.Lock()
-		bucket, ok := prodRateLimitBuckets[ip]
-		if !ok {
-			bucket = &prodTokenBucket{tokens: 100, lastRefill: time.Now()}
-			prodRateLimitBuckets[ip] = bucket
+		rateLimitMu.Lock()
+		now := time.Now()
+		window := now.Add(-1 * time.Minute)
+		var recent []time.Time
+		for _, t := range rateLimitStore[ip] {
+			if t.After(window) {
+				recent = append(recent, t)
+			}
 		}
-		elapsed := time.Since(bucket.lastRefill).Seconds()
-		bucket.tokens = math.Min(100, bucket.tokens+elapsed*(100.0/60.0))
-		bucket.lastRefill = time.Now()
-		if bucket.tokens < 1 {
-			prodRateLimitMu.Unlock()
+		if len(recent) >= 100 {
+			rateLimitMu.Unlock()
 			w.Header().Set("Retry-After", "60")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
+			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
 			return
 		}
-		bucket.tokens--
-		prodRateLimitMu.Unlock()
+		recent = append(recent, now)
+		rateLimitStore[ip] = recent
+		rateLimitMu.Unlock()
 		next.ServeHTTP(w, r)
 	})
 }
 
-// Prometheus-compatible metrics
-var (
-	prodMetricsReqCount   int64
-	prodMetricsErrCount   int64
-	prodMetricsStartTime  = time.Now()
-)
-
-func prodMetricsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&prodMetricsReqCount, 1)
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		if wrapped.statusCode >= 400 {
-			atomic.AddInt64(&prodMetricsErrCount, 1)
-		}
-	})
-}
-
-func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(prodMetricsStartTime).Seconds()
-	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
-	errCount := atomic.LoadInt64(&prodMetricsErrCount)
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
-}
-
 func main() {
+	initDB()
 	initKafka()
+	if db != nil {
+		defer db.Close()
+	}
 	r := chi.NewRouter()
+	r.Use(corsMiddleware)
+	r.Use(tracingMiddleware)
+	r.Use(rateLimitMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Use(metricsMiddleware)
 	r.Get("/metrics", metricsHandler)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "agent-mobile-app"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "agent-mobile-app"})
 	})
 	r.Get("/api/v1/agent/{id}/dashboard", agentDashboard)
 	r.Post("/api/v1/agent/{id}/checkin", agentCheckin)
@@ -237,30 +194,15 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" { port = "8134" }
 	log.Printf("Agent Mobile App starting on :%s", port)
-	handler := prodMetricsMiddleware(prodTracingMiddleware(prodCorsMiddleware(prodRateLimitMiddleware(r))))
-	srv := &http.Server{
-		Addr:         ":"+port,
-		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
-		}
-	}()
-
+	srv := &http.Server{Addr: ":"+port, Handler: tracingMiddleware(corsMiddleware(r)), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutting down gracefully...")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
-	}
+	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
 	log.Println("Server stopped")
 }
 

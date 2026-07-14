@@ -5,6 +5,7 @@ import { httpLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { getLoginUrl } from "./const";
+import "./i18n";
 import "./index.css";
 
 const queryClient = new QueryClient({

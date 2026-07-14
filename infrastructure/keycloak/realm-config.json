@@ -1,0 +1,111 @@
+{
+  "realm": "insureportal",
+  "enabled": true,
+  "displayName": "InsurePortal",
+  "displayNameHtml": "<strong>InsurePortal</strong>",
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "verifyEmail": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "accessTokenLifespan": 900,
+  "refreshTokenMaxReuse": 0,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "passwordPolicy": "length(8) and specialChars(1) and upperCase(1) and digits(1)",
+  "roles": {
+    "realm": [
+      { "name": "customer", "description": "Standard insurance customer" },
+      { "name": "agent", "description": "Insurance field agent" },
+      { "name": "broker", "description": "Insurance broker/intermediary" },
+      { "name": "adjuster", "description": "Claims adjuster" },
+      { "name": "underwriter", "description": "Policy underwriter" },
+      { "name": "admin", "description": "Platform administrator" },
+      { "name": "naicom_auditor", "description": "NAICOM regulatory auditor" },
+      { "name": "api_partner", "description": "B2B API marketplace partner" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "insureportal-web",
+      "name": "InsurePortal Web Portal",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "https://insureportal.ng/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "https://insureportal.ng",
+        "http://localhost:5173"
+      ],
+      "defaultClientScopes": ["openid", "profile", "email", "roles"]
+    },
+    {
+      "clientId": "insureportal-mobile",
+      "name": "InsurePortal Mobile App",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["insureportal://callback"],
+      "defaultClientScopes": ["openid", "profile", "email", "offline_access"]
+    },
+    {
+      "clientId": "insureportal-api",
+      "name": "InsurePortal API (service-to-service)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "${KEYCLOAK_API_CLIENT_SECRET}"
+    },
+    {
+      "clientId": "insureportal-marketplace",
+      "name": "API Marketplace Partners",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "secret": "${KEYCLOAK_MARKETPLACE_SECRET}"
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "providerId": "google",
+      "enabled": true,
+      "config": {
+        "clientId": "${GOOGLE_CLIENT_ID}",
+        "clientSecret": "${GOOGLE_CLIENT_SECRET}"
+      }
+    }
+  ],
+  "requiredActions": [
+    { "alias": "VERIFY_EMAIL", "name": "Verify Email", "enabled": true, "defaultAction": true },
+    { "alias": "terms_and_conditions", "name": "Terms and Conditions", "enabled": true }
+  ],
+  "smtpServer": {
+    "host": "${SMTP_HOST}",
+    "port": "587",
+    "from": "auth@insureportal.ng",
+    "fromDisplayName": "InsurePortal",
+    "starttls": "true",
+    "auth": "true",
+    "user": "${SMTP_USER}",
+    "password": "${SMTP_PASSWORD}"
+  }
+}

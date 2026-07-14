@@ -25,12 +25,12 @@ export default function FloatTopUpTab() {
   const [filter, setFilter] = useState<FilterStatus>("pending");
   const [rejectModal, setRejectModal] = useState<{
     id: number;
-    agentCode: string;
+    agentId: string;
   } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [approveModal, setApproveModal] = useState<{
     id: number;
-    agentCode: string;
+    agentId: string;
     amount: number;
   } | null>(null);
   const [approveNotes, setApproveNotes] = useState("");
@@ -211,7 +211,7 @@ export default function FloatTopUpTab() {
                     className="px-3 py-3 font-bold"
                     style={{ color: BLUE, fontFamily: MONO }}
                   >
-                    {req.agentCode ?? "—"}
+                    {req.agentId ?? "—"}
                   </td>
                   <td
                     className="px-3 py-3 text-white"
@@ -277,7 +277,7 @@ export default function FloatTopUpTab() {
                           onClick={() =>
                             setApproveModal({
                               id: req.id,
-                              agentCode: req.agentCode ?? "",
+                              agentId: req.agentId ?? "",
                               amount: req.requestedAmount,
                             })
                           }
@@ -290,7 +290,7 @@ export default function FloatTopUpTab() {
                           onClick={() =>
                             setRejectModal({
                               id: req.id,
-                              agentCode: req.agentCode ?? "",
+                              agentId: req.agentId ?? "",
                             })
                           }
                           className="px-3 py-1 rounded-lg text-xs font-bold text-white"
@@ -344,7 +344,7 @@ export default function FloatTopUpTab() {
                   className="font-bold"
                   style={{ color: BLUE, fontFamily: MONO }}
                 >
-                  {approveModal.agentCode}
+                  {approveModal.agentId}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -426,7 +426,7 @@ export default function FloatTopUpTab() {
               className="text-base font-black text-white"
               style={{ fontFamily: DISP }}
             >
-              Reject Request — {rejectModal.agentCode}
+              Reject Request — {rejectModal.agentId}
             </div>
             <div className="flex flex-col gap-1">
               <label

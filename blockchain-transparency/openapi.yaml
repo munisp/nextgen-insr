@@ -1,15 +1,20 @@
-openapi: '3.0.3'
+openapi: "3.0.3"
 info:
   title: Blockchain Transparency
-  description: Blockchain Transparency — immutable audit trail and parametric trigger verification Business Rules: - Smart contracts: Parametric insurance triggers (weather, flight delay)
-  version: 1.0.0
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
-      summary: Service health check
+      summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
+        "200":
+          description: Service is healthy
           content:
             application/json:
               schema:
@@ -23,48 +28,63 @@ paths:
                     example: blockchain-transparency
                   database:
                     type: string
-                    example: 'true'
-  /api/v1/record:
-    post:
-      summary: Record on chain
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        '200':
-          description: Successful record on chain
-        '201':
-          description: Resource created
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /api/v1/verify/{hash}:
+                    example: connected
+  /ready:
     get:
-      summary: Verify record
-      parameters:
-        - name: hash
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Successful verify record
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /api/v1/contracts:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
     get:
-      summary: List contracts
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Successful list contracts
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
+      responses:
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

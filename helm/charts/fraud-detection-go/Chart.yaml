@@ -1,0 +1,6 @@
+apiVersion: v2
+name: fraud-detection-go
+description: Helm chart for Fraud Detection Go
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

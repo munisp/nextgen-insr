@@ -32,10 +32,10 @@ describe("Sprint 26: Final Production Completion", () => {
     });
 
     it("should have POS Operations dashboard", () => {
-      expect(fileExists("infra/grafana/dashboards/pos-operations.json")).toBe(
+      expect(fileExists("infra/grafana/dashboards/field-operations.json")).toBe(
         true
       );
-      const content = readFile("infra/grafana/dashboards/pos-operations.json");
+      const content = readFile("infra/grafana/dashboards/field-operations.json");
       const parsed = JSON.parse(content);
       expect(parsed.title).toContain("POS Operations");
       expect(parsed.panels.length).toBeGreaterThan(0);

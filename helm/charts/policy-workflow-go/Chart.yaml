@@ -1,0 +1,6 @@
+apiVersion: v2
+name: policy-workflow-go
+description: Helm chart for Policy Workflow Go
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

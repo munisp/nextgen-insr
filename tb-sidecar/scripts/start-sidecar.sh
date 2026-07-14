@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
 # ============================================================
-# 54Link POS — TigerBeetle Sidecar Start Script
+# InsurePortal POS — TigerBeetle Sidecar Start Script
 # Runs the tb-sidecar binary on the POS terminal.
 # Designed to be called by systemd or manually for testing.
 # ============================================================
 set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────
-SIDECAR_BIN="${SIDECAR_BIN:-/usr/local/bin/54link-tb-sidecar}"
+SIDECAR_BIN="${SIDECAR_BIN:-/usr/local/bin/insureportal-tb-sidecar}"
 TB_BIN="${TB_BIN:-/usr/local/bin/tigerbeetle}"
-TB_DATA_DIR="${TB_DATA_DIR:-/var/lib/54link/tb-data}"
+TB_DATA_DIR="${TB_DATA_DIR:-/var/lib/insureportal/tb-data}"
 TB_DATA_FILE="${TB_DATA_DIR}/cluster.tigerbeetle"
 TB_CLUSTER_ID="${TB_CLUSTER_ID:-0}"
 TB_REPLICA_ADDR="${TB_REPLICA_ADDR:-3000}"
 SIDECAR_PORT="${SIDECAR_PORT:-8030}"
-SIDECAR_SQLITE_PATH="${SIDECAR_SQLITE_PATH:-/var/lib/54link/sidecar.db}"
+SIDECAR_SQLITE_PATH="${SIDECAR_SQLITE_PATH:-/var/lib/insureportal/sidecar.db}"
 POSTGRES_URL="${POSTGRES_URL:-}"
-LOG_DIR="${LOG_DIR:-/var/log/54link}"
+LOG_DIR="${LOG_DIR:-/var/log/insureportal}"
 LOG_FILE="${LOG_DIR}/tb-sidecar.log"
 
 # ── Colour helpers ───────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-info()  { echo -e "${GREEN}[54Link TB]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[54Link TB]${NC} $*"; }
-error() { echo -e "${RED}[54Link TB]${NC} $*" >&2; }
+info()  { echo -e "${GREEN}[InsurePortal TB]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[InsurePortal TB]${NC} $*"; }
+error() { echo -e "${RED}[InsurePortal TB]${NC} $*" >&2; }
 
 # ── Pre-flight checks ────────────────────────────────────────
-info "Starting 54Link TigerBeetle Sidecar..."
+info "Starting InsurePortal TigerBeetle Sidecar..."
 
 if [[ ! -x "${SIDECAR_BIN}" ]]; then
   error "Sidecar binary not found at ${SIDECAR_BIN}. Run install-sidecar.sh first."
@@ -54,7 +54,7 @@ if [[ ! -f "${TB_DATA_FILE}" ]]; then
 fi
 
 # ── Start TigerBeetle Zig cluster in background ───────────────
-TB_PID_FILE="/var/run/54link-tigerbeetle.pid"
+TB_PID_FILE="/var/run/insureportal-tigerbeetle.pid"
 if [[ -f "${TB_PID_FILE}" ]] && kill -0 "$(cat "${TB_PID_FILE}")" 2>/dev/null; then
   info "TigerBeetle Zig cluster already running (PID $(cat "${TB_PID_FILE}"))."
 else

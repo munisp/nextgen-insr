@@ -273,7 +273,7 @@ export function FailoverHistoryTab() {
                       className="px-3 py-2"
                       style={{ color: "oklch(0.75 0.015 230)" }}
                     >
-                      {row.agentCode}
+                      {row.agentId}
                     </td>
                     <td className="px-3 py-2">
                       <SlotBadge name={row.fromSlotName} />

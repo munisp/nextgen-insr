@@ -6,9 +6,9 @@
  *  2. Liveness Detection Service           (LIVENESS_SERVICE_URL, default: http://localhost:8104)
  *  3. Face Matching Service                (FACE_MATCHING_SERVICE_URL, default: http://localhost:8105)
  *  4. Deepfake Detection Service           (DEEPFAKE_SERVICE_URL, default: http://localhost:8106)
- *  5. Video-KYC liveness (legacy)          (KYC_SERVICE_URL, default: https://videokyc.54link.io)
- *  6. PaddleOCR document service           (PADDLEOCR_SERVICE_URL, default: https://ocr.54link.io)
- *  7. Compliance-KYC record store          (COMPLIANCE_KYC_URL, default: https://kyc.54link.io)
+ *  5. Video-KYC liveness (legacy)          (KYC_SERVICE_URL, default: https://videokyc.insureportal.io)
+ *  6. PaddleOCR document service           (PADDLEOCR_SERVICE_URL, default: https://ocr.insureportal.io)
+ *  7. Compliance-KYC record store          (COMPLIANCE_KYC_URL, default: https://kyc.insureportal.io)
  *  8. DeepFace Service                     (DEEPFACE_SERVICE_URL, default: http://localhost:8133)
  *
  * All calls are fail-safe: if the downstream service is unavailable the
@@ -28,11 +28,11 @@ const FACE_MATCHING_SERVICE_URL =
 const DEEPFAKE_SERVICE_URL =
   (ENV as any).DEEPFAKE_SERVICE_URL ?? "http://localhost:8106";
 const KYC_SERVICE_URL =
-  (ENV as any).KYC_SERVICE_URL ?? "https://videokyc.54link.io";
+  (ENV as any).KYC_SERVICE_URL ?? "https://videokyc.insureportal.io";
 const PADDLEOCR_URL =
-  (ENV as any).PADDLEOCR_SERVICE_URL ?? "https://ocr.54link.io";
+  (ENV as any).PADDLEOCR_SERVICE_URL ?? "https://ocr.insureportal.io";
 const COMPLIANCE_KYC_URL =
-  (ENV as any).COMPLIANCE_KYC_URL ?? "https://kyc.54link.io";
+  (ENV as any).COMPLIANCE_KYC_URL ?? "https://kyc.insureportal.io";
 const DEEPFACE_SERVICE_URL =
   (ENV as any).DEEPFACE_SERVICE_URL ?? "http://localhost:8133";
 

@@ -1,15 +1,20 @@
-openapi: '3.0.3'
+openapi: "3.0.3"
 info:
   title: Naicom Compliance Module
-  description: NAICOM Compliance Module — automated regulatory reporting and monitoring Business Rules: - Quarterly returns: Financial statements, solvency ratio, claims statistics
-  version: 1.0.0
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
-      summary: Service health check
+      summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
+        "200":
+          description: Service is healthy
           content:
             application/json:
               schema:
@@ -23,52 +28,63 @@ paths:
                     example: naicom-compliance-module
                   database:
                     type: string
-                    example: 'true'
-  /api/v1/returns/quarterly:
+                    example: connected
+  /ready:
     get:
-      summary: Quarterly returns
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Successful quarterly returns
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /api/v1/solvency:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
     get:
-      summary: Solvency status
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Successful solvency status
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /api/v1/incident/report:
-    post:
-      summary: Report incident
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        '200':
-          description: Successful report incident
-        '201':
-          description: Resource created
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /api/v1/capital:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
     get:
-      summary: Capital adequacy
+      summary: Domain statistics
+      operationId: getStats
       responses:
-        '200':
-          description: Successful capital adequacy
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

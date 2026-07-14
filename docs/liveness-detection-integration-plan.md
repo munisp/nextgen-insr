@@ -1,4 +1,4 @@
-# Liveness Detection Integration Plan for POS-54Link KYC Workflow
+# Liveness Detection Integration Plan for POS-InsurePortal KYC Workflow
 
 **Author:** Manus AI  
 **Date:** April 16, 2026  
@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-This document presents a detailed plan for integrating a world-class, open-source liveness detection mechanism into the existing POS-54Link KYC (Know Your Customer) workflow. The liveness detection system implements ISO/IEC 30107-3 compliant Presentation Attack Detection (PAD) at Level 2, combining passive single-frame analysis with active challenge-response protocols to achieve an Average Classification Error Rate (ACER) below 3.5%. The system leverages four open-source models — MiniFASNetV2, CDCN, FAS-SGTD, and MediaPipe Face Mesh — in a weighted ensemble architecture that defends against print attacks, screen replays, 3D masks, deepfakes, and video replays [1] [2].
+This document presents a detailed plan for integrating a world-class, open-source liveness detection mechanism into the existing POS-InsurePortal KYC (Know Your Customer) workflow. The liveness detection system implements ISO/IEC 30107-3 compliant Presentation Attack Detection (PAD) at Level 2, combining passive single-frame analysis with active challenge-response protocols to achieve an Average Classification Error Rate (ACER) below 3.5%. The system leverages four open-source models — MiniFASNetV2, CDCN, FAS-SGTD, and MediaPipe Face Mesh — in a weighted ensemble architecture that defends against print attacks, screen replays, 3D masks, deepfakes, and video replays [1] [2].
 
 The integration touches seven microservices, the tRPC backend router, the React PWA frontend, and both React Native and Flutter mobile clients. This plan covers the architecture, data flow, API contracts, state machine transitions, security considerations, and a phased rollout strategy.
 
@@ -17,7 +17,7 @@ The integration touches seven microservices, the tRPC backend router, the React 
 
 ## 2. Current KYC Workflow Baseline
 
-The existing KYC workflow in POS-54Link follows a linear state machine defined in `drizzle/schema.ts` with the `kycStatusEnum`. Prior to this integration, the workflow supported document upload, basic OCR extraction, and manual review. The enhanced workflow now includes the following 16 states:
+The existing KYC workflow in POS-InsurePortal follows a linear state machine defined in `drizzle/schema.ts` with the `kycStatusEnum`. Prior to this integration, the workflow supported document upload, basic OCR extraction, and manual review. The enhanced workflow now includes the following 16 states:
 
 | State                | Description                                             | Trigger                  |
 | -------------------- | ------------------------------------------------------- | ------------------------ |
@@ -230,7 +230,7 @@ Implement model retraining pipeline using collected data (with user consent). Ad
 
 ## 9. Monitoring and Alerting
 
-The liveness service exports Prometheus metrics via the `/metrics` endpoint, collected by the POS-54Link metrics aggregator (port 8093). Key metrics include:
+The liveness service exports Prometheus metrics via the `/metrics` endpoint, collected by the POS-InsurePortal metrics aggregator (port 8093). Key metrics include:
 
 | Metric                            | Type      | Alert Threshold |
 | --------------------------------- | --------- | --------------- |

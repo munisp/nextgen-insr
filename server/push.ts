@@ -17,7 +17,7 @@ const VAPID_PUBLIC_KEY =
 const VAPID_PRIVATE_KEY =
   process.env.VAPID_PRIVATE_KEY ||
   "vBqalBipE6mu4a592N8c1wucdpun-RaKemy8gZDa99M";
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:ops@54link.ng";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:ops@insureportal.ng";
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
@@ -34,11 +34,11 @@ export interface PushPayload {
 }
 
 /**
- * Send a push notification to a specific agent by agentCode.
+ * Send a push notification to a specific agent by agentId.
  * Sends to all active subscriptions for that agent.
  */
 export async function sendPushToAgent(
-  agentCode: string,
+  agentId: string,
   payload: PushPayload
 ): Promise<{ sent: number; failed: number }> {
   const db = await getDb();
@@ -47,7 +47,7 @@ export async function sendPushToAgent(
   const subs = await db
     .select()
     .from(agentPushSubscriptions)
-    .where(eq(agentPushSubscriptions.agentCode, agentCode));
+    .where(eq(agentPushSubscriptions.agentId, agentId));
 
   let sent = 0;
   let failed = 0;
@@ -92,13 +92,13 @@ export async function sendPushToAgent(
  * Notify agent of SIM failover event.
  */
 export async function notifySimFailover(params: {
-  agentCode: string;
+  agentId: string;
   fromSlot: number;
   toSlot: number;
   reason: string;
   transactionRef?: string;
 }): Promise<void> {
-  await sendPushToAgent(params.agentCode, {
+  await sendPushToAgent(params.agentId, {
     title: "⚠️ SIM Failover Triggered",
     body: `Network switched from SIM ${params.fromSlot} to SIM ${params.toSlot}: ${params.reason}`,
     tag: "sim-failover",
@@ -120,12 +120,12 @@ export async function notifySimFailover(params: {
  * Notify agent of fraud alert.
  */
 export async function notifyFraudAlert(params: {
-  agentCode: string;
+  agentId: string;
   transactionRef: string;
   riskScore: number;
   reason: string;
 }): Promise<void> {
-  await sendPushToAgent(params.agentCode, {
+  await sendPushToAgent(params.agentId, {
     title: "🚨 Fraud Alert",
     body: `Transaction ${params.transactionRef} flagged (score: ${params.riskScore}): ${params.reason}`,
     tag: "fraud-alert",
@@ -142,11 +142,11 @@ export async function notifyFraudAlert(params: {
  * Notify agent of float top-up approval.
  */
 export async function notifyFloatApproval(params: {
-  agentCode: string;
+  agentId: string;
   amount: number;
   newBalance: number;
 }): Promise<void> {
-  await sendPushToAgent(params.agentCode, {
+  await sendPushToAgent(params.agentId, {
     title: "✅ Float Top-Up Approved",
     body: `₦${params.amount.toLocaleString()} added to your float. New balance: ₦${params.newBalance.toLocaleString()}`,
     tag: "float-topup",
@@ -163,12 +163,12 @@ export async function notifyFloatApproval(params: {
  * Notify agent of settlement completion.
  */
 export async function notifySettlementComplete(params: {
-  agentCode: string;
+  agentId: string;
   batchId: string;
   totalAmount: number;
   txCount: number;
 }): Promise<void> {
-  await sendPushToAgent(params.agentCode, {
+  await sendPushToAgent(params.agentId, {
     title: "💰 Settlement Complete",
     body: `Batch ${params.batchId}: ${params.txCount} transactions totalling ₦${params.totalAmount.toLocaleString()} settled.`,
     tag: "settlement",
@@ -186,7 +186,7 @@ export async function notifySettlementComplete(params: {
  * Register a push subscription for an agent.
  */
 export async function registerPushSubscription(params: {
-  agentCode: string;
+  agentId: string;
   endpoint: string;
   p256dhKey: string;
   authKey: string;
@@ -198,7 +198,7 @@ export async function registerPushSubscription(params: {
   await db
     .insert(agentPushSubscriptions)
     .values({
-      agentCode: params.agentCode,
+      agentId: params.agentId,
       endpoint: params.endpoint,
       p256dhKey: params.p256dhKey,
       authKey: params.authKey,

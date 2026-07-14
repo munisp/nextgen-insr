@@ -90,7 +90,7 @@ describe("sendSms — live mode (TERMII_API_KEY set)", () => {
     const body = JSON.parse(options?.body as string);
     expect(body.to).toBe("+2348012345678");
     expect(body.sms).toBe("Your OTP is 654321");
-    expect(body.from).toBe("54Link");
+    expect(body.from).toBe("InsurePortal");
     expect(body.api_key).toBe("test-api-key-123");
     expect(body.type).toBe("plain");
     expect(body.channel).toBe("generic");
@@ -140,7 +140,7 @@ describe("buildConfirmationSms", () => {
     ref: "TXN-20260330-001",
     type: "Cash Out",
     amount: 5000,
-    agentCode: "AGT001",
+    agentId: "AGT001",
     agentName: "John Doe",
     customerName: "Jane Smith",
     timestamp: new Date("2026-03-30T10:00:00Z"),
@@ -161,7 +161,7 @@ describe("buildConfirmationSms", () => {
     expect(sms).toContain("5,000.00");
   });
 
-  it("includes agent code and name", () => {
+  it("includes agent ID and name", () => {
     const sms = buildConfirmationSms(baseData);
     expect(sms).toContain("AGT001");
     expect(sms).toContain("John Doe");
@@ -190,7 +190,7 @@ describe("buildReceiptSms", () => {
     type: "Transfer",
     amount: 10000,
     fee: 50,
-    agentCode: "AGT002",
+    agentId: "AGT002",
     agentName: "Mary Jane",
     customerName: "Bob Builder",
   };
@@ -206,9 +206,9 @@ describe("buildReceiptSms", () => {
     expect(sms).not.toContain("Fee:");
   });
 
-  it("includes 54Link branding", () => {
+  it("includes InsurePortal branding", () => {
     const sms = buildReceiptSms(baseData);
-    expect(sms).toContain("54Link");
+    expect(sms).toContain("InsurePortal");
   });
 
   it("includes the transaction reference", () => {

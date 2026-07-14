@@ -35,7 +35,7 @@ export default function UssdGateway() {
 
   const handleSend = () => {
     processInput.mutate({
-      agentCode: "AGT001",
+      agentId: "AGT001",
       phoneNumber: phone,
       input,
       sessionId: sessionId ?? undefined,

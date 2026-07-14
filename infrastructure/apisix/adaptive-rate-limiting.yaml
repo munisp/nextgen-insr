@@ -1,0 +1,88 @@
+# APISIX Adaptive Rate Limiting Plugin Configuration
+# Dynamic rate limits based on service health, time of day, and user tier
+
+plugins:
+  adaptive-rate-limit:
+    enable: true
+    config:
+      # Base limits per tier
+      tiers:
+        free:
+          requests_per_second: 10
+          burst: 20
+          daily_quota: 1000
+        standard:
+          requests_per_second: 50
+          burst: 100
+          daily_quota: 50000
+        premium:
+          requests_per_second: 200
+          burst: 500
+          daily_quota: 500000
+        enterprise:
+          requests_per_second: 1000
+          burst: 2000
+          daily_quota: -1  # Unlimited
+
+      # Adaptive scaling based on service health
+      health_scaling:
+        metric_source: prometheus
+        endpoints:
+          - name: payment-gateway
+            url: http://payment-gateway:8100/health
+            healthy_threshold: 0.95
+            degraded_multiplier: 0.5   # 50% rate when degraded
+            unhealthy_multiplier: 0.1  # 10% rate when unhealthy
+
+          - name: ai-advisor
+            url: http://ai-advisor:8110/health
+            healthy_threshold: 0.90
+            degraded_multiplier: 0.3
+            unhealthy_multiplier: 0.05
+
+      # Time-of-day adjustments (Nigerian business hours)
+      time_scaling:
+        timezone: Africa/Lagos
+        peak_hours: "09:00-17:00"
+        off_peak_multiplier: 2.0    # Double limits off-peak
+        weekend_multiplier: 1.5     # 50% more on weekends
+
+      # Circuit breaker integration
+      circuit_breaker:
+        failure_threshold: 5
+        recovery_time_seconds: 30
+        half_open_requests: 3
+
+      # Response headers
+      headers:
+        X-RateLimit-Limit: true
+        X-RateLimit-Remaining: true
+        X-RateLimit-Reset: true
+        X-RateLimit-Tier: true
+        X-RateLimit-Adaptive-Factor: true
+
+routes:
+  - uri: /api/v1/payments/*
+    plugins:
+      adaptive-rate-limit:
+        tier_header: X-API-Tier
+        key_type: consumer
+        rejected_code: 429
+        rejected_msg: '{"error":"Rate limit exceeded","retry_after_seconds":"{retry_after}"}'
+
+  - uri: /api/v1/advisor/*
+    plugins:
+      adaptive-rate-limit:
+        tier_header: X-API-Tier
+        key_type: consumer
+        rejected_code: 429
+        # AI advisor has stricter limits (compute-heavy)
+        multiplier: 0.5
+
+  - uri: /api/v1/micro/*
+    plugins:
+      adaptive-rate-limit:
+        tier_header: X-API-Tier
+        key_type: consumer
+        # Micro-moment needs high throughput for sub-second activation
+        multiplier: 3.0

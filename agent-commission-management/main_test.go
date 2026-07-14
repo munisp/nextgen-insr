@@ -4,30 +4,43 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestHealthEndpoint(t *testing.T) {
-	req := httptest.NewRequest("GET", "/health", nil)
+func Test_Health(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "agent-commission-management"})
-	})
-	mux.ServeHTTP(w, req)
+	handleHealth(w, req)
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+		t.Errorf("Expected 200, got %d", w.Code)
 	}
 	var resp map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["status"] != "healthy" {
-		t.Errorf("expected healthy status, got %v", resp["status"])
+	if resp["status"] == nil {
+		t.Errorf("Expected status in response")
 	}
 }
-
-func Test_calculateCommission(t *testing.T) {
-	// calculateCommission business logic test
-	t.Log("Testing calculateCommission function")
-	// Verified: function exists and compiles correctly
-	// Full integration test requires database connection
+func Test_Calculate(t *testing.T) {
+	body := strings.NewReader(`{"agent_id":"A001","policy_type":"motor","premium":50000}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/calculate", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handleCalculate(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["commission"] == nil {
+		t.Errorf("Expected commission in response")
+	}
+}
+func Test_PayoutSummary(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/payout-summary", nil)
+	w := httptest.NewRecorder()
+	handlePayoutSummary(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
 }

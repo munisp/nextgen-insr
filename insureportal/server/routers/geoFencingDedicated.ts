@@ -7,7 +7,7 @@ import {
   agentGeofenceZones,
   deviceLocations,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const geoFencingDedicatedRouter = router({
