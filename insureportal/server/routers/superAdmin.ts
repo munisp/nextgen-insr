@@ -21,7 +21,7 @@ import {
   platformSettings,
   complianceReports,
   devices,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, asc, and, gte, lte, count, sql, like } from "drizzle-orm";
 
 // ── Super-admin guard ─────────────────────────────────────────────────────────

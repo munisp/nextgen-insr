@@ -1,0 +1,6 @@
+apiVersion: v2
+name: document-management-system
+description: Helm chart for Document Management System
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

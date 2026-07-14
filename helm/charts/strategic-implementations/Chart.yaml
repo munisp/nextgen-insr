@@ -1,0 +1,6 @@
+apiVersion: v2
+name: strategic-implementations
+description: Helm chart for Strategic Implementations
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

@@ -1,16 +1,11 @@
-FROM python:3.11-slim
-
+FROM python:3.11-slim AS builder
 WORKDIR /app
-
-# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application
-COPY app/ ./app/
-
-# Expose port
+COPY . .
+FROM python:3.11-slim
+WORKDIR /app
+RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
+COPY --from=builder /app .
 EXPOSE 8010
-
-# Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010"]
+CMD ["python", "app/main.py"]

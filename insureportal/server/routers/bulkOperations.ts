@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions, agents, auditLog } from "../../drizzle/schema";
+import { transactions, agents, auditLog } from "@schema";
 import { desc, eq, sql, and, count, inArray } from "drizzle-orm";
 
 /**
@@ -26,7 +26,7 @@ export const bulkOperationsRouter = router({
   createBatch: protectedProcedure
     .input(z.object({
       type: z.enum(["bulk_payment", "mass_notification", "batch_kyc_review", "commission_payout", "policy_renewal"]),
-      records: z.array(z.record(z.any())).min(1).max(10000),
+      records: z.array(z.record(z.string(), z.any())).min(1).max(10000),
       scheduledAt: z.string().optional(),
     }))
     .mutation(async ({ input }) => {

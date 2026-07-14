@@ -963,7 +963,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["insureportal", "insureportal", "agency-banking", "nigeria"],
+  "tags": ["insureportal", "insureportal", "insurance", "nigeria"],
   "templating": {
     "list": [
       {

@@ -384,7 +384,7 @@ export const loyaltyPlatform = {
 // ─── Float Service ────────────────────────────────────────────────────────────
 
 export const floatPlatform = {
-  /** Get float balance for an agent (Go float-management service) */
+  /** Get premium reserve for an agent (Go float-management service) */
   getBalance: (agentId: string, token: string) =>
     platformFetch(
       "float",

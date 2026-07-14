@@ -1,6 +1,6 @@
 /**
  * Cross-Border Remittance — international money transfers via agent network,
- * FX rate management, compliance checks, and corridor management.
+ * FX rate management, compliance checks, and insurance_region management.
  *
  * Middleware: Mojaloop (ILP), Kafka (remittance events), PostgreSQL (transfer records),
  * TigerBeetle (multi-currency ledger), Go FX service
@@ -8,12 +8,12 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
+import { transactions, agents } from "@schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
-const CORRIDORS = [
+const REGIONS = [
   {
     from: "NGN",
     to: "GHS",
@@ -70,31 +70,31 @@ export const crossBorderRemittanceRouter = router({
     )
     .query(async ({ input }) => {
       try {
-        const corridor = CORRIDORS.find(
+        const insurance_region = REGIONS.find(
           c => c.from === input.fromCurrency && c.to === input.toCurrency
         );
-        if (!corridor)
+        if (!insurance_region)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Corridor not available",
+            message: "InsuranceRegion not available",
           });
-        if (!corridor.active)
+        if (!insurance_region.active)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Corridor temporarily suspended",
+            message: "InsuranceRegion temporarily suspended",
           });
 
         const fee = Math.max(500, Math.round(input.amount * 0.02));
-        const convertedAmount = (input.amount - fee) * corridor.rate;
+        const convertedAmount = (input.amount - fee) * insurance_region.rate;
 
         return {
           fromAmount: input.amount,
           fromCurrency: input.fromCurrency,
           toAmount: Math.round(convertedAmount * 100) / 100,
           toCurrency: input.toCurrency,
-          rate: corridor.rate,
+          rate: insurance_region.rate,
           fee,
-          corridorName: corridor.name,
+          insurance_regionName: insurance_region.name,
           expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
         };
       } catch (error) {
@@ -128,32 +128,32 @@ export const crossBorderRemittanceRouter = router({
             message: "Agent session required",
           });
 
-        const corridor = CORRIDORS.find(
+        const insurance_region = REGIONS.find(
           c => c.from === "NGN" && c.to === input.toCurrency
         );
-        if (!corridor)
+        if (!insurance_region)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Corridor not available",
+            message: "InsuranceRegion not available",
           });
 
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
         const [agent] = await db
-          .select({ floatBalance: agents.floatBalance })
+          .select({ premiumReserve: agents.premiumReserve })
           .from(agents)
           .where(eq(agents.id, session.id))
           .limit(1);
-        if (!agent || Number(agent.floatBalance) < input.amount)
+        if (!agent || Number(agent.premiumReserve) < input.amount)
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Insufficient float balance",
+            message: "Insufficient premium reserve",
           });
 
         const fee = Math.max(500, Math.round(input.amount * 0.02));
         const commission = Math.round(fee * 0.2);
-        const convertedAmount = (input.amount - fee) * corridor.rate;
+        const convertedAmount = (input.amount - fee) * insurance_region.rate;
         const ref = `REM-${crypto.randomUUID().slice(0, 12).toUpperCase()}`;
 
         const [tx] = await db
@@ -175,7 +175,7 @@ export const crossBorderRemittanceRouter = router({
               remittanceType: "cross_border",
               toCurrency: input.toCurrency,
               convertedAmount,
-              rate: corridor.rate,
+              rate: insurance_region.rate,
               purpose: input.purpose,
               recipientBankCode: input.recipientBankCode,
             },
@@ -185,14 +185,13 @@ export const crossBorderRemittanceRouter = router({
         await db
           .update(agents)
           .set({
-            floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(input.amount)}`,
+            premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(input.amount)}`,
             // commission: sql`CAST(${agents.commissionBalance} AS numeric) + ${String(commission)}`, // removed: not in schema
           })
           .where(eq(agents.id, session.id));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "CROSS_BORDER_REMITTANCE_SENT",
           resource: "remittance",
           resourceId: ref,
@@ -212,7 +211,7 @@ export const crossBorderRemittanceRouter = router({
           commission,
           convertedAmount,
           toCurrency: input.toCurrency,
-          rate: corridor.rate,
+          rate: insurance_region.rate,
           status: "success",
           transactionId: tx.id,
         };
@@ -226,8 +225,8 @@ export const crossBorderRemittanceRouter = router({
       }
     }),
 
-  listCorridors: protectedProcedure.query(async () => {
-    return { corridors: CORRIDORS.filter(c => c.active) };
+  listInsuranceRegions: protectedProcedure.query(async () => {
+    return { insurance_regions: REGIONS.filter(c => c.active) };
   }),
 
   getHistory: protectedProcedure

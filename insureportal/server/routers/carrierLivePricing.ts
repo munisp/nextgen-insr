@@ -19,7 +19,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { auditLog, systemConfig } from "../../drizzle/schema";
+import { auditLog, systemConfig } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const carrierLivePricingRouter = router({

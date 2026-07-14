@@ -8,7 +8,7 @@ function createAuthContext(): TrpcContext {
   const user: AuthenticatedUser = {
     id: 1,
     openId: "test-user-sprint28",
-    email: "agent@posshell.test",
+    email: "agent@insureportal.test",
     name: "Test Agent",
     loginMethod: "manus",
     role: "admin",
@@ -29,7 +29,7 @@ const caller = appRouter.createCaller(createAuthContext());
 describe("USSD Gateway", () => {
   it("should process USSD input", async () => {
     const result = await caller.ussdGateway.processInput({
-      agentCode: "AGT001",
+      agentId: "AGT001",
       phoneNumber: "08012345678",
       input: "",
     });
@@ -135,7 +135,7 @@ describe("Commission Engine", () => {
     const result = await caller.commissionEngine.simulate({
       transactionType: "cash_withdrawal",
       amount: 10000,
-      agentCode: "AGT001",
+      agentId: "AGT001",
     });
     expect(result).toHaveProperty("commission");
   });

@@ -1,9 +1,9 @@
-// TypeScript enabled — Sprint 96 security audit
 /**
  * Threshold Alert Notification Dispatcher
  * Connects breach events from the data threshold alert system to email and SMS services.
  * Supports cooldown periods, notification history, and multi-channel dispatch.
  */
+import { logger } from '../_core/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Severity = "info" | "warning" | "critical";
@@ -140,12 +140,12 @@ function buildBreachEmailHtml(event: BreachEvent): string {
   </table>
 
   <div style="margin-top: 24px; padding: 12px; background: #fef3c7; border-radius: 4px; font-size: 13px; color: #92400e;">
-    <strong>Action Required:</strong> Please review this alert in the 54Link Dashboard under
+    <strong>Action Required:</strong> Please review this alert in the InsurePortal Dashboard under
     Data Threshold Alerts and acknowledge or resolve it.
   </div>
 
   <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af;">
-    <p>This is an automated alert from 54Link POS Shell. Rule ID: ${event.ruleId} | Event ID: ${event.eventId}</p>
+    <p>This is an automated alert from InsurePortal POS Shell. Rule ID: ${event.ruleId} | Event ID: ${event.eventId}</p>
     <p>To manage your alert preferences, visit the Data Threshold Alerts page in your dashboard.</p>
   </div>
 </body>
@@ -163,7 +163,7 @@ Threshold: ${event.operator} ${event.threshold} ${event.unit}
 Severity: ${event.severity.toUpperCase()}
 Triggered At: ${new Date(event.createdAt).toLocaleString()}
 
-Action Required: Review this alert in the 54Link Dashboard.
+Action Required: Review this alert in the InsurePortal Dashboard.
 
 Rule ID: ${event.ruleId} | Event ID: ${event.eventId}`;
 }
@@ -233,7 +233,7 @@ async function sendEmailNotification(
   // In production, this calls:
   // import { sendEmail } from './emailService';
   // return sendEmail({ to, subject, html, text, priority, tags: ['threshold-alert'] });
-  console.log(`[ThresholdDispatcher] EMAIL → ${to}: ${subject}`);
+  logger.info(`[ThresholdDispatcher] EMAIL → ${to}: ${subject}`);
   return {
     success: true,
     messageId: `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -247,7 +247,7 @@ async function sendSmsNotification(
   // In production, this calls:
   // import { sendSms } from './smsService';
   // return sendSms({ to, message, provider: 'auto' });
-  console.log(`[ThresholdDispatcher] SMS → ${to}: ${message.slice(0, 50)}...`);
+  logger.info(`[ThresholdDispatcher] SMS → ${to}: ${message.slice(0, 50)}...`);
   return {
     success: true,
     messageId: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -259,7 +259,7 @@ async function sendPushNotification(
   title: string,
   _body: string
 ): Promise<{ success: boolean }> {
-  console.log(`[ThresholdDispatcher] PUSH: ${title}`);
+  logger.info(`[ThresholdDispatcher] PUSH: ${title}`);
   return { success: true };
 }
 
@@ -267,9 +267,7 @@ async function sendWebhookNotification(
   _url: string,
   payload: object
 ): Promise<{ success: boolean }> {
-  console.log(
-    `[ThresholdDispatcher] WEBHOOK:`,
-    JSON.stringify(payload).slice(0, 100)
+  logger.info(`[ThresholdDispatcher] WEBHOOK:: ` + JSON.stringify(payload).slice(0, 100)
   );
   return { success: true };
 }
@@ -444,7 +442,7 @@ export async function dispatchThresholdAlert(
           timestamp: event.createdAt,
         };
         const result = await sendWebhookNotification(
-          "https://hooks.54link.com/alerts",
+          "https://hooks.insureportal.com/alerts",
           payload
         );
         const record: NotificationRecord = {
@@ -452,7 +450,7 @@ export async function dispatchThresholdAlert(
           eventId: event.eventId,
           ruleId: event.ruleId,
           channel: "webhook",
-          recipient: "https://hooks.54link.com/alerts",
+          recipient: "https://hooks.insureportal.com/alerts",
           status: result.success ? "sent" : "failed",
           sentAt: new Date().toISOString(),
         };

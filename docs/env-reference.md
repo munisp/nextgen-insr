@@ -1,4 +1,4 @@
-# 54Link POS Shell — Environment Variables Reference
+# InsurePortal POS Shell — Environment Variables Reference
 
 Copy and rename this file to `.env` for your environment. Never commit `.env` to version control.
 
@@ -8,13 +8,13 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 | ---------- | ----------------------- | ---------------- |
 | `NODE_ENV` | `production`            | Node environment |
 | `PORT`     | `3000`                  | HTTP server port |
-| `APP_URL`  | `https://pos.54link.ng` | Public URL       |
+| `APP_URL`  | `https://pos.insureportal.ng` | Public URL       |
 
 ## Database
 
 | Variable       | Default                                                     | Description                  |
 | -------------- | ----------------------------------------------------------- | ---------------------------- |
-| `POSTGRES_URL` | `postgresql://posshell:changeme@localhost:5432/posshell_db` | PostgreSQL connection string |
+| `POSTGRES_URL` | `postgresql://insureportal:changeme@localhost:5432/insureportal_db` | PostgreSQL connection string |
 
 ## Redis
 
@@ -35,8 +35,8 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 | Variable             | Default                | Description         |
 | -------------------- | ---------------------- | ------------------- |
 | `KEYCLOAK_URL`       | `http://keycloak:8080` | Keycloak server URL |
-| `KEYCLOAK_REALM`     | `54link`               | Realm name          |
-| `KEYCLOAK_CLIENT_ID` | `pos-shell`            | Client ID           |
+| `KEYCLOAK_REALM`     | `insureportal`               | Realm name          |
+| `KEYCLOAK_CLIENT_ID` | `insurance-portal`            | Client ID           |
 
 ## MinIO / S3 Object Storage
 
@@ -45,15 +45,15 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 | `MINIO_ENDPOINT`   | `http://minio:9000` | MinIO endpoint |
 | `MINIO_ACCESS_KEY` | `minioadmin`        | Access key     |
 | `MINIO_SECRET_KEY` | `minioadmin123`     | Secret key     |
-| `MINIO_BUCKET`     | `54link-pos-shell`  | Default bucket |
+| `MINIO_BUCKET`     | `insureportal-insurance-portal`  | Default bucket |
 
 ## Kafka / Redpanda
 
 | Variable          | Default               | Description    |
 | ----------------- | --------------------- | -------------- |
 | `KAFKA_BROKERS`   | `redpanda:9092`       | Broker list    |
-| `KAFKA_CLIENT_ID` | `pos-shell-server`    | Client ID      |
-| `KAFKA_GROUP_ID`  | `pos-shell-consumers` | Consumer group |
+| `KAFKA_CLIENT_ID` | `insurance-portal-server`    | Client ID      |
+| `KAFKA_GROUP_ID`  | `insurance-portal-consumers` | Consumer group |
 
 ## HashiCorp Vault
 
@@ -61,15 +61,15 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 | ------------------- | ----------------------- | -------------------- |
 | `VAULT_ADDR`        | `http://vault:8200`     | Vault server address |
 | `VAULT_TOKEN`       | _(must set)_            | Root/service token   |
-| `VAULT_SECRET_PATH` | `secret/data/pos-shell` | Secret mount path    |
+| `VAULT_SECRET_PATH` | `secret/data/insurance-portal` | Secret mount path    |
 
 ## Temporal Workflow Engine
 
 | Variable              | Default           | Description             |
 | --------------------- | ----------------- | ----------------------- |
 | `TEMPORAL_ADDRESS`    | `localhost:7233`  | Temporal server address |
-| `TEMPORAL_NAMESPACE`  | `pos-shell`       | Namespace               |
-| `TEMPORAL_TASK_QUEUE` | `pos-shell-tasks` | Task queue name         |
+| `TEMPORAL_NAMESPACE`  | `insurance-portal`       | Namespace               |
+| `TEMPORAL_TASK_QUEUE` | `insurance-portal-tasks` | Task queue name         |
 
 ## Email (SMTP)
 
@@ -77,7 +77,7 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 | ----------- | ------------------- | ------------ |
 | `SMTP_HOST` | `mailhog`           | SMTP host    |
 | `SMTP_PORT` | `1025`              | SMTP port    |
-| `SMTP_FROM` | `noreply@54link.ng` | From address |
+| `SMTP_FROM` | `noreply@insureportal.ng` | From address |
 
 ## VAPID Push Notifications
 
@@ -87,7 +87,7 @@ Generate keys with: `npx web-push generate-vapid-keys`
 | ------------------- | ------------------------ | ----------------- |
 | `VAPID_PUBLIC_KEY`  | _(must generate)_        | VAPID public key  |
 | `VAPID_PRIVATE_KEY` | _(must generate)_        | VAPID private key |
-| `VAPID_SUBJECT`     | `mailto:admin@54link.ng` | VAPID subject     |
+| `VAPID_SUBJECT`     | `mailto:admin@insureportal.ng` | VAPID subject     |
 
 ## Webhook Delivery
 
@@ -158,7 +158,7 @@ Generate keys with: `npx web-push generate-vapid-keys`
 | Variable           | Default                 | Description            |
 | ------------------ | ----------------------- | ---------------------- |
 | `BCRYPT_ROUNDS`    | `12`                    | bcrypt hash rounds     |
-| `CORS_ORIGIN`      | `https://pos.54link.ng` | CORS allowed origin    |
+| `CORS_ORIGIN`      | `https://pos.insureportal.ng` | CORS allowed origin    |
 | `COOKIE_SECURE`    | `true`                  | Secure cookie flag     |
 | `COOKIE_SAME_SITE` | `strict`                | SameSite cookie policy |
 

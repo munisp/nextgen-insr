@@ -2,7 +2,7 @@
 name = "pos54-connection-pool"
 version = "1.0.0"
 edition = "2021"
-description = "Multi-backend connection pool manager for POS-54Link middleware"
+description = "Multi-backend connection pool manager for POS-InsurePortal middleware"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

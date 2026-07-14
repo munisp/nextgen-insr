@@ -448,7 +448,7 @@ describe("KYC Verification Workflow", () => {
     const result = await mockFeatures.submitKycDocument({
       agentId: "agent-001",
       documentType: "national_id",
-      documentUrl: "https://storage.54link.com/kyc/nin-001.pdf",
+      documentUrl: "https://storage.insureportal.com/kyc/nin-001.pdf",
     });
     expect(result.status).toBe("pending");
     expect(result.documentType).toBe("national_id");
@@ -536,7 +536,7 @@ describe("Scheduled Email Delivery", () => {
       enabled: true,
       cronExpression: "0 8 * * 1",
       timezone: "Africa/Lagos",
-      recipients: ["admin@54link.com", "ops@54link.com"],
+      recipients: ["admin@insureportal.com", "ops@insureportal.com"],
       nextDelivery: Date.now() + 86400000,
       deliveryHistory: [
         {

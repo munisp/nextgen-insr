@@ -1,5 +1,5 @@
 /**
- * Sprint 85 Tests — 54Link POS Shell
+ * Sprint 85 Tests — InsurePortal POS Shell
  *
  * Validates:
  * H1: TypeScript strict-mode compliance (0 errors after @ts-nocheck removal)
@@ -84,7 +84,7 @@ describe("L2: OpenAPI/Swagger Documentation", () => {
     const doc = yaml.parse(content);
     expect(doc.openapi).toMatch(/^3\.0/);
     expect(doc.info).toBeDefined();
-    expect(doc.info.title).toContain("54Link");
+    expect(doc.info.title).toContain("InsurePortal");
     expect(doc.info.version).toBe("1.0.0");
   });
 

@@ -56,7 +56,7 @@ export default function AgentPerformance() {
     const q = search.toLowerCase();
     return data.agents.filter(
       (a: any) =>
-        a.agentCode?.toLowerCase().includes(q) ||
+        a.agentId?.toLowerCase().includes(q) ||
         a.name?.toLowerCase().includes(q)
     );
   }, [data?.agents, search]);
@@ -133,7 +133,7 @@ export default function AgentPerformance() {
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search by agent code or name..."
+                placeholder="Search by agent ID or name..."
                 className="pl-9 bg-slate-800 border-slate-700 text-white"
               />
             </div>
@@ -247,10 +247,10 @@ export default function AgentPerformance() {
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="font-medium text-white">
-                          {a.name || a.agentCode}
+                          {a.name || a.agentId}
                         </div>
                         <div className="text-slate-500 text-[10px]">
-                          {a.agentCode}
+                          {a.agentId}
                         </div>
                       </td>
                       <td className="px-3 py-2.5">

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { transactions } from "@schema";
 import { sql, desc, eq, and, between } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

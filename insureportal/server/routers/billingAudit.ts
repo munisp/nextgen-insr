@@ -8,7 +8,7 @@ async function db() {
   if (!d) throw new Error("Database not available");
   return d;
 }
-import { billingAuditLog, tenantBillingConfig } from "../../drizzle/schema";
+import { billingAuditLog, tenantBillingConfig } from "@schema";
 import { eq, and, desc, gte, lte, sql, like } from "drizzle-orm";
 import { requireBillingPermission } from "./billingRbac";
 import { TRPCError } from "@trpc/server";

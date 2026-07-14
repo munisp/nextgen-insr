@@ -1,10 +1,10 @@
--- ── 54Link Data Lakehouse: Iceberg Table Definitions ─────────────────────────
+-- ── InsurePortal Data Lakehouse: Iceberg Table Definitions ─────────────────────────
 -- Engine: Apache Spark + Iceberg on MinIO (S3-compatible)
 -- Catalog: REST catalog via Nessie or Iceberg REST
--- Namespace: 54link
+-- Namespace: insureportal
 
 -- Bronze layer: raw ingestion (append-only, partitioned by date)
-CREATE TABLE IF NOT EXISTS 54link.bronze.transactions (
+CREATE TABLE IF NOT EXISTS insureportal.bronze.transactions (
   id              BIGINT,
   ref             STRING,
   agent_id        INT,
@@ -33,7 +33,7 @@ TBLPROPERTIES (
   'read.split.target-size' = '134217728'               -- 128 MB splits
 );
 
-CREATE TABLE IF NOT EXISTS 54link.bronze.fraud_alerts (
+CREATE TABLE IF NOT EXISTS insureportal.bronze.fraud_alerts (
   id              BIGINT,
   agent_id        INT,
   transaction_id  INT,
@@ -54,7 +54,7 @@ TBLPROPERTIES (
   'write.parquet.compression-codec' = 'snappy'
 );
 
-CREATE TABLE IF NOT EXISTS 54link.bronze.mdm_heartbeats (
+CREATE TABLE IF NOT EXISTS insureportal.bronze.mdm_heartbeats (
   device_id       STRING,
   agent_code      STRING,
   terminal_model  STRING,
@@ -78,7 +78,7 @@ TBLPROPERTIES (
 );
 
 -- Silver layer: cleaned, deduplicated, enriched
-CREATE TABLE IF NOT EXISTS 54link.silver.transactions (
+CREATE TABLE IF NOT EXISTS insureportal.silver.transactions (
   id              BIGINT,
   ref             STRING,
   agent_id        INT,
@@ -111,7 +111,7 @@ TBLPROPERTIES (
 );
 
 -- Gold layer: aggregated metrics for dashboards
-CREATE TABLE IF NOT EXISTS 54link.gold.daily_agent_summary (
+CREATE TABLE IF NOT EXISTS insureportal.gold.daily_agent_summary (
   summary_date    DATE,
   tenant_id       INT,
   agent_id        INT,
@@ -135,7 +135,7 @@ TBLPROPERTIES (
   'write.parquet.compression-codec' = 'snappy'
 );
 
-CREATE TABLE IF NOT EXISTS 54link.gold.hourly_transaction_metrics (
+CREATE TABLE IF NOT EXISTS insureportal.gold.hourly_transaction_metrics (
   metric_hour     TIMESTAMP,
   tenant_id       INT,
   tx_count        BIGINT,
@@ -154,7 +154,7 @@ TBLPROPERTIES (
   'write.parquet.compression-codec' = 'snappy'
 );
 
-CREATE TABLE IF NOT EXISTS 54link.gold.cbn_monthly_summary (
+CREATE TABLE IF NOT EXISTS insureportal.gold.cbn_monthly_summary (
   report_month    STRING,  -- YYYY-MM
   tenant_id       INT,
   total_tx_count  BIGINT,

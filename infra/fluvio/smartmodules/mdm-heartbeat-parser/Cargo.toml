@@ -2,7 +2,7 @@
 name = "mdm-heartbeat-parser"
 version = "1.0.0"
 edition = "2021"
-description = "54Link Fluvio SmartModule: validates and normalises MDM heartbeat payloads"
+description = "InsurePortal Fluvio SmartModule: validates and normalises MDM heartbeat payloads"
 
 [lib]
 name = "mdm_heartbeat_parser"

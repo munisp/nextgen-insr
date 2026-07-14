@@ -140,10 +140,10 @@ export const remittanceRouter = router({
         {
           id: "RP-001",
           name: "WorldRemit",
-          corridor: "UK-NG",
+          insurance_region: "UK-NG",
           status: "active",
         },
-        { id: "RP-002", name: "Lemfi", corridor: "CA-NG", status: "active" },
+        { id: "RP-002", name: "Lemfi", insurance_region: "CA-NG", status: "active" },
       ],
     };
   }),
@@ -170,7 +170,7 @@ export const remittanceRouter = router({
       totalFees: 5000000,
       totalCommission: 2500000,
       avgAmount: 250000,
-      topCorridors: [{ corridor: "UK-NG", volume: 200000000 }],
+      topInsuranceRegions: [{ insurance_region: "UK-NG", volume: 200000000 }],
       byPartner: [
         { partner: "WorldRemit", volume: 300000000, count: 1200 },
         { partner: "Flutterwave", volume: 200000000, count: 800 },

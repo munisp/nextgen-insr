@@ -1,14 +1,14 @@
-# 54Link POS Shell — Middleware Integration Audit
+# InsurePortal POS Shell — Middleware Integration Audit
 
 **Date:** 30 March 2026  
 **Author:** Manus AI  
-**Scope:** All middleware layers between the 54Link POS Shell Node.js server and the canonical platform infrastructure
+**Scope:** All middleware layers between the InsurePortal POS Shell Node.js server and the canonical platform infrastructure
 
 ---
 
 ## Executive Summary
 
-The 54Link Agency Banking Platform comprises a React/Node.js POS Shell (`pos-shell-demo`) that sits in front of a rich platform monorepo (`/home/ubuntu/platform/`). The platform monorepo contains production-ready implementations of every major middleware component — Kafka, Dapr, Fluvio, Temporal, Redis, APISix, TigerBeetle, and a Delta Lake-based data lakehouse. The POS Shell currently integrates with these layers through a **thin HTTP proxy pattern** (`server/_core/platformClient.ts`), with graceful local-PostgreSQL fallbacks for every call. This document maps the current integration status, identifies gaps, and prescribes the remaining work to achieve full middleware connectivity.
+The InsurePortal Insurance Platform comprises a React/Node.js POS Shell (`insurance-portal-demo`) that sits in front of a rich platform monorepo (`/home/ubuntu/platform/`). The platform monorepo contains production-ready implementations of every major middleware component — Kafka, Dapr, Fluvio, Temporal, Redis, APISix, TigerBeetle, and a Delta Lake-based data lakehouse. The POS Shell currently integrates with these layers through a **thin HTTP proxy pattern** (`server/_core/platformClient.ts`), with graceful local-PostgreSQL fallbacks for every call. This document maps the current integration status, identifies gaps, and prescribes the remaining work to achieve full middleware connectivity.
 
 ---
 
@@ -16,7 +16,7 @@ The 54Link Agency Banking Platform comprises a React/Node.js POS Shell (`pos-she
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│                  54Link POS Shell (Node.js / tRPC)                 │
+│                  InsurePortal POS Shell (Node.js / tRPC)                 │
 │                                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐ │
 │  │  platformClient.ts  (thin HTTP proxy, fail-open, 3s timeout) │ │
@@ -158,8 +158,8 @@ The 54Link Agency Banking Platform comprises a React/Node.js POS Shell (`pos-she
 | **POS Shell sidecar**     | `tb-sidecar/` — Go binary (18 MB), SQLite WAL offline ledger, HTTP API on `:8030`                                                                                                                               |
 | **POS Shell integration** | **Wired (sidecar pattern).** `server/tbClient.ts` calls the sidecar's `POST /transfer` endpoint with a 200ms timeout. On sidecar unavailability, falls back to PostgreSQL-only persistence.                     |
 | **Status**                | **Fully wired.** The sidecar handles offline double-entry ledger writes and syncs to TigerBeetle Zig + PostgreSQL when connectivity is restored.                                                                |
-| **Gap**                   | The sidecar's `GET /balance/:id` endpoint is not yet called from the POS Shell. Float balance could be sourced from TigerBeetle (authoritative ledger) rather than the PostgreSQL `agents.floatBalance` column. |
-| **Recommendation**        | Add `tbClient.getBalance(accountId)` helper. In `transactions.agentDayStats`, attempt TB balance lookup first; fall back to PostgreSQL. This makes TigerBeetle the single source of truth for float balances.   |
+| **Gap**                   | The sidecar's `GET /balance/:id` endpoint is not yet called from the POS Shell. Float balance could be sourced from TigerBeetle (authoritative ledger) rather than the PostgreSQL `agents.premiumReserve` column. |
+| **Recommendation**        | Add `tbClient.getBalance(accountId)` helper. In `transactions.agentDayStats`, attempt TB balance lookup first; fall back to PostgreSQL. This makes TigerBeetle the single source of truth for premium reserves.   |
 
 ---
 
@@ -198,13 +198,13 @@ The following table summarises which platform services are wired via `platformCl
 
 ## 4. Float Platform 2-Phase Commit — Remaining Work
 
-The float platform uses a `utilize`/`settle` pattern (not `reserve`/`commit`/`release` as originally planned). The current `transactions.create` procedure performs float checks and updates against the local PostgreSQL `agents.floatBalance` column. The remaining integration steps are:
+The float platform uses a `utilize`/`settle` pattern (not `reserve`/`commit`/`release` as originally planned). The current `transactions.create` procedure performs float checks and updates against the local PostgreSQL `agents.premiumReserve` column. The remaining integration steps are:
 
 1. **Cash Out / Transfer / Card / QR / NFC payments** — call `floatPlatform.utilize()` after the local float sufficiency check passes. On platform success, proceed with the local DB transaction. On platform failure (503/unreachable), proceed with local DB only (fail-open).
 
 2. **Cash In** — call `floatPlatform.settle()` after the local DB insert succeeds.
 
-3. **Float balance display** — call `floatPlatform.getBalance(agentId)` in `agentDayStats` and `agent.me` procedures, falling back to `agents.floatBalance` from PostgreSQL.
+3. **Float balance display** — call `floatPlatform.getBalance(agentId)` in `agentDayStats` and `agent.me` procedures, falling back to `agents.premiumReserve` from PostgreSQL.
 
 4. **TigerBeetle balance** — call `tbClient.getBalance(accountId)` as an additional source of truth, with PostgreSQL as the final fallback.
 
@@ -229,7 +229,7 @@ The following table prioritises the remaining middleware integration work by imp
 | **P4**   | Temporal           | Wrap `runDailySettlement()` as a Temporal workflow                      | 4h     |
 | **P4**   | Temporal           | Wrap KYC session as a Temporal child workflow                           | 4h     |
 | **P5**   | Dapr               | Add Dapr sidecar annotation to Kubernetes deployment                    | 2h     |
-| **P5**   | TigerBeetle        | Wire `tbClient.getBalance()` as primary float balance source            | 1h     |
+| **P5**   | TigerBeetle        | Wire `tbClient.getBalance()` as primary premium reserve source            | 1h     |
 
 ---
 
@@ -266,8 +266,8 @@ The following environment variables must be set in production to activate all pl
 | `PLATFORM_ANALYTICS_URL`    | `http://localhost:8109` | analytics-service                               |
 | `PLATFORM_NOTIFICATION_URL` | `http://localhost:8110` | notification-service                            |
 | `KEYCLOAK_URL`              | `http://localhost:8080` | Keycloak OIDC server                            |
-| `KEYCLOAK_REALM`            | `54link`                | Keycloak realm name                             |
-| `KEYCLOAK_CLIENT_ID`        | `pos-shell`             | Keycloak client ID                              |
+| `KEYCLOAK_REALM`            | `insureportal`                | Keycloak realm name                             |
+| `KEYCLOAK_CLIENT_ID`        | `insurance-portal`             | Keycloak client ID                              |
 | `KEYCLOAK_CLIENT_SECRET`    | _(required)_            | Keycloak client secret                          |
 | `TERMII_API_KEY`            | _(optional)_            | SMS delivery (graceful fallback to console.log) |
 | `VAPID_PUBLIC_KEY`          | _(bundled default)_     | Web push public key                             |
@@ -275,4 +275,4 @@ The following environment variables must be set in production to activate all pl
 
 ---
 
-_Document generated from live codebase inspection of `/home/ubuntu/pos-shell-demo/` and `/home/ubuntu/platform/platform/middleware/`. All integration statuses reflect the state as of the Phase 84 checkpoint._
+_Document generated from live codebase inspection of `/home/ubuntu/insurance-portal-demo/` and `/home/ubuntu/platform/platform/middleware/`. All integration statuses reflect the state as of the Phase 84 checkpoint._

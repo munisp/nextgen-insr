@@ -54,7 +54,7 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
   const [type, setType] = useState<"daily" | "weekly" | "monthly">("daily");
   const [template, setTemplate] = useState("transaction_summary");
-  const [recipients, setRecipients] = useState("admin@54link.com");
+  const [recipients, setRecipients] = useState("admin@insureportal.com");
   const [hour, setHour] = useState(18);
   const [minute, setMinute] = useState(0);
   const [format, setFormat] = useState<"html" | "pdf">("html");
@@ -137,7 +137,7 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
             <Input
               value={recipients}
               onChange={e => setRecipients(e.target.value)}
-              placeholder="admin@54link.com, finance@54link.com"
+              placeholder="admin@insureportal.com, finance@insureportal.com"
             />
           </div>
           <div className="grid grid-cols-3 gap-4">

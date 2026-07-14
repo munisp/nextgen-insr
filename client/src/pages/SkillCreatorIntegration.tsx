@@ -47,7 +47,7 @@ export default function SkillCreatorIntegration() {
           <div>
             <h1 className="text-2xl font-bold">Skill Creator Integration</h1>
             <p className="text-muted-foreground mt-1">
-              manage and extend 54link-pos-builder reusable skill
+              manage and extend insureportal-pos-builder reusable skill
             </p>
           </div>
           <div className="flex gap-2">
