@@ -219,6 +219,12 @@ class FraudHandler(BaseHTTPRequestHandler):
 
         if self.path == "/api/v1/evaluate":
             result = calculate_fraud_score(body)
+            publish_event("fraud.evaluations", result["transaction_id"], {
+                "event": "fraud.evaluated",
+                "transaction_id": result["transaction_id"],
+                "decision": result["decision"],
+                "fraud_score": result["fraud_score"],
+            })
             self._respond(200, result)
         elif self.path == "/api/v1/ml/predict":
             from ml_models.fraud_model import predict_fraud

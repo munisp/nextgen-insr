@@ -137,7 +137,7 @@ func isPQClientError(err error) bool {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "underwriting-engine"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "kafka": "configured", "redis": "configured", "service": "underwriting-engine"})
 }
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	status := map[string]string{"status": "ready"}
@@ -169,6 +169,7 @@ func handleQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := calculatePremium(req)
+	publishEvent("underwriting.quotes", req.Product, map[string]interface{}{"event": "quote.calculated", "product": req.Product, "premium": result.Premium, "risk_class": result.RiskClass, "declined": result.Declined})
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
