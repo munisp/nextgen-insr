@@ -492,6 +492,110 @@ VALUES
   (4, 'signup_initiated', 'signup', NULL, 'tier0', '{}', NOW() - interval '2 months');
 
 -- ══════════════════════════════════════════════════════════════════════════════
+-- GEOSPATIAL — PostGIS seed data
+-- ══════════════════════════════════════════════════════════════════════════════
+
+-- Nigerian states (36 + FCT)
+INSERT INTO geospatial.states (name, code, capital, region) VALUES
+  ('Lagos', 'LA', 'Ikeja', 'South-West'),
+  ('Abuja FCT', 'FC', 'Abuja', 'North-Central'),
+  ('Kano', 'KN', 'Kano', 'North-West'),
+  ('Rivers', 'RV', 'Port Harcourt', 'South-South'),
+  ('Oyo', 'OY', 'Ibadan', 'South-West'),
+  ('Kaduna', 'KD', 'Kaduna', 'North-West'),
+  ('Enugu', 'EN', 'Enugu', 'South-East'),
+  ('Delta', 'DE', 'Asaba', 'South-South'),
+  ('Anambra', 'AN', 'Awka', 'South-East'),
+  ('Edo', 'ED', 'Benin City', 'South-South'),
+  ('Ogun', 'OG', 'Abeokuta', 'South-West'),
+  ('Kwara', 'KW', 'Ilorin', 'North-Central'),
+  ('Ondo', 'ON', 'Akure', 'South-West'),
+  ('Osun', 'OS', 'Oshogbo', 'South-West'),
+  ('Plateau', 'PL', 'Jos', 'North-Central'),
+  ('Cross River', 'CR', 'Calabar', 'South-South'),
+  ('Abia', 'AB', 'Umuahia', 'South-East'),
+  ('Imo', 'IM', 'Owerri', 'South-East'),
+  ('Borno', 'BO', 'Maiduguri', 'North-East'),
+  ('Sokoto', 'SO', 'Sokoto', 'North-West')
+ON CONFLICT DO NOTHING;
+
+-- Flood risk zones (based on real NIMET flood-prone areas)
+INSERT INTO geospatial.flood_risk_zones (name, risk_level, boundary, historical_claim_count, historical_loss_amount, premium_multiplier, data_source) VALUES
+  ('Lagos Island Flood Zone', 'HIGH',
+   ST_GeomFromText('POLYGON((3.38 6.44, 3.42 6.44, 3.42 6.48, 3.38 6.48, 3.38 6.44))', 4326),
+   245, 850000000.00, 1.45, 'NIMET'),
+  ('Benue Valley Flood Plain', 'CRITICAL',
+   ST_GeomFromText('POLYGON((7.5 7.5, 8.5 7.5, 8.5 8.5, 7.5 8.5, 7.5 7.5))', 4326),
+   380, 1200000000.00, 1.65, 'NEMA'),
+  ('Niger Delta Coastal Zone', 'HIGH',
+   ST_GeomFromText('POLYGON((5.5 4.0, 7.0 4.0, 7.0 5.5, 5.5 5.5, 5.5 4.0))', 4326),
+   310, 950000000.00, 1.50, 'NIMET'),
+  ('Kogi Confluence Zone', 'MEDIUM',
+   ST_GeomFromText('POLYGON((6.5 7.0, 7.5 7.0, 7.5 8.0, 6.5 8.0, 6.5 7.0))', 4326),
+   180, 420000000.00, 1.25, 'NEMA'),
+  ('Adamawa Highland Zone', 'LOW',
+   ST_GeomFromText('POLYGON((12.0 9.0, 13.0 9.0, 13.0 10.0, 12.0 10.0, 12.0 9.0))', 4326),
+   45, 95000000.00, 1.10, 'HISTORICAL_CLAIMS')
+ON CONFLICT DO NOTHING;
+
+-- Crime risk zones (based on NBS crime statistics)
+INSERT INTO geospatial.crime_risk_zones (name, risk_level, boundary, theft_rate, robbery_rate, vehicle_theft_rate, premium_multiplier, data_source) VALUES
+  ('Lagos Mainland High Crime', 'HIGH',
+   ST_GeomFromText('POLYGON((3.30 6.50, 3.45 6.50, 3.45 6.60, 3.30 6.60, 3.30 6.50))', 4326),
+   450.00, 180.00, 320.00, 1.40, 'NBS'),
+  ('Abuja Central Business', 'MEDIUM',
+   ST_GeomFromText('POLYGON((7.40 9.00, 7.55 9.00, 7.55 9.12, 7.40 9.12, 7.40 9.00))', 4326),
+   180.00, 65.00, 95.00, 1.20, 'NBS'),
+  ('Port Harcourt Industrial', 'HIGH',
+   ST_GeomFromText('POLYGON((6.95 4.75, 7.10 4.75, 7.10 4.90, 6.95 4.90, 6.95 4.75))', 4326),
+   380.00, 150.00, 280.00, 1.35, 'NBS'),
+  ('Kano Commercial Zone', 'MEDIUM',
+   ST_GeomFromText('POLYGON((8.50 11.95, 8.65 11.95, 8.65 12.05, 8.50 12.05, 8.50 11.95))', 4326),
+   220.00, 90.00, 140.00, 1.25, 'NBS')
+ON CONFLICT DO NOTHING;
+
+-- Fire risk zones
+INSERT INTO geospatial.fire_risk_zones (name, risk_level, boundary, building_density, fire_station_distance_km, historical_fire_count, premium_multiplier, data_source) VALUES
+  ('Lagos Market District', 'HIGH',
+   ST_GeomFromText('POLYGON((3.37 6.45, 3.43 6.45, 3.43 6.50, 3.37 6.50, 3.37 6.45))', 4326),
+   'HIGH', 2.5, 85, 1.35, 'FEDERAL_FIRE_SERVICE'),
+  ('Onitsha Trading Hub', 'CRITICAL',
+   ST_GeomFromText('POLYGON((6.76 6.12, 6.82 6.12, 6.82 6.17, 6.76 6.17, 6.76 6.12))', 4326),
+   'HIGH', 4.8, 120, 1.55, 'FEDERAL_FIRE_SERVICE'),
+  ('Abuja Residential', 'LOW',
+   ST_GeomFromText('POLYGON((7.42 9.02, 7.52 9.02, 7.52 9.10, 7.42 9.10, 7.42 9.02))', 4326),
+   'MEDIUM', 1.2, 15, 1.05, 'FEDERAL_FIRE_SERVICE')
+ON CONFLICT DO NOTHING;
+
+-- Agent locations with PostGIS points
+INSERT INTO geospatial.agent_locations (agent_id, agent_name, agent_type, office_address, office_city, office_state_code, office_location, service_radius_km, assigned_policies_count, total_premium_managed) VALUES
+  (gen_random_uuid(), 'Adebayo Insurance Services', 'INDIVIDUAL', '15 Broad Street', 'Lagos', 'LA', ST_SetSRID(ST_MakePoint(3.3892, 6.4541), 4326), 25.0, 450, 125000000.00),
+  (gen_random_uuid(), 'Amina Assurance Agency', 'INDIVIDUAL', '8 Ahmadu Bello Way', 'Abuja', 'FC', ST_SetSRID(ST_MakePoint(7.4951, 9.0579), 4326), 30.0, 320, 95000000.00),
+  (gen_random_uuid(), 'Emeka & Sons Insurance Brokers', 'CORPORATE', '22 New Market Road', 'Onitsha', 'AN', ST_SetSRID(ST_MakePoint(6.7863, 6.1455), 4326), 50.0, 280, 72000000.00),
+  (gen_random_uuid(), 'Musa Kano Insurance', 'INDIVIDUAL', '4 Bayero Road', 'Kano', 'KN', ST_SetSRID(ST_MakePoint(8.5200, 12.0022), 4326), 40.0, 190, 48000000.00),
+  (gen_random_uuid(), 'Blessing PH Insurance', 'INDIVIDUAL', '12 Aba Road', 'Port Harcourt', 'RV', ST_SetSRID(ST_MakePoint(7.0498, 4.8156), 4326), 35.0, 350, 98000000.00),
+  (gen_random_uuid(), 'Ibadan Premium Insurance', 'CORPORATE', '5 Ring Road', 'Ibadan', 'OY', ST_SetSRID(ST_MakePoint(3.9470, 7.3775), 4326), 45.0, 220, 65000000.00),
+  (gen_random_uuid(), 'Kaduna Shield Insurance', 'INDIVIDUAL', '3 Kachia Road', 'Kaduna', 'KD', ST_SetSRID(ST_MakePoint(7.4323, 10.5105), 4326), 55.0, 160, 42000000.00)
+ON CONFLICT DO NOTHING;
+
+-- Healthcare providers with PostGIS points
+INSERT INTO geospatial.healthcare_providers (name, provider_type, address, city, state_code, location, is_network_provider, tier, specialties, phone, is_24_hours, accepts_emergency) VALUES
+  ('Lagos University Teaching Hospital', 'HOSPITAL', 'Ishaga Road, Idi-Araba', 'Lagos', 'LA', ST_SetSRID(ST_MakePoint(3.3569, 6.5167), 4326), true, 'TIER1', '{"General Surgery","Internal Medicine","Pediatrics","Obstetrics"}', '+234-1-585-2003', true, true),
+  ('National Hospital Abuja', 'HOSPITAL', 'Plot 132, Central Business District', 'Abuja', 'FC', ST_SetSRID(ST_MakePoint(7.4951, 9.0579), 4326), true, 'TIER1', '{"Cardiology","Neurology","Oncology","Orthopedics"}', '+234-9-413-7050', true, true),
+  ('Reddington Hospital', 'HOSPITAL', '12 Idowu Martins Street, VI', 'Lagos', 'LA', ST_SetSRID(ST_MakePoint(3.4227, 6.4311), 4326), true, 'TIER2', '{"General Practice","Diagnostics","Maternity"}', '+234-1-271-6301', true, true),
+  ('St. Nicholas Hospital', 'HOSPITAL', '57 Campbell Street', 'Lagos', 'LA', ST_SetSRID(ST_MakePoint(3.3912, 6.4531), 4326), true, 'TIER2', '{"General Practice","Surgery","Diagnostics"}', '+234-1-263-0090', false, true),
+  ('MedPlus Pharmacy', 'PHARMACY', '30 Isaac John Street, Ikeja', 'Lagos', 'LA', ST_SetSRID(ST_MakePoint(3.3467, 6.5967), 4326), true, 'TIER3', '{"Pharmacy"}', '+234-1-791-0000', false, false)
+ON CONFLICT DO NOTHING;
+
+-- Auto repair shops with PostGIS points
+INSERT INTO geospatial.repair_shops (shop_id, name, shop_type, address, city, state_code, location, is_network_provider, brands_serviced, avg_rating, phone) VALUES
+  (gen_random_uuid(), 'Elizade Toyota Lagos', 'AUTHORIZED_DEALER', 'Plot 1, Block A, Alausa', 'Lagos', 'LA', ST_SetSRID(ST_MakePoint(3.3579, 6.6131), 4326), true, '{"Toyota","Lexus"}', 4.5, '+234-1-774-5000'),
+  (gen_random_uuid(), 'Coscharis Motors', 'AUTHORIZED_DEALER', '1 Coscharis Way, Lekki', 'Lagos', 'LA', ST_SetSRID(ST_MakePoint(3.4651, 6.4413), 4326), true, '{"BMW","Ford","Jaguar","Land Rover"}', 4.3, '+234-1-295-0100'),
+  (gen_random_uuid(), 'AutoMedics Workshop', 'INDEPENDENT', '15 Allen Avenue, Ikeja', 'Lagos', 'LA', ST_SetSRID(ST_MakePoint(3.3495, 6.5993), 4326), false, '{"All Brands"}', 4.0, '+234-803-555-1234'),
+  (gen_random_uuid(), 'Abuja Auto Care', 'INDEPENDENT', '8 Wuse Zone 4', 'Abuja', 'FC', ST_SetSRID(ST_MakePoint(7.4725, 9.0645), 4326), true, '{"All Brands"}', 3.8, '+234-802-555-5678')
+ON CONFLICT DO NOTHING;
+
+-- ══════════════════════════════════════════════════════════════════════════════
 -- SEQUENCE RESET (ensure next inserts don't conflict)
 -- ══════════════════════════════════════════════════════════════════════════════
 SELECT setval('users_id_seq', (SELECT COALESCE(MAX(id),0) FROM users));

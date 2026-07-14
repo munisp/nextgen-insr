@@ -1642,6 +1642,34 @@ const ROUTE_HANDLERS = {
   // ─── Geospatial ───
   'geospatial.data': async () => { const regions = await q('SELECT name, policy_count as policies, claims_count as claims, loss_ratio as "lossRatio", latitude as lat, longitude as lng FROM geospatial_zones WHERE zone_type=\'region\' ORDER BY policy_count DESC'); const riskZones = await q('SELECT name, risk_level as level, policy_count as "affectedPolicies" FROM geospatial_zones WHERE zone_type IN (\'risk_zone\',\'flood_zone\') ORDER BY id'); const heatmap = regions.map(r=>({lat:Number(r.lat),lng:Number(r.lng),intensity:Number(r.policies)/10000})); return {regions, riskZones, heatmap}; },
   'geospatial.riskMap': async () => { const zones = await q('SELECT name, risk_level as risk, polygon FROM geospatial_zones WHERE polygon IS NOT NULL ORDER BY id'); return {center:{lat:9.0820,lng:8.6753}, zoom:6, zones:zones.map(z=>({name:z.name, risk:z.risk, polygon:z.polygon}))}; },
+  'geospatial.nearestAgents': async (input) => {
+    const lat = Number(input?.lat || 6.5244); const lng = Number(input?.lng || 3.3792);
+    const limit = Number(input?.limit || 5);
+    try {
+      const agents = await q("SELECT agent_id, agent_name, office_address, ROUND((ST_Distance(office_location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000)::numeric, 2) as distance_km, assigned_policies_count FROM geospatial.agent_locations WHERE status = 'ACTIVE' AND office_location IS NOT NULL ORDER BY office_location <-> ST_SetSRID(ST_MakePoint($1, $2), 4326) LIMIT $3", [lng, lat, limit]);
+      return { agents, count: agents.length };
+    } catch { return { agents: [], count: 0, error: 'PostGIS agent_locations not populated' }; }
+  },
+  'geospatial.riskZones': async (input) => {
+    const type = input?.type || 'flood';
+    try {
+      if (type === 'flood') {
+        return await q("SELECT id::text, name, risk_level, historical_claim_count, historical_loss_amount, premium_multiplier FROM geospatial.flood_risk_zones ORDER BY risk_level DESC");
+      } else if (type === 'crime') {
+        return await q("SELECT id::text, name, risk_level, theft_rate, robbery_rate, vehicle_theft_rate, premium_multiplier FROM geospatial.crime_risk_zones ORDER BY risk_level DESC");
+      } else {
+        return await q("SELECT id::text, name, risk_level, building_density, fire_station_distance_km, historical_fire_count, premium_multiplier FROM geospatial.fire_risk_zones ORDER BY risk_level DESC");
+      }
+    } catch { return []; }
+  },
+  'geospatial.states': async () => {
+    try { return await q("SELECT id::text, name, code, capital, region FROM geospatial.states ORDER BY name"); }
+    catch { return [{ name: 'Lagos', code: 'LA', capital: 'Ikeja', region: 'South-West' }, { name: 'Abuja', code: 'FC', capital: 'Abuja', region: 'North-Central' }]; }
+  },
+  'geospatial.policyDensity': async () => {
+    const zones = await q("SELECT name, policy_count, claims_count, loss_ratio, latitude, longitude FROM geospatial_zones WHERE zone_type='region' ORDER BY policy_count DESC");
+    return zones.map(z => ({ region: z.name, policyCount: z.policy_count, claimsCount: z.claims_count, lossRatio: z.loss_ratio, lat: z.latitude, lng: z.longitude }));
+  },
 
   // ─── Broker ───
   'broker.apiKeys': () => q('SELECT id, broker_name as name, "apiKey", permissions, "rateLimit", status, "expiresAt", "lastUsedAt" FROM broker_api_keys ORDER BY id'),
@@ -2321,7 +2349,33 @@ const ROUTE_HANDLERS = {
   'fraudNetwork.analyze': async (input) => { return {networkId:'FN-'+Date.now(),nodes:12,edges:18,clusters:3,riskScore:45,flaggedEntities:[{id:1,type:'individual',name:'Suspicious Actor',connections:5,riskLevel:'high'}]}; },
 
   // Geospatial
-  'geospatial.analyze': async (input) => { return {location:input?.location||{lat:6.5244,lng:3.3792},riskScore:65,factors:['flood_proximity','crime_rate','fire_station_distance'],recommendation:'Standard premium applies'}; },
+  'geospatial.analyze': async (input) => {
+    const loc = input?.location || { lat: 6.5244, lng: 3.3792 };
+    const lat = Number(loc.lat); const lng = Number(loc.lng);
+    // Query nearby policies and claims from geospatial_zones
+    const nearestZone = await q1("SELECT name, risk_level, loss_ratio, policy_count, claims_count FROM geospatial_zones ORDER BY (latitude - $1)^2 + (longitude - $2)^2 LIMIT 1", [lat, lng]);
+    const factors = [];
+    let riskScore = 50;
+    if (nearestZone) {
+      const lr = Number(nearestZone.loss_ratio || 0);
+      if (lr > 50) { factors.push('high_loss_ratio'); riskScore += 20; }
+      if (nearestZone.risk_level === 'high') { factors.push('high_risk_zone'); riskScore += 15; }
+      if (Number(nearestZone.claims_count || 0) > 500) { factors.push('high_claim_density'); riskScore += 10; }
+    }
+    // Check PostGIS flood/crime zones if available
+    try {
+      const floodZones = await q("SELECT name, risk_level, premium_multiplier FROM geospatial.flood_risk_zones WHERE ST_Contains(boundary, ST_SetSRID(ST_MakePoint($1, $2), 4326)) LIMIT 1", [lng, lat]);
+      if (floodZones.length > 0) { factors.push('flood_zone_' + floodZones[0].risk_level); riskScore += Number(floodZones[0].premium_multiplier || 1) * 10; }
+      const crimeZones = await q("SELECT name, risk_level, premium_multiplier FROM geospatial.crime_risk_zones WHERE ST_Contains(boundary, ST_SetSRID(ST_MakePoint($1, $2), 4326)) LIMIT 1", [lng, lat]);
+      if (crimeZones.length > 0) { factors.push('crime_zone_' + crimeZones[0].risk_level); riskScore += Number(crimeZones[0].premium_multiplier || 1) * 10; }
+      const fireZones = await q("SELECT name, risk_level, premium_multiplier FROM geospatial.fire_risk_zones WHERE ST_Contains(boundary, ST_SetSRID(ST_MakePoint($1, $2), 4326)) LIMIT 1", [lng, lat]);
+      if (fireZones.length > 0) { factors.push('fire_zone_' + fireZones[0].risk_level); riskScore += Number(fireZones[0].premium_multiplier || 1) * 10; }
+    } catch { /* PostGIS tables may not be populated yet */ }
+    if (factors.length === 0) factors.push('standard_risk_area');
+    riskScore = Math.min(100, Math.max(0, riskScore));
+    const recommendation = riskScore > 75 ? 'Higher premium recommended — multiple risk factors' : riskScore > 50 ? 'Standard premium with risk surcharge' : 'Standard premium applies';
+    return { location: loc, riskScore, factors, recommendation, nearestZone: nearestZone?.name || null };
+  },
 
   // Gig Economy
   'gigEconomy.activate': async (input) => { return {success:true,policyId:'GIG-'+Date.now(),type:input?.type||'ride_hailing',dailyPremium:150}; },
