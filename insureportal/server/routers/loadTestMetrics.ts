@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { loadTestRuns as loadTestRunsTable } from "../../drizzle/schema";
-import { auditLog } from "../../drizzle/schema";
+import { loadTestRuns as loadTestRunsTable } from "@schema";
+import { auditLog } from "@schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { notifyOwner } from "../_core/notification";
 import { getConfig, getConfigNumber, setConfig } from "../lib/runtimeConfig";

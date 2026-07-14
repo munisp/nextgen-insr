@@ -1,5 +1,5 @@
 /**
- * 54Link Agency Banking Platform — Developer Portal
+ * InsurePortal Insurance Platform — Developer Portal
  * API key management, usage dashboard, and documentation for third-party integrators.
  * Enhanced with search/filter, pagination, usage stats, and webhook management.
  */
@@ -50,7 +50,7 @@ const ENDPOINTS = [
   {
     method: "GET",
     path: "/api/v1/agents/me",
-    desc: "Get the current agent's profile and float balance",
+    desc: "Get the current agent's profile and premium reserve",
     scope: "agents:read",
   },
   {
@@ -62,7 +62,7 @@ const ENDPOINTS = [
   {
     method: "GET",
     path: "/api/v1/float/balance",
-    desc: "Get current float balance",
+    desc: "Get current premium reserve",
     scope: "float:read",
   },
   {
@@ -325,7 +325,7 @@ export default function DeveloperPortal() {
             className="text-xs px-2 py-0.5 rounded-full font-semibold"
             style={{ background: "oklch(0.65 0.22 260 / 0.15)", color: BLUE }}
           >
-            54Link API v1
+            InsurePortal API v1
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -730,7 +730,7 @@ export default function DeveloperPortal() {
             >
               Base URL:{" "}
               <code className="text-blue-400" style={{ fontFamily: MONO }}>
-                https://api.54link.ng/api/v1
+                https://api.insureportal.ng/api/v1
               </code>
               <br />
               Authentication:{" "}

@@ -1,44 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
-  title: Pan-African eKYC Service
-  version: 1.0.0
-  description: Multi-country identity verification (BVN, NIN, Ghana Card, etc.)
+  title: Pan African Ekyc
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
       summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/countries:
-    get:
-      summary: List supported countries and ID types
-      responses:
-        '200':
-          description: Country list with supported document types
-  /api/v1/verify:
-    post:
-      summary: Verify an identity document
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [country, id_type, id_number]
-              properties:
-                country: { type: string, description: ISO 3166-1 alpha-2 }
-                id_type: { type: string, enum: [bvn, nin, voters_card, passport, ghana_card] }
-                id_number: { type: string }
-                full_name: { type: string }
-      responses:
-        '200':
-          description: Verification result
+        "200":
+          description: Service is healthy
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  verified: { type: boolean }
-                  match_score: { type: number }
-                  source: { type: string }
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: pan-african-ekyc
+                  database:
+                    type: string
+                    example: connected
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: getReady
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
+      responses:
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

@@ -1,45 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
   title: Underwriting Engine
-  version: 1.0.0
-  description: Insurance policy underwriting with risk assessment
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
       summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/quote:
-    post:
-      summary: Generate underwriting quote
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [applicant_age, product_type, sum_assured]
-              properties:
-                applicant_age: { type: integer }
-                product_type: { type: string }
-                sum_assured: { type: number }
-                health_status: { type: string }
-                occupation_risk: { type: string }
-      responses:
-        '200':
-          description: Underwriting quote
+        "200":
+          description: Service is healthy
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  premium: { type: number }
-                  risk_class: { type: string }
-                  conditions: { type: array, items: { type: string } }
-  /api/v1/risk-factors:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: underwriting-engine
+                  database:
+                    type: string
+                    example: connected
+  /ready:
     get:
-      summary: List risk factors
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Available risk factors and weightings
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
+      responses:
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

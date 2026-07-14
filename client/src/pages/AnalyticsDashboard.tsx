@@ -1,7 +1,7 @@
 /**
  * AnalyticsDashboard.tsx
  *
- * Real-time analytics dashboard for 54Link POS Shell.
+ * Real-time analytics dashboard for InsurePortal POS Shell.
  * Shows:
  *  - MQTT message throughput (messages/min over time)
  *  - ERP sync success rate (pie + trend)

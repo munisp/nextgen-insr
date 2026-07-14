@@ -1,40 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
   title: Customer Feedback Loop
-  description: Feedback collection, NPS scoring, and sentiment analysis
-  version: 1.0.0
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
-      summary: Service health check
+      summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/feedback:
-    post:
-      summary: Submit customer feedback
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-              - customer_id
-              - rating
-              - comment
-      responses:
-        '201':
-          description: Feedback recorded
-  /api/v1/feedback/summary:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: customer-feedback-loop
+                  database:
+                    type: string
+                    example: connected
+  /ready:
     get:
-      summary: Get feedback summary
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Aggregated feedback with sentiment analysis
-  /api/v1/nps:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
     get:
-      summary: Get NPS score
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Net Promoter Score with breakdown
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
+      responses:
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

@@ -1,35 +1,58 @@
 package main
 
 import (
-	"github.com/go-chi/chi/v5"
-	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
-func testRouter() *chi.Mux {
-	r := chi.NewRouter()
-	r.Post("/api/v1/verify", verifyIdentity)
-	r.Get("/api/v1/countries", supportedCountries)
-	return r
-}
-
-func Test_Countries(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/countries", nil)
-	w := httptest.NewRecorder()
-	supportedCountries(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+func TestValidateQueryParam(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		key    string
+		maxLen int
+		want   string
+		err    bool
+	}{
+		{"valid", "?name=test", "name", 100, "test", false},
+		{"empty", "", "name", 100, "", false},
+		{"too long", "?name=toolongvalue", "name", 5, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateQueryParam(req, tt.key, tt.maxLen)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
-func Test_Verify(t *testing.T) {
-	body := strings.NewReader(`{"country":"NG","id_type":"bvn","id_number":"12345678901"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/verify", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	verifyIdentity(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+func TestValidateIntParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		key   string
+		want  int
+		err   bool
+	}{
+		{"valid", "?page=5", "page", 5, false},
+		{"empty", "", "page", 0, false},
+		{"invalid", "?page=abc", "page", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateIntParam(req, tt.key)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

@@ -1,57 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
   title: Document Management System
-  description: Insurance document storage, versioning, and compliance tracking
-  version: 1.0.0
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
-      summary: Service health check
+      summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/documents:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: document-management-system
+                  database:
+                    type: string
+                    example: connected
+  /ready:
     get:
-      summary: List documents
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Document list with metadata
-    post:
-      summary: Upload document
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-              - name
-              - type
-              - content
-      responses:
-        '201':
-          description: Document uploaded
-  /api/v1/documents/{id}:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
     get:
-      summary: Get document
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Document details and download URL
-  /api/v1/documents/{id}/versions:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
     get:
-      summary: Get document versions
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+      summary: Domain statistics
+      operationId: getStats
       responses:
-        '200':
-          description: Version history
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

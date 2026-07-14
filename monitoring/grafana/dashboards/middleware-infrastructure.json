@@ -1,0 +1,175 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "ngapp-middleware-infra",
+    "title": "NGApp Platform - Middleware Infrastructure",
+    "tags": ["ngapp", "middleware", "infrastructure"],
+    "timezone": "UTC",
+    "schemaVersion": 30,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "PostgreSQL Connections & Queries",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+        "targets": [
+          {"expr": "pg_stat_activity_count{datname=~\"ngapp.*\"}", "legendFormat": "{{ state }}"},
+          {"expr": "rate(pg_stat_database_xact_commit{datname=~\"ngapp.*\"}[5m])", "legendFormat": "Commits/s"},
+          {"expr": "rate(pg_stat_database_xact_rollback{datname=~\"ngapp.*\"}[5m])", "legendFormat": "Rollbacks/s"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "PostgreSQL Latency",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+        "targets": [
+          {"expr": "histogram_quantile(0.95, rate(pg_stat_activity_wait_time_seconds_bucket[5m]))", "legendFormat": "P95 wait time"}
+        ]
+      },
+      {
+        "id": 3,
+        "title": "PostgreSQL Deadlocks & Temp Files",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+        "targets": [
+          {"expr": "rate(pg_stat_database_deadlocks{datname=~\"ngapp.*\"}[5m])", "legendFormat": "Deadlocks/s"},
+          {"expr": "rate(pg_stat_database_temp_bytes{datname=~\"ngapp.*\"}[5m]) / 1024 / 1024", "legendFormat": "Temp MB/s"}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Redis Memory & Operations",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {"expr": "redis_memory_used_bytes / 1024 / 1024", "legendFormat": "Used MB"},
+          {"expr": "redis_memory_max_bytes / 1024 / 1024", "legendFormat": "Max MB"},
+          {"expr": "rate(redis_commands_processed_total[5m])", "legendFormat": "Commands/s"}
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Redis Hit Rate & Connected Clients",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {"expr": "rate(redis_keyspace_hits_total[5m]) / (rate(redis_keyspace_hits_total[5m]) + rate(redis_keyspace_misses_total[5m]))", "legendFormat": "Hit Rate"},
+          {"expr": "redis_connected_clients", "legendFormat": "Connected Clients"}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Kafka Broker Status",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16},
+        "targets": [
+          {"expr": "kafka_brokers", "legendFormat": "Brokers"}
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Kafka Topic Throughput",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 16},
+        "targets": [
+          {"expr": "sum(rate(kafka_topic_partition_current_offset{topic=~\"ngapp.*\"}[5m])) by (topic)", "legendFormat": "{{ topic }} offset/s"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Kafka Consumer Groups Lag",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+        "targets": [
+          {"expr": "kafka_consumer_lag_sum{topic=~\"ngapp.*\"}", "legendFormat": "{{ consumer_group }} - {{ topic }}"}
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Kafka Under-Replicated Partitions",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 28},
+        "targets": [
+          {"expr": "kafka_topic_partitions_under_replicated", "legendFormat": "Under-replicated"}
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Temporal Workflow Execution Rate",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+        "targets": [
+          {"expr": "rate(temporal_workflow_completed_total[5m])", "legendFormat": "Completed"},
+          {"expr": "rate(temporal_workflow_failed_total[5m])", "legendFormat": "Failed"},
+          {"expr": "rate(temporal_workflow_timeout_total[5m])", "legendFormat": "Timed Out"}
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Keycloak Active Sessions",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 32},
+        "targets": [
+          {"expr": "keycloak_sessions_active_count", "legendFormat": "Active Sessions"}
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Keycloak Login Rate",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 36},
+        "targets": [
+          {"expr": "rate(keycloak_login_success_total[5m])", "legendFormat": "Success"},
+          {"expr": "rate(keycloak_login_failure_total[5m])", "legendFormat": "Failed"}
+        ]
+      },
+      {
+        "id": 13,
+        "title": "OpenSearch Cluster Health",
+        "type": "stat",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 36},
+        "targets": [
+          {"expr": "opensearch_cluster_health_status{color=~\"green|yellow|red\"}", "legendFormat": "{{ color }}"}
+        ]
+      },
+      {
+        "id": 14,
+        "title": "OpenSearch Indexing & Search Rate",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 44},
+        "targets": [
+          {"expr": "rate(opensearch_indices_indexing_index_total[5m])", "legendFormat": "Index ops/s"},
+          {"expr": "rate(opensearch_indices_search_query_total[5m])", "legendFormat": "Query ops/s"}
+        ]
+      },
+      {
+        "id": 15,
+        "title": "OpenSearch Heap Usage",
+        "type": "timeseries",
+        "datasource": "Prometheus",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 52},
+        "targets": [
+          {"expr": "opensearch_jvm_mem_heap_used_bytes / opensearch_jvm_mem_heap_max_bytes * 100", "legendFormat": "Heap %"}
+        ]
+      }
+    ],
+    "time": {"from": "now-1h", "to": "now"}
+  }
+}

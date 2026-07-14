@@ -1,43 +1,83 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
-func Test_Health(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+func TestHealthEndpoint(t *testing.T) {
+	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
 	handleHealth(w, req)
 	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+		t.Errorf("health returned %d, want 200", w.Code)
 	}
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["status"] == nil {
-		t.Errorf("Expected status in response")
-	}
-}
-func Test_Collect(t *testing.T) {
-	body := strings.NewReader(`{"policy_id":"P001","amount":25000,"method":"bank_transfer"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/collect", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	handleCollect(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+	body := w.Body.String()
+	if body == "" {
+		t.Error("health returned empty body")
 	}
 }
-func Test_Reconcile(t *testing.T) {
-	body := strings.NewReader(`{"date":"2026-01-15"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/reconcile", body)
-	req.Header.Set("Content-Type", "application/json")
+
+func TestHealthContentType(t *testing.T) {
+	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
-	handleReconcile(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+	handleHealth(w, req)
+	ct := w.Header().Get("Content-Type")
+	if ct != "" && ct != "application/json" {
+		t.Errorf("unexpected content-type: %s", ct)
+	}
+}
+
+func TestValidateQueryParam(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		key    string
+		maxLen int
+		want   string
+		err    bool
+	}{
+		{"valid", "?name=test", "name", 100, "test", false},
+		{"empty", "", "name", 100, "", false},
+		{"too long", "?name=toolongvalue", "name", 5, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateQueryParam(req, tt.key, tt.maxLen)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateIntParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		key   string
+		want  int
+		err   bool
+	}{
+		{"valid", "?page=5", "page", 5, false},
+		{"empty", "", "page", 0, false},
+		{"invalid", "?page=abc", "page", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateIntParam(req, tt.key)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

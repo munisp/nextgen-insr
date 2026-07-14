@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, sql, count } from "drizzle-orm";
-import { platform_incidents, auditLog } from "../../drizzle/schema";
+import { platform_incidents, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const incidentCommandCenterRouter = router({

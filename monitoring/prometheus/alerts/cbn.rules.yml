@@ -13,7 +13,7 @@ groups:
         annotations:
           summary: "CBN Monthly Activity Report submission overdue"
           description: "The CBN Monthly Activity Report has not been submitted for {{ $value | humanizeDuration }}. CBN deadline is 10 days after month-end."
-          runbook: "https://docs.54link.ng/runbooks/cbn-report-overdue"
+          runbook: "https://docs.insureportal.ng/runbooks/cbn-report-overdue"
 
       - alert: CBNQuarterlyFraudReportOverdue
         expr: (time() - pos_cbn_last_report_submission_timestamp{report_type="quarterly_fraud"}) > 1296000
@@ -25,7 +25,7 @@ groups:
         annotations:
           summary: "CBN Quarterly Fraud Report submission overdue"
           description: "The CBN Quarterly Fraud Report has not been submitted for {{ $value | humanizeDuration }}. CBN deadline is 15 days after quarter-end."
-          runbook: "https://docs.54link.ng/runbooks/cbn-report-overdue"
+          runbook: "https://docs.insureportal.ng/runbooks/cbn-report-overdue"
 
       - alert: CBNSARNotSubmitted
         expr: pos_cbn_sar_pending_total > 0
@@ -37,7 +37,7 @@ groups:
         annotations:
           summary: "Suspicious Activity Report (SAR) not submitted within 72 hours"
           description: "{{ $value }} SAR(s) are pending submission. CBN requires SAR submission within 3 business days of detection."
-          runbook: "https://docs.54link.ng/runbooks/cbn-sar-overdue"
+          runbook: "https://docs.insureportal.ng/runbooks/cbn-sar-overdue"
 
       - alert: SARThresholdBreached
         expr: pos_transaction_amount_ngn > 5000000
@@ -82,7 +82,7 @@ groups:
         annotations:
           summary: "Agent KYC document expired"
           description: "Agent {{ $labels.agent_id }} KYC document {{ $labels.document_type }} has expired. Agent must be suspended until KYC is renewed."
-          runbook: "https://docs.54link.ng/runbooks/kyc-expired"
+          runbook: "https://docs.insureportal.ng/runbooks/kyc-expired"
 
       - alert: CBNReportGenerationFailed
         expr: increase(pos_cbn_report_generation_failures_total[1h]) > 0
@@ -94,7 +94,7 @@ groups:
         annotations:
           summary: "CBN report generation failed"
           description: "{{ $value }} CBN report generation failure(s) in the last hour. Report type: {{ $labels.report_type }}."
-          runbook: "https://docs.54link.ng/runbooks/cbn-report-failure"
+          runbook: "https://docs.insureportal.ng/runbooks/cbn-report-failure"
 
   # ── Settlement Alerts ─────────────────────────────────────────────────────────
   - name: settlement
@@ -110,7 +110,7 @@ groups:
         annotations:
           summary: "Settlement batch processing failed"
           description: "{{ $value }} settlement batch failure(s) in the last hour. Batch ID: {{ $labels.batch_id }}."
-          runbook: "https://docs.54link.ng/runbooks/settlement-failure"
+          runbook: "https://docs.insureportal.ng/runbooks/settlement-failure"
 
       - alert: SettlementDelayed
         expr: (time() - pos_settlement_last_successful_timestamp) > 86400
@@ -122,7 +122,7 @@ groups:
         annotations:
           summary: "Settlement has not completed in over 24 hours"
           description: "Last successful settlement was {{ $value | humanizeDuration }} ago. Immediate investigation required."
-          runbook: "https://docs.54link.ng/runbooks/settlement-delayed"
+          runbook: "https://docs.insureportal.ng/runbooks/settlement-delayed"
 
       - alert: SettlementReconciliationMismatch
         expr: abs(pos_settlement_expected_amount_ngn - pos_settlement_actual_amount_ngn) > 10000
@@ -134,7 +134,7 @@ groups:
         annotations:
           summary: "Settlement reconciliation mismatch detected"
           description: "Settlement {{ $labels.settlement_id }} has a discrepancy of {{ $value | humanize }} NGN between expected and actual amounts."
-          runbook: "https://docs.54link.ng/runbooks/settlement-mismatch"
+          runbook: "https://docs.insureportal.ng/runbooks/settlement-mismatch"
 
       - alert: NIPSettlementWindowMissed
         expr: pos_nip_settlement_window_missed_total > 0
@@ -146,4 +146,4 @@ groups:
         annotations:
           summary: "NIP settlement window missed"
           description: "{{ $value }} NIP settlement window(s) missed. This may result in penalties from NIBSS."
-          runbook: "https://docs.54link.ng/runbooks/nip-window-missed"
+          runbook: "https://docs.insureportal.ng/runbooks/nip-window-missed"

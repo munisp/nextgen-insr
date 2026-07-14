@@ -1,69 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
   title: Nigerian Bank Integrations
-  version: 1.0.0
-  description: NUBAN validation, name enquiry, and bank transfers for Nigerian banks
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
       summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/banks:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: nigerian-bank-integrations
+                  database:
+                    type: string
+                    example: connected
+  /ready:
     get:
-      summary: List supported Nigerian banks
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Bank list with codes
-  /api/v1/validate-nuban:
-    post:
-      summary: Validate a NUBAN account number
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [account_number, bank_code]
-              properties:
-                account_number: { type: string, pattern: '^\d{10}$' }
-                bank_code: { type: string }
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Validation result
-  /api/v1/name-enquiry:
-    post:
-      summary: Account name enquiry
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [account_number, bank_code]
-              properties:
-                account_number: { type: string }
-                bank_code: { type: string }
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
       responses:
-        '200':
-          description: Account details
-  /api/v1/transfer:
-    post:
-      summary: Initiate bank transfer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [source_account, destination_account, amount]
-              properties:
-                source_account: { type: string }
-                destination_account: { type: string }
-                destination_bank_code: { type: string }
-                amount: { type: number }
-                narration: { type: string }
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
       responses:
-        '200':
-          description: Transfer initiated
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

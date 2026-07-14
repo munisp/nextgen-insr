@@ -1,12 +1,12 @@
 /**
- * useQRCode — Offline-capable QR code hook for 54Link POS Shell
+ * useQRCode — Offline-capable QR code hook for InsurePortal POS Shell
  *
  * Capabilities:
  *  1. Generate QR codes with real qrcode.react canvas (works fully offline)
  *  2. Scan QR codes via device camera using jsQR (works offline — no cloud OCR)
  *  3. Persist generated QR codes in IndexedDB so they survive page reloads
  *  4. Sync IndexedDB-persisted QR codes to the server when connectivity is restored
- *  5. Parse 54Link QR payload format: 54LINK:{ref}:{amount}:{agentCode}
+ *  5. Parse InsurePortal QR payload format: 54LINK:{ref}:{amount}:{agentId}
  *
  * Offline strategy:
  *  - QR generation: fully offline — canvas rendering is pure client-side
@@ -20,7 +20,7 @@ import { toast } from "sonner";
 
 // ── IndexedDB helpers ─────────────────────────────────────────────────────────
 
-const IDB_NAME = "54link-qr-store";
+const IDB_NAME = "insureportal-qr-store";
 const IDB_VERSION = 1;
 const IDB_STORE = "offline_qr_codes";
 
@@ -28,9 +28,9 @@ export interface OfflineQRRecord {
   id: string;
   code: string;
   amount: number;
-  agentCode: string;
+  agentId: string;
   label: string;
-  payload: string; // 54LINK:{ref}:{amount}:{agentCode}
+  payload: string; // 54LINK:{ref}:{amount}:{agentId}
   createdAt: string;
   synced: boolean;
 }
@@ -43,7 +43,7 @@ function openIDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(IDB_STORE)) {
         const store = db.createObjectStore(IDB_STORE, { keyPath: "id" });
         store.createIndex("synced", "synced", { unique: false });
-        store.createIndex("agentCode", "agentCode", { unique: false });
+        store.createIndex("agentId", "agentId", { unique: false });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -122,22 +122,22 @@ async function idbDelete(id: string): Promise<void> {
   });
 }
 
-// ── 54Link QR payload format ──────────────────────────────────────────────────
+// ── InsurePortal QR payload format ──────────────────────────────────────────────────
 
 export interface ParsedQRPayload {
   valid: boolean;
   ref?: string;
   amount?: number;
-  agentCode?: string;
+  agentId?: string;
   raw: string;
-  /** true if this is a 54Link QR; false for external QR (Masterpass, Visa QR, NIBSS, etc.) */
-  is54Link: boolean;
+  /** true if this is a InsurePortal QR; false for external QR (Masterpass, Visa QR, NIBSS, etc.) */
+  isInsurePortal: boolean;
   /** For external QR, the raw string is the payment reference */
   externalType?: "NIBSS" | "Masterpass" | "VisaQR" | "NIPQr" | "Unknown";
 }
 
 export function parseQRPayload(raw: string): ParsedQRPayload {
-  // 54Link format: 54LINK:{ref}:{amount}:{agentCode}
+  // InsurePortal format: 54LINK:{ref}:{amount}:{agentId}
   if (raw.startsWith("54LINK:")) {
     const parts = raw.split(":");
     if (parts.length >= 4) {
@@ -146,38 +146,38 @@ export function parseQRPayload(raw: string): ParsedQRPayload {
         valid: !isNaN(amount) && amount > 0,
         ref: parts[1],
         amount,
-        agentCode: parts[3],
+        agentId: parts[3],
         raw,
-        is54Link: true,
+        isInsurePortal: true,
       };
     }
-    return { valid: false, raw, is54Link: true };
+    return { valid: false, raw, isInsurePortal: true };
   }
 
   // NIBSS QR: starts with "NIBSS" or contains NIP
   if (raw.startsWith("NIBSS") || raw.includes("NIP")) {
-    return { valid: true, raw, is54Link: false, externalType: "NIBSS" };
+    return { valid: true, raw, isInsurePortal: false, externalType: "NIBSS" };
   }
 
   // Masterpass
   if (raw.startsWith("MP:") || raw.includes("masterpass")) {
-    return { valid: true, raw, is54Link: false, externalType: "Masterpass" };
+    return { valid: true, raw, isInsurePortal: false, externalType: "Masterpass" };
   }
 
   // Visa QR
   if (raw.startsWith("000201") || raw.includes("VISA")) {
-    return { valid: true, raw, is54Link: false, externalType: "VisaQR" };
+    return { valid: true, raw, isInsurePortal: false, externalType: "VisaQR" };
   }
 
-  return { valid: true, raw, is54Link: false, externalType: "Unknown" };
+  return { valid: true, raw, isInsurePortal: false, externalType: "Unknown" };
 }
 
-export function build54LinkQRPayload(
+export function buildInsurePortalQRPayload(
   ref: string,
   amount: number,
-  agentCode: string
+  agentId: string
 ): string {
-  return `54LINK:${ref}:${amount}:${agentCode}`;
+  return `54LINK:${ref}:${amount}:${agentId}`;
 }
 
 // ── Camera QR scanner ─────────────────────────────────────────────────────────
@@ -300,7 +300,7 @@ export function useQRScanner(onScan: (result: QRScanResult) => void) {
 
 // ── Offline QR code generator with IndexedDB persistence ─────────────────────
 
-export function useOfflineQRGenerator(agentCode: string) {
+export function useOfflineQRGenerator(agentId: string) {
   const [offlineQRCodes, setOfflineQRCodes] = useState<OfflineQRRecord[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -308,22 +308,22 @@ export function useOfflineQRGenerator(agentCode: string) {
   useEffect(() => {
     idbGetAll()
       .then(records =>
-        setOfflineQRCodes(records.filter(r => r.agentCode === agentCode))
+        setOfflineQRCodes(records.filter(r => r.agentId === agentId))
       )
       .catch(e => console.error("[QR IDB] Load failed:", e));
-  }, [agentCode]);
+  }, [agentId]);
 
   const generateOfflineQR = useCallback(
     async (amount: number, label?: string): Promise<OfflineQRRecord> => {
       setLoading(true);
       try {
-        const ref = `QR-${agentCode}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-        const payload = build54LinkQRPayload(ref, amount, agentCode);
+        const ref = `QR-${agentId}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+        const payload = buildInsurePortalQRPayload(ref, amount, agentId);
         const record: OfflineQRRecord = {
           id: ref,
           code: ref,
           amount,
-          agentCode,
+          agentId,
           label: label ?? `₦${amount.toLocaleString()} QR Code`,
           payload,
           createdAt: new Date().toISOString(),
@@ -336,7 +336,7 @@ export function useOfflineQRGenerator(agentCode: string) {
         setLoading(false);
       }
     },
-    [agentCode]
+    [agentId]
   );
 
   const syncToServer = useCallback(

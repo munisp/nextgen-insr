@@ -1,5 +1,5 @@
 ###############################################################################
-# Dapr HA Configuration — POS-54Link Production
+# Dapr HA Configuration — POS-InsurePortal Production
 # Sidecar injection, mTLS, distributed tracing, resiliency policies
 ###############################################################################
 apiVersion: dapr.io/v1alpha1

@@ -28,7 +28,7 @@ import {
   commissionSplits,
   commissionPayouts,
   commissionAuditTrail,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
 import {
   publishCommissionEvent,
@@ -405,14 +405,13 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.tier.updated" as any,
           agentId: 0,
-          agentCode: "SYSTEM",
           amount: 0,
           metadata: { tierId: input.id, changes: input },
         });
         // [Fluvio] Stream tier update
         await streamCommissionEvent({
           eventType: "tier.updated",
-          agentCode: "SYSTEM",
+          agentId: "SYSTEM",
           amount: 0,
         });
 
@@ -499,13 +498,12 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.tier.created" as any,
           agentId: 0,
-          agentCode: "SYSTEM",
           amount: 0,
           metadata: { tierId, tier: input },
         });
         await streamCommissionEvent({
           eventType: "tier.created",
-          agentCode: "SYSTEM",
+          agentId: "SYSTEM",
           amount: 0,
         });
         logger.info(`[Commission] Tier ${tierId} created: ${input.name}`);
@@ -557,7 +555,6 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.tier.deleted" as any,
           agentId: 0,
-          agentCode: "SYSTEM",
           amount: 0,
           metadata: { tierId: input.id },
         });
@@ -684,14 +681,13 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.split.updated",
           agentId: 0,
-          agentCode: "SYSTEM",
           amount: 0,
           metadata: { splitId: input.id, newShares: input },
         });
         // [Fluvio] Stream split update
         await streamCommissionEvent({
           eventType: "split.updated",
-          agentCode: "SYSTEM",
+          agentId: "SYSTEM",
           amount: 0,
         });
         // [Dapr] Update state store
@@ -784,13 +780,12 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.split.created" as any,
           agentId: 0,
-          agentCode: "SYSTEM",
           amount: 0,
           metadata: { splitId, split: input },
         });
         await streamCommissionEvent({
           eventType: "split.created",
-          agentCode: "SYSTEM",
+          agentId: "SYSTEM",
           amount: 0,
         });
         logger.info(
@@ -907,7 +902,7 @@ export const commissionEngineRouter = router({
         .object({
           status: z.string().optional(),
           limit: z.number().default(20),
-          agentCode: z.string().optional(),
+          agentId: z.string().optional(),
           from: z.string().optional(),
           to: z.string().optional(),
         })
@@ -921,8 +916,8 @@ export const commissionEngineRouter = router({
         const conditions = [];
         if (input?.status)
           conditions.push(eq(commissionPayouts.status, input.status as any));
-        if (input?.agentCode)
-          conditions.push(eq(commissionPayouts.agentCode, input.agentCode));
+        if (input?.agentId)
+          conditions.push(eq(commissionPayouts.agentId, input.agentId));
         if (input?.from)
           conditions.push(
             gte(commissionPayouts.createdAt, new Date(input.from))
@@ -945,8 +940,8 @@ export const commissionEngineRouter = router({
           payouts: rows.map(r => ({
             id: `CP-${String(r.id).padStart(4, "0")}`,
             dbId: r.id,
-            agentCode: r.agentCode,
-            agentName: r.accountName ?? r.agentCode,
+            agentId: r.agentId,
+            agentName: r.accountName ?? r.agentId,
             period: r.createdAt
               ? new Date(r.createdAt).toISOString().slice(0, 7)
               : "N/A",
@@ -1006,7 +1001,6 @@ export const commissionEngineRouter = router({
           transactionId: 0,
           transactionRef: input.id,
           agentId: payout.agentId,
-          agentCode: payout.agentCode,
           amount: parseFloat(payout.amount as string),
           entryType: "direct",
           hierarchyLevel: 0,
@@ -1028,14 +1022,13 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.payout.approved" as any,
           agentId: payout.agentId,
-          agentCode: payout.agentCode,
           amount: parseFloat(payout.amount as string),
           metadata: { payoutId: input.id, tbTransferId: tbResult?.transferId },
         });
         // [Fluvio] Stream payout event
         await streamCommissionEvent({
           eventType: "payout.approved",
-          agentCode: payout.agentCode,
+          agentId: payout.agentId,
           amount: parseFloat(payout.amount as string),
         });
 
@@ -1044,7 +1037,7 @@ export const commissionEngineRouter = router({
           payout: {
             id: input.id,
             status: "approved",
-            agentCode: payout.agentCode,
+            agentId: payout.agentId,
             totalCommission: parseFloat(payout.amount as string),
           },
           tbTransferId: tbResult?.transferId ?? null,
@@ -1125,7 +1118,7 @@ export const commissionEngineRouter = router({
     // [Fluvio] Stream analytics query event
     await streamCommissionEvent({
       eventType: "analytics.queried",
-      agentCode: "SYSTEM",
+      agentId: "SYSTEM",
       amount: 0,
     });
 
@@ -1212,7 +1205,7 @@ export const commissionEngineRouter = router({
   initiateIlpTransfer: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         amount: z.number(),
         currency: z.string().default("NGN"),
         payeeFsp: z.string(),
@@ -1225,7 +1218,7 @@ export const commissionEngineRouter = router({
           payeeFsp: input.payeeFsp,
           amount: input.amount,
           currency: input.currency,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           transactionRef: `ILP-COMM-${crypto.randomUUID()}`,
         });
         return { success: !!result, transfer: result };

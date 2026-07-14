@@ -1,50 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
-  title: NDPR Compliance
-  description: Nigeria Data Protection Regulation compliance — consent management,
-    data subject requests
-  version: 1.0.0
+  title: Ndpr Compliance
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
-      summary: Service health check
+      summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/consent:
-    post:
-      summary: Record data consent
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-              - customer_id
-              - purpose
-              - granted
-      responses:
-        '201':
-          description: Consent recorded
-  /api/v1/dsar:
-    post:
-      summary: Submit Data Subject Access Request
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-              - customer_id
-              - request_type
-      responses:
-        '201':
-          description: DSAR submitted
-  /api/v1/compliance/report:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: ndpr-compliance
+                  database:
+                    type: string
+                    example: connected
+  /ready:
     get:
-      summary: Get NDPR compliance report
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Compliance status and audit log
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
+      responses:
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

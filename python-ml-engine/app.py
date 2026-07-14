@@ -1,5 +1,5 @@
 """
-pos-ml-engine — Python sidecar for 54Link POS Shell
+insureportal-ml-engine — Python sidecar for InsurePortal InsurePortal
 
 
 """
@@ -60,7 +60,193 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import urlparse, parse_qs
 
-# ── In-Memory State ──────────────────────────────────────────────────────────
+# ── Database ─────────────────────────────────────────────────────────────────
+
+import psycopg2
+import psycopg2.extras
+
+db_conn = None
+
+def get_db():
+    global db_conn
+    if db_conn is None or db_conn.closed:
+        url = os.environ.get("DATABASE_URL", "")
+        if not url:
+            raise RuntimeError("DATABASE_URL is required")
+        db_conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+        db_conn.autocommit = True
+        with db_conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_anomalies (
+                    id SERIAL PRIMARY KEY,
+                    transaction_id TEXT,
+                    agent_id TEXT,
+                    amount NUMERIC,
+                    anomaly_score NUMERIC,
+                    anomalies JSONB DEFAULT '[]'::jsonb,
+                    is_anomaly BOOLEAN DEFAULT false,
+                    detected_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_compliance_checks (
+                    id SERIAL PRIMARY KEY,
+                    entity_name TEXT,
+                    check_type TEXT,
+                    risk_score NUMERIC,
+                    result JSONB,
+                    checked_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_risk_scores (
+                    id SERIAL PRIMARY KEY,
+                    transaction_id TEXT,
+                    risk_score NUMERIC,
+                    risk_level TEXT,
+                    factors JSONB,
+                    scored_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+    return db_conn
+
+def persist_anomaly(result: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO ml_anomalies (transaction_id, agent_id, amount, anomaly_score, anomalies, is_anomaly) VALUES (%s,%s,%s,%s,%s,%s)",
+                (result.get("transaction_id"), result.get("agent_id", ""), result.get("amount", 0),
+                 result.get("anomaly_score", 0), json.dumps(result.get("anomalies", [])), result.get("is_anomaly", False))
+            )
+    except Exception as e:
+        print(f"DB persist error: {e}")
+
+def persist_compliance(result: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO ml_compliance_checks (entity_name, check_type, risk_score, result) VALUES (%s,%s,%s,%s)",
+                (result.get("entity", ""), result.get("check_type", "aml"), result.get("risk_score", 0),
+                 json.dumps(result, default=str))
+            )
+    except Exception as e:
+        print(f"DB persist error: {e}")
+
+def persist_risk_score(result: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO ml_risk_scores (transaction_id, risk_score, risk_level, factors) VALUES (%s,%s,%s,%s)",
+                (result.get("transaction_id", ""), result.get("composite_score", 0),
+                 result.get("risk_level", ""), json.dumps(result.get("factors", {})))
+            )
+    except Exception as e:
+        print(f"DB persist error: {e}")
+
+def persist_transaction(transaction: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_transaction_log (
+                    id SERIAL PRIMARY KEY,
+                    transaction_id TEXT,
+                    agent_id TEXT,
+                    amount NUMERIC,
+                    tx_type TEXT,
+                    data JSONB,
+                    recorded_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute(
+                "INSERT INTO ml_transaction_log (transaction_id, agent_id, amount, tx_type, data) VALUES (%s,%s,%s,%s,%s)",
+                (transaction.get("id", ""), transaction.get("agent_id", ""),
+                 transaction.get("amount", 0), transaction.get("type", "transfer"),
+                 json.dumps(transaction, default=str))
+            )
+    except Exception as e:
+        print(f"DB persist transaction error: {e}")
+
+def persist_sentiment(result: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_sentiment_results (
+                    id SERIAL PRIMARY KEY,
+                    sentiment TEXT,
+                    confidence NUMERIC,
+                    net_score INTEGER,
+                    data JSONB,
+                    analyzed_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute(
+                "INSERT INTO ml_sentiment_results (sentiment, confidence, net_score, data) VALUES (%s,%s,%s,%s)",
+                (result.get("sentiment", ""), result.get("confidence", 0),
+                 result.get("net_score", 0), json.dumps(result, default=str))
+            )
+    except Exception as e:
+        print(f"DB persist sentiment error: {e}")
+
+def persist_agent_profile(agent_id: str, profile: dict):
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ml_agent_profiles (
+                    agent_id TEXT PRIMARY KEY,
+                    devices JSONB DEFAULT '[]',
+                    recipients JSONB DEFAULT '[]',
+                    ips JSONB DEFAULT '[]',
+                    transaction_count INTEGER DEFAULT 0,
+                    total_volume NUMERIC DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            serializable = {
+                "devices": list(profile.get("devices", set())),
+                "recipients": list(profile.get("recipients", set())),
+                "ips": list(profile.get("ips", set())),
+                "transaction_count": profile.get("transaction_count", 0),
+                "total_volume": profile.get("total_volume", 0),
+            }
+            cur.execute("""
+                INSERT INTO ml_agent_profiles (agent_id, devices, recipients, ips, transaction_count, total_volume, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (agent_id) DO UPDATE SET
+                    devices = %s, recipients = %s, ips = %s,
+                    transaction_count = %s, total_volume = %s, updated_at = NOW()
+            """, (agent_id, json.dumps(serializable["devices"]), json.dumps(serializable["recipients"]),
+                  json.dumps(serializable["ips"]), serializable["transaction_count"], serializable["total_volume"],
+                  json.dumps(serializable["devices"]), json.dumps(serializable["recipients"]),
+                  json.dumps(serializable["ips"]), serializable["transaction_count"], serializable["total_volume"]))
+    except Exception as e:
+        print(f"DB persist agent profile error: {e}")
+
+def load_agent_profiles_from_db() -> dict:
+    """Load agent profiles from PostgreSQL on startup."""
+    profiles = {}
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("SELECT agent_id, devices, recipients, ips, transaction_count, total_volume FROM ml_agent_profiles")
+            for row in cur.fetchall():
+                profiles[row["agent_id"]] = {
+                    "devices": set(row.get("devices") or []),
+                    "recipients": set(row.get("recipients") or []),
+                    "ips": set(row.get("ips") or []),
+                    "transaction_count": row.get("transaction_count", 0),
+                    "total_volume": float(row.get("total_volume", 0)),
+                }
+    except Exception as e:
+        print(f"Load agent profiles from DB failed (first boot?): {e}")
+    return profiles
+
+# ── In-Memory State (hot cache, backed by PostgreSQL) ─────────────────────────
 
 class MLState:
     def __init__(self):
@@ -81,6 +267,15 @@ class MLState:
         self.start_time = time.time()
 
 state = MLState()
+
+# Load persisted agent profiles from PostgreSQL on startup (crash recovery)
+try:
+    _profiles = load_agent_profiles_from_db()
+    if _profiles:
+        state.agent_profiles = _profiles
+        print(f"✓ Restored {len(_profiles)} agent profiles from PostgreSQL")
+except Exception as _e:
+    print(f"Agent profile load skipped (first boot?): {_e}")
 
 # ── Anomaly Detection ────────────────────────────────────────────────────────
 
@@ -161,14 +356,17 @@ def detect_anomalies(transaction: dict) -> dict:
             })
             score += 20
 
-    # Store transaction
+    # Store transaction (in-memory + persist to PostgreSQL)
     transaction["timestamp"] = transaction.get("timestamp", int(time.time() * 1000))
     state.transaction_history.append(transaction)
+    persist_transaction(transaction)
     if len(state.transaction_history) > 10000:
         state.transaction_history = state.transaction_history[-5000:]
 
     result = {
         "transaction_id": transaction.get("id", f"txn_{int(time.time()*1000)}"),
+        "agent_id": agent_id,
+        "amount": amount,
         "is_anomalous": len(anomalies) > 0,
         "anomaly_score": min(round(score, 1), 100),
         "risk_level": "high" if score > 50 else "medium" if score > 20 else "low",
@@ -180,6 +378,7 @@ def detect_anomalies(transaction: dict) -> dict:
     if anomalies:
         state.anomalies_detected.append(result)
         state.anomaly_count += 1
+        persist_anomaly(result)
         if len(state.anomalies_detected) > 5000:
             state.anomalies_detected = state.anomalies_detected[-2500:]
 
@@ -260,6 +459,7 @@ def check_compliance(entity: dict) -> dict:
     }
 
     state.compliance_checks.append(result)
+    persist_compliance(result)
     if len(state.compliance_checks) > 5000:
         state.compliance_checks = state.compliance_checks[-2500:]
 
@@ -322,6 +522,7 @@ def analyze_sentiment(text: str) -> dict:
     }
 
     state.sentiment_results.append(result)
+    persist_sentiment(result)
     if len(state.sentiment_results) > 5000:
         state.sentiment_results = state.sentiment_results[-2500:]
 
@@ -383,9 +584,13 @@ def score_fraud_risk(transaction: dict) -> dict:
         p["ips"].add(ip_address)
     p["transaction_count"] += 1
     p["total_volume"] += amount
+    # Persist agent profile to PostgreSQL (write-through)
+    persist_agent_profile(agent_id, p)
 
     result = {
         "transaction_id": transaction.get("id", f"txn_{int(time.time()*1000)}"),
+        "agent_id": agent_id,
+        "amount": amount,
         "fraud_score": min(score, 100),
         "risk_level": "high" if score > 50 else "medium" if score > 25 else "low",
         "factors": factors,
@@ -395,6 +600,7 @@ def score_fraud_risk(transaction: dict) -> dict:
     }
 
     state.risk_scores.append(result)
+    persist_risk_score(result)
     if len(state.risk_scores) > 5000:
         state.risk_scores = state.risk_scores[-2500:]
 
@@ -425,7 +631,7 @@ class MLHandler(BaseHTTPRequestHandler):
         if path == "/health":
             self._send_json({
                 "status": "healthy",
-                "service": "pos-ml-engine",
+                "service": "insureportal-ml-engine",
                 "version": "1.0.0",
                 "uptime_seconds": int(time.time() - state.start_time),
                 "anomalies_detected": state.anomaly_count,
@@ -540,7 +746,7 @@ class MLHandler(BaseHTTPRequestHandler):
 def main():
     port = int(os.environ.get("PYTHON_ML_PORT", "9300"))
     server = HTTPServer(("0.0.0.0", port), MLHandler)
-    print(f"[pos-ml-engine] Starting Python sidecar on port {port}")
+    print(f"[insureportal-ml-engine] Starting Python sidecar on port {port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

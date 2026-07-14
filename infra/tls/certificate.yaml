@@ -1,0 +1,20 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: insureportal-tls
+  namespace: insureportal
+spec:
+  secretName: insureportal-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: "*.insureportal.io"
+  dnsNames:
+    - insureportal.io
+    - "*.insureportal.io"
+    - api.insureportal.io
+    - portal.insureportal.io
+    - admin.insureportal.io
+    - agent.insureportal.io
+  duration: 2160h    # 90 days
+  renewBefore: 360h  # Renew 15 days before expiry

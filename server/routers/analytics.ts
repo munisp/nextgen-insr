@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * analytics.ts — tRPC router for real-time and historical analytics
  *
@@ -22,7 +22,7 @@ import {
   agents,
   fraudAlerts,
   disputes,
-  floatTopUpRequests,
+  premiumTopUpRequests,
   customers,
   kycSessions,
 } from "../../drizzle/schema";
@@ -293,7 +293,7 @@ export const analyticsRouter = router({
         const since = new Date(Date.now() - input.days * 86400000);
         const offset = (input.page - 1) * input.limit;
         const rows = await db.execute(sql`
-          SELECT a.id, a."agentCode", a."name", a.tier, a.status, a."floatBalance", a."loyaltyPoints",
+          SELECT a.id, a."agentId", a."name", a.tier, a.status, a."premiumReserve", a."loyaltyPoints",
             COALESCE(COUNT(t.id), 0)::int AS "txCount",
             COALESCE(SUM(CAST(t.amount AS NUMERIC)), 0)::float AS volume,
             COALESCE(SUM(CAST(COALESCE(t.commission, '0') AS NUMERIC)), 0)::float AS commission,
@@ -313,11 +313,11 @@ export const analyticsRouter = router({
         return {
           agents: rows.rows as Array<{
             id: number;
-            agentCode: string;
+            agentId: string;
             fullName: string;
             tier: string;
             status: string;
-            floatBalance: string;
+            premiumReserve: string;
             loyaltyPoints: number;
             txCount: number;
             volume: number;
@@ -368,7 +368,7 @@ export const analyticsRouter = router({
           sql`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'approved') AS approved FROM kyc_sessions WHERE "createdAt" >= ${since}`
         );
         const floatStats = await db.execute(
-          sql`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE CAST("floatBalance" AS NUMERIC) >= ${CBN_MIN_FLOAT}) AS adequate FROM agents WHERE "isActive" = true AND "deletedAt" IS NULL`
+          sql`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE CAST("premiumReserve" AS NUMERIC) >= ${CBN_MIN_FLOAT}) AS adequate FROM agents WHERE "isActive" = true AND "deletedAt" IS NULL`
         );
         // Split into two parameterized queries to avoid scanner false positive
         const fraudCountResult = await db.execute(
@@ -538,8 +538,8 @@ export const analyticsRouter = router({
         );
         const [pending] = await db
           .select({ pendingCount: sql<string>`COUNT(*)` })
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.status, "pending"))
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.status, "pending"))
           .limit(100);
         const totals = await db.execute(
           sql`SELECT COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE status = 'approved'), 0) AS total_disbursed FROM float_topup_requests WHERE "createdAt" >= ${since}`

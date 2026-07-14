@@ -3,7 +3,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const auditTrailRouter = router({

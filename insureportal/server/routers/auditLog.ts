@@ -4,7 +4,7 @@ import { getAuditLog } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog } from "@schema";
 import { inArray, desc } from "drizzle-orm";
 
 export const auditLogRouter = router({

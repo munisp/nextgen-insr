@@ -30,7 +30,7 @@ describe("Critical Business Flows", () => {
     it("should reject production startup with default dev secrets", async () => {
       const { validateEnvironment } = await import("../envValidation");
       process.env.NODE_ENV = "production";
-      process.env.JWT_SECRET = "pos54link-secret";
+      process.env.JWT_SECRET = "posinsureportal-secret";
 
       const result = validateEnvironment();
       expect(result.valid).toBe(false);

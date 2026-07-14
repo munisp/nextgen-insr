@@ -1,39 +1,14 @@
 version: "3.9"
 
 # NGApp Staging Environment
+# All microservices, middleware, and supporting infrastructure
 # Usage: docker compose -f deploy/staging/docker-compose.staging.yml up -d
 
 services:
-  # ── Core Application ──
-  portal:
-    build:
-      context: ../../customer-portal-full
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=staging
-      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD}@postgres:5432/ngapp_staging
-      - REDIS_URL=redis://redis:6379
-      - KAFKA_BROKERS=kafka:9092
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_REALM=ngapp
-      - KEYCLOAK_CLIENT_ID=ngapp-portal
-      - TEMPORAL_ADDRESS=temporal:7233
-      - OPENSEARCH_URL=http://opensearch:9200
-      - DEMO_MODE=false
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+  # ╔══════════════════════════════════════════════════════════════╗
+  # ║                    CORE DATABASE & STORAGE                   ║
+  # ╚══════════════════════════════════════════════════════════════╝
 
-  # ── Database ──
   postgres:
     image: postgres:16-alpine
     environment:
@@ -44,26 +19,35 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ../../infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ngapp"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    networks:
+      - ngapp-net
 
-  # ── Cache ──
   redis:
     image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:-staging_redis_pass} --maxmemory 512mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-staging_redis_pass}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ngapp-net
 
-  # ── Message Broker ──
+  # ╔══════════════════════════════════════════════════════════════╗
+  # ║                   MESSAGE BROKERS & QUEUES                   ║
+  # ╚══════════════════════════════════════════════════════════════╝
+
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     environment:
@@ -79,11 +63,77 @@ services:
       - "9092:9092"
     volumes:
       - kafkadata:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - ngapp-net
 
-  # ── Authentication ──
+  # Zookeeper dependency for Kafka (legacy mode) or use KRaft
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeperdata:/var/lib/zookeeper/data
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | telnet localhost 2181 | grep imok"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ngapp-net
+
+  # ╔══════════════════════════════════════════════════════════════╗
+  # ║                   WORKFLOW & AUTHENTICATION                  ║
+  # ╚══════════════════════════════════════════════════════════════╝
+
+  temporal:
+    image: temporalio/auto-setup:1.23
+    environment:
+      DB: postgresql
+      DB_PORT: "5432"
+      POSTGRES_USER: ngapp
+      POSTGRES_PWD: ${DB_PASSWORD:-staging_password}
+      POSTGRES_SEEDS: postgres
+      TEMPORAL_MAX_QPS: "1000"
+    ports:
+      - "7233:7233"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "temporal --address localhost:7233 cluster health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  temporal-ui:
+    image: temporalio/ui:2.19.1
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=*
+    ports:
+      - "8088:8080"
+    depends_on:
+      temporal:
+        condition: service_healthy
+    networks:
+      - ngapp-net
+
   keycloak:
     image: quay.io/keycloak/keycloak:23.0
-    command: start-dev
+    command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -91,71 +141,1320 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/ngapp_staging
       KC_DB_USERNAME: ngapp
       KC_DB_PASSWORD: ${DB_PASSWORD:-staging_password}
+      KC_PROXY_HEADERS: xforwarded
     ports:
       - "8080:8080"
+    volumes:
+      - keycloakdata:/opt/keycloak/data
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - ngapp-net
 
-  # ── Workflow Engine ──
-  temporal:
-    image: temporalio/auto-setup:1.23
-    environment:
-      DB: postgresql
-      DB_PORT: 5432
-      POSTGRES_USER: ngapp
-      POSTGRES_PWD: ${DB_PASSWORD:-staging_password}
-      POSTGRES_SEEDS: postgres
-    ports:
-      - "7233:7233"
-    depends_on:
-      postgres:
-        condition: service_healthy
+  # ╔══════════════════════════════════════════════════════════════╗
+  # ║                 SEARCH & ANALYTICS ENGINE                    ║
+  # ╚══════════════════════════════════════════════════════════════╝
 
-  # ── Search & Analytics ──
   opensearch:
     image: opensearchproject/opensearch:2.11.0
     environment:
       - discovery.type=single-node
       - DISABLE_SECURITY_PLUGIN=true
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - cluster.name=opensearch-staging
     ports:
       - "9200:9200"
+      - "9300:9300"
     volumes:
       - opensearchdata:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - ngapp-net
 
-  # ── Go Microservices ──
+  permify:
+    image: permify/permify:latest
+    command: serve --port 3476 --postgres-url "postgresql://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging?sslmode=disable"
+    ports:
+      - "3476:3476"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3476/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  # ╔══════════════════════════════════════════════════════════════╗
+  # ║                    PAYMENT & LEDGER                          ║
+  # ╚══════════════════════════════════════════════════════════════╝
+
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:latest
+    command: ["./tigerbeetle", "start", "--addresses=0.0.0.0:3000", "--data-dir=/data"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - tigerbeetledata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ngapp-net
+
+  # ╔══════════════════════════════════════════════════════════════╗
+  # ║                  API GATEWAY (APISIX)                        ║
+  # ╚══════════════════════════════════════════════════════════════╝
+
+  apisix:
+    image: apache/apisix:3.8.0
+    ports:
+      - "9080:9080"
+      - "9443:9443"
+      - "9180:9180"
+    environment:
+      APISIX_DEPLOY_TYPE: docker
+    depends_on:
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  # ╔══════════════════════════════════════════════════════════════╗
+  # ║                   MOJALOOP DFS                               ║
+  # ╚══════════════════════════════════════════════════════════════╝
+
+  mojaloop-migrate:
+    image: mojaloop/project-sandbox:latest
+    command: ["npm", "run", "migrate"]
+    environment:
+      - NODE_ENV=staging
+    depends_on:
+      - postgres
+    networks:
+      - ngapp-net
+
+  # ╔══════════════════════════════════════════════════════════════╗
+  # ║                 CORE APPLICATION SERVICES                    ║
+  # ╚══════════════════════════════════════════════════════════════╝
+
+  portal:
+    build:
+      context: ../../customer-portal-full
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=staging
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=ngapp
+      - KEYCLOAK_CLIENT_ID=ngapp-portal
+      - TEMPORAL_ADDRESS=temporal:7233
+      - OPENSEARCH_URL=http://opensearch:9200
+      - PERMIFY_ADDRESS=http://permify:3476
+      - TIGERBEETLE_ADDRESS=tigerbeetle:3000
+      - DEMO_MODE=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ngapp-net
+
+  # ── Core Insurance Engines ──
+  claims-adjudication-engine:
+    build:
+      context: ../../claims-adjudication-engine
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8090
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - TEMPORAL_ADDRESS=temporal:7233
+      - OPENSEARCH_URL=http://opensearch:9200
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8090/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  fraud-detection-go:
+    build:
+      context: ../../fraud-detection-go
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8102
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - OPENSEARCH_URL=http://opensearch:9200
+    ports:
+      - "8102:8102"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8102/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
   ussd-gateway:
     build:
       context: ../../ussd-gateway
       dockerfile: Dockerfile
     environment:
-      - PORT=8088
+      - PORT=8093
       - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
       - KAFKA_BROKERS=kafka:9092
     ports:
-      - "8088:8088"
+      - "8093:8093"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8093/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
 
+  enhanced-kyc-kyb:
+    build:
+      context: ../../enhanced-kyc-kyb
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8101
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - OPENSEARCH_URL=http://opensearch:9200
+    ports:
+      - "8101:8101"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8101/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  enterprise-mdm:
+    build:
+      context: ../../enterprise-mdm
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8094
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8094:8094"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8094/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  disaster-recovery-module:
+    build:
+      context: ../../disaster-recovery-module
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8091
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8091:8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8091/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  naicom-compliance-module:
+    build:
+      context: ../../naicom-compliance-module
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8092
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8092:8092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8092/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  notification-service:
+    build:
+      context: ../../notification-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8122
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+    ports:
+      - "8122:8122"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8122/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  policy-workflow-go:
+    build:
+      context: ../../policy-workflow-go
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8106
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - TEMPORAL_ADDRESS=temporal:7233
+    ports:
+      - "8106:8106"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8106/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  takaful-module:
+    build:
+      context: ../../takaful-module
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8128
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8128:8128"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8128/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  premium-collection-service:
+    build:
+      context: ../../premium-collection-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8135
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8135:8135"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8135/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  premium-finance-service:
+    build:
+      context: ../../premium-finance-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8108
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8108:8108"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8108/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  reinsurance-service:
+    build:
+      context: ../../reinsurance-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8109
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8109:8109"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8109/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  microinsurance-engine:
+    build:
+      context: ../../microinsurance-engine
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8105
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8105:8105"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8105/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  ndpr-compliance:
+    build:
+      context: ../../ndpr-compliance
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8120
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8120:8120"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8120/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  gamification-service:
+    build:
+      context: ../../gamification-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8103
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8103:8103"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8103/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  agent-commission-management:
+    build:
+      context: ../../agent-commission-management
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8098
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8098:8098"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8098/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  # ── Supporting Services ──
   api-marketplace:
     build:
       context: ../../api-marketplace
       dockerfile: Dockerfile
     environment:
+      - PORT=8095
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8095:8095"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8095/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  communication-service:
+    build:
+      context: ../../communication-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8100
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8100:8100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8100/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  reconciliation-engine:
+    build:
+      context: ../../reconciliation-engine
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8121
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8121:8121"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8121/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  # ── Additional Microservices ──
+  instant-payout-service:
+    build:
+      context: ../../instant-payout-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8104
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8104:8104"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8104/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  mobile-money-service:
+    build:
+      context: ../../mobile-money-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8124
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8124:8124"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8124/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  multi-currency-service:
+    build:
+      context: ../../multi-currency-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8118
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8118:8118"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8118/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  customer-360-service:
+    build:
+      context: ../../customer-360-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8113
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - OPENSEARCH_URL=http://opensearch:9200
+    ports:
+      - "8113:8113"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8113/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  batch-processing-engine:
+    build:
+      context: ../../batch-processing-engine
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8112
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8112:8112"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8112/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  gdpr-compliance:
+    build:
+      context: ../../gdpr-compliance
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8116
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8116:8116"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8116/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  dr-ha-service:
+    build:
+      context: ../../dr-ha-service
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8115
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8115:8115"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8115/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  multi-tenant-platform:
+    build:
+      context: ../../multi-tenant-platform
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8119
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8119:8119"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8119/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  group-life-admin:
+    build:
+      context: ../../group-life-admin
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8117
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8117:8117"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8117/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  blockchain-transparency:
+    build:
+      context: ../../blockchain-transparency
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8099
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8099:8099"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8099/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  it-governance-itsm:
+    build:
+      context: ../../it-governance-itsm
+      dockerfile: Dockerfile
+    environment:
       - PORT=8096
       - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
     ports:
       - "8096:8096"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8096/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  agent-network-platform:
+    build:
+      context: ../../agent-network-platform
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8097
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8097:8097"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8097/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  usage-based-insurance:
+    build:
+      context: ../../usage-based-insurance
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8111
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8111:8111"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8111/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  security-operations:
+    build:
+      context: ../../security-operations
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8130
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8130:8130"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8130/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  zero-trust-network:
+    build:
+      context: ../../zero-trust-network
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8131
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8131:8131"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8131/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  risk-scoring-engine:
+    build:
+      context: ../../risk-scoring-engine
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8142
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8142:8142"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8142/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  actuarial-calculator:
+    build:
+      context: ../../actuarial-calculator
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8143
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8143:8143"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8143/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  ifrs17-engine:
+    build:
+      context: ../../ifrs17-engine
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8140
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - OPENSEARCH_URL=http://opensearch:9200
+    ports:
+      - "8140:8140"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8140/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  mlops-governance:
+    build:
+      context: ../../mlops-governance
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8141
+      - DATABASE_URL=postgres://ngapp:${DB_PASSWORD:-staging_password}@postgres:5432/ngapp_staging
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-staging_redis_pass}@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - OPENSEARCH_URL=http://opensearch:9200
+    ports:
+      - "8141:8141"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8141/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - ngapp-net
+
+  # ── Monitoring Infrastructure ──
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheusdata:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ngapp-net
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ../../monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ngapp-net
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - "9093:9093"
+    volumes:
+      - ../../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9093/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ngapp-net
+
+  # ── Logging & Tracing ──
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    volumes:
+      - ../../monitoring/otel-collector.yaml:/etc/otelcol/config.yaml
+    command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on:
+      - opensearch
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:13133/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ngapp-net
 
 volumes:
   pgdata:
   redisdata:
   kafkadata:
+  zookeeperdata:
+  keycloakdata:
   opensearchdata:
+  tigerbeetledata:
+  prometheusdata:
+  grafanadata:
+
+networks:
+  ngapp-net:
+    driver: bridge

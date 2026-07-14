@@ -1,42 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
   title: Customer 360 View
-  description: Unified customer profile with cross-sell recommendations and segmentation
-  version: 1.0.0
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
-      summary: Service health check
+      summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/customers/{id}/360:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: customer-360-view
+                  database:
+                    type: string
+                    example: connected
+  /ready:
     get:
-      summary: Get customer 360 profile
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Complete customer profile with policies, claims, and interactions
-  /api/v1/customers/{id}/cross-sell:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
     get:
-      summary: Get cross-sell recommendations
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Personalized product recommendations
-  /api/v1/segments:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
     get:
-      summary: List customer segments
+      summary: Domain statistics
+      operationId: getStats
       responses:
-        '200':
-          description: Customer segments with metrics
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

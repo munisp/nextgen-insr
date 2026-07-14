@@ -1,7 +1,7 @@
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: 54link-cron-daily
+  name: insureportal-cron-daily
   namespace: default
 spec:
   type: bindings.cron
@@ -13,7 +13,7 @@ spec:
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: 54link-cron-hourly
+  name: insureportal-cron-hourly
   namespace: default
 spec:
   type: bindings.cron
@@ -25,7 +25,7 @@ spec:
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: 54link-cron-settlement
+  name: insureportal-cron-settlement
   namespace: default
 spec:
   type: bindings.cron

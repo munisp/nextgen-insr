@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { analyticsMetrics } from "../../drizzle/schema";
+import { analyticsMetrics } from "@schema";
 import { desc, count } from "drizzle-orm";
 
 /**
@@ -23,7 +23,7 @@ const METRIC_DEFINITIONS = [
   { name: "insureportal_api_request_duration_ms", type: "histogram", help: "API request latency", labels: ["method", "endpoint", "status"] },
   { name: "insureportal_active_agents", type: "gauge", help: "Currently active agents", labels: ["tier", "region"] },
   { name: "insureportal_claims_pending", type: "gauge", help: "Claims awaiting processing", labels: ["type", "priority"] },
-  { name: "insureportal_float_balance_naira", type: "gauge", help: "Total float balance across all agents", labels: ["region"] },
+  { name: "insureportal_float_balance_naira", type: "gauge", help: "Total premium reserve across all agents", labels: ["region"] },
   { name: "insureportal_fraud_score_distribution", type: "histogram", help: "Fraud score distribution", labels: ["decision"] },
   { name: "insureportal_sla_compliance_pct", type: "gauge", help: "SLA compliance percentage", labels: ["service"] },
   { name: "insureportal_error_rate", type: "gauge", help: "Error rate per service", labels: ["service", "error_type"] },

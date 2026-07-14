@@ -1,56 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
-  title: Broker API Service
-  description: Insurance broker management — registration, licensing, commission calculation
-  version: 1.0.0
+  title: Broker Api Service
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
-      summary: Service health check
+      summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/brokers:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: broker-api-service
+                  database:
+                    type: string
+                    example: connected
+  /ready:
     get:
-      summary: List registered brokers
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Broker list with license status
-    post:
-      summary: Register new broker
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-              - name
-              - license_number
-      responses:
-        '201':
-          description: Broker registered
-  /api/v1/brokers/{id}/commission:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
     get:
-      summary: Calculate broker commission
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Commission breakdown
-  /api/v1/brokers/{id}/validate-license:
-    post:
-      summary: Validate broker license with NAICOM
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
       responses:
-        '200':
-          description: License validation result
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

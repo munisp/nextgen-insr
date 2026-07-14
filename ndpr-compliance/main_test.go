@@ -1,47 +1,58 @@
 package main
 
 import (
-	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
-func TestRecordConsent(t *testing.T) {
-	body := strings.NewReader(`{"user_id":"U001","purpose":"marketing","granted":true}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/consent", body)
-	w := httptest.NewRecorder()
-	recordConsent(w, req)
-	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
-		t.Errorf("Expected success, got %d", w.Code)
+func TestValidateQueryParam(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		key    string
+		maxLen int
+		want   string
+		err    bool
+	}{
+		{"valid", "?name=test", "name", 100, "test", false},
+		{"empty", "", "name", 100, "", false},
+		{"too long", "?name=toolongvalue", "name", 5, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateQueryParam(req, tt.key, tt.maxLen)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
-
-func TestSubmitDSAR(t *testing.T) {
-	body := strings.NewReader(`{"user_id":"U001","type":"data_export","email":"user@example.com"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/dsar", body)
-	w := httptest.NewRecorder()
-	submitDSAR(w, req)
-	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
-		t.Errorf("Expected success, got %d", w.Code)
+func TestValidateIntParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		key   string
+		want  int
+		err   bool
+	}{
+		{"valid", "?page=5", "page", 5, false},
+		{"empty", "", "page", 0, false},
+		{"invalid", "?page=abc", "page", 0, true},
 	}
-}
-
-func TestGetDSARStatus(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/dsar/DSAR-001", nil)
-	w := httptest.NewRecorder()
-	getDSARStatus(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
-	}
-}
-
-func TestReportBreach(t *testing.T) {
-	body := strings.NewReader(`{"description":"Unauthorized access to customer data","severity":"high"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/breach", body)
-	w := httptest.NewRecorder()
-	reportBreach(w, req)
-	if w.Code != http.StatusOK && w.Code != http.StatusCreated {
-		t.Errorf("Expected success, got %d", w.Code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateIntParam(req, tt.key)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

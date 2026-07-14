@@ -124,7 +124,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["54link", "fraud", "security"],
+  "tags": ["insureportal", "fraud", "security"],
   "time": { "from": "now-24h", "to": "now" },
   "title": "Fraud Detection",
   "uid": "fraud-detection-v1"

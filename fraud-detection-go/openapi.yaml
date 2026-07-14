@@ -1,51 +1,90 @@
-openapi: 3.0.3
+openapi: "3.0.3"
 info:
-  title: Fraud Detection Service
-  version: 1.0.0
-  description: Real-time transaction fraud scoring with rule-based detection
+  title: Fraud Detection Go
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
       summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
-  /api/v1/score:
-    post:
-      summary: Score a transaction for fraud
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [amount, merchant]
-              properties:
-                amount: { type: number }
-                merchant: { type: string }
-                device_id: { type: string }
-                location: { type: string }
-                transaction_count: { type: integer }
-      responses:
-        '200':
-          description: Fraud score result
+        "200":
+          description: Service is healthy
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  fraud_score: { type: number }
-                  decision: { type: string, enum: [allow, monitor, review, block] }
-                  triggered_rules: { type: array, items: { type: string } }
-  /api/v1/rules:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: fraud-detection-go
+                  database:
+                    type: string
+                    example: connected
+  /ready:
     get:
-      summary: List fraud detection rules
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Active fraud rules
-  /api/v1/stats:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
     get:
-      summary: Fraud detection statistics
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Detection metrics
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
+    get:
+      summary: Domain statistics
+      operationId: getStats
+      responses:
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

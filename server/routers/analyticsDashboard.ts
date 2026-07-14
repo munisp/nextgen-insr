@@ -293,11 +293,11 @@ export const analyticsDashboardRouter = router({
           agents: rows.map((a: any) => ({
             ...a,
             tier:
-              a.floatBalance > 1000000
+              a.premiumReserve > 1000000
                 ? "Diamond"
-                : a.floatBalance > 500000
+                : a.premiumReserve > 500000
                   ? "Gold"
-                  : a.floatBalance > 100000
+                  : a.premiumReserve > 100000
                     ? "Silver"
                     : "Bronze",
             txCount: 0,

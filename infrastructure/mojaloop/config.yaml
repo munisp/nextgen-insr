@@ -1,0 +1,96 @@
+# Mojaloop Integration — Inter-bank Payment Switch for InsurePortal
+# Enables real-time premium collection and claim payouts via Nigerian banks
+# Follows Mojaloop FSPIOP (Financial Services Provider Interoperability Protocol)
+
+mojaloop:
+  hub_url: "${MOJALOOP_HUB_URL}"
+  dfsp_id: "insureportal"  # Digital Financial Service Provider ID
+  environment: "sandbox"
+
+  # DFSP (Digital Financial Service Provider) endpoints
+  endpoints:
+    transfers: "/transfers"
+    quotes: "/quotes"
+    parties: "/parties"
+    participants: "/participants"
+    transactionRequests: "/transactionRequests"
+    bulkTransfers: "/bulkTransfers"
+
+  # Participant configuration
+  participant:
+    name: "InsurePortal Insurance Ltd"
+    id: "insureportal"
+    currency: "NGN"
+    limit:
+      type: "NET_DEBIT_CAP"
+      value: 50000000  # ₦50M net debit cap
+    initial_position: 10000000  # ₦10M initial position
+
+  # Settlement configuration
+  settlement:
+    model: "DEFERREDNET"
+    granularity: "GROSS"
+    interchange: "BILATERAL"
+    delay: "DEFERRED"
+    windows:
+      - name: "daily_settlement"
+        schedule: "0 23 * * *"  # 11 PM daily
+
+  # Supported transaction types
+  transaction_types:
+    - scenario: "TRANSFER"          # Premium payments
+      sub_scenario: "PREMIUM_PAYMENT"
+      initiator: "PAYER"
+      initiator_type: "CONSUMER"
+
+    - scenario: "TRANSFER"          # Claim payouts
+      sub_scenario: "CLAIM_PAYOUT"
+      initiator: "PAYEE"
+      initiator_type: "BUSINESS"
+
+    - scenario: "TRANSFER"          # Wallet top-up
+      sub_scenario: "WALLET_TOPUP"
+      initiator: "PAYER"
+      initiator_type: "CONSUMER"
+
+    - scenario: "TRANSFER"          # P2P pool contributions
+      sub_scenario: "P2P_CONTRIBUTION"
+      initiator: "PAYER"
+      initiator_type: "CONSUMER"
+
+    - scenario: "REFUND"            # Premium refunds
+      sub_scenario: "PREMIUM_REFUND"
+      initiator: "PAYEE"
+      initiator_type: "BUSINESS"
+
+  # Supported banks (via CBN switch)
+  supported_banks:
+    - code: "044"
+      name: "Access Bank"
+    - code: "058"
+      name: "Guaranty Trust Bank"
+    - code: "011"
+      name: "First Bank of Nigeria"
+    - code: "033"
+      name: "United Bank for Africa"
+    - code: "032"
+      name: "Union Bank"
+    - code: "057"
+      name: "Zenith Bank"
+    - code: "035"
+      name: "Wema Bank"
+    - code: "999"
+      name: "Kuda Microfinance Bank"
+    - code: "998"
+      name: "OPay Digital Services"
+
+  # Security
+  security:
+    jws:
+      signing_key: "${MOJALOOP_JWS_KEY}"
+      algorithm: "RS256"
+    mutual_tls:
+      enabled: true
+      ca_cert: "${MOJALOOP_CA_CERT_PATH}"
+      client_cert: "${MOJALOOP_CLIENT_CERT_PATH}"
+      client_key: "${MOJALOOP_CLIENT_KEY_PATH}"

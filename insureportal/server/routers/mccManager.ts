@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { merchants } from "../../drizzle/schema";
+import { merchants } from "@schema";
 import { desc, eq, count } from "drizzle-orm";
 
 /**

@@ -1,0 +1,150 @@
+# Kafka Topic Configuration for InsurePortal Event Sourcing
+# Managed via Strimzi or confluent-kafka CLI
+
+topics:
+  # Claims lifecycle events
+  - name: claims.submitted
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 604800000  # 7 days
+      cleanup.policy: delete
+      min.insync.replicas: 2
+
+  - name: claims.reviewed
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 604800000
+      min.insync.replicas: 2
+
+  - name: claims.approved
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 604800000
+      min.insync.replicas: 2
+
+  - name: claims.paid
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 604800000
+      min.insync.replicas: 2
+
+  - name: claims.rejected
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 604800000
+      min.insync.replicas: 2
+
+  # Policy lifecycle
+  - name: policies.created
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 2592000000  # 30 days
+      min.insync.replicas: 2
+
+  - name: policies.renewed
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: 2592000000
+
+  - name: policies.cancelled
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: 2592000000
+
+  - name: policies.expired
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: 2592000000
+
+  # Payment events
+  - name: payments.initiated
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 604800000
+      min.insync.replicas: 2
+
+  - name: payments.completed
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 604800000
+      min.insync.replicas: 2
+
+  - name: payments.failed
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: 604800000
+
+  # Audit/compliance events (long retention)
+  - name: audit.log
+    partitions: 12
+    replication-factor: 3
+    config:
+      retention.ms: -1  # infinite retention
+      cleanup.policy: compact
+      min.insync.replicas: 2
+
+  - name: naicom.reports
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: -1
+      cleanup.policy: compact
+
+  # KYC events
+  - name: kyc.submitted
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: 2592000000
+
+  - name: kyc.verified
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: 2592000000
+
+  # Fraud detection
+  - name: fraud.alerts
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 604800000
+      min.insync.replicas: 2
+
+  # Reinsurance events
+  - name: reinsurance.cession
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: 2592000000
+
+  # Notifications
+  - name: notifications.email
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 172800000  # 2 days
+
+  - name: notifications.sms
+    partitions: 6
+    replication-factor: 3
+    config:
+      retention.ms: 172800000
+
+  - name: notifications.push
+    partitions: 3
+    replication-factor: 3
+    config:
+      retention.ms: 172800000

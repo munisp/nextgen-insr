@@ -1,0 +1,124 @@
+# Kafka Event Sourcing Configuration
+# Log compaction for immutable event store — all domain state derived from events
+
+event_sourcing:
+  # Compacted topics (infinite retention, key-based dedup)
+  compacted_topics:
+    - name: policy.events
+      partitions: 12
+      replication: 3
+      cleanup_policy: compact
+      min_compaction_lag_ms: 3600000  # 1 hour before compaction
+      retention: -1  # Infinite
+      segment_bytes: 1073741824  # 1GB segments
+      key_format: "policy_id"
+      value_schema: PolicyEvent
+
+    - name: claims.events
+      partitions: 12
+      replication: 3
+      cleanup_policy: compact
+      min_compaction_lag_ms: 3600000
+      retention: -1
+      key_format: "claim_id"
+      value_schema: ClaimEvent
+
+    - name: payment.events
+      partitions: 6
+      replication: 3
+      cleanup_policy: compact
+      min_compaction_lag_ms: 1800000  # 30 min
+      retention: -1
+      key_format: "transaction_id"
+      value_schema: PaymentEvent
+
+    - name: agent.events
+      partitions: 6
+      replication: 3
+      cleanup_policy: compact
+      retention: -1
+      key_format: "agent_id"
+      value_schema: AgentEvent
+
+    - name: customer.events
+      partitions: 12
+      replication: 3
+      cleanup_policy: compact
+      retention: -1
+      key_format: "customer_id"
+      value_schema: CustomerEvent
+
+  # Event types per domain
+  event_schemas:
+    PolicyEvent:
+      types:
+        - PolicyCreated
+        - PolicyActivated
+        - PolicyRenewed
+        - PolicyCancelled
+        - PolicyLapsed
+        - PremiumAdjusted
+        - BeneficiaryAdded
+        - EndorsementApplied
+      envelope:
+        event_id: uuid
+        event_type: string
+        aggregate_id: string
+        version: integer
+        timestamp: iso8601
+        payload: object
+        metadata:
+          user_id: string
+          source: string
+          correlation_id: string
+
+    ClaimEvent:
+      types:
+        - ClaimFiled
+        - ClaimDocumentsAttached
+        - ClaimAssigned
+        - ClaimInvestigated
+        - ClaimApproved
+        - ClaimRejected
+        - ClaimPaid
+        - ClaimAppealed
+
+    PaymentEvent:
+      types:
+        - PaymentInitiated
+        - PaymentAuthorized
+        - PaymentCaptured
+        - PaymentFailed
+        - PaymentRefunded
+        - PaymentReconciled
+
+  # Snapshot strategy (reduces replay time)
+  snapshots:
+    interval: 100  # Snapshot every 100 events
+    storage: redis
+    ttl_hours: 720  # 30 days
+
+  # Projections (materialized views)
+  projections:
+    - name: active-policies-view
+      source_topic: policy.events
+      target: postgresql
+      table: policy_projections
+      events: [PolicyCreated, PolicyActivated, PolicyRenewed, PolicyCancelled, PolicyLapsed]
+
+    - name: claims-status-view
+      source_topic: claims.events
+      target: postgresql
+      table: claim_projections
+      events: [ClaimFiled, ClaimApproved, ClaimRejected, ClaimPaid]
+
+    - name: payment-ledger-view
+      source_topic: payment.events
+      target: tigerbeetle
+      events: [PaymentCaptured, PaymentRefunded]
+
+    - name: agent-commission-view
+      source_topic: agent.events
+      target: postgresql
+      table: agent_commission_projections
+      events: [CommissionEarned, CommissionPaid]

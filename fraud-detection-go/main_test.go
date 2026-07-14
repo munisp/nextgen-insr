@@ -1,44 +1,58 @@
 package main
 
 import (
-	"github.com/go-chi/chi/v5"
-	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
-func testRouter() *chi.Mux {
-	r := chi.NewRouter()
-	r.Post("/api/v1/score", scoreTransaction)
-	r.Get("/api/v1/rules", getRules)
-	r.Get("/api/v1/stats", getStats)
-	return r
-}
-
-func Test_Score(t *testing.T) {
-	body := strings.NewReader(`{"amount":50000,"merchant":"store","device_id":"D001"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/score", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	scoreTransaction(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+func TestValidateQueryParam(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		key    string
+		maxLen int
+		want   string
+		err    bool
+	}{
+		{"valid", "?name=test", "name", 100, "test", false},
+		{"empty", "", "name", 100, "", false},
+		{"too long", "?name=toolongvalue", "name", 5, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateQueryParam(req, tt.key, tt.maxLen)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
-func Test_Rules(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/rules", nil)
-	w := httptest.NewRecorder()
-	getRules(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+func TestValidateIntParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		key   string
+		want  int
+		err   bool
+	}{
+		{"valid", "?page=5", "page", 5, false},
+		{"empty", "", "page", 0, false},
+		{"invalid", "?page=abc", "page", 0, true},
 	}
-}
-func Test_Stats(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/stats", nil)
-	w := httptest.NewRecorder()
-	getStats(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateIntParam(req, tt.key)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

@@ -1,4 +1,4 @@
-// Package main implements a production-grade health checker for all POS-54Link
+// Package main implements a production-grade health checker for all InsurePortal
 // middleware components. It performs deep health checks (not just TCP) and
 // exposes Prometheus metrics + a JSON status endpoint.
 package main
@@ -10,7 +10,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -187,6 +190,41 @@ func env(key, fallback string) string {
 	return fallback
 }
 
+
+// validateQueryParam validates and sanitizes a query parameter.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	val := r.URL.Query().Get(key)
+	if len(val) > maxLen {
+		return "", fmt.Errorf("parameter %q exceeds max length %d", key, maxLen)
+	}
+	return val, nil
+}
+
+// validateRequiredParam validates a required query parameter.
+func validateRequiredParam(r *http.Request, key string, maxLen int) (string, error) {
+	val, err := validateQueryParam(r, key, maxLen)
+	if err != nil {
+		return "", err
+	}
+	if val == "" {
+		return "", fmt.Errorf("parameter %q is required", key)
+	}
+	return val, nil
+}
+
+// validateIntParam validates and converts an integer query parameter.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	val := r.URL.Query().Get(key)
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %q must be a valid integer", key)
+	}
+	return n, nil
+}
+
 func main() {
 	port := env("PORT", "8090")
 	interval := 15 * time.Second
@@ -205,8 +243,23 @@ func main() {
 	})
 	mux.Handle("/metrics", promhttp.Handler())
 
+	srv := &http.Server{Addr: ":" + port, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("[HealthChecker] Shutting down gracefully...")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+		cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("[HealthChecker] Forced shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("[HealthChecker] Starting on :%s (interval=%s)", port, interval)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

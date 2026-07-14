@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 import { TRPCError } from "@trpc/server";
 /**
  * F17: Webhook Management — Production-Grade

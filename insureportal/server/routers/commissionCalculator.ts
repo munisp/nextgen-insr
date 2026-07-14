@@ -6,7 +6,7 @@ import {
   router,
 } from "../_core/trpc";
 import { getDb } from "../db";
-import { commissionRules } from "../../drizzle/schema";
+import { commissionRules } from "@schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const commissionCalculatorRouter = router({

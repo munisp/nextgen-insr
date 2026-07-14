@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // Sprint 87: AES-256 encryption/decryption, key rotation, access audit
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

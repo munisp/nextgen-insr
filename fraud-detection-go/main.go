@@ -1,282 +1,153 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"encoding/json"
-	"log"
-	"math"
 	"net/http"
 	"os"
-	"sync"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"database/sql"
-
-	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
+	"github.com/go-chi/cors"
+	"github.com/insureportal/fraud-detection-go/config"
+	"github.com/insureportal/fraud-detection-go/db"
+	"github.com/insureportal/fraud-detection-go/handler"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
-
-// Fraud Detection (Go) — real-time transaction fraud scoring
-// Business Rules:
-// - Score range: 0-100 (0=legitimate, 100=certain fraud)
-// - Auto-block: Score > 80
-// - Manual review: Score 60-80
-// - Allow: Score < 60
-// - Rules: Amount anomaly, velocity, geo-impossible, device fingerprint, time pattern
-// - CBN STR: Auto-file for transactions > ₦5M
-// - Machine learning: Ensemble of gradient boosting + neural network
-
-type FraudScore struct {
-	TransactionID string  `json:"transaction_id"`
-	Score         float64 `json:"score"`
-	Decision      string  `json:"decision"`
-	Rules         []Rule  `json:"rules_triggered"`
-}
-
-type Rule struct {
-	Name   string  `json:"name"`
-	Impact float64 `json:"impact"`
-	Detail string  `json:"detail"`
-}
-
-var db *sql.DB
-
-func initDB() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dsn)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
-		return
-	}
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
-		db = nil
-		return
-	}
-	log.Printf("Connected to PostgreSQL for fraud_detection_go")
-
-	// Create table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS fraud_detection_go (
-		id SERIAL PRIMARY KEY,
-		data JSONB NOT NULL DEFAULT '{}',
-		status VARCHAR(50) DEFAULT 'active',
-		created_at TIMESTAMPTZ DEFAULT NOW(),
-		updated_at TIMESTAMPTZ DEFAULT NOW(),
-		tenant_id INTEGER DEFAULT 1
-	)`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func tracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := r.Header.Get("X-Request-ID")
-		if requestID == "" {
-			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-ID", requestID)
-		start := time.Now()
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
-	})
-}
-
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
-var (
-	rateLimitMu    sync.Mutex
-	rateLimitStore = make(map[string][]time.Time)
-)
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		rateLimitMu.Lock()
-		now := time.Now()
-		window := now.Add(-1 * time.Minute)
-		var recent []time.Time
-		for _, t := range rateLimitStore[ip] {
-			if t.After(window) {
-				recent = append(recent, t)
-			}
-		}
-		if len(recent) >= 100 {
-			rateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
-			return
-		}
-		recent = append(recent, now)
-		rateLimitStore[ip] = recent
-		rateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
 
 func main() {
-	initDB()
-	initKafka()
-	if db != nil {
-		defer db.Close()
+	// Load and validate configuration
+	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid config: %v\n", err)
+		os.Exit(1)
 	}
-	r := chi.NewRouter()
-	r.Use(corsMiddleware)
-	r.Use(tracingMiddleware)
-	r.Use(rateLimitMiddleware)
-	r.Use(middleware.Logger, middleware.Recoverer)
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "fraud-detection-go"})
-	})
-	r.Post("/api/v1/score", scoreTransaction)
-	r.Get("/api/v1/rules", getRules)
-	r.Get("/api/v1/stats", getStats)
 
-	port := os.Getenv("PORT")
-	if port == "" { port = "8109" }
-	log.Printf("Fraud Detection (Go) starting on :%s", port)
-	srv := &http.Server{Addr: ":"+port, Handler: corsMiddleware(r), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
-	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
+	// Initialize structured logger
+	logger, err := zap.NewProduction()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Sync()
+
+	// Configure logger level from env
+	if levelStr := os.Getenv("LOG_LEVEL"); levelStr != "" {
+		if lvl, err := zapcore.ParseLevel(levelStr); err == nil {
+			cfg := zap.NewProductionConfig()
+			cfg.Level.SetLevel(lvl)
+			logger, _ = cfg.Build()
+		}
+	}
+
+	logger.Info("starting fraud-detection-go",
+		zap.Int("port", cfg.Server.Port),
+		zap.String("environment", cfg.Server.Environment),
+	)
+
+	// Connect to PostgreSQL
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	store, err := db.NewPostgresStore(
+		ctx,
+		cfg.Database.ConnectionString(),
+		cfg.Database.MaxOpenConns,
+		cfg.Database.MaxIdleConns,
+		cfg.Database.ConnMaxLife,
+		logger,
+	)
+	if err != nil {
+		logger.Fatal("failed to connect to postgres", zap.Error(err))
+	}
+	defer store.Close()
+
+	// Connect to Redis
+	cache, err := db.NewRedisCache(cfg.Redis, logger)
+	if err != nil {
+		logger.Warn("failed to connect to redis — continuing without caching", zap.Error(err))
+	}
+
+	// Build HTTP service and router
+	service := handler.NewService(cfg, store, cache, logger)
+	r := setupRouter(service)
+
+	// Create HTTP server
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler:      r,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
+	}
+
+	// Start server in a goroutine
+	go func() {
+		logger.Info("server listening", zap.String("addr", server.Addr))
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("server error", zap.Error(err))
+		}
+	}()
+
+	// Graceful shutdown on SIGINT/SIGTERM
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down gracefully...")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
-	log.Println("Server stopped")
+
+	logger.Info("shutting down server...")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Error("server forced to shutdown", zap.Error(err))
+	}
+
+	logger.Info("server exited properly")
 }
 
-func scoreTransaction(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Amount      float64 `json:"amount"`
-		AccountID   string  `json:"account_id"`
-		Merchant    string  `json:"merchant"`
-		Location    string  `json:"location"`
-		DeviceID    string  `json:"device_id"`
-		HourOfDay   int     `json:"hour_of_day"`
-	}
-	json.NewDecoder(r.Body).Decode(&body)
+// setupRouter configures chi with middleware and routes.
+func setupRouter(service *handler.Service) http.Handler {
+	r := chi.NewRouter()
 
-	score := 10.0
-	rules := []Rule{}
+	// Core middleware
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(30 * time.Second))
 
-	// Amount anomaly
-	if body.Amount > 5000000 {
-		score += 35
-		rules = append(rules, Rule{"high_amount", 35, "Transaction exceeds ₦5M STR threshold"})
-	} else if body.Amount > 1000000 {
-		score += 15
-		rules = append(rules, Rule{"elevated_amount", 15, "Transaction > ₦1M"})
-	}
+	// CORS for browser clients
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Requested-With"},
+		ExposedHeaders:   []string{"X-Request-ID"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
 
-	// Time pattern (2-5 AM = suspicious)
-	if body.HourOfDay >= 2 && body.HourOfDay <= 5 {
-		score += 20
-		rules = append(rules, Rule{"unusual_time", 20, "Transaction during 2-5 AM"})
-	}
+	// Health and readiness
+	r.Get("/health", service.HealthHandler)
+	r.Get("/ready", service.ReadyHandler)
 
-	// New device
-	if body.DeviceID == "" || body.DeviceID == "unknown" {
-		score += 15
-		rules = append(rules, Rule{"unknown_device", 15, "Unrecognized device fingerprint"})
-	}
+	// API v1 routes
+	r.Group(func(api chi.Router) {
+		api.Post("/score", service.ScoreHandler)
 
-	score = math.Min(100, score)
-	decision := "allow"
-	if score > 80 { decision = "block" } else if score > 60 { decision = "review" }
+		api.Get("/history/{accountID}", service.HistoryHandler)
 
-	result := FraudScore{TransactionID: "TXN-" + time.Now().Format("20060102150405"), Score: score, Decision: decision, Rules: rules}
-	json.NewEncoder(w).Encode(result)
-}
+		api.Post("/fraud-cases", service.FraudCasesHandler)
+		api.Get("/fraud-cases", service.FraudCasesHandler)
 
-func getRules(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"rules": []map[string]interface{}{
-			{"name": "high_amount", "threshold": 5000000, "impact": 35},
-			{"name": "elevated_amount", "threshold": 1000000, "impact": 15},
-			{"name": "unusual_time", "hours": "2-5 AM", "impact": 20},
-			{"name": "unknown_device", "impact": 15},
-			{"name": "velocity_breach", "threshold": "20 txn/hour", "impact": 25},
-			{"name": "geo_impossible", "threshold": "2 states in 30min", "impact": 30},
-		},
+		api.Get("/rules", service.RulesHandler)
+		api.Get("/stats", service.StatsHandler)
+
+		api.Post("/accounts/{accountID}/block", service.BlockAccountHandler)
 	})
-}
 
-func getStats(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"transactions_scored_24h": 45000, "blocked": 120, "reviewed": 350, "allowed": 44530,
-		"false_positive_rate": 0.02, "avg_score": 22.5, "str_filed": 8,
-	})
+	return r
 }

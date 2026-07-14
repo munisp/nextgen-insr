@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
+import { transactions, agents } from "@schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -73,7 +73,7 @@ export const eodReconciliationRouter = router({
 
         const [agent] = await db
           .select({
-            floatBalance: agents.floatBalance,
+            premiumReserve: agents.premiumReserve,
             commission: agents.commissionBalance,
           })
           .from(agents)
@@ -84,7 +84,6 @@ export const eodReconciliationRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "EOD_REPORT_GENERATED",
           resource: "eod_reconciliation",
           resourceId: reportId,
@@ -109,7 +108,7 @@ export const eodReconciliationRouter = router({
             pendingCount: summary.pendingCount,
           },
           byType,
-          currentFloat: Number(agent?.floatBalance ?? 0),
+          currentFloat: Number(agent?.premiumReserve ?? 0),
           currentCommission: Number(agent?.commission ?? 0),
           generatedAt: new Date().toISOString(),
         };

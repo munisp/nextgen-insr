@@ -677,7 +677,7 @@ function GoldLayerMetrics() {
                   {dailySummary.rows.map((row: any) => (
                     <TableRow key={row.agentId}>
                       <TableCell className="font-mono text-xs">
-                        {row.agentCode}
+                        {row.agentId}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs capitalize">

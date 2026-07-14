@@ -1,260 +1,124 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"bytes"
-	"encoding/json"
-	"log"
 	"net/http"
 	"os"
-	"sync"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"database/sql"
-
-	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
+	"github.com/insureportal/notification_service/config"
+	"github.com/insureportal/notification_service/db"
+	"github.com/insureportal/notification_service/internal/handlers"
+	"github.com/insureportal/notification_service/internal/middleware"
+	"github.com/insureportal/notification_service/internal/service"
+	"go.uber.org/zap"
 )
-
-// Notification Service — multi-channel notification delivery
-// Channels: SMS (Termii), Email (SendGrid), Push (FCM/APNS), WhatsApp, In-App
-// Business Rules:
-// - Priority: P1 (all channels), P2 (push+email), P3 (in-app only)
-// - Quiet hours: 10PM-7AM for non-critical notifications
-// - Rate limit: Max 5 SMS/day per customer, 3 push/hour
-// - Templates: NAICOM-approved for policy/claim communications
-// - Delivery confirmation: Required for policy issuance, claim payment
-// - Retry: 3 attempts with exponential backoff (1min, 5min, 30min)
-
-var db *sql.DB
-
-func initDB() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dsn)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
-		return
-	}
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
-		db = nil
-		return
-	}
-	log.Printf("Connected to PostgreSQL for notification_service")
-
-	// Create table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS notification_service (
-		id SERIAL PRIMARY KEY,
-		data JSONB NOT NULL DEFAULT '{}',
-		status VARCHAR(50) DEFAULT 'active',
-		created_at TIMESTAMPTZ DEFAULT NOW(),
-		updated_at TIMESTAMPTZ DEFAULT NOW(),
-		tenant_id INTEGER DEFAULT 1
-	)`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-
-// ── Kafka Event Publishing (via REST Proxy) ─────────────────────────────────
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
-// ── Redis Caching ───────────────────────────────────────────────────────────
-var redisAddr string
-
-type redisConn struct {
-	addr string
-}
-
-func initRedis() *redisConn {
-	redisAddr = os.Getenv("REDIS_URL")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
-	}
-	log.Printf("Redis configured at %s", redisAddr)
-	return &redisConn{addr: redisAddr}
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func tracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := r.Header.Get("X-Request-ID")
-		if requestID == "" {
-			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-ID", requestID)
-		start := time.Now()
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
-	})
-}
-
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-var (
-	rateLimitMu    sync.Mutex
-	rateLimitStore = make(map[string][]time.Time)
-)
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		rateLimitMu.Lock()
-		now := time.Now()
-		window := now.Add(-1 * time.Minute)
-		var recent []time.Time
-		for _, t := range rateLimitStore[ip] {
-			if t.After(window) {
-				recent = append(recent, t)
-			}
-		}
-		if len(recent) >= 100 {
-			rateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
-			return
-		}
-		recent = append(recent, now)
-		rateLimitStore[ip] = recent
-		rateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
 
 func main() {
-	initDB()
-	initKafka()
-	initRedis()
-	if db != nil {
-		defer db.Close()
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to init logger: %v", err))
 	}
+	defer logger.Sync()
+	zap.ReplaceGlobals(logger)
+	log := zap.L()
+
+	log.Info("Notification Service starting up")
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal("Failed to load config", zap.Error(err))
+	}
+	log.Info("Configuration loaded", zap.String("env", cfg.Env), zap.Int("port", cfg.Port))
+
+	pg, err := db.NewPostgreSQL(cfg)
+	if err != nil {
+		log.Fatal("Failed to init PostgreSQL", zap.Error(err))
+	}
+	defer pg.Close()
+	log.Info("PostgreSQL initialized")
+
+	rdb, err := db.NewRedisCache(cfg)
+	if err != nil {
+		log.Warn("Redis not available, running without cache", zap.Error(err))
+		rdb = &db.RedisCache{}
+	}
+	defer rdb.Close()
+	log.Info("Redis initialized")
+
+	notifSvc := service.NewNotificationService(pg, rdb, cfg)
+	h := handlers.NewHandlers(notifSvc)
+
 	r := chi.NewRouter()
-	r.Use(corsMiddleware)
-	r.Use(tracingMiddleware)
-	r.Use(rateLimitMiddleware)
-	r.Use(middleware.Logger, middleware.Recoverer)
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "kafka": "configured", "redis": "configured", "service": "notification-service"})
+	r.Use(middleware.RequestID)
+	r.Use(middleware.CORSMiddleware())
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Logger)
+	r.Use(middleware.RealIP)
+
+	r.Get(cfg.HealthCheckPath, h.HealthCheck)
+	r.Get("/ready", h.ReadinessCheck)
+
+	r.Group(func(api chi.Router) {
+		api.Use(middleware.APIKeyAuth)
+
+		// Send notification
+		api.Post("/api/v1/send", h.SendNotification)
+
+		// Templates
+		api.Get("/api/v1/templates", h.ListTemplates)
+		api.Get("/api/v1/templates/by-code", h.GetTemplate)
+		api.Post("/api/v1/templates", h.CreateTemplate)
+
+		// Delivery tracking
+		api.Get("/api/v1/delivery-stats", h.GetDeliveryStats)
+		api.Get("/api/v1/delivery-stats/daily", h.GetDeliveryStatsDaily)
+		api.Get("/api/v1/delivery-attempts", h.GetDeliveryAttempts)
+		api.Post("/api/v1/delivery/retry", h.RetryNotification)
+
+		// Dashboard
+		api.Get("/api/v1/dashboard", h.GetDashboard)
+
+		// Customer preferences
+		api.Get("/api/v1/preferences", h.GetCustomerPreference)
+		api.Post("/api/v1/preferences", h.UpdateCustomerPreference)
+
+		// Notification history
+		api.Get("/api/v1/notifications", h.GetNotificationsByCustomer)
+
+		// Channel status
+		api.Get("/api/v1/channels/status", h.GetChannelStatus)
 	})
-	r.Post("/api/v1/send", sendNotification)
-	r.Get("/api/v1/templates", listTemplates)
-	r.Get("/api/v1/delivery-stats", deliveryStats)
 
-	port := os.Getenv("PORT")
-	if port == "" { port = "8122" }
-	log.Printf("Notification Service starting on :%s", port)
-	srv := &http.Server{Addr: ":"+port, Handler: corsMiddleware(r), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
-	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Println("Shutting down gracefully...")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
-	log.Println("Server stopped")
-}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-func sendNotification(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Channel  string `json:"channel"`
-		To       string `json:"to"`
-		Template string `json:"template"`
-		Priority int    `json:"priority"`
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
+		Handler:      r,
+		ReadTimeout:  cfg.ReadTimeout,
+		WriteTimeout: cfg.WriteTimeout,
+		IdleTimeout:  60 * time.Second,
 	}
-	json.NewDecoder(r.Body).Decode(&body)
-	w.WriteHeader(202)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"notification_id": "NTF-" + time.Now().Format("20060102150405"),
-		"channel": body.Channel, "status": "queued", "priority": body.Priority,
-		"estimated_delivery": "< 30 seconds", "retry_policy": "3 attempts, exponential backoff",
-	})
-}
 
-func listTemplates(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"templates": []map[string]string{
-			{"id": "TPL-001", "name": "policy_issuance", "channel": "sms,email", "naicom_approved": "true"},
-			{"id": "TPL-002", "name": "claim_payment", "channel": "sms,email,push", "naicom_approved": "true"},
-			{"id": "TPL-003", "name": "renewal_reminder", "channel": "sms,push", "naicom_approved": "true"},
-			{"id": "TPL-004", "name": "premium_due", "channel": "sms,whatsapp", "naicom_approved": "true"},
-		},
-	})
-}
+	go func() {
+		log.Info("Starting Notification server", zap.String("address", srv.Addr))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("Server failed", zap.Error(err))
+		}
+	}()
 
-func deliveryStats(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"sms": map[string]interface{}{"sent": 4500, "delivered": 4350, "failed": 150, "rate": 96.7},
-		"email": map[string]interface{}{"sent": 2200, "delivered": 2150, "bounced": 50, "rate": 97.7},
-		"push": map[string]interface{}{"sent": 8000, "delivered": 7200, "rate": 90.0},
-		"period": "last_24_hours",
-	})
+	<-ctx.Done()
+	log.Info("Shutting down Notification server...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("Server forced shutdown", zap.Error(err))
+	}
+	log.Info("Notification server stopped")
 }
