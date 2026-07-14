@@ -102,26 +102,26 @@ describe("SIM Failover Logic", () => {
 
   describe("API key validation logic", () => {
     it("accepts matching API key", () => {
-      const cfgKey = "54link-sim-orchestrator-default-key";
-      const inputKey = "54link-sim-orchestrator-default-key";
+      const cfgKey = "insureportal-sim-orchestrator-default-key";
+      const inputKey = "insureportal-sim-orchestrator-default-key";
       expect(inputKey === cfgKey).toBe(true);
     });
 
     it("rejects mismatched API key", () => {
-      const cfgKey = "54link-sim-orchestrator-default-key";
+      const cfgKey = "insureportal-sim-orchestrator-default-key";
       const inputKey = "wrong-key";
       expect(inputKey === cfgKey).toBe(false);
     });
 
     it("falls back to default key when no config exists", () => {
-      const defaultKey = "54link-sim-orchestrator-default-key";
+      const defaultKey = "insureportal-sim-orchestrator-default-key";
       const cfg = undefined;
       const expectedKey = (cfg as any)?.apiKey ?? defaultKey;
       expect(expectedKey).toBe(defaultKey);
     });
 
     it("uses config key when config exists", () => {
-      const defaultKey = "54link-sim-orchestrator-default-key";
+      const defaultKey = "insureportal-sim-orchestrator-default-key";
       const cfg = { apiKey: "custom-key-abc" };
       const expectedKey = cfg?.apiKey ?? defaultKey;
       expect(expectedKey).toBe("custom-key-abc");

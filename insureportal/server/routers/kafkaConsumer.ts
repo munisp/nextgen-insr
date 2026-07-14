@@ -12,7 +12,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { dlqMessages } from "../../drizzle/schema";
+import { dlqMessages } from "@schema";
 import { desc, eq, count, sql, and, lt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

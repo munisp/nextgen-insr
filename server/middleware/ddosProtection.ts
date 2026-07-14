@@ -5,6 +5,7 @@
  * circuit breaker pattern, and slowloris protection.
  */
 import { Request, Response, NextFunction } from "express";
+import { logger } from '../_core/logger';
 
 // ── IP Reputation Store ──────────────────────────────────────────────
 interface IPRecord {
@@ -211,7 +212,7 @@ export function circuitBreaker(serviceName: string) {
         if (circuit.failures >= FAILURE_THRESHOLD) {
           circuit.state = "open";
           circuit.openedAt = Date.now();
-          console.warn(
+          logger.warn(
             `[CircuitBreaker] ${serviceName} circuit OPENED after ${circuit.failures} failures`
           );
         }
@@ -324,7 +325,7 @@ export function getIPReputation(ip: string): IPRecord | null {
 // ── Aggregate DDoS Middleware ────────────────────────────────────────
 export function applyDDoSProtection(app: any) {
   if (process.env.NODE_ENV === "development") {
-    console.log(
+    logger.info(
       "[DDoS] Skipped in development mode (Vite needs 400+ concurrent module requests)"
     );
     return;
@@ -333,7 +334,7 @@ export function applyDDoSProtection(app: any) {
   app.use(connectionThrottle);
   app.use(adaptiveRateLimit);
   app.use(slowlorisProtection(15_000)); // 15s timeout
-  console.log(
+  logger.info(
     "[DDoS] Protection layers applied: body bomb, connection throttle, adaptive rate limit, slowloris"
   );
 }

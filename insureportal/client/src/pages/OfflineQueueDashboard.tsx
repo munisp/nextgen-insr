@@ -630,7 +630,7 @@ export default function OfflineQueueDashboard() {
                 on 2G/EDGE networks.
               </p>
               <p>
-                3. Critical transactions (cash-in/cash-out) are prioritized in
+                3. Critical transactions (premium collection/claim payout) are prioritized in
                 the sync queue.
               </p>
               <p>

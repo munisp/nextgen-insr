@@ -1,12 +1,12 @@
 /**
  * Push Notifications Router
  * Handles VAPID push subscription management for agents and admins.
- * Uses agentPushSubscriptions table (agentCode, endpoint, p256dhKey, authKey).
+ * Uses agentPushSubscriptions table (agentId, endpoint, p256dhKey, authKey).
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agentPushSubscriptions } from "../../drizzle/schema";
+import { agentPushSubscriptions } from "@schema";
 import { eq, and } from "drizzle-orm";
 import { sendPushToAgent } from "../push";
 import { TRPCError } from "@trpc/server";
@@ -36,7 +36,7 @@ export const pushNotificationsRouter = router({
     .input(
       z.object({
         subscription: PushSubscriptionSchema,
-        agentCode: z.string().max(32),
+        agentId: z.string().max(32),
         deviceName: z.string().max(100).optional(),
         userAgent: z.string().max(500).optional(),
       })
@@ -52,7 +52,7 @@ export const pushNotificationsRouter = router({
           .from(agentPushSubscriptions)
           .where(
             and(
-              eq(agentPushSubscriptions.agentCode, input.agentCode),
+              eq(agentPushSubscriptions.agentId, input.agentId),
               eq(agentPushSubscriptions.endpoint, input.subscription.endpoint)
             )
           )
@@ -72,7 +72,7 @@ export const pushNotificationsRouter = router({
         }
 
         await db.insert(agentPushSubscriptions).values({
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           endpoint: input.subscription.endpoint,
           p256dhKey: input.subscription.keys.p256dh,
           authKey: input.subscription.keys.auth,
@@ -97,7 +97,7 @@ export const pushNotificationsRouter = router({
     .input(
       z.object({
         endpoint: z.string().url(),
-        agentCode: z.string().max(32),
+        agentId: z.string().max(32),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -108,7 +108,7 @@ export const pushNotificationsRouter = router({
           .delete(agentPushSubscriptions)
           .where(
             and(
-              eq(agentPushSubscriptions.agentCode, input.agentCode),
+              eq(agentPushSubscriptions.agentId, input.agentId),
               eq(agentPushSubscriptions.endpoint, input.endpoint)
             )
           );
@@ -125,7 +125,7 @@ export const pushNotificationsRouter = router({
 
   // ── List subscriptions for an agent ──────────────────────────────────────
   listSubscriptions: protectedProcedure
-    .input(z.object({ agentCode: z.string().max(32) }))
+    .input(z.object({ agentId: z.string().max(32) }))
     .query(async ({ ctx, input }) => {
       try {
         const db = (await getDb())!;
@@ -138,7 +138,7 @@ export const pushNotificationsRouter = router({
             createdAt: agentPushSubscriptions.createdAt,
           })
           .from(agentPushSubscriptions)
-          .where(eq(agentPushSubscriptions.agentCode, input.agentCode));
+          .where(eq(agentPushSubscriptions.agentId, input.agentId));
         return subs;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -154,13 +154,13 @@ export const pushNotificationsRouter = router({
   testPush: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string().max(32),
+        agentId: z.string().max(32),
         message: z.string().max(200).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        const sent = await sendPushToAgent(input.agentCode, {
+        const sent = await sendPushToAgent(input.agentId, {
           title: "InsurePortal — Test Notification",
           body: input.message ?? "Push notifications are working correctly.",
           icon: "/icons/icon-192x192.png",

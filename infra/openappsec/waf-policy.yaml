@@ -1,0 +1,136 @@
+# ── OpenAppSec WAF Configuration for InsurePortal ─────────────────────────
+# Applies to all APISIX-proxied routes for comprehensive threat protection
+
+apiVersion: openappsec.io/v1
+kind: Policy
+metadata:
+  name: insureportal-waf-policy
+  namespace: insureportal
+spec:
+  default:
+    mode: prevent-learn
+    practiceId: insureportal-web-protection
+  
+  practices:
+    - id: insureportal-web-protection
+      name: "InsurePortal Web Application Protection"
+      webAttacks:
+        minimumConfidence: medium
+        maxBodySizeKb: 10240
+        maxHeaderSizeKb: 64
+        maxObjectDepth: 40
+        maxUrlSizeKb: 32
+      antiBot:
+        injectedUris:
+          - "/api/trpc/*"
+          - "/api/v1/*"
+        validatedUris:
+          - "/api/oauth/*"
+      snortSignatures:
+        configmap: []
+        files: []
+      openApiSchemaValidation:
+        configmap: []
+        files: []
+      
+  exceptions:
+    - name: "Health probes bypass"
+      match:
+        sourceIp: "10.0.0.0/8"
+        url: "*/health"
+      action: skip
+    - name: "Kubernetes probes"
+      match:
+        sourceIp: "10.0.0.0/8"
+        url: "*/ready"
+      action: skip
+    - name: "Internal metrics"
+      match:
+        sourceIp: "10.0.0.0/8"
+        url: "*/metrics"
+      action: skip
+
+  triggers:
+    - name: "Log all blocked requests"
+      log:
+        webRequests:
+          detect: true
+          prevent: true
+        webUrlPath: true
+        webHeaders: true
+        webBody: false
+        cefSyslog:
+          address: "${OPENSEARCH_URL}"
+          port: 9200
+          protocol: tcp
+    - name: "Kafka security events"
+      kafka:
+        brokers: "${KAFKA_BROKERS}"
+        topic: "security-events"
+    
+  customRules:
+    # Nigerian financial data protection
+    - name: "Block BVN exposure"
+      match:
+        responseBody:
+          regex: "\\b[0-9]{11}\\b"
+          header: "Content-Type: application/json"
+      action: prevent
+      message: "Potential BVN data exposure blocked"
+    
+    # PII protection for NDPR compliance
+    - name: "Rate limit KYC endpoints"
+      match:
+        url: "*/kyc/*"
+        method: POST
+      rateLimit:
+        rate: 10
+        interval: 60
+    
+    # SQL injection prevention (enhanced for financial queries)
+    - name: "Enhanced SQL injection for financial APIs"
+      match:
+        url: "*/api/v1/*"
+        parameter:
+          regex: "(UNION|SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC)\\s"
+      action: prevent
+      
+    # XSS protection
+    - name: "XSS protection for form inputs"
+      match:
+        requestBody:
+          regex: "<script|javascript:|onerror=|onload="
+      action: prevent
+      
+    # Path traversal
+    - name: "Path traversal prevention"
+      match:
+        url:
+          regex: "\\.\\./"
+      action: prevent
+
+---
+apiVersion: openappsec.io/v1
+kind: TrustedSources
+metadata:
+  name: insureportal-trusted
+  namespace: insureportal
+spec:
+  minNumOfSources: 3
+  sourcesIdentifiers:
+    - "X-Forwarded-For"
+    - "X-Real-IP"
+
+---
+apiVersion: openappsec.io/v1
+kind: LogTrigger
+metadata:
+  name: insureportal-security-log
+  namespace: insureportal
+spec:
+  accessLog: true
+  appsecLog: true
+  cefLog:
+    address: "${OPENSEARCH_URL}"
+    port: 9200
+    protocol: tcp

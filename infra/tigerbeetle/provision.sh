@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# 54Link TigerBeetle Account Provisioning Script
-# Creates all ledger accounts required for the 54Link Agency Banking Platform.
+# InsurePortal TigerBeetle Account Provisioning Script
+# Creates all ledger accounts required for the InsurePortal Agency Banking Platform.
 #
 # Account ID Convention (128-bit, encoded as two u64 values):
 #   Ledger 1 = NGN (Nigerian Naira)
@@ -97,7 +97,7 @@ create_account() {
 # 2 = debits_must_not_exceed_credits (overdraft protection)
 # 4 = credits_must_not_exceed_debits (reserve account)
 
-log "Provisioning TigerBeetle accounts for 54Link Agency Banking Platform..."
+log "Provisioning TigerBeetle accounts for InsurePortal Agency Banking Platform..."
 
 # ── LEDGER 1: NGN (Nigerian Naira) ────────────────────────────────────────────
 log "--- NGN Ledger (1) ---"

@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { disputes, disputeMessages } from "../../drizzle/schema";
+import { disputes, disputeMessages } from "@schema";
 import { eq, desc, count, sql, and, ilike } from "drizzle-orm";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";

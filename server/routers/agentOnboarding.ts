@@ -11,7 +11,7 @@ import {
   agentOnboardingProgress,
   agents,
   kycSessions,
-  floatTopUpRequests,
+  premiumTopUpRequests,
 } from "../../drizzle/schema";
 import { eq, desc, count, and } from "drizzle-orm";
 import { writeAuditLog } from "../db";
@@ -20,7 +20,7 @@ import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 export const agentOnboardingRouter = router({
   // ── Get onboarding progress for an agent ─────────────────────────────────
   getProgress: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .query(async ({ input }) => {
       try {
         const db = await getDb();
@@ -29,7 +29,7 @@ export const agentOnboardingRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
         if (!agent) return null;
 
@@ -45,7 +45,7 @@ export const agentOnboardingRouter = router({
             .insert(agentOnboardingProgress)
             .values({
               agentId: agent.id,
-              agentCode: input.agentCode,
+              agentId: input.agentId,
               currentStep: "profile",
             })
             .returning();
@@ -67,7 +67,7 @@ export const agentOnboardingRouter = router({
   completeProfile: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         name: z.string().min(2).max(128),
         phone: z.string().min(11).max(20),
         email: z.string().email().optional(),
@@ -82,7 +82,7 @@ export const agentOnboardingRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -96,7 +96,7 @@ export const agentOnboardingRouter = router({
             location: input.location,
             updatedAt: new Date(),
           })
-          .where(eq(agents.agentCode, input.agentCode));
+          .where(eq(agents.agentId, input.agentId));
 
         // Update onboarding progress
         const [progress] = await db
@@ -106,12 +106,12 @@ export const agentOnboardingRouter = router({
             currentStep: "kyc",
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentCode, input.agentCode))
+          .where(eq(agentOnboardingProgress.agentId, input.agentId))
           .returning();
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           action: "onboarding_profile_complete",
           resource: "agent_onboarding",
           resourceId: String(agent.id),
@@ -131,7 +131,7 @@ export const agentOnboardingRouter = router({
 
   // ── Complete KYC step ─────────────────────────────────────────────────────
   completeKyc: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -140,7 +140,7 @@ export const agentOnboardingRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -170,7 +170,7 @@ export const agentOnboardingRouter = router({
             currentStep: "float",
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentCode, input.agentCode))
+          .where(eq(agentOnboardingProgress.agentId, input.agentId))
           .returning();
 
         return progress;
@@ -186,7 +186,7 @@ export const agentOnboardingRouter = router({
 
   // ── Complete float funding step ───────────────────────────────────────────
   completeFloat: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -195,15 +195,15 @@ export const agentOnboardingRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
 
-        const floatBalance = parseFloat(agent.floatBalance as string);
-        if (floatBalance < 10000) {
+        const premiumReserve = parseFloat(agent.premiumReserve as string);
+        if (premiumReserve < 10000) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Minimum float balance of ₦10,000 required to proceed",
+            message: "Minimum premium reserve of ₦10,000 required to proceed",
           });
         }
 
@@ -214,7 +214,7 @@ export const agentOnboardingRouter = router({
             currentStep: "terminal",
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentCode, input.agentCode))
+          .where(eq(agentOnboardingProgress.agentId, input.agentId))
           .returning();
 
         return progress;
@@ -232,7 +232,7 @@ export const agentOnboardingRouter = router({
   completeTerminal: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         terminalSerial: z.string().min(1).max(64),
         terminalModel: z.string().max(64).optional(),
       })
@@ -250,7 +250,7 @@ export const agentOnboardingRouter = router({
             terminalEnabled: true,
             updatedAt: new Date(),
           })
-          .where(eq(agents.agentCode, input.agentCode));
+          .where(eq(agents.agentId, input.agentId));
 
         const [progress] = await db
           .update(agentOnboardingProgress)
@@ -259,7 +259,7 @@ export const agentOnboardingRouter = router({
             currentStep: "training",
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentCode, input.agentCode))
+          .where(eq(agentOnboardingProgress.agentId, input.agentId))
           .returning();
 
         return progress;
@@ -275,7 +275,7 @@ export const agentOnboardingRouter = router({
 
   // ── Complete training step and activate agent ─────────────────────────────
   completeTraining: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -284,7 +284,7 @@ export const agentOnboardingRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
         if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -292,7 +292,7 @@ export const agentOnboardingRouter = router({
         await db
           .update(agents)
           .set({ isActive: true, updatedAt: new Date() })
-          .where(eq(agents.agentCode, input.agentCode));
+          .where(eq(agents.agentId, input.agentId));
 
         const [progress] = await db
           .update(agentOnboardingProgress)
@@ -302,14 +302,14 @@ export const agentOnboardingRouter = router({
             activatedAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentCode, input.agentCode))
+          .where(eq(agentOnboardingProgress.agentId, input.agentId))
           .returning();
 
         // Send activation email
         if (agent.email) {
           const { subject, html, text } = buildAlertEmail({
-            title: "Welcome to 54Link POS — Your Account is Active!",
-            message: `Congratulations ${agent.name}! Your 54Link POS agent account (${input.agentCode}) has been fully activated. You can now process transactions on your terminal.`,
+            title: "Welcome to InsurePortal POS — Your Account is Active!",
+            message: `Congratulations ${agent.name}! Your InsurePortal POS agent account (${input.agentId}) has been fully activated. You can now process transactions on your terminal.`,
             severity: "low",
           });
           enqueueEmail({ to: agent.email, subject, html, text });
@@ -317,7 +317,7 @@ export const agentOnboardingRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           action: "agent_activated_via_onboarding",
           resource: "agent",
           resourceId: String(agent.id),
@@ -384,7 +384,7 @@ export const agentOnboardingRouter = router({
 
   // ── Add notes to onboarding record ───────────────────────────────────────
   addNote: protectedProcedure
-    .input(z.object({ agentCode: z.string(), note: z.string().max(1000) }))
+    .input(z.object({ agentId: z.string(), note: z.string().max(1000) }))
     .mutation(async ({ input }) => {
       try {
         const db = await getDb();
@@ -392,7 +392,7 @@ export const agentOnboardingRouter = router({
         await db
           .update(agentOnboardingProgress)
           .set({ notes: input.note, updatedAt: new Date() })
-          .where(eq(agentOnboardingProgress.agentCode, input.agentCode));
+          .where(eq(agentOnboardingProgress.agentId, input.agentId));
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -448,7 +448,7 @@ export const agentOnboardingRouter = router({
         const filtered = input.search
           ? items.filter(
               (i: any) =>
-                i.agentCode.includes(input.search!) ||
+                i.agentId.includes(input.search!) ||
                 (i.agentName ?? "")
                   .toLowerCase()
                   .includes(input.search!.toLowerCase())
@@ -639,7 +639,7 @@ export const agentOnboardingRouter = router({
           .insert(agentOnboardingProgress)
           .values({
             agentId: agent.id,
-            agentCode: agent.agentCode,
+            agentId: agent.agentId,
             currentStep: "profile",
           })
           .returning();

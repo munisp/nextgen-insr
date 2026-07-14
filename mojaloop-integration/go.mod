@@ -13,5 +13,4 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/klauspost/compress v1.15.9 // indirect
 	github.com/pierrec/lz4/v4 v4.1.15 // indirect
-	github.com/tigerbeetle/tigerbeetle-go v0.15.3
 )

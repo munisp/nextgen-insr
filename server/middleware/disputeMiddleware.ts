@@ -42,7 +42,7 @@ export async function publishDisputeEvent(params: {
   disputeId?: number;
   refundId?: number;
   agentId?: number;
-  agentCode?: string;
+  agentId?: string;
   amount?: number;
   transactionRef?: string;
   metadata?: Record<string, unknown>;
@@ -53,7 +53,7 @@ export async function publishDisputeEvent(params: {
       : "pos.disputes.resolved";
     await publishEvent(
       topic,
-      params.agentCode ?? params.transactionRef ?? "system",
+      params.agentId ?? params.transactionRef ?? "system",
       {
         eventType: params.eventType,
         timestamp: new Date().toISOString(),
@@ -64,7 +64,7 @@ export async function publishDisputeEvent(params: {
         transactionRef: params.transactionRef,
         ...params.metadata,
       },
-      { agentCode: params.agentCode }
+      { agentId: params.agentId }
     );
     logger.info(`[Kafka] Dispute event: ${params.eventType}`);
   } catch (e) {
@@ -114,19 +114,19 @@ export async function checkDisputeRateLimit(
 export async function tbRecordRefundReversal(params: {
   refundId: number;
   transactionRef: string;
-  agentCode: string;
+  agentId: string;
   amount: number;
 }): Promise<{ transferId: string; syncStatus: string } | null> {
   try {
     const req: TBTransferRequest = {
-      debitAccountId: `agent-float-${params.agentCode}`,
+      debitAccountId: `agent-float-${params.agentId}`,
       creditAccountId: "platform-refund-pool",
       amount: Math.round(params.amount * 100), // kobo
       ledger: 5000,
       code: 501,
       ref: `REF-${params.transactionRef}`,
       txType: "refund_reversal",
-      agentCode: params.agentCode,
+      agentId: params.agentId,
     };
     const result = await tbCreateTransfer(req);
     if (result && result.id) {
@@ -145,7 +145,7 @@ export async function tbRecordRefundReversal(params: {
 export async function triggerDisputeResolutionWorkflow(params: {
   disputeId: number;
   transactionRef: string;
-  agentCode: string;
+  agentId: string;
   amount: number;
   reason: string;
   slaHours: number;
@@ -174,13 +174,13 @@ export async function triggerDisputeResolutionWorkflow(params: {
 // ── Permify: RBAC for Dispute Operations ─────────────────────────────────
 // permifyCheck({ subjectType, subjectId, entityType, entityId, permission })
 export async function canApproveDispute(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   try {
     return await permifyCheck({
       subjectType: "agent",
-      subjectId: agentCode,
+      subjectId: agentId,
       entityType: "dispute",
       entityId: "*",
       permission: "approve",
@@ -191,13 +191,13 @@ export async function canApproveDispute(
 }
 
 export async function canProcessRefund(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   try {
     return await permifyCheck({
       subjectType: "agent",
-      subjectId: agentCode,
+      subjectId: agentId,
       entityType: "refund",
       entityId: "*",
       permission: "process",
@@ -212,18 +212,18 @@ export async function canProcessRefund(
 export async function streamDisputeEvent(params: {
   eventType: string;
   disputeId?: number;
-  agentCode?: string;
+  agentId?: string;
   amount?: number;
   transactionRef?: string;
 }): Promise<void> {
   try {
     await fluvioProduce({
       topic: "dispute-events",
-      key: params.agentCode ?? "system",
+      key: params.agentId ?? "system",
       payload: {
         eventType: params.eventType,
         disputeId: params.disputeId,
-        agentCode: params.agentCode,
+        agentId: params.agentId,
         amount: params.amount,
         transactionRef: params.transactionRef,
         source: "dispute-engine",

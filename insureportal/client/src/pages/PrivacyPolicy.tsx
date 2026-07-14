@@ -21,7 +21,7 @@ const SECTIONS = [
   },
   {
     title: "3. Categories of Personal Data Collected",
-    content: `We collect and process the following categories of personal data:\n\n• Identity Data: Full name, date of birth, BVN (Bank Verification Number), NIN (National Identification Number), passport photograph, signature.\n• Contact Data: Phone number, email address, residential address, state of origin.\n• Financial Data: Bank account details, transaction history, float balance, commission records, settlement account information.\n• Device & Technical Data: Terminal serial number, device fingerprint, IP address, geolocation coordinates, operating system version.\n• KYC Data: Government-issued ID documents, utility bills, business registration certificates, facial biometrics.\n• Usage Data: Login timestamps, transaction logs, audit trails, session data.`,
+    content: `We collect and process the following categories of personal data:\n\n• Identity Data: Full name, date of birth, BVN (Bank Verification Number), NIN (National Identification Number), passport photograph, signature.\n• Contact Data: Phone number, email address, residential address, state of origin.\n• Financial Data: Bank account details, transaction history, premium reserve, commission records, settlement account information.\n• Device & Technical Data: Terminal serial number, device fingerprint, IP address, geolocation coordinates, operating system version.\n• KYC Data: Government-issued ID documents, utility bills, business registration certificates, facial biometrics.\n• Usage Data: Login timestamps, transaction logs, audit trails, session data.`,
   },
   {
     title: "4. Legal Basis for Processing",

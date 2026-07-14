@@ -17,7 +17,7 @@ const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 async function loginAsAdmin(page: Page) {
   await page.goto(`${BASE_URL}/`);
   // Use test admin credentials (set via environment in CI)
-  const adminEmail = process.env.TEST_ADMIN_EMAIL || "admin@54link.ng";
+  const adminEmail = process.env.TEST_ADMIN_EMAIL || "admin@insureportal.ng";
   const adminPass = process.env.TEST_ADMIN_PASS || "TestAdmin123!";
 
   // Check if already logged in

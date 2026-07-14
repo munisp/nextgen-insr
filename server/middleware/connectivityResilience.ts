@@ -11,6 +11,7 @@
  */
 import type { Request, Response, NextFunction } from "express";
 import { createHash } from "crypto";
+import { logger } from '../_core/logger';
 
 // ─── Request Deduplication ───────────────────────────────────────────────────
 interface DedupeEntry {
@@ -46,7 +47,7 @@ export function requestDeduplication(
 
   const existing = dedupeStore.get(hash);
   if (existing && now - existing.timestamp < DEDUPE_WINDOW_MS) {
-    console.log(
+    logger.info(
       `[Dedupe] Returning cached response for ${req.method} ${req.path}`
     );
     return res.status(200).json(existing.response);

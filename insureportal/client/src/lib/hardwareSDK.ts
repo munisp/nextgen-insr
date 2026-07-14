@@ -18,7 +18,7 @@ export interface ReceiptData {
   fee?: number;
   customerName?: string;
   customerPhone?: string;
-  agentCode: string;
+  agentId: string;
   agentName: string;
   terminalSerial?: string;
   timestamp?: Date;
@@ -88,7 +88,7 @@ export const printer = {
         ${data.customerName ? `<div class="row"><span>Customer:</span><span>${data.customerName}</span></div>` : ""}
         ${data.customerPhone ? `<div class="row"><span>Phone:</span><span>${data.customerPhone}</span></div>` : ""}
         <div class="divider"></div>
-        <div class="row"><span>Agent:</span><span>${data.agentCode}</span></div>
+        <div class="row"><span>Agent:</span><span>${data.agentId}</span></div>
         <div class="row"><span>Terminal:</span><span>${data.terminalSerial ?? "N/A"}</span></div>
         <div class="row"><span>Date:</span><span>${timestamp}</span></div>
         <div class="divider"></div>

@@ -14,7 +14,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { customers, auditLog } from "../../drizzle/schema";
+import { customers, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const accountOpeningRouter = router({

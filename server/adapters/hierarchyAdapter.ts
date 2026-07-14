@@ -14,7 +14,7 @@ export interface OrgNode {
 }
 
 export interface AgentHierarchy {
-  agentCode: string;
+  agentId: string;
   branch: string;
   district: string;
   region: string;
@@ -32,10 +32,10 @@ export async function getOrgTree(
 }
 
 export async function getAgentHierarchy(
-  agentCode: string
+  agentId: string
 ): Promise<AdapterResponse<AgentHierarchy>> {
   return hierarchyEngine.get<AgentHierarchy>(
-    `/api/v1/agent/${agentCode}/hierarchy`
+    `/api/v1/agent/${agentId}/hierarchy`
   );
 }
 

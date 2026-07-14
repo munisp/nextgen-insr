@@ -1,5 +1,5 @@
 /**
- * 54Link Hardware SDK Simulation Layer
+ * InsurePortal Hardware SDK Simulation Layer
  *
  * Provides a unified interface for:
  *  - ESC/POS receipt printer (WebUSB with print dialog fallback)
@@ -18,7 +18,7 @@ export interface ReceiptData {
   fee?: number;
   customerName?: string;
   customerPhone?: string;
-  agentCode: string;
+  agentId: string;
   agentName: string;
   terminalSerial?: string;
   timestamp?: Date;
@@ -64,7 +64,7 @@ export const printer = {
     const receiptHtml = `
       <html>
       <head>
-        <title>54Link Receipt</title>
+        <title>InsurePortal Receipt</title>
         <style>
           body { font-family: 'Courier New', monospace; font-size: 12px; width: 80mm; margin: 0 auto; padding: 8px; }
           .center { text-align: center; }
@@ -77,7 +77,7 @@ export const printer = {
       <body>
         <div class="center">
           <div class="logo">54LINK</div>
-          <div>Agency Banking Terminal</div>
+          <div>Insurance Terminal</div>
           <div class="divider"></div>
         </div>
         <div class="row"><span>Ref:</span><span>${data.ref}</span></div>
@@ -88,12 +88,12 @@ export const printer = {
         ${data.customerName ? `<div class="row"><span>Customer:</span><span>${data.customerName}</span></div>` : ""}
         ${data.customerPhone ? `<div class="row"><span>Phone:</span><span>${data.customerPhone}</span></div>` : ""}
         <div class="divider"></div>
-        <div class="row"><span>Agent:</span><span>${data.agentCode}</span></div>
+        <div class="row"><span>Agent:</span><span>${data.agentId}</span></div>
         <div class="row"><span>Terminal:</span><span>${data.terminalSerial ?? "N/A"}</span></div>
         <div class="row"><span>Date:</span><span>${timestamp}</span></div>
         <div class="divider"></div>
         <div class="center bold">TRANSACTION SUCCESSFUL</div>
-        <div class="center" style="font-size:10px;margin-top:4px;">Powered by 54Link · CBN Licensed</div>
+        <div class="center" style="font-size:10px;margin-top:4px;">Powered by InsurePortal · CBN Licensed</div>
       </body>
       </html>
     `;
@@ -169,7 +169,7 @@ export const biometric = {
       const credential = await navigator.credentials.create({
         publicKey: {
           challenge,
-          rp: { name: "54Link POS", id: window.location.hostname },
+          rp: { name: "InsurePortal POS", id: window.location.hostname },
           user: {
             id: new TextEncoder().encode(agentId),
             name: customerName,

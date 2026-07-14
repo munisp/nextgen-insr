@@ -38,6 +38,7 @@ export function auditApiKeyAge(keyId: string, createdAt: number): ApiKeyAudit {
 
 // ─── 2. Transaction Signing ─────────────────────────────────────────────────
 import crypto from "crypto";
+import { logger } from '../_core/logger';
 
 const TX_SIGNING_SECRET = process.env.TX_SIGNING_SECRET || "";
 
@@ -409,7 +410,7 @@ export function isBlockedIp(ip: string): boolean {
 
 export function blockIp(ip: string, reason: string): void {
   blockedIps.add(ip);
-  console.log(`[SecurityPosture] Blocked IP: ${ip} — Reason: ${reason}`);
+  logger.info(`[SecurityPosture] Blocked IP: ${ip} — Reason: ${reason}`);
 }
 
 export function isBlockedCountry(countryCode: string): boolean {

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * F06: Merchant KYC & Onboarding Workflow
  * Document upload, verification workflow, compliance checks, merchant activation

@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * 54Link — Agent Loyalty Points System
+ * InsurePortal — Agent Loyalty Points System
  * Design: Bloomberg Terminal dark — near-black bg, gold/amber primary for rewards
  * Features: Points dashboard, tier progression, transaction multipliers,
  *           rewards catalogue, leaderboard, milestone badges, redemption flow,
@@ -80,7 +80,7 @@ interface Challenge {
 interface LeaderboardEntry {
   rank: number;
   agentName: string;
-  agentCode: string;
+  agentId: string;
   location: string;
   points: number;
   tier: TierName;
@@ -201,7 +201,7 @@ const REWARDS: Reward[] = [
   {
     id: "r3",
     name: "₦50,000 Float Top-Up",
-    description: "Instant float balance credit",
+    description: "Instant premium reserve credit",
     cost: 4_000,
     category: "float",
     icon: "💰",
@@ -211,7 +211,7 @@ const REWARDS: Reward[] = [
   {
     id: "r4",
     name: "₦100,000 Float Top-Up",
-    description: "Instant float balance credit",
+    description: "Instant premium reserve credit",
     cost: 7_500,
     category: "float",
     icon: "💰",
@@ -247,7 +247,7 @@ const REWARDS: Reward[] = [
   {
     id: "r8",
     name: "Thermal Paper (10 rolls)",
-    description: "Compatible with all 54Link terminals",
+    description: "Compatible with all InsurePortal terminals",
     cost: 200,
     category: "device",
     icon: "🖨",
@@ -352,7 +352,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 1,
     agentName: "Aminu Garba",
-    agentCode: "AG-KAN-007812",
+    agentId: "AG-KAN-007812",
     location: "Kano City",
     points: 52_340,
     tier: "Diamond",
@@ -363,7 +363,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 2,
     agentName: "Biodun Olatunji",
-    agentCode: "AG-LOS-008876",
+    agentId: "AG-LOS-008876",
     location: "Victoria Island",
     points: 48_120,
     tier: "Platinum",
@@ -374,7 +374,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 3,
     agentName: "Chioma Obi",
-    agentCode: "AG-PHC-003219",
+    agentId: "AG-PHC-003219",
     location: "Port Harcourt",
     points: 34_890,
     tier: "Platinum",
@@ -385,7 +385,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 4,
     agentName: "Emeka Eze",
-    agentCode: "AG-ABJ-002341",
+    agentId: "AG-ABJ-002341",
     location: "Wuse, Abuja",
     points: 28_450,
     tier: "Platinum",
@@ -396,7 +396,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 5,
     agentName: "Ngozi Adeyemi",
-    agentCode: "AG-ENU-001187",
+    agentId: "AG-ENU-001187",
     location: "Enugu",
     points: 21_780,
     tier: "Platinum",
@@ -407,7 +407,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 6,
     agentName: "Tunde Bakare",
-    agentCode: "AG-IBD-005543",
+    agentId: "AG-IBD-005543",
     location: "Ibadan, Oyo",
     points: 18_340,
     tier: "Gold",
@@ -418,7 +418,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 7,
     agentName: "Musa Aliyu",
-    agentCode: "AG-KAD-009934",
+    agentId: "AG-KAD-009934",
     location: "Kaduna",
     points: 15_670,
     tier: "Gold",
@@ -429,7 +429,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 8,
     agentName: "Fatima Bello",
-    agentCode: "AG-LOS-003311",
+    agentId: "AG-LOS-003311",
     location: "Surulere, Lagos",
     points: 12_980,
     tier: "Gold",
@@ -440,7 +440,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 9,
     agentName: "Chidi Okafor",
-    agentCode: "AG-OWR-006612",
+    agentId: "AG-OWR-006612",
     location: "Owerri, Imo",
     points: 11_240,
     tier: "Gold",
@@ -451,7 +451,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 10,
     agentName: "Blessing Eze",
-    agentCode: "AG-LOS-009901",
+    agentId: "AG-LOS-009901",
     location: "Lekki, Lagos",
     points: 9_870,
     tier: "Gold",
@@ -462,7 +462,7 @@ const LEADERBOARD: LeaderboardEntry[] = [
   {
     rank: 14,
     agentName: "Adaeze Okonkwo",
-    agentCode: "AG-LOS-004821",
+    agentId: "AG-LOS-004821",
     location: "Ikeja, Lagos",
     points: 8_450,
     tier: "Gold",
@@ -693,7 +693,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
             Loyalty Rewards
           </div>
           <div className="text-xs text-gray-500">
-            54Link Agent Rewards Program
+            InsurePortal Agent Rewards Program
           </div>
         </div>
         <div
@@ -1407,7 +1407,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                       e =>
                         !lbSearch ||
                         e.name.toLowerCase().includes(lbSearch.toLowerCase()) ||
-                        (e.agentCode ?? "")
+                        (e.agentId ?? "")
                           .toLowerCase()
                           .includes(lbSearch.toLowerCase())
                     )
@@ -1452,7 +1452,7 @@ export default function LoyaltySystem({ onBack }: { onBack?: () => void }) {
                               className="text-xs truncate"
                               style={{ color: "#6b7280" }}
                             >
-                              {entry.location ?? entry.agentCode}
+                              {entry.location ?? entry.agentId}
                             </div>
                           </div>
                           <span className="text-base">{tierObj.icon}</span>

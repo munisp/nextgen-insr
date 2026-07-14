@@ -1,0 +1,163 @@
+# ── Fluvio Topic Configuration for InsurePortal ──────────────────────────
+# Real-time streaming topics for all business events
+
+topics:
+
+  - name: policy-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - policy_created
+      - policy_updated
+      - policy_cancelled
+      - policy_renewed
+      - policy_lapsed
+
+  - name: claims-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - claim_submitted
+      - claim_adjudicated
+      - claim_approved
+      - claim_rejected
+      - claim_paid
+
+  - name: premium-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - premium_invoiced
+      - premium_collected
+      - premium_overdue
+      - premium_refunded
+
+  - name: kyc-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - kyc_initiated
+      - kyc_document_uploaded
+      - kyc_verified
+      - kyc_rejected
+      - kyc_expired
+
+  - name: fraud-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - fraud_alert_raised
+      - fraud_investigation_started
+      - fraud_confirmed
+      - fraud_cleared
+
+  - name: payment-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - payment_initiated
+      - payment_completed
+      - payment_failed
+      - payment_reversed
+
+  - name: agent-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - agent_registered
+      - agent_activated
+      - agent_commission_paid
+      - agent_deactivated
+
+  - name: reinsurance-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - cession_created
+      - treaty_applied
+      - settlement_initiated
+      - settlement_completed
+
+  - name: compliance-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - naicom_report_generated
+      - aml_alert_raised
+      - ndpr_consent_recorded
+      - audit_log_created
+
+  - name: underwriting-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - application_received
+      - risk_assessed
+      - decision_made
+      - policy_bound
+
+  - name: notification-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - sms_sent
+      - email_sent
+      - push_notification_sent
+      - webhook_triggered
+
+  - name: system-events
+    partitions: 6
+    replicas: 3
+    retention:
+      time: 168h  # 7 days
+      size: 10Gi
+    compression: lz4
+    events:
+      - service_started
+      - service_stopped
+      - health_check_failed
+      - config_changed

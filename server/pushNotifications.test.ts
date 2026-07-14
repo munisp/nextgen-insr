@@ -22,18 +22,18 @@ const PushSubscriptionSchema = z.object({
 
 const SubscribePushInput = z.object({
   subscription: PushSubscriptionSchema,
-  agentCode: z.string().max(32),
+  agentId: z.string().max(32),
   deviceName: z.string().max(100).optional(),
   userAgent: z.string().max(500).optional(),
 });
 
 const UnsubscribePushInput = z.object({
   endpoint: z.string().url(),
-  agentCode: z.string().max(32),
+  agentId: z.string().max(32),
 });
 
 const SendTestPushInput = z.object({
-  agentCode: z.string().max(32),
+  agentId: z.string().max(32),
   type: z.enum([
     "sim_failover",
     "float_approved",
@@ -75,7 +75,7 @@ describe("pushNotifications router", () => {
             auth: "test_auth_key",
           },
         },
-        agentCode: "AGT001",
+        agentId: "AGT001",
         deviceName: "Chrome on Android",
         userAgent: "Mozilla/5.0 (Linux; Android 11)",
       };
@@ -88,7 +88,7 @@ describe("pushNotifications router", () => {
           endpoint: "not-a-url",
           keys: { p256dh: "key", auth: "auth" },
         },
-        agentCode: "AGT001",
+        agentId: "AGT001",
       };
       expect(() => SubscribePushInput.parse(input)).toThrow();
     });
@@ -99,18 +99,18 @@ describe("pushNotifications router", () => {
           endpoint: "https://fcm.googleapis.com/fcm/send/abc123",
           keys: { p256dh: "", auth: "auth" },
         },
-        agentCode: "AGT001",
+        agentId: "AGT001",
       };
       expect(() => SubscribePushInput.parse(input)).toThrow();
     });
 
-    it("rejects agentCode longer than 32 chars", () => {
+    it("rejects agentId longer than 32 chars", () => {
       const input = {
         subscription: {
           endpoint: "https://fcm.googleapis.com/fcm/send/abc123",
           keys: { p256dh: "key", auth: "auth" },
         },
-        agentCode: "A".repeat(33),
+        agentId: "A".repeat(33),
       };
       expect(() => SubscribePushInput.parse(input)).toThrow();
     });
@@ -121,27 +121,27 @@ describe("pushNotifications router", () => {
           endpoint: "https://fcm.googleapis.com/fcm/send/abc123",
           keys: { p256dh: "key", auth: "auth" },
         },
-        agentCode: "AGT001",
+        agentId: "AGT001",
       };
       expect(() => SubscribePushInput.parse(input)).not.toThrow();
     });
   });
 
   describe("unsubscribePush input validation", () => {
-    it("accepts a valid endpoint and agentCode", () => {
+    it("accepts a valid endpoint and agentId", () => {
       const input = {
         endpoint: "https://fcm.googleapis.com/fcm/send/abc123",
-        agentCode: "AGT001",
+        agentId: "AGT001",
       };
       expect(() => UnsubscribePushInput.parse(input)).not.toThrow();
     });
 
     it("rejects an invalid endpoint URL", () => {
-      const input = { endpoint: "not-a-url", agentCode: "AGT001" };
+      const input = { endpoint: "not-a-url", agentId: "AGT001" };
       expect(() => UnsubscribePushInput.parse(input)).toThrow();
     });
 
-    it("rejects missing agentCode", () => {
+    it("rejects missing agentId", () => {
       const input = { endpoint: "https://fcm.googleapis.com/fcm/send/abc123" };
       expect(() => UnsubscribePushInput.parse(input)).toThrow();
     });
@@ -157,18 +157,18 @@ describe("pushNotifications router", () => {
     ] as const;
 
     it.each(validTypes)("accepts type '%s'", type => {
-      const input = { agentCode: "AGT001", type };
+      const input = { agentId: "AGT001", type };
       expect(() => SendTestPushInput.parse(input)).not.toThrow();
     });
 
     it("rejects an unknown notification type", () => {
-      const input = { agentCode: "AGT001", type: "unknown_type" };
+      const input = { agentId: "AGT001", type: "unknown_type" };
       expect(() => SendTestPushInput.parse(input)).toThrow();
     });
 
-    it("rejects empty agentCode", () => {
-      const input = { agentCode: "", type: "sim_failover" };
-      // Empty string is valid (max 32), but agentCode is required
+    it("rejects empty agentId", () => {
+      const input = { agentId: "", type: "sim_failover" };
+      // Empty string is valid (max 32), but agentId is required
       const result = SendTestPushInput.safeParse(input);
       // Empty string passes max(32) but is semantically invalid — just check it parses
       expect(result.success).toBe(true);

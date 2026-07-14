@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * gdpr.ts — NDPR/GDPR Data Portability & Right to Erasure
  *
@@ -33,6 +33,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { count } from "drizzle-orm";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 import { notifyOwner } from "../_core/notification";
+import { logger } from '../_core/logger';
 
 export const gdprRouter = router({
   /**
@@ -107,7 +108,7 @@ export const gdprRouter = router({
       // Write audit log for the export request
       await writeAuditLog({
         agentId: agent.id,
-        agentCode: agent.agentCode,
+        agentId: agent.agentId,
         action: "GDPR_EXPORT_REQUEST",
         resource: "agent",
         resourceId: String(agent.id),
@@ -128,7 +129,7 @@ export const gdprRouter = router({
         exportedAt: new Date().toISOString(),
         dataSubject: {
           id: agentProfile?.id,
-          agentCode: agentProfile?.agentCode,
+          agentId: agentProfile?.agentId,
           name: agentProfile?.name,
           phone: agentProfile?.phone,
           email: agentProfile?.email,
@@ -215,7 +216,7 @@ export const gdprRouter = router({
         // Log the erasure request
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "GDPR_ERASURE_REQUEST",
           resource: "agent",
           resourceId: String(agent.id),
@@ -229,17 +230,17 @@ export const gdprRouter = router({
 
         // Notify the platform owner
         await notifyOwner({
-          title: `NDPR Erasure Request: Agent ${agent.agentCode}`,
-          content: `Agent ${agent.name} (${agent.agentCode}) has submitted a data erasure request.\n\nReason: ${input.reason}\n\nAction required: Review and process within 30 days per NDPR Article 2.1(1)(c).\n\nNote: Financial transaction records must be retained for 7 years per CBN AML regulations.`,
+          title: `NDPR Erasure Request: Agent ${agent.agentId}`,
+          content: `Agent ${agent.name} (${agent.agentId}) has submitted a data erasure request.\n\nReason: ${input.reason}\n\nAction required: Review and process within 30 days per NDPR Article 2.1(1)(c).\n\nNote: Financial transaction records must be retained for 7 years per CBN AML regulations.`,
         }).catch((e: unknown) =>
-          console.error("[GDPR] Erasure notification failed:", e)
+          logger.error("[GDPR] Erasure notification failed:: " + e)
         );
 
         return {
           success: true,
           message:
             "Your erasure request has been received and will be processed within 30 days as required by NDPR.",
-          requestId: `ERASURE-${agent.agentCode}-${Date.now()}`,
+          requestId: `ERASURE-${agent.agentId}-${Date.now()}`,
           retentionNote:
             "Financial transaction records will be retained for 7 years as required by CBN AML regulations. All other personal data will be anonymised.",
         };

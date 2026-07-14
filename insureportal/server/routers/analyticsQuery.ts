@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { platformBillingLedger, billingAuditLog } from "../../drizzle/schema";
+import { platformBillingLedger, billingAuditLog } from "@schema";
 import { desc, count, sql, gte, and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

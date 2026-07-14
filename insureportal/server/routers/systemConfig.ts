@@ -16,7 +16,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { systemConfig } from "../../drizzle/schema";
+import { systemConfig } from "@schema";
 import { eq } from "drizzle-orm";
 
 export const systemConfigRouter = router({
