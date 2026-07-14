@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"bytes"
 	"fmt"
 	"encoding/json"
@@ -16,6 +17,8 @@ import (
 		"context"
 	"os/signal"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Agent Commission Management Service
@@ -235,6 +238,8 @@ func main() {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/ready", handleReady)
+	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/api/v1/calculate", handleCalculate)
 	mux.HandleFunc("/api/v1/payout-summary", handlePayoutSummary)
 	mux.HandleFunc("/metrics", prodMetricsHandler)
@@ -264,5 +269,5 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Forced shutdown: %v", err)
 	}
-	log.Println("Server stopped")
+	log.Printf(`{"level":"info","msg":"server stopped","service":"agent-commission-management"}`)
 }

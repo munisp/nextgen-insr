@@ -1,6 +1,6 @@
 # InsurePortal Insurance Platform — Production Readiness Report
 
-**Platform:** POS Shell (Node.js/TypeScript tRPC + React PWA)  
+**Platform:** InsurePortal Platform (Node.js/TypeScript tRPC + React PWA)  
 **Sprint:** Production Readiness Sprint — Final Assessment  
 **Date:** 2026-03-31  
 **Prepared by:** Manus AI  
@@ -105,7 +105,7 @@ The 19 tRPC routers expose a total of approximately 120 procedures covering the 
 
 ### 4. Platform Proxy Integration (9.0 / 10)
 
-The platform proxy pattern is consistently applied across all nine downstream services. Each procedure first attempts to call the platform service; on failure it falls back to the local PostgreSQL implementation. This ensures the POS Shell remains operational even when platform services are unreachable.
+The platform proxy pattern is consistently applied across all nine downstream services. Each procedure first attempts to call the platform service; on failure it falls back to the local PostgreSQL implementation. This ensures the InsurePortal Platform remains operational even when platform services are unreachable.
 
 | Service       | Router                                   | Fallback                         | Status |
 | ------------- | ---------------------------------------- | -------------------------------- | ------ |
@@ -195,7 +195,7 @@ Three k6 load test scenarios are defined:
 
 ### 9. Frontend Completeness (9.5 / 10)
 
-The React PWA implements 33 screens in the `screenMap`, all wired to live tRPC data. The tile-based POS terminal UI supports drag-to-reorder, configurable tile grid, live terminal status bar, and Socket.IO real-time fraud alerts.
+The React PWA implements 33 screens in the `screenMap`, all wired to live tRPC data. The tile-based service node UI supports drag-to-reorder, configurable tile grid, live terminal status bar, and Socket.IO real-time fraud alerts.
 
 | Category         | Screens                                                                            |
 | ---------------- | ---------------------------------------------------------------------------------- |
@@ -247,7 +247,6 @@ The React Native and Flutter mobile apps exist in the platform monorepo (`/home/
 | Middleware Integration Audit   | `docs/middleware-integration-audit.md` | All 10 middleware components                             |
 | KYC/KYB Audit                  | `docs/kyc-audit.md`                    | Full KYC flow with compliance notes                      |
 | Redundancy Audit               | `docs/redundancy-audit.md`             | Failover and resilience patterns                         |
-| TigerBeetle Sidecar Deployment | `docs/tb-sidecar-deployment.md`        | Offline-sync verification guide                          |
 | mTLS Microservices             | `docs/mtls-microservices.md`           | CA hierarchy, cert rotation, per-service config          |
 | golang-migrate                 | `docs/golang-migrate.md`               | Migration files, CI/CD integration, dirty-state recovery |
 | Production Readiness Report    | `docs/production-readiness-report.md`  | This document                                            |

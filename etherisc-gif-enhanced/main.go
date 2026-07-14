@@ -25,6 +25,8 @@ import (
 		"context"
 	"os/signal"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
@@ -799,6 +801,68 @@ func handleOracleEvaluate(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("PO-%d", time.Now().UnixNano()), req.PolicyID, req.EventValue, payout, req.DataSource)
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"policy_id": req.PolicyID, "triggered": triggered, "event_value": req.EventValue, "threshold": threshold, "payout": payout})
+}
+
+// Panic recovery middleware - catches panics and returns 500
+func prodRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Printf(`{"level":"info","msg":"database connected","service":"etherisc-gif-enhanced","driver":"postgresql"}`)
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS parametric_policies (id TEXT PRIMARY KEY, product_id TEXT, customer_id TEXT, trigger_type TEXT, trigger_threshold NUMERIC(10,2), payout_amount NUMERIC(15,2), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {

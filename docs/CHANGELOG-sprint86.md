@@ -8,7 +8,7 @@
 
 ## Summary
 
-Sprint 86 performed a comprehensive deep audit of the entire POS Shell platform, identifying and resolving orphan tables, unwired routers, and missing CRUD coverage. All 25 orphan database tables now have full CRUD routers. Security was hardened with PBAC, ransomware protection, and input sanitization. Resilience was improved with WebSocket offline-first queuing, bandwidth optimization, and transaction queue fallback. Middleware integration was completed with Kafka, Dapr, Redis, Mojaloop, OpenSearch, and APISIX.
+Sprint 86 performed a comprehensive deep audit of the entire InsurePortal Platform platform, identifying and resolving orphan tables, unwired routers, and missing CRUD coverage. All 25 orphan database tables now have full CRUD routers. Security was hardened with PBAC, ransomware protection, and input sanitization. Resilience was improved with WebSocket offline-first queuing, bandwidth optimization, and transaction queue fallback. Middleware integration was completed with Kafka, Dapr, Redis, Mojaloop, OpenSearch, and APISIX.
 
 ---
 

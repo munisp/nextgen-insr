@@ -549,7 +549,7 @@ export async function runDeadLetterDigest(): Promise<void> {
       ...itemLines,
       moreNote,
       ``,
-      `Action required: Log in to the POS Shell → Offline Resilience → ERP Retry Worker`,
+      `Action required: Log in to the InsurePortal Platform → Offline Resilience → ERP Retry Worker`,
       `and click "Retry All Dead-Letter" to re-queue these items.`,
     ].join("\n");
 

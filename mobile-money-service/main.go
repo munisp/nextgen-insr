@@ -18,6 +18,8 @@ import (
 		"context"
 	"os/signal"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Mobile Money Service — integration with Nigerian mobile money operators
@@ -184,6 +186,8 @@ func main() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "mobile-money-service"})
 	})
+	r.Get("/ready", handleReady)
+	r.Get("/live", handleLive)
 	r.Post("/api/v1/collect", collectPremium)
 	r.Post("/api/v1/disburse", disburseToClaim)
 	r.Get("/api/v1/operators", listOperators)
@@ -198,7 +202,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down gracefully...")
+	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"mobile-money-service"}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }

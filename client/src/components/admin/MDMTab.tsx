@@ -3,7 +3,7 @@
 /**
  * MDM Device Management Tab — Admin Panel
  *
- * Shows all enrolled POS terminals with live status, allows remote commands,
+ * Shows all enrolled service nodes with live status, allows remote commands,
  * config push, and OTA update triggers.
  */
 
@@ -1029,7 +1029,7 @@ export function MDMTab() {
                   )}
                   <div className="bg-slate-800 rounded-lg p-3 text-left">
                     <p className="text-xs text-slate-400 mb-1">
-                      Install command for POS terminal:
+                      Install command for service node:
                     </p>
                     <code className="text-xs text-emerald-300 break-all">
                       sudo ./insureportal-installer --enroll-token{" "}
@@ -1158,7 +1158,7 @@ export function MDMTab() {
                       <span className="font-mono text-amber-300">
                         {killSwitchTarget?.agentId}
                       </span>
-                      . The POS Shell will immediately show a kill-switch
+                      . The InsurePortal Platform will immediately show a kill-switch
                       overlay and all transactions will be blocked.
                     </>
                   ) : (
@@ -1171,7 +1171,7 @@ export function MDMTab() {
                       <span className="font-mono text-amber-300">
                         {killSwitchTarget?.agentId}
                       </span>
-                      . The POS Shell overlay will dismiss automatically.
+                      . The InsurePortal Platform overlay will dismiss automatically.
                     </>
                   )}
                 </p>
@@ -2371,7 +2371,7 @@ function EnrollmentTokenPanel() {
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-white">Device Enrollment</h3>
       <p className="text-xs text-slate-400">
-        Generate enrollment tokens for new POS terminals. Agents enter this
+        Generate enrollment tokens for new service nodes. Agents enter this
         token during device setup to bind the terminal to their account.
       </p>
 
@@ -2426,7 +2426,7 @@ function EnrollmentTokenPanel() {
                 </Button>
               </div>
               <p className="text-xs text-slate-500 mt-2">
-                Enter this token on the POS terminal during first-time setup.
+                Enter this token on the service node during first-time setup.
                 The device will auto-enroll and appear in the Devices tab.
               </p>
             </div>

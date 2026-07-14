@@ -1,6 +1,6 @@
 # mTLS Certificate Setup Guide
 
-This guide covers generating development/staging certificates and wiring them into the POS Shell server.
+This guide covers generating development/staging certificates and wiring them into the InsurePortal Platform server.
 
 ## Quick Start (Development — Self-Signed)
 
@@ -12,7 +12,7 @@ openssl genrsa -out ca.key 4096
 openssl req -new -x509 -days 3650 -key ca.key -out ca.crt \
   -subj "/CN=InsurePortal Dev CA/O=InsurePortal/C=NG"
 
-# 2. Generate POS Shell certificate
+# 2. Generate InsurePortal Platform certificate
 openssl genrsa -out tls.key 2048
 openssl req -new -key tls.key -out tls.csr \
   -subj "/CN=insurance-portal.svc.insureportal.internal/O=InsurePortal/C=NG"

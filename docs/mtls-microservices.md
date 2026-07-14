@@ -1,4 +1,4 @@
-# mTLS Between POS Shell and Platform Microservices
+# mTLS Between InsurePortal Platform and Platform Microservices
 
 ## Overview
 
@@ -51,9 +51,9 @@ spec:
 
 ---
 
-## POS Shell Client Configuration
+## InsurePortal Platform Client Configuration
 
-The POS Shell Node.js server uses the `https` module (or `node-fetch` with a custom agent) when calling platform microservices. The TLS agent is constructed once at startup and reused across all requests.
+The InsurePortal Platform Node.js server uses the `https` module (or `node-fetch` with a custom agent) when calling platform microservices. The TLS agent is constructed once at startup and reused across all requests.
 
 ```typescript
 // server/lib/mtlsAgent.ts
@@ -144,7 +144,7 @@ export async function callPlatformService(
 
 ## Dapr Sidecar Integration
 
-When running under Dapr, mTLS between services is handled automatically by the Dapr control plane (SPIFFE/SPIRE). The POS Shell server communicates with Dapr via its local sidecar on `http://localhost:3500`, and Dapr handles certificate rotation transparently.
+When running under Dapr, mTLS between services is handled automatically by the Dapr control plane (SPIFFE/SPIRE). The InsurePortal Platform server communicates with Dapr via its local sidecar on `http://localhost:3500`, and Dapr handles certificate rotation transparently.
 
 ```yaml
 # dapr/components/insurance-portal-subscription.yaml
@@ -173,8 +173,8 @@ dapr mtls status -k
 
 1. cert-manager automatically renews certificates 7 days before expiry.
 2. The new secret is written to the Kubernetes `Secret` object.
-3. A `SIGHUP` is sent to the POS Shell pod via a cert-manager `CertificateRequest` webhook.
-4. The POS Shell server calls `resetMtlsAgent()` on `SIGHUP` to force re-read of the new certificate.
+3. A `SIGHUP` is sent to the InsurePortal Platform pod via a cert-manager `CertificateRequest` webhook.
+4. The InsurePortal Platform server calls `resetMtlsAgent()` on `SIGHUP` to force re-read of the new certificate.
 5. In-flight requests complete with the old certificate; new requests use the new certificate.
 
 ```typescript
@@ -190,7 +190,7 @@ process.on("SIGHUP", () => {
 ## Verification
 
 ```bash
-# Verify POS Shell certificate
+# Verify InsurePortal Platform certificate
 openssl s_client \
   -connect insurance-portal.svc.insureportal.internal:8443 \
   -cert /etc/insureportal/certs/tls.crt \

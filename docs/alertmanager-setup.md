@@ -91,14 +91,14 @@ All alerting rules are defined in `monitoring/prometheus-rules.yml`. The file is
 
 | Alert                              | Severity | Threshold        | For    | Channel                         |
 | ---------------------------------- | -------- | ---------------- | ------ | ------------------------------- |
-| `POSShellHighTransactionLatency`   | critical | p95 > 500 ms     | 2 min  | OnCall + Slack critical         |
-| `POSShellHighTransactionErrorRate` | critical | error rate > 5%  | 3 min  | OnCall + Slack critical         |
-| `POSShellNoTransactions`           | warning  | rate = 0         | 10 min | Slack warning                   |
-| `POSShellFraudAlertSpike`          | critical | > 10 alerts/min  | 1 min  | OnCall + Slack critical + fraud |
-| `POSShellFloatLockContention`      | warning  | > 5 locks/min    | 2 min  | Slack warning                   |
-| `POSShellPlatformDegradation`      | warning  | error rate > 10% | 3 min  | Slack warning                   |
-| `POSShellHighMemoryUsage`          | warning  | heap > 512 MB    | 5 min  | Slack warning                   |
-| `POSShellEventLoopLag`             | warning  | lag > 100 ms     | 2 min  | Slack warning                   |
+| `PlatformShellHighTransactionLatency`   | critical | p95 > 500 ms     | 2 min  | OnCall + Slack critical         |
+| `PlatformShellHighTransactionErrorRate` | critical | error rate > 5%  | 3 min  | OnCall + Slack critical         |
+| `PlatformShellNoTransactions`           | warning  | rate = 0         | 10 min | Slack warning                   |
+| `PlatformShellFraudAlertSpike`          | critical | > 10 alerts/min  | 1 min  | OnCall + Slack critical + fraud |
+| `PlatformShellFloatLockContention`      | warning  | > 5 locks/min    | 2 min  | Slack warning                   |
+| `PlatformShellPlatformDegradation`      | warning  | error rate > 10% | 3 min  | Slack warning                   |
+| `PlatformShellHighMemoryUsage`          | warning  | heap > 512 MB    | 5 min  | Slack warning                   |
+| `PlatformShellEventLoopLag`             | warning  | lag > 100 ms     | 2 min  | Slack warning                   |
 
 ### Adding a new alert rule
 

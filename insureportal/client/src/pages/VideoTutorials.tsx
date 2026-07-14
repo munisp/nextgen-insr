@@ -81,7 +81,7 @@ const tutorials: Tutorial[] = [
       "Sufficient premium reserve",
     ],
     relatedPages: [
-      { label: "POS Terminal", path: "/" },
+      { label: "Service Node", path: "/" },
       { label: "User Guide: Transactions", path: "/user-guide" },
     ],
     chapters: [
@@ -93,7 +93,7 @@ const tutorials: Tutorial[] = [
         content:
           "Cash-in (deposits) and claim payout (withdrawals) are the most common POS operations. Cash-in adds money to a customer's account while claim payout allows them to withdraw. Both operations require proper customer identification and affect your premium reserve.",
         steps: [
-          "Navigate to the POS Terminal from the Hub",
+          "Navigate to the Service Node from the Hub",
           "Select either 'Premium Payment' or 'Claim Payout' from the transaction menu",
           "The system will check your current premium reserve before proceeding",
         ],
@@ -109,7 +109,7 @@ const tutorials: Tutorial[] = [
         content:
           "A premium collection transaction involves collecting physical cash from the customer and crediting their account. The amount is deducted from your premium reserve and the customer receives a deposit confirmation.",
         steps: [
-          "Select 'Premium Payment' from the POS Terminal menu",
+          "Select 'Premium Payment' from the Service Node menu",
           "Enter the customer's account number or phone number",
           "Enter the deposit amount (minimum ₦100, maximum ₦500,000)",
           "Verify the customer name displayed on screen matches the person",
@@ -130,7 +130,7 @@ const tutorials: Tutorial[] = [
         content:
           "A claim payout transaction involves debiting the customer's account and dispensing physical cash. This increases your premium reserve. Ensure you have sufficient physical cash before starting.",
         steps: [
-          "Select 'Claim Payout' from the POS Terminal menu",
+          "Select 'Claim Payout' from the Service Node menu",
           "Enter the customer's account number or phone number",
           "Enter the withdrawal amount",
           "The customer authorizes the transaction via their bank's approval",
@@ -151,7 +151,7 @@ const tutorials: Tutorial[] = [
         content:
           "Your premium reserve determines how many premium collection transactions you can process. Cash-in reduces float, claim payout increases it. Monitor your float regularly and request top-ups when running low.",
         steps: [
-          "Check your current float in the POS Terminal header bar",
+          "Check your current float in the Service Node header bar",
           "Navigate to Admin Panel > Float Requests to request a top-up",
           "Enter the desired top-up amount and submit",
           "Wait for supervisor approval (you'll receive a notification)",

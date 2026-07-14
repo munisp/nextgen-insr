@@ -13,14 +13,14 @@ Internet
     ▼
 nginx (443/80) ─── TLS 1.3, HSTS, CSP
     │
-    ├── /                → POS Shell (Node.js 22, port 3000)
+    ├── /                → InsurePortal Platform (Node.js 22, port 3000)
     ├── /api/trpc/*      → APISix Gateway (rate limit, JWT auth)
     ├── /auth/*          → Keycloak OIDC (port 8080)
     ├── /grafana         → Grafana (port 3001)
     ├── /temporal-ui     → Temporal Web UI (port 8088)
     └── /vault           → HashiCorp Vault (port 8200)
 
-POS Shell
+InsurePortal Platform
     ├── PostgreSQL (port 5432)     — primary data store
     ├── Redis (port 6379)          — session + float + probe cache
     ├── Kafka (port 9092)          — event bus (tx.created, fraud.alert, sim.failover)
@@ -159,7 +159,7 @@ This starts all services in the correct dependency order:
 
 1. PostgreSQL → Redis → Kafka
 2. Temporal → Fluvio → Keycloak → Permify
-3. POS Shell (runs `pnpm db:push` on startup)
+3. InsurePortal Platform (runs `pnpm db:push` on startup)
 4. APISix → nginx
 5. Prometheus → Loki → Promtail → Grafana
 

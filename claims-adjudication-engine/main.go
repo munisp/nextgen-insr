@@ -711,7 +711,7 @@ func prodTracingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
+		log.Printf(`{"level":"debug","msg":"request","method":"%s","path":"%s","status":%d,"duration":"%s","request_id":"%s"}`, r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
 	})
 }
 
@@ -802,6 +802,116 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
 	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
+}
+
+// Panic recovery middleware - catches panics and returns 500
+func prodRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Printf(`{"level":"info","msg":"database connected","service":"claims-adjudication-engine","driver":"postgresql"}`)
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS claims (id TEXT PRIMARY KEY, policy_id TEXT NOT NULL, claimant_id TEXT, amount NUMERIC(15,2), claim_type TEXT, status TEXT DEFAULT 'submitted', risk_score NUMERIC(5,2), decision TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
+
+// Circuit breaker for external API calls
+type circuitBreaker struct {
+	maxFailures int
+	failures    int
+	state       string // "closed", "open", "half-open"
+	lastFailure time.Time
+	timeout     time.Duration
+	mu          sync.Mutex
+}
+
+var externalAPIBreaker = &circuitBreaker{
+	maxFailures: 5,
+	state:       "closed",
+	timeout:     30 * time.Second,
+}
+
+func (cb *circuitBreaker) execute(fn func() error) error {
+	cb.mu.Lock()
+	if cb.state == "open" {
+		if time.Since(cb.lastFailure) > cb.timeout {
+			cb.state = "half-open"
+		} else {
+			cb.mu.Unlock()
+			log.Printf(`{"level":"warn","msg":"circuit breaker open","failures":%d}`, cb.failures)
+			return fmt.Errorf("circuit breaker open: too many failures")
+		}
+	}
+	cb.mu.Unlock()
+
+	err := fn()
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	if err != nil {
+		cb.failures++
+		cb.lastFailure = time.Now()
+		if cb.failures >= cb.maxFailures {
+			cb.state = "open"
+			log.Printf(`{"level":"error","msg":"circuit breaker tripped","failures":%d}`, cb.failures)
+		}
+		return err
+	}
+	cb.failures = 0
+	cb.state = "closed"
+	return nil
 }
 
 func main() {

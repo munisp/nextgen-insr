@@ -18,6 +18,8 @@ import (
 		"context"
 	"os/signal"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // agent-network-platform — production microservice for InsurePortal platform
@@ -195,11 +197,19 @@ func main() {
 	r.Use(rateLimitMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		dbStatus := "disconnected"
+		if db != nil {
+			if err := db.Ping(); err == nil {
+				dbStatus = "connected"
+			}
+		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "kafka": "configured", "redis": "configured", "service": "agent-network-platform", "version": "1.0.0",
 			"uptime": time.Since(startTime).String(),
 		})
 	})
+	r.Get("/ready", handleReady)
+	r.Get("/live", handleLive)
 	r.Get("/api/v1/info", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"service": "agent-network-platform", "started_at": startTime.Format(time.RFC3339),
@@ -221,7 +231,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down gracefully...")
+	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"agent-network-platform"}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }

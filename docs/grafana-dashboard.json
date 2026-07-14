@@ -3,7 +3,7 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "Prometheus data source connected to the POS Shell /api/metrics endpoint",
+      "description": "Prometheus data source connected to the InsurePortal Platform /api/metrics endpoint",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"

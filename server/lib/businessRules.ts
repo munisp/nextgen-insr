@@ -792,10 +792,10 @@ export const REWARD_CATALOG = [
   },
   {
     id: "pos_upgrade",
-    name: "POS Terminal Upgrade",
+    name: "Service Node Upgrade",
     pointsCost: 50_000,
     category: "hardware",
-    description: "Upgrade to next-generation POS terminal",
+    description: "Upgrade to next-generation service node",
   },
 ];
 

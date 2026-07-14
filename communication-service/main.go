@@ -25,6 +25,8 @@ import (
 		"context"
 	"os/signal"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls

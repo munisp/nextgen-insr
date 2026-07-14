@@ -19,6 +19,8 @@ import (
 		"context"
 	"os/signal"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Agent Mobile App Backend — API for insurance agent field operations
@@ -186,6 +188,8 @@ func main() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "agent-mobile-app"})
 	})
+	r.Get("/ready", handleReady)
+	r.Get("/live", handleLive)
 	r.Get("/api/v1/agent/{id}/dashboard", agentDashboard)
 	r.Post("/api/v1/agent/{id}/checkin", agentCheckin)
 	r.Get("/api/v1/agent/{id}/commission", agentCommission)
@@ -199,7 +203,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down gracefully...")
+	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"agent-mobile-app"}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
