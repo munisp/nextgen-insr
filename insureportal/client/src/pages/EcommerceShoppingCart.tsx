@@ -2,23 +2,23 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
-export default function EcommerceShoppingCart() {
+export default function InsuranceShoppingCart() {
   const customerId = 1; // From auth context in production
   const [syncing, setSyncing] = useState(false);
 
-  const { data: cart, refetch } = trpc.ecommerceCart.getCart.useQuery({
+  const { data: cart, refetch } = trpc.insuranceCart.getCart.useQuery({
     customerId,
   });
-  const updateItem = trpc.ecommerceCart.updateItem.useMutation({
+  const updateItem = trpc.insuranceCart.updateItem.useMutation({
     onSuccess: () => refetch(),
   });
-  const removeItem = trpc.ecommerceCart.removeItem.useMutation({
+  const removeItem = trpc.insuranceCart.removeItem.useMutation({
     onSuccess: () => refetch(),
   });
-  const clearCart = trpc.ecommerceCart.clearCart.useMutation({
+  const clearCart = trpc.insuranceCart.clearCart.useMutation({
     onSuccess: () => refetch(),
   });
-  const syncOffline = trpc.ecommerceCart.syncOfflineCart.useMutation({
+  const syncOffline = trpc.insuranceCart.syncOfflineCart.useMutation({
     onSuccess: () => {
       setSyncing(false);
       refetch();
@@ -158,7 +158,7 @@ export default function EcommerceShoppingCart() {
               <span>₦{total.toLocaleString()}</span>
             </div>
             <a
-              href="/ecommerce/checkout"
+              href="/insurance/checkout"
               className="block w-full text-center px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
             >
               Proceed to Checkout

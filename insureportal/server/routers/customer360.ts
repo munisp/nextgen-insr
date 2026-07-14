@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { customers } from "../../drizzle/schema";
+import { customers } from "@schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const customer360Router = router({

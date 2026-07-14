@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog } from "@schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -184,7 +184,7 @@ export const crossBorderRemittanceHubRouter = router({
       }
     }),
 
-  listCorridors: protectedProcedure.query(async () => {
+  listInsuranceRegions: protectedProcedure.query(async () => {
     try {
       return { data: [], total: 0 };
     } catch (error) {

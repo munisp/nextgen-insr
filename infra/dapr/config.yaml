@@ -1,13 +1,13 @@
 apiVersion: dapr.io/v1alpha1
 kind: Configuration
 metadata:
-  name: 54link-dapr-config
+  name: insureportal-dapr-config
   namespace: default
 spec:
   tracing:
     samplingRate: "1"
     zipkin:
-      endpointAddress: "http://jaeger.54link.io:9411/api/v2/spans"
+      endpointAddress: "http://jaeger.insureportal.io:9411/api/v2/spans"
   metric:
     enabled: true
   logging:

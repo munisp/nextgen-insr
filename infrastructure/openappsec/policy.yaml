@@ -1,0 +1,94 @@
+# OpenAppSec (open-appsec.io) WAF Policy for InsurePortal
+# ML-based web application firewall — no signatures, adapts to traffic patterns
+
+apiVersion: openappsec.io/v1beta1
+kind: Policy
+metadata:
+  name: insureportal-waf
+  namespace: insureportal
+spec:
+  default:
+    mode: prevent  # prevent (block), detect (log only)
+    practices:
+      - web-attacks
+      - api-protection
+      - bot-prevention
+    triggers:
+      - log
+      - web-hook
+
+  practices:
+    - name: web-attacks
+      web-attacks:
+        minimum-confidence: medium
+        max-body-size: 52428800  # 50MB (for image uploads)
+        protections:
+          - sql-injection: prevent
+          - cross-site-scripting: prevent
+          - command-injection: prevent
+          - path-traversal: prevent
+          - ldap-injection: prevent
+          - xml-external-entity: prevent
+          - server-side-request-forgery: prevent
+
+    - name: api-protection
+      api-protection:
+        api-spec-validation: true
+        schema-validation: true
+        max-url-length: 2048
+        max-header-length: 8192
+        max-object-depth: 10
+        allowed-methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        content-type-enforcement:
+          - application/json
+          - multipart/form-data
+          - application/x-www-form-urlencoded
+
+    - name: bot-prevention
+      anti-bot:
+        injected-URIs:
+          - /api/v1/portal/auth/*
+          - /api/v1/marketplace/*
+        validated-URIs:
+          - /api/v1/portal/claims/*
+          - /api/v1/portal/payments/*
+
+  triggers:
+    - name: log
+      log:
+        address: "opensearch:9200"
+        protocol: https
+        format: json-extra
+
+    - name: web-hook
+      web-hook:
+        address: "http://realtime-streaming:8091/api/v1/streams/publish"
+        headers:
+          X-Source: "openappsec"
+
+  exceptions:
+    - name: health-checks
+      match:
+        source-ip:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+        url:
+          - /health
+          - /health/ready
+          - /metrics
+      action: skip
+
+    - name: ussd-callbacks
+      match:
+        url:
+          - /ussd/callback
+          - /ussd/africastalking
+        source-ip:
+          - 41.58.0.0/16
+      action: skip

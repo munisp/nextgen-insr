@@ -1,4 +1,4 @@
-/// # 54Link Transaction Filter SmartModule
+/// # InsurePortal Transaction Filter SmartModule
 ///
 /// Fluvio filter SmartModule that discards transaction events below a configurable
 /// minimum amount threshold and filters out non-actionable statuses.

@@ -32,7 +32,7 @@ The following table maps each InsurePortal internal router to its canonical plat
 | `geofencing.ts`      | Zone CRUD, location check   | `pos-geofencing`                                   | `platform/backend/python-services/pos-geofencing/`                                                   | **Partial** — `geofencingPlatform` client exists; polygon zones not yet proxied            |
 | `disputes.ts`        | Dispute CRUD, messages      | `dispute-service`                                  | `platform/core-services/dispute-service/`                                                            | **Partial** — `disputePlatform` client exists; chargeback/provisional credit not yet in UI |
 | `loyalty.ts`         | Points, rewards, redemption | `loyalty-service`                                  | `platform/backend/python-services/loyalty-service/`                                                  | **Wired** — `loyaltyPlatform` client, local DB fallback                                    |
-| `floatTopUp.ts`      | Float top-up requests       | `float-service` (Python) + `float-management` (Go) | `platform/backend/python-services/float-service/`, `platform/services/go-services/float-management/` | **Partial** — `floatPlatform.utilize/settle` not yet called in `transactions.create`       |
+| `premiumTopUp.ts`      | Float top-up requests       | `float-service` (Python) + `float-management` (Go) | `platform/backend/python-services/float-service/`, `platform/services/go-services/float-management/` | **Partial** — `floatPlatform.utilize/settle` not yet called in `transactions.create`       |
 | `agentManagement.ts` | Agent CRUD, KYB             | `agent-service`                                    | `platform/backend/python-services/agent-service/`                                                    | **Not wired** — fully internal                                                             |
 | `transactions.ts`    | Transaction create, stats   | `transaction-service`, `analytics-service`         | `platform/core-services/transaction-service/`, `platform/core-services/analytics-service/`           | **Partial** — analytics platform client exists but not called                              |
 | `auditLog.ts`        | Audit log writes/reads      | `audit-service` (Go)                               | `platform/services/go-services/audit-service/`                                                       | **Not wired** — fully internal (Fluvio dual-write pending)                                 |
@@ -56,7 +56,7 @@ The platform monorepo contains multiple implementations of the same service in d
 | --------------------------- | ------------------------------------------------- | -------------- | -------- | ---------------------------- |
 | Python float-service        | `platform/backend/python-services/float-service/` | Python/FastAPI | 8107     | REST API, PostgreSQL         |
 | Go float-management         | `platform/services/go-services/float-management/` | Go             | 8107     | Higher performance, same API |
-| InsurePortal floatTopUp router | `server/routers/floatTopUp.ts`                    | TypeScript     | internal | Local DB only                |
+| InsurePortal premiumTopUp router | `server/routers/premiumTopUp.ts`                    | TypeScript     | internal | Local DB only                |
 
 **Canonical:** Go float-management (`:8107`) — the `floatPlatform` client in `platformClient.ts` already points to it.
 

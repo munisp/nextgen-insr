@@ -2,24 +2,24 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
-export default function EcommerceOrderManagement() {
+export default function InsuranceOrderManagement() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [page, setPage] = useState(0);
   const [selectedOrder, setSelectedOrder] = useState<number | null>(null);
   const limit = 20;
 
-  const { data: orders, refetch } = trpc.ecommerceOrders.listOrders.useQuery({
+  const { data: orders, refetch } = trpc.policyOrders.listOrders.useQuery({
     status: statusFilter || undefined,
     limit,
     offset: page * limit,
   });
 
-  const { data: orderDetail } = trpc.ecommerceOrders.getOrder.useQuery(
+  const { data: orderDetail } = trpc.policyOrders.getOrder.useQuery(
     { id: selectedOrder! },
     { enabled: !!selectedOrder }
   );
 
-  const updateStatus = trpc.ecommerceOrders.updateStatus.useMutation({
+  const updateStatus = trpc.policyOrders.updateStatus.useMutation({
     onSuccess: () => {
       refetch();
       setSelectedOrder(null);

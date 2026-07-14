@@ -19,7 +19,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { systemConfig, auditLog } from "../../drizzle/schema";
+import { systemConfig, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const businessRulesRouter = router({

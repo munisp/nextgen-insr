@@ -1,0 +1,6 @@
+apiVersion: v2
+name: enterprise-mdm
+description: Helm chart for Enterprise Mdm
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

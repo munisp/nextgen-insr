@@ -7,6 +7,7 @@
  */
 import { Request, Response, NextFunction, Express } from "express";
 import crypto from "crypto";
+import { logger } from '../_core/logger';
 
 // ─── Request ID Middleware ───────────────────────────────────────
 export function requestIdMiddleware(
@@ -32,7 +33,7 @@ export function requestLoggerMiddleware(
     const duration = Date.now() - start;
     const level =
       res.statusCode >= 500 ? "ERROR" : res.statusCode >= 400 ? "WARN" : "INFO";
-    console.log(
+    logger.info(
       `[${level}] ${new Date().toISOString()} ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms reqId=${reqId} ip=${req.ip}`
     );
   });
@@ -130,7 +131,7 @@ export function xssSanitizeMiddleware(
 const ALLOWED_ORIGINS = [
   /^https?:\/\/localhost(:\d+)?$/,
   /^https?:\/\/.*\.manus\.(computer|space)$/,
-  /^https?:\/\/.*\.54link\.com$/,
+  /^https?:\/\/.*\.insureportal\.com$/,
 ];
 
 export function corsHardeningMiddleware(
@@ -240,16 +241,16 @@ export function registerGracefulShutdown(server: any) {
     if (shuttingDown) return;
     shuttingDown = true;
     setServerReady(false);
-    console.log(`[SHUTDOWN] Received ${signal}. Draining connections...`);
+    logger.info(`[SHUTDOWN] Received ${signal}. Draining connections...`);
 
     // Stop accepting new connections
     server.close(() => {
-      console.log("[SHUTDOWN] HTTP server closed.");
+      logger.info("[SHUTDOWN] HTTP server closed.");
     });
 
     // Give in-flight requests 10 seconds to complete
     setTimeout(() => {
-      console.log("[SHUTDOWN] Force exit after timeout.");
+      logger.info("[SHUTDOWN] Force exit after timeout.");
       process.exit(0);
     }, 10_000);
 
@@ -258,9 +259,9 @@ export function registerGracefulShutdown(server: any) {
       const { getPool } = await import("../db");
       const pool = await getPool();
       if (pool) await pool.end();
-      console.log("[SHUTDOWN] Database pool closed.");
+      logger.info("[SHUTDOWN] Database pool closed.");
     } catch (e) {
-      console.log("[SHUTDOWN] DB pool close error:", e);
+      logger.info("[SHUTDOWN] DB pool close error:: " + e);
     }
 
     process.exit(0);
@@ -282,7 +283,7 @@ export function auditTrailMiddleware(
     if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       const userId = (req as any).user?.id || "anonymous";
       const reqId = (req as any).requestId || "-";
-      console.log(
+      logger.info(
         `[AUDIT] ${new Date().toISOString()} user=${userId} method=${req.method} path=${req.originalUrl} status=${res.statusCode} reqId=${reqId}`
       );
     }

@@ -1,0 +1,223 @@
+# Apache APISIX Configuration — API Gateway for InsurePortal
+# Provides: rate limiting, auth, load balancing, circuit breaking, observability
+
+apisix:
+  node_listen: 9080
+  enable_ipv6: false
+  ssl:
+    enable: true
+    listen_port: 9443
+
+deployment:
+  role: traditional
+  role_traditional:
+    config_provider: etcd
+  admin:
+    admin_key:
+      - name: admin
+        key: "${APISIX_ADMIN_KEY}"
+        role: admin
+
+plugin_attr:
+  prometheus:
+    export_addr:
+      ip: "0.0.0.0"
+      port: 9091
+
+plugins:
+  - real-ip
+  - cors
+  - gzip
+  - limit-req
+  - limit-count
+  - limit-conn
+  - key-auth
+  - jwt-auth
+  - openid-connect
+  - authz-keycloak
+  - ip-restriction
+  - ua-restriction
+  - referer-restriction
+  - csrf
+  - request-id
+  - request-validation
+  - proxy-rewrite
+  - grpc-transcode
+  - prometheus
+  - zipkin
+  - opentelemetry
+  - datadog
+  - ext-plugin-pre-req
+  - ext-plugin-post-resp
+  - traffic-split
+  - response-rewrite
+  - fault-injection
+  - serverless-pre-function
+  - serverless-post-function
+
+---
+# Routes configuration
+routes:
+  # Customer Portal API
+  - uri: /api/v1/portal/*
+    name: customer-portal
+    upstream:
+      type: roundrobin
+      nodes:
+        "customer-portal:5002": 1
+    plugins:
+      limit-count:
+        count: 1000
+        time_window: 60
+        key: "remote_addr"
+      jwt-auth: {}
+      opentelemetry:
+        sampler:
+          name: always_on
+
+  # Fraud Detection Service
+  - uri: /api/v1/fraud/*
+    name: fraud-detection
+    upstream:
+      type: roundrobin
+      nodes:
+        "fraud-detection:8081": 1
+    plugins:
+      limit-count:
+        count: 500
+        time_window: 60
+      key-auth: {}
+
+  # USSD Gateway
+  - uri: /ussd/*
+    name: ussd-gateway
+    upstream:
+      type: roundrobin
+      nodes:
+        "ussd-gateway:8082": 1
+    plugins:
+      ip-restriction:
+        whitelist:
+          - "41.58.0.0/16"  # AfricasTalking IPs
+          - "197.255.0.0/16"
+
+  # Telematics Engine
+  - uri: /api/v1/telematics/*
+    name: telematics-engine
+    upstream:
+      type: roundrobin
+      nodes:
+        "telematics-engine:8083": 1
+    plugins:
+      limit-count:
+        count: 5000
+        time_window: 60
+        key: "consumer_name"
+      jwt-auth: {}
+
+  # Parametric Insurance
+  - uri: /api/v1/parametric/*
+    name: parametric-insurance
+    upstream:
+      type: roundrobin
+      nodes:
+        "parametric-insurance:8084": 1
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 200
+        time_window: 60
+
+  # P2P Pools
+  - uri: /api/v1/pools/*
+    name: p2p-pools
+    upstream:
+      type: roundrobin
+      nodes:
+        "p2p-pools:8085": 1
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 300
+        time_window: 60
+
+  # API Marketplace (B2B)
+  - uri: /api/v1/marketplace/*
+    name: api-marketplace
+    upstream:
+      type: roundrobin
+      nodes:
+        "api-marketplace:8086": 1
+    plugins:
+      key-auth: {}
+      limit-count:
+        count: 10000
+        time_window: 60
+        key: "consumer_name"
+
+  # ML Fraud Scoring
+  - uri: /api/v1/ml/*
+    name: ml-fraud-scoring
+    upstream:
+      type: roundrobin
+      nodes:
+        "ml-fraud-scoring:8087": 1
+    plugins:
+      key-auth: {}
+      limit-req:
+        rate: 100
+        burst: 50
+
+  # CV Claims Adjuster
+  - uri: /api/v1/cv/*
+    name: cv-claims-adjuster
+    upstream:
+      type: roundrobin
+      nodes:
+        "cv-claims-adjuster:8088": 1
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 50
+        time_window: 60
+      client-control:
+        max_body_size: 52428800  # 50MB for image uploads
+
+  # Voice Transcription
+  - uri: /api/v1/voice/*
+    name: voice-transcription
+    upstream:
+      type: roundrobin
+      nodes:
+        "voice-transcription:8089": 1
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 100
+        time_window: 60
+      client-control:
+        max_body_size: 26214400  # 25MB for audio files
+
+  # Ledger Sidecar
+  - uri: /api/v1/ledger/*
+    name: ledger-sidecar
+    upstream:
+      type: roundrobin
+      nodes:
+        "ledger-sidecar:8090": 1
+    plugins:
+      key-auth: {}
+      limit-req:
+        rate: 10000
+        burst: 5000
+
+  # Real-time Streaming (WebSocket)
+  - uri: /api/v1/streams/*
+    name: realtime-streaming
+    upstream:
+      type: roundrobin
+      nodes:
+        "realtime-streaming:8091": 1
+    plugins:
+      jwt-auth: {}
+    enable_websocket: true

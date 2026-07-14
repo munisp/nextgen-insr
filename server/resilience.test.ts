@@ -21,9 +21,9 @@ function createCtx(): TrpcContext {
       id: 1,
       username: "test-agent",
       role: "admin" as const,
-      agentCode: "AGT001",
+      agentId: "AGT001",
       name: "Test Agent",
-      email: "test@54link.io",
+      email: "test@insureportal.io",
     },
     req: {
       headers: {},

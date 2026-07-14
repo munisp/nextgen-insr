@@ -16,7 +16,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq, and, isNull, desc, gte, count, sql } from "drizzle-orm";
 import { getDb } from "../db";
-import { apiKeys, webhookSecrets, apiKeyUsage } from "../../drizzle/schema";
+import { apiKeys, webhookSecrets, apiKeyUsage } from "@schema";
 import { router, protectedProcedure } from "../_core/trpc";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

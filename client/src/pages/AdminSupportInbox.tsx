@@ -1,5 +1,5 @@
 /**
- * Admin Support Inbox — 54Link POS Shell
+ * Admin Support Inbox — InsurePortal POS Shell
  * Bloomberg Terminal dark theme with electric blue accents.
  *
  * Features:
@@ -69,7 +69,7 @@ interface ChatMessage {
 const ADMIN_CANNED = [
   {
     label: "Greeting",
-    text: "Hello! Thank you for contacting 54Link support. I'm reviewing your issue now.",
+    text: "Hello! Thank you for contacting InsurePortal support. I'm reviewing your issue now.",
   },
   {
     label: "Investigating",

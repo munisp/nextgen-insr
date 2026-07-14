@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, count, desc } from "drizzle-orm";
-import { receiptTemplates } from "../../drizzle/schema";
+import { receiptTemplates } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const receiptTemplatesRouter = router({

@@ -6,7 +6,7 @@
 
 ## Context
 
-54Link agents operate in areas with unreliable network connectivity — 2G/3G networks, frequent outages, and high latency. A traditional online-only architecture would result in failed transactions, lost revenue, and poor agent experience. The platform must function reliably even when connectivity is intermittent or completely unavailable.
+InsurePortal agents operate in areas with unreliable network connectivity — 2G/3G networks, frequent outages, and high latency. A traditional online-only architecture would result in failed transactions, lost revenue, and poor agent experience. The platform must function reliably even when connectivity is intermittent or completely unavailable.
 
 ## Decision
 

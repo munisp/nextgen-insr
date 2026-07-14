@@ -1,0 +1,59 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: email-binding
+  namespace: insureportal
+spec:
+  type: bindings.smtp
+  version: v1
+  metadata:
+    - name: host
+      value: "smtp.insureportal.ng"
+    - name: port
+      value: "587"
+    - name: user
+      secretKeyRef:
+        name: smtp-secret
+        key: username
+    - name: password
+      secretKeyRef:
+        name: smtp-secret
+        key: password
+    - name: skipTLSVerify
+      value: "false"
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: sms-binding
+  namespace: insureportal
+spec:
+  type: bindings.twilio.sms
+  version: v1
+  metadata:
+    - name: toNumber
+      value: ""
+    - name: fromNumber
+      value: "+2348001234567"
+    - name: accountSid
+      secretKeyRef:
+        name: twilio-secret
+        key: account-sid
+    - name: authToken
+      secretKeyRef:
+        name: twilio-secret
+        key: auth-token
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: cron-daily
+  namespace: insureportal
+spec:
+  type: bindings.cron
+  version: v1
+  metadata:
+    - name: schedule
+      value: "0 6 * * *"  # Daily at 6 AM WAT
+    - name: direction
+      value: "input"

@@ -142,7 +142,7 @@ export const automatedSettlementSchedulerRouter = router({
           } as any);
         } catch (e) {
           // @ts-expect-error auto-fix
-          logger.warn("[SettlementScheduler] Middleware:", e);
+          logger.warn("[SettlementScheduler] Middleware:: " + e);
         }
         return { id: ns.id, ...input, status: "active", createdAt: Date.now() };
       } catch (error) {
@@ -176,7 +176,7 @@ export const automatedSettlementSchedulerRouter = router({
           } as any);
         } catch (e) {
           // @ts-expect-error auto-fix
-          logger.warn("[SettlementScheduler] Middleware:", e);
+          logger.warn("[SettlementScheduler] Middleware:: " + e);
         }
         return {
           success: true,
@@ -231,7 +231,7 @@ export const automatedSettlementSchedulerRouter = router({
           });
         } catch (e) {
           // @ts-expect-error middleware type mismatch
-          logger.warn("[SettlementScheduler] Middleware:", e);
+          logger.warn("[SettlementScheduler] Middleware:: " + e);
         }
         return {
           executionId: batchRef,

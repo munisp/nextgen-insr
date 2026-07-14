@@ -6,7 +6,7 @@
 
 ## Context
 
-The 54Link billing engine requires a high-performance, ACID-compliant double-entry ledger capable of processing millions of financial transactions per day across multiple tenants. Traditional RDBMS solutions (PostgreSQL) struggle with the write throughput required for real-time settlement processing, while NoSQL databases lack the strict consistency guarantees needed for financial data.
+The InsurePortal billing engine requires a high-performance, ACID-compliant double-entry ledger capable of processing millions of financial transactions per day across multiple tenants. Traditional RDBMS solutions (PostgreSQL) struggle with the write throughput required for real-time settlement processing, while NoSQL databases lack the strict consistency guarantees needed for financial data.
 
 Key requirements:
 

@@ -1,0 +1,65 @@
+{{- /*
+  pdb.yaml - PodDisruptionBudgets for all NGApp services
+  Ensures minimum availability during voluntary disruptions (upgrades, scaling).
+*/ -}}
+
+{{- $fullName := include "ngapp.fullname" . -}}
+
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- range $name, $config := .Values.services }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullName }}-{{ $name }}
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+spec:
+  {{- if $config.pdb.minAvailable }}
+  minAvailable: {{ $config.pdb.minAvailable }}
+  {{- else }}
+  minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if $config.pdb.maxUnavailable }}
+  maxUnavailable: {{ $config.pdb.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" $name) | nindent 6 }}
+{{- end }}
+
+{{- /* Frontend PDB */ -}}
+{{- if .Values.frontend.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullName }}-frontend
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.frontend.pdbMinAvailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" "frontend") | nindent 6 }}
+{{- end }}
+
+{{- /* APISIX PDB */ -}}
+{{- if .Values.apiGateway.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullName }}-apisix
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "ngapp.serviceSelectorLabels" (dict "root" $ "serviceName" "apisix") | nindent 6 }}
+{{- end }}
+{{- end }}

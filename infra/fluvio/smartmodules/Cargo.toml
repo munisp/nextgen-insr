@@ -9,5 +9,5 @@ resolver = "2"
 [workspace.package]
 version = "1.0.0"
 edition = "2021"
-authors = ["54Link Engineering <engineering@54link.ng>"]
+authors = ["InsurePortal Engineering <engineering@insureportal.ng>"]
 license = "MIT"

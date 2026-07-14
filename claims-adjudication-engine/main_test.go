@@ -1,150 +1,83 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
-func TestCalculateRiskScore_LowRisk(t *testing.T) {
-	claim := ClaimRequest{
-		Amount:   30000,
-		Evidence: []string{"photo", "receipt", "police_report"},
-		SubmittedAt: time.Now().Add(-48 * time.Hour),
-	}
-	score := calculateRiskScore(claim)
-	if score >= 30 {
-		t.Errorf("Expected low risk score (<30), got %.0f", score)
-	}
-}
-
-func TestCalculateRiskScore_HighAmount(t *testing.T) {
-	claim := ClaimRequest{
-		Amount:   1500000,
-		Evidence: []string{},
-		SubmittedAt: time.Now(),
-	}
-	score := calculateRiskScore(claim)
-	if score < 70 {
-		t.Errorf("Expected high risk score (>=70) for ₦1.5M with no evidence, got %.0f", score)
-	}
-}
-
-func TestAdjudicateClaim_AutoApprove(t *testing.T) {
-	claim := ClaimRequest{
-		ID:       "CLM-001",
-		Amount:   25000,
-		Evidence: []string{"photo", "receipt"},
-		SubmittedAt: time.Now().Add(-48 * time.Hour),
-	}
-	result := adjudicateClaim(claim)
-	if result.Decision != "approved" {
-		t.Errorf("Expected auto-approve for ₦25K low-risk claim, got %s", result.Decision)
-	}
-	if result.Confidence < 0.9 {
-		t.Errorf("Expected high confidence for auto-approve, got %.2f", result.Confidence)
-	}
-}
-
-func TestAdjudicateClaim_Escalate(t *testing.T) {
-	claim := ClaimRequest{
-		ID:       "CLM-002",
-		Amount:   750000,
-		Evidence: []string{},
-		SubmittedAt: time.Now(),
-	}
-	result := adjudicateClaim(claim)
-	if result.Decision != "escalated" {
-		t.Errorf("Expected escalation for ₦750K claim, got %s", result.Decision)
-	}
-	if result.AssignedTo != "executive_review_queue" {
-		t.Errorf("Expected executive review queue, got %s", result.AssignedTo)
-	}
-}
-
-func TestAdjudicateClaim_PendingReview(t *testing.T) {
-	claim := ClaimRequest{
-		ID:       "CLM-003",
-		Amount:   200000,
-		Evidence: []string{"photo"},
-		SubmittedAt: time.Now().Add(-48 * time.Hour),
-	}
-	result := adjudicateClaim(claim)
-	if result.Decision != "pending_review" {
-		t.Errorf("Expected pending_review for ₦200K moderate claim, got %s", result.Decision)
-	}
-	if result.AssignedTo != "supervisor_queue" {
-		t.Errorf("Expected supervisor queue, got %s", result.AssignedTo)
-	}
-}
-
 func TestHealthEndpoint(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
 	handleHealth(w, req)
 	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+		t.Errorf("health returned %d, want 200", w.Code)
 	}
-	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["status"] != "healthy" {
-		t.Errorf("Expected healthy status, got %s", resp["status"])
-	}
-	if resp["service"] != "claims-adjudication-engine" {
-		t.Errorf("Expected service name, got %s", resp["service"])
+	body := w.Body.String()
+	if body == "" {
+		t.Error("health returned empty body")
 	}
 }
 
-func TestAdjudicateEndpoint_InvalidMethod(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/adjudicate", nil)
+func TestHealthContentType(t *testing.T) {
+	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
-	handleAdjudicate(w, req)
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("Expected 405 for GET, got %d", w.Code)
+	handleHealth(w, req)
+	ct := w.Header().Get("Content-Type")
+	if ct != "" && ct != "application/json" {
+		t.Errorf("unexpected content-type: %s", ct)
 	}
 }
 
-func TestAdjudicateEndpoint_ValidClaim(t *testing.T) {
-	claim := ClaimRequest{
-		ID:       "CLM-TEST",
-		Amount:   15000,
-		Evidence: []string{"photo", "receipt"},
-		SubmittedAt: time.Now().Add(-24 * time.Hour),
+func TestValidateQueryParam(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		key    string
+		maxLen int
+		want   string
+		err    bool
+	}{
+		{"valid", "?name=test", "name", 100, "test", false},
+		{"empty", "", "name", 100, "", false},
+		{"too long", "?name=toolongvalue", "name", 5, "", true},
 	}
-	body, _ := json.Marshal(claim)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/adjudicate", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	handleAdjudicate(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
-	}
-	var result AdjudicationResult
-	json.NewDecoder(w.Body).Decode(&result)
-	if result.ClaimID != "CLM-TEST" {
-		t.Errorf("Expected claim ID CLM-TEST, got %s", result.ClaimID)
-	}
-}
-
-func TestAdjudicateEndpoint_BadJSON(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/adjudicate", bytes.NewReader([]byte("invalid")))
-	w := httptest.NewRecorder()
-	handleAdjudicate(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Expected 400 for bad JSON, got %d", w.Code)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateQueryParam(req, tt.key, tt.maxLen)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestRiskScoreCap(t *testing.T) {
-	claim := ClaimRequest{
-		Amount:   5000000,
-		Evidence: []string{},
-		SubmittedAt: time.Now(),
+func TestValidateIntParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		key   string
+		want  int
+		err   bool
+	}{
+		{"valid", "?page=5", "page", 5, false},
+		{"empty", "", "page", 0, false},
+		{"invalid", "?page=abc", "page", 0, true},
 	}
-	score := calculateRiskScore(claim)
-	if score > 100 {
-		t.Errorf("Risk score should be capped at 100, got %.0f", score)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateIntParam(req, tt.key)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

@@ -11,7 +11,7 @@ const ROUTERS_DIR = path.join(__dirname, "routers");
 
 // 26 newly wired routers (Sprint 44)
 const SPRINT_44_ROUTERS = [
-  "floatTopUp",
+  "premiumTopUp",
   "loanDisbursement",
   "customerWalletSystem",
   "merchantPayments",

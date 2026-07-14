@@ -7,7 +7,7 @@ CREATE TABLE "mqtt_bridge_config" (
 	"useTls" boolean DEFAULT false NOT NULL,
 	"username" varchar(128) DEFAULT '',
 	"password" text DEFAULT '',
-	"clientId" varchar(128) DEFAULT '54link-fluvio-bridge',
+	"clientId" varchar(128) DEFAULT 'insureportal-fluvio-bridge',
 	"topicMappings" json DEFAULT '[]'::json,
 	"qos" "mqtt_qos" DEFAULT '1' NOT NULL,
 	"keepAliveSeconds" integer DEFAULT 60 NOT NULL,

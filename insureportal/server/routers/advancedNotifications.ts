@@ -14,7 +14,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { notification_logs, auditLog } from "../../drizzle/schema";
+import { notification_logs, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const advancedNotificationsRouter = router({

@@ -27,7 +27,7 @@ import {
   keycloakConfig,
 } from "./keycloak";
 import { getDb } from "../db";
-import { users } from "../../drizzle/schema";
+import { users } from "@schema";
 import { eq } from "drizzle-orm";
 import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
 

@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Auto-Refresh Polling Module — 54Link Agency Banking Platform
+ * Auto-Refresh Polling Module — InsurePortal Insurance Platform
  *
  * Provides configurable polling intervals for real-time dashboard updates.
  * Supports:

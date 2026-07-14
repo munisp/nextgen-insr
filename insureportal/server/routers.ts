@@ -9,7 +9,7 @@ import { loyaltyRouter } from "./routers/loyalty";
 import { chatRouter } from "./routers/chat";
 import { auditLogRouter } from "./routers/auditLog";
 import { agentManagementRouter } from "./routers/agentManagement";
-import { floatTopUpRouter } from "./routers/floatTopUp";
+import { premiumTopUpRouter } from "./routers/premiumTopUp";
 import { smsReceiptRouter } from "./routers/smsReceipt";
 import { exportRouter } from "./routers/export";
 import { pinResetRouter } from "./routers/pinReset";
@@ -35,7 +35,7 @@ import { simOrchestratorRouter } from "./routers/simOrchestrator";
 import { pushNotificationsRouter } from "./routers/pushNotifications";
 import { cbnReportingRouter } from "./routers/cbnReporting";
 import { businessRulesRouter } from "./routers/businessRules";
-import { lakehouseRouter } from "./routers/lakehouse";
+import { lakehouseRouter, insuranceLakehouseExtensions } from "./routers/lakehouse";
 import { webhooksRouter } from "./routers/webhooks";
 import { commissionPayoutsRouter } from "./routers/commissionPayouts";
 import { referralsRouter } from "./routers/referrals";
@@ -180,7 +180,7 @@ import { agentTerritoryMgmtRouter } from "./routers/agentTerritoryMgmt";
 import { dynamicPricingEngineRouter } from "./routers/dynamicPricingEngine";
 import { customerLoyaltyProgramRouter } from "./routers/customerLoyaltyProgram";
 import { fraudCaseManagementRouter } from "./routers/fraudCaseManagement";
-import { posTerminalFleetRouter } from "./routers/posTerminalFleet";
+import { insuranceServiceFleetRouter } from "./routers/insuranceServiceFleet";
 import { financialReconciliationDashRouter } from "./routers/financialReconciliationDash";
 import { apiAnalyticsDashRouter } from "./routers/apiAnalyticsDash";
 import { agentCommunicationHubRouter } from "./routers/agentCommunicationHub";
@@ -319,7 +319,7 @@ import { agentPerformanceLeaderboardRouter } from "./routers/agentPerformanceLea
 import { automatedSettlementSchedulerRouter } from "./routers/automatedSettlementScheduler";
 import { customerWalletSystemRouter } from "./routers/customerWalletSystem";
 import { merchantAnalyticsDashRouter } from "./routers/merchantAnalyticsDash";
-import { posFirmwareOTARouter } from "./routers/posFirmwareOTA";
+import { posServiceUpdateRouter } from "./routers/posServiceUpdate";
 import { transactionReceiptGeneratorRouter } from "./routers/transactionReceiptGenerator";
 import { agentLoanAdvanceRouter } from "./routers/agentLoanAdvance";
 import { multiChannelPaymentOrchRouter } from "./routers/multiChannelPaymentOrch";
@@ -482,14 +482,17 @@ import { transactionMonitoringRouter } from "./routers/transactionMonitoring";
 import { transactionReversalWorkflowRouter } from "./routers/transactionReversalWorkflow";
 import { ussdLocalizationRouter } from "./routers/ussdLocalization";
 import { geoFenceDedicatedRouter } from "./routers/geoFenceDedicated";
-import { ecommerceCatalogRouter } from "./routers/ecommerceCatalog";
-import { ecommerceCartRouter } from "./routers/ecommerceCart";
-import { ecommerceOrdersRouter } from "./routers/ecommerceOrders";
+import { insuranceCatalogRouter } from "./routers/insuranceCatalog";
+import { insuranceCartRouter } from "./routers/insuranceCart";
+import { policyOrdersRouter } from "./routers/policyOrders";
 import { supplyChainRouter } from "./routers/supplyChain";
 import { marketplaceRouter } from "./routers/marketplace";
 import { promotionsRouter } from "./routers/promotions";
 // ── KYC/KYB Enforcement & Compliance Services ──
 import { kycEnforcementRouter } from "./routers/kycEnforcement";
+// ── NAICOM Compliance & Nigeria Payment Rails (confirmed gaps — first real implementations) ──
+import { naicomComplianceRouter } from "./routers/naicomCompliance";
+import { nigeriaPaymentRailsRouter } from "./routers/nigeriaPaymentRails";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -547,7 +550,7 @@ export const appRouter = router({
   chat: chatRouter,
   auditLog: auditLogRouter,
   agentMgmt: agentManagementRouter,
-  floatTopUp: floatTopUpRouter,
+  premiumTopUp: premiumTopUpRouter,
   smsReceipt: smsReceiptRouter,
   export: exportRouter,
   pinReset: pinResetRouter,
@@ -592,6 +595,8 @@ export const appRouter = router({
   businessRules: businessRulesRouter,
   // Data Lakehouse: snapshot management, Sedona spatial queries, DataFusion proxy, Gold-layer metrics
   lakehouse: lakehouseRouter,
+  // Insurance Lakehouse Extensions: per-connector sync triggers, data catalog, role-gated queries
+  insuranceLakehouse: router(insuranceLakehouseExtensions),
   // Outbound webhook endpoint management + delivery history
   webhooks: webhooksRouter,
   // Commission payout lifecycle (request → approve → process → complete)
@@ -789,7 +794,7 @@ export const appRouter = router({
   dynamicPricingEngine: dynamicPricingEngineRouter,
   customerLoyaltyProgram: customerLoyaltyProgramRouter,
   fraudCaseManagement: fraudCaseManagementRouter,
-  posTerminalFleet: posTerminalFleetRouter,
+  insuranceServiceFleet: insuranceServiceFleetRouter,
   financialReconciliationDash: financialReconciliationDashRouter,
   apiAnalyticsDash: apiAnalyticsDashRouter,
   agentCommunicationHub: agentCommunicationHubRouter,
@@ -848,7 +853,7 @@ export const appRouter = router({
   automatedSettlementScheduler: automatedSettlementSchedulerRouter,
   customerWalletSystem: customerWalletSystemRouter,
   merchantAnalyticsDash: merchantAnalyticsDashRouter,
-  posFirmwareOTA: posFirmwareOTARouter,
+  posServiceUpdate: posServiceUpdateRouter,
   transactionReceiptGenerator: transactionReceiptGeneratorRouter,
   agentLoanAdvance: agentLoanAdvanceRouter,
   multiChannelPaymentOrch: multiChannelPaymentOrchRouter,
@@ -1077,14 +1082,17 @@ export const appRouter = router({
   amlScreening: amlScreeningRouter,
   receiptTemplates: receiptTemplatesRouter,
   // E-commerce & Supply Chain
-  ecommerceCatalog: ecommerceCatalogRouter,
-  ecommerceCart: ecommerceCartRouter,
-  ecommerceOrders: ecommerceOrdersRouter,
+  insuranceCatalog: insuranceCatalogRouter,
+  insuranceCart: insuranceCartRouter,
+  policyOrders: policyOrdersRouter,
   supplyChain: supplyChainRouter,
   marketplace: marketplaceRouter,
   promotions: promotionsRouter,
   // KYC/KYB Enforcement & Compliance
   kycEnforcement: kycEnforcementRouter,
+  // NAICOM Compliance & Nigeria Payment Rails
+  naicomCompliance: naicomComplianceRouter,
+  nigeriaPaymentRails: nigeriaPaymentRailsRouter,
 });
 
 export type AppRouter = typeof appRouter;

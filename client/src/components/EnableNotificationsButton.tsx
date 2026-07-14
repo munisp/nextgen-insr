@@ -111,7 +111,7 @@ export function EnableNotificationsButton() {
             auth: subJson.keys!.auth,
           },
         },
-        agentCode: (agent as any)?.agentCode ?? "",
+        agentId: (agent as any)?.agentId ?? "",
         deviceName: navigator.userAgent.slice(0, 100),
         userAgent: navigator.userAgent,
       });
@@ -130,7 +130,7 @@ export function EnableNotificationsButton() {
         await sub.unsubscribe();
         await unsubscribeMutation.mutateAsync({
           endpoint: sub.endpoint,
-          agentCode: (agent as any)?.agentCode ?? "",
+          agentId: (agent as any)?.agentId ?? "",
         });
       }
     } catch (err) {

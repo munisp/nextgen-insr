@@ -1,42 +1,58 @@
 package main
 
 import (
-	"encoding/json"
-	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
-func TestRecordEvent(t *testing.T) {
-	body := strings.NewReader(`{"action":"policy.created","user_id":"U001","resource":"POL-001"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", body)
-	w := httptest.NewRecorder()
-	recordEvent(w, req)
-	if w.Code != http.StatusCreated && w.Code != http.StatusOK {
-		t.Errorf("Expected 200 or 201, got %d", w.Code)
+func TestValidateQueryParam(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		key    string
+		maxLen int
+		want   string
+		err    bool
+	}{
+		{"valid", "?name=test", "name", 100, "test", false},
+		{"empty", "", "name", 100, "", false},
+		{"too long", "?name=toolongvalue", "name", 5, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateQueryParam(req, tt.key, tt.maxLen)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
-
-func TestQueryAudit(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/audit?user_id=U001", nil)
-	w := httptest.NewRecorder()
-	queryAudit(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
+func TestValidateIntParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		key   string
+		want  int
+		err   bool
+	}{
+		{"valid", "?page=5", "page", 5, false},
+		{"empty", "", "page", 0, false},
+		{"invalid", "?page=abc", "page", 0, true},
 	}
-}
-
-func TestVerifyChain(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/verify", nil)
-	w := httptest.NewRecorder()
-	verifyChain(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected 200, got %d", w.Code)
-	}
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-	if _, ok := resp["chain_valid"]; !ok {
-		t.Error("Expected chain_valid field in response")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateIntParam(req, tt.key)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

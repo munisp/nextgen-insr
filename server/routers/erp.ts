@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * erp.ts — ERP Webhook Configuration & Sync Router
  *
@@ -102,7 +102,7 @@ async function pushTransactionToErp(
   try {
     const endpoint =
       cfg.erpType === "odoo"
-        ? `${cfg.baseUrl}/api/method/54link.api.create_journal_entry`
+        ? `${cfg.baseUrl}/api/method/insureportal.api.create_journal_entry`
         : `${cfg.baseUrl}/api/transactions`;
     const mappings = (cfg.fieldMappings as Record<string, string>) ?? {};
     const payload = {

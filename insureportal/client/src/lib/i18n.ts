@@ -3,7 +3,7 @@
  *
  * Supports 6 languages for Nigerian agent banking:
  * - English (en) — Default
- * - French (fr) — West African remittance corridors
+ * - French (fr) — West African remittance insurance_regions
  * - Nigerian Pidgin English (pcm) — Most widely spoken lingua franca
  * - Hausa (ha) — Northern Nigeria
  * - Yoruba (yo) — Southwest Nigeria
@@ -86,7 +86,7 @@ const en: TranslationMap = {
   "agent.code": "Agent Code",
   "agent.name": "Agent Name",
   "agent.tier": "Agent Tier",
-  "agent.floatBalance": "Float Balance",
+  "agent.premiumReserve": "Float Balance",
   "agent.commissionBalance": "Commission Balance",
   "agent.kycLevel": "KYC Level",
   "agent.onboarding": "Agent Onboarding",
@@ -132,7 +132,7 @@ const en: TranslationMap = {
   "pos.confirmTransaction": "Confirm Transaction",
   "pos.transactionSuccess": "Transaction Successful",
   "pos.transactionFailed": "Transaction Failed",
-  "pos.insufficientFloat": "Insufficient float balance",
+  "pos.insufficientFloat": "Insufficient premium reserve",
   "pos.dailyLimitReached": "Daily transaction limit reached",
   "language.select": "Select Language",
 };
@@ -207,7 +207,7 @@ const fr: TranslationMap = {
   "agent.code": "Code agent",
   "agent.name": "Nom de l'agent",
   "agent.tier": "Niveau d'agent",
-  "agent.floatBalance": "Solde flottant",
+  "agent.premiumReserve": "Solde flottant",
   "agent.commissionBalance": "Solde commission",
   "agent.kycLevel": "Niveau KYC",
   "agent.onboarding": "Intégration agent",
@@ -328,7 +328,7 @@ const pcm: TranslationMap = {
   "agent.code": "Agent Code",
   "agent.name": "Agent Name",
   "agent.tier": "Agent Level",
-  "agent.floatBalance": "Float Balance",
+  "agent.premiumReserve": "Float Balance",
   "agent.commissionBalance": "Commission Balance",
   "agent.kycLevel": "KYC Level",
   "agent.onboarding": "Agent Registration",
@@ -449,7 +449,7 @@ const ha: TranslationMap = {
   "agent.code": "Lambar wakili",
   "agent.name": "Sunan wakili",
   "agent.tier": "Matakin wakili",
-  "agent.floatBalance": "Ragowar float",
+  "agent.premiumReserve": "Ragowar float",
   "agent.commissionBalance": "Ragowar kwamiti",
   "agent.kycLevel": "Matakin KYC",
   "agent.onboarding": "Rajista wakili",
@@ -570,7 +570,7 @@ const yo: TranslationMap = {
   "agent.code": "Kóòdù aṣojú",
   "agent.name": "Orúkọ aṣojú",
   "agent.tier": "Ìpele aṣojú",
-  "agent.floatBalance": "Iyókù float",
+  "agent.premiumReserve": "Iyókù float",
   "agent.commissionBalance": "Iyókù kọmíṣọ́nì",
   "agent.kycLevel": "Ìpele KYC",
   "agent.onboarding": "Ìforúkọsílẹ̀ aṣojú",
@@ -691,7 +691,7 @@ const ig: TranslationMap = {
   "agent.code": "Koodu nnọchiteanya",
   "agent.name": "Aha nnọchiteanya",
   "agent.tier": "Ọkwa nnọchiteanya",
-  "agent.floatBalance": "Float fọdụrụ",
+  "agent.premiumReserve": "Float fọdụrụ",
   "agent.commissionBalance": "Kọmishọn fọdụrụ",
   "agent.kycLevel": "Ọkwa KYC",
   "agent.onboarding": "Ndebanye aha",
