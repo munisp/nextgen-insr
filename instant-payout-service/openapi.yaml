@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: Instant Payout Service
+  description: Real-time claim payouts via bank transfer, mobile money, and wallet
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/payout:
+    post:
+      summary: Initiate instant payout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - claim_id
+              - amount
+              - channel
+      responses:
+        '200':
+          description: Payout status with reference
+  /api/v1/payout/{id}/status:
+    get:
+      summary: Get payout status
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Payout processing status

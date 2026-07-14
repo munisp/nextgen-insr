@@ -1,0 +1,31 @@
+openapi: 3.0.3
+info:
+  title: Takaful Module
+  description: Islamic (Sharia-compliant) insurance — tabarru contributions and surplus
+    distribution
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/contributions:
+    get:
+      summary: List tabarru contributions
+      responses:
+        '200':
+          description: Contribution pool status
+  /api/v1/surplus:
+    get:
+      summary: Get surplus distribution
+      responses:
+        '200':
+          description: Surplus calculation and distribution plan
+  /api/v1/compliance/sharia:
+    get:
+      summary: Get Sharia compliance status
+      responses:
+        '200':
+          description: Advisory board opinions and compliance status

@@ -1,0 +1,33 @@
+openapi: 3.0.3
+info:
+  title: Policy Workflow
+  description: Policy lifecycle workflow management — from quote to issuance to cancellation
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/workflows:
+    get:
+      summary: List active workflows
+      responses:
+        '200':
+          description: Active policy workflows with state
+  /api/v1/workflows/transition:
+    post:
+      summary: Transition workflow state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - workflow_id
+              - action
+      responses:
+        '200':
+          description: New workflow state

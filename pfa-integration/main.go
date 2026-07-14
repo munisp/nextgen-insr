@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 		"context"
 	"os/signal"
@@ -393,6 +394,39 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+var (
+	rateLimitMu    sync.Mutex
+	rateLimitStore = make(map[string][]time.Time)
+)
+
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = fwd
+		}
+		rateLimitMu.Lock()
+		now := time.Now()
+		window := now.Add(-1 * time.Minute)
+		var recent []time.Time
+		for _, t := range rateLimitStore[ip] {
+			if t.After(window) {
+				recent = append(recent, t)
+			}
+		}
+		if len(recent) >= 100 {
+			rateLimitMu.Unlock()
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
+			return
+		}
+		recent = append(recent, now)
+		rateLimitStore[ip] = recent
+		rateLimitMu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	service := NewPFAService()
 	
@@ -408,7 +442,7 @@ func main() {
 	
 	log.Printf("PFA Integration Service starting on port %s", port)
 	
-	srv := &http.Server{Addr: ":"+port, Handler: tracingMiddleware(corsMiddleware(http.DefaultServeMux)), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	srv := &http.Server{Addr: ":"+port, Handler: rateLimitMiddleware(tracingMiddleware(corsMiddleware(http.DefaultServeMux))), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

@@ -1,0 +1,34 @@
+openapi: 3.0.3
+info:
+  title: Communication Service
+  description: Multi-channel notification delivery — SMS, email, push, WhatsApp
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/send:
+    post:
+      summary: Send notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - channel
+              - recipient
+              - message
+      responses:
+        '200':
+          description: Notification sent
+  /api/v1/templates:
+    get:
+      summary: List notification templates
+      responses:
+        '200':
+          description: Available templates by channel

@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: API Marketplace
+  description: Insurance API catalog, subscription management, and usage tracking
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/catalog:
+    get:
+      summary: List available APIs
+      responses:
+        '200':
+          description: API catalog with pricing and documentation
+  /api/v1/subscribe:
+    post:
+      summary: Subscribe to an API
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - api_id
+              - plan
+      responses:
+        '201':
+          description: Subscription created with API key
+  /api/v1/usage/{apiKey}:
+    get:
+      summary: Get API usage statistics
+      parameters:
+      - name: apiKey
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Usage metrics and billing

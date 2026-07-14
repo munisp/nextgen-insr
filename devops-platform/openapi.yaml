@@ -1,0 +1,39 @@
+openapi: 3.0.3
+info:
+  title: DevOps Platform
+  description: Deployment management and infrastructure monitoring for insurance services
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/deployments:
+    get:
+      summary: List deployments
+      responses:
+        '200':
+          description: Deployment history with status
+  /api/v1/deploy:
+    post:
+      summary: Trigger deployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - service
+              - version
+      responses:
+        '200':
+          description: Deployment triggered
+  /api/v1/infrastructure:
+    get:
+      summary: Get infrastructure status
+      responses:
+        '200':
+          description: Infrastructure health and resource utilization

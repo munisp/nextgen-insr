@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: Customer 360 View
+  description: Unified customer profile with cross-sell recommendations and segmentation
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/customers/{id}/360:
+    get:
+      summary: Get customer 360 profile
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Complete customer profile with policies, claims, and interactions
+  /api/v1/customers/{id}/cross-sell:
+    get:
+      summary: Get cross-sell recommendations
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Personalized product recommendations
+  /api/v1/segments:
+    get:
+      summary: List customer segments
+      responses:
+        '200':
+          description: Customer segments with metrics

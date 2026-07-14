@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info:
+  title: Insurance Radar
+  description: Market intelligence and competitive analysis for insurance products
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/market/trends:
+    get:
+      summary: Get market trends
+      responses:
+        '200':
+          description: Insurance market trends and analysis
+  /api/v1/competitors:
+    get:
+      summary: Get competitor analysis
+      responses:
+        '200':
+          description: Competitor product comparison

@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"sync"
 	"time"
 	"database/sql"
 	"os"
@@ -193,6 +194,39 @@ func publishEvent(topic string, key string, payload interface{}) {
 	defer resp.Body.Close()
 }
 
+var (
+	rateLimitMu    sync.Mutex
+	rateLimitStore = make(map[string][]time.Time)
+)
+
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = fwd
+		}
+		rateLimitMu.Lock()
+		now := time.Now()
+		window := now.Add(-1 * time.Minute)
+		var recent []time.Time
+		for _, t := range rateLimitStore[ip] {
+			if t.After(window) {
+				recent = append(recent, t)
+			}
+		}
+		if len(recent) >= 100 {
+			rateLimitMu.Unlock()
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
+			return
+		}
+		recent = append(recent, now)
+		rateLimitStore[ip] = recent
+		rateLimitMu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	initDB()
 	initKafka()
@@ -207,7 +241,7 @@ func main() {
 	log.Printf("Agent Commission Management starting on %s", port)
 	srv := &http.Server{
 		Addr:         port,
-		Handler:      tracingMiddleware(corsMiddleware(mux)),
+		Handler:      rateLimitMiddleware(tracingMiddleware(corsMiddleware(mux))),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

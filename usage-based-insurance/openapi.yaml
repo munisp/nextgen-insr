@@ -1,0 +1,52 @@
+openapi: 3.0.3
+info:
+  title: Usage-Based Insurance
+  description: Pay-as-you-drive and usage-based insurance pricing with IoT/telematics
+    integration
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/telemetry:
+    post:
+      summary: Submit telemetry data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - device_id
+              - data
+      responses:
+        '200':
+          description: Telemetry processed
+  /api/v1/pricing/{policyId}:
+    get:
+      summary: Get usage-based pricing
+      parameters:
+      - name: policyId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Current premium based on usage
+  /api/v1/score/{driverId}:
+    get:
+      summary: Get driver safety score
+      parameters:
+      - name: driverId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Safety score with factor breakdown

@@ -1,0 +1,34 @@
+openapi: 3.0.3
+info:
+  title: Batch Processing Engine
+  description: Batch job management for bulk insurance operations — renewals, statements,
+    reports
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/batch:
+    post:
+      summary: Create a batch processing job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - type
+              - records
+      responses:
+        '201':
+          description: Batch job created
+  /api/v1/batch/status:
+    get:
+      summary: Get batch job status
+      responses:
+        '200':
+          description: Batch job progress and results

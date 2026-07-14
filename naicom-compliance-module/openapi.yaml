@@ -1,0 +1,39 @@
+openapi: 3.0.3
+info:
+  title: NAICOM Compliance Module
+  description: NAICOM regulatory reporting and compliance monitoring
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/reports:
+    get:
+      summary: List compliance reports
+      responses:
+        '200':
+          description: NAICOM regulatory reports
+  /api/v1/reports/generate:
+    post:
+      summary: Generate compliance report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - report_type
+              - period
+      responses:
+        '200':
+          description: Generated report
+  /api/v1/deadlines:
+    get:
+      summary: Get regulatory deadlines
+      responses:
+        '200':
+          description: Upcoming NAICOM filing deadlines

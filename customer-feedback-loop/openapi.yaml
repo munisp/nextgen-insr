@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: Customer Feedback Loop
+  description: Feedback collection, NPS scoring, and sentiment analysis
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/feedback:
+    post:
+      summary: Submit customer feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - customer_id
+              - rating
+              - comment
+      responses:
+        '201':
+          description: Feedback recorded
+  /api/v1/feedback/summary:
+    get:
+      summary: Get feedback summary
+      responses:
+        '200':
+          description: Aggregated feedback with sentiment analysis
+  /api/v1/nps:
+    get:
+      summary: Get NPS score
+      responses:
+        '200':
+          description: Net Promoter Score with breakdown

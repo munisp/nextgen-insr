@@ -1,0 +1,32 @@
+openapi: 3.0.3
+info:
+  title: Policy Renewal Automation
+  description: Automated policy renewal processing with risk reassessment
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/renewals/pending:
+    get:
+      summary: List pending renewals
+      responses:
+        '200':
+          description: Policies due for renewal
+  /api/v1/renewals/process:
+    post:
+      summary: Process renewal batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - policy_ids
+      responses:
+        '200':
+          description: Renewal processing results

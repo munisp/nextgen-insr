@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: Blockchain Transparency
+  description: Immutable audit trail for insurance transactions using blockchain verification
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/record:
+    post:
+      summary: Record transaction on blockchain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - transaction_id
+              - data
+      responses:
+        '201':
+          description: Transaction recorded with hash
+  /api/v1/verify/{hash}:
+    get:
+      summary: Verify blockchain record
+      parameters:
+      - name: hash
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Verification result with chain integrity status
+  /api/v1/contracts:
+    get:
+      summary: List smart contracts
+      responses:
+        '200':
+          description: Active smart contracts

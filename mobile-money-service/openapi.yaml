@@ -1,0 +1,49 @@
+openapi: 3.0.3
+info:
+  title: Mobile Money Service
+  description: Mobile money integration for premium collection and claim payouts
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/collect:
+    post:
+      summary: Collect premium via mobile money
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - phone
+              - amount
+              - provider
+      responses:
+        '200':
+          description: Collection initiated
+  /api/v1/disburse:
+    post:
+      summary: Disburse claim payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - phone
+              - amount
+      responses:
+        '200':
+          description: Disbursement initiated
+  /api/v1/balance:
+    get:
+      summary: Check wallet balance
+      responses:
+        '200':
+          description: Current balance
