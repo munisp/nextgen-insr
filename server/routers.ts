@@ -490,6 +490,8 @@ import { marketplaceRouter } from "./routers/marketplace";
 import { promotionsRouter } from "./routers/promotions";
 // ── KYC/KYB Enforcement & Compliance Services ──
 import { kycEnforcementRouter } from "./routers/kycEnforcement";
+// ── Insurance Domain Workflows (Sprint 98) ──
+import { insuranceWorkflowsRouter } from "./routers/insuranceWorkflows";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -704,6 +706,7 @@ export const appRouter = router({
   airtimeVending: airtimeVendingRouter,
   loanDisbursement: loanDisbursementRouter,
   insuranceProducts: insuranceProductsRouter,
+  insuranceWorkflows: insuranceWorkflowsRouter,
   savingsProducts: savingsProductsRouter,
   referralProgramDedicated: referralProgramRouter,
   cardRequest: cardRequestRouter,

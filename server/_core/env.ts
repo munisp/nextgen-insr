@@ -226,4 +226,20 @@ export const ENV = {
   // Both are validated at startup by envValidation.ts — no hardcoded fallbacks.
   cronSecret: process.env.CRON_SECRET ?? "",
   internalApiKey: process.env.INTERNAL_API_KEY ?? "",
+
+  // ── Dapr sidecar ───────────────────────────────────────────────────────────────────────────
+  daprHttpPort: optEnv("DAPR_HTTP_PORT", "3500"),
+  daprGrpcPort: optEnv("DAPR_GRPC_PORT", "50001"),
+  daprAppId: optEnv("DAPR_APP_ID", "insureportal-server"),
+
+  // ── OpenAppSec WAF ──────────────────────────────────────────────────────────────────────────
+  openappsecMode: optEnv("OPENAPPSEC_MODE", "detect"),
+  openappsecUpstream: optEnv("OPENAPPSEC_UPSTREAM", "http://apisix:9080"),
+
+  // ── Insurance domain service URLs ───────────────────────────────────────────────────────────
+  policyServiceUrl: optEnv("POLICY_SERVICE_URL", "http://policy-lifecycle-service:8080"),
+  claimsServiceUrl: optEnv("CLAIMS_SERVICE_URL", "http://claims-adjudication-engine:8080"),
+  actuarialServiceUrl: optEnv("ACTUARIAL_SERVICE_URL", "http://actuarial-module:8080"),
+  reinsuranceServiceUrl: optEnv("REINSURANCE_SERVICE_URL", "http://reinsurance-service:8080"),
+  ifrs17ServiceUrl: optEnv("IFRS17_SERVICE_URL", "http://ifrs17-engine:8080"),
 };

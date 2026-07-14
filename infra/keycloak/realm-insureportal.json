@@ -1,0 +1,65 @@
+{
+  "realm": "insureportal",
+  "enabled": true,
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": true,
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "insurance-portal",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "insurance-portal-secret-change-in-production",
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Administrator role"
+      },
+      {
+        "name": "agent",
+        "description": "Agent role"
+      },
+      {
+        "name": "supervisor",
+        "description": "Supervisor role"
+      },
+      {
+        "name": "customer",
+        "description": "Customer role"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@insureportal.io",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ]
+    }
+  ]
+}

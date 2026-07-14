@@ -4593,3 +4593,771 @@ export const guideFeedback = pgTable(
 );
 export type GuideFeedback = typeof guideFeedback.$inferSelect;
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INSURANCE DOMAIN SCHEMAS — Added in comprehensive schema audit
+// Covers: Policies, Claims, Underwriting, Reinsurance, Actuarial, Brokers,
+//         Beneficiaries, Endorsements, Renewals, Coverage, Risk, Reserves,
+//         Stakeholder roles (broker, underwriter, claims adjuster, actuary,
+//         compliance officer, regulator, customer/policyholder, reinsurer)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, json, index, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+
+// ─── Stakeholder Role Enums ──────────────────────────────────────────────────
+export const insuranceStakeholderRoleEnum = pgEnum("insurance_stakeholder_role", [
+  "policyholder",
+  "beneficiary",
+  "broker",
+  "underwriter",
+  "claims_adjuster",
+  "actuary",
+  "compliance_officer",
+  "regulator",
+  "reinsurer",
+  "agent",
+  "supervisor",
+  "admin",
+  "super_admin",
+]);
+
+export const policyStatusEnum = pgEnum("policy_status", [
+  "draft",
+  "quoted",
+  "bound",
+  "active",
+  "endorsed",
+  "renewed",
+  "cancelled",
+  "lapsed",
+  "expired",
+  "suspended",
+]);
+
+export const claimStatusEnum = pgEnum("claim_status", [
+  "submitted",
+  "under_review",
+  "investigation",
+  "approved",
+  "partially_approved",
+  "rejected",
+  "paid",
+  "closed",
+  "appealed",
+  "escalated",
+]);
+
+export const underwritingDecisionEnum = pgEnum("underwriting_decision", [
+  "pending",
+  "approved",
+  "approved_with_conditions",
+  "referred",
+  "declined",
+  "counter_offered",
+]);
+
+export const endorsementTypeEnum = pgEnum("endorsement_type", [
+  "addition",
+  "deletion",
+  "modification",
+  "extension",
+  "reduction",
+  "cancellation",
+  "reinstatement",
+]);
+
+export const reinsuranceTypeEnum = pgEnum("reinsurance_type", [
+  "proportional",
+  "non_proportional",
+  "quota_share",
+  "surplus",
+  "excess_of_loss",
+  "stop_loss",
+  "catastrophe",
+]);
+
+export const coverageTypeEnum = pgEnum("coverage_type", [
+  "life",
+  "health",
+  "motor",
+  "property",
+  "liability",
+  "marine",
+  "aviation",
+  "agriculture",
+  "credit",
+  "travel",
+  "micro",
+  "group_life",
+  "annuity",
+  "pension",
+]);
+
+// ─── Insurance Products ───────────────────────────────────────────────────────
+export const insuranceProducts = pgTable(
+  "insurance_products",
+  {
+    id: serial("id").primaryKey(),
+    productCode: varchar("productCode", { length: 32 }).notNull().unique(),
+    name: varchar("name", { length: 256 }).notNull(),
+    description: text("description"),
+    coverageType: coverageTypeEnum("coverageType").notNull(),
+    minPremium: numeric("minPremium", { precision: 18, scale: 2 }),
+    maxCoverageAmount: numeric("maxCoverageAmount", { precision: 18, scale: 2 }),
+    minAge: integer("minAge"),
+    maxAge: integer("maxAge"),
+    waitingPeriodDays: integer("waitingPeriodDays").default(0),
+    policyTermMonths: integer("policyTermMonths").default(12),
+    isActive: boolean("isActive").default(true).notNull(),
+    regulatoryApprovalRef: varchar("regulatoryApprovalRef", { length: 128 }),
+    naicomProductCode: varchar("naicomProductCode", { length: 64 }),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    productCodeIdx: index("ip_productCode_idx").on(t.productCode),
+    coverageTypeIdx: index("ip_coverageType_idx").on(t.coverageType),
+    tenantIdx: index("ip_tenant_idx").on(t.tenantId),
+  })
+);
+export type InsuranceProduct = typeof insuranceProducts.$inferSelect;
+export type InsertInsuranceProduct = typeof insuranceProducts.$inferInsert;
+
+// ─── Policies ─────────────────────────────────────────────────────────────────
+export const policies = pgTable(
+  "policies",
+  {
+    id: serial("id").primaryKey(),
+    policyNumber: varchar("policyNumber", { length: 64 }).notNull().unique(),
+    productId: integer("productId").notNull(),
+    customerId: integer("customerId").notNull(),
+    agentId: integer("agentId"),
+    brokerId: integer("brokerId"),
+    underwriterId: integer("underwriterId"),
+    status: policyStatusEnum("status").default("draft").notNull(),
+    coverageType: coverageTypeEnum("coverageType").notNull(),
+    sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }).notNull(),
+    annualPremium: numeric("annualPremium", { precision: 18, scale: 2 }).notNull(),
+    startDate: timestamp("startDate"),
+    endDate: timestamp("endDate"),
+    renewalDate: timestamp("renewalDate"),
+    cancellationDate: timestamp("cancellationDate"),
+    cancellationReason: text("cancellationReason"),
+    policyDocument: text("policyDocument"),
+    certificateNumber: varchar("certificateNumber", { length: 64 }),
+    naicomRef: varchar("naicomRef", { length: 128 }),
+    termsAndConditions: json("termsAndConditions"),
+    metadata: json("metadata"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyNumberIdx: uniqueIndex("pol_policyNumber_idx").on(t.policyNumber),
+    customerIdx: index("pol_customer_idx").on(t.customerId),
+    agentIdx: index("pol_agent_idx").on(t.agentId),
+    statusIdx: index("pol_status_idx").on(t.status),
+    renewalIdx: index("pol_renewal_idx").on(t.renewalDate),
+    tenantIdx: index("pol_tenant_idx").on(t.tenantId),
+  })
+);
+export type Policy = typeof policies.$inferSelect;
+export type InsertPolicy = typeof policies.$inferInsert;
+
+// ─── Beneficiaries ────────────────────────────────────────────────────────────
+export const beneficiaries = pgTable(
+  "beneficiaries",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    relationship: varchar("relationship", { length: 64 }).notNull(),
+    percentage: numeric("percentage", { precision: 5, scale: 2 }).notNull().default("100"),
+    dateOfBirth: timestamp("dateOfBirth"),
+    nationalId: varchar("nationalId", { length: 64 }),
+    phone: varchar("phone", { length: 32 }),
+    email: varchar("email", { length: 320 }),
+    address: text("address"),
+    isMinor: boolean("isMinor").default(false),
+    guardianName: varchar("guardianName", { length: 256 }),
+    guardianId: varchar("guardianId", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("ben_policy_idx").on(t.policyId),
+  })
+);
+export type Beneficiary = typeof beneficiaries.$inferSelect;
+export type InsertBeneficiary = typeof beneficiaries.$inferInsert;
+
+// ─── Claims ───────────────────────────────────────────────────────────────────
+export const claims = pgTable(
+  "claims",
+  {
+    id: serial("id").primaryKey(),
+    claimNumber: varchar("claimNumber", { length: 64 }).notNull().unique(),
+    policyId: integer("policyId").notNull(),
+    claimantId: integer("claimantId").notNull(),
+    assignedAdjusterId: integer("assignedAdjusterId"),
+    status: claimStatusEnum("status").default("submitted").notNull(),
+    claimType: varchar("claimType", { length: 64 }).notNull(),
+    incidentDate: timestamp("incidentDate").notNull(),
+    reportedDate: timestamp("reportedDate").defaultNow().notNull(),
+    claimedAmount: numeric("claimedAmount", { precision: 18, scale: 2 }).notNull(),
+    approvedAmount: numeric("approvedAmount", { precision: 18, scale: 2 }),
+    paidAmount: numeric("paidAmount", { precision: 18, scale: 2 }),
+    deductible: numeric("deductible", { precision: 18, scale: 2 }),
+    incidentDescription: text("incidentDescription").notNull(),
+    investigationNotes: text("investigationNotes"),
+    rejectionReason: text("rejectionReason"),
+    settlementDate: timestamp("settlementDate"),
+    isFraudSuspected: boolean("isFraudSuspected").default(false),
+    fraudScore: numeric("fraudScore", { precision: 5, scale: 4 }),
+    documents: json("documents").$type<string[]>(),
+    metadata: json("metadata"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    claimNumberIdx: uniqueIndex("cl_claimNumber_idx").on(t.claimNumber),
+    policyIdx: index("cl_policy_idx").on(t.policyId),
+    statusIdx: index("cl_status_idx").on(t.status),
+    adjusterIdx: index("cl_adjuster_idx").on(t.assignedAdjusterId),
+    tenantIdx: index("cl_tenant_idx").on(t.tenantId),
+  })
+);
+export type Claim = typeof claims.$inferSelect;
+export type InsertClaim = typeof claims.$inferInsert;
+
+// ─── Claim Documents ──────────────────────────────────────────────────────────
+export const claimDocuments = pgTable(
+  "claim_documents",
+  {
+    id: serial("id").primaryKey(),
+    claimId: integer("claimId").notNull(),
+    documentType: varchar("documentType", { length: 64 }).notNull(),
+    fileName: varchar("fileName", { length: 256 }).notNull(),
+    fileUrl: text("fileUrl").notNull(),
+    fileSize: integer("fileSize"),
+    mimeType: varchar("mimeType", { length: 128 }),
+    uploadedBy: integer("uploadedBy"),
+    isVerified: boolean("isVerified").default(false),
+    verifiedBy: integer("verifiedBy"),
+    verifiedAt: timestamp("verifiedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    claimIdx: index("cd_claim_idx").on(t.claimId),
+  })
+);
+export type ClaimDocument = typeof claimDocuments.$inferSelect;
+
+// ─── Underwriting Assessments ─────────────────────────────────────────────────
+export const underwritingAssessments = pgTable(
+  "underwriting_assessments",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    underwriterId: integer("underwriterId"),
+    decision: underwritingDecisionEnum("decision").default("pending").notNull(),
+    riskScore: numeric("riskScore", { precision: 5, scale: 2 }),
+    riskCategory: varchar("riskCategory", { length: 32 }),
+    premiumLoading: numeric("premiumLoading", { precision: 5, scale: 4 }),
+    exclusions: json("exclusions").$type<string[]>(),
+    conditions: json("conditions").$type<string[]>(),
+    notes: text("notes"),
+    decisionDate: timestamp("decisionDate"),
+    expiryDate: timestamp("expiryDate"),
+    referralReason: text("referralReason"),
+    counterOfferDetails: json("counterOfferDetails"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("ua_policy_idx").on(t.policyId),
+    underwriterIdx: index("ua_underwriter_idx").on(t.underwriterId),
+    decisionIdx: index("ua_decision_idx").on(t.decision),
+  })
+);
+export type UnderwritingAssessment = typeof underwritingAssessments.$inferSelect;
+
+// ─── Endorsements ─────────────────────────────────────────────────────────────
+export const endorsements = pgTable(
+  "endorsements",
+  {
+    id: serial("id").primaryKey(),
+    endorsementNumber: varchar("endorsementNumber", { length: 64 }).notNull().unique(),
+    policyId: integer("policyId").notNull(),
+    type: endorsementTypeEnum("type").notNull(),
+    effectiveDate: timestamp("effectiveDate").notNull(),
+    description: text("description").notNull(),
+    premiumAdjustment: numeric("premiumAdjustment", { precision: 18, scale: 2 }).default("0"),
+    sumInsuredAdjustment: numeric("sumInsuredAdjustment", { precision: 18, scale: 2 }).default("0"),
+    changesDetail: json("changesDetail"),
+    approvedBy: integer("approvedBy"),
+    approvedAt: timestamp("approvedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    endorsementNumberIdx: uniqueIndex("end_number_idx").on(t.endorsementNumber),
+    policyIdx: index("end_policy_idx").on(t.policyId),
+  })
+);
+export type Endorsement = typeof endorsements.$inferSelect;
+
+// ─── Policy Renewals ──────────────────────────────────────────────────────────
+export const policyRenewals = pgTable(
+  "policy_renewals",
+  {
+    id: serial("id").primaryKey(),
+    originalPolicyId: integer("originalPolicyId").notNull(),
+    renewedPolicyId: integer("renewedPolicyId"),
+    renewalNoticeDate: timestamp("renewalNoticeDate"),
+    renewalDueDate: timestamp("renewalDueDate").notNull(),
+    renewalPremium: numeric("renewalPremium", { precision: 18, scale: 2 }),
+    isAutoRenewal: boolean("isAutoRenewal").default(false),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    notificationSent: boolean("notificationSent").default(false),
+    notificationSentAt: timestamp("notificationSentAt"),
+    completedAt: timestamp("completedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    originalPolicyIdx: index("pr_original_idx").on(t.originalPolicyId),
+    dueDateIdx: index("pr_dueDate_idx").on(t.renewalDueDate),
+  })
+);
+export type PolicyRenewal = typeof policyRenewals.$inferSelect;
+
+// ─── Coverage Items ───────────────────────────────────────────────────────────
+export const coverageItems = pgTable(
+  "coverage_items",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    coverageType: coverageTypeEnum("coverageType").notNull(),
+    coverageName: varchar("coverageName", { length: 256 }).notNull(),
+    sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }).notNull(),
+    deductible: numeric("deductible", { precision: 18, scale: 2 }).default("0"),
+    premium: numeric("premium", { precision: 18, scale: 2 }).notNull(),
+    isExcluded: boolean("isExcluded").default(false),
+    exclusionReason: text("exclusionReason"),
+    startDate: timestamp("startDate"),
+    endDate: timestamp("endDate"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("ci_policy_idx").on(t.policyId),
+    coverageTypeIdx: index("ci_coverageType_idx").on(t.coverageType),
+  })
+);
+export type CoverageItem = typeof coverageItems.$inferSelect;
+
+// ─── Risk Assessments ─────────────────────────────────────────────────────────
+export const riskAssessments = pgTable(
+  "risk_assessments",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId"),
+    customerId: integer("customerId"),
+    assessmentType: varchar("assessmentType", { length: 64 }).notNull(),
+    overallRiskScore: numeric("overallRiskScore", { precision: 5, scale: 2 }),
+    riskCategory: varchar("riskCategory", { length: 32 }),
+    factors: json("factors"),
+    recommendations: json("recommendations").$type<string[]>(),
+    assessedBy: integer("assessedBy"),
+    assessedAt: timestamp("assessedAt").defaultNow().notNull(),
+    validUntil: timestamp("validUntil"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("ra_policy_idx").on(t.policyId),
+    customerIdx: index("ra_customer_idx").on(t.customerId),
+  })
+);
+export type RiskAssessment = typeof riskAssessments.$inferSelect;
+
+// ─── Actuarial Reserves ───────────────────────────────────────────────────────
+export const actuarialReserves = pgTable(
+  "actuarial_reserves",
+  {
+    id: serial("id").primaryKey(),
+    reserveType: varchar("reserveType", { length: 64 }).notNull(),
+    productId: integer("productId"),
+    coverageType: coverageTypeEnum("coverageType"),
+    calculationDate: timestamp("calculationDate").notNull(),
+    grossReserve: numeric("grossReserve", { precision: 18, scale: 2 }).notNull(),
+    netReserve: numeric("netReserve", { precision: 18, scale: 2 }).notNull(),
+    ibrnReserve: numeric("ibrnReserve", { precision: 18, scale: 2 }),
+    unearnedPremiumReserve: numeric("unearnedPremiumReserve", { precision: 18, scale: 2 }),
+    claimsReserve: numeric("claimsReserve", { precision: 18, scale: 2 }),
+    methodology: varchar("methodology", { length: 128 }),
+    assumptions: json("assumptions"),
+    calculatedBy: integer("calculatedBy"),
+    approvedBy: integer("approvedBy"),
+    approvedAt: timestamp("approvedAt"),
+    reportingPeriod: varchar("reportingPeriod", { length: 16 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    calcDateIdx: index("ar_calcDate_idx").on(t.calculationDate),
+    reserveTypeIdx: index("ar_reserveType_idx").on(t.reserveType),
+  })
+);
+export type ActuarialReserve = typeof actuarialReserves.$inferSelect;
+
+// ─── Reinsurance Treaties ─────────────────────────────────────────────────────
+export const reinsuranceTreaties = pgTable(
+  "reinsurance_treaties",
+  {
+    id: serial("id").primaryKey(),
+    treatyNumber: varchar("treatyNumber", { length: 64 }).notNull().unique(),
+    reinsurerId: integer("reinsurerId"),
+    reinsurerName: varchar("reinsurerName", { length: 256 }).notNull(),
+    type: reinsuranceTypeEnum("type").notNull(),
+    coverageType: coverageTypeEnum("coverageType"),
+    retentionLimit: numeric("retentionLimit", { precision: 18, scale: 2 }),
+    cessionLimit: numeric("cessionLimit", { precision: 18, scale: 2 }),
+    cessionPercentage: numeric("cessionPercentage", { precision: 5, scale: 4 }),
+    premiumRate: numeric("premiumRate", { precision: 5, scale: 4 }),
+    startDate: timestamp("startDate").notNull(),
+    endDate: timestamp("endDate"),
+    isActive: boolean("isActive").default(true),
+    terms: json("terms"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    treatyNumberIdx: uniqueIndex("rt_treatyNumber_idx").on(t.treatyNumber),
+    reinsurerIdx: index("rt_reinsurer_idx").on(t.reinsurerId),
+    typeIdx: index("rt_type_idx").on(t.type),
+  })
+);
+export type ReinsuranceTreaty = typeof reinsuranceTreaties.$inferSelect;
+
+// ─── Reinsurance Cessions ─────────────────────────────────────────────────────
+export const reinsuranceCessions = pgTable(
+  "reinsurance_cessions",
+  {
+    id: serial("id").primaryKey(),
+    treatyId: integer("treatyId").notNull(),
+    policyId: integer("policyId").notNull(),
+    cededPremium: numeric("cededPremium", { precision: 18, scale: 2 }).notNull(),
+    cededSumInsured: numeric("cededSumInsured", { precision: 18, scale: 2 }).notNull(),
+    retainedPremium: numeric("retainedPremium", { precision: 18, scale: 2 }).notNull(),
+    retainedSumInsured: numeric("retainedSumInsured", { precision: 18, scale: 2 }).notNull(),
+    cessionDate: timestamp("cessionDate").defaultNow().notNull(),
+    settlementDate: timestamp("settlementDate"),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    treatyIdx: index("rc_treaty_idx").on(t.treatyId),
+    policyIdx: index("rc_policy_idx").on(t.policyId),
+  })
+);
+export type ReinsuranceCession = typeof reinsuranceCessions.$inferSelect;
+
+// ─── Broker Profiles ──────────────────────────────────────────────────────────
+export const brokers = pgTable(
+  "brokers",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("userId"),
+    brokerCode: varchar("brokerCode", { length: 32 }).notNull().unique(),
+    companyName: varchar("companyName", { length: 256 }).notNull(),
+    licenseNumber: varchar("licenseNumber", { length: 128 }).notNull(),
+    licenseExpiry: timestamp("licenseExpiry"),
+    naicomRegNumber: varchar("naicomRegNumber", { length: 64 }),
+    commissionRate: numeric("commissionRate", { precision: 5, scale: 4 }),
+    contactEmail: varchar("contactEmail", { length: 320 }),
+    contactPhone: varchar("contactPhone", { length: 32 }),
+    address: text("address"),
+    isActive: boolean("isActive").default(true),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    brokerCodeIdx: uniqueIndex("br_brokerCode_idx").on(t.brokerCode),
+    licenseIdx: index("br_license_idx").on(t.licenseNumber),
+    tenantIdx: index("br_tenant_idx").on(t.tenantId),
+  })
+);
+export type Broker = typeof brokers.$inferSelect;
+export type InsertBroker = typeof brokers.$inferInsert;
+
+// ─── Premium Payments ─────────────────────────────────────────────────────────
+export const premiumPayments = pgTable(
+  "premium_payments",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    paymentReference: varchar("paymentReference", { length: 128 }).notNull().unique(),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 8 }).default("NGN").notNull(),
+    paymentDate: timestamp("paymentDate").defaultNow().notNull(),
+    dueDate: timestamp("dueDate"),
+    paymentMethod: varchar("paymentMethod", { length: 64 }),
+    channel: varchar("channel", { length: 64 }),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    gatewayRef: varchar("gatewayRef", { length: 256 }),
+    receiptNumber: varchar("receiptNumber", { length: 64 }),
+    periodStart: timestamp("periodStart"),
+    periodEnd: timestamp("periodEnd"),
+    isInstallment: boolean("isInstallment").default(false),
+    installmentNumber: integer("installmentNumber"),
+    totalInstallments: integer("totalInstallments"),
+    tigerBeetleRef: varchar("tigerBeetleRef", { length: 128 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("pp_policy_idx").on(t.policyId),
+    paymentRefIdx: uniqueIndex("pp_paymentRef_idx").on(t.paymentReference),
+    statusIdx: index("pp_status_idx").on(t.status),
+    dueDateIdx: index("pp_dueDate_idx").on(t.dueDate),
+  })
+);
+export type PremiumPayment = typeof premiumPayments.$inferSelect;
+export type InsertPremiumPayment = typeof premiumPayments.$inferInsert;
+
+// ─── NAICOM Compliance Reports ────────────────────────────────────────────────
+export const naicomReports = pgTable(
+  "naicom_reports",
+  {
+    id: serial("id").primaryKey(),
+    reportType: varchar("reportType", { length: 64 }).notNull(),
+    reportingPeriod: varchar("reportingPeriod", { length: 16 }).notNull(),
+    submissionDate: timestamp("submissionDate"),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    reportData: json("reportData"),
+    submittedBy: integer("submittedBy"),
+    naicomAcknowledgement: varchar("naicomAcknowledgement", { length: 256 }),
+    dueDate: timestamp("dueDate"),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    reportTypeIdx: index("nr_reportType_idx").on(t.reportType),
+    periodIdx: index("nr_period_idx").on(t.reportingPeriod),
+    statusIdx: index("nr_status_idx").on(t.status),
+  })
+);
+export type NaicomReport = typeof naicomReports.$inferSelect;
+
+// ─── Actuarial Tables (Mortality, Morbidity) ──────────────────────────────────
+export const actuarialTables = pgTable(
+  "actuarial_tables",
+  {
+    id: serial("id").primaryKey(),
+    tableCode: varchar("tableCode", { length: 32 }).notNull().unique(),
+    tableName: varchar("tableName", { length: 256 }).notNull(),
+    tableType: varchar("tableType", { length: 64 }).notNull(),
+    gender: varchar("gender", { length: 16 }),
+    smokerStatus: varchar("smokerStatus", { length: 16 }),
+    validFrom: timestamp("validFrom").notNull(),
+    validTo: timestamp("validTo"),
+    data: json("data").notNull(),
+    source: varchar("source", { length: 256 }),
+    approvedBy: integer("approvedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    tableCodeIdx: uniqueIndex("at_tableCode_idx").on(t.tableCode),
+  })
+);
+export type ActuarialTable = typeof actuarialTables.$inferSelect;
+
+// ─── Policy Workflow Events (Temporal integration) ────────────────────────────
+export const policyWorkflowEvents = pgTable(
+  "policy_workflow_events",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull(),
+    workflowId: varchar("workflowId", { length: 256 }),
+    temporalRunId: varchar("temporalRunId", { length: 256 }),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    fromStatus: policyStatusEnum("fromStatus"),
+    toStatus: policyStatusEnum("toStatus"),
+    triggeredBy: integer("triggeredBy"),
+    triggeredByRole: insuranceStakeholderRoleEnum("triggeredByRole"),
+    payload: json("payload"),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: index("pwe_policy_idx").on(t.policyId),
+    workflowIdx: index("pwe_workflow_idx").on(t.workflowId),
+    eventTypeIdx: index("pwe_eventType_idx").on(t.eventType),
+  })
+);
+export type PolicyWorkflowEvent = typeof policyWorkflowEvents.$inferSelect;
+
+// ─── Claim Workflow Events ────────────────────────────────────────────────────
+export const claimWorkflowEvents = pgTable(
+  "claim_workflow_events",
+  {
+    id: serial("id").primaryKey(),
+    claimId: integer("claimId").notNull(),
+    workflowId: varchar("workflowId", { length: 256 }),
+    temporalRunId: varchar("temporalRunId", { length: 256 }),
+    eventType: varchar("eventType", { length: 64 }).notNull(),
+    fromStatus: claimStatusEnum("fromStatus"),
+    toStatus: claimStatusEnum("toStatus"),
+    triggeredBy: integer("triggeredBy"),
+    triggeredByRole: insuranceStakeholderRoleEnum("triggeredByRole"),
+    payload: json("payload"),
+    notes: text("notes"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    claimIdx: index("cwe_claim_idx").on(t.claimId),
+    workflowIdx: index("cwe_workflow_idx").on(t.workflowId),
+  })
+);
+export type ClaimWorkflowEvent = typeof claimWorkflowEvents.$inferSelect;
+
+// ─── Stakeholder Profiles ─────────────────────────────────────────────────────
+export const stakeholderProfiles = pgTable(
+  "stakeholder_profiles",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("userId").notNull().unique(),
+    role: insuranceStakeholderRoleEnum("role").notNull(),
+    licenseNumber: varchar("licenseNumber", { length: 128 }),
+    licenseExpiry: timestamp("licenseExpiry"),
+    specializations: json("specializations").$type<string[]>(),
+    maxClaimAuthority: numeric("maxClaimAuthority", { precision: 18, scale: 2 }),
+    isActive: boolean("isActive").default(true),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    userIdx: uniqueIndex("sp_user_idx").on(t.userId),
+    roleIdx: index("sp_role_idx").on(t.role),
+    tenantIdx: index("sp_tenant_idx").on(t.tenantId),
+  })
+);
+export type StakeholderProfile = typeof stakeholderProfiles.$inferSelect;
+
+// ─── IFRS 17 Measurement Groups ───────────────────────────────────────────────
+export const ifrs17MeasurementGroups = pgTable(
+  "ifrs17_measurement_groups",
+  {
+    id: serial("id").primaryKey(),
+    groupCode: varchar("groupCode", { length: 64 }).notNull().unique(),
+    productId: integer("productId"),
+    coverageType: coverageTypeEnum("coverageType"),
+    measurementModel: varchar("measurementModel", { length: 64 }).notNull(),
+    reportingPeriod: varchar("reportingPeriod", { length: 16 }).notNull(),
+    csm: numeric("csm", { precision: 18, scale: 2 }),
+    ra: numeric("ra", { precision: 18, scale: 2 }),
+    lrc: numeric("lrc", { precision: 18, scale: 2 }),
+    lrc_remaining: numeric("lrc_remaining", { precision: 18, scale: 2 }),
+    calculatedAt: timestamp("calculatedAt").defaultNow().notNull(),
+    calculatedBy: integer("calculatedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    groupCodeIdx: uniqueIndex("img_groupCode_idx").on(t.groupCode),
+    periodIdx: index("img_period_idx").on(t.reportingPeriod),
+  })
+);
+export type Ifrs17MeasurementGroup = typeof ifrs17MeasurementGroups.$inferSelect;
+
+// ─── Dapr Workflow State ──────────────────────────────────────────────────────
+export const daprWorkflowState = pgTable(
+  "dapr_workflow_state",
+  {
+    id: serial("id").primaryKey(),
+    workflowName: varchar("workflowName", { length: 128 }).notNull(),
+    instanceId: varchar("instanceId", { length: 256 }).notNull().unique(),
+    status: varchar("status", { length: 32 }).notNull(),
+    input: json("input"),
+    output: json("output"),
+    errorMessage: text("errorMessage"),
+    startedAt: timestamp("startedAt").defaultNow().notNull(),
+    completedAt: timestamp("completedAt"),
+    lastUpdatedAt: timestamp("lastUpdatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    instanceIdIdx: uniqueIndex("dws_instanceId_idx").on(t.instanceId),
+    workflowNameIdx: index("dws_workflowName_idx").on(t.workflowName),
+    statusIdx: index("dws_status_idx").on(t.status),
+  })
+);
+export type DaprWorkflowState = typeof daprWorkflowState.$inferSelect;
+
+// ─── Fluvio Event Log ─────────────────────────────────────────────────────────
+export const fluvioEventLog = pgTable(
+  "fluvio_event_log",
+  {
+    id: serial("id").primaryKey(),
+    topic: varchar("topic", { length: 128 }).notNull(),
+    partition: integer("partition"),
+    offset: integer("offset"),
+    key: varchar("key", { length: 256 }),
+    payload: json("payload"),
+    processedAt: timestamp("processedAt").defaultNow().notNull(),
+    status: varchar("status", { length: 32 }).default("processed").notNull(),
+    errorMessage: text("errorMessage"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    topicIdx: index("fel_topic_idx").on(t.topic),
+    statusIdx: index("fel_status_idx").on(t.status),
+  })
+);
+export type FluvioEventLog = typeof fluvioEventLog.$inferSelect;
+
+// ─── TigerBeetle Sync Log ─────────────────────────────────────────────────────
+export const tigerBeetleSyncLog = pgTable(
+  "tigerbeetle_sync_log",
+  {
+    id: serial("id").primaryKey(),
+    transferId: varchar("transferId", { length: 128 }).notNull(),
+    debitAccountId: varchar("debitAccountId", { length: 128 }).notNull(),
+    creditAccountId: varchar("creditAccountId", { length: 128 }).notNull(),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    ledger: integer("ledger"),
+    code: integer("code"),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    syncedAt: timestamp("syncedAt"),
+    errorMessage: text("errorMessage"),
+    retryCount: integer("retryCount").default(0),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    transferIdIdx: index("tbsl_transferId_idx").on(t.transferId),
+    statusIdx: index("tbsl_status_idx").on(t.status),
+  })
+);
+export type TigerBeetleSyncLog = typeof tigerBeetleSyncLog.$inferSelect;
+
+// ─── Permify Relationship Cache ───────────────────────────────────────────────
+export const permifyRelationshipCache = pgTable(
+  "permify_relationship_cache",
+  {
+    id: serial("id").primaryKey(),
+    subjectType: varchar("subjectType", { length: 64 }).notNull(),
+    subjectId: varchar("subjectId", { length: 128 }).notNull(),
+    entityType: varchar("entityType", { length: 64 }).notNull(),
+    entityId: varchar("entityId", { length: 128 }).notNull(),
+    permission: varchar("permission", { length: 64 }).notNull(),
+    allowed: boolean("allowed").notNull(),
+    cachedAt: timestamp("cachedAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt"),
+  },
+  t => ({
+    lookupIdx: index("prc_lookup_idx").on(t.subjectType, t.subjectId, t.entityType, t.entityId, t.permission),
+  })
+);
+export type PermifyRelationshipCache = typeof permifyRelationshipCache.$inferSelect;
