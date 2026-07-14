@@ -21,6 +21,8 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+		"os/signal"
+	"syscall"
 )
 
 var db *sql.DB

@@ -17,6 +17,9 @@ import (
 	"database/sql"
 
 	_ "github.com/lib/pq"
+		"context"
+	"os/signal"
+	"syscall"
 )
 
 // Circuit breaker for external HTTP calls
@@ -94,6 +97,7 @@ func main() {
 		defer db.Close()
 	}
 	r := chi.NewRouter()
+	r.Use(corsMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "scripts-runner"})

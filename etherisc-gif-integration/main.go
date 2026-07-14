@@ -21,6 +21,10 @@ import (
 	"fmt"
 
 	_ "github.com/lib/pq"
+		"context"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 // Circuit breaker for external HTTP calls
@@ -826,6 +830,7 @@ func main() {
 	initDB()
 	initMiddleware()
 	r := chi.NewRouter()
+	r.Use(corsMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

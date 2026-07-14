@@ -20,6 +20,10 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+		"context"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 var db *sql.DB

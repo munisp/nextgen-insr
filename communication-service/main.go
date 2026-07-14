@@ -21,6 +21,9 @@ import (
 	"fmt"
 
 	_ "github.com/lib/pq"
+		"context"
+	"os/signal"
+	"syscall"
 )
 
 // Circuit breaker for external HTTP calls
