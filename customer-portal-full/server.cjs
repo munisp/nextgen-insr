@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const nodemailer = require('nodemailer');
 function uuidv4() { return crypto.randomUUID(); }
 
@@ -84,9 +85,7 @@ function log(level, message, meta = {}) {
   else process.stdout.write(line + '\n');
 }
 
-const compression = require('compression');
 const app = express();
-app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
 // CORS middleware
@@ -402,6 +401,16 @@ app.use((req, res, next) => {
   req.requestId = requestId;
   next();
 });
+
+// Response compression (Brotli/gzip)
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+}));
 
 // Health check endpoints registered after pool init (see below)
 
@@ -4680,7 +4689,8 @@ app.all('/api/trpc/*', async (req, res) => {
       const handler = ROUTE_MAP.get(batchRoute);
       if (handler) {
         const batchStart = Date.now();
-        const data = await handler(batchInput, { userId, user });
+        const batchToken = req.headers?.authorization?.replace('Bearer ', '') || null;
+        const data = await handler(batchInput, { userId, user, token: batchToken, req });
         const batchDuration = Date.now() - batchStart;
         if (batchDuration > 1000) log('warn', 'Slow batch route', { route: batchRoute, duration: batchDuration, userId });
         return { result: { data: { json: data } } };
