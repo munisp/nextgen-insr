@@ -462,6 +462,76 @@ async function run() {
     assert.strictEqual(r.data.error.code, 'BAD_REQUEST', 'Expected BAD_REQUEST code');
   });
 
+  // ─── P3: Extended User-Scoping Tests ───
+  console.log('\nUser Scoping (P3 — Extended):');
+
+  await test('kyc.status is user-scoped', async () => {
+    const r = await trpcQuery('kyc.status');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(r.data.result.data.status, 'Expected KYC status field');
+  });
+
+  await test('dashboard.notifications is user-scoped', async () => {
+    const r = await trpcQuery('dashboard.notifications');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
+  });
+
+  await test('communication.messages is user-scoped', async () => {
+    const r = await trpcQuery('communication.messages');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
+  });
+
+  await test('onboarding.status is user-scoped', async () => {
+    const r = await trpcQuery('onboarding.status');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(d.steps, 'Expected steps array');
+    assert.ok(typeof d.completionPercentage === 'number', 'Expected numeric completionPercentage');
+  });
+
+  await test('customer360.profile is user-scoped', async () => {
+    const r = await trpcQuery('customer360.profile');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(d.name, 'Expected user name');
+    assert.ok(typeof d.policies === 'number', 'Expected numeric policies count');
+  });
+
+  await test('rewards.balance is user-scoped', async () => {
+    const r = await trpcQuery('rewards.balance');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(typeof r.data.result.data.points === 'number', 'Expected numeric points');
+  });
+
+  await test('savings.plans is user-scoped', async () => {
+    const r = await trpcQuery('savings.plans');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
+  });
+
+  await test('referral.stats is user-scoped', async () => {
+    const r = await trpcQuery('referral.stats');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(typeof d.totalReferrals === 'number', 'Expected numeric totalReferrals');
+  });
+
+  // ─── P3: Pagination Tiebreaker Test ───
+  console.log('\nPagination Tiebreaker:');
+
+  await test('pagination returns deterministic order with id tiebreaker', async () => {
+    const r1 = await trpcQuery('policies.list', { limit: 3, page: 1 });
+    const r2 = await trpcQuery('policies.list', { limit: 3, page: 2 });
+    assert.ok(r1.data.result, 'Expected page 1 result');
+    assert.ok(r2.data.result, 'Expected page 2 result');
+    const ids1 = r1.data.result.data.map(r => r.id);
+    const ids2 = r2.data.result.data.map(r => r.id);
+    const overlap = ids1.filter(id => ids2.includes(id));
+    assert.strictEqual(overlap.length, 0, `Page 1 IDs ${ids1} and page 2 IDs ${ids2} should not overlap`);
+  });
+
   // ─── Summary ───
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passCount} passed, ${failCount} failed (${passCount + failCount} total)`);
