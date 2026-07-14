@@ -22,7 +22,7 @@ import {
   tbEnsureAgentAccount,
 } from "../tbClient";
 import { getDb } from "../db";
-import { agents, transactions } from "../../drizzle/schema";
+import { agents, transactions } from "@schema";
 import { desc, eq, sql, count, sum } from "drizzle-orm";
 
 const ENV = {

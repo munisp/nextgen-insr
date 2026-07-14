@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { complianceChecks, complianceFilings, complianceReports } from "../../drizzle/schema";
+import { complianceChecks, complianceFilings, complianceReports } from "@schema";
 import { desc, eq, sql, and, count, gte, lte } from "drizzle-orm";
 
 /**
@@ -63,7 +63,7 @@ export const regulatoryComplianceChecksRouter = router({
           "solvency_ratio",
           "filing_deadline",
         ]),
-        parameters: z.record(z.string()).optional(),
+        parameters: z.record(z.string(), z.string()).optional(),
       })
     )
     .mutation(async ({ input }) => {

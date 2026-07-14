@@ -5,7 +5,7 @@ import {
   insuranceProducts,
   insuranceCategories,
   insuranceInventory,
-} from "../../drizzle/schema";
+} from "@schema";
 import { desc, eq, and, ilike, count, sql } from "drizzle-orm";
 
 const CATALOG_SERVICE_URL =

@@ -1115,3 +1115,107 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       <<: *hc-defaults
+
+  # ── Go Infrastructure Service (TigerBeetle bridge, Fluvio bridge, Temporal client) ──
+  go-infra:
+    build:
+      context: ./insureportal/services/infra-go
+      dockerfile: Dockerfile
+    image: insureportal/go-infra:latest
+    container_name: insureportal-go-infra
+    restart: unless-stopped
+    profiles: [infra, all]
+    networks: [insureportal-infra, insureportal-app]
+    environment:
+      - PORT=8093
+      - TIGERBEETLE_ADDRESS=${TIGERBEETLE_ADDRESS:-tigerbeetle:3000}
+      - FLUVIO_ENDPOINT=${FLUVIO_ENDPOINT:-fluvio:9003}
+      - TEMPORAL_HOST_PORT=${TEMPORAL_HOST_PORT:-temporal:7233}
+      - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-insureportal}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - REDIS_URL=${REDIS_URL}
+      - PERMIFY_URL=${PERMIFY_URL:-http://permify:3476}
+      - KEYCLOAK_URL=${KEYCLOAK_URL}
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM:-insureportal}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-insureportal-backend}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+      - LOG_LEVEL=info
+    ports:
+      - "8093:8093"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8093/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ── Rust Middleware (audit pipeline, rate-limit, WAF bridge) ─────────────
+  rust-middleware:
+    build:
+      context: ./insureportal/services/rust-middleware
+      dockerfile: Dockerfile
+    image: insureportal/rust-middleware:latest
+    container_name: insureportal-rust-middleware
+    restart: unless-stopped
+    profiles: [infra, all]
+    networks: [insureportal-infra, insureportal-app]
+    environment:
+      - PORT=8091
+      - POSTGRES_URL=${POSTGRES_URL}
+      - REDIS_URL=${REDIS_URL}
+      - KAFKA_BROKERS=${KAFKA_BROKERS:-redpanda:9092}
+      - OPENAPPSEC_URL=http://openappsec-agent:8080
+      - LOG_LEVEL=info
+    ports:
+      - "8091:8091"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+
+  # ── Python Analytics Service (Lakehouse ETL, Actuarial, IFRS17, Fraud ML) ──
+  python-analytics:
+    build:
+      context: ./insureportal/services/python-analytics
+      dockerfile: Dockerfile
+    image: insureportal/python-analytics:latest
+    container_name: insureportal-python-analytics
+    restart: unless-stopped
+    profiles: [analytics, all]
+    networks: [insureportal-infra, insureportal-app]
+    environment:
+      - PORT=8092
+      - POSTGRES_URL=${POSTGRES_URL}
+      - REDIS_URL=${REDIS_URL}
+      - LAKEHOUSE_S3_ENDPOINT=${MINIO_ENDPOINT:-http://minio:9000}
+      - LAKEHOUSE_S3_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - LAKEHOUSE_S3_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - LAKEHOUSE_BUCKET=${LAKEHOUSE_BUCKET:-insureportal-lakehouse}
+      - FLUVIO_ENDPOINT=${FLUVIO_ENDPOINT:-http://fluvio:9003}
+      - LOG_LEVEL=info
+      - WORKERS=4
+    ports:
+      - "8092:8092"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8092/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G

@@ -13,7 +13,7 @@ import {
   users,
   billingAuditLog,
   platformBillingLedger,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

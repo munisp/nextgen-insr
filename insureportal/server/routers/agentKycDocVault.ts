@@ -14,7 +14,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { kycDocuments, auditLog } from "../../drizzle/schema";
+import { kycDocuments, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const agentKycDocVaultRouter = router({

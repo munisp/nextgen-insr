@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { premiumTopUpRequests, agents, transactions } from "../../drizzle/schema";
+import { premiumTopUpRequests, agents, transactions } from "@schema";
 import { desc, eq, sql, and, count, sum } from "drizzle-orm";
 
 /**
@@ -34,8 +34,8 @@ export const floatManagementRouter = router({
       if (!database) return { data: [], total: 0 };
 
       const conditions = [];
-      if (input.status) conditions.push(eq(premiumTopUpRequests.status, input.status));
-      if (input.agentId) conditions.push(eq(premiumTopUpRequests.agentId, input.agentId));
+      if (input.status) conditions.push(eq(premiumTopUpRequests.status, input.status as any));
+      if (input.agentId) conditions.push(eq(premiumTopUpRequests.agentId, Number(input.agentId)));
 
       const query = database.select().from(premiumTopUpRequests)
         .orderBy(desc(premiumTopUpRequests.id))

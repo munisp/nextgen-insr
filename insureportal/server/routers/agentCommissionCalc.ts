@@ -11,7 +11,7 @@ import {
   commissionPayouts,
   commissionRules,
   commissionAuditTrail,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {

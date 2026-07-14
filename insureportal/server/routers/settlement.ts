@@ -19,7 +19,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb } from "../db";
-import { auditLog, agents, transactions } from "../../drizzle/schema";
+import { auditLog, agents, transactions } from "@schema";
 import { desc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { runDailySettlement } from "../settlementCron";
 import { router, protectedProcedure } from "../_core/trpc";
@@ -313,7 +313,6 @@ export const settlementRouter = router({
 
     const outstanding = rows.map((r: any) => ({
       agentId: r.agentId,
-      agentId: agentMap[r.agentId]?.agentId ?? `#${r.agentId}`,
       agentName: agentMap[r.agentId]?.name ?? "Unknown",
       totalVolume: Number(r.totalVolume),
       totalCommission: Number(r.totalCommission),

@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
+import { transactions, agents } from "@schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -84,7 +84,6 @@ export const eodReconciliationRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "EOD_REPORT_GENERATED",
           resource: "eod_reconciliation",
           resourceId: reportId,

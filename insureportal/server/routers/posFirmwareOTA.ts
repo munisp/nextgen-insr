@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { insuranceServices, platformSettings } from "../../drizzle/schema";
+import { posTerminals as insuranceServices, platformSettings } from "@schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -95,7 +95,6 @@ export const posServiceUpdateRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FIRMWARE_PUBLISHED",
           resource: "firmware",
           resourceId: input.version,
@@ -134,7 +133,6 @@ export const posServiceUpdateRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FIRMWARE_ROLLOUT_STARTED",
           resource: "firmware_rollout",
           resourceId: rolloutId,
@@ -238,7 +236,6 @@ export const posServiceUpdateRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: input.success
             ? "FIRMWARE_UPDATE_SUCCESS"
             : "FIRMWARE_UPDATE_FAILED",

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agentOnboardingProgress, agents } from "../../drizzle/schema";
+import { agentOnboardingProgress, agents } from "@schema";
 import { desc, eq, sql, and, count } from "drizzle-orm";
 
 /**
@@ -35,7 +35,7 @@ export const agentOnboardingWorkflowRouter = router({
       if (!database) return { data: [], total: 0 };
 
       const conditions = [];
-      if (input.currentStep) conditions.push(eq(agentOnboardingProgress.currentStep, input.currentStep));
+      if (input.currentStep) conditions.push(eq(agentOnboardingProgress.currentStep, input.currentStep as any));
 
       const query = database.select().from(agentOnboardingProgress)
         .orderBy(desc(agentOnboardingProgress.id))
@@ -61,7 +61,7 @@ export const agentOnboardingWorkflowRouter = router({
       const [progress] = await database
         .select()
         .from(agentOnboardingProgress)
-        .where(eq(agentOnboardingProgress.agentId, input.agentId))
+        .where(eq(agentOnboardingProgress.agentId, Number(input.agentId)))
         .limit(1);
 
       if (!progress) throw new Error(`No onboarding record for agent #${input.agentId}`);
@@ -80,7 +80,7 @@ export const agentOnboardingWorkflowRouter = router({
       z.object({
         agentId: z.number(),
         completedStep: z.enum(["profile", "kyc", "training", "float_funding", "terminal", "go_live"]),
-        evidence: z.record(z.string()).optional(),
+        evidence: z.record(z.string(), z.string()).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -90,7 +90,7 @@ export const agentOnboardingWorkflowRouter = router({
       const [progress] = await database
         .select()
         .from(agentOnboardingProgress)
-        .where(eq(agentOnboardingProgress.agentId, input.agentId))
+        .where(eq(agentOnboardingProgress.agentId, Number(input.agentId)))
         .limit(1);
 
       if (!progress) throw new Error("No onboarding record found");
@@ -121,7 +121,7 @@ export const agentOnboardingWorkflowRouter = router({
       await database
         .update(agentOnboardingProgress)
         .set(updateFields)
-        .where(eq(agentOnboardingProgress.agentId, input.agentId));
+        .where(eq(agentOnboardingProgress.agentId, Number(input.agentId)));
 
       return {
         agentId: input.agentId,
@@ -136,7 +136,6 @@ export const agentOnboardingWorkflowRouter = router({
     .input(
       z.object({
         agentId: z.number(),
-        agentId: z.string().min(3),
       })
     )
     .mutation(async ({ input }) => {
@@ -147,7 +146,7 @@ export const agentOnboardingWorkflowRouter = router({
       const [existing] = await database
         .select()
         .from(agentOnboardingProgress)
-        .where(eq(agentOnboardingProgress.agentId, input.agentId))
+        .where(eq(agentOnboardingProgress.agentId, Number(input.agentId)))
         .limit(1);
 
       if (existing) throw new Error(`Onboarding already initiated for agent ${input.agentId}`);
@@ -156,13 +155,12 @@ export const agentOnboardingWorkflowRouter = router({
         .insert(agentOnboardingProgress)
         .values({
           agentId: input.agentId,
-          agentId: input.agentId,
           currentStep: "profile",
           profileComplete: false,
           kycComplete: false,
           floatFunded: false,
           terminalAssigned: false,
-        })
+        } as any)
         .returning();
 
       return { id: record.id, agentId: input.agentId, currentStep: "profile" };

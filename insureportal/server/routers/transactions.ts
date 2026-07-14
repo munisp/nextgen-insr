@@ -42,7 +42,7 @@ import {
   geofenceZones,
   deviceLocations,
   commissionRules,
-} from "../../drizzle/schema";
+} from "@schema";
 import { sendSms, buildConfirmationSms } from "../termii";
 import { getIO } from "../socketSingleton";
 import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
@@ -372,7 +372,6 @@ export const transactionsRouter = router({
         if (!deviceCheck.valid) {
           await writeAuditLog({
             agentId: agent.id,
-            agentId: agent.agentId,
             action: "DEVICE_TOKEN_REJECTED",
             resource: "transaction",
             status: "failure",
@@ -437,7 +436,6 @@ export const transactionsRouter = router({
           });
           await writeAuditLog({
             agentId: agent.id,
-            agentId: agent.agentId,
             action: "VELOCITY_LIMIT_BREACHED",
             resource: "transaction",
             status: "failure",
@@ -516,7 +514,6 @@ export const transactionsRouter = router({
                   });
                   await writeAuditLog({
                     agentId: agent.id,
-                    agentId: agent.agentId,
                     action: "GEOFENCE_VIOLATION",
                     resource: "transaction",
                     status: "failure",
@@ -635,7 +632,6 @@ export const transactionsRouter = router({
           if (amlResult.triggered) {
             await writeAuditLog({
               agentId: agent.id,
-              agentId: agent.agentId,
               action: "AML_TRIGGER",
               resource: "transaction",
               status: "flagged" as any,
@@ -787,7 +783,6 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "TRANSACTION_CREATED",
           resource: "transaction",
           resourceId: ref,
@@ -1095,7 +1090,6 @@ export const transactionsRouter = router({
 
           await writeAuditLog({
             agentId: agent.id,
-            agentId: agent.agentId,
             action: "REVERSAL_APPROVAL_REQUESTED",
             resource: "transaction",
             resourceId: input.ref,
@@ -1138,7 +1132,6 @@ export const transactionsRouter = router({
         const reversalRef = generateRef();
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "TRANSACTION_REVERSED",
           resource: "transaction",
           resourceId: input.ref,
@@ -1273,7 +1266,6 @@ export const transactionsRouter = router({
         const reversalRef = generateRef();
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "REVERSAL_APPROVED",
           resource: "transaction",
           resourceId: tx.ref,
@@ -1356,7 +1348,6 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "REVERSAL_REJECTED",
           resource: "transaction",
           resourceId: tx.ref,
@@ -1438,7 +1429,6 @@ export const transactionsRouter = router({
           .where(eq(velocityLimits.tier, input.tier));
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "VELOCITY_LIMIT_UPDATED",
           resource: "velocity_limits",
           resourceId: input.tier,
@@ -1516,7 +1506,6 @@ export const transactionsRouter = router({
           .where(eq(platformSettings.key, input.key));
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "PLATFORM_SETTING_UPDATED",
           resource: "platform_settings",
           resourceId: input.key,
@@ -1657,7 +1646,6 @@ export const transactionsRouter = router({
           .where(eq(fraudAlerts.id, input.alertId));
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "FRAUD_ALERT_REVIEWED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
@@ -1763,7 +1751,6 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "SECURITY_AUDIT_EXPORTED",
           resource: "fraud_alerts",
           status: "success",
@@ -1816,7 +1803,6 @@ export const transactionsRouter = router({
           .where(eq(fraudAlerts.id, input.alertId));
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "FRAUD_ALERT_SNOOZED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
@@ -1889,7 +1875,6 @@ export const transactionsRouter = router({
         }
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "FRAUD_ALERT_ESCALATED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),

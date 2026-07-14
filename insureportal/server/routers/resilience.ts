@@ -27,7 +27,7 @@ import {
   dlqMessages,
   erpSyncLog,
   mqttBridgeConfig,
-} from "../../drizzle/schema";
+} from "@schema";
 import webpush from "web-push";
 import { TRPCError } from "@trpc/server";
 

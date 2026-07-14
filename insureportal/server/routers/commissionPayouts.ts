@@ -7,7 +7,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { commissionPayouts, agents } from "../../drizzle/schema";
+import { commissionPayouts, agents } from "@schema";
 import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 import { dispatchWebhookEvent } from "../lib/webhookDelivery";
@@ -44,7 +44,7 @@ export const commissionPayoutsRouter = router({
         if (input.status)
           conditions.push(eq(commissionPayouts.status, input.status));
         if (input.agentId)
-          conditions.push(eq(commissionPayouts.agentId, input.agentId));
+          conditions.push(eq(commissionPayouts.agentId, Number(input.agentId)));
         if (input.from)
           conditions.push(
             gte(commissionPayouts.createdAt, new Date(input.from))
@@ -135,7 +135,6 @@ export const commissionPayoutsRouter = router({
           .insert(commissionPayouts)
           .values({
             agentId: agent.id,
-            agentId: input.agentId,
             amount: String(input.amount),
             bankCode: input.bankCode,
             accountNumber: input.accountNumber,
@@ -147,7 +146,6 @@ export const commissionPayoutsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentId: input.agentId,
           action: "commission_payout_requested",
           resource: "commission_payout",
           resourceId: String(payout.id),

@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents, commissionRules } from "../../drizzle/schema";
+import { transactions, agents, commissionRules } from "@schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -201,7 +201,6 @@ export const airtimeVendingRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "AIRTIME_VENDED",
           resource: "airtime",
           resourceId: ref,
@@ -305,7 +304,6 @@ export const airtimeVendingRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "DATA_VENDED",
           resource: "data_bundle",
           resourceId: ref,

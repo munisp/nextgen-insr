@@ -23,7 +23,7 @@ import {
   getDb,
 } from "../db";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
-import { agents } from "../../drizzle/schema";
+import { agents } from "@schema";
 import { getJwtSecret } from "../lib/envValidation";
 import {
   eq,
@@ -71,7 +71,7 @@ export const agentRouter = router({
         const valid = await bcrypt.compare(input.pin, agent.pinHash);
         if (!valid) {
           await writeAuditLog({
-            agentId: agent.id,
+            agentNumericId: agent.id,
             agentId: agent.agentId,
             action: "LOGIN_FAILED",
             resource: "agent",
@@ -87,7 +87,7 @@ export const agentRouter = router({
 
         await updateAgentLastLogin(agent.id);
         await writeAuditLog({
-          agentId: agent.id,
+          agentNumericId: agent.id,
           agentId: agent.agentId,
           action: "LOGIN_SUCCESS",
           resource: "agent",
@@ -468,7 +468,6 @@ export const agentRouter = router({
           .where(eq(agents.id, id));
         await writeAuditLog({
           agentId: id,
-          agentId: agent.agentId,
           action: "AGENT_UPDATED",
           resource: "agent",
           resourceId: String(id),
@@ -507,7 +506,7 @@ export const agentRouter = router({
           })
           .where(eq(agents.id, input.id));
         await writeAuditLog({
-          agentId: input.id,
+          agentNumericId: input.id,
           agentId: agent.agentId,
           action: "AGENT_DELETED",
           resource: "agent",
@@ -547,7 +546,7 @@ export const agentRouter = router({
           .set({ floatLocked: input.locked, updatedAt: new Date() })
           .where(eq(agents.id, input.id));
         await writeAuditLog({
-          agentId: input.id,
+          agentNumericId: input.id,
           agentId: agent.agentId,
           action: input.locked ? "FLOAT_LOCKED" : "FLOAT_UNLOCKED",
           resource: "agent",
@@ -593,7 +592,7 @@ export const agentRouter = router({
           })
           .where(eq(agents.id, input.id));
         await writeAuditLog({
-          agentId: input.id,
+          agentNumericId: input.id,
           agentId: agent.agentId,
           action: input.enabled ? "TERMINAL_ENABLED" : "TERMINAL_DISABLED",
           resource: "agent",

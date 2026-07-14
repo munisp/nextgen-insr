@@ -519,7 +519,7 @@ export const auditLog = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     agentId: integer("agentId"),
-    agentId: varchar("agentId", { length: 32 }),
+    agentId2: varchar("agentId", { length: 32 }),
     action: varchar("action", { length: 128 }).notNull(),
     resource: varchar("resource", { length: 64 }),
     resourceId: varchar("resourceId", { length: 64 }),
@@ -2467,7 +2467,7 @@ export const settlementReconciliation = pgTable(
     id: serial("id").primaryKey(),
     settlementDate: varchar("settlement_date", { length: 10 }).notNull(),
     agentId: integer("agent_id").references(() => agents.id),
-    agentId: varchar("agent_code", { length: 32 }),
+    agentId2: varchar("agent_code", { length: 32 }),
     expectedAmount: numeric("expected_amount", {
       precision: 18,
       scale: 2,
@@ -4602,7 +4602,7 @@ export type GuideFeedback = typeof guideFeedback.$inferSelect;
 //         compliance officer, regulator, customer/policyholder, reinsurer)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, json, index, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+// import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, json, index, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 
 // ─── Stakeholder Role Enums ──────────────────────────────────────────────────
 export const insuranceStakeholderRoleEnum = pgEnum("insurance_stakeholder_role", [

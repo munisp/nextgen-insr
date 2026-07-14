@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { agents } from "../../drizzle/schema";
+import { agents } from "@schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -85,7 +85,6 @@ export const agentFloatTransferRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "AGENT_FLOAT_TRANSFERRED",
           resource: "agent_float_transfer",
           resourceId: ref,

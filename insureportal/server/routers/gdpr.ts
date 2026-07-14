@@ -28,7 +28,7 @@ import {
   kycSessions,
   customers,
   dataRightsRequests,
-} from "../../drizzle/schema";
+} from "@schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { count } from "drizzle-orm";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -107,7 +107,6 @@ export const gdprRouter = router({
       // Write audit log for the export request
       await writeAuditLog({
         agentId: agent.id,
-        agentId: agent.agentId,
         action: "GDPR_EXPORT_REQUEST",
         resource: "agent",
         resourceId: String(agent.id),
@@ -215,7 +214,6 @@ export const gdprRouter = router({
         // Log the erasure request
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "GDPR_ERASURE_REQUEST",
           resource: "agent",
           resourceId: String(agent.id),

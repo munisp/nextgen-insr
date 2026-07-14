@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { notification_logs, notification_channels } from "../../drizzle/schema";
+import { notification_logs, notification_channels } from "@schema";
 import { desc, eq, sql, and, count, gte } from "drizzle-orm";
 
 /**

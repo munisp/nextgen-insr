@@ -19,7 +19,7 @@ import {
   fraudAlerts,
   shareableLinks,
   kycSessions,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
 import crypto from "crypto";
 

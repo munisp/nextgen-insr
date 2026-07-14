@@ -16,7 +16,7 @@ import {
   supervisorAgents,
   users,
   fraudAlerts,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 
 async function requireDb() {

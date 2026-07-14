@@ -269,6 +269,245 @@ routes:
         rejected_code: 429
       prometheus: {}
 
+  # ── Insurance Domain tRPC Routes ─────────────────────────────────────────
+  - id: insurance-policies-trpc
+    uri: /api/trpc/policies.*
+    upstream_id: insurance-portal
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      opentelemetry:
+        sampler:
+          name: always_on
+      prometheus: {}
+
+  - id: insurance-claims-trpc
+    uri: /api/trpc/claims.*
+    upstream_id: insurance-portal
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      prometheus: {}
+
+  - id: insurance-underwriting-trpc
+    uri: /api/trpc/underwriting.*
+    upstream_id: insurance-portal
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      prometheus: {}
+
+  - id: insurance-workflows-trpc
+    uri: /api/trpc/insuranceWorkflows.*
+    upstream_id: insurance-portal
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      prometheus: {}
+
+  - id: insurance-actuarial-trpc
+    uri: /api/trpc/actuarial.*
+    upstream_id: insurance-portal
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      prometheus: {}
+
+  - id: insurance-reinsurance-trpc
+    uri: /api/trpc/reinsurance.*
+    upstream_id: insurance-portal
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      prometheus: {}
+
+  - id: insurance-compliance-trpc
+    uri: /api/trpc/compliance.*
+    upstream_id: insurance-portal
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      prometheus: {}
+
+  - id: insurance-broker-trpc
+    uri: /api/trpc/broker.*
+    upstream_id: insurance-portal
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      prometheus: {}
+
+  # ── Python Analytics Service ──────────────────────────────────────────────
+  - id: python-analytics-actuarial
+    uri: /analytics/actuarial/*
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 10
+        burst: 3
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        regex_uri: ["/analytics/actuarial/(.*)", "/actuarial/$1"]
+      prometheus: {}
+
+  - id: python-analytics-fraud
+    uri: /analytics/fraud/*
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        regex_uri: ["/analytics/fraud/(.*)", "/fraud/$1"]
+      prometheus: {}
+
+  - id: python-analytics-ifrs17
+    uri: /analytics/ifrs17/*
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 10
+        burst: 3
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        regex_uri: ["/analytics/ifrs17/(.*)", "/ifrs17/$1"]
+      prometheus: {}
+
+  - id: python-analytics-lakehouse
+    uri: /analytics/lakehouse/*
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 10
+        burst: 3
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        regex_uri: ["/analytics/lakehouse/(.*)", "/lakehouse/$1"]
+      prometheus: {}
+
+  # ── Go Infra Service (TigerBeetle + Fluvio bridge) ────────────────────────
+  - id: go-infra-tigerbeetle
+    uri: /infra/tb/*
+    upstream_id: go-infra
+    plugins:
+      limit-req:
+        rate: 100
+        burst: 30
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        regex_uri: ["/infra/tb/(.*)", "/tb/$1"]
+      prometheus: {}
+
+  - id: go-infra-fluvio
+    uri: /infra/fluvio/*
+    upstream_id: go-infra
+    plugins:
+      limit-req:
+        rate: 200
+        burst: 50
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        regex_uri: ["/infra/fluvio/(.*)", "/fluvio/$1"]
+      prometheus: {}
+
+  - id: go-infra-temporal
+    uri: /infra/temporal/*
+    upstream_id: go-infra
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        regex_uri: ["/infra/temporal/(.*)", "/temporal/$1"]
+      prometheus: {}
+
+  # ── Rust Middleware (audit + rate-limit + WAF bridge) ─────────────────────
+  - id: rust-middleware-audit
+    uri: /middleware/audit/*
+    upstream_id: rust-middleware
+    plugins:
+      limit-req:
+        rate: 50
+        burst: 15
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        regex_uri: ["/middleware/audit/(.*)", "/audit/$1"]
+      prometheus: {}
+
+  - id: rust-middleware-metrics
+    uri: /middleware/metrics
+    upstream_id: rust-middleware
+    plugins:
+      limit-req:
+        rate: 10
+        burst: 3
+        key: remote_addr
+        rejected_code: 429
+      prometheus: {}
+
+  # ── OpenAppSec WAF health + management ───────────────────────────────────
+  - id: openappsec-health
+    uri: /waf/health
+    upstream_id: openappsec-agent
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 2
+        key: remote_addr
+        rejected_code: 429
+      prometheus: {}
+
+
 upstreams:
   - id: insurance-portal
     nodes:
@@ -553,6 +792,45 @@ upstreams:
   - id: dapr-sidecar
     nodes:
       "localhost:3500": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+  - id: python-analytics
+    nodes:
+      "python-analytics:8092": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    healthcheck:
+      active:
+        http_path: /health
+        healthy:
+          successes: 2
+  - id: go-infra
+    nodes:
+      "go-infra:8093": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    healthcheck:
+      active:
+        http_path: /health
+        healthy:
+          successes: 2
+  - id: rust-middleware
+    nodes:
+      "rust-middleware:8091": 1
+    type: roundrobin
+    scheme: http
+    pass_host: pass
+    healthcheck:
+      active:
+        http_path: /health
+        healthy:
+          successes: 2
+  - id: openappsec-agent
+    nodes:
+      "openappsec-agent:8090": 1
     type: roundrobin
     scheme: http
     pass_host: pass

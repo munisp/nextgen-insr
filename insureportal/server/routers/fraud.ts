@@ -9,7 +9,7 @@ import {
   writeAuditLog,
 } from "../db";
 import { getDb } from "../db";
-import { fraudAlerts, fraudRules } from "../../drizzle/schema";
+import { fraudAlerts, fraudRules } from "@schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
@@ -82,7 +82,6 @@ export const fraudRouter = router({
         await updateFraudAlertStatus(input.id, input.status);
         await writeAuditLog({
           agentId: agent?.id,
-          agentId: agent?.agentId,
           action: `FRAUD_ALERT_${input.status.toUpperCase()}`,
           resource: "fraud_alert",
           resourceId: String(input.id),
@@ -475,7 +474,6 @@ export const fraudRouter = router({
         .returning({ id: fraudRules.id });
       await writeAuditLog({
         agentId: agent.id,
-        agentId: agent.agentId,
         action: "FRAUD_RULES_SEEDED",
         resource: "fraud_rules",
         resourceId: "default",

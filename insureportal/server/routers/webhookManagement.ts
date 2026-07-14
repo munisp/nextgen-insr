@@ -7,7 +7,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { webhookEndpoints, webhookDeliveries } from "../../drizzle/schema";
+import { webhookEndpoints, webhookDeliveries } from "@schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
 import crypto from "crypto";
 

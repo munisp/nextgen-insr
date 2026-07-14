@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog } from "@schema";
 import { desc, eq, sql, and, count, gte, lte, like } from "drizzle-orm";
 
 /**
@@ -33,7 +33,7 @@ export const activityAuditLogRouter = router({
 
       const conditions = [];
       if (input.action) conditions.push(eq(auditLog.action, input.action));
-      if (input.userId) conditions.push(eq(auditLog.userId, input.userId));
+      if (input.userId) conditions.push(eq(auditLog.userId, String(input.userId)));
 
       const query = database.select().from(auditLog)
         .orderBy(desc(auditLog.id))
@@ -104,7 +104,7 @@ export const activityAuditLogRouter = router({
           action: input.action,
           userId: input.userId,
           details: input.details ?? null,
-        })
+        } as any)
         .returning();
 
       return record;

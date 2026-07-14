@@ -17,7 +17,7 @@ import {
   premiumTopUpRequests,
   agents,
   supervisorAgents,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -88,7 +88,6 @@ export const premiumTopUpRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FLOAT_TOPUP_REQUESTED",
           resource: "float_topup",
           resourceId: String(result[0].id),
@@ -203,7 +202,7 @@ export const premiumTopUpRouter = router({
           supervisorApprovedAt: premiumTopUpRequests.supervisorApprovedAt,
           notes: premiumTopUpRequests.notes,
           createdAt: premiumTopUpRequests.createdAt,
-          agentId: agents.agentId,
+          agentUserId: agents.agentId,
           agentName: agents.name,
           agentFloat: agents.premiumReserve,
           agentTier: agents.tier,
@@ -323,7 +322,6 @@ export const premiumTopUpRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FLOAT_TOPUP_SUPERVISOR_APPROVED",
           resource: "float_topup",
           resourceId: String(input.requestId),

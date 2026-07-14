@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { floatReconciliations, agents, transactions } from "../../drizzle/schema";
+import { floatReconciliations, agents, transactions } from "@schema";
 import { desc, eq, sql, count } from "drizzle-orm";
 
 /**

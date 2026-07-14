@@ -6,7 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { glEntries } from "../../drizzle/schema";
+import { glEntries } from "@schema";
 import { eq, desc, and, gte, lte, count, sum, sql } from "drizzle-orm";
 
 const ACCOUNT_TYPES = ["asset", "liability", "equity", "revenue", "expense"];
