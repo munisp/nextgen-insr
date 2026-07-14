@@ -38,6 +38,26 @@
       {
         "name": "user",
         "description": "Standard authenticated user"
+      },
+      {
+        "name": "underwriter",
+        "description": "Insurance underwriting specialist"
+      },
+      {
+        "name": "claims_adjuster",
+        "description": "Claims processing and adjudication specialist"
+      },
+      {
+        "name": "agent",
+        "description": "Insurance agent/broker"
+      },
+      {
+        "name": "compliance",
+        "description": "Regulatory compliance officer"
+      },
+      {
+        "name": "actuary",
+        "description": "Actuarial and risk assessment specialist"
       }
     ]
   },
@@ -114,7 +134,69 @@
       ]
     }
   ],
-  "passwordPolicy": "length(8) and upperCase(1) and digits(1) and specialChars(1) and notUsername(undefined)",
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA256",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyInitialCounter": 0,
+  "otpPolicyLookAheadWindow": 1,
+  "otpSupportedApplications": ["FreeOTP", "Google Authenticator", "Microsoft Authenticator"],
+  "authenticationFlows": [
+    {
+      "alias": "54link-browser-mfa",
+      "description": "Browser flow with mandatory TOTP for financial operations",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "requirement": "ALTERNATIVE",
+          "priority": 10
+        },
+        {
+          "authenticator": "auth-spnego",
+          "requirement": "DISABLED",
+          "priority": 20
+        },
+        {
+          "flowAlias": "54link-mfa-forms",
+          "requirement": "ALTERNATIVE",
+          "priority": 30
+        }
+      ]
+    },
+    {
+      "alias": "54link-mfa-forms",
+      "description": "Username/password + OTP",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "requirement": "REQUIRED",
+          "priority": 10
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "REQUIRED",
+          "priority": 20
+        }
+      ]
+    }
+  ],
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": true,
+      "priority": 10
+    }
+  ],
+  "passwordPolicy": "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername(undefined) and passwordHistory(3)",
   "smtpServer": {
     "replyToDisplayName": "InsurePortal Support",
     "port": "587",
@@ -125,6 +207,7 @@
     "ssl": "false",
     "starttls": "true"
   },
+  "browserFlow": "54link-browser-mfa",
   "loginTheme": "keycloak",
   "accountTheme": "keycloak.v3",
   "adminTheme": "keycloak.v2",

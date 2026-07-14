@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"time"
 )
+
+var validWorkflowID = regexp.MustCompile(`^[a-zA-Z0-9_\-.:]+$`)
 
 type TemporalClient struct {
 	baseURL   string
@@ -43,6 +47,9 @@ type StartWorkflowRequest struct {
 }
 
 func (t *TemporalClient) StartWorkflow(ctx context.Context, req StartWorkflowRequest) (*WorkflowExecution, error) {
+	if !validWorkflowID.MatchString(req.WorkflowID) {
+		return nil, fmt.Errorf("invalid workflow_id: must match [a-zA-Z0-9_-.:]+")
+	}
 	payload := map[string]interface{}{
 		"workflow_id":   req.WorkflowID,
 		"workflow_type": map[string]string{"name": req.WorkflowType},
@@ -50,8 +57,8 @@ func (t *TemporalClient) StartWorkflow(ctx context.Context, req StartWorkflowReq
 		"input":         req.Input,
 	}
 	body, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/api/v1/namespaces/%s/workflows", t.baseURL, t.namespace)
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	apiURL := fmt.Sprintf("%s/api/v1/namespaces/%s/workflows", t.baseURL, url.PathEscape(t.namespace))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -63,15 +70,26 @@ func (t *TemporalClient) StartWorkflow(ctx context.Context, req StartWorkflowReq
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("temporal start workflow returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	var result WorkflowExecution
-	json.Unmarshal(respBody, &result)
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("temporal response parse error: %w", err)
+	}
 	result.WorkflowID = req.WorkflowID
 	return &result, nil
 }
 
 func (t *TemporalClient) GetWorkflowStatus(ctx context.Context, workflowID, runID string) (map[string]interface{}, error) {
-	url := fmt.Sprintf("%s/api/v1/namespaces/%s/workflows/%s/runs/%s", t.baseURL, t.namespace, workflowID, runID)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if !validWorkflowID.MatchString(workflowID) {
+		return nil, fmt.Errorf("invalid workflow_id: must match [a-zA-Z0-9_-.:]+")
+	}
+	statusURL := fmt.Sprintf("%s/api/v1/namespaces/%s/workflows/%s/runs/%s",
+		t.baseURL, url.PathEscape(t.namespace), url.PathEscape(workflowID), url.PathEscape(runID))
+	req, err := http.NewRequestWithContext(ctx, "GET", statusURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +99,15 @@ func (t *TemporalClient) GetWorkflowStatus(ctx context.Context, workflowID, runI
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("temporal get workflow returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
 	var result map[string]interface{}
-	json.Unmarshal(respBody, &result)
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("temporal response parse error: %w", err)
+	}
 	return result, nil
 }
 

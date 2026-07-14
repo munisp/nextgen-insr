@@ -71,7 +71,7 @@ func NewOpenAppSecKafkaBridge() *OpenAppSecKafkaBridge {
 	
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(kafkaBrokers),
-		Topic:        "security.waf.events",
+		Topic:        "54link.security.waf_events",
 		Balancer:     &kafka.Hash{},
 		RequiredAcks: kafka.RequireAll,
 		Compression:  kafka.Snappy,
@@ -81,7 +81,7 @@ func NewOpenAppSecKafkaBridge() *OpenAppSecKafkaBridge {
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{kafkaBrokers},
-		Topic:          "security.waf.commands",
+		Topic:          "54link.security.waf_commands",
 		GroupID:        "openappsec-bridge",
 		MinBytes:       1,
 		MaxBytes:       10e6,

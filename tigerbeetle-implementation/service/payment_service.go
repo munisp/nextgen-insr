@@ -74,7 +74,7 @@ func (s *PaymentService) ProcessPremiumPayment(ctx context.Context, req models.P
 	transferID := ledger.GenerateTransferID(fmt.Sprintf("premium-%s", req.PolicyID), 1)
 
 	// 4. Convert amount to smallest currency unit (kobo for NGN)
-	amountInKobo := uint64(req.Amount * 100)
+	amountInKobo := ledger.AmountToSmallestUnit(req.Amount, 2)
 
 	// 5. Create transfer in TigerBeetle
 	transfer := types.Transfer{
@@ -204,7 +204,7 @@ func (s *PaymentService) ProcessRefund(ctx context.Context, req models.RefundReq
 	transferID := ledger.GenerateTransferID(fmt.Sprintf("refund-%d", req.PaymentID), 1)
 
 	// 5. Convert amount to smallest currency unit
-	amountInKobo := uint64(req.Amount * 100)
+	amountInKobo := ledger.AmountToSmallestUnit(req.Amount, 2)
 
 	// 6. Create refund transfer (reverse of original: debit company, credit customer)
 	transfer := types.Transfer{
@@ -378,7 +378,7 @@ func (s *PaymentService) ProcessCommissionPayment(ctx context.Context, req model
 	transferID := ledger.GenerateTransferID(fmt.Sprintf("commission-%s-%s", req.PolicyID, req.AgentID), 1)
 
 	// 3. Convert amount to smallest currency unit
-	amountInKobo := uint64(req.Amount * 100)
+	amountInKobo := ledger.AmountToSmallestUnit(req.Amount, 2)
 
 	// 4. Create transfer (debit company commissions account, credit agent account)
 	transfer := types.Transfer{

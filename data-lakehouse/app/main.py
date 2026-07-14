@@ -243,6 +243,54 @@ app = FastAPI(
 app.middleware("http")(keycloak_auth_middleware)
 
 
+# ── SQL Injection Prevention ──────────────────────────────────────────────────
+# Only whitelisted datasets and columns are queryable.
+# Raw SQL is NOT accepted — users specify dataset, filters, and aggregations
+# via structured parameters.
+
+ALLOWED_DATASETS = {
+    "policies": {
+        "table": "policies",
+        "columns": {"policy_id", "customer_id", "product_type", "start_date", "end_date",
+                     "premium", "sum_insured", "status", "state", "lga"},
+    },
+    "claims": {
+        "table": "claims",
+        "columns": {"claim_id", "policy_id", "claim_type", "amount_claimed",
+                     "amount_approved", "status", "filed_date", "resolved_date"},
+    },
+    "payments": {
+        "table": "payments",
+        "columns": {"transaction_id", "policy_id", "amount", "currency", "channel",
+                     "provider", "status", "created_at"},
+    },
+    "customers": {
+        "table": "customers",
+        "columns": {"customer_id", "name", "phone", "email", "state", "lga",
+                     "kyc_level", "segment", "clv_score", "churn_risk"},
+    },
+    "agents": {
+        "table": "agents",
+        "columns": {"agent_id", "name", "state", "lga", "tier", "policies_sold",
+                     "premium_collected", "commission", "active"},
+    },
+}
+
+ALLOWED_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+class AggregateFunction(str, Enum):
+    COUNT = "COUNT"
+    SUM = "SUM"
+    AVG = "AVG"
+    MIN = "MIN"
+    MAX = "MAX"
+
+
+def validate_column(dataset: str, column: str) -> bool:
+    if dataset not in ALLOWED_DATASETS:
+        return False
+    return column in ALLOWED_DATASETS[dataset]["columns"]
+
 
 @app.get("/api/v1/lakehouse/datasets")
 async def list_datasets():
@@ -313,13 +361,58 @@ async def list_datasets():
 
 
 @app.get("/api/v1/lakehouse/query")
-async def run_query(sql: str = "SELECT COUNT(*) as total_policies FROM policies"):
-    """Execute SQL query against the lakehouse."""
+async def run_query(
+    dataset: str = Query(..., description="Dataset name (policies, claims, payments, customers, agents)"),
+    aggregate: Optional[AggregateFunction] = Query(None, description="Aggregate function"),
+    aggregate_column: Optional[str] = Query(None, description="Column to aggregate"),
+    group_by: Optional[str] = Query(None, description="Column to group by"),
+    filter_column: Optional[str] = Query(None, description="Column to filter on"),
+    filter_value: Optional[str] = Query(None, description="Value to filter by"),
+    limit: int = Query(100, ge=1, le=10000, description="Max rows to return"),
+):
+    """Execute a structured query against the lakehouse.
+
+    Raw SQL is NOT accepted. Specify dataset, optional aggregate, group_by,
+    and filter parameters. All column names are validated against a whitelist.
+    """
+    if dataset not in ALLOWED_DATASETS:
+        raise HTTPException(status_code=400, detail=f"Unknown dataset: {dataset}. Allowed: {list(ALLOWED_DATASETS.keys())}")
+
+    ds = ALLOWED_DATASETS[dataset]
+    table = ds["table"]
+
+    # Validate all column references
+    if aggregate_column and not validate_column(dataset, aggregate_column):
+        raise HTTPException(status_code=400, detail=f"Column '{aggregate_column}' not allowed for dataset '{dataset}'")
+    if group_by and not validate_column(dataset, group_by):
+        raise HTTPException(status_code=400, detail=f"Column '{group_by}' not allowed for dataset '{dataset}'")
+    if filter_column and not validate_column(dataset, filter_column):
+        raise HTTPException(status_code=400, detail=f"Column '{filter_column}' not allowed for dataset '{dataset}'")
+
+    # Build safe query (all identifiers are whitelisted, values are parameterized)
+    if aggregate and aggregate_column:
+        select_clause = f"{aggregate.value}({aggregate_column})"
+        if group_by:
+            select_clause = f"{group_by}, {select_clause}"
+    else:
+        select_clause = "*"
+
+    safe_query = f"SELECT {select_clause} FROM {table}"
+    params = []
+    if filter_column and filter_value is not None:
+        safe_query += f" WHERE {filter_column} = $1"
+        params.append(filter_value)
+    if group_by and aggregate:
+        safe_query += f" GROUP BY {group_by}"
+    safe_query += f" LIMIT {limit}"
+
+    # For now, return structured mock results showing the safe query
     sample_results = {
-        "query": sql,
+        "query": safe_query,
+        "parameters": params,
         "execution_time_ms": 245,
-        "rows_scanned": 125000,
-        "result": [{"total_policies": 125000}],
+        "rows_scanned": ds.get("rows", 0) if isinstance(ds, dict) else 0,
+        "result": [{"total": 125000}],
         "engine": "Spark SQL / DuckDB",
     }
     return sample_results

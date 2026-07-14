@@ -1,7 +1,8 @@
 /**
  * InsurePortal Permify Client
  * HTTP client for Permify authorization service.
- * Falls back to role-based checks when Permify is unavailable.
+ * FAIL-CLOSED: denies access when Permify is unavailable.
+ * Circuit breaker prevents cascading timeouts when Permify is down.
  *
  * Schema (defined in infra/permify/schema.perm):
  *   entity agent { ... }
@@ -15,6 +16,40 @@
  *   - fraud alert status update requires admin
  */
 import logger from "./logger";
+
+// ── Circuit Breaker ─────────────────────────────────────────────────────────
+// Prevents cascading timeouts when Permify is down by short-circuiting
+// requests after repeated failures.
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_RECOVERY_MS = 30_000; // 30s before retrying after open
+
+let circuitFailures = 0;
+let circuitOpenedAt = 0;
+
+function isCircuitOpen(): boolean {
+  if (circuitFailures < CIRCUIT_FAILURE_THRESHOLD) return false;
+  if (Date.now() - circuitOpenedAt > CIRCUIT_RECOVERY_MS) {
+    // Half-open: allow one probe request
+    circuitFailures = CIRCUIT_FAILURE_THRESHOLD - 1;
+    return false;
+  }
+  return true;
+}
+
+function recordSuccess(): void {
+  circuitFailures = 0;
+  circuitOpenedAt = 0;
+}
+
+function recordFailure(): void {
+  circuitFailures++;
+  if (circuitFailures >= CIRCUIT_FAILURE_THRESHOLD && circuitOpenedAt === 0) {
+    circuitOpenedAt = Date.now();
+    logger.error(
+      "[Permify] Circuit breaker OPEN — denying all requests for 30s"
+    );
+  }
+}
 
 const PERMIFY_URL = process.env.PERMIFY_URL ?? "http://localhost:3476";
 const PERMIFY_TENANT_ID = process.env.PERMIFY_TENANT_ID ?? "t1";
@@ -57,6 +92,12 @@ export async function permifyCheck(params: {
     subject: { type: params.subjectType, id: params.subjectId },
   };
 
+  // Circuit breaker: if open, deny immediately without waiting for timeout
+  if (isCircuitOpen()) {
+    logger.warn("[Permify] Circuit breaker open — denying access");
+    return false;
+  }
+
   try {
     const res = await fetch(
       `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/permissions/check`,
@@ -72,10 +113,12 @@ export async function permifyCheck(params: {
       logger.warn(
         `[Permify] Check failed: ${res.status} — denying access`
       );
+      recordFailure();
       return false;
     }
 
     const json = (await res.json()) as PermifyCheckResponse;
+    recordSuccess();
     return json.can === "CHECK_RESULT_ALLOWED";
   } catch (err) {
     // Fail-closed: when Permify is unavailable, deny access.

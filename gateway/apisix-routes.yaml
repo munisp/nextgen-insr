@@ -39,6 +39,12 @@ routes:
       type: roundrobin
       nodes:
         "kyc-orchestrator-service:8004": 1
+    plugins:
+      limit-req:
+        rate: 50
+        burst: 20
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/risk-scoring/*
     name: risk-scoring-service
@@ -46,6 +52,12 @@ routes:
       type: roundrobin
       nodes:
         "risk-scoring-service:8005": 1
+    plugins:
+      limit-req:
+        rate: 40
+        burst: 15
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/document-verification/*
     name: document-verification-service
@@ -53,6 +65,12 @@ routes:
       type: roundrobin
       nodes:
         "document-verification-service:8006": 1
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key_type: var
+        key: remote_addr
 
   # === Core Insurance Services ===
   - uri: /api/v1/policies/*
@@ -61,6 +79,12 @@ routes:
       type: roundrobin
       nodes:
         "policy-service:8010": 1
+    plugins:
+      limit-req:
+        rate: 100
+        burst: 40
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/claims/*
     name: claims-adjudication-engine
@@ -68,6 +92,12 @@ routes:
       type: roundrobin
       nodes:
         "claims-adjudication-engine:8011": 1
+    plugins:
+      limit-req:
+        rate: 80
+        burst: 30
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/payments/*
     name: payment-service
@@ -75,6 +105,12 @@ routes:
       type: roundrobin
       nodes:
         "payment-service:8012": 1
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/customers/*
     name: customer-service
@@ -82,6 +118,12 @@ routes:
       type: roundrobin
       nodes:
         "customer-service:8013": 1
+    plugins:
+      limit-req:
+        rate: 100
+        burst: 40
+        key_type: var
+        key: remote_addr
 
   # === Insurance Operations ===
   - uri: /api/v1/actuarial/*
@@ -90,6 +132,12 @@ routes:
       type: roundrobin
       nodes:
         "actuarial-module:8020": 1
+    plugins:
+      limit-req:
+        rate: 40
+        burst: 15
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/reinsurance/*
     name: reinsurance-management
@@ -97,6 +145,12 @@ routes:
       type: roundrobin
       nodes:
         "reinsurance-management:8021": 1
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/group-life/*
     name: group-life-admin
@@ -104,6 +158,12 @@ routes:
       type: roundrobin
       nodes:
         "group-life-admin:8022": 1
+    plugins:
+      limit-req:
+        rate: 50
+        burst: 20
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/nmid/*
     name: nmid-integration
@@ -111,6 +171,12 @@ routes:
       type: roundrobin
       nodes:
         "nmid-integration:8023": 1
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/pfa/*
     name: pfa-integration
@@ -118,6 +184,12 @@ routes:
       type: roundrobin
       nodes:
         "pfa-integration:8024": 1
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/bancassurance/*
     name: bancassurance-integration
@@ -125,6 +197,12 @@ routes:
       type: roundrobin
       nodes:
         "bancassurance-integration:8025": 1
+    plugins:
+      limit-req:
+        rate: 40
+        burst: 15
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/naicom/*
     name: naicom-compliance-module
@@ -132,6 +210,12 @@ routes:
       type: roundrobin
       nodes:
         "naicom-compliance-module:8026": 1
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key_type: var
+        key: remote_addr
 
   # === Analytics & Reporting ===
   - uri: /api/v1/customer-360/*
@@ -140,6 +224,12 @@ routes:
       type: roundrobin
       nodes:
         "customer-360-view:8030": 1
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/performance/*
     name: performance-monitoring-dashboard
@@ -147,6 +237,12 @@ routes:
       type: roundrobin
       nodes:
         "performance-monitoring-dashboard:8031": 1
+    plugins:
+      limit-req:
+        rate: 40
+        burst: 15
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/ab-testing/*
     name: ab-testing-framework
@@ -154,6 +250,12 @@ routes:
       type: roundrobin
       nodes:
         "ab-testing-framework:8032": 1
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key_type: var
+        key: remote_addr
 
   # === Platform Operations ===
   - uri: /api/v1/audit/*
@@ -162,6 +264,12 @@ routes:
       type: roundrobin
       nodes:
         "audit-trail-system:8040": 1
+    plugins:
+      limit-req:
+        rate: 80
+        burst: 30
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/batch/*
     name: batch-processing-engine
@@ -169,6 +277,12 @@ routes:
       type: roundrobin
       nodes:
         "batch-processing-engine:8041": 1
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/feedback/*
     name: feedback-management
@@ -176,6 +290,12 @@ routes:
       type: roundrobin
       nodes:
         "feedback-management:8042": 1
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/commission/*
     name: agent-commission-management
@@ -183,6 +303,12 @@ routes:
       type: roundrobin
       nodes:
         "agent-commission-management:8043": 1
+    plugins:
+      limit-req:
+        rate: 50
+        burst: 20
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/renewals/*
     name: policy-renewal-automation
@@ -190,6 +316,12 @@ routes:
       type: roundrobin
       nodes:
         "policy-renewal-automation:8044": 1
+    plugins:
+      limit-req:
+        rate: 40
+        burst: 15
+        key_type: var
+        key: remote_addr
 
   # === Compliance ===
   - uri: /api/v1/gdpr/*
@@ -198,6 +330,12 @@ routes:
       type: roundrobin
       nodes:
         "gdpr-compliance:8050": 1
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/ndpr/*
     name: ndpr-compliance
@@ -205,6 +343,12 @@ routes:
       type: roundrobin
       nodes:
         "ndpr-compliance:8051": 1
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key_type: var
+        key: remote_addr
 
   # === Mobile APIs ===
   - uri: /api/v1/agent-app/*
@@ -240,6 +384,12 @@ routes:
       type: roundrobin
       nodes:
         "strategic-implementations:8070": 1
+    plugins:
+      limit-req:
+        rate: 40
+        burst: 15
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/enhanced-kyc/*
     name: enhanced-kyc-kyb
@@ -247,6 +397,12 @@ routes:
       type: roundrobin
       nodes:
         "enhanced-kyc-kyb:8071": 1
+    plugins:
+      limit-req:
+        rate: 50
+        burst: 20
+        key_type: var
+        key: remote_addr
 
   # === Integration Services ===
   - uri: /api/v1/communication/*
@@ -255,6 +411,12 @@ routes:
       type: roundrobin
       nodes:
         "communication-service:8080": 1
+    plugins:
+      limit-req:
+        rate: 60
+        burst: 20
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/reconciliation/*
     name: reconciliation-engine
@@ -262,6 +424,12 @@ routes:
       type: roundrobin
       nodes:
         "reconciliation-engine:8081": 1
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/fraud/*
     name: fraud-detection
@@ -269,6 +437,12 @@ routes:
       type: roundrobin
       nodes:
         "fraud-detection-go:8082": 1
+    plugins:
+      limit-req:
+        rate: 40
+        burst: 15
+        key_type: var
+        key: remote_addr
 
   - uri: /api/v1/telco/*
     name: telco-data-integration
@@ -276,6 +450,12 @@ routes:
       type: roundrobin
       nodes:
         "telco-data-integration-service:8083": 1
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key_type: var
+        key: remote_addr
 
 # Global plugins applied to all routes
 global_rules:
@@ -290,6 +470,14 @@ global_rules:
         allow_headers: "Content-Type, Authorization, X-API-Key, X-Request-ID"
         allow_credential: true
         max_age: 86400
+      api-breaker:
+        break_response_code: 502
+        max_breaker_sec: 30
+        unhealthy:
+          http_statuses: [500, 502, 503]
+          failures: 3
+        healthy:
+          successes: 2
 
 # Upstream health checks
 upstream_defaults:

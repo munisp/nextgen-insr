@@ -77,18 +77,18 @@ async function proxyPublish(
 // ── Domain event types ────────────────────────────────────────────────────────
 
 export type KafkaTopic =
-  | "pos.transactions.created"
-  | "pos.transactions.reversed"
-  | "pos.float.topped_up"
-  | "pos.float.depleted"
-  | "pos.agents.registered"
-  | "pos.agents.suspended"
-  | "pos.kyc.submitted"
-  | "pos.kyc.approved"
-  | "pos.kyc.rejected"
-  | "pos.disputes.opened"
-  | "pos.disputes.resolved"
-  | "pos.fraud.alert_raised";
+  | "54link.transactions.created"
+  | "54link.transactions.reversed"
+  | "54link.float.topped_up"
+  | "54link.float.depleted"
+  | "54link.agents.registered"
+  | "54link.agents.suspended"
+  | "54link.kyc.submitted"
+  | "54link.kyc.approved"
+  | "54link.kyc.rejected"
+  | "54link.disputes.opened"
+  | "54link.disputes.resolved"
+  | "54link.fraud.alert_raised";
 
 export interface KafkaEvent<T = unknown> {
   eventId: string;

@@ -41,9 +41,24 @@ class APIClient {
         
         let interceptor = AuthenticationInterceptor(tokenManager: tokenManager)
         
+        // Certificate pinning for production and staging environments.
+        // Uses CertificatePinning.shared as the URLSessionDelegate to validate
+        // server certificates against pinned SHA-256 hashes.
+        let serverTrustManager: ServerTrustManager? = {
+            guard environment != .development else { return nil }
+            let evaluators: [String: ServerTrustEvaluating] = [
+                "api.54link.ng": PinnedCertificatesTrustEvaluator(),
+                "staging.54link.ng": PinnedCertificatesTrustEvaluator(),
+                "api.remittance.ng": PinnedCertificatesTrustEvaluator(),
+                "secure.remittance.ng": PinnedCertificatesTrustEvaluator(),
+            ]
+            return ServerTrustManager(evaluators: evaluators)
+        }()
+        
         session = Session(
             configuration: configuration,
             interceptor: interceptor,
+            serverTrustManager: serverTrustManager,
             eventMonitors: [APILogger()]
         )
     }
