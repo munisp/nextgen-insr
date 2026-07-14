@@ -1,4 +1,4 @@
-name: NGApp Platform CI/CD
+name: InsurePortal Platform CI
 
 on:
   push:
@@ -7,79 +7,20 @@ on:
     branches: [main, develop]
 
 env:
-  GO_VERSION: '1.22'
   NODE_VERSION: '20'
-  PYTHON_VERSION: '3.11'
-  RUST_VERSION: 'stable'
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
 
 jobs:
-  # ── Go Services ──
-  go-services:
-    name: Go Services
+  # ── Server Build & Test ──
+  server:
+    name: Server Build & Test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        service:
-          - ab-testing-framework
-          - agent-commission-management
-          - agent-mobile-app
-          - agent-network-platform
-          - api-marketplace
-          - audit-trail-system
-          - bancassurance-integration
-          - batch-processing-engine
-          - blockchain-transparency
-          - broker-api-service
-          - claims-adjudication-engine
-          - communication-service
-          - cross-company-fraud-database
-          - customer-360-view
-          - customer-feedback-loop
-          - devops-platform
-          - disaster-recovery-module
-          - document-management-system
-          - dr-ha-service
-          - enhanced-kyc-kyb
-          - enterprise-mdm
-          - erpnext-integration-service
-          - feedback-management
-          - gamification-service
-          - gdpr-compliance
-          - group-life-admin
-          - instant-payout-service
-          - insurance-tech-innovations
-          - microinsurance-engine
-          - mobile-money-service
-          - multi-country-regulatory
-          - multi-currency-service
-          - multi-language-service
-          - multi-tenant-platform
-          - naicom-compliance-module
-          - native-mobile-ios
-          - ndpr-compliance
-          - nmid-integration
-          - notification-service
-          - pan-african-ekyc
-          - performance-monitoring-dashboard
-          - pfa-integration
-          - policy-renewal-automation
-          - premium-finance-service
-          - reinsurance-management
-          - strategic-implementations
-          - takaful-module
-          - tigerbeetle-implementation
-          - usage-based-insurance
-          - ussd-gateway
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: ngapp
           POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: ngapp_test
+          POSTGRES_DB: ngapp
         ports:
           - 5432:5432
         options: >-
@@ -98,64 +39,36 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-node@v4
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
-      - name: Build
-        working-directory: ${{ matrix.service }}
-        run: |
-          GONOSUMCHECK=* GOFLAGS=-mod=mod go mod tidy
-          go build -v ./...
-      - name: Test
-        working-directory: ${{ matrix.service }}
-        env:
-          DATABASE_URL: postgres://ngapp:test_password@localhost:5432/ngapp_test?sslmode=disable
-          REDIS_URL: redis://localhost:6379
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./... 2>/dev/null || echo "No tests"
-
-  # ── Python Services ──
-  python-services:
-    name: Python Services
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        service:
-          - ifrs17-engine
-          - mlops-governance
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
       - name: Install dependencies
-        working-directory: ${{ matrix.service }}
+        working-directory: customer-portal-full
+        run: npm install --legacy-peer-deps
+      - name: Initialize database
+        env:
+          PGPASSWORD: test_password
+        run: psql -h localhost -U ngapp -d ngapp -f customer-portal-full/ci-init.sql
+      - name: Start server
+        working-directory: customer-portal-full
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: ngapp
+          PGPASSWORD: test_password
+          PGDATABASE: ngapp
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: ci-test-secret
+          PORT: 5002
         run: |
-          pip install -r requirements.txt 2>/dev/null || pip install fastapi uvicorn pydantic numpy pandas
-          pip install pytest pytest-asyncio httpx ruff
-      - name: Lint
-        working-directory: ${{ matrix.service }}
-        run: ruff check . --select E,W,F --ignore E501 || true
-      - name: Syntax validation
-        working-directory: ${{ matrix.service }}
-        run: find . -name "*.py" -exec python -m py_compile {} \; 2>/dev/null || true
-
-  # ── Shared Go Packages ──
-  shared-packages:
-    name: Shared Go Packages
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
-      - name: Build shared packages
-        working-directory: shared
-        run: |
-          GONOSUMCHECK=* GOFLAGS=-mod=mod go mod tidy
-          go build ./...
+          node server.cjs &
+          sleep 5
+      - name: Smoke tests
+        working-directory: customer-portal-full
+        run: bash smoke-test.sh
+      - name: Integration tests
+        working-directory: customer-portal-full
+        run: node tests/integration.test.js
 
   # ── Security Scan ──
   security:
@@ -166,13 +79,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: fs
-          scan-ref: .
-          severity: CRITICAL,HIGH
-          exit-code: 0
-      - name: Check for secrets in code
-        run: |
-          echo "Scanning for potential hardcoded secrets..."
-          grep -rn "AKIA\|sk_live_\|sk_test_\|-----BEGIN.*PRIVATE KEY" \
-            --include="*.ts" --include="*.go" --include="*.py" \
-            --exclude-dir=node_modules --exclude-dir=.git . || echo "No hardcoded secrets found"
+          scan-type: 'fs'
+          scan-ref: 'customer-portal-full'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'

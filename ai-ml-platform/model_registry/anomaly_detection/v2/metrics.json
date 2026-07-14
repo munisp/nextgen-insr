@@ -1,6 +1,0 @@
-{
-  "accuracy": 0.96975,
-  "f1_score": 0.9593208491145807,
-  "training_time_seconds": 14.65,
-  "epochs": 50
-}

@@ -2,125 +2,72 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, 'devin/*']
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
-  go-build:
-    name: Go Build & Vet
+  server-test:
+    name: Server Tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        module:
-          - actuarial-module
-          - ab-testing-framework
-          - agent-commission-management
-          - agent-mobile-app
-          - audit-trail-system
-          - bancassurance-integration
-          - batch-processing-engine
-          - customer-360-view
-          - enhanced-kyc-kyb
-          - feedback-management
-          - gdpr-compliance
-          - group-life-admin
-          - native-mobile-ios
-          - ndpr-compliance
-          - nmid-integration
-          - performance-monitoring-dashboard
-          - pfa-integration
-          - policy-renewal-automation
-          - reinsurance-management
-          - strategic-implementations
-      fail-fast: false
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ngapp
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: ngapp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-node@v4
         with:
-          go-version: '1.22'
+          node-version: '20'
 
-      - name: Go Vet
-        working-directory: ${{ matrix.module }}
-        run: go vet ./... 2>/dev/null || true
+      - name: Install dependencies
+        working-directory: customer-portal-full
+        run: npm install --legacy-peer-deps
 
-      - name: Go Build
-        working-directory: ${{ matrix.module }}
-        run: go build ./... 2>/dev/null || true
+      - name: Initialize database
+        env:
+          PGPASSWORD: test_password
+        run: psql -h localhost -U ngapp -d ngapp -f customer-portal-full/ci-init.sql
 
-  python-lint:
-    name: Python Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Lint Python services
+      - name: Start server
+        working-directory: customer-portal-full
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: ngapp
+          PGPASSWORD: test_password
+          PGDATABASE: ngapp
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: ci-test-secret
+          PORT: 5002
         run: |
-          for svc in kyc-kyb-system/liveness-service \
-                     kyc-kyb-system/monitoring-service \
-                     kyc-kyb-system/document-verification-service \
-                     telco-data-integration-service \
-                     geospatial-service/python-service; do
-            if [ -d "$svc" ]; then
-              echo "=== Linting $svc ==="
-              ruff check "$svc" --select E,W --ignore E501 || true
-            fi
-          done
+          node server.cjs &
+          sleep 5
 
-  yaml-lint:
-    name: YAML Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Smoke tests
+        working-directory: customer-portal-full
+        run: bash smoke-test.sh
 
-      - name: Install yamllint
-        run: pip install yamllint
-
-      - name: Lint Kubernetes manifests
-        run: |
-          find . -path "*/k8s/*.yaml" -o -path "*/k8s/*.yml" | head -50 | while read f; do
-            echo "=== $f ==="
-            yamllint -d relaxed "$f" || true
-          done
-
-  docker-build:
-    name: Docker Build Check
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service:
-          - path: kyc-kyb-system/liveness-service
-            name: liveness-service
-          - path: kyc-kyb-system/aml-screening-service
-            name: aml-screening-service
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate Dockerfile
-        run: |
-          if [ -f "${{ matrix.service.path }}/Dockerfile" ]; then
-            docker build --no-cache --check "${{ matrix.service.path }}" 2>/dev/null || echo "Dockerfile syntax check completed"
-          fi
-
-  shared-packages:
-    name: Shared Packages Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: Build shared packages
-        working-directory: shared
-        run: go build ./... 2>/dev/null || true
+      - name: Integration tests
+        working-directory: customer-portal-full
+        run: node tests/integration.test.js

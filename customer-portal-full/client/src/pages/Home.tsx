@@ -136,7 +136,7 @@ export default function Home() {
           <a href="#products" className="text-white hover:text-blue-200 font-medium">
             Products
           </a>
-          <Link href="/dashboard">
+          <Link href="/auth">
             <Button variant="secondary" size="lg">
               Login / Sign Up
             </Button>
@@ -159,7 +159,7 @@ export default function Home() {
                 View Products
               </Button>
             </a>
-            <Link href="/dashboard">
+            <Link href="/auth">
               <Button size="lg" variant="outline" className="text-lg px-8 py-6 text-white border-white hover:bg-white/10">
                 Login / Sign Up
               </Button>

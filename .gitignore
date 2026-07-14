@@ -1,35 +1,11 @@
-kyc-kyb-system/identity-matching-engine/target/
-
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.egg-info/
-dist/
-*.egg
-
-# Go binaries
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Build artifacts
+node_modules/
+.env
 *.tar.gz
 *.zip
-
-# Rust
-**/target/
-
-# Node
-node_modules/
-
-# IDE
+.DS_Store
+Thumbs.db
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# OS
-.DS_Store
-Thumbs.db
+uploads/
