@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"math"
 	"os/signal"
 	"syscall"
+
+	_ "github.com/lib/pq"
 )
 
 // Batch Processing Engine
@@ -39,7 +42,13 @@ var (
 )
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "batch-processing-engine"})
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "batch-processing-engine", "database": dbStatus})
 }
 
 func handleCreateBatch(w http.ResponseWriter, r *http.Request) {
@@ -277,8 +286,36 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Println("PostgreSQL connected")
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS batch_jobs (id TEXT PRIMARY KEY, job_type TEXT NOT NULL, status TEXT DEFAULT 'queued', total_items INT, processed_items INT DEFAULT 0, error_count INT DEFAULT 0, started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
 func main() {
 	initKafka()
+	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", metricsHandler)
 	mux.HandleFunc("/health", handleHealth)
