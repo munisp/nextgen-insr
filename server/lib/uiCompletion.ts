@@ -421,11 +421,11 @@ export const EXPORT_CONFIGS = {
   agents: {
     format: "csv" as ExportFormat,
     columns: [
-      { key: "agentCode", label: "Agent Code" },
+      { key: "agentId", label: "Agent Code" },
       { key: "name", label: "Name" },
       { key: "tier", label: "Tier" },
       { key: "role", label: "Role" },
-      { key: "floatBalance", label: "Float Balance" },
+      { key: "premiumReserve", label: "Float Balance" },
       { key: "commissionBalance", label: "Commission" },
       { key: "isActive", label: "Active" },
       { key: "createdAt", label: "Joined" },

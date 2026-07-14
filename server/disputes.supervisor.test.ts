@@ -16,7 +16,7 @@ function makeCtx(overrides: Partial<TrpcContext["user"]> = {}): TrpcContext {
     user: {
       id: 1,
       openId: "test-user",
-      email: "test@54link.ng",
+      email: "test@insureportal.ng",
       name: "Test User",
       loginMethod: "manus",
       role: "user",
@@ -37,7 +37,7 @@ function makeAdminCtx() {
   return makeCtx({
     id: 99,
     role: "admin",
-    email: "admin@54link.ng",
+    email: "admin@insureportal.ng",
     name: "Admin",
   });
 }
@@ -46,7 +46,7 @@ function makeSupervisorCtx() {
   return makeCtx({
     id: 50,
     role: "supervisor",
-    email: "sup@54link.ng",
+    email: "sup@insureportal.ng",
     name: "Supervisor",
   });
 }

@@ -1,4 +1,4 @@
-// TypeScript enabled — Sprint 96 security audit
+// @ts-check
 /**
  * Enhanced Audit Trail Middleware
  *
@@ -10,6 +10,7 @@
  * - IP address and user agent (context)
  * - Before/after state for mutations (diff)
  */
+import { logger, auditLog as structuredAuditLog } from "../_core/logger";
 
 export interface AuditEntry {
   id: string;
@@ -61,11 +62,28 @@ export function logAudit(
     auditLog.splice(0, auditLog.length - 10000);
   }
 
-  // Log critical actions to console
+  // Log critical actions with structured logger
   if (entry.severity === "critical" || entry.severity === "high") {
-    console.log(
+    logger.warn(
+      {
+        audit: true,
+        severity: entry.severity,
+        action: entry.action,
+        resource: entry.resource,
+        userId: entry.userId,
+        description: entry.description,
+      },
       `[AUDIT:${entry.severity.toUpperCase()}] ${entry.action} ${entry.resource} by ${entry.userId || "anonymous"}: ${entry.description}`
     );
+    // Also log to structured audit trail
+    structuredAuditLog({
+      actor: entry.userId || "anonymous",
+      action: entry.action,
+      resource: entry.resource,
+      resourceId: entry.resourceId ?? undefined,
+      ip: entry.ipAddress,
+      metadata: { description: entry.description, category: entry.category },
+    });
   }
 
   return auditEntry;

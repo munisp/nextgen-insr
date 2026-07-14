@@ -18,7 +18,7 @@ import {
   trainingCourses,
   trainingEnrollments,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const agentTrainingAcademyRouter = router({

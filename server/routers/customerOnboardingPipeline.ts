@@ -162,7 +162,7 @@ export const customerOnboardingPipelineRouter = router({
 
         await writeAuditLog({
           agentId: 0,
-          agentCode: "system",
+          agentId: "system",
           action: "customer_onboarding_stage_advanced",
           resource: "customer_onboarding",
           resourceId: input.userId,

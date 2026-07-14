@@ -2,7 +2,7 @@
 name = "pos54-rate-limiter"
 version = "1.0.0"
 edition = "2021"
-description = "High-performance sliding window rate limiter for POS-54Link"
+description = "High-performance sliding window rate limiter for POS-InsurePortal"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

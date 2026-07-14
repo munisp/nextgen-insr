@@ -1,6 +1,6 @@
-// @ts-nocheck
+// @ts-check
 /**
- * transactions router — all transaction operations for the 54Link POS platform.
+ * transactions router — all transaction operations for the InsurePortal POS platform.
  *
  * Security controls (Phase 44-49):
  *  1. Float lock enforcement — rejects if agent.floatLocked = true
@@ -8,6 +8,24 @@
  *  3. Velocity limits per agent tier (hourly count, single-tx amount, daily volume)
  *  4. Customer SMS confirmation on Cash Out / Transfer / Card / QR / NFC
  *  5. Reversal approval threshold — reversals > ₦10,000 require admin/supervisor approval
+ *
+ * ─── NAVIGATION GUIDE ───────────────────────────────────────────────────────────
+ * This router is split into logical sections for easy navigation:
+ *
+ * Sections:
+ *  [1] Constants & Configuration        → COMMISSION_RATES, LOYALTY_RATES, SMS_CONFIRMATION_TYPES
+ *  [2] Helper Functions                 → generateRef(), calculateCommission(), applyVelocityLimits()
+ *  [3] Transaction Procedures           → createTransaction, getTransactions, getTransactionByRef
+ *  [4] Transaction Actions              → reverseTransaction, updateStatus, bulkUpdate
+ *  [5] Float Management                 → updateAgentFloat, getAgentFloat, lockFloat
+ *  [6] Commission & Loyalty             → calculateCommission, addLoyaltyPoints, redeemLoyaltyPoints
+ *  [7] Bulk Operations                  → bulkTransactions, bulkReversal
+ *  [8] Reporting & Analytics            → getDailySummary, getTransactionStats, exportTransactions
+ *  [9] Fraud & Compliance               → createFraudAlert, checkVelocity, validateAgentTier
+ *  [10] SMS & Notifications             → sendConfirmationSms, buildConfirmationSms
+ *  [11] tRPC Router Definition          → exports: transactionsRouter
+ *
+ * Quick Jump: Search for "[1]", "[2]", etc. to navigate to each section
  */
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -47,6 +65,7 @@ import { sendSms, buildConfirmationSms } from "../termii";
 import { getIO } from "../socketSingleton";
 import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
 import crypto from "crypto";
+import { logger } from '../_core/logger';
 import {
   transactionsTotal,
   transactionErrorsTotal,
@@ -122,7 +141,7 @@ async function checkVelocityLimits(
   agentId: number,
   tier: string,
   amount: number,
-  agentCode?: string
+  agentId?: string
 ): Promise<{ allowed: boolean; reason?: string }> {
   try {
     const enabled = await getPlatformSetting("velocity_limits_enabled", "true");
@@ -163,12 +182,12 @@ async function checkVelocityLimits(
     const hourlyCount = Number(hourlyRows[0]?.count ?? 0);
 
     // Emit 80% warning before hard block
-    if (agentCode && maxHourly > 0) {
+    if (agentId && maxHourly > 0) {
       const hourlyPct = (hourlyCount + 1) / maxHourly;
       if (hourlyPct >= 0.8 && hourlyPct < 1.0) {
         getIO()
           ?.of("/terminal")
-          .to(`agent:${agentCode}`)
+          .to(`agent:${agentId}`)
           .emit("terminal:velocity_warning", {
             type: "hourly_count",
             used: hourlyCount + 1,
@@ -201,12 +220,12 @@ async function checkVelocityLimits(
     const dailyVolume = Number(dailyRows[0]?.total ?? 0);
 
     // Emit 80% daily volume warning
-    if (agentCode && maxDaily > 0) {
+    if (agentId && maxDaily > 0) {
       const dailyPct = (dailyVolume + amount) / maxDaily;
       if (dailyPct >= 0.8 && dailyPct < 1.0) {
         getIO()
           ?.of("/terminal")
-          .to(`agent:${agentCode}`)
+          .to(`agent:${agentId}`)
           .emit("terminal:velocity_warning", {
             type: "daily_volume",
             used: dailyVolume + amount,
@@ -227,7 +246,7 @@ async function checkVelocityLimits(
 
     return { allowed: true };
   } catch (err) {
-    console.error("[Velocity] Check error (fail-open):", err);
+    logger.error("[Velocity] Check error (fail-open):: " + String(err));
     return { allowed: true };
   }
 }
@@ -276,7 +295,7 @@ async function validateDeviceToken(
     }
     return { valid: true };
   } catch (err) {
-    console.error("[DeviceToken] Validation error (fail-open):", err);
+    logger.error("[DeviceToken] Validation error (fail-open):: " + String(err));
     return { valid: true };
   }
 }
@@ -372,7 +391,7 @@ export const transactionsRouter = router({
         if (!deviceCheck.valid) {
           await writeAuditLog({
             agentId: agent.id,
-            agentCode: agent.agentCode,
+            agentId: agent.agentId,
             action: "DEVICE_TOKEN_REJECTED",
             resource: "transaction",
             status: "failure",
@@ -393,7 +412,7 @@ export const transactionsRouter = router({
           });
           getIO()
             ?.of("/terminal")
-            .to(`agent:${agent.agentCode}`)
+            .to(`agent:${agent.agentId}`)
             .emit("terminal:fraud_alert", {
               severity: "HIGH",
               type: "DEVICE_TOKEN_FAILURE",
@@ -410,11 +429,11 @@ export const transactionsRouter = router({
         // ── Gate 3: Float sufficiency ──────────────────────────────────────────
         if (
           FLOAT_DEBIT_TYPES.has(input.type) &&
-          Number(agentRecord.floatBalance) < input.amount
+          Number(agentRecord.premiumReserve) < input.amount
         ) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `Insufficient float balance. Available: ₦${Number(agentRecord.floatBalance).toLocaleString()}`,
+            message: `Insufficient premium reserve. Available: ₦${Number(agentRecord.premiumReserve).toLocaleString()}`,
           });
         }
 
@@ -423,7 +442,7 @@ export const transactionsRouter = router({
           agent.id,
           agentRecord.tier,
           input.amount,
-          agent.agentCode
+          agent.agentId
         );
         if (!velocityCheck.allowed) {
           await createFraudAlert({
@@ -437,7 +456,7 @@ export const transactionsRouter = router({
           });
           await writeAuditLog({
             agentId: agent.id,
-            agentCode: agent.agentCode,
+            agentId: agent.agentId,
             action: "VELOCITY_LIMIT_BREACHED",
             resource: "transaction",
             status: "failure",
@@ -450,7 +469,7 @@ export const transactionsRouter = router({
           // Notify the agent's terminal in real-time
           getIO()
             ?.of("/terminal")
-            .to(`agent:${agent.agentCode}`)
+            .to(`agent:${agent.agentId}`)
             .emit("terminal:fraud_alert", {
               severity: "HIGH",
               type: "VELOCITY_BREACH",
@@ -516,7 +535,7 @@ export const transactionsRouter = router({
                   });
                   await writeAuditLog({
                     agentId: agent.id,
-                    agentCode: agent.agentCode,
+                    agentId: agent.agentId,
                     action: "GEOFENCE_VIOLATION",
                     resource: "transaction",
                     status: "failure",
@@ -524,7 +543,7 @@ export const transactionsRouter = router({
                   });
                   getIO()
                     ?.of("/terminal")
-                    .to(`agent:${agent.agentCode}`)
+                    .to(`agent:${agent.agentId}`)
                     .emit("terminal:fraud_alert", {
                       severity: "HIGH",
                       type: "GEOFENCE_VIOLATION",
@@ -544,7 +563,7 @@ export const transactionsRouter = router({
           }
         } catch (geoErr) {
           if (geoErr instanceof TRPCError) throw geoErr;
-          console.error("[Geofence] Check error (fail-open):", geoErr);
+          logger.error("[Geofence] Check error (fail-open):: " + geoErr);
         }
 
         // ── Core processing ────────────────────────────────────────────────────
@@ -635,7 +654,7 @@ export const transactionsRouter = router({
           if (amlResult.triggered) {
             await writeAuditLog({
               agentId: agent.id,
-              agentCode: agent.agentCode,
+              agentId: agent.agentId,
               action: "AML_TRIGGER",
               resource: "transaction",
               status: "flagged" as any,
@@ -646,36 +665,34 @@ export const transactionsRouter = router({
             });
           }
         } catch (brErr) {
-          console.warn(
-            "[BusinessRules] Engine error (fail-open):",
-            (brErr as Error).message
+          logger.warn("[BusinessRules] Engine error (fail-open):: " + (brErr as Error).message
           );
         }
         const fee =
           input.type === "Transfer" ? Math.min(input.amount * 0.001, 100) : 0;
 
-        await tbEnsureAgentAccount(agent.agentCode);
+        await tbEnsureAgentAccount(agent.agentId);
         const tbResult = await tbCreateTransfer({
           debitAccountId: FLOAT_CREDIT_TYPES.has(input.type)
             ? "sys-bank-reserve"
-            : `float-${agent.agentCode}`,
+            : `float-${agent.agentId}`,
           creditAccountId: FLOAT_CREDIT_TYPES.has(input.type)
-            ? `float-${agent.agentCode}`
+            ? `float-${agent.agentId}`
             : "sys-bank-reserve",
           amount: Math.round(input.amount * 100),
           ledger: 2000,
           code: 300,
           ref,
           txType: input.type,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
         });
 
         if (tbResult) {
-          console.log(
+          logger.info(
             `[TB] Transfer committed: ${tbResult.id} (syncStatus=${tbResult.syncStatus})`
           );
         } else {
-          console.warn(
+          logger.warn(
             `[TB] Sidecar unavailable — transaction ${ref} persisted to PostgreSQL only`
           );
         }
@@ -719,9 +736,7 @@ export const transactionsRouter = router({
               );
             }
           } catch (floatErr) {
-            console.warn(
-              "[float] Platform settle sync failed (fail-open):",
-              (floatErr as Error).message
+            logger.warn("[float] Platform settle sync failed (fail-open):: " + (floatErr as Error).message
             );
           }
         } else if (FLOAT_DEBIT_TYPES.has(input.type)) {
@@ -742,9 +757,7 @@ export const transactionsRouter = router({
               );
             }
           } catch (floatErr) {
-            console.warn(
-              "[float] Platform utilize sync failed (fail-open):",
-              (floatErr as Error).message
+            logger.warn("[float] Platform utilize sync failed (fail-open):: " + (floatErr as Error).message
             );
           }
         }
@@ -763,11 +776,11 @@ export const transactionsRouter = router({
             transactionAmount: input.amount,
             totalCommission: commission,
             originAgentId: agent.id,
-            originAgentCode: agent.agentCode,
+            originAgentCode: agent.agentId,
             tenantId: (agent as any).tenantId ?? undefined,
           });
           if (!cascadeResult.success) {
-            console.warn(
+            logger.warn(
               `[CommissionCascade] Fallback for ${ref}: ${cascadeResult.error}`
             );
           }
@@ -787,7 +800,7 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "TRANSACTION_CREATED",
           resource: "transaction",
           resourceId: ref,
@@ -806,14 +819,14 @@ export const transactionsRouter = router({
               ref,
               type: input.type,
               amount: input.amount,
-              agentCode: agent.agentCode,
+              agentId: agent.agentId,
               agentName: agent.name,
               customerName: input.customerName,
               timestamp: new Date(),
             });
             sendSms(input.customerPhone, message).then(result => {
               if (!result.success) {
-                console.error(
+                logger.error(
                   `[SMS] Confirmation failed for ${ref}: ${result.error}`
                 );
               } else {
@@ -823,7 +836,7 @@ export const transactionsRouter = router({
                       .set({ smsSent: true })
                       .where(eq(transactions.id, tx.id))
                       .catch(e =>
-                        console.error("[SMS] smsSent update failed:", e)
+                        logger.error("[SMS] smsSent update failed:: " + e)
                       );
                   }
                 });
@@ -833,7 +846,7 @@ export const transactionsRouter = router({
         }
 
         const newFloatBalance =
-          Number(agentRecord.floatBalance) +
+          Number(agentRecord.premiumReserve) +
           (FLOAT_CREDIT_TYPES.has(input.type) ? input.amount : 0) -
           (FLOAT_DEBIT_TYPES.has(input.type) ? input.amount : 0);
 
@@ -854,14 +867,14 @@ export const transactionsRouter = router({
                 type: input.type,
                 amount: input.amount,
                 commission,
-                agentCode: agent.agentCode,
+                agentId: agent.agentId,
                 channel: input.channel ?? "Cash",
               },
-              { agentCode: agent.agentCode }
+              { agentId: agent.agentId }
             )
           )
           .catch((e: unknown) =>
-            console.error("[Kafka] Event publish failed:", e)
+            logger.error("[Kafka] Event publish failed:: " + e)
           );
 
         // ── Fluvio stream event (fire-and-forget, fail-open) ──────────────────────
@@ -879,7 +892,7 @@ export const transactionsRouter = router({
             })
           )
           .catch((e: unknown) =>
-            console.error("[Fluvio] Transaction event failed:", e)
+            logger.error("[Fluvio] Transaction event failed:: " + e)
           );
 
         // ── Real-Time Fraud Detection (fire-and-forget, fail-open) ─────────────────────
@@ -899,19 +912,17 @@ export const transactionsRouter = router({
               const result = await detectFraud(fraudCtx);
               if (result.isFraud) {
                 await createAndEmitFraudAlert(fraudCtx, result);
-                console.warn(
+                logger.warn(
                   `[Fraud] Alert created for tx ${ref}: ${result.reason}`
                 );
               }
             } catch (fraudErr) {
-              console.error(
-                "[Fraud] Detection failed (fail-open):",
-                (fraudErr as Error).message
+              logger.error("[Fraud] Detection failed (fail-open):: " + (fraudErr as Error).message
               );
             }
           })
           .catch((e: unknown) =>
-            console.error("[Fraud] Engine import failed:", e)
+            logger.error("[Fraud] Engine import failed:: " + e)
           );
 
         return {
@@ -920,7 +931,7 @@ export const transactionsRouter = router({
           transactionId: tx.id,
           commission,
           pointsEarned,
-          floatBalance: newFloatBalance,
+          premiumReserve: newFloatBalance,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1095,7 +1106,7 @@ export const transactionsRouter = router({
 
           await writeAuditLog({
             agentId: agent.id,
-            agentCode: agent.agentCode,
+            agentId: agent.agentId,
             action: "REVERSAL_APPROVAL_REQUESTED",
             resource: "transaction",
             resourceId: input.ref,
@@ -1112,7 +1123,7 @@ export const transactionsRouter = router({
             const { notifyOwner } = await import("../_core/notification");
             await notifyOwner({
               title: `Reversal Approval Required — ₦${amount.toLocaleString()}`,
-              content: `Agent ${agent.agentCode} (${agent.name}) requested reversal of ₦${amount.toLocaleString()} for ${input.ref}. Reason: ${input.reason ?? "Not specified"}. Review in Admin Panel → Pending Reversals.`,
+              content: `Agent ${agent.agentId} (${agent.name}) requested reversal of ₦${amount.toLocaleString()} for ${input.ref}. Reason: ${input.reason ?? "Not specified"}. Review in Admin Panel → Pending Reversals.`,
             });
           } catch {
             // Non-critical
@@ -1138,7 +1149,7 @@ export const transactionsRouter = router({
         const reversalRef = generateRef();
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "TRANSACTION_REVERSED",
           resource: "transaction",
           resourceId: input.ref,
@@ -1191,7 +1202,7 @@ export const transactionsRouter = router({
           customerName: transactions.customerName,
           failureReason: transactions.failureReason,
           createdAt: transactions.createdAt,
-          agentCode: agents.agentCode,
+          agentId: agents.agentId,
           agentName: agents.name,
         })
         .from(transactions)
@@ -1259,7 +1270,7 @@ export const transactionsRouter = router({
           .update(transactions)
           .set({
             status: "reversed",
-            approvedBy: agent.agentCode,
+            approvedBy: agent.agentId,
             approvedAt: new Date(),
             approvalRequired: false,
           })
@@ -1273,13 +1284,13 @@ export const transactionsRouter = router({
         const reversalRef = generateRef();
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "REVERSAL_APPROVED",
           resource: "transaction",
           resourceId: tx.ref,
           status: "success",
           metadata: {
-            approvedBy: agent.agentCode,
+            approvedBy: agent.agentId,
             originalRef: tx.ref,
             reversalRef,
             amount,
@@ -1356,12 +1367,12 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "REVERSAL_REJECTED",
           resource: "transaction",
           resourceId: tx.ref,
           status: "warning",
-          metadata: { rejectedBy: agent.agentCode, reason: input.reason },
+          metadata: { rejectedBy: agent.agentId, reason: input.reason },
         });
 
         return { success: true };
@@ -1438,7 +1449,7 @@ export const transactionsRouter = router({
           .where(eq(velocityLimits.tier, input.tier));
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "VELOCITY_LIMIT_UPDATED",
           resource: "velocity_limits",
           resourceId: input.tier,
@@ -1510,13 +1521,13 @@ export const transactionsRouter = router({
           .update(platformSettings)
           .set({
             value: input.value,
-            updatedBy: agent.agentCode,
+            updatedBy: agent.agentId,
             updatedAt: new Date(),
           })
           .where(eq(platformSettings.key, input.key));
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "PLATFORM_SETTING_UPDATED",
           resource: "platform_settings",
           resourceId: input.key,
@@ -1650,14 +1661,14 @@ export const transactionsRouter = router({
           .update(fraudAlerts)
           .set({
             status: "resolved",
-            assignedTo: agent.agentCode,
+            assignedTo: agent.agentId,
             resolvedAt: new Date(),
             updatedAt: new Date(),
           })
           .where(eq(fraudAlerts.id, input.alertId));
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "FRAUD_ALERT_REVIEWED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
@@ -1763,7 +1774,7 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "SECURITY_AUDIT_EXPORTED",
           resource: "fraud_alerts",
           status: "success",
@@ -1816,7 +1827,7 @@ export const transactionsRouter = router({
           .where(eq(fraudAlerts.id, input.alertId));
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "FRAUD_ALERT_SNOOZED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
@@ -1885,11 +1896,11 @@ export const transactionsRouter = router({
             content: `Alert #${alert.id} (${alert.severity}) escalated by ${ctx.user.name ?? String(ctx.user.id)}. Reason: ${alert.reason ?? "N/A"}. Amount: \u20a6${alert.amount ?? 0}.`,
           });
         } catch (e) {
-          console.error("[escalateAlert] notifyOwner failed:", e);
+          logger.error("[escalateAlert] notifyOwner failed:: " + e);
         }
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
           action: "FRAUD_ALERT_ESCALATED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
@@ -1947,7 +1958,7 @@ export const transactionsRouter = router({
               content: `Alert #${alert.id} (${alert.severity}) was snoozed but not resolved. Auto-escalated at ${now.toISOString()}.`,
             });
           } catch (e) {
-            console.error("[autoEscalateSnoozedAlerts] notifyOwner failed:", e);
+            logger.error("[autoEscalateSnoozedAlerts] notifyOwner failed:: " + e);
           }
         }
         return { escalated: expired.length };
@@ -2081,7 +2092,7 @@ export const transactionsRouter = router({
     }
   }),
 
-  // ── Analytics: hourly cashIn/cashOut for current agent today ─────────────
+  // ── Analytics: hourly premiumCollection/claimPayout for current agent today ─────────────
   hourlyStats: protectedProcedure.query(async ({ ctx }) => {
     try {
       const agent = (ctx as any).agent ?? (await getAgentFromCookie(ctx.req));
@@ -2106,20 +2117,20 @@ export const transactionsRouter = router({
         );
       const buckets: Record<
         string,
-        { cashIn: number; cashOut: number; count: number }
+        { premiumCollection: number; claimPayout: number; count: number }
       > = {};
       for (let h = 0; h < 24; h++) {
         buckets[`${h.toString().padStart(2, "0")}:00`] = {
-          cashIn: 0,
-          cashOut: 0,
+          premiumCollection: 0,
+          claimPayout: 0,
           count: 0,
         };
       }
       for (const row of rows) {
         const key = `${new Date(row.createdAt).getHours().toString().padStart(2, "0")}:00`;
         const amt = Number(row.amount);
-        if (row.type === "Cash In") buckets[key].cashIn += amt;
-        else buckets[key].cashOut += amt;
+        if (row.type === "Cash In") buckets[key].premiumCollection += amt;
+        else buckets[key].claimPayout += amt;
         buckets[key].count++;
       }
       return Object.entries(buckets).map(([h, v]) => ({ h, ...v }));
@@ -2201,37 +2212,37 @@ export const transactionsRouter = router({
             gte(transactions.createdAt, dayStart)
           )
         );
-      let cashIn = 0,
-        cashOut = 0,
+      let premiumCollection = 0,
+        claimPayout = 0,
         transfers = 0,
         commission = 0,
         count = 0,
         success = 0;
       for (const r of rows) {
         const amt = Number(r.amount);
-        if (r.type === "Cash In") cashIn += amt;
-        else if (r.type === "Cash Out") cashOut += amt;
+        if (r.type === "Cash In") premiumCollection += amt;
+        else if (r.type === "Cash Out") claimPayout += amt;
         else if (r.type === "Transfer") transfers += amt;
         commission += Number(r.commission ?? 0);
         count++;
         if (r.status === "success") success++;
       }
-      // Fetch live float balance from agents table
+      // Fetch live premium reserve from agents table
       const agentDbRows = await db
-        .select({ floatBalance: agents.floatBalance })
+        .select({ premiumReserve: agents.premiumReserve })
         .from(agents)
         .where(eq(agents.id, agent.id))
         .limit(1);
-      const floatBalance = Number(agentDbRows[0]?.floatBalance ?? 0);
+      const premiumReserve = Number(agentDbRows[0]?.premiumReserve ?? 0);
       return {
-        cashIn,
-        cashOut,
+        premiumCollection,
+        claimPayout,
         transfers,
         commission,
         count,
         successRate:
           count > 0 ? Math.round((success / count) * 1000) / 10 : 100,
-        float: floatBalance,
+        float: premiumReserve,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -2334,8 +2345,8 @@ export const transactionsRouter = router({
   }),
 
   /**
-   * getFloatBalance — fetches live float balance from platform float service.
-   * Falls back to local DB agent.floatBalance if platform is unavailable.
+   * getFloatBalance — fetches live premium reserve from platform float service.
+   * Falls back to local DB agent.premiumReserve if platform is unavailable.
    */
   getFloatBalance: protectedProcedure.query(async ({ ctx }) => {
     try {
@@ -2364,22 +2375,20 @@ export const transactionsRouter = router({
           };
         }
       } catch (err) {
-        console.warn(
-          "[float] Platform getBalance failed, using local DB:",
-          (err as Error).message
+        logger.warn("[float] Platform getBalance failed, using local DB:: " + (err as Error).message
         );
       }
       // Local DB fallback
       const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const [row] = await db
-        .select({ floatBalance: agents.floatBalance })
+        .select({ premiumReserve: agents.premiumReserve })
         .from(agents)
         .where(eq(agents.id, agent.id))
         .limit(1);
       return {
         source: "local" as const,
-        balance: Number(row?.floatBalance ?? 0),
+        balance: Number(row?.premiumReserve ?? 0),
         currency: "NGN",
       };
     } catch (error) {
@@ -2418,9 +2427,7 @@ export const transactionsRouter = router({
             return { source: "platform" as const, transactions: result };
           }
         } catch (err) {
-          console.warn(
-            "[float] Platform getTransactions failed, using local DB:",
-            (err as Error).message
+          logger.warn("[float] Platform getTransactions failed, using local DB:: " + (err as Error).message
           );
         }
         // Local DB fallback — return agent's recent transactions
@@ -2470,9 +2477,7 @@ export const transactionsRouter = router({
             );
             return { source: "platform" as const, data: result };
           } catch (err) {
-            console.warn(
-              "[analytics] Platform unavailable, falling back to local DB:",
-              (err as Error).message
+            logger.warn("[analytics] Platform unavailable, falling back to local DB:: " + (err as Error).message
             );
           }
         }

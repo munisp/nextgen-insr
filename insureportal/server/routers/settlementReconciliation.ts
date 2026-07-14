@@ -12,7 +12,7 @@ import {
   merchantSettlements,
   transactions,
   agents,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
 import { writeAuditLog } from "../db";
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
@@ -40,7 +40,7 @@ export const settlementReconciliationRouter = router({
         if (!db) return { items: [], total: 0 };
         const offset = (input.page - 1) * input.limit;
         const where = input.status
-          ? eq(settlementReconciliation.status, input.status)
+          ? eq(settlementReconciliation.status, input.status as any)
           : undefined;
         const [items, [{ c: total }]] = await Promise.all([
           db
@@ -121,10 +121,7 @@ export const settlementReconciliationRouter = router({
                   settlementReconciliation.settlementDate,
                   input.settlementDate
                 ),
-                eq(
-                  settlementReconciliation.agentCode,
-                  String(settlement.merchantId)
-                )
+                eq(settlementReconciliation.agentId, Number(settlement.merchantId))
               )
             )
             .limit(1);
@@ -146,7 +143,7 @@ export const settlementReconciliationRouter = router({
               .insert(settlementReconciliation)
               .values({
                 settlementDate: input.settlementDate,
-                agentCode: String(settlement.merchantId),
+                agentId: String(settlement.merchantId),
                 expectedAmount: String(txTotal),
                 actualAmount: String(settlementAmount),
                 discrepancy: String(discrepancy),

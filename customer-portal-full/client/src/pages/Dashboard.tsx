@@ -61,14 +61,14 @@ export default function Dashboard() {
     ...(payments?.slice(0, 2).map(p => ({
       type: "payment",
       title: p.status === "Completed" ? "Premium Paid" : "Payment Due",
-      date: p.paidDate || p.dueDate,
+      date: p.paidDate || p.dueDate || p.createdAt || p.date || new Date().toISOString(),
       amount: `₦${parseFloat(p.amount).toLocaleString()}`,
       status: p.status,
     })) || []),
     ...(claims?.slice(0, 2).map(c => ({
       type: "claim",
       title: "Claim Submitted",
-      date: c.createdAt,
+      date: c.createdAt || c.filedDate || new Date().toISOString(),
       amount: c.status,
       status: c.status,
     })) || []),

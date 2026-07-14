@@ -85,7 +85,7 @@ export const settlementRouter = router({
       await publishSettlementEvent({
         eventType: "settlement.batch.started",
         batchId,
-        metadata: { triggeredBy: ctx.agent.agentCode },
+        metadata: { triggeredBy: ctx.agent.agentId },
       });
       // [Fluvio] Stream batch start
       await streamSettlementEvent({ eventType: "batch.started", batchId });
@@ -97,7 +97,7 @@ export const settlementRouter = router({
         const db = (await getDb())!;
         if (db) {
           await db.insert(auditLog).values({
-            agentCode: ctx.agent.agentCode,
+            agentId: ctx.agent.agentId,
             action: "settlement.runNow",
             resource: "settlement",
             ipAddress:
@@ -128,7 +128,7 @@ export const settlementRouter = router({
         // [Dapr] Publish settlement notification
         await daprPublishSettlementNotification({
           batchId,
-          agentCode: ctx.agent.agentCode,
+          agentId: ctx.agent.agentId,
           amount: 0,
           status: "completed",
         });
@@ -175,7 +175,7 @@ export const settlementRouter = router({
     const meta = (row.metadata as Record<string, unknown>) ?? {};
     return {
       runAt: row.createdAt,
-      agentCode: row.agentCode,
+      agentId: row.agentId,
       agentCount: (meta.agentCount as number) ?? 0,
       smsSent: (meta.smsSent as number) ?? 0,
       status: row.status,
@@ -241,7 +241,7 @@ export const settlementRouter = router({
         return {
           id: row.id,
           runAt: row.createdAt,
-          agentCode: row.agentCode,
+          agentId: row.agentId,
           agentCount: (meta.agentCount as number) ?? 0,
           smsSent: (meta.smsSent as number) ?? 0,
           errors: (meta.errors as string[]) ?? [],
@@ -304,16 +304,16 @@ export const settlementRouter = router({
       .groupBy(transactions.agentId);
 
     const agentRows = await db
-      .select({ id: agents.id, agentCode: agents.agentCode, name: agents.name })
+      .select({ id: agents.id, agentId: agents.agentId, name: agents.name })
       .from(agents);
-    const agentMap: Record<number, { agentCode: string; name: string }> = {};
+    const agentMap: Record<number, { agentId: string; name: string }> = {};
     for (const a of agentRows) {
-      agentMap[a.id] = { agentCode: a.agentCode, name: a.name };
+      agentMap[a.id] = { agentId: a.agentId, name: a.name };
     }
 
     const outstanding = rows.map((r: any) => ({
       agentId: r.agentId,
-      agentCode: agentMap[r.agentId]?.agentCode ?? `#${r.agentId}`,
+      agentId: agentMap[r.agentId]?.agentId ?? `#${r.agentId}`,
       agentName: agentMap[r.agentId]?.name ?? "Unknown",
       totalVolume: Number(r.totalVolume),
       totalCommission: Number(r.totalCommission),
@@ -338,7 +338,7 @@ export const settlementRouter = router({
       try {
         const result = await initiateIlpSettlementTransfer({
           batchId: input.batchId,
-          payerFsp: "54link-fsp",
+          payerFsp: "insureportal-fsp",
           payeeFsp: input.payeeFsp,
           amount: input.amount,
           currency: input.currency,

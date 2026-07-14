@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Enhanced CRUD Operations — 54Link Agency Banking Platform
+ * Enhanced CRUD Operations — InsurePortal Insurance Platform
  *
  * Provides:
  * 1. Full-text search across agents, customers, transactions

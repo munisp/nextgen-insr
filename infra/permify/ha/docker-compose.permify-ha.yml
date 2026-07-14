@@ -1,6 +1,6 @@
 ###############################################################################
 # Permify HA — 2 nodes + PostgreSQL backend
-# Production-tuned for POS-54Link: fine-grained RBAC, agent hierarchy, tenant isolation
+# Production-tuned for POS-InsurePortal: fine-grained RBAC, agent hierarchy, tenant isolation
 ###############################################################################
 version: "3.9"
 

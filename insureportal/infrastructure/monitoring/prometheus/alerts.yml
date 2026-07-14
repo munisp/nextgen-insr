@@ -9,8 +9,8 @@ groups:
           severity: critical
           team: operations
         annotations:
-          summary: "Agent float balance critically low"
-          description: "Agent {{ $labels.agent_id }} ({{ $labels.agent_code }}) has float balance of {{ $value | humanize }} NGN, below 10,000 NGN minimum."
+          summary: "Agent premium reserve critically low"
+          description: "Agent {{ $labels.agent_id }} ({{ $labels.agent_code }}) has premium reserve of {{ $value | humanize }} NGN, below 10,000 NGN minimum."
           runbook: "https://docs.insureportal.ng/runbooks/float-replenishment"
 
       - alert: AgentFloatLow
@@ -20,8 +20,8 @@ groups:
           severity: warning
           team: operations
         annotations:
-          summary: "Agent float balance low"
-          description: "Agent {{ $labels.agent_id }} has float balance of {{ $value | humanize }} NGN."
+          summary: "Agent premium reserve low"
+          description: "Agent {{ $labels.agent_id }} has premium reserve of {{ $value | humanize }} NGN."
 
       - alert: FloatTopUpPendingTooLong
         expr: pos_float_topup_pending_age_seconds > 3600

@@ -87,7 +87,7 @@ describe("submitTransfer", () => {
     amount: 500000, // ₦5,000 in kobo
     ref: "TXN-001",
     txType: "cash_out",
-    agentCode: "AGT001",
+    agentId: "AGT001",
   };
 
   it("returns a TBTransferResponse on success", async () => {
@@ -142,7 +142,7 @@ describe("ensureAgentAccount", () => {
 describe("getAgentBalance", () => {
   it("returns balance object on success", async () => {
     mockFetchOk({
-      agentCode: "AGT001",
+      agentId: "AGT001",
       balanceKobo: 1500000,
       balanceNGN: 15000.0,
     });

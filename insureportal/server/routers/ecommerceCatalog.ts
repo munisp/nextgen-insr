@@ -2,10 +2,10 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
-  ecommerceProducts,
-  ecommerceCategories,
-  ecommerceInventory,
-} from "../../drizzle/schema";
+  insuranceProducts,
+  insuranceCategories,
+  insuranceInventory,
+} from "@schema";
 import { desc, eq, and, ilike, count, sql } from "drizzle-orm";
 
 const CATALOG_SERVICE_URL =
@@ -16,7 +16,7 @@ const CATALOG_SERVICE_URL =
  * Bridges tRPC API with Go catalog microservice for products, categories, and inventory.
  * Falls back to direct Drizzle queries when Go service is unavailable.
  */
-export const ecommerceCatalogRouter = router({
+export const insuranceCatalogRouter = router({
   // ── Products ─────────────────────────────────────────────────────────────
   listProducts: protectedProcedure
     .input(
@@ -34,13 +34,13 @@ export const ecommerceCatalogRouter = router({
 
       const conditions = [];
       if (input.categoryId) {
-        conditions.push(eq(ecommerceProducts.categoryId, input.categoryId));
+        conditions.push(eq(insuranceProducts.categoryId, input.categoryId));
       }
       if (input.active !== undefined) {
-        conditions.push(eq(ecommerceProducts.isActive, input.active));
+        conditions.push(eq(insuranceProducts.isActive, input.active));
       }
       if (input.search) {
-        conditions.push(ilike(ecommerceProducts.name, `%${input.search}%`));
+        conditions.push(ilike(insuranceProducts.name, `%${input.search}%`));
       }
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -48,14 +48,14 @@ export const ecommerceCatalogRouter = router({
       const [products, totalResult] = await Promise.all([
         database
           .select()
-          .from(ecommerceProducts)
+          .from(insuranceProducts)
           .where(where)
-          .orderBy(desc(ecommerceProducts.createdAt))
+          .orderBy(desc(insuranceProducts.createdAt))
           .limit(input.limit)
           .offset(input.offset),
         database
           .select({ total: count() })
-          .from(ecommerceProducts)
+          .from(insuranceProducts)
           .where(where),
       ]);
 
@@ -75,8 +75,8 @@ export const ecommerceCatalogRouter = router({
 
       const [product] = await database
         .select()
-        .from(ecommerceProducts)
-        .where(eq(ecommerceProducts.id, input.id))
+        .from(insuranceProducts)
+        .where(eq(insuranceProducts.id, input.id))
         .limit(1);
 
       return product ?? null;
@@ -105,7 +105,7 @@ export const ecommerceCatalogRouter = router({
       if (!database) throw new Error("Database unavailable");
 
       const [product] = await database
-        .insert(ecommerceProducts)
+        .insert(insuranceProducts)
         .values({
           sku: input.sku,
           name: input.name,
@@ -124,7 +124,7 @@ export const ecommerceCatalogRouter = router({
         .returning();
 
       // Create inventory record
-      await database.insert(ecommerceInventory).values({
+      await database.insert(insuranceInventory).values({
         sku: input.sku,
         productId: product.id,
         quantity: 0,
@@ -161,9 +161,9 @@ export const ecommerceCatalogRouter = router({
       if (input.attributes) updates.attributes = input.attributes;
 
       const [updated] = await database
-        .update(ecommerceProducts)
+        .update(insuranceProducts)
         .set(updates)
-        .where(eq(ecommerceProducts.id, input.id))
+        .where(eq(insuranceProducts.id, input.id))
         .returning();
 
       return updated;
@@ -176,8 +176,8 @@ export const ecommerceCatalogRouter = router({
       if (!database) throw new Error("Database unavailable");
 
       await database
-        .delete(ecommerceProducts)
-        .where(eq(ecommerceProducts.id, input.id));
+        .delete(insuranceProducts)
+        .where(eq(insuranceProducts.id, input.id));
 
       return { deleted: true };
     }),
@@ -190,9 +190,9 @@ export const ecommerceCatalogRouter = router({
 
       const products = await database
         .select()
-        .from(ecommerceProducts)
+        .from(insuranceProducts)
         .where(
-          sql`${ecommerceProducts.name} ILIKE ${`%${input.query}%`} OR ${ecommerceProducts.sku} ILIKE ${`%${input.query}%`}`
+          sql`${insuranceProducts.name} ILIKE ${`%${input.query}%`} OR ${insuranceProducts.sku} ILIKE ${`%${input.query}%`}`
         )
         .limit(input.limit);
 
@@ -206,9 +206,9 @@ export const ecommerceCatalogRouter = router({
 
     const categories = await database
       .select()
-      .from(ecommerceCategories)
-      .where(eq(ecommerceCategories.isActive, true))
-      .orderBy(ecommerceCategories.sortOrder);
+      .from(insuranceCategories)
+      .where(eq(insuranceCategories.isActive, true))
+      .orderBy(insuranceCategories.sortOrder);
 
     return { categories };
   }),
@@ -229,7 +229,7 @@ export const ecommerceCatalogRouter = router({
       if (!database) throw new Error("Database unavailable");
 
       const [category] = await database
-        .insert(ecommerceCategories)
+        .insert(insuranceCategories)
         .values({
           name: input.name,
           slug: input.slug,
@@ -252,8 +252,8 @@ export const ecommerceCatalogRouter = router({
 
       const [inv] = await database
         .select()
-        .from(ecommerceInventory)
-        .where(eq(ecommerceInventory.sku, input.sku))
+        .from(insuranceInventory)
+        .where(eq(insuranceInventory.sku, input.sku))
         .limit(1);
 
       if (!inv) return null;
@@ -268,12 +268,12 @@ export const ecommerceCatalogRouter = router({
 
       const alerts = await database
         .select()
-        .from(ecommerceInventory)
+        .from(insuranceInventory)
         .where(
-          sql`(${ecommerceInventory.quantity} - ${ecommerceInventory.reserved}) <= ${ecommerceInventory.reorderPoint}`
+          sql`(${insuranceInventory.quantity} - ${insuranceInventory.reserved}) <= ${insuranceInventory.reorderPoint}`
         )
         .orderBy(
-          sql`(${ecommerceInventory.quantity} - ${ecommerceInventory.reserved}) ASC`
+          sql`(${insuranceInventory.quantity} - ${insuranceInventory.reserved}) ASC`
         )
         .limit(input.limit);
 
@@ -293,13 +293,13 @@ export const ecommerceCatalogRouter = router({
       if (!database) throw new Error("Database unavailable");
 
       const [updated] = await database
-        .update(ecommerceInventory)
+        .update(insuranceInventory)
         .set({
           quantity: input.quantity,
           updatedAt: new Date(),
           lastRestocked: new Date(),
         })
-        .where(eq(ecommerceInventory.sku, input.sku))
+        .where(eq(insuranceInventory.sku, input.sku))
         .returning();
 
       return updated;

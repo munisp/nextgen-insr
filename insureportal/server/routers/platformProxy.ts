@@ -7,7 +7,7 @@ import {
   platform_health_checks,
   systemConfig,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const platformProxyRouter = router({

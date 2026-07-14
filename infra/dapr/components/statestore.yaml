@@ -1,14 +1,14 @@
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: 54link-statestore
+  name: insureportal-statestore
   namespace: default
 spec:
   type: state.redis
   version: v1
   metadata:
     - name: redisHost
-      value: "redis.54link.io:6379"
+      value: "redis.insureportal.io:6379"
     - name: redisPassword
       secretKeyRef:
         name: redis-secret

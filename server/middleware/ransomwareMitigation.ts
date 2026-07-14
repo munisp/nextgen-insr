@@ -15,6 +15,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import { logger } from '../_core/logger';
 
 export interface FileIntegrityRecord {
   path: string;
@@ -81,7 +82,7 @@ export function buildIntegrityBaseline(projectRoot: string): number {
       /* skip missing */
     }
   }
-  console.log(`[FIM] Integrity baseline built: ${count} files tracked`);
+  logger.info(`[FIM] Integrity baseline built: ${count} files tracked`);
   return count;
 }
 
@@ -168,7 +169,7 @@ export function trackBulkOperation(
   const suspicious = op.count > threshold;
 
   if (suspicious) {
-    console.warn(
+    logger.warn(
       `[Ransomware] Suspicious bulk ${opType} by user ${userId}: ${op.count} operations in ${BULK_OP_WINDOW}ms (threshold: ${threshold})`
     );
   }
@@ -211,7 +212,7 @@ export function trackDataExport(
   tracker.endpoints.add(endpoint);
 
   if (tracker.bytesExported > EXFIL_BYTE_LIMIT) {
-    console.warn(
+    logger.warn(
       `[Exfiltration] User ${userId} exceeded data export limit: ${(tracker.bytesExported / 1024 / 1024).toFixed(1)}MB in 1 hour`
     );
     return {
@@ -221,7 +222,7 @@ export function trackDataExport(
   }
 
   if (tracker.endpoints.size > EXFIL_ENDPOINT_LIMIT) {
-    console.warn(
+    logger.warn(
       `[Exfiltration] User ${userId} accessing too many data endpoints: ${tracker.endpoints.size} in 1 hour`
     );
     return {

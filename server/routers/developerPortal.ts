@@ -1,7 +1,7 @@
 /**
  * developerPortal.ts — P3-C Developer Portal Router
  *
- * Provides API key management for third-party developers integrating with 54Link.
+ * Provides API key management for third-party developers integrating with InsurePortal.
  *
  * Procedures:
  *  - devPortal.createKey    — create a new API key (protected)
@@ -18,6 +18,7 @@ import { eq, and, isNull, desc, gte, count, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { apiKeys, webhookSecrets, apiKeyUsage } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
+import { logger } from '../_core/logger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -371,7 +372,7 @@ export const developerPortalRouter = router({
           .set({ lastUsedAt: new Date() })
           .where(eq(apiKeys.id, key.id))
           .catch((e: unknown) =>
-            console.error("[DevPortal] lastUsedAt update failed:", e)
+            logger.error("[DevPortal] lastUsedAt update failed:: " + e)
           );
 
         return {

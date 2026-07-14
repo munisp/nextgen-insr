@@ -1,0 +1,49 @@
+openapi: 3.0.3
+info:
+  title: AI Claims Auto-Adjudication
+  version: 1.0.0
+  description: ML-powered instant claims approval for low-risk claims
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service healthy
+  /api/v1/auto-adjudicate:
+    post:
+      summary: Auto-adjudicate a claim using ML
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                policy_id:
+                  type: string
+                amount:
+                  type: number
+                evidence_count:
+                  type: integer
+      responses:
+        '200':
+          description: Auto-adjudication result
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: getReady
+      responses:
+        '200':
+          description: Service is ready
+        '503':
+          description: Service not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        '200':
+          description: Service is alive
