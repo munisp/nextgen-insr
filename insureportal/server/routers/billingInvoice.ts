@@ -6,7 +6,7 @@ import { getDb } from "../db";
 import {
   platformBillingLedger,
   tenantBillingConfig,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import Stripe from "stripe";
 

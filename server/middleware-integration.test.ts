@@ -85,7 +85,7 @@ describe("Commission Middleware Integration", () => {
         transactionId: 1,
         transactionRef: "TX-TEST",
         agentId: 1,
-        agentCode: "AGT001",
+        agentId: "AGT001",
         amount: 500,
         entryType: "direct",
         hierarchyLevel: 0,
@@ -103,11 +103,11 @@ describe("Commission Middleware Integration", () => {
     const mod = await import("./middleware/commissionMiddleware");
     await expect(
       mod.initiateIlpCommissionTransfer({
-        payerFsp: "54link-fsp",
+        payerFsp: "insureportal-fsp",
         payeeFsp: "test-fsp",
         amount: 1000,
         currency: "NGN",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         transactionRef: "ILP-TEST",
       })
     ).rejects.toThrow("Cross-border commission transfer failed");
@@ -169,7 +169,7 @@ describe("Settlement Middleware Integration", () => {
       mod.tbRecordSettlementTransfer({
         batchId: "SETTLE-TEST",
         agentId: 1,
-        agentCode: "AGT001",
+        agentId: "AGT001",
         amount: 10000,
         transactionCount: 50,
       })
@@ -239,7 +239,7 @@ describe("Dispute Middleware Integration", () => {
     const result = await mod.tbRecordRefundReversal({
       refundId: 1,
       transactionRef: "TX-TEST",
-      agentCode: "AGT001",
+      agentId: "AGT001",
       amount: 500,
     });
     expect(result).toBeNull();

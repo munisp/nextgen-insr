@@ -7,7 +7,7 @@ import { getJwtSecret } from "../lib/envValidation";
 
 export interface AgentSession {
   id: number;
-  agentCode: string;
+  agentId: string;
   name: string;
   tier: string;
   role: string;
@@ -25,7 +25,7 @@ export async function getAgentFromCookie(
     const { payload } = await jwtVerify(match[1], secret);
     return {
       id: Number(payload.sub),
-      agentCode: payload.agentCode as string,
+      agentId: payload.agentId as string,
       name: payload.name as string,
       tier: payload.tier as string,
       role: (payload.role as string) ?? "agent",

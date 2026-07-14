@@ -1,4 +1,4 @@
-/// # 54Link Fraud Enricher SmartModule
+/// # InsurePortal Fraud Enricher SmartModule
 ///
 /// Fluvio map SmartModule that enriches raw fraud alert events with:
 /// - Computed risk score (0-100) based on amount, velocity, and alert type

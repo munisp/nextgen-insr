@@ -1,6 +1,6 @@
-# 54Link TigerBeetle Sidecar
+# InsurePortal TigerBeetle Sidecar
 
-The TB sidecar is a Go 1.22 HTTP microservice that provides an **offline-first double-entry ledger** for the 54Link POS terminal. It persists transactions to a local SQLite database immediately (even without internet), then syncs to the TigerBeetle Zig cluster and PostgreSQL when connectivity is restored.
+The TB sidecar is a Go 1.22 HTTP microservice that provides an **offline-first double-entry ledger** for the InsurePortal POS terminal. It persists transactions to a local SQLite database immediately (even without internet), then syncs to the TigerBeetle Zig cluster and PostgreSQL when connectivity is restored.
 
 ---
 
@@ -47,12 +47,12 @@ sudo bash scripts/install-sidecar.sh
 
 This script will:
 
-1. Create a `54link` system user (no login shell)
+1. Create a `insureportal` system user (no login shell)
 2. Install the TigerBeetle v0.16.78 Zig binary to `/usr/local/bin/tigerbeetle`
-3. Install the sidecar binary to `/usr/local/bin/54link-tb-sidecar`
-4. Install the start script to `/usr/local/bin/54link-start-sidecar.sh`
-5. Create `/etc/54link/sidecar.env` (configuration file)
-6. Register and enable `54link-tb-sidecar.service` (systemd)
+3. Install the sidecar binary to `/usr/local/bin/insureportal-tb-sidecar`
+4. Install the start script to `/usr/local/bin/insureportal-start-sidecar.sh`
+5. Create `/etc/insureportal/sidecar.env` (configuration file)
+6. Register and enable `insureportal-tb-sidecar.service` (systemd)
 7. Start the service immediately
 
 After installation:
@@ -62,22 +62,22 @@ After installation:
 curl http://localhost:8030/health
 
 # View live logs
-journalctl -u 54link-tb-sidecar -f
+journalctl -u insureportal-tb-sidecar -f
 
 # Restart
-systemctl restart 54link-tb-sidecar
+systemctl restart insureportal-tb-sidecar
 ```
 
 ---
 
-## Configuration (`/etc/54link/sidecar.env`)
+## Configuration (`/etc/insureportal/sidecar.env`)
 
 | Variable          | Default                   | Description                                    |
 | ----------------- | ------------------------- | ---------------------------------------------- |
 | `POSTGRES_URL`    | _(required for sync)_     | PostgreSQL connection string for metadata sync |
 | `TB_REPLICA_ADDR` | `3000`                    | TigerBeetle Zig cluster replica address        |
 | `SIDECAR_PORT`    | `8030`                    | HTTP port the sidecar listens on               |
-| `DATA_DIR`        | `/var/lib/54link/tb-data` | Directory for SQLite + TigerBeetle data files  |
+| `DATA_DIR`        | `/var/lib/insureportal/tb-data` | Directory for SQLite + TigerBeetle data files  |
 
 ---
 
@@ -118,7 +118,7 @@ When `TERMII_API_KEY` is not set, all SMS messages are logged to the server cons
 
 ---
 
-## Systemd Unit (`scripts/54link-tb-sidecar.service`)
+## Systemd Unit (`scripts/insureportal-tb-sidecar.service`)
 
 Key settings:
 

@@ -28,7 +28,7 @@ const SMTP_HOST = process.env.SMTP_HOST || "smtp.gmail.com";
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587");
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
-const SMTP_FROM = process.env.SMTP_FROM || "54Link POS <noreply@54link.com>";
+const SMTP_FROM = process.env.SMTP_FROM || "InsurePortal POS <noreply@insureportal.com>";
 
 const isSmtpConfigured = SMTP_USER && SMTP_PASS;
 
@@ -43,7 +43,7 @@ export function weeklyReportTemplate(data: {
   totalCommission: number;
   fraudAlerts: number;
   topTransactionType: string;
-  floatBalance: number;
+  premiumReserve: number;
 }): string {
   return `
 <!DOCTYPE html>
@@ -52,7 +52,7 @@ export function weeklyReportTemplate(data: {
 <body style="margin:0;padding:0;background:#f4f4f7;font-family:Arial,sans-serif;">
   <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;margin-top:20px;">
     <div style="background:#1e40af;color:#fff;padding:24px;text-align:center;">
-      <h1 style="margin:0;font-size:24px;">54Link POS</h1>
+      <h1 style="margin:0;font-size:24px;">InsurePortal POS</h1>
       <p style="margin:4px 0 0;opacity:0.9;">Weekly Performance Report</p>
     </div>
     <div style="padding:24px;">
@@ -64,12 +64,12 @@ export function weeklyReportTemplate(data: {
         <tr><td style="padding:12px;border-bottom:1px solid #eee;color:#666;">Commission Earned</td><td style="padding:12px;border-bottom:1px solid #eee;font-weight:bold;text-align:right;color:#16a34a;">₦${data.totalCommission.toLocaleString()}</td></tr>
         <tr><td style="padding:12px;border-bottom:1px solid #eee;color:#666;">Fraud Alerts</td><td style="padding:12px;border-bottom:1px solid #eee;font-weight:bold;text-align:right;color:${data.fraudAlerts > 0 ? "#dc2626" : "#16a34a"};">${data.fraudAlerts}</td></tr>
         <tr><td style="padding:12px;border-bottom:1px solid #eee;color:#666;">Top Transaction Type</td><td style="padding:12px;border-bottom:1px solid #eee;font-weight:bold;text-align:right;">${data.topTransactionType}</td></tr>
-        <tr><td style="padding:12px;color:#666;">Current Float Balance</td><td style="padding:12px;font-weight:bold;text-align:right;">₦${data.floatBalance.toLocaleString()}</td></tr>
+        <tr><td style="padding:12px;color:#666;">Current Float Balance</td><td style="padding:12px;font-weight:bold;text-align:right;">₦${data.premiumReserve.toLocaleString()}</td></tr>
       </table>
       <p style="color:#666;font-size:14px;">Keep up the great work! Log in to your dashboard for detailed analytics.</p>
     </div>
     <div style="background:#f4f4f7;padding:16px;text-align:center;font-size:12px;color:#999;">
-      <p>54Link Agent Banking Platform — Powered by 54Link Technologies</p>
+      <p>InsurePortal Agent Banking Platform — Powered by InsurePortal Technologies</p>
       <p>This is an automated report. Do not reply to this email.</p>
     </div>
   </div>
@@ -83,7 +83,7 @@ export function transactionReceiptTemplate(data: {
   amount: number;
   fee: number;
   customerName: string;
-  agentCode: string;
+  agentId: string;
   timestamp: string;
   status: string;
 }): string {
@@ -103,12 +103,12 @@ export function transactionReceiptTemplate(data: {
         <tr><td style="padding:8px 0;color:#666;">Amount</td><td style="padding:8px 0;font-weight:bold;text-align:right;">₦${data.amount.toLocaleString()}</td></tr>
         <tr><td style="padding:8px 0;color:#666;">Fee</td><td style="padding:8px 0;text-align:right;">₦${data.fee.toLocaleString()}</td></tr>
         <tr><td style="padding:8px 0;color:#666;">Customer</td><td style="padding:8px 0;text-align:right;">${data.customerName}</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Agent</td><td style="padding:8px 0;text-align:right;">${data.agentCode}</td></tr>
+        <tr><td style="padding:8px 0;color:#666;">Agent</td><td style="padding:8px 0;text-align:right;">${data.agentId}</td></tr>
         <tr><td style="padding:8px 0;color:#666;">Date</td><td style="padding:8px 0;text-align:right;">${data.timestamp}</td></tr>
         <tr><td style="padding:8px 0;color:#666;">Status</td><td style="padding:8px 0;font-weight:bold;text-align:right;color:#16a34a;">${data.status}</td></tr>
       </table>
     </div>
-    <div style="background:#f4f4f7;padding:12px;text-align:center;font-size:11px;color:#999;">54Link POS — Thank you for your transaction</div>
+    <div style="background:#f4f4f7;padding:12px;text-align:center;font-size:11px;color:#999;">InsurePortal POS — Thank you for your transaction</div>
   </div>
 </body>
 </html>`;

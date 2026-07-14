@@ -1,0 +1,148 @@
+{
+  "indices": {
+    "policies": {
+      "settings": {
+        "number_of_shards": 3,
+        "number_of_replicas": 1,
+        "analysis": {
+          "analyzer": {
+            "nigerian_analyzer": {
+              "type": "custom",
+              "tokenizer": "standard",
+              "filter": ["lowercase", "asciifolding", "nigerian_synonyms"]
+            }
+          },
+          "filter": {
+            "nigerian_synonyms": {
+              "type": "synonym",
+              "synonyms": [
+                "motor,car,auto,vehicle",
+                "health,medical,hmo",
+                "property,building,home,house",
+                "agriculture,agric,crop,farming",
+                "life,endowment,term",
+                "naira,ngn,₦"
+              ]
+            }
+          }
+        }
+      },
+      "mappings": {
+        "properties": {
+          "policyNumber": { "type": "keyword" },
+          "holderName": { "type": "text", "analyzer": "nigerian_analyzer" },
+          "holderEmail": { "type": "keyword" },
+          "productType": { "type": "keyword" },
+          "productName": { "type": "text" },
+          "status": { "type": "keyword" },
+          "premiumAmount": { "type": "float" },
+          "sumAssured": { "type": "float" },
+          "startDate": { "type": "date" },
+          "endDate": { "type": "date" },
+          "createdAt": { "type": "date" },
+          "metadata": { "type": "object", "enabled": false }
+        }
+      }
+    },
+    "claims": {
+      "settings": {
+        "number_of_shards": 3,
+        "number_of_replicas": 1
+      },
+      "mappings": {
+        "properties": {
+          "claimNumber": { "type": "keyword" },
+          "policyNumber": { "type": "keyword" },
+          "claimantName": { "type": "text" },
+          "type": { "type": "keyword" },
+          "status": { "type": "keyword" },
+          "amount": { "type": "float" },
+          "approvedAmount": { "type": "float" },
+          "description": { "type": "text" },
+          "filedDate": { "type": "date" },
+          "resolvedDate": { "type": "date" }
+        }
+      }
+    },
+    "customers": {
+      "settings": {
+        "number_of_shards": 2,
+        "number_of_replicas": 1
+      },
+      "mappings": {
+        "properties": {
+          "name": { "type": "text", "analyzer": "standard" },
+          "email": { "type": "keyword" },
+          "phone": { "type": "keyword" },
+          "bvn": { "type": "keyword" },
+          "kycLevel": { "type": "integer" },
+          "riskRating": { "type": "keyword" },
+          "totalPolicies": { "type": "integer" },
+          "totalPremium": { "type": "float" },
+          "createdAt": { "type": "date" }
+        }
+      }
+    },
+    "agents": {
+      "settings": {
+        "number_of_shards": 2,
+        "number_of_replicas": 1
+      },
+      "mappings": {
+        "properties": {
+          "name": { "type": "text" },
+          "email": { "type": "keyword" },
+          "phone": { "type": "keyword" },
+          "region": { "type": "keyword" },
+          "tier": { "type": "keyword" },
+          "totalPolicies": { "type": "integer" },
+          "totalPremium": { "type": "float" },
+          "isActive": { "type": "boolean" }
+        }
+      }
+    },
+    "audit_log": {
+      "settings": {
+        "number_of_shards": 6,
+        "number_of_replicas": 1,
+        "index.lifecycle.name": "audit_policy",
+        "index.lifecycle.rollover_alias": "audit_log"
+      },
+      "mappings": {
+        "properties": {
+          "action": { "type": "keyword" },
+          "entityType": { "type": "keyword" },
+          "entityId": { "type": "keyword" },
+          "userId": { "type": "keyword" },
+          "ipAddress": { "type": "ip" },
+          "details": { "type": "text" },
+          "timestamp": { "type": "date" }
+        }
+      }
+    }
+  },
+  "lifecycle_policies": {
+    "audit_policy": {
+      "policy": {
+        "phases": {
+          "hot": {
+            "actions": {
+              "rollover": { "max_size": "50gb", "max_age": "30d" }
+            }
+          },
+          "warm": {
+            "min_age": "30d",
+            "actions": {
+              "shrink": { "number_of_shards": 1 },
+              "forcemerge": { "max_num_segments": 1 }
+            }
+          },
+          "delete": {
+            "min_age": "365d",
+            "actions": { "delete": {} }
+          }
+        }
+      }
+    }
+  }
+}

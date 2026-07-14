@@ -33,7 +33,7 @@ const SEARCH_ITEMS: SearchItem[] = [
   {
     id: "home",
     label: "POS Terminal",
-    description: "Main POS shell interface",
+    description: "Main insurance portal interface",
     path: "/",
     icon: <CreditCard className="w-4 h-4" />,
     category: "Navigation",

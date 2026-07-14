@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // TypeScript enabled — Sprint 96 security audit
 import { Server as SocketIOServer } from "socket.io";
 import type { Server as HttpServer } from "http";
@@ -16,6 +16,7 @@ import { initRealtimeNotifications } from "./lib/realtimeNotifications";
 import { invokeLLM } from "./_core/llm";
 import { fraudAlerts } from "../drizzle/schema";
 import { getJwtSecret } from "./lib/envValidation";
+import { logger } from "./_core/logger";
 
 // ─── Support chat: LLM-powered auto-reply ────────────────────────────────────
 async function generateSupportReply(
@@ -28,7 +29,7 @@ async function generateSupportReply(
         {
           role: "system",
           content:
-            "You are a helpful 54Link agency banking support agent. " +
+            "You are a helpful InsurePortal insurance support agent. " +
             "Respond concisely (1-3 sentences) to agent queries about transactions, float, " +
             "disputes, and account issues. Be professional and empathetic. " +
             "If you cannot resolve the issue immediately, acknowledge it and provide a reference number.",
@@ -39,7 +40,7 @@ async function generateSupportReply(
     const content = response?.choices?.[0]?.message?.content;
     if (typeof content === "string" && content.trim()) return content.trim();
   } catch (err) {
-    console.error("[Chat] LLM auto-reply failed, using fallback:", err);
+    logger.error({ err: String(err) }, "[Chat] LLM auto-reply failed, using fallback");
   }
   // Fallback if LLM is unavailable
   const ref = `SUP-${Date.now().toString(36).toUpperCase()}`;
@@ -73,7 +74,7 @@ export function initSocketIO(httpServer: HttpServer) {
   // In production, set ALLOWED_ORIGINS env var to comma-separated list.
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim())
-    : ["https://54link.io", "https://app.54link.io", "https://admin.54link.io"];
+    : ["https://insureportal.io", "https://app.insureportal.io", "https://admin.insureportal.io"];
   const isDev = process.env.NODE_ENV !== "production";
 
   const io = new SocketIOServer(httpServer, {
@@ -114,7 +115,7 @@ export function initSocketIO(httpServer: HttpServer) {
         severity: alert.severity ?? "high",
         reason: alert.reason ?? "",
         amount: Number(alert.amount ?? 0),
-        agentCode: alert.agentCode ?? "",
+        agentId: alert.agentId ?? "",
         customerName: alert.customerName ?? "Unknown",
         timestamp: alert.createdAt?.toISOString() ?? new Date().toISOString(),
         fraudScore: alert.riskScore ?? "75.0",
@@ -124,7 +125,7 @@ export function initSocketIO(httpServer: HttpServer) {
   }, 5000);
 
   fraudNs.on("connection", socket => {
-    console.log(`[Fraud] Admin connected: ${socket.id}`);
+    logger.info({ socketId: socket.id }, "[Fraud] Admin connected");
 
     socket.on(
       "alert:updateStatus",
@@ -134,7 +135,7 @@ export function initSocketIO(httpServer: HttpServer) {
     );
 
     socket.on("disconnect", () => {
-      console.log(`[Fraud] Admin disconnected: ${socket.id}`);
+      logger.info({ socketId: socket.id }, "[Fraud] Admin disconnected");
     });
   });
 
@@ -159,7 +160,7 @@ export function initSocketIO(httpServer: HttpServer) {
 
   chatNs.on("connection", socket => {
     const agentName = (socket as any).agentName ?? "Agent";
-    console.log(`[Chat] Agent connected: ${agentName} (${socket.id})`);
+    logger.info({ socketId: socket.id, agentName }, "[Chat] Agent connected");
 
     socket.on("chat:join", (sessionRef: string) => {
       socket.join(`session:${sessionRef}`);
@@ -209,7 +210,7 @@ export function initSocketIO(httpServer: HttpServer) {
             .to(`session:${data.sessionRef}`)
             .emit("chat:stopTyping", { senderType: "support" });
         } catch (err) {
-          console.error("[Chat] Error handling message:", err);
+          logger.error({ err: String(err) }, "[Chat] Error handling message");
         }
       }
     );
@@ -228,7 +229,7 @@ export function initSocketIO(httpServer: HttpServer) {
     });
 
     socket.on("disconnect", () => {
-      console.log(`[Chat] Agent disconnected: ${agentName}`);
+      logger.info({ agentName }, "[Chat] Agent disconnected");
     });
   });
 
@@ -236,12 +237,10 @@ export function initSocketIO(httpServer: HttpServer) {
   const terminalNs = io.of("/terminal");
 
   terminalNs.on("connection", socket => {
-    socket.on("terminal:register", (agentCode: string) => {
-      if (agentCode) {
-        socket.join(`agent:${agentCode}`);
-        console.log(
-          `[Terminal] Agent ${agentCode} registered socket ${socket.id}`
-        );
+    socket.on("terminal:register", (agentId: string) => {
+      if (agentId) {
+        socket.join(`agent:${agentId}`);
+        logger.info({ agentId, socketId: socket.id }, "[Terminal] Agent registered");
       }
     });
 
@@ -261,12 +260,12 @@ export function initSocketIO(httpServer: HttpServer) {
   const settlementNs = io.of("/settlement");
 
   settlementNs.on("connection", socket => {
-    console.log(`[Settlement] Dashboard connected: ${socket.id}`);
+    logger.info({ socketId: socket.id }, "[Settlement] Dashboard connected");
 
     // Client can subscribe to a specific batch
     socket.on("settlement:subscribe", (batchId: string) => {
       socket.join(`batch:${batchId}`);
-      console.log(`[Settlement] ${socket.id} subscribed to batch:${batchId}`);
+      logger.info({ socketId: socket.id, batchId }, "[Settlement] Subscribed to batch");
     });
 
     socket.on("settlement:unsubscribe", (batchId: string) => {
@@ -274,7 +273,7 @@ export function initSocketIO(httpServer: HttpServer) {
     });
 
     socket.on("disconnect", () => {
-      console.log(`[Settlement] Dashboard disconnected: ${socket.id}`);
+      logger.info({ socketId: socket.id }, "[Settlement] Dashboard disconnected");
     });
   });
 
@@ -284,8 +283,6 @@ export function initSocketIO(httpServer: HttpServer) {
   // Register singleton so routers can emit events
   setIO(io);
 
-  console.log(
-    "[Socket.IO] Initialized — /fraud, /chat, /terminal, /settlement, /notifications namespaces ready"
-  );
+  logger.info("[Socket.IO] Initialized — /fraud, /chat, /terminal, /settlement, /notifications namespaces ready");
   return io;
 }

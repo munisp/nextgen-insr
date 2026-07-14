@@ -420,7 +420,7 @@ export function SystemConfigTab() {
             <span style={{ color: GOLD, fontFamily: MONO }}>
               max_daily_cash_out
             </span>{" "}
-            — Per-agent daily cash-out ceiling in NGN
+            — Per-agent daily claim payout ceiling in NGN
           </div>
           <div>
             <span style={{ color: GOLD, fontFamily: MONO }}>

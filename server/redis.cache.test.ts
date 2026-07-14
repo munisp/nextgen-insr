@@ -194,9 +194,9 @@ describe("Redis cache — commission rate caching pattern", () => {
     cache.set(CACHE_KEY, JSON.stringify(mockRules), TTL_SECONDS);
     const raw = cache.get(CACHE_KEY);
     const rules: typeof mockRules = JSON.parse(raw!);
-    const cashInRule = rules.find(r => r.txType === "cash_in");
-    expect(cashInRule).toBeDefined();
-    expect(parseFloat(cashInRule!.rate)).toBeCloseTo(0.005);
+    const premiumCollectionRule = rules.find(r => r.txType === "cash_in");
+    expect(premiumCollectionRule).toBeDefined();
+    expect(parseFloat(premiumCollectionRule!.rate)).toBeCloseTo(0.005);
   });
 
   it("cache invalidation removes the key", () => {
@@ -281,10 +281,10 @@ describe("Redis cache — REDIS_URL configuration", () => {
   });
 
   it("accepts rediss:// (TLS) URL format", () => {
-    const url = "rediss://user:pass@redis.54link.io:6380";
+    const url = "rediss://user:pass@redis.insureportal.io:6380";
     expect(url.startsWith("rediss://")).toBe(true);
     const parsed = new URL(url);
-    expect(parsed.hostname).toBe("redis.54link.io");
+    expect(parsed.hostname).toBe("redis.insureportal.io");
     expect(parsed.port).toBe("6380");
     expect(parsed.username).toBe("user");
   });

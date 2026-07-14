@@ -1,5 +1,5 @@
 /**
- * Dispute from POS — agent-initiated dispute filing directly from the POS terminal,
+ * Dispute from POS — agent-initiated dispute filing directly from the insurance service,
  * with evidence upload and real-time status tracking.
  *
  * Middleware: Kafka (dispute events), PostgreSQL (dispute records), Redis (status cache)
@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { disputes, transactions } from "../../drizzle/schema";
+import { disputes, transactions } from "@schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -78,7 +78,6 @@ export const posDisputeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "POS_DISPUTE_FILED",
           resource: "dispute",
           resourceId: String(dispute.id),

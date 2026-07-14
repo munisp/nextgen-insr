@@ -173,7 +173,7 @@ describe("Sprint 87 — Orphan/Partial/Generic Feature Elimination", () => {
       "agent-commerce-integration",
       "art-agent-service",
       "agent-business-dashboard",
-      "agent-ecommerce-platform",
+      "agent-insurance-platform",
     ];
 
     for (const svc of expandedServices) {

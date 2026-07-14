@@ -13,7 +13,7 @@ import { agentTerritoryMgmtRouter } from "./routers/agentTerritoryMgmt";
 import { dynamicPricingEngineRouter } from "./routers/dynamicPricingEngine";
 import { customerLoyaltyProgramRouter } from "./routers/customerLoyaltyProgram";
 import { fraudCaseManagementRouter } from "./routers/fraudCaseManagement";
-import { posTerminalFleetRouter } from "./routers/posTerminalFleet";
+import { insuranceServiceFleetRouter } from "./routers/insuranceServiceFleet";
 import { financialReconciliationDashRouter } from "./routers/financialReconciliationDash";
 import { apiAnalyticsDashRouter } from "./routers/apiAnalyticsDash";
 import { agentCommunicationHubRouter } from "./routers/agentCommunicationHub";
@@ -42,7 +42,7 @@ describe("Sprint 35: All 20 Routers", () => {
     { name: "dynamicPricingEngine", router: dynamicPricingEngineRouter },
     { name: "customerLoyaltyProgram", router: customerLoyaltyProgramRouter },
     { name: "fraudCaseManagement", router: fraudCaseManagementRouter },
-    { name: "posTerminalFleet", router: posTerminalFleetRouter },
+    { name: "insuranceServiceFleet", router: insuranceServiceFleetRouter },
     {
       name: "financialReconciliationDash",
       router: financialReconciliationDashRouter,
@@ -100,7 +100,7 @@ describe("Sprint 35: Security Audit", () => {
       "dynamicPricingEngine.ts",
       "customerLoyaltyProgram.ts",
       "fraudCaseManagement.ts",
-      "posTerminalFleet.ts",
+      "insuranceServiceFleet.ts",
       "financialReconciliationDash.ts",
       "apiAnalyticsDash.ts",
       "agentCommunicationHub.ts",
@@ -139,7 +139,7 @@ describe("Sprint 35: Security Audit", () => {
       "dynamicPricingEngine.ts",
       "customerLoyaltyProgram.ts",
       "fraudCaseManagement.ts",
-      "posTerminalFleet.ts",
+      "insuranceServiceFleet.ts",
       "financialReconciliationDash.ts",
       "apiAnalyticsDash.ts",
       "agentCommunicationHub.ts",
@@ -171,7 +171,7 @@ describe("Sprint 35: Security Audit", () => {
       "dynamicPricingEngine.ts",
       "customerLoyaltyProgram.ts",
       "fraudCaseManagement.ts",
-      "posTerminalFleet.ts",
+      "insuranceServiceFleet.ts",
       "financialReconciliationDash.ts",
       "apiAnalyticsDash.ts",
       "agentCommunicationHub.ts",
@@ -204,7 +204,7 @@ describe("Sprint 35: Security Audit", () => {
       "dynamicPricingEngine.ts",
       "customerLoyaltyProgram.ts",
       "fraudCaseManagement.ts",
-      "posTerminalFleet.ts",
+      "insuranceServiceFleet.ts",
       "financialReconciliationDash.ts",
       "apiAnalyticsDash.ts",
       "agentCommunicationHub.ts",

@@ -1,0 +1,80 @@
+# OpenTelemetry Collector Configuration for InsurePortal
+# This config collects traces, metrics, and logs from the Node.js application
+# and exports them to your observability backend (Jaeger, Prometheus, Loki).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: insureportal
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["localhost:5002"]
+              labels:
+                service: insureportal
+                environment: production
+
+processors:
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 128
+  attributes:
+    actions:
+      - key: service.name
+        value: insureportal
+        action: upsert
+      - key: service.version
+        value: "3.0.0"
+        action: upsert
+      - key: deployment.environment
+        from_attribute: NODE_ENV
+        action: upsert
+  filter:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.route"] == "/health"'
+        - 'attributes["http.route"] == "/health/ready"'
+
+exporters:
+  otlp/jaeger:
+    endpoint: ${JAEGER_ENDPOINT:-localhost:4317}
+    tls:
+      insecure: ${JAEGER_INSECURE:-true}
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: insureportal
+  logging:
+    loglevel: warn
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, zpages]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, attributes, filter]
+      exporters: [otlp/jaeger, logging]
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, logging]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [logging]

@@ -1,16 +1,59 @@
+// @ts-check
 /**
  * env.ts — Centralised environment variable registry
  * Every env var consumed by the server MUST be declared here.
- * All values have safe defaults so the server starts without any .env file.
- * Production deployments override these via the platform Secrets panel.
  *
- * Default URLs follow the 54Link Docker Compose service name convention:
+ * CRITICAL: No hardcoded credential defaults. Sensitive values must be
+ * provided via Vault or environment variables at runtime. Dev/test
+ * services should set minimal required variables only.
+ *
+ * Default URLs follow the InsurePortal Docker Compose service name convention:
  *   http://<service>:<port>  — internal Docker network (production default)
- *   https://<service>.54link.io  — public-facing microservices
- *   https://api.54link.io        — APISix gateway
- *   https://auth.54link.io       — Keycloak OIDC
- *   mqtt://broker.54link.io:1883 — MQTT broker (TLS: 8883)
+ *   https://<service>.insureportal.io  — public-facing microservices
+ *   https://api.insureportal.io        — APISix gateway
+ *   https://auth.insureportal.io       — Keycloak OIDC
+ *   mqtt://broker.insureportal.io:1883 — MQTT broker (TLS: 8883)
  */
+
+// ── Helper: required env var with suspicious-value detection ────────────────
+
+/**
+ * Returns the value of a required environment variable, or throws.
+ * Also rejects values that look like placeholders or default examples.
+ */
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim() === "") {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  // Reject values that look like they were never replaced
+  const suspiciousPatterns = [
+    "change-me",
+    "change_in_prod",
+    "dev-",
+    "test-",
+    "demo-",
+    "example-",
+    "placeholder",
+  ];
+  for (const pattern of suspiciousPatterns) {
+    if (value.toLowerCase().includes(pattern.toLowerCase())) {
+      throw new Error(
+        `Environment variable ${name} contains suspicious default value: ${value}`
+      );
+    }
+  }
+  return value;
+}
+
+/**
+ * Returns the value of an optional environment variable with a safe default.
+ * Use only for non-sensitive configuration (hostnames, ports, feature flags).
+ */
+function optEnv(name: string, defaultValue: string): string {
+  return process.env[name] ?? defaultValue;
+}
+
 export const ENV = {
   // ── Manus Platform ──────────────────────────────────────────────────────────
   appId: process.env.VITE_APP_ID ?? "",
@@ -26,132 +69,152 @@ export const ENV = {
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
 
   // ── Redis ───────────────────────────────────────────────────────────────────
-  redisUrl: process.env.REDIS_URL ?? "redis://redis:6379",
+  redisUrl: optEnv("REDIS_URL", "redis://redis:6379"),
 
   // ── Kafka ───────────────────────────────────────────────────────────────────
-  kafkaBrokers: process.env.KAFKA_BROKERS ?? "kafka:9092",
-  kafkaClientId: process.env.KAFKA_CLIENT_ID ?? "pos-shell",
-  kafkaEnabled: process.env.KAFKA_ENABLED ?? "false",
-  kafkaSsl: process.env.KAFKA_SSL ?? "false",
+  kafkaBrokers: optEnv("KAFKA_BROKERS", "kafka:9092"),
+  kafkaClientId: optEnv("KAFKA_CLIENT_ID", "insurance-portal"),
+  kafkaEnabled: optEnv("KAFKA_ENABLED", "false"),
+  kafkaSsl: optEnv("KAFKA_SSL", "false"),
   kafkaSaslUsername: process.env.KAFKA_SASL_USERNAME ?? "",
   kafkaSaslPassword: process.env.KAFKA_SASL_PASSWORD ?? "",
 
   // ── TigerBeetle sidecar ─────────────────────────────────────────────────────
-  tbSidecarUrl: process.env.TB_SIDECAR_URL ?? "http://tigerbeetle-sidecar:8080",
+  tbSidecarUrl: optEnv("TB_SIDECAR_URL", "http://tigerbeetle-sidecar:8080"),
 
   // ── Platform APISix gateway ─────────────────────────────────────────────────
-  platformBaseUrl: process.env.PLATFORM_BASE_URL ?? "http://apisix:9080",
-  platformApiKey: process.env.PLATFORM_API_KEY ?? "54link-platform-dev-api-key",
-  platformServiceToken:
-    process.env.PLATFORM_SERVICE_TOKEN ?? "54link-service-token-dev",
+  platformBaseUrl: optEnv("PLATFORM_BASE_URL", "http://apisix:9080"),
+  platformApiKey: requireEnv("PLATFORM_API_KEY"),
+  platformServiceToken: requireEnv("PLATFORM_SERVICE_TOKEN"),
 
   // ── Keycloak OIDC ───────────────────────────────────────────────────────────
-  keycloakUrl: process.env.KEYCLOAK_URL ?? "http://keycloak:8080",
-  keycloakRealm: process.env.KEYCLOAK_REALM ?? "54link",
-  keycloakClientId: process.env.KEYCLOAK_CLIENT_ID ?? "pos-shell",
-  keycloakClientSecret:
-    process.env.KEYCLOAK_CLIENT_SECRET ?? "54link-keycloak-dev-secret",
+  keycloakUrl: optEnv("KEYCLOAK_URL", "http://keycloak:8080"),
+  keycloakRealm: optEnv("KEYCLOAK_REALM", "insureportal"),
+  keycloakClientId: optEnv("KEYCLOAK_CLIENT_ID", "insurance-portal"),
+  keycloakClientSecret: requireEnv("KEYCLOAK_CLIENT_SECRET"),
 
   // ── Temporal workflow engine ─────────────────────────────────────────────────
-  temporalAddress: process.env.TEMPORAL_ADDRESS ?? "temporal:7233",
-  temporalNamespace: process.env.TEMPORAL_NAMESPACE ?? "54link-production",
-  temporalTaskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "settlement-queue",
+  temporalAddress: optEnv("TEMPORAL_ADDRESS", "temporal:7233"),
+  temporalNamespace: optEnv("TEMPORAL_NAMESPACE", "insureportal-production"),
+  temporalTaskQueue: optEnv("TEMPORAL_TASK_QUEUE", "settlement-queue"),
 
   // ── HashiCorp Vault ──────────────────────────────────────────────────────────
-  vaultAddr: process.env.VAULT_ADDR ?? "http://vault:8200",
+  vaultAddr: optEnv("VAULT_ADDR", "http://vault:8200"),
   vaultRoleId: process.env.VAULT_ROLE_ID ?? "",
   vaultSecretId: process.env.VAULT_SECRET_ID ?? "",
-  vaultSecretPath:
-    process.env.VAULT_SECRET_PATH ?? "secret/data/pos-shell-demo",
+  vaultSecretPath: optEnv("VAULT_SECRET_PATH", "secret/data/insurance-portal-demo"),
 
   // ── Permify authorization service ───────────────────────────────────────────
-  permifyUrl: process.env.PERMIFY_URL ?? "http://permify:3476",
-  permifyTenantId: process.env.PERMIFY_TENANT_ID ?? "t1",
+  permifyUrl: optEnv("PERMIFY_URL", "http://permify:3476"),
+  permifyTenantId: optEnv("PERMIFY_TENANT_ID", "t1"),
 
   // ── MinIO / Lakehouse ────────────────────────────────────────────────────────
-  minioEndpoint: process.env.MINIO_ENDPOINT ?? "http://minio:9000",
-  minioAccessKey: process.env.MINIO_ACCESS_KEY ?? "54link_admin",
-  minioSecretKey: process.env.MINIO_SECRET_KEY ?? "54link_minio_dev_secret",
-  minioBucket: process.env.MINIO_BUCKET ?? "54link-screenshots",
+  minioEndpoint: optEnv("MINIO_ENDPOINT", "http://minio:9000"),
+  minioAccessKey: optEnv("MINIO_ACCESS_KEY", "insureportal_admin"),
+  minioSecretKey: requireEnv("MINIO_SECRET_KEY"),
+  minioBucket: optEnv("MINIO_BUCKET", "insureportal-screenshots"),
 
   // ── APISix gateway admin API ────────────────────────────────────────────────
-  apisixAdminUrl: process.env.APISIX_ADMIN_URL ?? "http://apisix:9180",
-  apisixAdminKey: process.env.APISIX_ADMIN_KEY ?? "54link-apisix-dev-admin-key",
+  apisixAdminUrl: optEnv("APISIX_ADMIN_URL", "http://apisix:9180"),
+  apisixAdminKey: requireEnv("APISIX_ADMIN_KEY"),
 
   // ── MDM microservices ────────────────────────────────────────────────────────
-  mdmComplianceEngineUrl:
-    process.env.MDM_COMPLIANCE_ENGINE_URL ??
-    "http://mdm-compliance-engine:8091",
-  mdmGeofenceServiceUrl:
-    process.env.MDM_GEOFENCE_SERVICE_URL ?? "http://mdm-geofence-service:8092",
+  mdmComplianceEngineUrl: optEnv(
+    "MDM_COMPLIANCE_ENGINE_URL",
+    "http://mdm-compliance-engine:8091"
+  ),
+  mdmGeofenceServiceUrl: optEnv(
+    "MDM_GEOFENCE_SERVICE_URL",
+    "http://mdm-geofence-service:8092"
+  ),
 
   // ── Resilience / offline sub-services ──────────────────────────────────────
-  resilienceAgentUrl:
-    process.env.RESILIENCE_AGENT_URL ?? "https://resilience.54link.io",
-  offlineQueueUrl: process.env.OFFLINE_QUEUE_URL ?? "https://queue.54link.io",
-  analyticsServiceUrl:
-    process.env.ANALYTICS_SERVICE_URL ?? "https://analytics.54link.io",
+  resilienceAgentUrl: optEnv(
+    "RESILIENCE_AGENT_URL",
+    "https://resilience.insureportal.io"
+  ),
+  offlineQueueUrl: optEnv("OFFLINE_QUEUE_URL", "https://queue.insureportal.io"),
+  analyticsServiceUrl: optEnv(
+    "ANALYTICS_SERVICE_URL",
+    "https://analytics.insureportal.io"
+  ),
 
   // ── POS Printer sidecar (Rust ESC/POS service) ──────────────────────────────
-  posPrinterUrl: process.env.POS_PRINTER_URL ?? "http://pos-printer:8085",
+  posPrinterUrl: optEnv("POS_PRINTER_URL", "http://pos-printer:8085"),
 
   // ── mTLS ────────────────────────────────────────────────────────────────────
-  mtlsEnabled: (process.env.MTLS_ENABLED ?? "false") === "true",
-  mtlsCertDir: process.env.MTLS_CERT_DIR ?? "/etc/54link/certs",
+  mtlsEnabled: optEnv("MTLS_ENABLED", "false") === "true",
+  mtlsCertDir: optEnv("MTLS_CERT_DIR", "/etc/insureportal/certs"),
 
   // ── OpenTelemetry ───────────────────────────────────────────────────────────
-  otelEndpoint:
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://otel-collector:4318",
-  otelServiceName: process.env.OTEL_SERVICE_NAME ?? "pos-shell",
-  otelServiceVersion: process.env.OTEL_SERVICE_VERSION ?? "1.0.0",
+  otelEndpoint: optEnv(
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "http://otel-collector:4318"
+  ),
+  otelServiceName: optEnv("OTEL_SERVICE_NAME", "insurance-portal"),
+  otelServiceVersion: optEnv("OTEL_SERVICE_VERSION", "1.0.0"),
 
   // ── Termii SMS / OTP ────────────────────────────────────────────────────────
-  // Override TERMII_API_KEY in production Secrets panel.
-  termiiApiKey: process.env.TERMII_API_KEY ?? "TLtest_54link_dev_key",
+  termiiApiKey: optEnv("TERMII_API_KEY", ""),
 
   // ── Web Push (VAPID) ────────────────────────────────────────────────────────
-  // These are dev/demo VAPID keys — override via VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in production.
-  vapidPublicKey:
-    process.env.VAPID_PUBLIC_KEY ??
-    "BE4Tbbh5r0IGPRlQ_0ePL0AEJfiWJynWxxM0UDmffgbenp87U4upzpn0aNysgCVQdT8IUfNSG3Dx6_k2Wn6lRgA",
-  vapidPrivateKey:
-    process.env.VAPID_PRIVATE_KEY ??
-    "vBqalBipE6mu4a592N8c1wucdpun-RaKemy8gZDa99M",
-  vapidSubject: process.env.VAPID_SUBJECT ?? "mailto:admin@54link.io",
+  // VAPID keys must be generated per-instance (openssl genpkey) and never
+  // committed to source control.
+  vapidPublicKey: optEnv("VAPID_PUBLIC_KEY", ""),
+  vapidPrivateKey: optEnv("VAPID_PRIVATE_KEY", ""),
+  vapidSubject: optEnv("VAPID_SUBJECT", "mailto:admin@insureportal.io"),
 
   // ── Platform microservice URLs (override per deployment) ───────────────────
-  PLATFORM_KYC_URL: process.env.PLATFORM_KYC_URL ?? "http://kyc-service:8070",
-  PLATFORM_VIDEO_KYC_URL:
-    process.env.PLATFORM_VIDEO_KYC_URL ?? "http://video-kyc-service:8071",
-  PLATFORM_FRAUD_URL:
-    process.env.PLATFORM_FRAUD_URL ?? "http://fraud-engine:8072",
-  PLATFORM_SETTLEMENT_URL:
-    process.env.PLATFORM_SETTLEMENT_URL ?? "http://settlement-service:8073",
-  PLATFORM_GEOFENCING_URL:
-    process.env.PLATFORM_GEOFENCING_URL ?? "http://mdm-geofence-service:8092",
-  PLATFORM_LOYALTY_URL:
-    process.env.PLATFORM_LOYALTY_URL ?? "http://loyalty-service:8074",
-  PLATFORM_FLOAT_URL:
-    process.env.PLATFORM_FLOAT_URL ?? "http://float-manager:8075",
-  PLATFORM_DISPUTE_URL:
-    process.env.PLATFORM_DISPUTE_URL ?? "http://dispute-service:8076",
-  PLATFORM_ANALYTICS_URL:
-    process.env.PLATFORM_ANALYTICS_URL ?? "http://analytics-service:8077",
-  PLATFORM_NOTIFICATION_URL:
-    process.env.PLATFORM_NOTIFICATION_URL ?? "http://notification-service:8078",
+  PLATFORM_KYC_URL: optEnv("PLATFORM_KYC_URL", "http://kyc-service:8070"),
+  PLATFORM_VIDEO_KYC_URL: optEnv(
+    "PLATFORM_VIDEO_KYC_URL",
+    "http://video-kyc-service:8071"
+  ),
+  PLATFORM_FRAUD_URL: optEnv(
+    "PLATFORM_FRAUD_URL",
+    "http://fraud-engine:8072"
+  ),
+  PLATFORM_SETTLEMENT_URL: optEnv(
+    "PLATFORM_SETTLEMENT_URL",
+    "http://settlement-service:8073"
+  ),
+  PLATFORM_GEOFENCING_URL: optEnv(
+    "PLATFORM_GEOFENCING_URL",
+    "http://mdm-geofence-service:8092"
+  ),
+  PLATFORM_LOYALTY_URL: optEnv(
+    "PLATFORM_LOYALTY_URL",
+    "http://loyalty-service:8074"
+  ),
+  PLATFORM_FLOAT_URL: optEnv(
+    "PLATFORM_FLOAT_URL",
+    "http://float-manager:8075"
+  ),
+  PLATFORM_DISPUTE_URL: optEnv(
+    "PLATFORM_DISPUTE_URL",
+    "http://dispute-service:8076"
+  ),
+  PLATFORM_ANALYTICS_URL: optEnv(
+    "PLATFORM_ANALYTICS_URL",
+    "http://analytics-service:8077"
+  ),
+  PLATFORM_NOTIFICATION_URL: optEnv(
+    "PLATFORM_NOTIFICATION_URL",
+    "http://notification-service:8078"
+  ),
 
   // ── Fluvio streaming cluster ─────────────────────────────────────────────────
-  fluvioEndpoint: process.env.FLUVIO_ENDPOINT ?? "http://fluvio:9003",
-  fluvioApiKey: process.env.FLUVIO_API_KEY ?? "54link-fluvio-dev-key",
+  fluvioEndpoint: optEnv("FLUVIO_ENDPOINT", "http://fluvio:9003"),
+  fluvioApiKey: optEnv("FLUVIO_API_KEY", ""),
 
   // ── MQTT broker (InfinyOn MQTT Source Connector) ─────────────────────────────
-  mqttBrokerUrl: process.env.MQTT_BROKER_URL ?? "mqtt://mosquitto:1883",
-  mqttClientId: process.env.MQTT_CLIENT_ID ?? "54link-fluvio-bridge",
-  mqttUsername: process.env.MQTT_USERNAME ?? "54link_mqtt",
-  mqttPassword: process.env.MQTT_PASSWORD ?? "54link_mqtt_dev_pass",
+  mqttBrokerUrl: optEnv("MQTT_BROKER_URL", "mqtt://mosquitto:1883"),
+  mqttClientId: optEnv("MQTT_CLIENT_ID", "insureportal-fluvio-bridge"),
+  mqttUsername: optEnv("MQTT_USERNAME", "insureportal_mqtt"),
+  mqttPassword: optEnv("MQTT_PASSWORD", ""),
 
   // ── S3 presigned URL signing ─────────────────────────────────────────────────
-  s3Region: process.env.S3_REGION ?? "us-east-1",
+  s3Region: optEnv("S3_REGION", "us-east-1"),
   s3PresignExpiry: parseInt(
     process.env.S3_PRESIGN_EXPIRY_SECONDS ?? "3600",
     10
@@ -163,4 +226,20 @@ export const ENV = {
   // Both are validated at startup by envValidation.ts — no hardcoded fallbacks.
   cronSecret: process.env.CRON_SECRET ?? "",
   internalApiKey: process.env.INTERNAL_API_KEY ?? "",
+
+  // ── Dapr sidecar ───────────────────────────────────────────────────────────────────────────
+  daprHttpPort: optEnv("DAPR_HTTP_PORT", "3500"),
+  daprGrpcPort: optEnv("DAPR_GRPC_PORT", "50001"),
+  daprAppId: optEnv("DAPR_APP_ID", "insureportal-server"),
+
+  // ── OpenAppSec WAF ──────────────────────────────────────────────────────────────────────────
+  openappsecMode: optEnv("OPENAPPSEC_MODE", "detect"),
+  openappsecUpstream: optEnv("OPENAPPSEC_UPSTREAM", "http://apisix:9080"),
+
+  // ── Insurance domain service URLs ───────────────────────────────────────────────────────────
+  policyServiceUrl: optEnv("POLICY_SERVICE_URL", "http://policy-lifecycle-service:8080"),
+  claimsServiceUrl: optEnv("CLAIMS_SERVICE_URL", "http://claims-adjudication-engine:8080"),
+  actuarialServiceUrl: optEnv("ACTUARIAL_SERVICE_URL", "http://actuarial-module:8080"),
+  reinsuranceServiceUrl: optEnv("REINSURANCE_SERVICE_URL", "http://reinsurance-service:8080"),
+  ifrs17ServiceUrl: optEnv("IFRS17_SERVICE_URL", "http://ifrs17-engine:8080"),
 };

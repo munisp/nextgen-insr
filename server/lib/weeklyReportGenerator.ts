@@ -21,6 +21,7 @@ import {
   getUptimePercentage,
 } from "./dbHealthCheck";
 import { getSecuritySummary } from "./securityHardening";
+import { logger } from '../_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -265,7 +266,7 @@ function collectErrorMetrics(): WeeklyReportMetrics["errors"] {
       {
         endpoint: "/api/trpc/transactions.create",
         count: Math.floor(totalErrors * 0.3),
-        message: "Insufficient float balance",
+        message: "Insufficient premium reserve",
       },
       {
         endpoint: "/api/trpc/agent.login",
@@ -540,13 +541,13 @@ export async function generateWeeklyReport(
         title: `Weekly Health Report — ${metrics.period.start} to ${metrics.period.end} (${scoreLabel}: ${score}/100)`,
         content: report.summary,
       });
-      console.log(`[WeeklyReport] Report ${report.id} delivered to owner`);
+      logger.info(`[WeeklyReport] Report ${report.id} delivered to owner`);
     } catch (err) {
-      console.warn("[WeeklyReport] Failed to notify owner:", err);
+      logger.warn("[WeeklyReport] Failed to notify owner:: " + String(err));
     }
   }
 
-  console.log(
+  logger.info(
     `[WeeklyReport] Generated report ${report.id} — Score: ${score}/100, ` +
       `Alerts: ${alerts.length}, Recommendations: ${recommendations.length}`
   );
@@ -582,7 +583,7 @@ export function updateScheduleConfig(
   updates: Partial<ReportScheduleConfig>
 ): ReportScheduleConfig {
   scheduleConfig = { ...scheduleConfig, ...updates };
-  console.log("[WeeklyReport] Schedule updated:", scheduleConfig);
+  logger.info("[WeeklyReport] Schedule updated:: " + scheduleConfig);
   return { ...scheduleConfig };
 }
 
@@ -625,20 +626,20 @@ export function startWeeklyReportCron() {
           }
         }
 
-        console.log(
+        logger.info(
           "[WeeklyReport] Cron triggered — generating weekly report..."
         );
         try {
           await generateWeeklyReport(true);
         } catch (err) {
-          console.error("[WeeklyReport] Cron generation failed:", err);
+          logger.error("[WeeklyReport] Cron generation failed:: " + String(err));
         }
       }
     },
     60 * 60 * 1000
   ); // Check every hour
 
-  console.log(
+  logger.info(
     `[WeeklyReport] Cron started — Day: ${scheduleConfig.dayOfWeek}, ` +
       `Time: ${String(scheduleConfig.hourUtc).padStart(2, "0")}:${String(scheduleConfig.minuteUtc).padStart(2, "0")} UTC`
   );
@@ -648,6 +649,6 @@ export function stopWeeklyReportCron() {
   if (cronInterval) {
     clearInterval(cronInterval);
     cronInterval = null;
-    console.log("[WeeklyReport] Cron stopped");
+    logger.info("[WeeklyReport] Cron stopped");
   }
 }

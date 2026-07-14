@@ -1,4 +1,4 @@
-# Security Hardening Guide — 54Link Agency Banking Platform
+# Security Hardening Guide — InsurePortal Insurance Platform
 
 ## OWASP Top 10 Compliance Matrix
 

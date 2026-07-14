@@ -154,7 +154,7 @@ export default function AgentPortal() {
 
   const dashData = dashboardQuery.data;
   const wallet = {
-    floatBalance: dashData?.floatBalance ?? agent?.floatBalance ?? "0",
+    premiumReserve: dashData?.premiumReserve ?? agent?.premiumReserve ?? "0",
     commissionBalance:
       (dashData as any)?.commissionBalance ?? agent?.commissionBalance ?? "0",
     loyaltyPoints: dashData?.loyaltyPoints ?? agent?.loyaltyPoints ?? 0,
@@ -165,7 +165,7 @@ export default function AgentPortal() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* GDPR/NDPR Consent Banner */}
-      <GdprConsentBanner agentId={agent?.agentCode} />
+      <GdprConsentBanner agentId={agent?.agentId} />
       {/* Header */}
       <header className="sticky top-0 z-10 bg-card border-b border-border px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -175,7 +175,7 @@ export default function AgentPortal() {
           <div>
             <h1 className="text-sm font-bold">Agent Portal</h1>
             <p className="text-xs text-muted-foreground">
-              {agent?.name ?? "Agent"} · {agent?.agentCode}
+              {agent?.name ?? "Agent"} · {agent?.agentId}
             </p>
           </div>
         </div>
@@ -193,7 +193,7 @@ export default function AgentPortal() {
           <CardContent className="p-3">
             <p className="text-xs opacity-80">Float Balance</p>
             <p className="text-lg font-bold">
-              ₦{Number(wallet.floatBalance).toLocaleString()}
+              ₦{Number(wallet.premiumReserve).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -282,7 +282,7 @@ export default function AgentPortal() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Available</span>
                     <span className="font-medium text-green-500">
-                      ₦{Number(wallet.floatBalance).toLocaleString()}
+                      ₦{Number(wallet.premiumReserve).toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -290,7 +290,7 @@ export default function AgentPortal() {
                     <span className="font-medium">
                       {agent?.floatLimit
                         ? Math.round(
-                            (Number(wallet.floatBalance) /
+                            (Number(wallet.premiumReserve) /
                               Number(agent.floatLimit)) *
                               100
                           )
@@ -621,7 +621,7 @@ export default function AgentPortal() {
               <CardContent className="space-y-2 text-xs">
                 {[
                   { label: "Name", value: (profile as any)?.name },
-                  { label: "Agent Code", value: (profile as any)?.agentCode },
+                  { label: "Agent Code", value: (profile as any)?.agentId },
                   { label: "Phone", value: (profile as any)?.phone },
                   { label: "Email", value: (profile as any)?.email },
                   { label: "Tier", value: (profile as any)?.tier },

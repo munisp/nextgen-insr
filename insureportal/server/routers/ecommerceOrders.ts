@@ -2,13 +2,13 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
-  ecommerceOrders,
-  ecommerceOrderItems,
-  ecommerceInventory,
-  ecommerceCartItems,
-  ecommerceCarts,
-  type EcommerceCartItem,
-} from "../../drizzle/schema";
+  policyOrders,
+  insuranceOrderItems,
+  insuranceInventory,
+  insuranceCartItems,
+  insuranceCarts,
+  type InsuranceCartItem,
+} from "@schema";
 import { desc, eq, and, sql, count } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -18,7 +18,7 @@ import crypto from "crypto";
  * Integrates with inventory (fail-closed), settlement middleware, and commission engine.
  * Supports offline order creation and sync.
  */
-export const ecommerceOrdersRouter = router({
+export const policyOrdersRouter = router({
   // ── Create Order (from cart) ─────────────────────────────────────────────
   createFromCart: protectedProcedure
     .input(
@@ -49,16 +49,16 @@ export const ecommerceOrdersRouter = router({
       // Get cart items
       const [cart] = await database
         .select()
-        .from(ecommerceCarts)
-        .where(eq(ecommerceCarts.customerId, input.customerId))
+        .from(insuranceCarts)
+        .where(eq(insuranceCarts.customerId, input.customerId))
         .limit(1);
 
       if (!cart) throw new Error("Cart is empty");
 
       const cartItems = await database
         .select()
-        .from(ecommerceCartItems)
-        .where(eq(ecommerceCartItems.cartId, cart.id));
+        .from(insuranceCartItems)
+        .where(eq(insuranceCartItems.cartId, cart.id));
 
       if (cartItems.length === 0) throw new Error("Cart is empty");
 
@@ -66,8 +66,8 @@ export const ecommerceOrdersRouter = router({
       for (const item of cartItems) {
         const [inv] = await database
           .select()
-          .from(ecommerceInventory)
-          .where(eq(ecommerceInventory.sku, item.sku))
+          .from(insuranceInventory)
+          .where(eq(insuranceInventory.sku, item.sku))
           .limit(1);
 
         if (!inv) {
@@ -83,17 +83,17 @@ export const ecommerceOrdersRouter = router({
 
         // Reserve stock
         await database
-          .update(ecommerceInventory)
+          .update(insuranceInventory)
           .set({
             reserved: inv.reserved + item.quantity,
             updatedAt: new Date(),
           })
-          .where(eq(ecommerceInventory.id, inv.id));
+          .where(eq(insuranceInventory.id, inv.id));
       }
 
       // Calculate totals
       const subTotal = cartItems.reduce(
-        (sum: number, item: EcommerceCartItem) =>
+        (sum: number, item: InsuranceCartItem) =>
           sum + parseFloat(item.unitPrice) * item.quantity,
         0
       );
@@ -110,7 +110,7 @@ export const ecommerceOrdersRouter = router({
 
       // Create order
       const [order] = await database
-        .insert(ecommerceOrders)
+        .insert(policyOrders)
         .values({
           orderNumber,
           customerId: input.customerId,
@@ -133,7 +133,7 @@ export const ecommerceOrdersRouter = router({
       // Insert order items
       for (const item of cartItems) {
         const lineTotal = parseFloat(item.unitPrice) * item.quantity;
-        await database.insert(ecommerceOrderItems).values({
+        await database.insert(insuranceOrderItems).values({
           orderId: order.id,
           productId: item.productId,
           sku: item.sku,
@@ -146,11 +146,11 @@ export const ecommerceOrdersRouter = router({
 
       // Clear cart after order creation
       await database
-        .delete(ecommerceCartItems)
-        .where(eq(ecommerceCartItems.cartId, cart.id));
+        .delete(insuranceCartItems)
+        .where(eq(insuranceCartItems.cartId, cart.id));
       await database
-        .delete(ecommerceCarts)
-        .where(eq(ecommerceCarts.id, cart.id));
+        .delete(insuranceCarts)
+        .where(eq(insuranceCarts.id, cart.id));
 
       return order;
     }),
@@ -164,16 +164,16 @@ export const ecommerceOrdersRouter = router({
 
       const [order] = await database
         .select()
-        .from(ecommerceOrders)
-        .where(eq(ecommerceOrders.id, input.id))
+        .from(policyOrders)
+        .where(eq(policyOrders.id, input.id))
         .limit(1);
 
       if (!order) return null;
 
       const items = await database
         .select()
-        .from(ecommerceOrderItems)
-        .where(eq(ecommerceOrderItems.orderId, order.id));
+        .from(insuranceOrderItems)
+        .where(eq(insuranceOrderItems.orderId, order.id));
 
       return { ...order, items };
     }),
@@ -195,23 +195,23 @@ export const ecommerceOrdersRouter = router({
 
       const conditions = [];
       if (input.customerId)
-        conditions.push(eq(ecommerceOrders.customerId, input.customerId));
+        conditions.push(eq(policyOrders.customerId, input.customerId));
       if (input.merchantId)
-        conditions.push(eq(ecommerceOrders.merchantId, input.merchantId));
+        conditions.push(eq(policyOrders.merchantId, input.merchantId));
       if (input.status)
-        conditions.push(eq(ecommerceOrders.status, input.status as any));
+        conditions.push(eq(policyOrders.status, input.status as any));
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
 
       const [orders, totalResult] = await Promise.all([
         database
           .select()
-          .from(ecommerceOrders)
+          .from(policyOrders)
           .where(where)
-          .orderBy(desc(ecommerceOrders.createdAt))
+          .orderBy(desc(policyOrders.createdAt))
           .limit(input.limit)
           .offset(input.offset),
-        database.select({ total: count() }).from(ecommerceOrders).where(where),
+        database.select({ total: count() }).from(policyOrders).where(where),
       ]);
 
       return { orders, total: totalResult[0]?.total ?? 0 };
@@ -248,26 +248,26 @@ export const ecommerceOrdersRouter = router({
       }
 
       const [updated] = await database
-        .update(ecommerceOrders)
+        .update(policyOrders)
         .set(updates)
-        .where(eq(ecommerceOrders.id, input.id))
+        .where(eq(policyOrders.id, input.id))
         .returning();
 
       // On cancellation, release inventory
       if (input.status === "cancelled") {
         const items = await database
           .select()
-          .from(ecommerceOrderItems)
-          .where(eq(ecommerceOrderItems.orderId, input.id));
+          .from(insuranceOrderItems)
+          .where(eq(insuranceOrderItems.orderId, input.id));
 
         for (const item of items) {
           await database
-            .update(ecommerceInventory)
+            .update(insuranceInventory)
             .set({
-              reserved: sql`GREATEST(${ecommerceInventory.reserved} - ${item.quantity}, 0)`,
+              reserved: sql`GREATEST(${insuranceInventory.reserved} - ${item.quantity}, 0)`,
               updatedAt: new Date(),
             })
-            .where(eq(ecommerceInventory.sku, item.sku));
+            .where(eq(insuranceInventory.sku, item.sku));
         }
       }
 
@@ -275,18 +275,18 @@ export const ecommerceOrdersRouter = router({
       if (input.status === "delivered") {
         const items = await database
           .select()
-          .from(ecommerceOrderItems)
-          .where(eq(ecommerceOrderItems.orderId, input.id));
+          .from(insuranceOrderItems)
+          .where(eq(insuranceOrderItems.orderId, input.id));
 
         for (const item of items) {
           await database
-            .update(ecommerceInventory)
+            .update(insuranceInventory)
             .set({
-              quantity: sql`${ecommerceInventory.quantity} - ${item.quantity}`,
-              reserved: sql`GREATEST(${ecommerceInventory.reserved} - ${item.quantity}, 0)`,
+              quantity: sql`${insuranceInventory.quantity} - ${item.quantity}`,
+              reserved: sql`GREATEST(${insuranceInventory.reserved} - ${item.quantity}, 0)`,
               updatedAt: new Date(),
             })
-            .where(eq(ecommerceInventory.sku, item.sku));
+            .where(eq(insuranceInventory.sku, item.sku));
         }
       }
 
@@ -301,30 +301,30 @@ export const ecommerceOrdersRouter = router({
       if (!database) throw new Error("Database unavailable");
 
       const [order] = await database
-        .update(ecommerceOrders)
+        .update(policyOrders)
         .set({
           status: "delivered",
           fulfilledAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(ecommerceOrders.id, input.id))
+        .where(eq(policyOrders.id, input.id))
         .returning();
 
       // Deduct inventory
       const items = await database
         .select()
-        .from(ecommerceOrderItems)
-        .where(eq(ecommerceOrderItems.orderId, input.id));
+        .from(insuranceOrderItems)
+        .where(eq(insuranceOrderItems.orderId, input.id));
 
       for (const item of items) {
         await database
-          .update(ecommerceInventory)
+          .update(insuranceInventory)
           .set({
-            quantity: sql`${ecommerceInventory.quantity} - ${item.quantity}`,
-            reserved: sql`GREATEST(${ecommerceInventory.reserved} - ${item.quantity}, 0)`,
+            quantity: sql`${insuranceInventory.quantity} - ${item.quantity}`,
+            reserved: sql`GREATEST(${insuranceInventory.reserved} - ${item.quantity}, 0)`,
             updatedAt: new Date(),
           })
-          .where(eq(ecommerceInventory.sku, item.sku));
+          .where(eq(insuranceInventory.sku, item.sku));
       }
 
       return order;
@@ -388,7 +388,7 @@ export const ecommerceOrdersRouter = router({
           const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 
           const [order] = await database
-            .insert(ecommerceOrders)
+            .insert(policyOrders)
             .values({
               orderNumber,
               customerId: offlineOrder.customerId,
@@ -410,7 +410,7 @@ export const ecommerceOrdersRouter = router({
 
           for (const item of offlineOrder.items) {
             const lineTotal = parseFloat(item.unitPrice) * item.quantity;
-            await database.insert(ecommerceOrderItems).values({
+            await database.insert(insuranceOrderItems).values({
               orderId: order.id,
               productId: item.productId,
               sku: item.sku,

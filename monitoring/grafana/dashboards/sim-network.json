@@ -1,6 +1,6 @@
 {
-  "title": "54Link POS — SIM Network Quality",
-  "uid": "54link-sim-network",
+  "title": "InsurePortal POS — SIM Network Quality",
+  "uid": "insureportal-sim-network",
   "version": 1,
   "schemaVersion": 38,
   "refresh": "15s",

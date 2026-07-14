@@ -11,7 +11,7 @@ import {
   txMonitoringAlerts,
   agents,
   fraudAlerts,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, sql, and, gte, lte, count, sum, avg } from "drizzle-orm";
 
 const VELOCITY_THRESHOLD_TPS = 50;

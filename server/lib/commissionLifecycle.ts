@@ -269,7 +269,7 @@ export async function reconcileCommissions(period: string): Promise<{
   discrepancy: number;
   status: "balanced" | "discrepancy_found";
   details: Array<{
-    agentCode: string;
+    agentId: string;
     expected: number;
     actual: number;
     diff: number;
@@ -293,7 +293,7 @@ export async function reconcileCommissions(period: string): Promise<{
 
   let totalActual = 0;
   const details: Array<{
-    agentCode: string;
+    agentId: string;
     expected: number;
     actual: number;
     diff: number;
@@ -303,7 +303,7 @@ export async function reconcileCommissions(period: string): Promise<{
     const amount = parseFloat(p.amount as string);
     totalActual += amount;
     details.push({
-      agentCode: p.agentCode,
+      agentId: p.agentId,
       expected: amount,
       actual: amount,
       diff: 0,

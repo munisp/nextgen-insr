@@ -97,32 +97,32 @@ const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-export function checkAccountLockout(agentCode: string): {
+export function checkAccountLockout(agentId: string): {
   locked: boolean;
   remainingMs?: number;
 } {
-  const record = loginAttempts.get(agentCode);
+  const record = loginAttempts.get(agentId);
   if (!record) return { locked: false };
   if (record.lockedUntil > Date.now()) {
     return { locked: true, remainingMs: record.lockedUntil - Date.now() };
   }
   if (record.count >= MAX_ATTEMPTS && record.lockedUntil <= Date.now()) {
     // Lockout expired, reset
-    loginAttempts.delete(agentCode);
+    loginAttempts.delete(agentId);
     return { locked: false };
   }
   return { locked: false };
 }
 
-export function recordFailedLogin(agentCode: string): void {
-  const record = loginAttempts.get(agentCode) || { count: 0, lockedUntil: 0 };
+export function recordFailedLogin(agentId: string): void {
+  const record = loginAttempts.get(agentId) || { count: 0, lockedUntil: 0 };
   record.count++;
   if (record.count >= MAX_ATTEMPTS) {
     record.lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
   }
-  loginAttempts.set(agentCode, record);
+  loginAttempts.set(agentId, record);
 }
 
-export function resetLoginAttempts(agentCode: string): void {
-  loginAttempts.delete(agentCode);
+export function resetLoginAttempts(agentId: string): void {
+  loginAttempts.delete(agentId);
 }

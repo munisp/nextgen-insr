@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
-export default function EcommerceCheckout() {
+export default function InsuranceCheckout() {
   const customerId = 1; // From auth context
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [submitting, setSubmitting] = useState(false);
@@ -17,8 +17,8 @@ export default function EcommerceCheckout() {
     phone: "",
   });
 
-  const { data: cart } = trpc.ecommerceCart.getCart.useQuery({ customerId });
-  const createOrder = trpc.ecommerceOrders.createFromCart.useMutation({
+  const { data: cart } = trpc.insuranceCart.getCart.useQuery({ customerId });
+  const createOrder = trpc.policyOrders.createFromCart.useMutation({
     onSuccess: data => {
       setSubmitting(false);
       setOrderResult(data);
@@ -49,12 +49,12 @@ export default function EcommerceCheckout() {
         </p>
         <div className="flex gap-3 justify-center mt-6">
           <a
-            href="/ecommerce/orders"
+            href="/insurance/orders"
             className="px-4 py-2 bg-blue-600 text-white rounded-lg"
           >
             View Orders
           </a>
-          <a href="/ecommerce/catalog" className="px-4 py-2 border rounded-lg">
+          <a href="/insurance/catalog" className="px-4 py-2 border rounded-lg">
             Continue Shopping
           </a>
         </div>

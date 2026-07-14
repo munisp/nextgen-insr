@@ -1,0 +1,6 @@
+apiVersion: v2
+name: nmid-integration
+description: Helm chart for Nmid Integration
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

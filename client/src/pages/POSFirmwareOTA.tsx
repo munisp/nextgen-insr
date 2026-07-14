@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 
-export default function POSFirmwareOTA() {
+export default function POSServiceUpdate() {
   const [search, setSearch] = useState("");
-  const stats = trpc.posFirmwareOTA.getStats.useQuery();
+  const stats = trpc.posServiceUpdate.getStats.useQuery();
 
   return (
     <div className="space-y-6">
@@ -16,7 +16,7 @@ export default function POSFirmwareOTA() {
         <div>
           <h1 className="text-2xl font-bold">POS Firmware OTA</h1>
           <p className="text-muted-foreground">
-            Over-the-air firmware management for POS terminals
+            Over-the-air firmware management for insurance services
           </p>
         </div>
         <Button onClick={() => toast.success("Action triggered")}>

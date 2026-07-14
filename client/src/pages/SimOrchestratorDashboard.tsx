@@ -7,15 +7,15 @@ import { Badge } from "@/components/ui/badge";
 
 export default function SimOrchestratorDashboard() {
   const [terminalId, setTerminalId] = useState("TERM-001");
-  const [agentCode, setAgentCode] = useState("AGT-001");
+  const [agentId, setAgentCode] = useState("AGT-001");
 
   const configQ = trpc.simOrchestrator.getConfig.useQuery(
     { terminalId, apiKey: import.meta.env.VITE_SIM_API_KEY ?? "" },
     { retry: false, enabled: !!terminalId }
   );
   const carrierQ = trpc.simOrchestrator.getCarrierSummary.useQuery(
-    { agentCode, hours: 24 },
-    { retry: false, enabled: !!agentCode }
+    { agentId, hours: 24 },
+    { retry: false, enabled: !!agentId }
   );
 
   return (
@@ -49,7 +49,7 @@ export default function SimOrchestratorDashboard() {
               Agent Code
             </label>
             <Input
-              value={agentCode}
+              value={agentId}
               onChange={e => setAgentCode(e.target.value)}
               className="bg-gray-800 border-gray-700 text-white"
             />

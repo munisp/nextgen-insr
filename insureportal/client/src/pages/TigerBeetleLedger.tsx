@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function TigerBeetleLedger() {
-  const [agentCode, setAgentCode] = useState("");
+  const [agentId, setAgentCode] = useState("");
   const [activeTab, setActiveTab] = useState<"accounts" | "sync" | "health">(
     "accounts"
   );
@@ -17,8 +17,8 @@ export default function TigerBeetleLedger() {
     refetchInterval: 30000,
   });
   const balanceQ = trpc.ledger.agentBalance.useQuery(
-    { agentCode },
-    { enabled: !!agentCode, retry: false }
+    { agentId },
+    { enabled: !!agentId, retry: false }
   );
   const syncQ = trpc.ledger.syncStatus.useQuery(undefined, { retry: false });
   const summaryQ = trpc.ledger.summary.useQuery(undefined, { retry: false });
@@ -112,7 +112,7 @@ export default function TigerBeetleLedger() {
             <CardContent className="space-y-4">
               <div className="flex gap-3">
                 <Input
-                  value={agentCode}
+                  value={agentId}
                   onChange={e => setAgentCode(e.target.value)}
                   placeholder="Agent code (e.g., AGT-001)"
                   className="bg-gray-800 border-gray-700 text-white max-w-xs"

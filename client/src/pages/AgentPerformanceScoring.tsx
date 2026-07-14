@@ -17,7 +17,7 @@ import {
 const mockAgents = [
   {
     agentId: "a1",
-    agentCode: "AG-001",
+    agentId: "AG-001",
     name: "Adebayo Ogundimu",
     overallScore: 92.5,
     tier: "platinum" as const,
@@ -33,7 +33,7 @@ const mockAgents = [
   },
   {
     agentId: "a2",
-    agentCode: "AG-002",
+    agentId: "AG-002",
     name: "Chioma Nwosu",
     overallScore: 87.3,
     tier: "gold" as const,
@@ -49,7 +49,7 @@ const mockAgents = [
   },
   {
     agentId: "a3",
-    agentCode: "AG-003",
+    agentId: "AG-003",
     name: "Emeka Okafor",
     overallScore: 78.1,
     tier: "gold" as const,
@@ -65,7 +65,7 @@ const mockAgents = [
   },
   {
     agentId: "a4",
-    agentCode: "AG-004",
+    agentId: "AG-004",
     name: "Fatima Ibrahim",
     overallScore: 65.8,
     tier: "silver" as const,
@@ -81,7 +81,7 @@ const mockAgents = [
   },
   {
     agentId: "a5",
-    agentCode: "AG-005",
+    agentId: "AG-005",
     name: "Oluwaseun Bakare",
     overallScore: 55.2,
     tier: "bronze" as const,
@@ -183,7 +183,7 @@ export default function AgentPerformanceScoring() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{agent.name}</span>
                       <Badge variant="outline" className="text-xs">
-                        {agent.agentCode}
+                        {agent.agentId}
                       </Badge>
                       <Badge
                         className={`text-xs capitalize ${tierColors[agent.tier]}`}

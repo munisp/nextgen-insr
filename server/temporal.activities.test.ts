@@ -79,16 +79,16 @@ describe("Settlement Workflow Logic", () => {
 
   describe("float replenishment threshold", () => {
     it("triggers replenishment when balance is below threshold", () => {
-      const floatBalance = 5000;
+      const premiumReserve = 5000;
       const minThreshold = 10000;
-      const needsReplenishment = floatBalance < minThreshold;
+      const needsReplenishment = premiumReserve < minThreshold;
       expect(needsReplenishment).toBe(true);
     });
 
     it("does not trigger replenishment when balance is above threshold", () => {
-      const floatBalance = 50000;
+      const premiumReserve = 50000;
       const minThreshold = 10000;
-      const needsReplenishment = floatBalance < minThreshold;
+      const needsReplenishment = premiumReserve < minThreshold;
       expect(needsReplenishment).toBe(false);
     });
 

@@ -23,18 +23,18 @@ describe("Transaction validation", () => {
   });
 
   it("should reject insufficient float for debit transactions", () => {
-    const floatBalance = 5000;
+    const premiumReserve = 5000;
     const amount = 10000;
     const isDebit = FLOAT_DEBIT_TYPES.has("Cash Out");
-    const hasSufficientFloat = !isDebit || floatBalance >= amount;
+    const hasSufficientFloat = !isDebit || premiumReserve >= amount;
     expect(hasSufficientFloat).toBe(false);
   });
 
-  it("should allow transactions within float balance", () => {
-    const floatBalance = 15000;
+  it("should allow transactions within premium reserve", () => {
+    const premiumReserve = 15000;
     const amount = 10000;
     const isDebit = FLOAT_DEBIT_TYPES.has("Cash Out");
-    const hasSufficientFloat = !isDebit || floatBalance >= amount;
+    const hasSufficientFloat = !isDebit || premiumReserve >= amount;
     expect(hasSufficientFloat).toBe(true);
   });
 

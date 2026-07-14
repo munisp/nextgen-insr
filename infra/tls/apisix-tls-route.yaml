@@ -1,0 +1,54 @@
+apiVersion: apisix.apache.org/v2
+kind: ApisixTls
+metadata:
+  name: insureportal-tls
+  namespace: insureportal
+spec:
+  hosts:
+    - api.insureportal.io
+    - portal.insureportal.io
+    - admin.insureportal.io
+  secret:
+    name: insureportal-tls-secret
+    namespace: insureportal
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: insureportal-api
+  namespace: insureportal
+spec:
+  http:
+    - name: api-gateway
+      match:
+        hosts:
+          - api.insureportal.io
+        paths:
+          - /api/*
+      backends:
+        - serviceName: claims-adjudication-engine
+          servicePort: 8080
+          weight: 100
+      plugins:
+        - name: redirect
+          enable: true
+          config:
+            http_to_https: true
+        - name: limit-req
+          enable: true
+          config:
+            rate: 100
+            burst: 50
+            key: remote_addr
+        - name: cors
+          enable: true
+          config:
+            allow_origins: "https://portal.insureportal.io,https://admin.insureportal.io"
+            allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+            allow_headers: "Authorization,Content-Type,X-Request-ID,X-Tenant-ID"
+            max_age: 86400
+        - name: ip-restriction
+          enable: false
+          config:
+            whitelist:
+              - 0.0.0.0/0
