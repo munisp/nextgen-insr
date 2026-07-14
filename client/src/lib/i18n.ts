@@ -1,5 +1,5 @@
 /**
- * Internationalization (i18n) Framework — 54Link Agency Banking Platform
+ * Internationalization (i18n) Framework — InsurePortal Insurance Platform
  *
  * Supports 6 languages for Nigerian agent banking:
  * - English (en) — Default
@@ -65,8 +65,8 @@ const en: TranslationMap = {
   "common.approved": "Approved",
   "common.rejected": "Rejected",
   "common.suspended": "Suspended",
-  "txn.cashIn": "Cash In",
-  "txn.cashOut": "Cash Out",
+  "txn.premiumCollection": "Cash In",
+  "txn.claimPayout": "Cash Out",
   "txn.transfer": "Transfer",
   "txn.billPayment": "Bill Payment",
   "txn.reference": "Reference",
@@ -86,7 +86,7 @@ const en: TranslationMap = {
   "agent.code": "Agent Code",
   "agent.name": "Agent Name",
   "agent.tier": "Agent Tier",
-  "agent.floatBalance": "Float Balance",
+  "agent.premiumReserve": "Float Balance",
   "agent.commissionBalance": "Commission Balance",
   "agent.kycLevel": "KYC Level",
   "agent.onboarding": "Agent Onboarding",
@@ -132,7 +132,7 @@ const en: TranslationMap = {
   "pos.confirmTransaction": "Confirm Transaction",
   "pos.transactionSuccess": "Transaction Successful",
   "pos.transactionFailed": "Transaction Failed",
-  "pos.insufficientFloat": "Insufficient float balance",
+  "pos.insufficientFloat": "Insufficient premium reserve",
   "pos.dailyLimitReached": "Daily transaction limit reached",
   "language.select": "Select Language",
 };
@@ -186,8 +186,8 @@ const fr: TranslationMap = {
   "common.approved": "Approuvé",
   "common.rejected": "Rejeté",
   "common.suspended": "Suspendu",
-  "txn.cashIn": "Dépôt",
-  "txn.cashOut": "Retrait",
+  "txn.premiumCollection": "Dépôt",
+  "txn.claimPayout": "Retrait",
   "txn.transfer": "Transfert",
   "txn.billPayment": "Paiement de facture",
   "txn.reference": "Référence",
@@ -207,7 +207,7 @@ const fr: TranslationMap = {
   "agent.code": "Code agent",
   "agent.name": "Nom de l'agent",
   "agent.tier": "Niveau d'agent",
-  "agent.floatBalance": "Solde flottant",
+  "agent.premiumReserve": "Solde flottant",
   "agent.commissionBalance": "Solde commission",
   "agent.kycLevel": "Niveau KYC",
   "agent.onboarding": "Intégration agent",
@@ -307,8 +307,8 @@ const pcm: TranslationMap = {
   "common.approved": "E don approve",
   "common.rejected": "Dem reject am",
   "common.suspended": "Dem suspend am",
-  "txn.cashIn": "Put Money",
-  "txn.cashOut": "Collect Money",
+  "txn.premiumCollection": "Put Money",
+  "txn.claimPayout": "Collect Money",
   "txn.transfer": "Send Money",
   "txn.billPayment": "Pay Bill",
   "txn.reference": "Reference",
@@ -328,7 +328,7 @@ const pcm: TranslationMap = {
   "agent.code": "Agent Code",
   "agent.name": "Agent Name",
   "agent.tier": "Agent Level",
-  "agent.floatBalance": "Float Balance",
+  "agent.premiumReserve": "Float Balance",
   "agent.commissionBalance": "Commission Balance",
   "agent.kycLevel": "KYC Level",
   "agent.onboarding": "Agent Registration",
@@ -428,8 +428,8 @@ const ha: TranslationMap = {
   "common.approved": "An amince",
   "common.rejected": "An ƙi",
   "common.suspended": "An dakatar",
-  "txn.cashIn": "Saka Kuɗi",
-  "txn.cashOut": "Cire Kuɗi",
+  "txn.premiumCollection": "Saka Kuɗi",
+  "txn.claimPayout": "Cire Kuɗi",
   "txn.transfer": "Tura Kuɗi",
   "txn.billPayment": "Biyan Kuɗi",
   "txn.reference": "Lambar tunani",
@@ -449,7 +449,7 @@ const ha: TranslationMap = {
   "agent.code": "Lambar wakili",
   "agent.name": "Sunan wakili",
   "agent.tier": "Matakin wakili",
-  "agent.floatBalance": "Ragowar float",
+  "agent.premiumReserve": "Ragowar float",
   "agent.commissionBalance": "Ragowar kwamiti",
   "agent.kycLevel": "Matakin KYC",
   "agent.onboarding": "Rajista wakili",
@@ -549,8 +549,8 @@ const yo: TranslationMap = {
   "common.approved": "Ti fọwọ́ sí",
   "common.rejected": "Ti kọ̀",
   "common.suspended": "Ti dá dúró",
-  "txn.cashIn": "Fi Owó Sí",
-  "txn.cashOut": "Gbé Owó Jáde",
+  "txn.premiumCollection": "Fi Owó Sí",
+  "txn.claimPayout": "Gbé Owó Jáde",
   "txn.transfer": "Fi Owó Ránṣẹ́",
   "txn.billPayment": "San Owó",
   "txn.reference": "Ìtọ́kasí",
@@ -570,7 +570,7 @@ const yo: TranslationMap = {
   "agent.code": "Kóòdù aṣojú",
   "agent.name": "Orúkọ aṣojú",
   "agent.tier": "Ìpele aṣojú",
-  "agent.floatBalance": "Iyókù float",
+  "agent.premiumReserve": "Iyókù float",
   "agent.commissionBalance": "Iyókù kọmíṣọ́nì",
   "agent.kycLevel": "Ìpele KYC",
   "agent.onboarding": "Ìforúkọsílẹ̀ aṣojú",
@@ -670,8 +670,8 @@ const ig: TranslationMap = {
   "common.approved": "Akwadoro",
   "common.rejected": "Ajụrụ",
   "common.suspended": "Kwụsịrị",
-  "txn.cashIn": "Tinye Ego",
-  "txn.cashOut": "Wepụ Ego",
+  "txn.premiumCollection": "Tinye Ego",
+  "txn.claimPayout": "Wepụ Ego",
   "txn.transfer": "Zipu Ego",
   "txn.billPayment": "Kwụọ Ụgwọ",
   "txn.reference": "Nchọpụta",
@@ -691,7 +691,7 @@ const ig: TranslationMap = {
   "agent.code": "Koodu nnọchiteanya",
   "agent.name": "Aha nnọchiteanya",
   "agent.tier": "Ọkwa nnọchiteanya",
-  "agent.floatBalance": "Float fọdụrụ",
+  "agent.premiumReserve": "Float fọdụrụ",
   "agent.commissionBalance": "Kọmishọn fọdụrụ",
   "agent.kycLevel": "Ọkwa KYC",
   "agent.onboarding": "Ndebanye aha",
@@ -759,14 +759,14 @@ let currentLocale: Locale = "en";
 export function setLocale(locale: Locale): void {
   currentLocale = locale;
   if (typeof window !== "undefined") {
-    localStorage.setItem("54link_locale", locale);
+    localStorage.setItem("insureportal_locale", locale);
     document.documentElement.lang = locale;
   }
 }
 
 export function getLocale(): Locale {
   if (typeof window !== "undefined") {
-    const stored = localStorage.getItem("54link_locale") as Locale | null;
+    const stored = localStorage.getItem("insureportal_locale") as Locale | null;
     if (stored && translations[stored]) return stored;
   }
   return currentLocale;

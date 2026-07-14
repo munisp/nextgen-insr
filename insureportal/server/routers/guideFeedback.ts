@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, count, avg, desc, sql } from "drizzle-orm";
-import { guideFeedback } from "../../drizzle/schema";
+import { guideFeedback } from "@schema";
 
 export const guideFeedbackRouter = router({
   list: protectedProcedure

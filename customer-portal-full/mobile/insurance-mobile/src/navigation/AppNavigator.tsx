@@ -24,6 +24,16 @@ import WalletScreen from '../screens/WalletScreen';
 import SupportScreen from '../screens/SupportScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen';
 import ReferralScreen from '../screens/ReferralScreen';
+import DocumentsScreen from '../screens/DocumentsScreen';
+import ChatbotScreen from '../screens/ChatbotScreen';
+import ClaimsTrackerScreen from '../screens/ClaimsTrackerScreen';
+import QuoteScreen from '../screens/QuoteScreen';
+import BeneficiariesScreen from '../screens/BeneficiariesScreen';
+import RenewPolicyScreen from '../screens/RenewPolicyScreen';
+import CommunicationScreen from '../screens/CommunicationScreen';
+import InsuranceScoreScreen from '../screens/InsuranceScoreScreen';
+import NearbyHospitalsScreen from '../screens/NearbyHospitalsScreen';
+import RewardsScreen from '../screens/RewardsScreen';
 import { OfflineIndicator } from '../components/OfflineIndicator';
 import { View } from 'react-native';
 
@@ -101,6 +111,16 @@ export function AppNavigator() {
             <Stack.Screen name="Support" component={SupportScreen} />
             <Stack.Screen name="Analytics" component={AnalyticsScreen} />
             <Stack.Screen name="Referral" component={ReferralScreen} />
+            <Stack.Screen name="Documents" component={DocumentsScreen} />
+            <Stack.Screen name="Chatbot" component={ChatbotScreen} />
+            <Stack.Screen name="ClaimsTracker" component={ClaimsTrackerScreen} />
+            <Stack.Screen name="Quote" component={QuoteScreen} />
+            <Stack.Screen name="Beneficiaries" component={BeneficiariesScreen} />
+            <Stack.Screen name="RenewPolicy" component={RenewPolicyScreen} />
+            <Stack.Screen name="Communication" component={CommunicationScreen} />
+            <Stack.Screen name="InsuranceScore" component={InsuranceScoreScreen} />
+            <Stack.Screen name="NearbyHospitals" component={NearbyHospitalsScreen} />
+            <Stack.Screen name="Rewards" component={RewardsScreen} />
           </>
         ) : (
           <Stack.Screen name="KYC" component={KYCScreen} />

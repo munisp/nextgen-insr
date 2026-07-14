@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
-# 54Link — PostgreSQL HA Streaming Replication Setup
+# InsurePortal — PostgreSQL HA Streaming Replication Setup
 # Sets up primary → replica streaming replication with automatic failover.
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -12,7 +12,7 @@ REPLICATION_PASSWORD="${REPLICATION_PASSWORD:-$(openssl rand -base64 32)}"
 PGDATA="${PGDATA:-/var/lib/postgresql/data}"
 
 echo "═══════════════════════════════════════════════════════════════"
-echo "  54Link PostgreSQL HA — Streaming Replication Setup"
+echo "  InsurePortal PostgreSQL HA — Streaming Replication Setup"
 echo "═══════════════════════════════════════════════════════════════"
 
 # ── Step 1: Configure Primary ────────────────────────────────────────────────

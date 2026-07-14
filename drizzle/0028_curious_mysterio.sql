@@ -1,4 +1,4 @@
-CREATE TYPE "public"."corridor_status" AS ENUM('active', 'paused', 'disabled');--> statement-breakpoint
+CREATE TYPE "public"."cross_border_remittance_status" AS ENUM('active', 'paused', 'disabled');--> statement-breakpoint
 CREATE TYPE "public"."fee_type" AS ENUM('percentage', 'flat', 'tiered');--> statement-breakpoint
 CREATE TYPE "public"."invite_code_status" AS ENUM('active', 'used', 'expired', 'revoked');--> statement-breakpoint
 CREATE TYPE "public"."invite_code_type" AS ENUM('one_time', 'multi_use');--> statement-breakpoint
@@ -45,14 +45,14 @@ CREATE TABLE "tenant_branding" (
 	"updatedAt" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "tenant_corridors" (
+CREATE TABLE "tenant_cross_border_remittances" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"tenantId" integer NOT NULL,
 	"sourceCountry" varchar(3) NOT NULL,
 	"sourceCurrency" varchar(3) NOT NULL,
 	"destinationCountry" varchar(3) NOT NULL,
 	"destinationCurrency" varchar(3) NOT NULL,
-	"status" "corridor_status" DEFAULT 'active' NOT NULL,
+	"status" "cross_border_remittance_status" DEFAULT 'active' NOT NULL,
 	"minAmount" numeric(20, 2) DEFAULT '10.00' NOT NULL,
 	"maxAmount" numeric(20, 2) DEFAULT '1000000.00' NOT NULL,
 	"dailyLimit" numeric(20, 2) DEFAULT '5000000.00' NOT NULL,
@@ -66,7 +66,7 @@ CREATE TABLE "tenant_corridors" (
 CREATE TABLE "tenant_fee_overrides" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"tenantId" integer NOT NULL,
-	"corridorId" integer,
+	"cross_border_remittanceId" integer,
 	"txType" varchar(64) DEFAULT 'transfer' NOT NULL,
 	"feeType" "fee_type" DEFAULT 'percentage' NOT NULL,
 	"feeValue" numeric(10, 4) DEFAULT '1.5000' NOT NULL,
@@ -99,10 +99,10 @@ CREATE UNIQUE INDEX "invite_codes_code_idx" ON "invite_codes" USING btree ("code
 CREATE INDEX "invite_codes_status_idx" ON "invite_codes" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "invite_codes_createdBy_idx" ON "invite_codes" USING btree ("createdBy");--> statement-breakpoint
 CREATE UNIQUE INDEX "tenant_branding_tenantId_idx" ON "tenant_branding" USING btree ("tenantId");--> statement-breakpoint
-CREATE INDEX "tenant_corridors_tenantId_idx" ON "tenant_corridors" USING btree ("tenantId");--> statement-breakpoint
-CREATE INDEX "tenant_corridors_route_idx" ON "tenant_corridors" USING btree ("sourceCountry","destinationCountry");--> statement-breakpoint
+CREATE INDEX "tenant_cross_border_remittances_tenantId_idx" ON "tenant_cross_border_remittances" USING btree ("tenantId");--> statement-breakpoint
+CREATE INDEX "tenant_cross_border_remittances_route_idx" ON "tenant_cross_border_remittances" USING btree ("sourceCountry","destinationCountry");--> statement-breakpoint
 CREATE INDEX "tenant_fee_overrides_tenantId_idx" ON "tenant_fee_overrides" USING btree ("tenantId");--> statement-breakpoint
-CREATE INDEX "tenant_fee_overrides_corridorId_idx" ON "tenant_fee_overrides" USING btree ("corridorId");--> statement-breakpoint
+CREATE INDEX "tenant_fee_overrides_cross_border_remittanceId_idx" ON "tenant_fee_overrides" USING btree ("cross_border_remittanceId");--> statement-breakpoint
 CREATE INDEX "tenant_users_tenantId_idx" ON "tenant_users" USING btree ("tenantId");--> statement-breakpoint
 CREATE INDEX "tenant_users_email_idx" ON "tenant_users" USING btree ("email");--> statement-breakpoint
 CREATE INDEX "tenant_users_userId_idx" ON "tenant_users" USING btree ("userId");

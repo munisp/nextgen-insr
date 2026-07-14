@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# 54Link Event Streaming Taxonomy
+# InsurePortal Event Streaming Taxonomy
 #
 # Standardizes event naming, routing, and schema across Kafka and Fluvio.
 #

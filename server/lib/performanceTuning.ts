@@ -5,7 +5,7 @@
  * and request metrics for P99 response times
  */
 import { cacheGet, cacheSet } from "../redisClient";
-import logger from "../_core/logger";
+import { logger } from "../_core/logger";
 
 // ── 1. In-Memory LRU Cache for Hot Queries ────────────────────────────────────
 interface CacheEntry<T> {
@@ -112,7 +112,7 @@ export async function cachedQuery<T>(
         queryCache.set(key, parsed, ttlMs); // Populate L1
         return parsed;
       }
-    } catch (err) { console.error("[performanceTuning] operation failed:", err); }
+    } catch (err) { logger.error("[performanceTuning] operation failed:: " + String(err)); }
   }
 
   // L3: Database query
@@ -123,7 +123,7 @@ export async function cachedQuery<T>(
   if (useRedis) {
     try {
       await cacheSet(key, JSON.stringify(result), Math.ceil(ttlMs / 1000));
-    } catch (err) { console.error("[performanceTuning] operation failed:", err); }
+    } catch (err) { logger.error("[performanceTuning] operation failed:: " + String(err)); }
   }
 
   return result;

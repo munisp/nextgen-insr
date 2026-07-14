@@ -2,7 +2,7 @@ import { z } from "zod";
 import { publicProcedure, router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, sql, count } from "drizzle-orm";
-import { backupSnapshots, auditLog } from "../../drizzle/schema";
+import { backupSnapshots, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const backupDisasterRecoveryRouter = router({

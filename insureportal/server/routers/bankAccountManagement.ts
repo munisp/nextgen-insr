@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agentBankAccounts } from "../../drizzle/schema";
+import { agentBankAccounts } from "@schema";
 import { eq, desc, and, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

@@ -28,7 +28,7 @@ export default function FloatReconciliationPage() {
             <RefreshCw className="w-6 h-6" /> Float Reconciliation
           </h1>
           <p className="text-muted-foreground mt-1">
-            Reconcile agent float balances against transaction ledger
+            Reconcile agent premium reserves against transaction ledger
           </p>
         </div>
         <Button

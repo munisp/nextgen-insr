@@ -161,7 +161,7 @@ export default function RateAlerts() {
     createAlert.mutate({
       agentId: 1,
       agentName: "Demo Agent",
-      agentEmail: "demo@54link.io",
+      agentEmail: "demo@insureportal.io",
       baseCurrency,
       targetCurrency,
       targetRate: parseFloat(targetRate),

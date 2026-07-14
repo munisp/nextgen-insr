@@ -47,7 +47,7 @@ type CaseStatus = "open" | "investigating" | "resolved" | "escalated";
 
 interface FraudEvent {
   id: string;
-  agentCode: string;
+  agentId: string;
   agentName: string;
   location: string;
   txType: string;
@@ -64,7 +64,7 @@ interface FraudEvent {
 }
 
 interface AgentRisk {
-  agentCode: string;
+  agentId: string;
   agentName: string;
   location: string;
   riskScore: number;
@@ -185,7 +185,7 @@ function generateEvent(): FraudEvent {
   const now = new Date();
   return {
     id: `EVT-${Date.now()}-${_eventCounter}`,
-    agentCode: agent.code,
+    agentId: agent.code,
     agentName: agent.name,
     location: agent.location,
     txType: TX_TYPES[Math.floor(Math.random() * TX_TYPES.length)],
@@ -224,7 +224,7 @@ const INITIAL_EVENTS: FraudEvent[] = Array.from(
 }));
 
 const AGENT_RISKS: AgentRisk[] = AGENTS.map((a, i) => ({
-  agentCode: a.code,
+  agentId: a.code,
   agentName: a.name,
   location: a.location,
   riskScore: [72, 45, 88, 31, 65, 52, 91, 28][i],
@@ -442,8 +442,8 @@ export default function FraudDashboard() {
       const score = parseFloat(a.fraudScore ?? "0");
       return {
         id: String(a.id),
-        agentCode: a.agentCode ?? "UNKNOWN",
-        agentName: a.agentCode ?? "Unknown Agent",
+        agentId: a.agentId ?? "UNKNOWN",
+        agentName: a.agentId ?? "Unknown Agent",
         location: "Nigeria",
         txType: a.txType ?? "Transaction",
         amount: Number(a.amount ?? 0),
@@ -487,7 +487,7 @@ export default function FraudDashboard() {
     const latest = storeEvents[0];
     const mapped: FraudEvent = {
       id: latest.id,
-      agentCode: latest.agentCode,
+      agentId: latest.agentId,
       agentName: latest.customerName,
       location: "Lagos, Nigeria",
       txType: latest.type,
@@ -819,7 +819,7 @@ export default function FraudDashboard() {
                           </span>
                         </div>
                         <div className="text-xs text-gray-400">
-                          {selected.agentCode} · {selected.location}
+                          {selected.agentId} · {selected.location}
                         </div>
                       </div>
                       <div className="text-right">
@@ -992,7 +992,7 @@ export default function FraudDashboard() {
                       ["Time", selected.time],
                       [
                         "Agent Tier",
-                        AGENTS.find(a => a.code === selected.agentCode)?.tier ||
+                        AGENTS.find(a => a.code === selected.agentId)?.tier ||
                           "—",
                       ],
                     ].map(([k, v]) => (
@@ -1059,7 +1059,7 @@ export default function FraudDashboard() {
                           : GREEN;
                   return (
                     <div
-                      key={agent.agentCode}
+                      key={agent.agentId}
                       className="grid grid-cols-6 gap-3 px-5 py-4 items-center transition-all hover:opacity-80"
                       style={{
                         borderBottom: `1px solid ${BORDER}`,
@@ -1074,7 +1074,7 @@ export default function FraudDashboard() {
                           {agent.agentName}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {agent.agentCode} · {agent.location}
+                          {agent.agentId} · {agent.location}
                         </div>
                       </div>
                       <div>

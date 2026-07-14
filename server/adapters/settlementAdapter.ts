@@ -5,7 +5,7 @@
 import { settlementGateway, type AdapterResponse } from "./goServiceAdapter";
 
 export interface SettlementRequest {
-  agentCode: string;
+  agentId: string;
   amount: number;
   bankAccount: string;
   bankCode: string;

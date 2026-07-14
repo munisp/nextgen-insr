@@ -1,6 +1,6 @@
 ###############################################################################
 # Redis HA — 1 Master + 2 Replicas + 3 Sentinels
-# Production-tuned for POS-54Link: session cache, rate limiting, pub/sub
+# Production-tuned for POS-InsurePortal: session cache, rate limiting, pub/sub
 ###############################################################################
 version: "3.9"
 

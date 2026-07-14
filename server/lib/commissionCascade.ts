@@ -145,7 +145,7 @@ export interface CascadeResult {
 export async function resolveHierarchyChain(agentId: number): Promise<
   Array<{
     id: number;
-    agentCode: string;
+    agentId: string;
     hierarchyRole: string;
     level: number;
     commissionSplitOverride: number | null;
@@ -162,7 +162,7 @@ export async function resolveHierarchyChain(agentId: number): Promise<
 
   const chain: Array<{
     id: number;
-    agentCode: string;
+    agentId: string;
     hierarchyRole: string;
     level: number;
     commissionSplitOverride: number | null;
@@ -179,7 +179,7 @@ export async function resolveHierarchyChain(agentId: number): Promise<
 
     const rows: Array<{
       id: number;
-      agentCode: string;
+      agentId: string;
       hierarchyRole: string | null;
       hierarchyLevel: number | null;
       parentAgentId: number | null;
@@ -187,7 +187,7 @@ export async function resolveHierarchyChain(agentId: number): Promise<
     }> = await db
       .select({
         id: agents.id,
-        agentCode: agents.agentCode,
+        agentId: agents.agentId,
         hierarchyRole: agents.hierarchyRole,
         hierarchyLevel: agents.hierarchyLevel,
         parentAgentId: agents.parentAgentId,
@@ -202,7 +202,7 @@ export async function resolveHierarchyChain(agentId: number): Promise<
 
     chain.push({
       id: row.id,
-      agentCode: row.agentCode,
+      agentId: row.agentId,
       hierarchyRole: row.hierarchyRole ?? "agent",
       level: row.hierarchyLevel ?? 3,
       commissionSplitOverride: row.commissionSplitOverride
@@ -220,7 +220,7 @@ export async function resolveHierarchyChain(agentId: number): Promise<
       agentId,
       chain.map(c => ({
         id: c.id,
-        agentCode: c.agentCode,
+        agentId: c.agentId,
         hierarchyRole: c.hierarchyRole,
         level: c.level,
       }))
@@ -316,7 +316,7 @@ export async function executeCommissionCascade(params: {
       if (amount > 0 && role !== "platform") {
         entries.push({
           recipientAgentId: member.id,
-          recipientAgentCode: member.agentCode,
+          recipientAgentCode: member.agentId,
           recipientHierarchyRole: role,
           recipientHierarchyLevel: member.level,
           splitPercentage: splitPct,
@@ -374,7 +374,7 @@ export async function executeCommissionCascade(params: {
     await publishCommissionEvent({
       eventType: "commission.cascade.completed",
       agentId: originAgentId,
-      agentCode: originAgentCode,
+      agentId: originAgentCode,
       amount: totalCommission,
       metadata: {
         transactionRef,
@@ -391,7 +391,7 @@ export async function executeCommissionCascade(params: {
         transactionId,
         transactionRef,
         agentId: entry.recipientAgentId,
-        agentCode: entry.recipientAgentCode,
+        agentId: entry.recipientAgentCode,
         amount: entry.commissionAmount,
         entryType:
           entry.recipientAgentId === originAgentId
@@ -404,7 +404,7 @@ export async function executeCommissionCascade(params: {
     // [Fluvio] Stream cascade event
     await streamCommissionEvent({
       eventType: "cascade.completed",
-      agentCode: originAgentCode,
+      agentId: originAgentCode,
       amount: totalCommission,
     });
 

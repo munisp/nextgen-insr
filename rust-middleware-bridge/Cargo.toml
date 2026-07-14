@@ -2,7 +2,7 @@
 name = "pos-middleware-bridge"
 version = "1.0.0"
 edition = "2021"
-description = "High-performance middleware bridge for 54Link POS Shell — Kafka, Redis, event bus"
+description = "High-performance middleware bridge for InsurePortal POS Shell — Kafka, Redis, event bus"
 
 [dependencies]
 actix-web = "4"

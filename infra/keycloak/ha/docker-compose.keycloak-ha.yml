@@ -1,6 +1,6 @@
 ###############################################################################
 # Keycloak HA — 2 nodes + shared PostgreSQL + Infinispan distributed cache
-# Production-tuned for POS-54Link: OAuth, RBAC, agent/merchant SSO
+# Production-tuned for POS-InsurePortal: OAuth, RBAC, agent/merchant SSO
 ###############################################################################
 version: "3.9"
 

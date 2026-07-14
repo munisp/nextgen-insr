@@ -216,7 +216,7 @@ CREATE TABLE "webhook_secrets" (
 	CONSTRAINT "webhook_secrets_integrationName_unique" UNIQUE("integrationName")
 );
 --> statement-breakpoint
-ALTER TABLE "pos_terminals" DROP CONSTRAINT "pos_terminals_agentId_agents_id_fk";
+ALTER TABLE "field_agent_devicess" DROP CONSTRAINT "field_agent_devicess_agentId_agents_id_fk";
 --> statement-breakpoint
 ALTER TABLE "commission_rules" ALTER COLUMN "ruleType" SET DATA TYPE text;--> statement-breakpoint
 ALTER TABLE "commission_rules" ALTER COLUMN "ruleType" SET DEFAULT 'percentage'::text;--> statement-breakpoint
@@ -284,12 +284,12 @@ ALTER TABLE "kyc_sessions" ALTER COLUMN "status" SET DATA TYPE varchar(32);--> s
 ALTER TABLE "kyc_sessions" ALTER COLUMN "status" SET DEFAULT 'pending';--> statement-breakpoint
 ALTER TABLE "kyc_sessions" ALTER COLUMN "livenessScore" SET DATA TYPE numeric(5, 2);--> statement-breakpoint
 ALTER TABLE "kyc_sessions" ALTER COLUMN "docType" SET DATA TYPE varchar(32);--> statement-breakpoint
-ALTER TABLE "mqtt_bridge_config" ALTER COLUMN "brokerUrl" SET DEFAULT 'mqtt://broker.54link.io:1883';--> statement-breakpoint
+ALTER TABLE "mqtt_bridge_config" ALTER COLUMN "brokerUrl" SET DEFAULT 'mqtt://broker.insureportal.io:1883';--> statement-breakpoint
 ALTER TABLE "platform_settings" ALTER COLUMN "value" DROP NOT NULL;--> statement-breakpoint
-ALTER TABLE "pos_terminals" ALTER COLUMN "model" DROP NOT NULL;--> statement-breakpoint
-ALTER TABLE "pos_terminals" ALTER COLUMN "status" SET DATA TYPE varchar(32);--> statement-breakpoint
-ALTER TABLE "pos_terminals" ALTER COLUMN "status" SET DEFAULT 'unassigned';--> statement-breakpoint
-ALTER TABLE "pos_terminals" ALTER COLUMN "lastCommand" SET DATA TYPE varchar(64);--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ALTER COLUMN "model" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ALTER COLUMN "status" SET DATA TYPE varchar(32);--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ALTER COLUMN "status" SET DEFAULT 'unassigned';--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ALTER COLUMN "lastCommand" SET DATA TYPE varchar(64);--> statement-breakpoint
 ALTER TABLE "supervisor_agents" ALTER COLUMN "supervisorUserId" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "agents" ADD COLUMN "deletedAt" timestamp;--> statement-breakpoint
 ALTER TABLE "agents" ADD COLUMN "tenantId" integer;--> statement-breakpoint
@@ -358,13 +358,13 @@ ALTER TABLE "kyc_sessions" ADD COLUMN "deletedAt" timestamp;--> statement-breakp
 ALTER TABLE "kyc_sessions" ADD COLUMN "tenantId" integer;--> statement-breakpoint
 ALTER TABLE "otp_tokens" ADD COLUMN "purpose" varchar(32) DEFAULT 'pin_reset' NOT NULL;--> statement-breakpoint
 ALTER TABLE "otp_tokens" ADD COLUMN "usedAt" timestamp;--> statement-breakpoint
-ALTER TABLE "pos_terminals" ADD COLUMN "osVersion" varchar(32);--> statement-breakpoint
-ALTER TABLE "pos_terminals" ADD COLUMN "imei" varchar(20);--> statement-breakpoint
-ALTER TABLE "pos_terminals" ADD COLUMN "simIccid" varchar(22);--> statement-breakpoint
-ALTER TABLE "pos_terminals" ADD COLUMN "lastSeenAt" timestamp;--> statement-breakpoint
-ALTER TABLE "pos_terminals" ADD COLUMN "lastLocation" json;--> statement-breakpoint
-ALTER TABLE "pos_terminals" ADD COLUMN "deletedAt" timestamp;--> statement-breakpoint
-ALTER TABLE "pos_terminals" ADD COLUMN "tenantId" integer;--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ADD COLUMN "osVersion" varchar(32);--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ADD COLUMN "imei" varchar(20);--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ADD COLUMN "simIccid" varchar(22);--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ADD COLUMN "lastSeenAt" timestamp;--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ADD COLUMN "lastLocation" json;--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ADD COLUMN "deletedAt" timestamp;--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" ADD COLUMN "tenantId" integer;--> statement-breakpoint
 ALTER TABLE "supervisor_agents" ADD COLUMN "supervisorId" integer;--> statement-breakpoint
 ALTER TABLE "supervisor_agents" ADD COLUMN "removedAt" timestamp;--> statement-breakpoint
 ALTER TABLE "tenants" ADD COLUMN "webhookSecret" varchar(128);--> statement-breakpoint
@@ -453,10 +453,10 @@ CREATE INDEX "kyc_tenantId_idx" ON "kyc_sessions" USING btree ("tenantId");--> s
 CREATE INDEX "loyalty_agentId_idx" ON "loyalty_history" USING btree ("agentId");--> statement-breakpoint
 CREATE INDEX "otp_agentId_idx" ON "otp_tokens" USING btree ("agentId");--> statement-breakpoint
 CREATE INDEX "otp_expiresAt_idx" ON "otp_tokens" USING btree ("expiresAt");--> statement-breakpoint
-CREATE UNIQUE INDEX "pos_serialNumber_idx" ON "pos_terminals" USING btree ("serialNumber");--> statement-breakpoint
-CREATE INDEX "pos_agentId_idx" ON "pos_terminals" USING btree ("agentId");--> statement-breakpoint
-CREATE INDEX "pos_status_idx" ON "pos_terminals" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "pos_tenantId_idx" ON "pos_terminals" USING btree ("tenantId");--> statement-breakpoint
+CREATE UNIQUE INDEX "pos_serialNumber_idx" ON "field_agent_devicess" USING btree ("serialNumber");--> statement-breakpoint
+CREATE INDEX "pos_agentId_idx" ON "field_agent_devicess" USING btree ("agentId");--> statement-breakpoint
+CREATE INDEX "pos_status_idx" ON "field_agent_devicess" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "pos_tenantId_idx" ON "field_agent_devicess" USING btree ("tenantId");--> statement-breakpoint
 CREATE INDEX "qr_agentId_status_idx" ON "qr_codes" USING btree ("agentId","status");--> statement-breakpoint
 CREATE INDEX "qr_expiresAt_idx" ON "qr_codes" USING btree ("expiresAt");--> statement-breakpoint
 CREATE INDEX "reversal_agentId_status_idx" ON "reversal_requests" USING btree ("agentId","status");--> statement-breakpoint
@@ -478,12 +478,12 @@ CREATE UNIQUE INDEX "users_keycloakSub_idx" ON "users" USING btree ("keycloakSub
 CREATE INDEX "users_tenantId_idx" ON "users" USING btree ("tenantId");--> statement-breakpoint
 CREATE INDEX "users_role_idx" ON "users" USING btree ("role");--> statement-breakpoint
 CREATE INDEX "vat_agentId_period_idx" ON "vat_records" USING btree ("agentId","period");--> statement-breakpoint
-ALTER TABLE "pos_terminals" DROP COLUMN "lastHeartbeatAt";--> statement-breakpoint
-ALTER TABLE "pos_terminals" DROP COLUMN "locationLat";--> statement-breakpoint
-ALTER TABLE "pos_terminals" DROP COLUMN "locationLng";--> statement-breakpoint
-ALTER TABLE "pos_terminals" DROP COLUMN "simProfile";--> statement-breakpoint
-ALTER TABLE "pos_terminals" DROP COLUMN "enrollmentToken";--> statement-breakpoint
-ALTER TABLE "pos_terminals" DROP COLUMN "notes";--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" DROP COLUMN "lastHeartbeatAt";--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" DROP COLUMN "locationLat";--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" DROP COLUMN "locationLng";--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" DROP COLUMN "simProfile";--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" DROP COLUMN "enrollmentToken";--> statement-breakpoint
+ALTER TABLE "field_agent_devicess" DROP COLUMN "notes";--> statement-breakpoint
 ALTER TABLE "kyc_sessions" ADD CONSTRAINT "kyc_sessions_sessionRef_unique" UNIQUE("sessionRef");--> statement-breakpoint
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_idempotencyKey_unique" UNIQUE("idempotencyKey");--> statement-breakpoint
 DROP TYPE "public"."command_status";--> statement-breakpoint

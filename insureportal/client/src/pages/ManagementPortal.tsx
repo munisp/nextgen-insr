@@ -271,7 +271,7 @@ export default function ManagementPortal() {
                       icon: <AlertTriangle size={20} />,
                     },
                     {
-                      label: "POS Terminals",
+                      label: "Insurance Services",
                       value: stats.terminals ?? 0,
                       icon: <Database size={20} />,
                     },
@@ -396,7 +396,7 @@ export default function ManagementPortal() {
                               </p>
                             </td>
                             <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                              {a.agentCode}
+                              {a.agentId}
                             </td>
                             <td className="px-4 py-3">
                               <Badge variant="outline" className="text-xs">
@@ -404,7 +404,7 @@ export default function ManagementPortal() {
                               </Badge>
                             </td>
                             <td className="px-4 py-3 text-xs">
-                              {fmt(a.floatBalance ?? 0)}
+                              {fmt(a.premiumReserve ?? 0)}
                             </td>
                             <td className="px-4 py-3">
                               <Badge

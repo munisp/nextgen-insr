@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Lifecycle Workflow Engine — 54Link Agency Banking Platform
+ * Lifecycle Workflow Engine — InsurePortal Insurance Platform
  *
  * State machines for:
  * 1. Agent Onboarding: apply → kyc → training → approval → active → suspended → terminated

@@ -9,7 +9,7 @@ export default function PushNotificationConfig() {
     retry: false,
   });
   const subsQ = trpc.push.listSubscriptions.useQuery(
-    { agentCode: "AGT-001" },
+    { agentId: "AGT-001" },
     { retry: false }
   );
 

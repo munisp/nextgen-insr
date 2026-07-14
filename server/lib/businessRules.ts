@@ -1,8 +1,8 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * 54Link Agency Banking Platform — Business Rules Engine
+ * InsurePortal Insurance Platform — Business Rules Engine
  * ─────────────────────────────────────────────────────────────────────────────
- * Centralised enforcement of CBN-mandated agency banking regulations, internal
+ * Centralised enforcement of CBN-mandated insurance regulations, internal
  * risk policies, and commercial rules. All rules are data-driven and can be
  * overridden via the systemConfig table without a code deploy.
  *
@@ -560,7 +560,7 @@ export function evaluateAgentSuspension(params: {
   fraudAlertCount: number;
   unresolvedDisputeCount: number;
   consecutiveFailedDays: number;
-  floatBalance: number;
+  premiumReserve: number;
   kycExpired: boolean;
 }): LifecycleTransitionResult {
   if (params.kycExpired) {
@@ -746,14 +746,14 @@ export const REWARD_CATALOG = [
     name: "₦5,000 Float Credit",
     pointsCost: 4_500,
     category: "float",
-    description: "₦5,000 credited directly to your float balance",
+    description: "₦5,000 credited directly to your premium reserve",
   },
   {
     id: "float_20k",
     name: "₦20,000 Float Credit",
     pointsCost: 17_000,
     category: "float",
-    description: "₦20,000 credited directly to your float balance",
+    description: "₦20,000 credited directly to your premium reserve",
   },
   {
     id: "cashback_1k",
