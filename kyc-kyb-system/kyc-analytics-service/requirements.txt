@@ -1,0 +1,11 @@
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.3
+httpx==0.28.1
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+redis==5.2.1
+pyarrow==18.1.0
+deltalake==0.22.3
+pandas==2.2.3
+numpy==2.2.1

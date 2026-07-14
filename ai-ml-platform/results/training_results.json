@@ -1,0 +1,61 @@
+{
+  "total_time_s": 205.58,
+  "pytorch_version": "2.12.0+cu130",
+  "device": "cpu",
+  "models": {
+    "fraud_detection": {
+      "best_auc": 1.0,
+      "best_f1": 1.0,
+      "best_epoch": 31,
+      "total_time_s": 71.02071046829224
+    },
+    "churn_prediction": {
+      "best_auc": 1.0,
+      "best_f1": 1.0,
+      "best_epoch": 28,
+      "total_time_s": 36.4430365562439
+    },
+    "claims_adjudication": {
+      "best_f1": 0.4810586483810545,
+      "best_epoch": 16,
+      "total_time_s": 16.742117643356323
+    },
+    "credit_scoring": {
+      "best_auc": 0.5562
+    },
+    "anomaly_detection": {
+      "best_val_loss": 0.2738000825047493,
+      "total_time_s": 25.66755223274231
+    },
+    "gnn_fraud": {
+      "test_auc": 0.9986,
+      "test_f1": 0.875,
+      "test_accuracy": 0.9958,
+      "total_time_s": 11.98
+    },
+    "mcmc_risk": {
+      "n_products": 16,
+      "portfolio_mean_loss_rate": 0.212273,
+      "portfolio_var_99": 0.392672,
+      "total_time_s": 10.04
+    }
+  },
+  "weight_files": {
+    "anomaly_detection.pt": 0.04,
+    "churn_prediction.pt": 0.26,
+    "claims_adjudication.pt": 0.17,
+    "credit_scoring.pt": 0.16,
+    "fraud_detection.pt": 0.5,
+    "fraud_gnn.pt": 0.12
+  },
+  "data_files": {
+    "anomaly_detection.parquet": 2.89,
+    "churn_prediction.parquet": 1.04,
+    "claims_adjudication.parquet": 1.43,
+    "credit_scoring.parquet": 1.91,
+    "fraud_detection.parquet": 2.74,
+    "graph_edges.parquet": 0.44,
+    "graph_nodes.parquet": 0.48,
+    "risk_actuarial.parquet": 0.85
+  }
+}
