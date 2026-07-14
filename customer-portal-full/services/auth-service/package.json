@@ -1,0 +1,14 @@
+{
+  "name": "insureportal-auth-service",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "pg": "^8.13.1",
+    "nodemailer": "^6.9.16"
+  }
+}
