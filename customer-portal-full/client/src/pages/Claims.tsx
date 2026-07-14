@@ -237,7 +237,7 @@ export default function Claims() {
                     <div>
                       <p className="text-sm text-muted-foreground">Incident Date</p>
                       <p className="font-semibold">
-                        {new Date(claim.incidentDate).toLocaleDateString('en-US', { 
+                        {new Date(claim.incidentDate || claim.createdAt || claim.filedDate).toLocaleDateString('en-US', { 
                           year: 'numeric', 
                           month: 'long', 
                           day: 'numeric' 
