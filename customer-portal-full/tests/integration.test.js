@@ -12,9 +12,12 @@ let testResults = [];
 let passCount = 0;
 let failCount = 0;
 
+let authToken = null;
+
 async function request(method, path, body) {
   const url = new URL(path, BASE);
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (authToken) opts.headers['Authorization'] = `Bearer ${authToken}`;
   if (body) opts.body = JSON.stringify(body);
   const resp = await fetch(url, opts);
   const text = await resp.text();
@@ -89,14 +92,15 @@ const tests = [
   test('Auth: login with valid demo credentials', async () => {
     const resp = await trpcMutate('auth.login', { email: 'demo@insureportal.ng', password: 'demo123' });
     const data = resp.data?.result?.data?.json || resp.data?.result?.data;
-    assert.ok(data?.token || data?.id, 'Should return token or user data');
+    assert.ok(data?.accessToken || data?.token || data?.id, 'Should return token or user data');
+    authToken = data?.accessToken || data?.token || null;
   }),
 
   // 7. Auth - login with invalid credentials
   test('Auth: reject invalid credentials', async () => {
     const resp = await trpcMutate('auth.login', { email: 'bad@test.com', password: 'wrong' });
     const data = resp.data?.result?.data?.json || resp.data?.result?.data;
-    assert.ok(data?.error, 'Should return error for invalid credentials');
+    assert.ok(data?.error || resp.data?.error, 'Should return error for invalid credentials');
   }),
 
   // 8. Auth - signup

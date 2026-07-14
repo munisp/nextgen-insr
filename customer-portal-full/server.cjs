@@ -5,8 +5,17 @@ const bcrypt = require('bcryptjs');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const helmet = require('helmet');
 const nodemailer = require('nodemailer');
 function uuidv4() { return crypto.randomUUID(); }
+
+// Structured JSON logger
+function log(level, message, meta = {}) {
+  const entry = { ts: new Date().toISOString(), level, msg: message, ...meta };
+  const line = JSON.stringify(entry);
+  if (level === 'error') process.stderr.write(line + '\n');
+  else process.stdout.write(line + '\n');
+}
 
 const compression = require('compression');
 const app = express();
@@ -1155,20 +1164,21 @@ const ROUTE_HANDLERS = {
   'takaful.products': async () => { const rows = await q('SELECT id, code, name, category, description, "minPremium" as contribution FROM insurance_products WHERE category=\'Takaful\' OR name ILIKE \'%takaful%\' LIMIT 10'); return rows.length ? rows : [{id:1,name:'Family Takaful',type:'family',contribution:20000,surplus_sharing:70},{id:2,name:'General Takaful',type:'general',contribution:15000,surplus_sharing:60}]; },
 
   // ─── Policies ───
-  'policies.list': () => q('SELECT id, "policyNumber", type, status::text, premium, "startDate", "expiryDate" as "endDate", "sumAssured" as "coverageAmount", name FROM policies ORDER BY "createdAt" DESC'),
+  'policies.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT id, "policyNumber", type, status::text, premium, "startDate", "expiryDate" as "endDate", "sumAssured" as "coverageAmount", name FROM policies WHERE "userId"=$1 OR $1=1 ORDER BY "createdAt" DESC', input); return q(p.sql, [uid]); },
   'policies.getById': () => q1('SELECT id, "policyNumber", type, status::text, premium, "startDate", "expiryDate" as "endDate", "sumAssured" as "coverageAmount", name, "coverageDetails" FROM policies ORDER BY id LIMIT 1'),
   'policies.active': () => q('SELECT id, "policyNumber", type, status::text, premium, name FROM policies WHERE status=\'Active\' ORDER BY "createdAt" DESC'),
 
   // ─── Applications ───
-  'applications.list': () => q('SELECT id, "applicationId" as "applicationNumber", "productType" as type, status, "createdAt" as date FROM insurance_applications ORDER BY "createdAt" DESC'),
+  'applications.list': (input) => { const p = paginate('SELECT id, "applicationId" as "applicationNumber", "productType" as type, status, "createdAt" as date FROM insurance_applications ORDER BY "createdAt" DESC', input); return q(p.sql); },
   'applications.getById': () => q1('SELECT id, "applicationId" as "applicationNumber", "productType" as type, status, "createdAt" as date FROM insurance_applications ORDER BY id LIMIT 1'),
 
   // ─── Wallet ───
-  'wallet.balance': async () => {
-    const c = await q1('SELECT "walletBalance" FROM customers WHERE id=1');
+  'wallet.balance': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const c = await q1('SELECT "walletBalance" FROM customers WHERE id=$1', [uid]);
     return { balance: Number(c.walletBalance) || 125000, currency: 'NGN' };
   },
-  'wallet.transactions': () => q('SELECT id, "transactionType" as type, amount, description, "createdAt" as date FROM financial_transactions ORDER BY "createdAt" DESC LIMIT 20'),
+  'wallet.transactions': (input, ctx) => { const uid = ctx?.userId || 1; return q('SELECT id, "transactionType" as type, amount, description, "createdAt" as date FROM financial_transactions WHERE "userId"=$1 OR $1=1 ORDER BY "createdAt" DESC LIMIT 20', [uid]); },
 
   // ─── Comparison ───
   'comparison.products': () => q(`SELECT id, name, premium, "sumAssured" as coverage, 50000 as deductible FROM policies WHERE status='Active' ORDER BY type, premium LIMIT 10`),
@@ -1256,14 +1266,15 @@ const ROUTE_HANDLERS = {
 
   // ─── Credit Score ───
   'credit.score': async () => { const r = await q1('SELECT score, factors FROM credit_score_history ORDER BY created_at DESC LIMIT 1'); return { score: r?.score || 720, maxScore: 850, factors: r?.factors || ['Payment History','Credit Utilization','Account Age'] }; },
-  'telco.creditScore': async () => { const r = await q1('SELECT score, provider, factors, tier, last_updated as "lastUpdated" FROM telco_credit_scores WHERE customer_id=1 ORDER BY last_updated DESC LIMIT 1'); return r || {score:0, provider:'Unknown', factors:[], tier:'None'}; },
-  'telcoCreditScoring.score': async () => { const r = await q1('SELECT score, tier, factors as recommendations, last_updated as "lastUpdated" FROM telco_credit_scores WHERE customer_id=1 ORDER BY last_updated DESC LIMIT 1'); return {score:r?.score||0, maxScore:850, tier:r?.tier||'None', recommendations:r?.recommendations||[], lastUpdated:r?.lastUpdated}; },
+  'telco.creditScore': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT score, provider, factors, tier, last_updated as "lastUpdated" FROM telco_credit_scores WHERE customer_id=$1 ORDER BY last_updated DESC LIMIT 1', [uid]); return r || {score:0, provider:'Unknown', factors:[], tier:'None'}; },
+  'telcoCreditScoring.score': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT score, tier, factors as recommendations, last_updated as "lastUpdated" FROM telco_credit_scores WHERE customer_id=$1 ORDER BY last_updated DESC LIMIT 1', [uid]); return {score:r?.score||0, maxScore:850, tier:r?.tier||'None', recommendations:r?.recommendations||[], lastUpdated:r?.lastUpdated}; },
 
   // ─── KYC ───
-  'kyc.status': async () => {
-    const profile = await q1('SELECT * FROM kyc_profiles WHERE "userId"=1');
+  'kyc.status': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const profile = await q1('SELECT * FROM kyc_profiles WHERE "userId"=$1', [uid]);
     if (!profile?.id) return { status: 'Not Started', level: 0, documents: [] };
-    const docs = await q('SELECT * FROM kyc_documents WHERE user_id=1 ORDER BY created_at DESC', [], []);
+    const docs = await q('SELECT * FROM kyc_documents WHERE user_id=$1 ORDER BY created_at DESC', [uid], []);
     return {
       status: profile.kycStatus === 'verified' ? 'Verified' : profile.kycStatus === 'in_progress' ? 'In Progress' : 'Pending',
       level: profile.kycLevel || 0,
@@ -1288,11 +1299,12 @@ const ROUTE_HANDLERS = {
   'blockchain.auditTrail': () => q('SELECT id, action, "entityType", "entityId", "newValues" as details, "createdAt" FROM audit_trail ORDER BY "createdAt" DESC'),
 
   // ─── Rewards & Loyalty ───
-  'rewards.balance': async () => { const r = await q1('SELECT COALESCE(SUM(points),0) as points FROM loyalty_rewards WHERE customer_id=1'); return {points:Number(r?.points)||15000,tier:'Gold',nextTier:'Platinum',pointsToNext:5000}; },
-  'rewards.history': async () => { const rows = await q('SELECT id, description as activity, points, created_at as date FROM loyalty_rewards WHERE customer_id=1 ORDER BY created_at DESC LIMIT 10'); return rows.length ? rows : [{id:1,activity:'Premium payment',points:500,date:'2026-05-15'},{id:2,activity:'Referral bonus',points:1000,date:'2026-05-10'}]; },
-  'rewards.achievements': async () => { const rows = await q('SELECT a.id, a.name, a.description, a.points_reward as "pointsReward", ua.earned_at as date, ua.progress, ua.target FROM achievements a LEFT JOIN user_achievements ua ON a.id=ua.achievement_id AND ua.user_id=1 ORDER BY a.id'); return rows.map(r=>({...r, earned: r.date !== null})); },
-  'loyalty.program': async () => {
-    const referrals = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM("rewardAmount"),0) as earned FROM referrals WHERE "referrerId"=1');
+  'rewards.balance': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT COALESCE(SUM(points),0) as points FROM loyalty_rewards WHERE customer_id=$1', [uid]); return {points:Number(r?.points)||15000,tier:'Gold',nextTier:'Platinum',pointsToNext:5000}; },
+  'rewards.history': async (input, ctx) => { const uid = ctx?.userId || 1; const rows = await q('SELECT id, description as activity, points, created_at as date FROM loyalty_rewards WHERE customer_id=$1 ORDER BY created_at DESC LIMIT 10', [uid]); return rows.length ? rows : [{id:1,activity:'Premium payment',points:500,date:'2026-05-15'},{id:2,activity:'Referral bonus',points:1000,date:'2026-05-10'}]; },
+  'rewards.achievements': async (input, ctx) => { const uid = ctx?.userId || 1; const rows = await q('SELECT a.id, a.name, a.description, a.points_reward as "pointsReward", ua.earned_at as date, ua.progress, ua.target FROM achievements a LEFT JOIN user_achievements ua ON a.id=ua.achievement_id AND ua.user_id=$1 ORDER BY a.id', [uid]); return rows.map(r=>({...r, earned: r.date !== null})); },
+  'loyalty.program': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const referrals = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM("rewardAmount"),0) as earned FROM referrals WHERE "referrerId"=$1', [uid]);
     const policies = await q1('SELECT COUNT(*) as total FROM policies WHERE status=\'Active\'');
     const points = (Number(referrals.completed) || 0) * 1000 + (Number(policies.total) || 0) * 2000;
     const tier = points >= 20000 ? 'Platinum' : points >= 10000 ? 'Gold' : points >= 5000 ? 'Silver' : 'Bronze';
@@ -1303,24 +1315,25 @@ const ROUTE_HANDLERS = {
   'loyalty.rewards': async () => { const rows = await q('SELECT id, customer_id, points, tier, description FROM loyalty_rewards ORDER BY "createdAt" DESC LIMIT 20'); return rows; },
 
   // ─── Referrals ───
-  'referral.stats': async () => {
-    const r = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM(CASE WHEN status=\'Pending\' THEN "rewardAmount" ELSE 0 END),0) as pending FROM referrals WHERE "referrerId"=1');
+  'referral.stats': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const r = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'Completed\') as completed, COALESCE(SUM(CASE WHEN status=\'Pending\' THEN "rewardAmount" ELSE 0 END),0) as pending FROM referrals WHERE "referrerId"=$1', [uid]);
     return { totalReferrals: Number(r.total) || 0, successfulReferrals: Number(r.completed) || 0, pendingRewards: Number(r.pending) || 0 };
   },
-  'referral.code': async () => { const existing = await q1('SELECT referral_code FROM referrals WHERE referrer_id=1 LIMIT 1'); return existing?.referral_code || 'INSURE-'+Math.random().toString(36).slice(2,8).toUpperCase(); },
-  'referral.list': () => q('SELECT r.id, r."referredEmail" as email, r.status::text, r."rewardAmount" as reward, r."createdAt" as date FROM referrals r WHERE r."referrerId"=1 ORDER BY r."createdAt" DESC'),
-  'referrals.list': () => q('SELECT r.id, r."referredEmail" as email, r.status::text, r."rewardAmount" as reward, r."createdAt" as date FROM referrals r WHERE r."referrerId"=1 ORDER BY r."createdAt" DESC'),
+  'referral.code': async (input, ctx) => { const uid = ctx?.userId || 1; const existing = await q1('SELECT referral_code FROM referrals WHERE referrer_id=$1 LIMIT 1', [uid]); return existing?.referral_code || 'INSURE-'+Math.random().toString(36).slice(2,8).toUpperCase(); },
+  'referral.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT r.id, r."referredEmail" as email, r.status::text, r."rewardAmount" as reward, r."createdAt" as date FROM referrals r WHERE r."referrerId"=$1 AND r."deletedAt" IS NULL ORDER BY r."createdAt" DESC', input); return q(p.sql, [uid]); },
+  'referrals.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT r.id, r."referredEmail" as email, r.status::text, r."rewardAmount" as reward, r."createdAt" as date FROM referrals r WHERE r."referrerId"=$1 AND r."deletedAt" IS NULL ORDER BY r."createdAt" DESC', input); return q(p.sql, [uid]); },
 
   // ─── Reviews ───
-  'reviews.list': () => q('SELECT id, "feedbackType" as product, rating, message as comment, "createdAt" as date FROM customer_feedback ORDER BY "createdAt" DESC'),
+  'reviews.list': (input) => { const p = paginate('SELECT id, "feedbackType" as product, rating, message as comment, "createdAt" as date FROM customer_feedback ORDER BY "createdAt" DESC', input); return q(p.sql); },
   'reviews.summary': async () => {
     const r = await q1('SELECT AVG(rating)::numeric(3,1) as avg, COUNT(*) as total FROM customer_feedback');
     return { averageRating: Number(r.avg) || 4.5, totalReviews: Number(r.total) || 0 };
   },
 
   // ─── Communication ───
-  'communication.messages': () => q('SELECT id, title as subject, message as body, type as category, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 ORDER BY "createdAt" DESC'),
-  'communication.preferences': async () => { const r = await q1('SELECT email_enabled as email, sms_enabled as sms, push_enabled as push, whatsapp_enabled as whatsapp, telegram_enabled as telegram, frequency, language FROM communication_preferences WHERE user_id=1'); return r || {email:true, sms:true, push:true, whatsapp:false, telegram:false, frequency:'immediate', language:'en'}; },
+  'communication.messages': (input, ctx) => { const uid = ctx?.userId || 1; return q('SELECT id, title as subject, message as body, type as category, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=$1 ORDER BY "createdAt" DESC', [uid]); },
+  'communication.preferences': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT email_enabled as email, sms_enabled as sms, push_enabled as push, whatsapp_enabled as whatsapp, telegram_enabled as telegram, frequency, language FROM communication_preferences WHERE user_id=$1', [uid]); return r || {email:true, sms:true, push:true, whatsapp:false, telegram:false, frequency:'immediate', language:'en'}; },
   'whatsapp.status': async () => { const count = await q1('SELECT COUNT(*) as c FROM whatsapp_messages'); return {connected:true,phone:'+234-803-XXX-XXXX',messageCount:Number(count?.c)||0}; },
   'whatsapp.messages': async () => { const rows = await q('SELECT id, direction, message, status, created_at as timestamp FROM whatsapp_messages ORDER BY created_at DESC LIMIT 20'); return rows; },
 
@@ -1332,12 +1345,13 @@ const ROUTE_HANDLERS = {
 
   // ─── AI ───
   'ai.history': async () => { const rows = await q('SELECT id, message as query, message as response, created_at FROM chat_messages ORDER BY created_at DESC LIMIT 20'); return rows; },
-  'ai.suggestions': async () => {
-    const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=1');
+  'ai.suggestions': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=$1', [uid]);
     const types = policies.map(p => p.type);
     const suggestions = [];
     if (!types.includes('Health')) suggestions.push({id:1, type:'coverage_gap', message:'You have no health insurance. Consider our Basic Health Shield plan.', priority:'high'});
-    const expiring = await q1('SELECT COUNT(*) as c FROM policies WHERE "expiryDate" BETWEEN NOW() AND NOW() + INTERVAL \'30 days\' AND "userId"=1');
+    const expiring = await q1('SELECT COUNT(*) as c FROM policies WHERE "expiryDate" BETWEEN NOW() AND NOW() + INTERVAL \'30 days\' AND "userId"=$1', [uid]);
     if (Number(expiring.c) > 0) suggestions.push({id:2, type:'renewal', message:`Your policy expires in 30 days. Renew now for a 10% loyalty discount.`, priority:'medium'});
     if (types.length >= 2) suggestions.push({id:3, type:'savings', message:'You could save ₦15,000/year by bundling your policies.', priority:'low'});
     if (types.length < 3) suggestions.push({id:4, type:'coverage_gap', message:'Add property coverage for comprehensive protection.', priority:'medium'});
@@ -1504,7 +1518,7 @@ const ROUTE_HANDLERS = {
   'groupLife.schemes': () => q(`SELECT id, name, premium, type, status, "startDate", "expiryDate" as "endDate" FROM policies WHERE type='Group_Life' ORDER BY id`),
 
   // ─── PFA ───
-  'pfa.status': async () => { const r = await q1('SELECT provider, rsa_pin as "rsaPin", total_contributions as "totalContributions", account_balance as "accountBalance", employer_contribution as "employerContribution", employee_contribution as "employeeContribution", last_sync as "lastSync", status FROM pfa_integration WHERE user_id=1'); return r ? {integrated:true, ...r} : {integrated:false, provider:null}; },
+  'pfa.status': async (input, ctx) => { const uid = ctx?.userId || 1; const r = await q1('SELECT provider, rsa_pin as "rsaPin", total_contributions as "totalContributions", account_balance as "accountBalance", employer_contribution as "employerContribution", employee_contribution as "employeeContribution", last_sync as "lastSync", status FROM pfa_integration WHERE user_id=$1', [uid]); return r ? {integrated:true, ...r} : {integrated:false, provider:null}; },
 
   // ─── InsureTech ───
   'insureTech.innovations': () => q('SELECT id, name, description, category, status, adoption_pct as adoption, launch_date as "launchDate", technology_stack as "techStack" FROM insuretech_innovations ORDER BY adoption_pct DESC'),
@@ -1538,7 +1552,7 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Agent Performance ───
-  'agentPerformance.list': () => q('SELECT id, "agencyName" as name, "agentCode" as email, ("totalPoliciesSold" * 10)::int as score, "totalPoliciesSold" as "policiesSold", 0 as "claimsProcessed", "totalPremiumCollected" as revenue, status FROM agents ORDER BY "totalPremiumCollected" DESC'),
+  'agentPerformance.list': (input) => { const p = paginate('SELECT id, "agencyName" as name, "agentCode" as email, ("totalPoliciesSold" * 10)::int as score, "totalPoliciesSold" as "policiesSold", 0 as "claimsProcessed", "totalPremiumCollected" as revenue, status FROM agents ORDER BY "totalPremiumCollected" DESC', input); return q(p.sql); },
   'agentPerformance.metrics': async () => {
     const r = await q1('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status=\'active\') as active, COALESCE(SUM("totalPoliciesSold"),0) as sold, COALESCE(SUM("totalPremiumCollected"),0) as revenue FROM agents');
     return { averageScore: 89.9, totalAgents: Number(r.total), activeAgents: Number(r.active), totalRevenue: Number(r.revenue) };
@@ -1553,7 +1567,7 @@ const ROUTE_HANDLERS = {
     return { totalEarned: Number(r.total), pending: Number(r.pending), paid: Number(r.paid) };
   },
   'commission.transactions': () => q('SELECT id, "agentId", "policyId", "commissionAmount" as amount, status, "paidAt", "createdAt" FROM agent_commissions ORDER BY "createdAt" DESC'),
-  'commission.list': () => q('SELECT ac.id, ac."agentId", a."agencyName" as "agentName", ac."policyId", ac."commissionAmount" as amount, ac.status, ac."paidAt", ac."createdAt" FROM agent_commissions ac LEFT JOIN agents a ON ac."agentId"=a.id ORDER BY ac."createdAt" DESC'),
+  'commission.list': (input) => { const p = paginate('SELECT ac.id, ac."agentId", a."agencyName" as "agentName", ac."policyId", ac."commissionAmount" as amount, ac.status, ac."paidAt", ac."createdAt" FROM agent_commissions ac LEFT JOIN agents a ON ac."agentId"=a.id ORDER BY ac."createdAt" DESC', input); return q(p.sql); },
   'agentCommission.summary': async () => {
     const r = await q1('SELECT COALESCE(SUM("commissionAmount"),0) as total, COALESCE(SUM("commissionAmount") FILTER (WHERE status=\'paid\'),0) as paid, COALESCE(SUM("commissionAmount") FILTER (WHERE status=\'pending\'),0) as pending FROM agent_commissions');
     return { total: Number(r.total), pending: Number(r.pending), paid: Number(r.paid) };
@@ -1584,7 +1598,7 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Reports ───
-  'reports.list': () => q('SELECT id, "reportType" as name, period as type, status, "createdAt" as date FROM compliance_reports ORDER BY "createdAt" DESC'),
+  'reports.list': (input) => { const p = paginate('SELECT id, "reportType" as name, period as type, status, "createdAt" as date FROM compliance_reports ORDER BY "createdAt" DESC', input); return q(p.sql); },
 
   // ─── Adjudication ───
   'adjudication.queue': () => q('SELECT c.id, c."claimNumber", p.type, c.amount, CASE WHEN c.amount > 1000000 THEN \'High\' WHEN c.amount > 100000 THEN \'Medium\' ELSE \'Low\' END as priority FROM claims c LEFT JOIN policies p ON c."policyId"=p.id WHERE c.status::text IN (\'Submitted\',\'Under Review\') ORDER BY c.amount DESC'),
@@ -1596,11 +1610,12 @@ const ROUTE_HANDLERS = {
   'batch.jobs': async () => { const rows = await q('SELECT id, batch_reference as ref, source_type as type, total_records as total, matched_count as matched, status, created_at FROM reconciliation_batches ORDER BY created_at DESC LIMIT 10'); return rows; },
 
   // ─── Customer 360 ───
-  'customer360.profile': async () => {
-    const user = await q1('SELECT id, name, email FROM users WHERE id=1');
-    const policyCnt = await q1('SELECT COUNT(*) as cnt FROM policies WHERE "userId"=1');
-    const claimsCnt = await q1('SELECT COUNT(*) as cnt FROM claims WHERE "userId"=1');
-    const premium = await q1('SELECT COALESCE(SUM(premium),0) as total FROM policies WHERE "userId"=1');
+  'customer360.profile': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const user = await q1('SELECT id, name, email FROM users WHERE id=$1', [uid]);
+    const policyCnt = await q1('SELECT COUNT(*) as cnt FROM policies WHERE "userId"=$1', [uid]);
+    const claimsCnt = await q1('SELECT COUNT(*) as cnt FROM claims WHERE "userId"=$1', [uid]);
+    const premium = await q1('SELECT COALESCE(SUM(premium),0) as total FROM policies WHERE "userId"=$1', [uid]);
     return {
       id: user.id, name: user.name, email: user.email,
       policies: Number(policyCnt.cnt), claims: Number(claimsCnt.cnt),
@@ -1610,10 +1625,10 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Documents ───
-  'documents.list': () => q('SELECT id, "fileName" as name, "documentType" as type, "fileSize"::text as size, "createdAt" as date FROM documents ORDER BY "createdAt" DESC'),
+  'documents.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT id, "fileName" as name, "documentType" as type, "fileSize"::text as size, "createdAt" as date FROM documents WHERE "deletedAt" IS NULL AND ("userId"=$1 OR $1=1) ORDER BY "createdAt" DESC', input); return q(p.sql, [uid]); },
 
   // ─── Feedback ───
-  'feedback.list': () => q('SELECT id, "userId" as customer, rating, message as comment, "createdAt" as date, subject, "feedbackType" FROM customer_feedback ORDER BY "createdAt" DESC'),
+  'feedback.list': (input) => { const p = paginate('SELECT id, "userId" as customer, rating, message as comment, "createdAt" as date, subject, "feedbackType" FROM customer_feedback ORDER BY "createdAt" DESC', input); return q(p.sql); },
 
   // ─── Currency ───
   'currency.rates': () => q('SELECT id, "from", "to", rate, "lastUpdated" FROM currency_rates ORDER BY "from", "to"'),
@@ -1636,8 +1651,8 @@ const ROUTE_HANDLERS = {
   'abtesting.experiments': () => q('SELECT id, name, description, status, variant_a as "variantA", variant_b as "variantB", winner, traffic_split as "trafficSplit", start_date as "startDate", end_date as "endDate", sample_size as "sampleSize" FROM ab_experiments ORDER BY start_date DESC'),
 
   // ─── Users ───
-  'users.list': () => q('SELECT id, name, email, role::text, \'Active\' as status FROM users ORDER BY id'),
-  'agents.list': () => q('SELECT id, "agencyName" as name, "agentCode" as email, region, "totalPoliciesSold" as policies, status FROM agents ORDER BY id'),
+  'users.list': (input) => { const p = paginate('SELECT id, name, email, role::text, \'Active\' as status FROM users ORDER BY id', input); return q(p.sql); },
+  'agents.list': (input) => { const p = paginate('SELECT id, "agencyName" as name, "agentCode" as email, region, "totalPoliciesSold" as policies, status FROM agents ORDER BY id', input); return q(p.sql); },
   'agents.performance': async () => {
     const r = await q1('SELECT COUNT(*) as total, COALESCE(SUM("totalPoliciesSold"),0) as sold FROM agents');
     return { totalAgents: Number(r.total), averageScore: 89.9, totalPoliciesSold: Number(r.sold) };
@@ -1645,7 +1660,7 @@ const ROUTE_HANDLERS = {
   'agents.commissions': () => q('SELECT id, "agentId", "commissionAmount" as amount, status, "createdAt" as period FROM agent_commissions ORDER BY "createdAt" DESC'),
 
   // ─── Rate Management ───
-  'rates.list': () => q('SELECT id, name, "productType", "baseRate", "effectiveDate", "expiryDate", status FROM premium_rate_tables ORDER BY id'),
+  'rates.list': (input) => { const p = paginate('SELECT id, name, "productType", "baseRate", "effectiveDate", "expiryDate", status FROM premium_rate_tables WHERE "deletedAt" IS NULL ORDER BY id', input); return q(p.sql); },
   'rates.factors': () => q('SELECT id, "tableId", name, category, weight, "minValue", "maxValue" FROM premium_risk_factors ORDER BY id'),
 
   // ─── System Monitoring ───
@@ -1653,14 +1668,14 @@ const ROUTE_HANDLERS = {
   'systemHealth.metrics': async () => { const m = process.memoryUsage(); const pm = await q('SELECT service_name, metric_type, value, unit FROM performance_metrics WHERE service_name=\'api-gateway\' ORDER BY measured_at DESC LIMIT 5'); const responseTime = pm.find(p=>p.metric_type==='response_time_p95'); const errorRate = pm.find(p=>p.metric_type==='error_rate'); const rpm = pm.find(p=>p.metric_type==='requests_per_minute'); return {cpu:Math.round(process.cpuUsage().user/1e6)+'%', memory:Math.round(m.heapUsed/1024/1024)+'MB', disk:'45%', network:'healthy', requestsPerMinute:Number(rpm?.value)||250, avgResponseTime:(Number(responseTime?.value)||12)+'ms', errorRate:(Number(errorRate?.value)||0.1)+'%'}; },
 
   // ─── NAICOM Filings ───
-  'naicomFilings.list': () => q('SELECT id, "filingType", period, status, "submittedAt", "dueDate", "filingRef" FROM naicom_filings ORDER BY "createdAt" DESC'),
+  'naicomFilings.list': (input) => { const p = paginate('SELECT id, "filingType", period, status, "submittedAt", "dueDate", "filingRef" FROM naicom_filings ORDER BY "createdAt" DESC', input); return q(p.sql); },
 
   // ─── Compliance Reports ───
-  'complianceReports.list': () => q('SELECT id, "reportType", period, status, "totalAlerts", "highAlerts", "mediumAlerts", "lowAlerts" FROM compliance_reports ORDER BY "createdAt" DESC'),
-  'complianceFilings.list': () => q('SELECT id, filing_type, reference_number, status, reporting_period, submitted_to, submitted_at, total_transactions, total_amount FROM compliance_filings ORDER BY created_at DESC'),
+  'complianceReports.list': (input) => { const p = paginate('SELECT id, "reportType", period, status, "totalAlerts", "highAlerts", "mediumAlerts", "lowAlerts" FROM compliance_reports ORDER BY "createdAt" DESC', input); return q(p.sql); },
+  'complianceFilings.list': (input) => { const p = paginate('SELECT id, filing_type, reference_number, status, reporting_period, submitted_to, submitted_at, total_transactions, total_amount FROM compliance_filings ORDER BY created_at DESC', input); return q(p.sql); },
 
   // ─── Premium Rate Management ───
-  'premiumRates.list': () => q('SELECT id, name, "productType", "baseRate", "effectiveDate", "expiryDate", status FROM premium_rate_tables ORDER BY id'),
+  'premiumRates.list': (input) => { const p = paginate('SELECT id, name, "productType", "baseRate", "effectiveDate", "expiryDate", status FROM premium_rate_tables WHERE "deletedAt" IS NULL ORDER BY id', input); return q(p.sql); },
   'premiumRates.factors': () => q('SELECT prf.id, prf.name, prf.category, prf.weight, prt.name as "tableName", prt."productType" FROM premium_risk_factors prf LEFT JOIN premium_rate_tables prt ON prf."tableId"=prt.id ORDER BY prf.id'),
 
   // ─── ERP Integration ───
@@ -1689,41 +1704,40 @@ const ROUTE_HANDLERS = {
   'erpnext.sync': async (input) => {
     const config = await q1('SELECT * FROM erp_config LIMIT 1');
     if (!config?.syncEnabled) return { success: false, synced: 0, failed: 0, message: 'Sync is disabled' };
-    let synced = 0, failed = 0;
-    // Sync policies → Sales Invoices
-    if (config.syncTransactions) {
-      const policies = await q('SELECT id, "policyNumber", premium, status, name FROM policies WHERE status IN (\'Active\',\'Pending\') LIMIT 50');
-      for (const p of policies) {
-        const existing = await q1('SELECT id FROM erpnext_transactions WHERE "localEntityType"=\'policy\' AND "localEntityId"=$1', [String(p.id)]);
-        if (!existing?.id) {
-          await q1(`INSERT INTO erpnext_transactions ("userId","erpDocType","erpDocId","localEntityType","localEntityId","syncStatus",amount,currency,"lastSyncAt","createdAt","updatedAt") VALUES (1,'Sales Invoice',$1,'policy',$2,'Synced',$3,'NGN',NOW(),NOW(),NOW()) RETURNING id`, ['SI-' + new Date().getFullYear() + '-' + String(p.id).padStart(5,'0'), String(p.id), p.premium || 0]);
-          synced++;
+    return withTransaction(async (txQ, txQ1) => {
+      let synced = 0, failed = 0;
+      if (config.syncTransactions) {
+        const policies = await txQ('SELECT id, "policyNumber", premium, status, name FROM policies WHERE status IN (\'Active\',\'Pending\') LIMIT 50');
+        for (const p of policies) {
+          const existing = await txQ1('SELECT id FROM erpnext_transactions WHERE "localEntityType"=\'policy\' AND "localEntityId"=$1', [String(p.id)]);
+          if (!existing?.id) {
+            await txQ1(`INSERT INTO erpnext_transactions ("userId","erpDocType","erpDocId","localEntityType","localEntityId","syncStatus",amount,currency,"lastSyncAt","createdAt","updatedAt") VALUES (1,'Sales Invoice',$1,'policy',$2,'Synced',$3,'NGN',NOW(),NOW(),NOW()) RETURNING id`, ['SI-' + new Date().getFullYear() + '-' + String(p.id).padStart(5,'0'), String(p.id), p.premium || 0]);
+            synced++;
+          }
+        }
+        const claims = await txQ('SELECT id, "claimNumber", amount, status FROM claims WHERE status IN (\'Approved\',\'Paid\') LIMIT 50');
+        for (const c of claims) {
+          const existing = await txQ1('SELECT id FROM erpnext_transactions WHERE "localEntityType"=\'claim\' AND "localEntityId"=$1', [String(c.id)]);
+          if (!existing?.id) {
+            await txQ1(`INSERT INTO erpnext_transactions ("userId","erpDocType","erpDocId","localEntityType","localEntityId","syncStatus",amount,currency,"lastSyncAt","createdAt","updatedAt") VALUES (1,'Payment Entry',$1,'claim',$2,'Synced',$3,'NGN',NOW(),NOW(),NOW()) RETURNING id`, ['PE-' + new Date().getFullYear() + '-' + String(c.id).padStart(5,'0'), String(c.id), c.amount || 0]);
+            synced++;
+          }
         }
       }
-      // Sync claims → Payment Entries
-      const claims = await q('SELECT id, "claimNumber", amount, status FROM claims WHERE status IN (\'Approved\',\'Paid\') LIMIT 50');
-      for (const c of claims) {
-        const existing = await q1('SELECT id FROM erpnext_transactions WHERE "localEntityType"=\'claim\' AND "localEntityId"=$1', [String(c.id)]);
-        if (!existing?.id) {
-          await q1(`INSERT INTO erpnext_transactions ("userId","erpDocType","erpDocId","localEntityType","localEntityId","syncStatus",amount,currency,"lastSyncAt","createdAt","updatedAt") VALUES (1,'Payment Entry',$1,'claim',$2,'Synced',$3,'NGN',NOW(),NOW(),NOW()) RETURNING id`, ['PE-' + new Date().getFullYear() + '-' + String(c.id).padStart(5,'0'), String(c.id), c.amount || 0]);
-          synced++;
+      if (config.syncAgents) {
+        const agents = await txQ('SELECT id, "agencyName" as name, "agentCode" as email, region FROM agents LIMIT 50');
+        for (const a of agents) {
+          const existing = await txQ1('SELECT id FROM erpnext_transactions WHERE "localEntityType"=\'agent\' AND "localEntityId"=$1', [String(a.id)]);
+          if (!existing?.id) {
+            await txQ1(`INSERT INTO erpnext_transactions ("userId","erpDocType","erpDocId","localEntityType","localEntityId","syncStatus",amount,currency,"lastSyncAt","createdAt","updatedAt") VALUES (1,'Sales Partner',$1,'agent',$2,'Synced',0,'NGN',NOW(),NOW(),NOW()) RETURNING id`, ['SP-' + String(a.id).padStart(5,'0'), String(a.id)]);
+            synced++;
+          }
         }
       }
-    }
-    // Sync agents → Sales Partners
-    if (config.syncAgents) {
-      const agents = await q('SELECT id, "agencyName" as name, "agentCode" as email, region FROM agents LIMIT 50');
-      for (const a of agents) {
-        const existing = await q1('SELECT id FROM erpnext_transactions WHERE "localEntityType"=\'agent\' AND "localEntityId"=$1', [String(a.id)]);
-        if (!existing?.id) {
-          await q1(`INSERT INTO erpnext_transactions ("userId","erpDocType","erpDocId","localEntityType","localEntityId","syncStatus",amount,currency,"lastSyncAt","createdAt","updatedAt") VALUES (1,'Sales Partner',$1,'agent',$2,'Synced',0,'NGN',NOW(),NOW(),NOW()) RETURNING id`, ['SP-' + String(a.id).padStart(5,'0'), String(a.id)]);
-          synced++;
-        }
-      }
-    }
-    const now = new Date().toISOString();
-    await q1(`UPDATE erp_config SET "lastSyncAt"=$1, "lastSyncStatus"='success', "lastSyncCount"=$2, "updatedAt"=NOW() WHERE id=1`, [now, synced]);
-    return { success: true, synced, failed, lastSync: now, message: `Sync completed: ${synced} new records synced` };
+      const now = new Date().toISOString();
+      await txQ1(`UPDATE erp_config SET "lastSyncAt"=$1, "lastSyncStatus"='success', "lastSyncCount"=$2, "updatedAt"=NOW() WHERE id=1`, [now, synced]);
+      return { success: true, synced, failed, lastSync: now, message: `Sync completed: ${synced} new records synced` };
+    });
   },
 
   // ─── Mutations & Missing Query Routes ───
@@ -1830,8 +1844,10 @@ const ROUTE_HANDLERS = {
     if (!reset?.token || reset.token !== otp) return { error: 'Invalid or expired OTP' };
     if (new Date(reset.expires_at) < new Date()) return { error: 'OTP has expired. Please request a new one.' };
     const hash = await bcrypt.hash(newPassword, 12);
-    await q('UPDATE users SET "passwordHash"=$1, "updatedAt"=NOW() WHERE id=$2', [hash, user.id]);
-    await q('DELETE FROM password_resets WHERE user_id=$1', [user.id]);
+    await withTransaction(async (txQ) => {
+      await txQ('UPDATE users SET "passwordHash"=$1, "updatedAt"=NOW() WHERE id=$2', [hash, user.id]);
+      await txQ('DELETE FROM password_resets WHERE user_id=$1', [user.id]);
+    });
     return { success: true, message: 'Password reset successfully. You can now log in.' };
   },
   'auth.setup2FA': async (input) => {
@@ -1896,10 +1912,9 @@ const ROUTE_HANDLERS = {
 
   // Agents
   'agents.update': async (input) => {
-    if (input.id) {
-      await q('UPDATE agents SET status=$1, tier=$2, "updatedAt"=NOW() WHERE id=$3', [input.status || 'active', input.tier || 'Silver', input.id]);
-    }
-    return { success: true, id: input.id || 1 };
+    validate(input, { id: { required: true, type: 'number', min: 1 }, status: { type: 'string', oneOf: ['active', 'inactive', 'suspended'] }, tier: { type: 'string', oneOf: ['Bronze', 'Silver', 'Gold', 'Platinum'] } });
+    await q('UPDATE agents SET status=$1, tier=$2, "updatedAt"=NOW() WHERE id=$3', [input.status || 'active', input.tier || 'Silver', input.id]);
+    return { success: true, id: input.id };
   },
 
   // Agricultural
@@ -1965,13 +1980,14 @@ const ROUTE_HANDLERS = {
 
   // Application (Insurance Application)
   'application.create': async (input) => {
+    validate(input, { productType: { required: true, type: 'string' } });
     const r = await q1(`INSERT INTO insurance_applications (id, "userId", "productType", status, "personalInfo", "riskInfo", "createdAt", "updatedAt")
       VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM insurance_applications), 1, $1, 'submitted', $2, '{}', NOW(), NOW()) RETURNING *`,
       [input.productType || 'Motor', JSON.stringify(input.personalInfo || {})], { id: 1, status: 'submitted' });
     return { success: true, applicationId: r.id, status: 'submitted' };
   },
   'application.get': (input) => q1('SELECT * FROM insurance_applications WHERE id=$1', [input.id || 1]),
-  'application.list': () => q('SELECT id, "userId", "productType", status, "createdAt" FROM insurance_applications ORDER BY "createdAt" DESC'),
+  'application.list': (input) => { const p = paginate('SELECT id, "userId", "productType", status, "createdAt" FROM insurance_applications ORDER BY "createdAt" DESC', input); return q(p.sql); },
   'application.update': async (input) => { return {success:true,applicationId:input?.id||'APP-'+Date.now(),status:'updated'}; },
 
   // Audit Trail
@@ -2081,7 +2097,7 @@ const ROUTE_HANDLERS = {
   'claimRouting.route': async (input) => { const amount = input?.amount || 0; const team = amount > 1000000 ? 'senior_adjuster' : amount > 500000 ? 'standard_adjuster' : 'auto_approve'; return {claimId:input?.claimId||'CLM-'+Date.now(),routedTo:team,priority:amount>1000000?'high':'normal',estimatedTime:team==='auto_approve'?'instant':'3 business days'}; },
 
   // Compliance
-  'compliance.list': () => q('SELECT id, "reportType", period, status, "totalAlerts", "highAlerts", "mediumAlerts", "lowAlerts" FROM compliance_reports ORDER BY "createdAt" DESC'),
+  'compliance.list': (input) => { const p = paginate('SELECT id, "reportType", period, status, "totalAlerts", "highAlerts", "mediumAlerts", "lowAlerts" FROM compliance_reports ORDER BY "createdAt" DESC', input); return q(p.sql); },
   'compliance.run': async () => { const ref = 'CMP-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", details, "createdAt") VALUES (\'compliance.run\', \'compliance\', $1, NOW())', [JSON.stringify({runId:ref})]); return {success:true,runId:ref,checksCompleted:15,passed:13,failed:2,score:87}; },
 
   // Currency
@@ -2115,7 +2131,7 @@ const ROUTE_HANDLERS = {
   // Documents mutations
   'documents.upload': async (input) => { return {success:true,documentId:'DOC-'+Date.now(),url:'/api/documents/'+Date.now()+'.pdf'}; },
   'documents.delete': async (input) => {
-    if (input.id) await q('DELETE FROM documents WHERE id=$1', [input.id]);
+    if (input.id) await q('UPDATE documents SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]);
     return { success: true };
   },
 
@@ -2155,7 +2171,7 @@ const ROUTE_HANDLERS = {
       [input.type || 'accident', input.description || 'Emergency reported'], { id: 1 });
     return { success: true, emergencyId: r.id, status: 'dispatched', eta: '15 minutes' };
   },
-  'emergency.list': () => q('SELECT id, "userId", "incidentType", description, status, "createdAt" FROM emergency_incidents ORDER BY "createdAt" DESC'),
+  'emergency.list': (input, ctx) => { const uid = ctx?.userId || 1; const p = paginate('SELECT id, "userId", "incidentType", description, status, "createdAt" FROM emergency_incidents WHERE "userId"=$1 OR $1=1 ORDER BY "createdAt" DESC', input); return q(p.sql, [uid]); },
 
   // Family Coverage
   'familyCoverage.members': () => q('SELECT id, "userId", "memberName" as name, relationship, "dateOfBirth", "coveredPolicyId", status FROM family_members ORDER BY "userId"'),
@@ -2193,7 +2209,7 @@ const ROUTE_HANDLERS = {
       ],
     };
   },
-  'financialWellness.recommendations': async () => { const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=1'); const types = policies.map(p=>p.type); const recs = []; if (!types.includes('Health')) recs.push({id:1,type:'coverage_gap',title:'Health Insurance Gap',description:'You have no active health policy. Consider Basic Health Shield.',priority:'high',potentialSavings:50000}); if (types.length >= 2) recs.push({id:2,type:'premium_optimization',title:'Bundle Discount Available',description:'Combine policies for up to 15% discount.',priority:'medium',potentialSavings:15000}); recs.push({id:3,type:'emergency_fund',title:'Build Emergency Reserve',description:'Target 6 months of premium payments in savings.',priority:'low',potentialSavings:0}); return recs; },
+  'financialWellness.recommendations': async (input, ctx) => { const uid = ctx?.userId || 1; const policies = await q('SELECT type FROM policies WHERE status=\'Active\' AND "userId"=$1', [uid]); const types = policies.map(p=>p.type); const recs = []; if (!types.includes('Health')) recs.push({id:1,type:'coverage_gap',title:'Health Insurance Gap',description:'You have no active health policy. Consider Basic Health Shield.',priority:'high',potentialSavings:50000}); if (types.length >= 2) recs.push({id:2,type:'premium_optimization',title:'Bundle Discount Available',description:'Combine policies for up to 15% discount.',priority:'medium',potentialSavings:15000}); recs.push({id:3,type:'emergency_fund',title:'Build Emergency Reserve',description:'Target 6 months of premium payments in savings.',priority:'low',potentialSavings:0}); return recs; },
 
   // Fraud Network
   'fraudNetwork.analyze': async (input) => { return {networkId:'FN-'+Date.now(),nodes:12,edges:18,clusters:3,riskScore:45,flaggedEntities:[{id:1,type:'individual',name:'Suspicious Actor',connections:5,riskLevel:'high'}]}; },
@@ -2208,7 +2224,7 @@ const ROUTE_HANDLERS = {
   'groupLife.enroll': async (input) => { return {success:true,enrollmentId:'GL-'+Date.now(),members:input?.members||1}; },
 
   // Health
-  'health.data': async () => { const user = await q1('SELECT id FROM users WHERE id=1'); const policies = await q1('SELECT COUNT(*) as c FROM policies WHERE type=\'Health\' AND status=\'Active\' AND "userId"=1'); return {bmi:24.5, bloodPressure:'120/80', cholesterol:190, lastCheckup:new Date(Date.now()-45*86400000).toISOString().slice(0,10), nextCheckup:new Date(Date.now()+180*86400000).toISOString().slice(0,10), riskLevel:'low', hasHealthPolicy:Number(policies?.c)>0}; },
+  'health.data': async (input, ctx) => { const uid = ctx?.userId || 1; const user = await q1('SELECT id FROM users WHERE id=$1', [uid]); const policies = await q1('SELECT COUNT(*) as c FROM policies WHERE type=\'Health\' AND status=\'Active\' AND "userId"=$1', [uid]); return {bmi:24.5, bloodPressure:'120/80', cholesterol:190, lastCheckup:new Date(Date.now()-45*86400000).toISOString().slice(0,10), nextCheckup:new Date(Date.now()+180*86400000).toISOString().slice(0,10), riskLevel:'low', hasHealthPolicy:Number(policies?.c)>0}; },
   'health.submit': async (input) => { return {success:true,recordId:'HLT-'+Date.now()}; },
 
   // Insurance Radar
@@ -2220,41 +2236,51 @@ const ROUTE_HANDLERS = {
   'knowledgeGraph.query': async (input) => { return {results:[{entity:input?.query||'insurance',type:'concept',relatedEntities:['underwriting','premium','claims'],relevance:0.95}]}; },
 
   // KYC mutations
-  'kyc.submit': async (input) => {
+  'kyc.submit': async (input, ctx) => {
+    validate(input, { documentType: { required: true, type: 'string', oneOf: ['bvn', 'nin', 'passport', 'drivers_license', 'voters_card'] } });
     const docType = input?.documentType || 'bvn';
-    await q1('UPDATE kyc_profiles SET "kycStatus"=\'in_progress\', "updatedAt"=NOW() WHERE "userId"=1');
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "kycStatus"=\'in_progress\', "updatedAt"=NOW() WHERE "userId"=$1', [uid]);
     return { success: true, verificationId: 'KYC-' + Date.now(), status: 'in_progress', documentType: docType };
   },
-  'kyc.verifyBVN': async (input) => {
-    await q1('UPDATE kyc_profiles SET "bvnVerified"=true, bvn=$1, "kycLevel"=GREATEST("kycLevel",1), "lastVerificationDate"=NOW(), "updatedAt"=NOW() WHERE "userId"=1', [input?.bvn || '22200000001']);
+  'kyc.verifyBVN': async (input, ctx) => {
+    validate(input, { bvn: { required: true, type: 'string', minLength: 11, maxLength: 11 } });
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "bvnVerified"=true, bvn=$1, "kycLevel"=GREATEST("kycLevel",1), "lastVerificationDate"=NOW(), "updatedAt"=NOW() WHERE "userId"=$2', [input?.bvn || '22200000001', uid]);
     return { valid: true, name: 'Patrick Munis', bvn: input?.bvn || '22200000001', bank: 'First Bank', verified: true };
   },
-  'kyc.verifyNIN': async (input) => {
-    await q1('UPDATE kyc_profiles SET "ninVerified"=true, nin=$1, "updatedAt"=NOW() WHERE "userId"=1', [input?.nin || '10000000001']);
+  'kyc.verifyNIN': async (input, ctx) => {
+    validate(input, { nin: { required: true, type: 'string', minLength: 11, maxLength: 11 } });
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "ninVerified"=true, nin=$1, "updatedAt"=NOW() WHERE "userId"=$2', [input?.nin || '10000000001', uid]);
     return { valid: true, name: 'Patrick Munis', nin: input?.nin || '10000000001', verified: true };
   },
-  'kyc.verifyPhone': async (input) => {
-    await q1('UPDATE kyc_profiles SET "phoneVerified"=true, "updatedAt"=NOW() WHERE "userId"=1');
+  'kyc.verifyPhone': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE kyc_profiles SET "phoneVerified"=true, "updatedAt"=NOW() WHERE "userId"=$1', [uid]);
     return { valid: true, carrier: 'MTN Nigeria', verified: true };
   },
-  'kyc.gate': async () => checkKycGate(1),
+  'kyc.gate': async (input, ctx) => checkKycGate(ctx?.userId || 1),
   'kyc.serviceHealth': async () => { const total = await q1('SELECT COUNT(*) as c FROM kyc_profiles'); const verified = await q1('SELECT COUNT(*) as c FROM kyc_profiles WHERE "kycStatus"=\'verified\''); return {bvnService:{status:'operational',latency:120,verified:Number(verified?.c)||0}, ninService:{status:'operational',latency:200}, facialMatch:{status:'operational',latency:350}, documentOcr:{status:'operational',latency:450}, overallHealth:'healthy', totalProfiles:Number(total?.c)||0}; },
 
   // Training / LMS
   'literacy.content': () => q('SELECT id, title, description, category, content_type as type, duration_minutes as "readTime", is_mandatory as mandatory FROM training_courses WHERE is_active=true ORDER BY id'),
-  'literacy.complete': async (input) => {
+  'literacy.complete': async (input, ctx) => {
     const courseId = input?.courseId || 1;
-    await q1('UPDATE training_enrollments SET status=\'completed\', progress=100, completed_at=NOW() WHERE course_id=$1 AND agent_id=1', [courseId]);
+    const uid = ctx?.userId || 1;
+    await q1('UPDATE training_enrollments SET status=\'completed\', progress=100, completed_at=NOW() WHERE course_id=$1 AND agent_id=$2', [courseId, uid]);
     return { success: true, badges: ['Course Completed'] };
   },
-  'literacy.progress': async () => {
+  'literacy.progress': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
     const total = await q1('SELECT COUNT(*) as c FROM training_courses WHERE is_active=true');
-    const completed = await q1('SELECT COUNT(*) as c FROM training_enrollments WHERE agent_id=1 AND status=\'completed\'');
+    const completed = await q1('SELECT COUNT(*) as c FROM training_enrollments WHERE agent_id=$1 AND status=\'completed\'', [uid]);
     return { completed: Number(completed.c) || 0, total: Number(total.c) || 0, streak: 5 };
   },
-  'training.courses': () => q('SELECT tc.id, tc.title, tc.description, tc.category, tc.content_type, tc.duration_minutes, tc.passing_score, tc.is_mandatory, COALESCE(te.status, \'not_enrolled\') as "enrollStatus", COALESCE(te.progress, 0) as progress, te.score FROM training_courses tc LEFT JOIN training_enrollments te ON tc.id=te.course_id AND te.agent_id=1 WHERE tc.is_active=true ORDER BY tc.is_mandatory DESC, tc.id'),
-  'training.enroll': async (input) => {
-    const r = await q1('INSERT INTO training_enrollments (id, course_id, agent_id, status, progress, started_at) VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM training_enrollments), $1, 1, \'in_progress\', 0, NOW()) RETURNING id', [input?.courseId]);
+  'training.courses': (input, ctx) => { const uid = ctx?.userId || 1; return q('SELECT tc.id, tc.title, tc.description, tc.category, tc.content_type, tc.duration_minutes, tc.passing_score, tc.is_mandatory, COALESCE(te.status, \'not_enrolled\') as "enrollStatus", COALESCE(te.progress, 0) as progress, te.score FROM training_courses tc LEFT JOIN training_enrollments te ON tc.id=te.course_id AND te.agent_id=$1 WHERE tc.is_active=true ORDER BY tc.is_mandatory DESC, tc.id', [uid]); },
+  'training.enroll': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const r = await q1('INSERT INTO training_enrollments (id, course_id, agent_id, status, progress, started_at) VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM training_enrollments), $1, $2, \'in_progress\', 0, NOW()) RETURNING id', [input?.courseId, uid]);
     return { success: true, enrollmentId: r?.id };
   },
 
@@ -2307,7 +2333,7 @@ const ROUTE_HANDLERS = {
   'notifications.markRead': async (input) => { await q('UPDATE notifications SET "isRead"=true, "readAt"=NOW() WHERE id=$1', [input?.id]); return { success: true }; },
 
   // Onboarding
-  'onboarding.status': async () => { const user = await q1('SELECT id, name, email FROM users WHERE id=1'); const kyc = await q1('SELECT "kycLevel", "kycStatus" FROM kyc_profiles WHERE "userId"=1'); const policy = await q1('SELECT COUNT(*) as c FROM policies WHERE "userId"=1'); const steps = []; if(user) steps.push('profile'); if(kyc?.kycStatus==='verified') steps.push('kyc'); if(Number(policy?.c)>0) steps.push('firstPolicy'); return {completed: steps.length >= 3, steps, currentStep: steps.length < 3 ? ['profile','kyc','firstPolicy'][steps.length] : null, completionPercentage: Math.round(steps.length/3*100)}; },
+  'onboarding.status': async (input, ctx) => { const uid = ctx?.userId || 1; const user = await q1('SELECT id, name, email FROM users WHERE id=$1', [uid]); const kyc = await q1('SELECT "kycLevel", "kycStatus" FROM kyc_profiles WHERE "userId"=$1', [uid]); const policy = await q1('SELECT COUNT(*) as c FROM policies WHERE "userId"=$1', [uid]); const steps = []; if(user) steps.push('profile'); if(kyc?.kycStatus==='verified') steps.push('kyc'); if(Number(policy?.c)>0) steps.push('firstPolicy'); return {completed: steps.length >= 3, steps, currentStep: steps.length < 3 ? ['profile','kyc','firstPolicy'][steps.length] : null, completionPercentage: Math.round(steps.length/3*100)}; },
   'onboarding.complete': async () => { return {success:true}; },
 
   // Parametric mutations
@@ -2356,6 +2382,7 @@ const ROUTE_HANDLERS = {
   // Payment Gateway Integration
   'payments.gateways': async () => { const rows = await q('SELECT gateway, COUNT(*) as transactions, SUM(amount) as volume, SUM(CASE WHEN status=\'success\' THEN 1 ELSE 0 END) as successful FROM payment_transactions GROUP BY gateway'); return rows.length ? rows.map(r=>({name:r.gateway,transactions:Number(r.transactions),volume:Number(r.volume),successRate:Math.round(Number(r.successful)/Number(r.transactions)*100)})) : [{name:'paystack',status:'active',transactions:150,volume:12500000},{name:'flutterwave',status:'active',transactions:85,volume:8500000},{name:'insureportal_pay',status:'active',transactions:45,volume:2500000}]; },
   'payments.initiate': async (input) => {
+    validate(input, { amount: { required: true, type: 'number', min: 1 }, gateway: { type: 'string', oneOf: ['paystack', 'flutterwave', 'insureportal_pay'] } });
     const gateway = input?.gateway || 'paystack';
     const amount = input?.amount || 0;
     const ref = `${gateway.toUpperCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -2490,7 +2517,7 @@ const ROUTE_HANDLERS = {
   // Premium Rates mutations
   'premiumRates.create': async (input) => { const ref = 'PRT-'+Date.now(); await q('INSERT INTO premium_rate_tables (name, "baseRate", "productType", category, status) VALUES ($1, $2, $3, $4, \'active\')', [input?.name||'New Rate', input?.rate||5.0, input?.productType||'motor', input?.category||'standard']); return {success:true,id:ref}; },
   'premiumRates.update': async (input) => { if (input?.id) await q('UPDATE premium_rate_tables SET "baseRate"=$1, name=$2 WHERE id=$3', [input.rate||5.0, input.name||'Updated', input.id]); return {success:true,id:input?.id}; },
-  'premiumRates.delete': async (input) => { if (input?.id) await q('DELETE FROM premium_rate_tables WHERE id=$1', [input.id]); return {success:true}; },
+  'premiumRates.delete': async (input) => { if (input?.id) await q('UPDATE premium_rate_tables SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]); return {success:true}; },
 
   // Profile
   'profile.get': async (input) => { const userId = input?.userId || 1; const u = await q1('SELECT id, email, name, "displayName", role, phone FROM users WHERE id=$1', [userId]); return u || DEMO_USER; },
@@ -2543,8 +2570,8 @@ const ROUTE_HANDLERS = {
   },
 
   // Referrals mutations
-  'referrals.create': async (input) => { const code = 'REF-'+Math.random().toString(36).slice(2,8).toUpperCase(); await q('INSERT INTO referrals (referrer_id, referred_email, referral_code, status) VALUES (1, $1, $2, \'pending\')', [input?.email||'', code]); return {success:true,referralCode:code}; },
-  'referrals.delete': async (input) => { if (input?.id) await q('DELETE FROM referrals WHERE id=$1', [input.id]); return {success:true}; },
+  'referrals.create': async (input) => { validate(input, { email: { required: true, type: 'email' } }); const code = 'REF-'+Math.random().toString(36).slice(2,8).toUpperCase(); await q('INSERT INTO referrals (referrer_id, referred_email, referral_code, status) VALUES (1, $1, $2, \'pending\')', [input.email, code]); return {success:true,referralCode:code}; },
+  'referrals.delete': async (input) => { if (input?.id) await q('UPDATE referrals SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input.id]); return {success:true}; },
 
   // Reinsurance mutations
   'reinsurance.cessions': () => q('SELECT id, "treatyId", "policyId", "cedingAmount", "retainedAmount", "reinsurerPremium", status, "cessionDate" FROM reinsurance_cessions ORDER BY "cessionDate" DESC'),
@@ -2738,18 +2765,18 @@ const ROUTE_HANDLERS = {
     return { queue, total: queue.length, fastTrack: queue.filter(q => q.priority === 'fast_track').length, seniorReview: queue.filter(q => q.priority === 'senior_review').length };
   },
   'claims.approve': async (input) => {
-    await q('UPDATE claims SET status=\'Approved\', "updatedAt"=NOW() WHERE id=$1', [input?.id]);
-    // Create payout record
-    const claim = await q1('SELECT * FROM claims WHERE id=$1', [input?.id]);
-    if (claim?.id) {
-      await q1(`INSERT INTO claims_payouts (id, "claimId", "beneficiaryName", amount, status, "approvedBy", "approvedAt")
-        VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM claims_payouts), $1, 'Policyholder', $2, 'approved', 'Claims Manager', NOW()) RETURNING id`, [claim.id, claim.amount || 0]);
-      // GL entry
-      await q1(`INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate")
-        VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM financial_transactions), 'claim_reserved', 'claim', $1, 'Claims Expense', 'Outstanding Claims Reserve', $2, $3, CURRENT_DATE) RETURNING id`,
-        [claim.id, claim.amount || 0, 'Reserve for claim ' + (claim.claimNumber || claim.id)]);
-    }
-    return { success: true, claimId: input?.id, status: 'approved' };
+    return withTransaction(async (txQ, txQ1) => {
+      await txQ('UPDATE claims SET status=\'Approved\', "updatedAt"=NOW() WHERE id=$1', [input?.id]);
+      const claim = await txQ1('SELECT * FROM claims WHERE id=$1', [input?.id]);
+      if (claim?.id) {
+        await txQ1(`INSERT INTO claims_payouts (id, "claimId", "beneficiaryName", amount, status, "approvedBy", "approvedAt")
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM claims_payouts), $1, 'Policyholder', $2, 'approved', 'Claims Manager', NOW()) RETURNING id`, [claim.id, claim.amount || 0]);
+        await txQ1(`INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate")
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM financial_transactions), 'claim_reserved', 'claim', $1, 'Claims Expense', 'Outstanding Claims Reserve', $2, $3, CURRENT_DATE) RETURNING id`,
+          [claim.id, claim.amount || 0, 'Reserve for claim ' + (claim.claimNumber || claim.id)]);
+      }
+      return { success: true, claimId: input?.id, status: 'approved' };
+    });
   },
   // ═══════════════════════════════════════════════════════════════════
   // FLOW-OF-FUNDS SCENARIO 5: Claims Payout — ATOMIC SAGA
@@ -2889,8 +2916,9 @@ const ROUTE_HANDLERS = {
   },
 
   // --- KYB (Business verification) ---
-  'kyb.status': async () => {
-    const profile = await q1('SELECT * FROM kyb_profiles WHERE "userId"=1', [], {});
+  'kyb.status': async (input, ctx) => {
+    const uid = ctx?.userId || 1;
+    const profile = await q1('SELECT * FROM kyb_profiles WHERE "userId"=$1', [uid], {});
     if (!profile?.id) return { status: 'not_applicable', message: 'No business profile found' };
     return { status: profile.kybStatus, level: profile.kybLevel, companyName: profile.companyName, rcNumber: profile.rcNumber, tinNumber: profile.tinNumber, businessType: profile.businessType, cacVerified: profile.cacVerified, tinVerified: profile.tinVerified, directorVerified: profile.directorVerified, financialStatements: profile.financialStatements };
   },
@@ -2961,7 +2989,7 @@ const ROUTE_HANDLERS = {
     return { success: true };
   },
   'approval.chains.delete': async (input) => {
-    await q('DELETE FROM approval_chains WHERE id=$1', [input?.id]);
+    await q('UPDATE approval_chains SET "deletedAt"=NOW() WHERE id=$1 AND "deletedAt" IS NULL', [input?.id]);
     return { success: true };
   },
   'approval.requests': () => q('SELECT ar.id, ar.chain_id, ac.name as chain_name, ar.entity_type, ar.entity_id, ar.current_step, ar.status, ar.submitted_by, ar.submitted_at, ar.completed_at, ar.notes, ar.history, ac.steps as chain_steps FROM approval_requests ar LEFT JOIN approval_chains ac ON ar.chain_id=ac.id ORDER BY ar.submitted_at DESC'),
@@ -3541,8 +3569,9 @@ const ROUTE_HANDLERS = {
   },
   'naicom.dataExchange': async (input) => {
     const direction = input?.direction;
-    const where = direction ? `WHERE direction='${direction}'` : '';
-    const rows = await q(`SELECT * FROM naicom_data_exchange ${where} ORDER BY created_at DESC`);
+    const rows = direction
+      ? await q('SELECT * FROM naicom_data_exchange WHERE direction=$1 ORDER BY created_at DESC', [direction])
+      : await q('SELECT * FROM naicom_data_exchange ORDER BY created_at DESC');
     const summary = { outbound: rows.filter(r => r.direction === 'outbound').length, inbound: rows.filter(r => r.direction === 'inbound').length, acknowledged: rows.filter(r => r.status === 'acknowledged').length, pending: rows.filter(r => r.status === 'pending' || r.status === 'sent').length };
     return { exchanges: rows, summary };
   },
@@ -3663,8 +3692,9 @@ const ROUTE_HANDLERS = {
   },
   'reinsurance.bordereaux': async (input) => {
     const period = input?.period;
-    const where = period ? `WHERE rb.period='${period}'` : '';
-    const rows = await q(`SELECT rb.*, rt."treatyName" as treaty_name, rt.reinsurer FROM reinsurance_bordereaux rb JOIN reinsurance_treaties rt ON rb.treaty_id=rt.id ${where} ORDER BY rb.created_at DESC`);
+    const rows = period
+      ? await q('SELECT rb.*, rt."treatyName" as treaty_name, rt.reinsurer FROM reinsurance_bordereaux rb JOIN reinsurance_treaties rt ON rb.treaty_id=rt.id WHERE rb.period=$1 ORDER BY rb.created_at DESC', [period])
+      : await q('SELECT rb.*, rt."treatyName" as treaty_name, rt.reinsurer FROM reinsurance_bordereaux rb JOIN reinsurance_treaties rt ON rb.treaty_id=rt.id ORDER BY rb.created_at DESC');
     return { bordereaux: rows, summary: { total: rows.length, draft: rows.filter(r => r.status === 'draft').length, sent: rows.filter(r => r.status === 'sent').length, reconciled: rows.filter(r => r.status === 'reconciled').length } };
   },
   'reinsurance.generateBordereaux': async (input) => {
@@ -3847,8 +3877,9 @@ const ROUTE_HANDLERS = {
   },
   'ussd.sessionHistory': async (input) => {
     const phone = input?.phone;
-    const where = phone ? `WHERE phone='${phone}'` : '';
-    const rows = await q(`SELECT session_id, phone, menu_level, user_input, response, status, pin_verified, transaction_ref, created_at FROM ussd_session_log ${where} ORDER BY created_at DESC LIMIT 50`);
+    const rows = phone
+      ? await q('SELECT session_id, phone, menu_level, user_input, response, status, pin_verified, transaction_ref, created_at FROM ussd_session_log WHERE phone=$1 ORDER BY created_at DESC LIMIT 50', [phone])
+      : await q('SELECT session_id, phone, menu_level, user_input, response, status, pin_verified, transaction_ref, created_at FROM ussd_session_log ORDER BY created_at DESC LIMIT 50');
     return rows;
   },
 
@@ -4495,8 +4526,10 @@ app.all('/api/trpc/*', async (req, res) => {
     if (req.method === 'POST' && req.body) {
       input = req.body?.json || req.body || {};
     } else if (req.query.input) {
-      try { input = JSON.parse(req.query.input); } catch (e) {}
+      try { const parsed = JSON.parse(req.query.input); input = parsed?.json || parsed || {}; } catch (e) {}
     }
+    input = sanitizeInput(input);
+
     if (route === 'auth.me') {
       if (bearerToken && sessions.has(bearerToken)) return res.json({ result: { data: sessions.get(bearerToken) } });
       if (jwtPayload) return res.json({ result: { data: { ...DEMO_USER, id: jwtPayload.sub, email: jwtPayload.email } } });
@@ -4512,6 +4545,7 @@ app.all('/api/trpc/*', async (req, res) => {
         console.error(`Route error [${route}]:`, err.message);
         return res.status(500).json({ result: { data: [] }, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
       }
+      return res.status(statusCode).json({ error: { message: statusCode >= 500 ? 'Internal server error' : err.message, code: statusCode >= 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST' } });
     }
     return res.status(404).json({ result: { data: [] }, error: { message: `Route not found: ${route}`, code: 'NOT_FOUND' } });
   }
@@ -4529,18 +4563,26 @@ app.all('/api/trpc/*', async (req, res) => {
 
   const results = await Promise.all(keys.map(async (key, i) => {
     const batchRoute = routes[i] || routes[0] || '';
-    const input = parsedInput[key]?.json || parsedInput[key] || {};
+    let batchInput = parsedInput[key]?.json || parsedInput[key] || {};
+    batchInput = sanitizeInput(batchInput);
 
     if (batchRoute === 'auth.me') {
+      if (user) {
+        const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [user.sub || user.id]);
+        if (dbUser?.id) {
+          const kycCheck = await checkKycGate(dbUser.id);
+          return { result: { data: { json: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
+        }
+      }
       const authHeader = req.headers?.authorization;
-      const token = authHeader?.replace('Bearer ', '') || input?.token;
+      const token = authHeader?.replace('Bearer ', '') || batchInput?.token;
       if (token) {
         const decoded = verifyToken(token);
         if (decoded && decoded.type === 'access') {
-          const user = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
-          if (user?.id) {
-            const kycCheck = await checkKycGate(user.id);
-            return { result: { data: { json: { ...user, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
+          const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
+          if (dbUser?.id) {
+            const kycCheck = await checkKycGate(dbUser.id);
+            return { result: { data: { json: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } } };
           }
         }
       }
@@ -4550,10 +4592,13 @@ app.all('/api/trpc/*', async (req, res) => {
     try {
       const handler = ROUTE_MAP.get(batchRoute);
       if (handler) {
-        const data = await handler(input);
+        const batchStart = Date.now();
+        const data = await handler(batchInput, { userId, user });
+        const batchDuration = Date.now() - batchStart;
+        if (batchDuration > 1000) log('warn', 'Slow batch route', { route: batchRoute, duration: batchDuration, userId });
         return { result: { data: { json: data } } };
       }
-      return { result: { data: { json: [] } } };
+      return { error: { message: `Route not found: ${batchRoute}` } };
     } catch (err) {
       logger.error('Batch route error', { route: batchRoute, error: err.message });
       return { result: { data: { json: [] } } };
