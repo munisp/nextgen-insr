@@ -4,7 +4,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface AgentProfile {
   id: number;
-  agentCode: string;
+  agentId: string;
   name: string;
   role: "agent" | "admin" | "supervisor";
   tier: "Bronze" | "Silver" | "Gold" | "Platinum";
@@ -12,7 +12,7 @@ export interface AgentProfile {
   location: string | null;
   terminalModel: string | null;
   terminalSerial: string | null;
-  floatBalance: number;
+  premiumReserve: number;
   floatLimit: number;
   commissionBalance: number;
   loyaltyPoints: number;
@@ -37,7 +37,7 @@ export interface FraudEvent {
   type: string;
   severity: "critical" | "high" | "medium" | "low";
   amount: number;
-  agentCode: string;
+  agentId: string;
   customerName: string;
   timestamp: string;
   fraudScore: string;
@@ -132,7 +132,7 @@ export const usePosStore = create<PosState>()(
             ? {
                 agent: {
                   ...s.agent,
-                  floatBalance: s.agent.floatBalance + delta,
+                  premiumReserve: s.agent.premiumReserve + delta,
                 },
               }
             : {}

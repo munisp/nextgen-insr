@@ -13,7 +13,7 @@ groups:
         annotations:
           summary: "Critical MDM compliance violation detected"
           description: "Device {{ $labels.device_id }} has a critical compliance violation: {{ $labels.violation_type }}. Immediate action required."
-          runbook: "https://docs.54link.ng/runbooks/mdm-compliance-violation"
+          runbook: "https://docs.insureportal.ng/runbooks/mdm-compliance-violation"
 
       - alert: DeviceComplianceViolationWarning
         expr: pos_mdm_compliance_violations_total{severity="warning"} > 5
@@ -36,7 +36,7 @@ groups:
         annotations:
           summary: "Rooted/jailbroken POS device detected"
           description: "Device {{ $labels.device_id }} has been flagged as rooted/jailbroken. Terminal: {{ $labels.terminal_id }}. This device must be immediately decommissioned."
-          runbook: "https://docs.54link.ng/runbooks/rooted-device"
+          runbook: "https://docs.insureportal.ng/runbooks/rooted-device"
 
       - alert: DeviceOfflineTooLong
         expr: (time() - pos_mdm_last_heartbeat_timestamp) > 3600
@@ -48,7 +48,7 @@ groups:
         annotations:
           summary: "POS device offline for more than 1 hour"
           description: "Device {{ $labels.device_id }} (terminal {{ $labels.terminal_id }}) has not sent a heartbeat for {{ $value | humanizeDuration }}."
-          runbook: "https://docs.54link.ng/runbooks/device-offline"
+          runbook: "https://docs.insureportal.ng/runbooks/device-offline"
 
       - alert: DeviceOfflineCritical
         expr: (time() - pos_mdm_last_heartbeat_timestamp) > 86400
@@ -60,7 +60,7 @@ groups:
         annotations:
           summary: "POS device offline for more than 24 hours"
           description: "Device {{ $labels.device_id }} has been offline for {{ $value | humanizeDuration }}. Possible theft or hardware failure."
-          runbook: "https://docs.54link.ng/runbooks/device-offline"
+          runbook: "https://docs.insureportal.ng/runbooks/device-offline"
 
       - alert: DeviceTamperDetected
         expr: pos_mdm_tamper_events_total > 0
@@ -72,7 +72,7 @@ groups:
         annotations:
           summary: "Physical tamper event detected on POS device"
           description: "Device {{ $labels.device_id }} reported a tamper event: {{ $labels.tamper_type }}. Location: {{ $labels.location }}. Immediate investigation required."
-          runbook: "https://docs.54link.ng/runbooks/device-tamper"
+          runbook: "https://docs.insureportal.ng/runbooks/device-tamper"
 
       - alert: OTAUpdateFailureRateHigh
         expr: rate(pos_ota_update_failures_total[30m]) / rate(pos_ota_update_attempts_total[30m]) > 0.1
@@ -95,7 +95,7 @@ groups:
         annotations:
           summary: "POS device geofence violation"
           description: "Device {{ $labels.device_id }} has left its authorised geofence zone {{ $labels.zone_id }}. Current coordinates logged."
-          runbook: "https://docs.54link.ng/runbooks/geofence-violation"
+          runbook: "https://docs.insureportal.ng/runbooks/geofence-violation"
 
   # ── MDM Fleet Health Alerts ────────────────────────────────────────────────────
   - name: mdm_fleet
@@ -122,7 +122,7 @@ groups:
         annotations:
           summary: "Critical: less than 50% of POS fleet is online"
           description: "Fleet online rate has dropped to {{ $value | humanizePercentage }}. Possible network outage or mass device failure."
-          runbook: "https://docs.54link.ng/runbooks/fleet-outage"
+          runbook: "https://docs.insureportal.ng/runbooks/fleet-outage"
 
       - alert: OutdatedFirmwareDevicesHigh
         expr: pos_mdm_outdated_firmware_devices_total / pos_mdm_registered_devices_total > 0.3

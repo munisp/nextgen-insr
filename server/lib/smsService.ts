@@ -1,4 +1,4 @@
-// TypeScript enabled — Sprint 96 security audit
+// @ts-check
 /**
  * Sprint 9: SMS Notification Service
  *
@@ -6,7 +6,7 @@
  *   1. Twilio (primary) — global coverage, reliable delivery
  *   2. Africa's Talking (secondary) — optimized for African markets
  *   3. Termii (tertiary) — existing integration for Nigerian numbers
- *   4. Console (dev fallback) — logs to stdout
+ *   4. Console (dev fallback) — logs to structured logger
  *
  * Features:
  *   - Automatic failover between providers
@@ -22,10 +22,11 @@
  *   TWILIO_FROM_NUMBER     — Twilio sender number (+1234567890)
  *   AT_API_KEY             — Africa's Talking API key
  *   AT_USERNAME            — Africa's Talking username
- *   AT_SENDER_ID           — Africa's Talking sender ID (e.g. "54Link")
+ *   AT_SENDER_ID           — Africa's Talking sender ID (e.g. "InsurePortal")
  *   TERMII_API_KEY         — Termii API key (existing)
- *   TERMII_SENDER_ID       — Termii sender ID (default: "54Link")
+ *   TERMII_SENDER_ID       — Termii sender ID (default: "InsurePortal")
  */
+import { logger } from "../_core/logger";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -208,7 +209,7 @@ async function sendViaAfricasTalking(
 ): Promise<{ messageId: string; cost?: number }> {
   const apiKey = process.env.AT_API_KEY!;
   const username = process.env.AT_USERNAME!;
-  const senderId = process.env.AT_SENDER_ID ?? "54Link";
+  const senderId = process.env.AT_SENDER_ID ?? "InsurePortal";
 
   const params = new URLSearchParams({
     username,
@@ -260,7 +261,7 @@ async function sendViaAfricasTalking(
 
 async function sendViaTermii(msg: SmsMessage): Promise<{ messageId: string }> {
   const apiKey = process.env.TERMII_API_KEY!;
-  const senderId = process.env.TERMII_SENDER_ID ?? "54Link";
+  const senderId = process.env.TERMII_SENDER_ID ?? "InsurePortal";
 
   const body = {
     to: normalizePhone(msg.to).replace("+", ""),
@@ -287,8 +288,9 @@ async function sendViaTermii(msg: SmsMessage): Promise<{ messageId: string }> {
 }
 
 async function sendViaConsole(msg: SmsMessage): Promise<{ messageId: string }> {
-  console.log(
-    `[SmsService/DEV] Would send SMS:\n  To: ${msg.to}\n  Body: ${msg.body.substring(0, 100)}${msg.body.length > 100 ? "..." : ""}`
+  logger.info(
+    { service: "sms", provider: "console", to: msg.to, bodyPreview: msg.body.substring(0, 100) },
+    `[SmsService/DEV] Would send SMS to ${msg.to}`
   );
   return { messageId: `sms_console_${Date.now()}` };
 }
@@ -350,7 +352,8 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
 
   for (const provider of sortedProviders) {
     if (!checkProviderRateLimit(provider)) {
-      console.warn(
+      logger.info(
+        { service: "sms", provider: provider.name },
         `[SmsService] ${provider.name} rate limited, trying next provider`
       );
       continue;
@@ -374,7 +377,8 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
       };
       logDelivery(logEntry);
 
-      console.log(
+      logger.info(
+        { service: "sms", provider: provider.name, messageId: result.messageId },
         `[SmsService] Sent via ${provider.name}: ${result.messageId}`
       );
       return {
@@ -385,8 +389,10 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
         timestamp: new Date(),
       };
     } catch (err) {
-      console.warn(
-        `[SmsService] ${provider.name} failed: ${(err as Error).message}, trying next`
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { service: "sms", provider: provider.name, error: message },
+        `[SmsService] ${provider.name} failed: ${message}, trying next`
       );
       continue;
     }
@@ -530,7 +536,7 @@ export function buildRateAlertSms(opts: {
   const verb = opts.direction === "above" ? "risen above" : "fallen below";
   return {
     to: "",
-    body: `54Link Alert: ${opts.baseCurrency}/${opts.targetCurrency} has ${verb} your target of ${opts.targetRate}. Current rate: ${opts.currentRate}. Log in to manage your alerts.`,
+    body: `InsurePortal Alert: ${opts.baseCurrency}/${opts.targetCurrency} has ${verb} your target of ${opts.targetRate}. Current rate: ${opts.currentRate}. Log in to manage your alerts.`,
   };
 }
 
@@ -543,7 +549,7 @@ export function buildFraudAlertSms(opts: {
 }): SmsMessage {
   return {
     to: "",
-    body: `54Link FRAUD ALERT [${opts.severity.toUpperCase()}]: ${opts.type} detected. Amount: ${opts.currency} ${opts.amount.toLocaleString()}. Agent: ${opts.agentName}. Take immediate action.`,
+    body: `InsurePortal FRAUD ALERT [${opts.severity.toUpperCase()}]: ${opts.type} detected. Amount: ${opts.currency} ${opts.amount.toLocaleString()}. Agent: ${opts.agentName}. Take immediate action.`,
   };
 }
 
@@ -556,7 +562,7 @@ export function buildTransactionConfirmSms(opts: {
 }): SmsMessage {
   return {
     to: "",
-    body: `54Link: ${opts.type} of ${opts.currency} ${opts.amount.toLocaleString()} confirmed. Ref: ${opts.ref}${opts.customerName ? `. Customer: ${opts.customerName}` : ""}. Thank you.`,
+    body: `InsurePortal: ${opts.type} of ${opts.currency} ${opts.amount.toLocaleString()} confirmed. Ref: ${opts.ref}${opts.customerName ? `. Customer: ${opts.customerName}` : ""}. Thank you.`,
   };
 }
 
@@ -566,7 +572,7 @@ export function buildOtpSms(opts: {
 }): SmsMessage {
   return {
     to: "",
-    body: `Your 54Link verification code is: ${opts.otp}. Valid for ${opts.expiresInMinutes} minutes. Do not share this code.`,
+    body: `Your InsurePortal verification code is: ${opts.otp}. Valid for ${opts.expiresInMinutes} minutes. Do not share this code.`,
   };
 }
 
@@ -579,6 +585,6 @@ export function buildSettlementSms(opts: {
 }): SmsMessage {
   return {
     to: "",
-    body: `54Link Daily Settlement: ${opts.agentName}, ${opts.txCount} transactions processed. Volume: ${opts.currency} ${opts.totalVolume.toLocaleString()}. Commission: ${opts.currency} ${opts.commission.toLocaleString()}.`,
+    body: `InsurePortal Daily Settlement: ${opts.agentName}, ${opts.txCount} transactions processed. Volume: ${opts.currency} ${opts.totalVolume.toLocaleString()}. Commission: ${opts.currency} ${opts.commission.toLocaleString()}.`,
   };
 }

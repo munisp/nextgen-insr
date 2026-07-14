@@ -1,5 +1,5 @@
 /**
- * 54Link POS Shell — Security Vulnerability Scoring
+ * InsurePortal POS Shell — Security Vulnerability Scoring
  *
  * Automated security scoring across all OWASP categories.
  * Each test category contributes points to a total score out of 100.

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { sla_definitions, sla_breaches } from "../../drizzle/schema";
+import { sla_definitions, sla_breaches } from "@schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
 
 export const slaMonitoringRouter = router({

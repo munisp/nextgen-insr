@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Settlement Netting Engine — DB-backed netting calculations using merchantSettlements
  * Sprint 54: Full PostgreSQL + middleware integration
@@ -13,7 +13,7 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
-import logger from "../_core/logger";
+import { logger } from "../_core/logger";
 import { TRPCError } from "@trpc/server";
 
 export const settlementNettingEngineRouter = router({
@@ -171,21 +171,21 @@ export const settlementNettingEngineRouter = router({
           "system",
           { event: "netting.session.created", timestamp: Date.now() }
         );
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:: " + String(err)); }
       try {
         await cacheSet(
           "settlementNettingEngine:last",
           JSON.stringify({ ts: Date.now() }),
           300
         );
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:: " + String(err)); }
       try {
         await tbCreateTransfer({
           debitAccountId: "1",
           creditAccountId: "2",
           amount: 0,
         });
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:: " + String(err)); }
       try {
         await fluvioProduce("pos.settlementnettingengine", {
           value: JSON.stringify({
@@ -193,7 +193,7 @@ export const settlementNettingEngineRouter = router({
             ts: Date.now(),
           }),
         });
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:: " + String(err)); }
       try {
         await permifyCheck({
           subjectType: "user",
@@ -202,7 +202,7 @@ export const settlementNettingEngineRouter = router({
           entityId: "system",
           permission: "execute",
         });
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:: " + String(err)); }
       return {
         sessionId: `NET-${Date.now()}`,
         status: "calculating",
@@ -223,7 +223,7 @@ export const settlementNettingEngineRouter = router({
           .where(eq(merchantSettlements.id, numId));
       } catch (e) {
         // @ts-expect-error middleware type mismatch
-        logger.warn("[NettingEngine]", e);
+        logger.warn("[NettingEngine]: " + e);
       }
       try {
         await publishEvent(
@@ -231,7 +231,7 @@ export const settlementNettingEngineRouter = router({
           "system",
           { event: "netting.session.settled", sessionId: input.sessionId }
         );
-      } catch (err) { console.error("[settlementNettingEngine] operation failed:", err); }
+      } catch (err) { logger.error("[settlementNettingEngine] operation failed:: " + String(err)); }
       return {
         sessionId: input.sessionId,
         status: "settled",

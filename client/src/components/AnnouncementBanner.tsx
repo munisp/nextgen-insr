@@ -63,7 +63,7 @@ const REACTION_EMOJIS = [
   { emoji: "🎉", label: "celebrate" as const },
 ];
 
-const DISMISSED_KEY = "54link_dismissed_announcements";
+const DISMISSED_KEY = "insureportal_dismissed_announcements";
 const CURRENT_USER_ID = "current_user"; // Placeholder — replaced by useAuth() in production
 const CURRENT_USER_NAME = "You";
 

@@ -10,6 +10,10 @@ global:
   tls:
     enabled: true
     issuer: letsencrypt-prod
+  # Common labels applied to all resources
+  commonLabels:
+    app.kubernetes.io/platform: ngapp
+    app.kubernetes.io/version: "{{ .Chart.AppVersion }}"
 
 # Middleware dependencies
 postgresql:
@@ -96,7 +100,360 @@ temporal:
       memory: 1Gi
       cpu: "1"
 
-# Frontend application
+# TigerBeetle ledger
+tigerbeetle:
+  enabled: true
+  replicaCount: 3
+  persistence:
+    size: 50Gi
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 2Gi
+      cpu: "1"
+
+# Permify authorization
+permify:
+  enabled: true
+  replicaCount: 2
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: "1"
+
+# APISIX API Gateway
+apisix:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: apache/apisix
+    tag: "3.8.0"
+  service:
+    type: LoadBalancer
+    port: 9080
+    adminPort: 9180
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 200m
+    limits:
+      memory: 1Gi
+      cpu: "1"
+
+# Mojaloop DFS
+mojaloop:
+  enabled: true
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 2Gi
+      cpu: "1"
+
+# Fluent Bit log shipping
+fluentbit:
+  enabled: true
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
+      cpu: 100m
+
+# ============================================================
+# Microservices Configuration
+# All services follow the same pattern with sensible defaults
+# ============================================================
+
+serviceDefaults:
+  replicaCount: 2
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startupProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 30
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 75
+
+# Per-service overrides (only specify what differs from defaults)
+# All insurance microservices with correct ports
+services:
+  # ── Core Insurance Engines ──
+  claims-adjudication-engine:
+    port: 8090
+    replicaCount: 3
+    resources:
+      limits:
+        memory: 1Gi
+    autoscaling:
+      minReplicas: 3
+      maxReplicas: 10
+
+  disaster-recovery-module:
+    port: 8091
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 768Mi
+
+  naicom-compliance-module:
+    port: 8092
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 768Mi
+
+  ussd-gateway:
+    port: 8093
+    replicaCount: 4
+    resources:
+      limits:
+        memory: 256Mi
+
+  enterprise-mdm:
+    port: 8094
+    replicaCount: 2
+
+  api-marketplace:
+    port: 8095
+    replicaCount: 3
+
+  it-governance-itsm:
+    port: 8096
+    replicaCount: 2
+
+  agent-network-platform:
+    port: 8097
+    replicaCount: 3
+
+  agent-commission-management:
+    port: 8098
+    replicaCount: 2
+
+  blockchain-transparency:
+    port: 8099
+    replicaCount: 2
+
+  # ── Identity & KYC ──
+  communication-service:
+    port: 8100
+    replicaCount: 3
+
+  enhanced-kyc-kyb:
+    port: 8101
+    replicaCount: 3
+    resources:
+      limits:
+        memory: 1Gi
+
+  fraud-detection-go:
+    port: 8102
+    replicaCount: 3
+    resources:
+      limits:
+        memory: 1Gi
+        cpu: "1"
+
+  # ── Core Platform Services ──
+  gamification-service:
+    port: 8103
+    replicaCount: 2
+
+  instant-payout-service:
+    port: 8104
+    replicaCount: 3
+
+  microinsurance-engine:
+    port: 8105
+    replicaCount: 3
+    resources:
+      limits:
+        memory: 768Mi
+
+  policy-workflow-go:
+    port: 8106
+    replicaCount: 3
+    resources:
+      limits:
+        memory: 1Gi
+        cpu: "1"
+
+  notification-service:
+    port: 8107
+    replicaCount: 3
+    resources:
+      limits:
+        memory: 512Mi
+
+  premium-finance-service:
+    port: 8108
+    replicaCount: 2
+
+  reinsurance-service:
+    port: 8109
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 1Gi
+
+  takaful-module:
+    port: 8110
+    replicaCount: 2
+
+  usage-based-insurance:
+    port: 8111
+    replicaCount: 2
+
+  # ── Batch & Processing ──
+  batch-processing-engine:
+    port: 8112
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: "2"
+
+  customer-360-service:
+    port: 8113
+    replicaCount: 2
+
+  devops-platform:
+    port: 8114
+    replicaCount: 1
+
+  dr-ha-service:
+    port: 8115
+    replicaCount: 2
+
+  gdpr-compliance:
+    port: 8116
+    replicaCount: 2
+
+  group-life-admin:
+    port: 8117
+    replicaCount: 2
+
+  multi-currency-service:
+    port: 8118
+    replicaCount: 2
+
+  multi-tenant-platform:
+    port: 8119
+    replicaCount: 2
+
+  ndpr-compliance:
+    port: 8120
+    replicaCount: 2
+
+  pan-african-ekyc:
+    port: 8121
+    replicaCount: 3
+
+  reconciliation-engine:
+    port: 8122
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 1Gi
+
+  # ── Payment & Finance ──
+  premium-collection-service:
+    port: 8123
+    replicaCount: 3
+    resources:
+      limits:
+        memory: 768Mi
+
+  mobile-money-service:
+    port: 8124
+    replicaCount: 3
+    resources:
+      limits:
+        memory: 768Mi
+
+  # ── Security Services (Rust) ──
+  security-operations:
+    port: 8130
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 1Gi
+
+  zero-trust-network:
+    port: 8131
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 512Mi
+
+  # ── Python/ML Services ──
+  ifrs17-engine:
+    port: 8140
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: "2"
+
+  mlops-governance:
+    port: 8141
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: "2"
+
+  risk-scoring-engine:
+    port: 8142
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 1Gi
+
+  actuarial-calculator:
+    port: 8143
+    replicaCount: 2
+    resources:
+      limits:
+        memory: 1Gi
+
+# ── Frontend ──
 frontend:
   enabled: true
   replicaCount: 3
@@ -136,200 +493,6 @@ frontend:
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
 
-# API Gateway (APISIX)
-apiGateway:
-  enabled: true
-  replicaCount: 2
-  image:
-    repository: apache/apisix
-    tag: "3.8.0"
-  service:
-    type: LoadBalancer
-    port: 9080
-    adminPort: 9180
-  resources:
-    requests:
-      memory: 256Mi
-      cpu: 200m
-    limits:
-      memory: 1Gi
-      cpu: "1"
-
-# ============================================================
-# Microservices Configuration
-# All services follow the same pattern with sensible defaults
-# ============================================================
-
-serviceDefaults:
-  replicaCount: 2
-  resources:
-    requests:
-      memory: 128Mi
-      cpu: 100m
-    limits:
-      memory: 512Mi
-      cpu: 500m
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: http
-    initialDelaySeconds: 15
-    periodSeconds: 20
-  readinessProbe:
-    httpGet:
-      path: /health
-      port: http
-    initialDelaySeconds: 5
-    periodSeconds: 10
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 8
-    targetCPUUtilizationPercentage: 75
-
-# Per-service overrides (only specify what differs from defaults)
-services:
-  claims-adjudication-engine:
-    port: 8090
-    replicaCount: 3
-    resources:
-      limits:
-        memory: 1Gi
-  disaster-recovery-module:
-    port: 8091
-    replicaCount: 2
-  naicom-compliance-module:
-    port: 8092
-    replicaCount: 2
-  ussd-gateway:
-    port: 8093
-    replicaCount: 4
-    resources:
-      limits:
-        memory: 256Mi
-  enterprise-mdm:
-    port: 8094
-    replicaCount: 2
-  api-marketplace:
-    port: 8095
-    replicaCount: 3
-  it-governance-itsm:
-    port: 8096
-    replicaCount: 2
-  agent-network-platform:
-    port: 8097
-    replicaCount: 3
-  agent-commission-management:
-    port: 8098
-    replicaCount: 2
-  blockchain-transparency:
-    port: 8099
-    replicaCount: 2
-  communication-service:
-    port: 8100
-    replicaCount: 3
-  enhanced-kyc-kyb:
-    port: 8101
-    replicaCount: 3
-  fraud-detection-go:
-    port: 8102
-    replicaCount: 3
-    resources:
-      limits:
-        memory: 1Gi
-  gamification-service:
-    port: 8103
-    replicaCount: 2
-  instant-payout-service:
-    port: 8104
-    replicaCount: 3
-  microinsurance-engine:
-    port: 8105
-    replicaCount: 3
-  mobile-money-service:
-    port: 8106
-    replicaCount: 3
-  notification-service:
-    port: 8107
-    replicaCount: 3
-  premium-finance-service:
-    port: 8108
-    replicaCount: 2
-  reinsurance-management:
-    port: 8109
-    replicaCount: 2
-  takaful-module:
-    port: 8110
-    replicaCount: 2
-  usage-based-insurance:
-    port: 8111
-    replicaCount: 2
-  batch-processing-engine:
-    port: 8112
-    replicaCount: 2
-    resources:
-      limits:
-        memory: 2Gi
-        cpu: "2"
-  customer-360-service:
-    port: 8113
-    replicaCount: 2
-  devops-platform:
-    port: 8114
-    replicaCount: 1
-  dr-ha-service:
-    port: 8115
-    replicaCount: 2
-  gdpr-compliance:
-    port: 8116
-    replicaCount: 2
-  group-life-admin:
-    port: 8117
-    replicaCount: 2
-  multi-currency-service:
-    port: 8118
-    replicaCount: 2
-  multi-tenant-platform:
-    port: 8119
-    replicaCount: 2
-  ndpr-compliance:
-    port: 8120
-    replicaCount: 2
-  pan-african-ekyc:
-    port: 8121
-    replicaCount: 3
-  reconciliation-engine:
-    port: 8122
-    replicaCount: 2
-  # Security services (Rust)
-  security-operations:
-    port: 8130
-    replicaCount: 2
-    resources:
-      limits:
-        memory: 1Gi
-  zero-trust-network:
-    port: 8131
-    replicaCount: 2
-    resources:
-      limits:
-        memory: 512Mi
-  # Python/ML services
-  ifrs17-engine:
-    port: 8140
-    replicaCount: 2
-    resources:
-      limits:
-        memory: 2Gi
-        cpu: "2"
-  mlops-governance:
-    port: 8141
-    replicaCount: 2
-    resources:
-      limits:
-        memory: 2Gi
-        cpu: "2"
-
 # Network policies
 networkPolicies:
   enabled: true
@@ -344,3 +507,123 @@ podDisruptionBudget:
 serviceMesh:
   enabled: false
   provider: istio
+
+# API Gateway Ingress configuration
+apiIngress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+  hosts:
+    - host: api.ngapp.example.com
+      paths:
+        # Core insurance services
+        - path: /api/claims
+          pathType: Prefix
+          service: claims-adjudication-engine
+          port: 8090
+        - path: /api/fraud
+          pathType: Prefix
+          service: fraud-detection-go
+          port: 8102
+        - path: /api/kyc
+          pathType: Prefix
+          service: enhanced-kyc-kyb
+          port: 8101
+        - path: /api/ussd
+          pathType: Prefix
+          service: ussd-gateway
+          port: 8093
+        - path: /api/mdm
+          pathType: Prefix
+          service: enterprise-mdm
+          port: 8094
+        - path: /api/dr
+          pathType: Prefix
+          service: disaster-recovery-module
+          port: 8091
+        - path: /api/compliance
+          pathType: Prefix
+          service: naicom-compliance-module
+          port: 8092
+        - path: /api/notifications
+          pathType: Prefix
+          service: notification-service
+          port: 8107
+        - path: /api/policy
+          pathType: Prefix
+          service: policy-workflow-go
+          port: 8106
+        - path: /api/takaful
+          pathType: Prefix
+          service: takaful-module
+          port: 8110
+        - path: /api/premium-finance
+          pathType: Prefix
+          service: premium-finance-service
+          port: 8108
+        - path: /api/premium-collection
+          pathType: Prefix
+          service: premium-collection-service
+          port: 8123
+        - path: /api/reinsurance
+          pathType: Prefix
+          service: reinsurance-service
+          port: 8109
+        - path: /api/microinsurance
+          pathType: Prefix
+          service: microinsurance-engine
+          port: 8105
+        - path: /api/ndpr
+          pathType: Prefix
+          service: ndpr-compliance
+          port: 8120
+        - path: /api/gamification
+          pathType: Prefix
+          service: gamification-service
+          port: 8103
+        - path: /api/commission
+          pathType: Prefix
+          service: agent-commission-management
+          port: 8098
+        - path: /api/kycb
+          pathType: Prefix
+          service: pan-african-ekyc
+          port: 8121
+        - path: /api/mobile-money
+          pathType: Prefix
+          service: mobile-money-service
+          port: 8124
+  tls:
+    - secretName: ngapp-api-tls
+      hosts:
+        - api.ngapp.example.com
+
+# Common configmap data for environment-wide settings
+commonConfig:
+  LOG_LEVEL: "info"
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: "ngapp-platform"
+  TRACING_ENABLED: "true"
+
+# Common secret references
+commonSecrets:
+  database:
+    existingSecret: ""
+    password: ""
+  redis:
+    existingSecret: ""
+    password: ""
+  jwt:
+    existingSecret: ""
+    secret: ""
+  payment:
+    paystackSecretKey: ""
+    flutterwaveSecretKey: ""

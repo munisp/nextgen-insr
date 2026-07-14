@@ -1,0 +1,6 @@
+apiVersion: v2
+name: communication-service
+description: Helm chart for Communication Service
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

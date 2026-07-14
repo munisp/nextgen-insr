@@ -235,7 +235,7 @@ const endpoints: Endpoint[] = [
   {
     method: "GET",
     path: "/api/trpc/float.balance",
-    description: "Get agent float balance",
+    description: "Get agent premium reserve",
     auth: "protected",
     category: "Float Management",
   },

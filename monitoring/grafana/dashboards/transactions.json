@@ -1,6 +1,6 @@
 {
-  "title": "54Link POS — Transactions Overview",
-  "uid": "54link-transactions",
+  "title": "InsurePortal POS — Transactions Overview",
+  "uid": "insureportal-transactions",
   "version": 1,
   "schemaVersion": 38,
   "refresh": "30s",

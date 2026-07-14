@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Transaction Dispute Arbitration — DB-backed with middleware integration
  * Sprint 56: Full PostgreSQL persistence, zero static data
@@ -13,7 +13,7 @@ import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
-import logger from "../_core/logger";
+import { logger } from "../_core/logger";
 import { TRPCError } from "@trpc/server";
 
 export const txDisputeArbitrationRouter = router({
@@ -195,21 +195,21 @@ export const txDisputeArbitrationRouter = router({
           disputeId: numId,
           outcome: input.outcome,
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:: " + String(err)); }
       try {
         await cacheSet(
           `txDisputeArbitration:resolved:${numId}`,
           JSON.stringify({ outcome: input.outcome, ts: Date.now() }),
           600
         );
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:: " + String(err)); }
       try {
         await tbCreateTransfer({
           debitAccountId: "1",
           creditAccountId: "2",
           amount: input.refundAmount ?? 0,
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:: " + String(err)); }
       try {
         await fluvioProduce("pos.txdisputearbitration", {
           value: JSON.stringify({
@@ -219,7 +219,7 @@ export const txDisputeArbitrationRouter = router({
             ts: Date.now(),
           }),
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:: " + String(err)); }
       try {
         await permifyCheck({
           subjectType: "user",
@@ -228,7 +228,7 @@ export const txDisputeArbitrationRouter = router({
           entityId: String(numId),
           permission: "resolve",
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:: " + String(err)); }
 
       logger.info(
         `[TxDisputeArbitration] Dispute ${numId} resolved: ${input.outcome}`
@@ -289,7 +289,7 @@ export const txDisputeArbitrationRouter = router({
           disputeId: numId,
           escalateTo: input.escalateTo,
         });
-      } catch (err) { console.error("[txDisputeArbitration] operation failed:", err); }
+      } catch (err) { logger.error("[txDisputeArbitration] operation failed:: " + String(err)); }
 
       const slaExtension = {
         senior_investigator: 5,

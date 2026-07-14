@@ -12,7 +12,7 @@ import {
   billingRoleAssignments,
   billingAuditLog,
   tenantBillingConfig,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, and, desc } from "drizzle-orm";
 
 // ═══════════════════════════════════════════════════════════════════════════════

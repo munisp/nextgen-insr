@@ -6,7 +6,7 @@
 
 ## Context
 
-The 54Link platform spans 370+ microservices with diverse performance, safety, and development velocity requirements. A single-language approach forces compromises: Go excels at concurrent network services but lacks Rust's memory safety guarantees for financial processing; Python's ML ecosystem is unmatched but its runtime performance is insufficient for hot-path transaction processing.
+The InsurePortal platform spans 370+ microservices with diverse performance, safety, and development velocity requirements. A single-language approach forces compromises: Go excels at concurrent network services but lacks Rust's memory safety guarantees for financial processing; Python's ML ecosystem is unmatched but its runtime performance is insufficient for hot-path transaction processing.
 
 ## Decision
 

@@ -109,7 +109,7 @@ const CANNED_RESPONSES = [
   },
   {
     label: "Terminal issue",
-    text: "My POS terminal is showing an error and cannot process transactions. Error code: ",
+    text: "My insurance service is showing an error and cannot process transactions. Error code: ",
   },
   {
     label: "Reversal needed",
@@ -137,7 +137,7 @@ const BOT_RESPONSES: Record<string, string[]> = {
     "I'm connecting you with our Level 2 technical team for further assistance.",
   ],
   float: [
-    "I can see your current float balance. Let me check your eligibility for an emergency top-up.",
+    "I can see your current premium reserve. Let me check your eligibility for an emergency top-up.",
     "You're eligible for an emergency float of up to ₦200,000 based on your transaction history.",
     "The float top-up has been approved and will reflect in your balance within 2 minutes.",
   ],

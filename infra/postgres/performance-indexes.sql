@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 54Link Agency Banking Platform — Performance Index Migration
+-- InsurePortal Insurance Platform — Performance Index Migration
 -- Comprehensive B-tree, partial, composite, and covering indexes for all 71 tables.
 -- Run after initial schema creation via: psql -f performance-indexes.sql
 -- ═══════════════════════════════════════════════════════════════════════════════

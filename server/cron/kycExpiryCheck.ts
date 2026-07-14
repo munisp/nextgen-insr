@@ -1,16 +1,17 @@
-// @ts-nocheck
+// @ts-check
 import { getDb } from "../db";
 import { agents } from "../../drizzle/schema";
 import { eq, and, lt, isNotNull } from "drizzle-orm";
+import { logger } from "../_core/logger";
 
 /**
  * Runs daily — flags agents with expired KYC documents and notifies them.
  */
 export async function runKycExpiryCheck() {
-  console.log("[Cron] Running KYC expiry check...");
+  logger.info("[Cron] Running KYC expiry check");
   const db = await getDb();
   if (!db) {
-    console.warn("[Cron] No DB — skipping KYC expiry check");
+    logger.warn("[Cron] No DB — skipping KYC expiry check");
     return { flagged: 0 };
   }
 
@@ -43,27 +44,21 @@ export async function runKycExpiryCheck() {
       if (isExpired) {
         // Mark agent as KYC-expired — restrict transaction limits
         expired++;
-        console.log(
-          `[KYC] Agent ${agent.agentCode} KYC expired on ${expiryDate.toISOString()}`
-        );
+        logger.warn({ agentId: agent.agentId, expiryDate: expiryDate.toISOString() }, "[KYC] Agent KYC expired");
       } else {
         // Send warning notification
         flagged++;
         const daysUntilExpiry = Math.ceil(
           (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
         );
-        console.log(
-          `[KYC] Agent ${agent.agentCode} KYC expires in ${daysUntilExpiry} days`
-        );
+        logger.info({ agentId: agent.agentId, daysUntilExpiry }, "[KYC] Agent KYC expiring soon");
       }
     }
 
-    console.log(
-      `[Cron] KYC expiry check complete: ${expired} expired, ${flagged} expiring soon`
-    );
+    logger.info({ expired, flagged, checked: expiringAgents.length }, "[Cron] KYC expiry check complete");
     return { expired, flagged, checked: expiringAgents.length };
   } catch (err) {
-    console.error("[Cron] KYC expiry check error:", (err as Error).message);
+    logger.error({ err: (err as Error).message }, "[Cron] KYC expiry check error");
     return { flagged: 0, error: (err as Error).message };
   }
 }

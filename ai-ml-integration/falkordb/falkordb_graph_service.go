@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -110,7 +111,7 @@ type RelatedCustomer struct {
 // NewFalkorDBClient creates a new FalkorDB client
 func NewFalkorDBClient(redisAddr string, graphName string) (*FalkorDBClient, error) {
 	if redisAddr == "" {
-		redisAddr = "localhost:6379"
+		log.Fatal("FATAL: REDIS_ADDR environment variable is required")
 	}
 	if graphName == "" {
 		graphName = "insurance_graph"

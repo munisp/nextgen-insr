@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
-export default function EcommerceMerchantStorefront() {
+export default function InsuranceMerchantInsurancePortal() {
   const merchantId = 1; // From auth context
   const [activeTab, setActiveTab] = useState<
     "products" | "orders" | "analytics"
@@ -18,18 +18,18 @@ export default function EcommerceMerchantStorefront() {
   });
 
   const { data: products, refetch: refetchProducts } =
-    trpc.ecommerceCatalog.listProducts.useQuery({
+    trpc.insuranceCatalog.listProducts.useQuery({
       limit: 50,
       offset: 0,
     });
 
-  const { data: orders } = trpc.ecommerceOrders.listOrders.useQuery({
+  const { data: orders } = trpc.policyOrders.listOrders.useQuery({
     merchantId,
     limit: 20,
     offset: 0,
   });
 
-  const createProduct = trpc.ecommerceCatalog.createProduct.useMutation({
+  const createProduct = trpc.insuranceCatalog.createProduct.useMutation({
     onSuccess: () => {
       setShowAddProduct(false);
       setNewProduct({
@@ -44,7 +44,7 @@ export default function EcommerceMerchantStorefront() {
     },
   });
 
-  const deleteProduct = trpc.ecommerceCatalog.deleteProduct.useMutation({
+  const deleteProduct = trpc.insuranceCatalog.deleteProduct.useMutation({
     onSuccess: () => refetchProducts(),
   });
 
@@ -63,7 +63,7 @@ export default function EcommerceMerchantStorefront() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Merchant Storefront</h1>
+      <h1 className="text-2xl font-bold">Merchant InsurancePortal</h1>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

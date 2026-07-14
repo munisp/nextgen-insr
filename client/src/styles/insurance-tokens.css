@@ -1,0 +1,263 @@
+/**
+ * InsurePortal — Insurance Domain Design Tokens
+ * 
+ * Semantic color tokens for all insurance domain concepts:
+ * risk levels, policy status, claim status, role accents,
+ * financial indicators, and compliance states.
+ * 
+ * Built on top of the base Bloomberg-dark theme in index.css.
+ */
+
+/* ─── Risk Level Tokens ─────────────────────────────────────────────────── */
+:root {
+  /* Risk severity */
+  --risk-low:           oklch(0.65 0.18 145);   /* green */
+  --risk-medium:        oklch(0.72 0.20 80);    /* amber */
+  --risk-high:          oklch(0.65 0.22 35);    /* orange */
+  --risk-critical:      oklch(0.60 0.25 25);    /* red */
+  --risk-low-bg:        oklch(0.65 0.18 145 / 0.12);
+  --risk-medium-bg:     oklch(0.72 0.20 80  / 0.12);
+  --risk-high-bg:       oklch(0.65 0.22 35  / 0.12);
+  --risk-critical-bg:   oklch(0.60 0.25 25  / 0.12);
+
+  /* ─── Policy Status Tokens ──────────────────────────────────────────── */
+  --policy-active:      oklch(0.65 0.18 145);
+  --policy-pending:     oklch(0.72 0.20 80);
+  --policy-lapsed:      oklch(0.55 0.015 230);
+  --policy-cancelled:   oklch(0.60 0.25 25);
+  --policy-expired:     oklch(0.50 0.015 230);
+  --policy-renewed:     oklch(0.60 0.22 260);
+  --policy-active-bg:   oklch(0.65 0.18 145 / 0.12);
+  --policy-pending-bg:  oklch(0.72 0.20 80  / 0.12);
+  --policy-lapsed-bg:   oklch(0.55 0.015 230 / 0.12);
+  --policy-cancelled-bg:oklch(0.60 0.25 25  / 0.12);
+
+  /* ─── Claim Status Tokens ───────────────────────────────────────────── */
+  --claim-fnol:         oklch(0.72 0.20 80);
+  --claim-investigating:oklch(0.65 0.22 260);
+  --claim-approved:     oklch(0.65 0.18 145);
+  --claim-settled:      oklch(0.60 0.22 145);
+  --claim-rejected:     oklch(0.60 0.25 25);
+  --claim-disputed:     oklch(0.65 0.22 35);
+  --claim-fnol-bg:      oklch(0.72 0.20 80  / 0.12);
+  --claim-approved-bg:  oklch(0.65 0.18 145 / 0.12);
+  --claim-settled-bg:   oklch(0.60 0.22 145 / 0.12);
+  --claim-rejected-bg:  oklch(0.60 0.25 25  / 0.12);
+
+  /* ─── Underwriting Decision Tokens ─────────────────────────────────── */
+  --uw-approve:         oklch(0.65 0.18 145);
+  --uw-refer:           oklch(0.72 0.20 80);
+  --uw-decline:         oklch(0.60 0.25 25);
+  --uw-pending:         oklch(0.65 0.22 260);
+
+  /* ─── Financial Indicator Tokens ────────────────────────────────────── */
+  --fin-positive:       oklch(0.65 0.18 145);   /* profit / increase */
+  --fin-negative:       oklch(0.60 0.25 25);    /* loss / decrease */
+  --fin-neutral:        oklch(0.55 0.015 230);  /* flat */
+  --fin-premium:        oklch(0.60 0.22 260);   /* premium collection */
+  --fin-reserve:        oklch(0.65 0.22 35);    /* reserve / liability */
+  --fin-surplus:        oklch(0.65 0.18 145);   /* surplus */
+
+  /* ─── Compliance & Regulatory Tokens ────────────────────────────────── */
+  --compliance-pass:    oklch(0.65 0.18 145);
+  --compliance-warn:    oklch(0.72 0.20 80);
+  --compliance-fail:    oklch(0.60 0.25 25);
+  --compliance-review:  oklch(0.65 0.22 260);
+  --compliance-pass-bg: oklch(0.65 0.18 145 / 0.12);
+  --compliance-warn-bg: oklch(0.72 0.20 80  / 0.12);
+  --compliance-fail-bg: oklch(0.60 0.25 25  / 0.12);
+
+  /* ─── Role Accent Tokens (one per role) ─────────────────────────────── */
+  --role-super-admin:       oklch(0.65 0.25 300);  /* violet */
+  --role-admin:             oklch(0.60 0.22 260);  /* electric blue */
+  --role-supervisor:        oklch(0.65 0.22 220);  /* cyan */
+  --role-underwriter:       oklch(0.65 0.22 35);   /* orange */
+  --role-actuary:           oklch(0.65 0.22 260);  /* blue */
+  --role-claims-adjuster:   oklch(0.60 0.25 25);   /* red */
+  --role-broker:            oklch(0.65 0.18 145);  /* green */
+  --role-agent:             oklch(0.72 0.20 80);   /* amber */
+  --role-policyholder:      oklch(0.65 0.22 180);  /* teal */
+  --role-beneficiary:       oklch(0.65 0.18 145);  /* light green */
+  --role-compliance-officer:oklch(0.65 0.22 300);  /* purple */
+  --role-regulator:         oklch(0.55 0.015 230); /* grey */
+  --role-reinsurer:         oklch(0.65 0.22 260);  /* deep blue */
+  --role-billing-admin:     oklch(0.72 0.20 80);   /* gold */
+  --role-billing-analyst:   oklch(0.65 0.18 145);  /* green */
+  --role-user:              oklch(0.55 0.015 230); /* muted */
+
+  /* ─── KPI Card Tokens ───────────────────────────────────────────────── */
+  --kpi-card-bg:            oklch(0.13 0.012 240);
+  --kpi-card-border:        oklch(0.20 0.015 240);
+  --kpi-card-hover:         oklch(0.16 0.015 240);
+  --kpi-trend-up:           oklch(0.65 0.18 145);
+  --kpi-trend-down:         oklch(0.60 0.25 25);
+  --kpi-trend-flat:         oklch(0.55 0.015 230);
+
+  /* ─── Chart Palette (insurance-specific) ────────────────────────────── */
+  --chart-premium:          oklch(0.60 0.22 260);
+  --chart-claims:           oklch(0.60 0.25 25);
+  --chart-reserve:          oklch(0.65 0.22 35);
+  --chart-profit:           oklch(0.65 0.18 145);
+  --chart-reinsurance:      oklch(0.65 0.22 220);
+  --chart-commission:       oklch(0.72 0.20 80);
+  --chart-lapse:            oklch(0.55 0.015 230);
+
+  /* ─── Spacing Scale ─────────────────────────────────────────────────── */
+  --space-xs:   0.25rem;   /* 4px */
+  --space-sm:   0.5rem;    /* 8px */
+  --space-md:   1rem;      /* 16px */
+  --space-lg:   1.5rem;    /* 24px */
+  --space-xl:   2rem;      /* 32px */
+  --space-2xl:  3rem;      /* 48px */
+  --space-3xl:  4rem;      /* 64px */
+
+  /* ─── Mobile-specific ───────────────────────────────────────────────── */
+  --bottom-nav-height:      4rem;       /* 64px */
+  --bottom-nav-bg:          oklch(0.11 0.012 240 / 0.95);
+  --bottom-nav-border:      oklch(0.20 0.015 240);
+  --bottom-nav-active:      oklch(0.60 0.22 260);
+  --bottom-nav-inactive:    oklch(0.55 0.015 230);
+  --safe-area-bottom:       env(safe-area-inset-bottom, 0px);
+  --safe-area-top:          env(safe-area-inset-top, 0px);
+
+  /* ─── Animation Tokens ──────────────────────────────────────────────── */
+  --transition-fast:    150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base:    250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow:    400ms cubic-bezier(0.4, 0, 0.2, 1);
+  --spring-bounce:      cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ─── Elevation / Shadow ────────────────────────────────────────────── */
+  --shadow-sm:    0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-md:    0 4px 12px oklch(0 0 0 / 0.4);
+  --shadow-lg:    0 8px 24px oklch(0 0 0 / 0.5);
+  --shadow-glow-primary: 0 0 20px oklch(0.60 0.22 260 / 0.3);
+  --shadow-glow-success: 0 0 20px oklch(0.65 0.18 145 / 0.3);
+  --shadow-glow-danger:  0 0 20px oklch(0.60 0.25 25  / 0.3);
+}
+
+/* ─── Light Mode Overrides ───────────────────────────────────────────────── */
+.light {
+  --risk-low-bg:        oklch(0.65 0.18 145 / 0.08);
+  --risk-medium-bg:     oklch(0.72 0.20 80  / 0.08);
+  --risk-high-bg:       oklch(0.65 0.22 35  / 0.08);
+  --risk-critical-bg:   oklch(0.60 0.25 25  / 0.08);
+  --kpi-card-bg:        oklch(0.98 0.002 240);
+  --kpi-card-border:    oklch(0.90 0.005 240);
+  --kpi-card-hover:     oklch(0.95 0.005 240);
+  --bottom-nav-bg:      oklch(0.98 0.002 240 / 0.95);
+  --bottom-nav-border:  oklch(0.88 0.005 240);
+}
+
+/* ─── Utility Classes ────────────────────────────────────────────────────── */
+
+/* Risk badges */
+.badge-risk-low      { background: var(--risk-low-bg);      color: var(--risk-low);      border: 1px solid var(--risk-low); }
+.badge-risk-medium   { background: var(--risk-medium-bg);   color: var(--risk-medium);   border: 1px solid var(--risk-medium); }
+.badge-risk-high     { background: var(--risk-high-bg);     color: var(--risk-high);     border: 1px solid var(--risk-high); }
+.badge-risk-critical { background: var(--risk-critical-bg); color: var(--risk-critical); border: 1px solid var(--risk-critical); }
+
+/* Policy status badges */
+.badge-policy-active    { background: var(--policy-active-bg);    color: var(--policy-active); }
+.badge-policy-pending   { background: var(--policy-pending-bg);   color: var(--policy-pending); }
+.badge-policy-lapsed    { background: var(--policy-lapsed-bg);    color: var(--policy-lapsed); }
+.badge-policy-cancelled { background: var(--policy-cancelled-bg); color: var(--policy-cancelled); }
+
+/* Claim status badges */
+.badge-claim-fnol         { background: var(--claim-fnol-bg);     color: var(--claim-fnol); }
+.badge-claim-approved     { background: var(--claim-approved-bg); color: var(--claim-approved); }
+.badge-claim-settled      { background: var(--claim-settled-bg);  color: var(--claim-settled); }
+.badge-claim-rejected     { background: var(--claim-rejected-bg); color: var(--claim-rejected); }
+
+/* Financial indicators */
+.fin-positive { color: var(--fin-positive); }
+.fin-negative { color: var(--fin-negative); }
+.fin-neutral  { color: var(--fin-neutral); }
+
+/* KPI card */
+.kpi-card {
+  background: var(--kpi-card-bg);
+  border: 1px solid var(--kpi-card-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.kpi-card:hover {
+  background: var(--kpi-card-hover);
+  box-shadow: var(--shadow-md);
+}
+
+/* Mobile safe area padding */
+.safe-bottom { padding-bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom)); }
+.safe-top    { padding-top: var(--safe-area-top); }
+
+/* Touch feedback */
+.touch-feedback {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+.touch-feedback:active {
+  transform: scale(0.97);
+  transition: transform 80ms ease;
+}
+
+/* Smooth page transitions */
+.page-enter {
+  animation: pageEnter var(--transition-base) var(--spring-bounce) both;
+}
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Skeleton shimmer */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.17 0.012 240) 25%,
+    oklch(0.22 0.015 240) 50%,
+    oklch(0.17 0.012 240) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* Offline indicator */
+.offline-banner {
+  background: var(--risk-high-bg);
+  border-bottom: 1px solid var(--risk-high);
+  color: var(--risk-high);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.375rem 1rem;
+  letter-spacing: 0.025em;
+}
+
+/* Glow effects for live KPI values */
+.kpi-glow-primary { box-shadow: var(--shadow-glow-primary); }
+.kpi-glow-success { box-shadow: var(--shadow-glow-success); }
+.kpi-glow-danger  { box-shadow: var(--shadow-glow-danger); }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: oklch(0.28 0.015 240); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: oklch(0.35 0.015 240); }
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Print */
+@media print {
+  .no-print { display: none !important; }
+  .kpi-card { border: 1px solid #ccc; box-shadow: none; }
+}

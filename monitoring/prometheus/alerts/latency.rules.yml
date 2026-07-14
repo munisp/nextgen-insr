@@ -4,7 +4,7 @@ groups:
     rules:
       # ── Transaction API high latency ────────────────────────────────────────
       - alert: TransactionApiHighLatency
-        expr: histogram_quantile(0.95, rate(pos54link_http_request_duration_seconds_bucket{route=~"/api/trpc/transactions.*"}[5m])) > 3
+        expr: histogram_quantile(0.95, rate(posinsureportal_http_request_duration_seconds_bucket{route=~"/api/trpc/transactions.*"}[5m])) > 3
         for: 3m
         labels:
           severity: critical
@@ -12,11 +12,11 @@ groups:
         annotations:
           summary: "Transaction API p95 latency > 3s"
           description: "95th percentile latency for transaction API is {{ $value | humanizeDuration }}. PAX A920 timeout is 30s but UX degrades above 3s."
-          runbook: "https://wiki.54link.ng/runbooks/high-latency"
+          runbook: "https://wiki.insureportal.ng/runbooks/high-latency"
 
       # ── SIM mid-transaction latency ─────────────────────────────────────────
       - alert: SimMidTransactionLatencyHigh
-        expr: pos54link_sim_latency_ms > 3000
+        expr: posinsureportal_sim_latency_ms > 3000
         for: 1m
         labels:
           severity: critical
@@ -27,7 +27,7 @@ groups:
 
       # ── Database query slow ─────────────────────────────────────────────────
       - alert: DatabaseQuerySlow
-        expr: histogram_quantile(0.99, rate(pos54link_db_query_duration_seconds_bucket[5m])) > 1
+        expr: histogram_quantile(0.99, rate(posinsureportal_db_query_duration_seconds_bucket[5m])) > 1
         for: 5m
         labels:
           severity: warning

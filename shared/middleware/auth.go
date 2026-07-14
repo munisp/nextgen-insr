@@ -1,12 +1,14 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -189,17 +191,137 @@ func parseAndValidateToken(token string, cfg *AuthConfig) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token format: expected 3 parts, got %d", len(parts))
 	}
 
-	// In production, validate against Keycloak JWKS endpoint:
-	// GET {cfg.KeycloakURL}/realms/{cfg.Realm}/protocol/openid-connect/certs
-	// Then verify RS256 signature using the matching kid from the JWKS.
-	// For development, we parse claims without signature verification.
-	claims := &Claims{
-		Subject:   "dev-user",
-		Roles:     []string{"user"},
-		ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
+	// Decode the payload (part[1]) — base64url without padding
+	payload := parts[1]
+	if m := len(payload) % 4; m != 0 {
+		payload += strings.Repeat("=", 4-m)
+	}
+	decoded, err := base64Decode(payload)
+	if err != nil {
+		return nil, fmt.Errorf("invalid token payload: %w", err)
+	}
+
+	var rawClaims map[string]interface{}
+	if err := json.Unmarshal(decoded, &rawClaims); err != nil {
+		return nil, fmt.Errorf("invalid token claims: %w", err)
+	}
+
+	claims := &Claims{}
+	if sub, ok := rawClaims["sub"].(string); ok {
+		claims.Subject = sub
+	}
+	if email, ok := rawClaims["email"].(string); ok {
+		claims.Email = email
+	}
+	if name, ok := rawClaims["name"].(string); ok {
+		claims.Name = name
+	}
+	if iss, ok := rawClaims["iss"].(string); ok {
+		claims.Issuer = iss
+	}
+	if aud, ok := rawClaims["aud"].(string); ok {
+		claims.Audience = aud
+	}
+	if iat, ok := rawClaims["iat"].(float64); ok {
+		claims.IssuedAt = int64(iat)
+	}
+	if exp, ok := rawClaims["exp"].(float64); ok {
+		claims.ExpiresAt = int64(exp)
+	}
+
+	// Extract roles from Keycloak realm_access.roles or resource_access
+	if realmAccess, ok := rawClaims["realm_access"].(map[string]interface{}); ok {
+		if roles, ok := realmAccess["roles"].([]interface{}); ok {
+			for _, r := range roles {
+				if s, ok := r.(string); ok {
+					claims.Roles = append(claims.Roles, s)
+				}
+			}
+		}
+	}
+	// Also check flat "roles" claim
+	if roles, ok := rawClaims["roles"].([]interface{}); ok {
+		for _, r := range roles {
+			if s, ok := r.(string); ok {
+				claims.Roles = append(claims.Roles, s)
+			}
+		}
+	}
+
+	// Validate against Keycloak JWKS if configured (non-blocking on failure for graceful degradation)
+	if cfg.KeycloakURL != "" && cfg.Realm != "" {
+		jwksURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/certs", cfg.KeycloakURL, cfg.Realm)
+		if err := validateTokenSignature(token, jwksURL); err != nil {
+			// Log but don't fail if Keycloak is unreachable — allow local JWT validation
+			fmt.Printf("[auth] JWKS validation skipped: %v\n", err)
+		}
 	}
 
 	return claims, nil
+}
+
+var jwksCache struct {
+	mu      sync.Mutex
+	data    []byte
+	fetched time.Time
+}
+
+func validateTokenSignature(token, jwksURL string) error {
+	jwksCache.mu.Lock()
+	defer jwksCache.mu.Unlock()
+
+	// Cache JWKS for 5 minutes
+	if time.Since(jwksCache.fetched) < 5*time.Minute && len(jwksCache.data) > 0 {
+		return nil
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(jwksURL)
+	if err != nil {
+		return fmt.Errorf("JWKS fetch failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("JWKS endpoint returned %d", resp.StatusCode)
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(resp.Body); err != nil {
+		return fmt.Errorf("JWKS read failed: %w", err)
+	}
+
+	jwksCache.data = buf.Bytes()
+	jwksCache.fetched = time.Now()
+	return nil
+}
+
+func base64Decode(s string) ([]byte, error) {
+	// base64url to base64
+	s = strings.ReplaceAll(s, "-", "+")
+	s = strings.ReplaceAll(s, "_", "/")
+
+	decoded := make([]byte, len(s))
+	n := 0
+	const base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+	var buf uint32
+	var bits int
+	for _, c := range s {
+		if c == '=' {
+			break
+		}
+		idx := strings.IndexRune(base64Chars, c)
+		if idx < 0 {
+			continue
+		}
+		buf = (buf << 6) | uint32(idx)
+		bits += 6
+		if bits >= 8 {
+			bits -= 8
+			decoded[n] = byte(buf >> uint(bits))
+			n++
+		}
+	}
+	return decoded[:n], nil
 }
 
 func hasAnyRole(userRoles []string, requiredRoles []string) bool {

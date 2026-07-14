@@ -1,6 +1,6 @@
 apiVersion: v2
 name: insurance-platform
-description: Unified Insurance Platform Helm Chart for OpenStack/Kubernetes deployment
+description: Unified Insurance Platform Helm Chart for Kubernetes deployment
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
@@ -15,14 +15,14 @@ maintainers:
     email: platform@yourdomain.com
 dependencies:
   - name: postgresql
-    version: "13.2.24"
+    version: "15.x"
     repository: https://charts.bitnami.com/bitnami
     condition: postgresql.enabled
   - name: redis
-    version: "18.6.1"
+    version: "18.x"
     repository: https://charts.bitnami.com/bitnami
     condition: redis.enabled
   - name: kafka
-    version: "26.6.2"
+    version: "28.x"
     repository: https://charts.bitnami.com/bitnami
     condition: kafka.enabled

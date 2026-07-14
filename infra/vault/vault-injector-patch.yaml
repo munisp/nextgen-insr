@@ -1,0 +1,22 @@
+# Vault sidecar injector annotations for InsurePortal deployments.
+# Add these annotations to any deployment that needs secrets from Vault.
+#
+# Usage: Apply as a patch to existing deployments:
+#   kubectl patch deployment <name> --patch-file vault-injector-patch.yaml
+
+spec:
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "insureportal-app"
+        vault.hashicorp.com/agent-inject-secret-env: "secret/data/insureportal/production"
+        vault.hashicorp.com/agent-inject-template-env: |
+          {{- with secret "secret/data/insureportal/production" -}}
+          export DATABASE_URL="{{ .Data.data.database_url }}"
+          export JWT_SECRET="{{ .Data.data.jwt_secret }}"
+          export KAFKA_BROKERS="{{ .Data.data.kafka_brokers }}"
+          export REDIS_URL="{{ .Data.data.redis_url }}"
+          {{- end }}
+    spec:
+      serviceAccountName: insureportal-sa

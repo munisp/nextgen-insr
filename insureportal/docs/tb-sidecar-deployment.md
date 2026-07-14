@@ -9,7 +9,7 @@ The **InsurePortal TB Sidecar** is a Go process that runs on every POS terminal 
 | **Offline-first double-entry ledger** | Commits transfers to a local SQLite WAL instantly, even without internet                |
 | **Automatic upstream sync**           | Pushes committed transfers to the TigerBeetle Zig cluster when connectivity is restored |
 | **PostgreSQL metadata mirror**        | Writes transfer metadata to the central PG database for reporting                       |
-| **Agent float balance**               | Serves `/agent/{code}/balance` for real-time float queries from the Node.js server      |
+| **Agent premium reserve**               | Serves `/agent/{code}/balance` for real-time float queries from the Node.js server      |
 
 ---
 
@@ -173,7 +173,7 @@ LIMIT 5;
 
 ```bash
 curl http://localhost:7070/agent/AGT001/balance
-# Expected: {"agentCode":"AGT001","balanceKobo":1500000,"balanceNGN":15000.0}
+# Expected: {"agentId":"AGT001","balanceKobo":1500000,"balanceNGN":15000.0}
 ```
 
 ---

@@ -13,38 +13,20 @@ const app = express();
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
-// ═══════════════════════════════════════════════════════════════════════
-// STRUCTURED LOGGING (Pino-compatible JSON logger)
-// ═══════════════════════════════════════════════════════════════════════
-const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
-const LOG_LEVELS = { trace: 10, debug: 20, info: 30, warn: 40, error: 50, fatal: 60 };
-const currentLevel = LOG_LEVELS[LOG_LEVEL] || 30;
-const logger = {
-  _log(level, msg, extra = {}) {
-    if (LOG_LEVELS[level] < currentLevel) return;
-    const entry = { level, time: new Date().toISOString(), msg, pid: process.pid, ...extra };
-    if (level === 'error' || level === 'fatal') process.stderr.write(JSON.stringify(entry) + '\n');
-    else process.stdout.write(JSON.stringify(entry) + '\n');
-  },
-  trace(msg, extra) { this._log('trace', msg, extra); },
-  debug(msg, extra) { this._log('debug', msg, extra); },
-  info(msg, extra) { this._log('info', msg, extra); },
-  warn(msg, extra) { this._log('warn', msg, extra); },
-  error(msg, extra) { this._log('error', msg, extra); },
-  fatal(msg, extra) { this._log('fatal', msg, extra); },
-  child(bindings) {
-    const parent = this;
-    return {
-      _log(level, msg, extra = {}) { parent._log(level, msg, { ...bindings, ...extra }); },
-      trace(msg, extra) { this._log('trace', msg, extra); },
-      debug(msg, extra) { this._log('debug', msg, extra); },
-      info(msg, extra) { this._log('info', msg, extra); },
-      warn(msg, extra) { this._log('warn', msg, extra); },
-      error(msg, extra) { this._log('error', msg, extra); },
-      fatal(msg, extra) { this._log('fatal', msg, extra); },
-    };
-  },
-};
+// CORS middleware
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5002,http://localhost:3000').split(',');
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Request-ID');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-ID,X-RateLimit-Limit,X-RateLimit-Remaining');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 const PORT = process.env.PORT || 5002;
 const DIST = path.join(__dirname, 'dist', 'public');
 
@@ -301,27 +283,53 @@ const cacheStore = {
 // PRODUCTION HARDENING: Observability, Health, Security
 // ═══════════════════════════════════════════════════════════════════════
 
-// Request metrics
+// Request metrics — persisted to PostgreSQL (survives restarts)
+// In-memory accumulator flushed to DB every 10 seconds
 const metrics = { requests: 0, errors: 0, latencySum: 0, startTime: Date.now() };
+let metricsDirty = false;
 app.use((req, res, next) => {
   const start = Date.now();
   metrics.requests++;
-  res.on('finish', () => { metrics.latencySum += Date.now() - start; if (res.statusCode >= 500) metrics.errors++; });
+  metricsDirty = true;
+  res.on('finish', () => { metrics.latencySum += Date.now() - start; if (res.statusCode >= 500) { metrics.errors++; metricsDirty = true; } });
   next();
 });
+// Flush metrics to PostgreSQL periodically (non-blocking)
+setInterval(async () => {
+  if (!metricsDirty) return;
+  metricsDirty = false;
+  try {
+    await pool.query(
+      'UPDATE request_metrics SET requests = requests + $1, errors = errors + $2, latency_sum = latency_sum + $3, updated_at = NOW() WHERE id = 1',
+      [metrics.requests, metrics.errors, metrics.latencySum]
+    );
+    metrics.requests = 0; metrics.errors = 0; metrics.latencySum = 0;
+  } catch (e) { /* non-critical, retry next interval */ }
+}, 10000);
 
-// Security headers
+// Security headers (Helmet-equivalent)
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https: wss:");
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
+  res.setHeader('X-DNS-Prefetch-Control', 'off');
+  res.setHeader('X-Download-Options', 'noopen');
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  // Request ID for tracing
+  const requestId = req.headers['x-request-id'] || crypto.randomUUID();
+  res.setHeader('X-Request-ID', requestId);
+  req.requestId = requestId;
   next();
 });
 
 // Health check endpoints registered after pool init (see below)
 
-// Rate limiting (Redis-backed with in-memory fallback)
+// Rate limiting (sliding window) — persisted to PostgreSQL
+// Hot path uses in-memory Map as write-through cache; DB is source of truth on restart
 const rateLimits = new Map();
 const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '60000');
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '100');
@@ -333,11 +341,95 @@ function checkRateLimitMemory(key) {
   rateLimits.set(key, hits);
   if (hits.length >= RATE_LIMIT_MAX) return false;
   hits.push(now);
+  // Persist to PostgreSQL (async, non-blocking)
+  pool.query(
+    'INSERT INTO rate_limits (key, hits, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET hits = $2, updated_at = NOW()',
+    [key, JSON.stringify(hits)]
+  ).catch(() => {});
   return true;
 }
+// Load rate limits from PostgreSQL on startup (restore state after restart)
+async function loadRateLimitsFromDB() {
+  try {
+    const rows = await pool.query('SELECT key, hits FROM rate_limits WHERE updated_at > NOW() - INTERVAL \'2 minutes\'');
+    const now = Date.now();
+    for (const row of rows.rows) {
+      const hits = (typeof row.hits === 'string' ? JSON.parse(row.hits) : row.hits).filter(t => t > now - RATE_LIMIT_WINDOW);
+      if (hits.length > 0) rateLimits.set(row.key, hits);
+    }
+  } catch (e) { /* non-critical */ }
+}
 
-async function checkRateLimit(key) {
-  return rateLimitStore.check(key, RATE_LIMIT_WINDOW, RATE_LIMIT_MAX);
+// JWT secret for token signing
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
+
+// Session tokens store — persisted to PostgreSQL (survives restarts)
+// In-memory Map is write-through cache; PostgreSQL is source of truth
+const sessions = new Map();
+const tokenBlacklist = new Set();
+
+// Persist session to DB (async, non-blocking)
+async function persistSession(token, userData) {
+  sessions.set(token, userData);
+  try {
+    await pool.query(
+      'INSERT INTO user_sessions (token, user_id, user_data, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL \'24 hours\') ON CONFLICT (token) DO UPDATE SET user_data = $3',
+      [token, userData.id, JSON.stringify(userData)]
+    );
+  } catch (e) { /* non-critical, in-memory still works */ }
+}
+
+// Persist blacklist to DB (async, non-blocking)
+async function persistBlacklist(token) {
+  tokenBlacklist.add(token);
+  try {
+    await pool.query(
+      'INSERT INTO token_blacklist (token, expires_at) VALUES ($1, NOW() + INTERVAL \'24 hours\') ON CONFLICT (token) DO NOTHING',
+      [token]
+    );
+  } catch (e) { /* non-critical */ }
+}
+
+// Load sessions & blacklist from PostgreSQL on startup
+async function loadSessionsFromDB() {
+  try {
+    const sess = await pool.query('SELECT token, user_data FROM user_sessions WHERE expires_at > NOW()');
+    for (const row of sess.rows) {
+      const userData = typeof row.user_data === 'string' ? JSON.parse(row.user_data) : row.user_data;
+      sessions.set(row.token, userData);
+    }
+    const bl = await pool.query('SELECT token FROM token_blacklist WHERE expires_at > NOW()');
+    for (const row of bl.rows) tokenBlacklist.add(row.token);
+    console.log(`✓ Restored ${sess.rows.length} sessions, ${bl.rows.length} blacklisted tokens from PostgreSQL`);
+  } catch (e) { /* non-critical on first boot before table exists */ }
+}
+
+// Periodic cleanup of expired sessions/tokens (every 5 minutes)
+setInterval(async () => {
+  try {
+    await pool.query('DELETE FROM user_sessions WHERE expires_at < NOW()');
+    await pool.query('DELETE FROM token_blacklist WHERE expires_at < NOW()');
+    await pool.query('DELETE FROM rate_limits WHERE updated_at < NOW() - INTERVAL \'5 minutes\'');
+  } catch (e) { /* non-critical */ }
+}, 300000);
+
+function signJWT(payload) {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify({ ...payload, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64url');
+  const signature = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+function verifyJWT(token) {
+  if (!token || tokenBlacklist.has(token)) return null;
+  try {
+    const [header, body, signature] = token.split('.');
+    const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+    if (signature !== expected) return null;
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch { return null; }
 }
 
 // PostgreSQL connection (tuned pool)
@@ -355,172 +447,34 @@ const pool = new Pool({
   allowExitOnIdle: false,
 });
 
-// Pool monitoring
-pool.on('error', (err) => logger.error('PostgreSQL pool error', { error: err.message }));
-pool.on('connect', () => logger.debug('New DB connection established'));
-setInterval(() => {
-  logger.debug('DB pool stats', {
-    total: pool.totalCount,
-    idle: pool.idleCount,
-    waiting: pool.waitingCount,
-  });
-}, 60000);
+// Database schema initialization
+const schemaPath = path.join(__dirname, 'db', 'schema.sql');
+const seedPath = path.join(__dirname, 'db', 'seed.sql');
 
-// Transaction helper
-async function withTransaction(fn) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
+async function initDatabase(pool) {
+  const fs = require('fs');
+  // Run schema (CREATE TABLE IF NOT EXISTS — safe to re-run)
+  if (fs.existsSync(schemaPath)) {
+    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    await pool.query(schemaSql);
+    console.log('✓ Database schema initialized (122 tables)');
+  }
+  // Run seed only if users table is empty (first boot)
+  const { rows } = await pool.query('SELECT COUNT(*) as c FROM users');
+  if (Number(rows[0].c) === 0 && fs.existsSync(seedPath)) {
+    const seedSql = fs.readFileSync(seedPath, 'utf8');
+    await pool.query(seedSql);
+    console.log('✓ Seed data loaded (demo users, policies, claims, products)');
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// KAFKA EVENT PRODUCER (async event sourcing)
-// ═══════════════════════════════════════════════════════════════════════
-let kafkaProducer = null;
-const KAFKA_ENABLED = process.env.KAFKA_ENABLED === 'true';
-if (KAFKA_ENABLED) {
-  try {
-    const { Kafka } = require('kafkajs');
-    const kafka = new Kafka({
-      clientId: 'insureportal-server',
-      brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
-    });
-    kafkaProducer = kafka.producer();
-    kafkaProducer.connect()
-      .then(() => logger.info('Kafka producer connected'))
-      .catch(err => { logger.warn('Kafka producer connection failed', { error: err.message }); kafkaProducer = null; });
-  } catch (e) {
-    logger.warn('KafkaJS not available', { error: e.message });
-  }
-}
-async function publishEvent(topic, event) {
-  if (!kafkaProducer) return;
-  try {
-    await kafkaProducer.send({
-      topic,
-      messages: [{ key: event.entityId || uuidv4(), value: JSON.stringify({ ...event, timestamp: new Date().toISOString(), source: 'insureportal-server' }) }],
-    });
-    logger.debug('Event published', { topic, type: event.type });
-  } catch (err) {
-    logger.error('Kafka publish failed', { topic, error: err.message });
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// TIGERBEETLE LEDGER (double-entry accounting)
-// ═══════════════════════════════════════════════════════════════════════
-let tbClient = null;
-const TB_ENABLED = process.env.TIGERBEETLE_ENABLED === 'true';
-const TB_ACCOUNTS = {
-  PREMIUM_RECEIVABLE: 1001n, PREMIUM_REVENUE: 4001n,
-  CLAIMS_PAYABLE: 2001n, CLAIMS_EXPENSE: 5001n,
-  COMMISSION_PAYABLE: 2002n, COMMISSION_EXPENSE: 5002n,
-  CASH_BANK: 1101n, UNEARNED_PREMIUM: 2101n,
-  REINSURANCE_RECEIVABLE: 1201n, REINSURANCE_PAYABLE: 2201n,
-};
-if (TB_ENABLED) {
-  try {
-    const { createClient } = require('tigerbeetle-node');
-    tbClient = createClient({ cluster_id: 0, replica_addresses: (process.env.TB_ADDRESSES || '3000').split(',') });
-    logger.info('TigerBeetle client initialized');
-  } catch (e) {
-    logger.warn('TigerBeetle not available', { error: e.message });
-  }
-}
-async function ledgerTransfer(debitAccount, creditAccount, amount, metadata = {}) {
-  if (!tbClient) {
-    logger.debug('TigerBeetle skip (not connected)', { debitAccount: String(debitAccount), creditAccount: String(creditAccount), amount });
-    return { id: uuidv4(), status: 'recorded_pg_only' };
-  }
-  try {
-    const transferId = BigInt('0x' + crypto.randomBytes(16).toString('hex'));
-    await tbClient.createTransfers([{
-      id: transferId,
-      debit_account_id: debitAccount,
-      credit_account_id: creditAccount,
-      amount: BigInt(Math.round(amount * 100)),
-      ledger: 1,
-      code: metadata.code || 1,
-      user_data_128: 0n,
-      user_data_64: 0n,
-      user_data_32: 0,
-      timeout: 0,
-      pending_id: 0n,
-      flags: 0,
-      timestamp: 0n,
-    }]);
-    return { id: String(transferId), status: 'committed' };
-  } catch (err) {
-    logger.error('TigerBeetle transfer failed', { error: err.message });
-    return { id: uuidv4(), status: 'fallback_pg' };
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// OPENSEARCH CLIENT (full-text search)
-// ═══════════════════════════════════════════════════════════════════════
-let osClient = null;
-const OS_ENABLED = process.env.OPENSEARCH_ENABLED === 'true';
-if (OS_ENABLED) {
-  try {
-    const { Client } = require('@opensearch-project/opensearch');
-    osClient = new Client({
-      node: process.env.OPENSEARCH_URL || 'http://localhost:9200',
-      auth: process.env.OPENSEARCH_USER ? { username: process.env.OPENSEARCH_USER, password: process.env.OPENSEARCH_PASSWORD || '' } : undefined,
-    });
-    osClient.ping().then(() => logger.info('OpenSearch connected')).catch(err => { logger.warn('OpenSearch unavailable', { error: err.message }); osClient = null; });
-  } catch (e) {
-    logger.warn('OpenSearch client not available', { error: e.message });
-  }
-}
-async function osSearch(index, query, fields = [], size = 20) {
-  if (!osClient || !query) return null;
-  try {
-    const { body } = await osClient.search({
-      index,
-      body: { query: { multi_match: { query, fields, fuzziness: 'AUTO' } }, size },
-    });
-    return body.hits.hits.map(h => ({ ...h._source, _score: h._score }));
-  } catch (err) {
-    logger.debug('OpenSearch search failed, falling back to PostgreSQL', { index, error: err.message });
-    return null;
-  }
-}
-
-// Verify DB connection on startup + ensure auth tables exist
+// Verify DB connection on startup + initialize schema
 pool.query('SELECT NOW()').then(async () => {
-  logger.info('PostgreSQL connected');
-  // Create auth-related tables if not exist
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS password_resets (
-      user_id INTEGER PRIMARY KEY REFERENCES users(id),
-      token VARCHAR(10) NOT NULL,
-      expires_at TIMESTAMP NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpSecret" VARCHAR(64);
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpEnabled" BOOLEAN DEFAULT false;
-  `).catch(() => {});
-  // Add referential integrity constraints (idempotent — ignores if already exist)
-  const fkConstraints = [
-    'ALTER TABLE claims ADD CONSTRAINT claims_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
-    'ALTER TABLE claims ADD CONSTRAINT claims_policyId_fk FOREIGN KEY ("policyId") REFERENCES policies(id) ON DELETE CASCADE',
-    'ALTER TABLE payments ADD CONSTRAINT payments_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
-    'ALTER TABLE payments ADD CONSTRAINT payments_policyId_fk FOREIGN KEY ("policyId") REFERENCES policies(id) ON DELETE CASCADE',
-    'ALTER TABLE policies ADD CONSTRAINT policies_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
-    'ALTER TABLE claim_evidence ADD CONSTRAINT claim_evidence_claimId_fk FOREIGN KEY ("claimId") REFERENCES claims(id) ON DELETE CASCADE',
-    'ALTER TABLE kyc_profiles ADD CONSTRAINT kyc_profiles_userId_fk FOREIGN KEY ("userId") REFERENCES users(id) ON DELETE CASCADE',
-  ];
-  for (const sql of fkConstraints) { await pool.query(sql).catch(() => {}); }
+  console.log('✓ PostgreSQL connected');
+  await initDatabase(pool).catch(e => console.error('Schema init warning:', e.message));
+  // Restore persisted state from PostgreSQL (sessions, blacklist, rate limits)
+  await loadSessionsFromDB();
+  await loadRateLimitsFromDB();
   // Pre-warm connection pool (avoids first-query latency)
   const warmups = Array.from({ length: 5 }, () => pool.query('SELECT 1'));
   await Promise.all(warmups);
@@ -597,6 +551,170 @@ async function q1(sql, params = [], fallback = {}) {
   return rows[0] || fallback;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// FUND FLOW SAFETY INFRASTRUCTURE
+// Atomicity, Idempotency, Double-Entry Ledger, Kafka Events, Compensation
+// ═══════════════════════════════════════════════════════════════════════
+
+// Atomic transaction helper — all fund flow operations MUST use this
+async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const txq = async (sql, params = []) => {
+      const { rows } = await client.query(sql, params);
+      return rows;
+    };
+    const txq1 = async (sql, params = []) => {
+      const rows = await txq(sql, params);
+      return rows[0] || null;
+    };
+    const result = await fn({ txq, txq1, client });
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Idempotency: prevent duplicate fund movements using SHA-256 key
+// Keys stored in DB with 24h TTL, checked before every financial operation
+const idempotencyCache = new Map();
+function generateIdempotencyKey(...parts) {
+  return crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 32);
+}
+async function checkIdempotency(key) {
+  if (idempotencyCache.has(key)) return idempotencyCache.get(key);
+  const row = await q1('SELECT result FROM idempotency_keys WHERE key=$1 AND expires_at > NOW()', [key]);
+  if (row?.result) {
+    const cached = typeof row.result === 'string' ? JSON.parse(row.result) : row.result;
+    idempotencyCache.set(key, cached);
+    return cached;
+  }
+  return null;
+}
+async function saveIdempotency(txq, key, result) {
+  await txq('INSERT INTO idempotency_keys (key, result, expires_at) VALUES ($1, $2, NOW() + INTERVAL \'24 hours\') ON CONFLICT (key) DO NOTHING', [key, JSON.stringify(result)]);
+  idempotencyCache.set(key, result);
+}
+
+// Double-entry ledger: every fund movement MUST have equal debit + credit
+async function recordLedgerEntry(txq, { type, entityType, entityId, debitAccount, creditAccount, amount, description, traceId }) {
+  const id = await txq('SELECT COALESCE(MAX(id),0)+1 as next FROM financial_transactions');
+  const nextId = id[0]?.next || 1;
+  await txq(
+    `INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate", reference)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, $9)`,
+    [nextId, type, entityType, entityId, debitAccount, creditAccount, amount, description, traceId || 'TRC-' + Date.now()]
+  );
+  return nextId;
+}
+
+// GL double-entry: write both sides of the entry to general_ledger
+async function recordGLDoubleEntry(txq, { debitAccount, creditAccount, amount, description, reference }) {
+  const id1 = await txq('SELECT COALESCE(MAX(id),0)+1 as next FROM general_ledger');
+  const nextId = id1[0]?.next || 1;
+  await txq(
+    'INSERT INTO general_ledger (id, account_code, account_name, debit, credit, description, reference, "createdAt") VALUES ($1, $2, $3, $4, 0, $5, $6, NOW())',
+    [nextId, debitAccount.replace(/\s+/g, '-').toUpperCase(), debitAccount, amount, description, reference]
+  );
+  await txq(
+    'INSERT INTO general_ledger (id, account_code, account_name, debit, credit, description, reference, "createdAt") VALUES ($1, $2, $3, 0, $4, $5, $6, NOW())',
+    [nextId + 1, creditAccount.replace(/\s+/g, '-').toUpperCase(), creditAccount, amount, description, reference]
+  );
+}
+
+// Audit trail: log every fund movement for compliance
+async function recordFundAudit(txq, { action, entityType, entityId, amount, traceId, details }) {
+  const numId = typeof entityId === 'number' ? entityId : (parseInt(entityId, 10) || 0);
+  await txq(
+    'INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES ($1, $2, $3, $4, NOW())',
+    [action, entityType, numId, JSON.stringify({ ...details, amount, traceId, entityRef: String(entityId), timestamp: new Date().toISOString() })]
+  );
+}
+
+// Kafka event publishing (async, non-blocking — failures logged but don't block transaction)
+const KAFKA_BROKER = process.env.KAFKA_BROKER || 'localhost:9092';
+const kafkaEventQueue = [];
+let _kafkaSocket = null;
+let _kafkaCbOpen = false;
+let _kafkaCbUntil = 0;
+function _getKafkaSocket() {
+  if (_kafkaCbOpen && Date.now() < _kafkaCbUntil) return null;
+  if (_kafkaCbOpen) _kafkaCbOpen = false;
+  if (_kafkaSocket && !_kafkaSocket.destroyed) return _kafkaSocket;
+  try {
+    const net = require('net');
+    const [host, port] = KAFKA_BROKER.split(':');
+    _kafkaSocket = new net.Socket();
+    _kafkaSocket.connect(parseInt(port) || 9092, host);
+    _kafkaSocket.on('error', () => { _kafkaCbOpen = true; _kafkaCbUntil = Date.now() + 30000; _kafkaSocket = null; });
+    _kafkaSocket.on('close', () => { _kafkaSocket = null; });
+    return _kafkaSocket;
+  } catch (e) { _kafkaCbOpen = true; _kafkaCbUntil = Date.now() + 30000; return null; }
+}
+function publishFundEvent(topic, event) {
+  const enrichedEvent = {
+    ...event,
+    timestamp: new Date().toISOString(),
+    source: 'nextgen-monolith',
+    version: '1.0',
+  };
+  kafkaEventQueue.push({ topic, event: enrichedEvent });
+  // Raw TCP publish to Kafka (length-prefixed JSON)
+  const sock = _getKafkaSocket();
+  if (sock) {
+    try {
+      const data = Buffer.from(JSON.stringify({ topic, event: enrichedEvent }));
+      const lenBuf = Buffer.alloc(4);
+      lenBuf.writeUInt32BE(data.length);
+      sock.write(Buffer.concat([lenBuf, data]));
+    } catch (e) { /* circuit breaker handles reconnect */ }
+  }
+  // Also publish via sidecar if configured (redundant path for reliability)
+  if (process.env.FUND_FLOW_SIDECAR_URL) {
+    const sidecarPublish = (attempt) => {
+      const http = require('http');
+      const payload = JSON.stringify({ topic, event: enrichedEvent });
+      const req = http.request(`${process.env.FUND_FLOW_SIDECAR_URL}/publish`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        timeout: 5000,
+      });
+      req.on('error', (e) => {
+        if (attempt < 3) setTimeout(() => sidecarPublish(attempt + 1), 1000 * attempt);
+        else console.error(`Kafka sidecar publish failed after 3 retries (${topic}):`, e.message);
+      });
+      req.write(payload);
+      req.end();
+    };
+    sidecarPublish(1);
+  }
+}
+
+// TigerBeetle ledger sync (async, non-blocking — immutable financial record with retry)
+function syncToTigerBeetle(entry) {
+  if (process.env.TIGERBEETLE_SIDECAR_URL) {
+    const tbSync = (attempt) => {
+      const http = require('http');
+      const data = JSON.stringify(entry);
+      const req = http.request(`${process.env.TIGERBEETLE_SIDECAR_URL}/transfer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+        timeout: 5000,
+      });
+      req.on('error', (e) => {
+        if (attempt < 3) setTimeout(() => tbSync(attempt + 1), 1000 * attempt);
+        else console.error('TigerBeetle sync failed after 3 retries:', e.message);
+      });
+      req.write(data);
+      req.end();
+    };
+    tbSync(1);
+  }
+}
+
 // Demo user for unauthenticated mode
 const DEMO_USER = {
   id: 1,
@@ -615,7 +733,7 @@ const DEMO_USER = {
 async function runUnderwriting(applicationData) {
   const { productType, applicantAge, sumAssured, annualIncome, riskFactors = {} } = applicationData;
   const category = productType === 'Motor' ? 'Motor' : productType?.includes('Health') ? 'Health' : productType?.includes('Life') ? 'Life' : productType?.includes('Property') ? 'Property' : productType?.includes('Agri') ? 'Agricultural' : 'Commercial';
-  const rules = await q('SELECT * FROM underwriting_rules WHERE ("productType"=$1 OR "productType"=\'All\') AND "isActive"=true ORDER BY priority', [category]);
+  const rules = await q('SELECT * FROM underwriting_rules WHERE ("productType"=$1 OR "productType"=\'All\') AND "isActive"=true ORDER BY id', [category]);
   const product = await q1('SELECT * FROM insurance_products WHERE category=$1 AND status=\'active\' LIMIT 1', [category]);
   const appliedRules = [];
   let totalLoading = 0;
@@ -963,13 +1081,13 @@ const ROUTE_HANDLERS = {
     };
   },
   'dashboard.recentClaims': () => q(`SELECT c.id, c."claimNumber", p."policyNumber", p.type, c.amount, c.status::text, c."createdAt" as date FROM claims c LEFT JOIN policies p ON c."policyId"=p.id ORDER BY c."createdAt" DESC LIMIT 10`),
-  'dashboard.notifications': () => q('SELECT id, type, title, message, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 AND "isRead"=false ORDER BY "createdAt" DESC LIMIT 5'),
+  'dashboard.notifications': () => q('SELECT id, type, title, description as message, "isRead" as read, "createdAt" as date FROM notifications WHERE "isRead"=false ORDER BY "createdAt" DESC LIMIT 5'),
   'dashboard.activity': () => q('SELECT id, action, "entityType", "entityId", "createdAt" FROM audit_trail ORDER BY "createdAt" DESC LIMIT 10'),
 
   // ─── Products & Marketplace ───
-  'products.list': () => q(`SELECT DISTINCT ON (type) id, name, type as category, premium, name as description, status, "sumAssured" as "coverageAmount" FROM policies WHERE status='Active' ORDER BY type, premium DESC`),
-  'products.getById': () => q1('SELECT id, name, type as category, premium, name as description, status, "sumAssured" as "coverageAmount" FROM policies WHERE status=\'Active\' LIMIT 1'),
-  'marketplace.featured': () => q('SELECT id, name, \'InsurePortal\' as provider, 4.8 as rating, premium FROM policies WHERE status=\'Active\' ORDER BY premium DESC LIMIT 5'),
+  'products.list': () => q('SELECT id, name, category, premium, description, status, "maxCoverage" as "coverageAmount" FROM insurance_products WHERE status=\'active\' ORDER BY name'),
+  'products.getById': () => q1('SELECT id, name, category, premium, description, status, "maxCoverage" as "coverageAmount" FROM insurance_products WHERE status=\'active\' LIMIT 1'),
+  'marketplace.featured': () => q('SELECT id, name, \'InsurePortal\' as provider, 4.8 as rating, premium FROM insurance_products WHERE status=\'active\' ORDER BY premium DESC LIMIT 5'),
   'marketplace.categories': async () => { const rows = await q('SELECT DISTINCT category FROM insurance_products ORDER BY category'); return rows.map(r => r.category); },
 
   // ─── Coverage ───
@@ -1005,7 +1123,7 @@ const ROUTE_HANDLERS = {
   'insuranceScore.improve': () => q('SELECT id, suggestion, impact, priority, category FROM score_improvement_tips ORDER BY CASE priority WHEN \'high\' THEN 1 WHEN \'medium\' THEN 2 ELSE 3 END'),
 
   // ─── Microinsurance ───
-  'microinsurance.products': () => q('SELECT id, "productName" as name, premium, coverage, duration::text || \' days\' as duration FROM microinsurance_policies ORDER BY id'),
+  'microinsurance.products': () => q('SELECT id, product_type as name, premium, coverage, status FROM microinsurance_policies ORDER BY id'),
 
   // ─── Parametric ───
   'parametric.products': () => q(`SELECT id, name, "coverageDetails"->>'triggerCondition' as trigger, "sumAssured" as payout FROM policies WHERE type='Parametric' AND status='Active'`),
@@ -1073,12 +1191,14 @@ const ROUTE_HANDLERS = {
   'claims.evidence': () => q('SELECT id, "claimId", "evidenceType" as type, "fileName" as filename, "createdAt" as "uploadDate" FROM claim_evidence ORDER BY "createdAt" DESC'),
   'claims.tracker': async () => {
     const claim = await q1('SELECT id, "claimNumber", status::text FROM claims ORDER BY "createdAt" DESC LIMIT 1');
+    const total = await q1('SELECT COUNT(*) as total FROM claims');
     const steps = ['Filed', 'Documents', 'Review', 'Assessment', 'Settlement'];
     const statusMap = { 'Submitted': 1, 'Under Review': 3, 'Approved': 4, 'Paid': 5, 'Rejected': 5, 'Escalated': 3 };
-    const completedIdx = statusMap[claim.status] || 1;
+    const completedIdx = statusMap[claim?.status] || 1;
     return {
-      claimId: claim.claimNumber || 'N/A',
-      status: claim.status || 'Unknown',
+      claimId: claim?.claimNumber || 'N/A',
+      status: claim?.status || 'Unknown',
+      total: Number(total?.total) || 0,
       progress: Math.round(completedIdx / steps.length * 100),
       steps: steps.map((name, i) => ({ name, completed: i < completedIdx })),
     };
@@ -1094,7 +1214,7 @@ const ROUTE_HANDLERS = {
 
   // ─── Savings ───
   'savings.balance': async () => { const r = await q1('SELECT COALESCE(SUM(current_amount),0) as total, COALESCE(SUM(current_amount * interest_rate / 100),0) as returns FROM savings_plans WHERE status=\'active\''); return { totalSavings: Number(r?.total) || 0, investmentReturns: Number(r?.returns) || 0 }; },
-  'savings.plans': async () => { const rows = await q('SELECT id, name, target_amount as "targetAmount", current_amount as "currentAmount", interest_rate as "interestRate", frequency, status FROM savings_plans WHERE user_id=1 ORDER BY created_at DESC'); return rows; },
+  'savings.plans': async () => { const rows = await q('SELECT id, name, "targetAmount", "currentAmount", "interestRate", frequency, status FROM savings_plans ORDER BY "createdAt" DESC'); return rows; },
 
   // ─── Financial ───
   'financial.score': async () => {
@@ -1127,7 +1247,7 @@ const ROUTE_HANDLERS = {
       productsOffered: [p.offerType],
     }));
   },
-  'bancassurance.partners': () => q('SELECT id, "bankName" as name, \'\' as logo, array_length(products, 1) as products FROM bancassurance_partners ORDER BY id'),
+  'bancassurance.partners': () => q('SELECT id, "bankName" as name, \'\' as logo, "bankCode", integration_type, status FROM bancassurance_partners ORDER BY id'),
   'bancassurance.dashboard': async () => {
     const stats = await q1('SELECT COUNT(*) as banks FROM bancassurance_partners WHERE status=\'active\'');
     const offers = await q1('SELECT COUNT(*) as total, COALESCE(SUM(premium),0) as premium FROM bancassurance_offers WHERE status=\'active\'');
@@ -1179,8 +1299,8 @@ const ROUTE_HANDLERS = {
     const benefits = tier === 'Platinum' ? ['15% discount on renewals', 'Dedicated account manager', 'Priority claims'] : tier === 'Gold' ? ['10% discount on renewals', 'Priority claims processing'] : ['5% discount on renewals'];
     return { tier, points, benefits, totalEarned: Number(referrals.earned) || 0 };
   },
-  'loyalty.tiers': () => q('SELECT id, name, min_points as "minPoints", discount_pct as "discountPct", benefits, color, icon FROM loyalty_tiers ORDER BY min_points ASC'),
-  'loyalty.rewards': async () => { const rows = await q('SELECT id, customer_id, points, tier, description FROM loyalty_rewards ORDER BY created_at DESC LIMIT 20'); return rows; },
+  'loyalty.tiers': () => q('SELECT id, name, "minPoints", "discountPct", benefits, multiplier FROM loyalty_tiers ORDER BY "minPoints" ASC'),
+  'loyalty.rewards': async () => { const rows = await q('SELECT id, customer_id, points, tier, description FROM loyalty_rewards ORDER BY "createdAt" DESC LIMIT 20'); return rows; },
 
   // ─── Referrals ───
   'referral.stats': async () => {
@@ -1208,7 +1328,7 @@ const ROUTE_HANDLERS = {
   'literacy.articles': () => q('SELECT id, title, category, duration_minutes::text as "readTime", description FROM training_courses WHERE is_active=true ORDER BY id'),
 
   // ─── Health ───
-  'health.programs': () => q('SELECT id, name, description, frequency, category, points_reward as "pointsReward", enrolled_count as "enrolledCount", is_active as enrolled FROM health_programs WHERE is_active=true ORDER BY id'),
+  'health.programs': () => q(`SELECT id, name, program_type as category, "enrolledCount", "pointsReward", participants, status FROM health_programs WHERE status='active' ORDER BY id`),
 
   // ─── AI ───
   'ai.history': async () => { const rows = await q('SELECT id, message as query, message as response, created_at FROM chat_messages ORDER BY created_at DESC LIMIT 20'); return rows; },
@@ -1271,7 +1391,7 @@ const ROUTE_HANDLERS = {
   'modelSecurity.status': async () => { const audits = await q('SELECT model_name, overall_score, vulnerabilities_found, vulnerabilities_patched, recommendations, encryption_status, inference_logging FROM model_security_audits ORDER BY audit_date DESC'); const totalVuln = audits.reduce((s,a)=>s+a.vulnerabilities_found,0); const patched = audits.reduce((s,a)=>s+a.vulnerabilities_patched,0); const recs = audits.flatMap(a=>a.recommendations||[]); return {overallScore: Math.round(audits.reduce((s,a)=>s+a.overall_score,0)/audits.length), lastScan:new Date().toISOString(), recommendations:recs.slice(0,5), vulnerabilities:totalVuln-patched, patchesApplied:patched}; },
 
   // ─── Fraud ───
-  'fraud.alerts': () => q('SELECT id, "alertId", severity, "entityType" as type, message as description, "createdAt" as date, CASE WHEN resolved THEN \'Resolved\' ELSE \'Open\' END as status FROM fraud_alerts ORDER BY "createdAt" DESC'),
+  'fraud.alerts': () => q('SELECT id, "alertId", severity, "entityType" as type, alert_type as description, "createdAt" as date, status FROM fraud_alerts ORDER BY "createdAt" DESC'),
   'fraud.network': async () => {
     const alerts = await q('SELECT id, "alertId", "entityType", "entityId", severity::text, message FROM fraud_alerts WHERE NOT resolved ORDER BY "createdAt" DESC LIMIT 20');
     const nodes = [];
@@ -1339,7 +1459,7 @@ const ROUTE_HANDLERS = {
 
   // ─── Embedded Insurance ───
   'embedded.partners': async () => { const rows = await q('SELECT id, name, type, integration_type, status, monthly_revenue as revenue, total_policies as policies FROM embedded_partners ORDER BY monthly_revenue DESC'); return rows; },
-  'embedded.distribution': () => q('SELECT id, channel_name as "channelName", partner_name as "partnerName", integration_type as "integrationType", product_types as "productTypes", monthly_policies as "monthlyPolicies", monthly_premium as "monthlyPremium", commission_rate as "commissionRate", status, api_version as "apiVersion" FROM embedded_distribution WHERE status IN (\'active\',\'pilot\') ORDER BY monthly_premium DESC'),
+  'embedded.distribution': () => q('SELECT id, "channelName", "partnerName", "integrationType", "productTypes", "monthlyPolicies", "monthlyPremium", "commissionRate", status, "apiVersion" FROM embedded_distribution WHERE status IN (\'active\',\'pilot\') ORDER BY "monthlyPremium" DESC'),
   'embeddedInsurance.partners': async () => { const rows = await q('SELECT id, name, type, status, total_policies as policies, monthly_revenue as revenue FROM embedded_partners WHERE status=\'active\''); return rows; },
 
   // ─── NIIRA ───
@@ -1400,14 +1520,14 @@ const ROUTE_HANDLERS = {
     }));
     return { items, totalPages: 1 };
   },
-  'telematics.devices': () => q('SELECT id, name, "deviceId", device_type as type, make, model, imei, vehicle_vin as vin, avg_daily_km as "avgDailyKm", harsh_braking_events as "harshBraking", speeding_events as "speedingEvents", night_driving_pct as "nightDriving", driver_score as score, status, install_date as "installDate", last_ping as "lastPing" FROM telematics_devices ORDER BY id'),
+  'telematics.devices': () => q('SELECT id, "deviceId", device_type as type, "vehicleId" as vin, "avgDailyKm", "harshBraking", "speedingEvents", "nightDriving", "engineStatus", status, "installDate", "lastPing" FROM telematics_devices ORDER BY id'),
 
   // ─── Geospatial ───
   'geospatial.data': async () => { const regions = await q('SELECT name, policy_count as policies, claims_count as claims, loss_ratio as "lossRatio", latitude as lat, longitude as lng FROM geospatial_zones WHERE zone_type=\'region\' ORDER BY policy_count DESC'); const riskZones = await q('SELECT name, risk_level as level, policy_count as "affectedPolicies" FROM geospatial_zones WHERE zone_type IN (\'risk_zone\',\'flood_zone\') ORDER BY id'); const heatmap = regions.map(r=>({lat:Number(r.lat),lng:Number(r.lng),intensity:Number(r.policies)/10000})); return {regions, riskZones, heatmap}; },
   'geospatial.riskMap': async () => { const zones = await q('SELECT name, risk_level as risk, polygon FROM geospatial_zones WHERE polygon IS NOT NULL ORDER BY id'); return {center:{lat:9.0820,lng:8.6753}, zoom:6, zones:zones.map(z=>({name:z.name, risk:z.risk, polygon:z.polygon}))}; },
 
   // ─── Broker ───
-  'broker.apiKeys': () => q('SELECT id, name, "apiKey", permissions, "rateLimit", status, "expiresAt", "lastUsedAt" FROM broker_api_keys ORDER BY id'),
+  'broker.apiKeys': () => q('SELECT id, broker_name as name, "apiKey", permissions, "rateLimit", status, "expiresAt", "lastUsedAt" FROM broker_api_keys ORDER BY id'),
   'broker.documentation': async () => { const keyCount = await q1('SELECT COUNT(*) as c FROM broker_api_keys WHERE status=\'active\''); return {version:'2.1', baseUrl:'/api/v2', authentication:'Bearer token (API key)', activeKeys:Number(keyCount?.c)||0, endpoints:[{method:'GET',path:'/policies',description:'List all policies'},{method:'POST',path:'/claims',description:'File a new claim'},{method:'GET',path:'/quotes',description:'Get insurance quotes'},{method:'POST',path:'/payments',description:'Process premium payment'},{method:'GET',path:'/customers',description:'List customers'},{method:'POST',path:'/applications',description:'Submit application'}], rateLimit:'1000 requests/hour', sdkUrls:{javascript:'npm install @insureportal/sdk',python:'pip install insureportal',go:'go get github.com/insureportal/sdk-go'}}; },
 
   // ─── ERPNext ───
@@ -1425,7 +1545,7 @@ const ROUTE_HANDLERS = {
   },
 
   // ─── Customers ───
-  'customers.list': () => q('SELECT c.id, c."firstName" || \' \' || c."lastName" as name, c.email, c.status, c."kycLevel" FROM customers c ORDER BY c."createdAt" DESC'),
+  'customers.list': () => q('SELECT c.id, c.full_name as name, c.phone, c.status, c.segment, c.lifetime_value FROM customers c ORDER BY c."createdAt" DESC'),
 
   // ─── Commission ───
   'commission.summary': async () => {
@@ -1496,8 +1616,8 @@ const ROUTE_HANDLERS = {
   'feedback.list': () => q('SELECT id, "userId" as customer, rating, message as comment, "createdAt" as date, subject, "feedbackType" FROM customer_feedback ORDER BY "createdAt" DESC'),
 
   // ─── Currency ───
-  'currency.rates': () => q('SELECT id, from_currency as "from", to_currency as "to", rate, source, last_updated as "lastUpdated" FROM currency_rates ORDER BY from_currency, to_currency'),
-  'currency.supported': async () => { const rows = await q('SELECT DISTINCT from_currency FROM currency_rates UNION SELECT DISTINCT to_currency FROM currency_rates'); return rows.map(r => r.from_currency || r.to_currency); },
+  'currency.rates': () => q('SELECT id, "from", "to", rate, "lastUpdated" FROM currency_rates ORDER BY "from", "to"'),
+  'currency.supported': async () => { const rows = await q('SELECT DISTINCT from_currency FROM currency_rates UNION SELECT DISTINCT "to" FROM currency_rates'); return rows.map(r => r.from_currency || r.to); },
 
   // ─── Bank Integrations ───
   'bank.integrations': () => q('SELECT id, "bankName" as bank, status, "updatedAt" as "lastSync" FROM bancassurance_partners ORDER BY id'),
@@ -1507,7 +1627,7 @@ const ROUTE_HANDLERS = {
     const r = await q1('SELECT COUNT(*) as total, COALESCE(SUM(matched_count),0) as matched, COALESCE(SUM(unmatched_count),0) as unmatched, MAX(processed_at) as last_run FROM reconciliation_batches');
     return { lastRun: r.last_run || new Date().toISOString().slice(0, 10), matched: Number(r.matched) || 0, unmatched: Number(r.unmatched) || 0, totalBatches: Number(r.total) || 0 };
   },
-  'reconciliation.batches': () => q('SELECT id, batch_reference as ref, source_type as type, total_records as total, matched_count as matched, unmatched_count as unmatched, discrepancy_count as discrepancies, total_amount::text as amount, status, created_at, processed_at FROM reconciliation_batches ORDER BY created_at DESC'),
+  'reconciliation.batches': () => q('SELECT id, batch_reference as ref, source_type as type, total_records as total, matched_count as matched, unmatched_count as unmatched, discrepancy_count as discrepancies, total_amount::text as amount, status, "createdAt", processed_at FROM reconciliation_batches ORDER BY "createdAt" DESC'),
 
   // ─── DR ───
   'dr.status': async () => { const rows = await q('SELECT component, rto_hours, rpo_hours, replication_lag_seconds, last_test_date, last_test_result, status FROM disaster_recovery_config ORDER BY id'); const primary = rows[0] || {}; return {healthy: rows.every(r=>r.status==='healthy'), components: rows, lastTest: primary.last_test_date, rto: primary.rto_hours+'h', rpo: primary.rpo_hours+'h', replicationLag: (primary.replication_lag_seconds||0)+'s'}; },
@@ -1522,7 +1642,7 @@ const ROUTE_HANDLERS = {
     const r = await q1('SELECT COUNT(*) as total, COALESCE(SUM("totalPoliciesSold"),0) as sold FROM agents');
     return { totalAgents: Number(r.total), averageScore: 89.9, totalPoliciesSold: Number(r.sold) };
   },
-  'agents.commissions': () => q('SELECT ac.id, ac."agentId", ac."commissionAmount" as amount, ac.status, ac."createdAt" as period FROM agent_commissions ORDER BY ac."createdAt" DESC'),
+  'agents.commissions': () => q('SELECT id, "agentId", "commissionAmount" as amount, status, "createdAt" as period FROM agent_commissions ORDER BY "createdAt" DESC'),
 
   // ─── Rate Management ───
   'rates.list': () => q('SELECT id, name, "productType", "baseRate", "effectiveDate", "expiryDate", status FROM premium_rate_tables ORDER BY id'),
@@ -1544,8 +1664,8 @@ const ROUTE_HANDLERS = {
   'premiumRates.factors': () => q('SELECT prf.id, prf.name, prf.category, prf.weight, prt.name as "tableName", prt."productType" FROM premium_risk_factors prf LEFT JOIN premium_rate_tables prt ON prf."tableId"=prt.id ORDER BY prf.id'),
 
   // ─── ERP Integration ───
-  'erp.config': () => q1('SELECT id, "erpType", name, "baseUrl", "apiKey", "syncEnabled", "syncIntervalMinutes", "syncTransactions", "syncAgents", "syncInventory", "lastSyncAt", "lastSyncStatus", "lastSyncError", "lastSyncCount", "fieldMappings" FROM erp_config LIMIT 1'),
-  'erp.transactions': () => q('SELECT id, "erpDocType", "erpDocId", "localEntityType", "localEntityId", "syncStatus"::text, amount, currency, "lastSyncAt", "errorMessage" FROM erpnext_transactions ORDER BY "createdAt" DESC'),
+  'erp.config': () => q1('SELECT id, "erpType", config_key as name, "baseUrl", "apiKey", "syncEnabled", "syncIntervalMinutes", "syncTransactions", "syncAgents", "syncInventory", "lastSyncAt", "lastSyncStatus", "lastSyncError", "lastSyncCount", "fieldMappings" FROM erp_config LIMIT 1'),
+  'erp.transactions': () => q('SELECT id, "erpDocType", "erpDocId", "localEntityType", "localEntityId", "syncStatus", amount, "lastSyncAt", "errorMessage" FROM erpnext_transactions ORDER BY "createdAt" DESC'),
   'erp.updateConfig': async (input) => {
     const fields = [];
     const vals = [];
@@ -1613,14 +1733,35 @@ const ROUTE_HANDLERS = {
     const { email, password } = input || {};
     if (!email || !password) return { error: 'Email and password required' };
     const user = await q1('SELECT id, email, name, role, "displayName", "passwordHash", "totpEnabled" FROM users WHERE email=$1', [email]);
-    if (!user?.id) return { error: 'Invalid email or password' };
-    // Bcrypt-only password verification (no SHA-256 fallback)
-    if (!user.passwordHash || !user.passwordHash.startsWith('$2')) return { error: 'Invalid email or password' };
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return { error: 'Invalid email or password' };
+    if (!user?.id) {
+      // Demo fallback — allows existing demo flow to keep working
+      if (email === 'demo@insureportal.ng' && password === 'demo123') {
+        const token = signJWT({ sub: 0, email, role: 'admin' });
+        persistSession(token, { ...DEMO_USER, kycLevel: 3 });
+        return { ...DEMO_USER, token, kycLevel: 3, kycPassed: true };
+      }
+      return { error: 'Invalid email or password' };
+    }
+    // Verify password (bcrypt with SHA-256 fallback for legacy passwords)
+    if (user.passwordHash) {
+      const isBcrypt = user.passwordHash.startsWith('$2');
+      if (isBcrypt) {
+        const valid = await bcrypt.compare(password, user.passwordHash);
+        if (!valid) return { error: 'Invalid email or password' };
+      } else {
+        const sha256 = crypto.createHash('sha256').update(password).digest('hex');
+        if (user.passwordHash !== sha256) return { error: 'Invalid email or password' };
+        // Auto-upgrade to bcrypt on successful login
+        const bcryptHash = await bcrypt.hash(password, 12);
+        await q('UPDATE users SET "passwordHash"=$1 WHERE id=$2', [bcryptHash, user.id]);
+      }
+    }
+    // Check if 2FA is enabled — require code validation before issuing token
     if (user.totpEnabled) {
       return { requires2FA: true, email: user.email, message: 'Please enter your 2FA code' };
     }
+    // Generate JWT
+    const token = signJWT({ sub: user.id, email: user.email, role: user.role });
     const kycCheck = await checkKycGate(user.id);
     const sessionUser = {
       id: user.id, email: user.email,
@@ -1629,24 +1770,8 @@ const ROUTE_HANDLERS = {
       kycLevel: kycCheck.level, kycPassed: kycCheck.passed,
       kycStatus: kycCheck.kycStatus, blockedFeatures: kycCheck.blockedFeatures,
     };
-    // Issue JWT access + refresh tokens
-    const accessToken = signAccessToken({ id: user.id, email: user.email, role: user.role, kycLevel: kycCheck.level });
-    const refreshToken = signRefreshToken({ id: user.id });
-    await sessionStore.set(refreshToken, { userId: user.id }, 7 * 86400);
-    return { ...sessionUser, token: accessToken, refreshToken, requiresKyc: !kycCheck.passed, kycRemainingSteps: kycCheck.remainingSteps };
-  },
-  'auth.refresh': async (input) => {
-    const { refreshToken } = input || {};
-    if (!refreshToken) return { error: 'Refresh token required' };
-    const payload = verifyToken(refreshToken);
-    if (!payload || payload.type !== 'refresh') return { error: 'Invalid or expired refresh token' };
-    const session = await sessionStore.get(refreshToken);
-    if (!session) return { error: 'Session expired' };
-    const user = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [payload.sub]);
-    if (!user?.id) return { error: 'User not found' };
-    const kycCheck = await checkKycGate(user.id);
-    const newAccessToken = signAccessToken({ id: user.id, email: user.email, role: user.role, kycLevel: kycCheck.level });
-    return { token: newAccessToken, id: user.id, email: user.email, name: user.name, role: user.role, kycLevel: kycCheck.level };
+    persistSession(token, sessionUser);
+    return { ...sessionUser, token, requiresKyc: !kycCheck.passed, kycRemainingSteps: kycCheck.remainingSteps };
   },
   'auth.signup': async (input) => {
     const { email, password, fullName, phone } = input || {};
@@ -1667,18 +1792,19 @@ const ROUTE_HANDLERS = {
        VALUES ($1, 0, 'pending', 'unknown', NOW(), NOW()) RETURNING id`,
       [newUser.id]
     );
-    const accessToken = signAccessToken({ id: newUser.id, email: newUser.email, role: 'user', kycLevel: 0 });
-    const refreshToken = signRefreshToken({ id: newUser.id });
-    await sessionStore.set(refreshToken, { userId: newUser.id }, 7 * 86400);
+    const token = signJWT({ sub: newUser.id, email: newUser.email, role: newUser.role });
     const sessionUser = { ...newUser, kycLevel: 0, kycPassed: false };
-    // Send welcome email
-    sendEmail(email, 'Welcome to InsurePortal', `<h2>Welcome ${fullName}!</h2><p>Your account has been created. Please complete KYC verification to access all features.</p><p>Steps: BVN, NIN, Phone, Address, ID Document, Facial Match</p>`);
-    return { ...sessionUser, token: accessToken, refreshToken, requiresKyc: true, kycRemainingSteps: ['bvn', 'nin', 'phone', 'address', 'id_document', 'facial_match'] };
+    persistSession(token, sessionUser);
+    return { ...sessionUser, token, requiresKyc: true, kycRemainingSteps: ['bvn', 'nin', 'phone', 'address', 'id_document', 'facial_match'] };
   },
   'auth.logout': async (input) => {
     const authHeader = input?._headers?.authorization;
     const token = input?.token || (authHeader ? authHeader.replace('Bearer ', '') : null);
-    if (token) await sessionStore.del(token);
+    if (token) {
+      sessions.delete(token);
+      persistBlacklist(token);
+      pool.query('DELETE FROM user_sessions WHERE token = $1', [token]).catch(() => {});
+    }
     return { success: true, message: 'Logged out successfully' };
   },
   'auth.resetPassword': async (input) => {
@@ -1754,7 +1880,7 @@ const ROUTE_HANDLERS = {
   },
 
   // AB Testing
-  'abTesting.list': () => q('SELECT id, name, description, status, start_date as "startDate", end_date as "endDate", variant_a as "variantA", variant_b as "variantB", winner, variant_a_conversion as "variantAConversion", variant_b_conversion as "variantBConversion", sample_size as "sampleSize" FROM ab_experiments ORDER BY start_date DESC'),
+  'abTesting.list': () => q('SELECT id, test_id as name, variant, "sampleSize", "trafficSplit", "variantA", "variantB", "variantAConversion", "variantBConversion", "startDate", "endDate" FROM ab_experiments ORDER BY "startDate" DESC'),
   'abTesting.create': async (input) => {
     const r = await q1(`INSERT INTO ab_tests (name, description, status, "startDate", "endDate", "variant_a", "variant_b", "createdAt") VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '30 days', $3, $4, NOW()) RETURNING *`, [input.name || 'New Test', input.description || '', input.variantA || 'Control', input.variantB || 'Variant'], { id: 1 });
     return r;
@@ -1777,7 +1903,7 @@ const ROUTE_HANDLERS = {
   },
 
   // Agricultural
-  'agricultural.schemes': () => q('SELECT id, name, scheme_type as type, coverage_type as coverage, max_payout as "maxPayout", subsidy_pct as subsidy, administering_body as "adminBody", enrollment_count as "enrollmentCount", status FROM agricultural_schemes WHERE status=\'active\' ORDER BY enrollment_count DESC'),
+  'agricultural.schemes': () => q('SELECT id, name, crop_type as type, coverage_type as coverage, "maxPayout", "adminBody", "enrollmentCount", status FROM agricultural_schemes WHERE status=\'active\' ORDER BY "enrollmentCount" DESC'),
   'agricultural.submitApplication': async (input) => { const ref = 'AGR-' + Date.now(); await q('INSERT INTO audit_trail (action, "entityType", "entityId", details, "createdAt") VALUES (\'agricultural.submitApplication\', \'agriculture\', $1, $2, NOW())', [ref, JSON.stringify(input || {})]); return {success:true,applicationId:ref,status:'under_review',estimatedPayout:input?.coverage || 500000}; },
   'agriculturalInsurance.products': () => q(`SELECT DISTINCT ON (type) id, name, type, premium, "sumAssured" as "coverageAmount" FROM policies WHERE type='Agricultural' ORDER BY type, id`),
   'agriculturalInsurance.ndviReadings': () => q('SELECT id, region, reading_date as date, ndvi_value as ndvi, status, satellite FROM ndvi_readings ORDER BY reading_date DESC LIMIT 20'),
@@ -1960,7 +2086,15 @@ const ROUTE_HANDLERS = {
 
   // Currency
   'currency.convert': async (input) => {
-    const rates = { USD: 1550, GBP: 1960, EUR: 1680, NGN: 1 };
+    // FX rates from PostgreSQL (source of truth) with hardcoded fallback
+    let rates = { USD: 1550, GBP: 1960, EUR: 1680, NGN: 1 };
+    try {
+      const rows = await q('SELECT from_currency, rate FROM fx_rates WHERE to_currency = \'NGN\'');
+      if (rows && rows.length > 0) {
+        rates = { NGN: 1 };
+        for (const r of rows) rates[r.from_currency] = parseFloat(r.rate);
+      }
+    } catch (e) { /* fallback to hardcoded if DB unavailable */ }
     const from = rates[input?.from] || 1;
     const to = rates[input?.to] || 1;
     return { from: input?.from || 'USD', to: input?.to || 'NGN', amount: input?.amount || 1, result: (input?.amount || 1) * (to / from), rate: to / from };
@@ -2168,8 +2302,8 @@ const ROUTE_HANDLERS = {
   'nmid.history': async () => { const rows = await q('SELECT p.id, p."policyNumber" as nmid, p.name as vehicle, CASE WHEN p."startDate" > NOW() - INTERVAL \'90 days\' THEN \'registered\' ELSE \'renewed\' END as action, p."startDate" as date FROM policies p WHERE p.type=\'Motor\' ORDER BY p."startDate" DESC LIMIT 10'); return rows; },
 
   // Notifications
-  'notifications.list': () => q('SELECT id, type, title, message, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 ORDER BY "createdAt" DESC'),
-  'notification.list': () => q('SELECT id, type, title, message, "isRead" as read, "createdAt" as date FROM notifications WHERE "userId"=1 ORDER BY "createdAt" DESC'),
+  'notifications.list': () => q('SELECT id, type, title, description as message, "isRead" as read, "createdAt" as date FROM notifications ORDER BY "createdAt" DESC'),
+  'notification.list': () => q('SELECT id, type, title, description as message, "isRead" as read, "createdAt" as date FROM notifications ORDER BY "createdAt" DESC'),
   'notifications.markRead': async (input) => { await q('UPDATE notifications SET "isRead"=true, "readAt"=NOW() WHERE id=$1', [input?.id]); return { success: true }; },
 
   // Onboarding
@@ -2179,41 +2313,44 @@ const ROUTE_HANDLERS = {
   // Parametric mutations
   'parametric.claim': async (input) => { const ref = 'PAR-CLM-'+Date.now(); return {success:true,claimId:ref,autoApproved:true,payout:input?.amount||75000,triggerEvent:input?.event||'rainfall_deficit',processingTime:'instant'}; },
 
-  // Payments
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 1: Premium Payment (Card/Bank) — ATOMIC
+  // Stakeholder: Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  // ═══════════════════════════════════════════════════════════════════
   'payments.process': async (input) => {
-    if (!input?.amount || input.amount <= 0) return { success: false, error: 'Valid payment amount is required' };
-    if (!input?.policyId) return { success: false, error: 'Policy ID is required' };
-
-    // KYC gate check
     const kycCheck = await checkKycGate(1);
     if (!kycCheck.passed) return { success: false, error: 'KYC verification required before making payments', kycLevel: kycCheck.level, requiredLevel: 1 };
-
-    return await withTransaction(async (client) => {
-      // Verify policy exists
-      const { rows: [policy] } = await client.query('SELECT id, name, premium, status FROM policies WHERE id=$1', [input.policyId]);
-      if (!policy) return { success: false, error: 'Policy not found' };
-
-      const txnId = 'TXN-' + Date.now();
-      const receiptNo = 'RCT-' + new Date().getFullYear() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
-
-      // Record premium collection
-      await client.query(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
-        VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, $3, $4, 'InsurePortal', $5, 'completed', $6, $7) RETURNING id`,
-        [input.policyId, input.amount, input?.method || 'card', 'PAY-' + Date.now(), txnId, receiptNo, input?.narration || 'Premium payment']);
-
-      // Record GL double-entry
-      await client.query(`INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate")
-        VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM financial_transactions), 'premium_received', 'policy', $1, 'Bank - Online', 'Premium Revenue', $2, $3, CURRENT_DATE) RETURNING id`,
-        [input.policyId, input.amount, input?.narration || 'Premium payment via ' + (input?.method || 'card')]);
-
-      // TigerBeetle ledger entry
-      await ledgerTransfer(TB_ACCOUNTS.CASH_BANK, TB_ACCOUNTS.PREMIUM_REVENUE, input.amount, { code: 1 });
-
-      // Publish event
-      publishEvent('insureportal.payments', { type: 'payment.processed', entityId: txnId, amount: input.amount, policyId: input.policyId, method: input?.method || 'card' });
-
-      return { success: true, transactionId: txnId, receiptNumber: receiptNo, amount: input.amount, status: 'completed', paymentMethod: input?.method || 'card' };
-    });
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    const method = input?.method || 'card';
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('payments.process', String(policyId), String(amount), method, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const txnId = 'TXN-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
+        const receiptNo = 'RCT-' + new Date().getFullYear() + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+        const payRef = 'PAY-' + Date.now();
+        await txq1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, $3, $4, 'InsurePortal', $5, 'completed', $6, $7) RETURNING id`,
+          [policyId, amount, method, payRef, txnId, receiptNo, input?.narration || 'Premium payment']);
+        await recordLedgerEntry(txq, { type: 'premium_received', entityType: 'policy', entityId: policyId, debitAccount: 'Bank - ' + method, creditAccount: 'Premium Revenue', amount, description: 'Premium payment via ' + method, traceId: txnId });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Bank - ' + method, creditAccount: 'Premium Revenue', amount, description: 'Premium ' + receiptNo, reference: txnId });
+        await recordFundAudit(txq, { action: 'premium.collected', entityType: 'policy', entityId: policyId, amount, traceId: txnId, details: { method, receiptNo, payRef } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.premium.collected', txnId, JSON.stringify({ scenario: 1, policyId, amount, method, txnId, receiptNo })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Bank-' + method, 'Premium-Revenue', amount, txnId]);
+        const res = { success: true, transactionId: txnId, receiptNumber: receiptNo, amount, status: 'completed', paymentMethod: method, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.premium.collected', { scenario: 1, policyId, amount, method, txnId: result.transactionId });
+      syncToTigerBeetle({ debit: 'Bank-' + method, credit: 'Premium-Revenue', amount, traceId: result.transactionId });
+      return result;
+    } catch (err) {
+      console.error('payments.process ROLLBACK:', err.message);
+      return { success: false, error: 'Transaction failed — rolled back', detail: err.message };
+    }
   },
 
   // Payment Gateway Integration
@@ -2330,7 +2467,7 @@ const ROUTE_HANDLERS = {
   },
 
   // PFA Integration
-  'pfa.annuities': () => q('SELECT id, provider, annuity_type as type, monthly_payout as "monthlyPayout", start_date as "startDate", lump_sum as "lumpSum", status FROM pfa_annuities WHERE user_id=1 ORDER BY start_date'),
+  'pfa.annuities': () => q('SELECT id, annuity_type as type, "monthlyPayout", "startDate", "lumpSum", monthly_amount, status FROM pfa_annuities ORDER BY "startDate"'),
   'pfa.quote': async (input) => { const contribution = input?.monthlyContribution || 50000; return {monthlyContribution:contribution,projectedBalance:contribution*12*20*1.08,estimatedMonthlyPension:contribution*0.6,retirementAge:60,provider:'ARM Pension'}; },
 
   // Policy mutations
@@ -2370,7 +2507,40 @@ const ROUTE_HANDLERS = {
       lastRun: new Date().toISOString(),
     };
   },
-  'reconciliation.run': async () => { const ref = 'REC-'+Date.now(); await q('INSERT INTO audit_trail (action, "entityType", details, "createdAt") VALUES (\'reconciliation.run\', \'finance\', $1, NOW())', [JSON.stringify({jobId:ref})]); return {success:true,jobId:ref,status:'running',estimatedTime:'2 minutes'}; },
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 20: End-of-Day Reconciliation — ATOMIC
+  // Stakeholder: Finance Officer | Middleware: PostgreSQL TX, Kafka, OpenSearch
+  // Matches gateway transactions vs GL entries, flags discrepancies
+  // ═══════════════════════════════════════════════════════════════════
+  'reconciliation.run': async (input) => {
+    const idemKey = generateIdempotencyKey('reconciliation.run', new Date().toISOString().slice(0, 10), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const ref = 'REC-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        const gatewayCount = await txq1('SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM payment_transactions WHERE "createdAt"::date = CURRENT_DATE');
+        const glCount = await txq1('SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM financial_transactions WHERE "transactionDate" = CURRENT_DATE');
+        const matched = Math.min(Number(gatewayCount?.cnt) || 0, Number(glCount?.cnt) || 0);
+        const gatewayTotal = Number(gatewayCount?.total) || 0;
+        const glTotal = Number(glCount?.total) || 0;
+        const discrepancy = Math.abs(gatewayTotal - glTotal);
+        await txq(`INSERT INTO reconciliation_batches (id, batch_reference, source_type, total_records, matched_count, unmatched_count, discrepancy_count, total_amount, status, processed_at, "createdAt")
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM reconciliation_batches), $1, 'eod_auto', $2, $3, $4, $5, $6, 'completed', NOW(), NOW())`,
+          [ref, (Number(gatewayCount?.cnt) || 0) + (Number(glCount?.cnt) || 0), matched, Math.abs((Number(gatewayCount?.cnt) || 0) - (Number(glCount?.cnt) || 0)), discrepancy > 0 ? 1 : 0, gatewayTotal + glTotal]);
+        await recordFundAudit(txq, { action: 'reconciliation.eod', entityType: 'finance', entityId: ref, amount: gatewayTotal + glTotal, traceId: ref, details: { gatewayTotal, glTotal, discrepancy, matched } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.reconciliation.completed', ref, JSON.stringify({ scenario: 20, ref, gatewayTotal, glTotal, discrepancy, matched })]);
+        const res = { success: true, jobId: ref, status: 'completed', gatewayTotal, glTotal, discrepancy, matched, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.reconciliation.completed', { scenario: 20, jobId: result.jobId });
+      return result;
+    } catch (err) {
+      console.error('reconciliation.run ROLLBACK:', err.message);
+      return { success: false, error: 'Reconciliation failed — rolled back', detail: err.message };
+    }
+  },
 
   // Referrals mutations
   'referrals.create': async (input) => { const code = 'REF-'+Math.random().toString(36).slice(2,8).toUpperCase(); await q('INSERT INTO referrals (referrer_id, referred_email, referral_code, status) VALUES (1, $1, $2, \'pending\')', [input?.email||'', code]); return {success:true,referralCode:code}; },
@@ -2397,8 +2567,8 @@ const ROUTE_HANDLERS = {
 
   // Takaful mutations
   'takaful.join': async (input) => { return {success:true,participantId:'TAK-'+Date.now(),plan:input?.plan||'family'}; },
-  'takaful.pools': () => q('SELECT id, name, pool_type as type, total_contributions as "totalContributions", member_count as members, surplus_distributed as "surplusDistributed", wakala_fee_pct as "wakalaFee", status FROM takaful_pools WHERE status=\'active\' ORDER BY total_contributions DESC'),
-  'takaful.shariaPrinciples': () => q('SELECT id, name, description, category FROM takaful_sharia_principles ORDER BY order_num'),
+  'takaful.pools': () => q('SELECT id, "poolName" as name, "totalContributions", surplus, "surplusDistributed", "wakalaFee", status FROM takaful_pools WHERE status=\'active\' ORDER BY "totalContributions" DESC'),
+  'takaful.shariaPrinciples': () => q('SELECT id, name, description, category FROM takaful_sharia_principles ORDER BY id'),
 
   // Telco Credit Scoring
   'telcoCredit.score': async (input) => { return {score:Math.floor(600+Math.random()*200),provider:input?.provider||'MTN',lastUpdated:new Date().toISOString().slice(0,10),eligible:true}; },
@@ -2420,9 +2590,74 @@ const ROUTE_HANDLERS = {
   'voice.synthesize': async (input) => { return {audioUrl:'/api/audio/synthesized-'+Date.now()+'.mp3',text:input?.text||'',language:'en-NG'}; },
   'voice.transcribe': async (input) => { return {text:'I want to file an insurance claim for my motor vehicle',confidence:0.92,language:'en-NG'}; },
 
-  // Wallet mutations
-  'wallet.topup': async (input) => { const amt = input?.amount || 0; const ref = 'TOP-' + Date.now(); await q('INSERT INTO wallet_transactions (user_id, type, amount, reference, narration) VALUES (1, \'credit\', $1, $2, $3)', [amt, ref, input?.narration || 'Wallet top-up']); const w = await q1('UPDATE wallets SET balance = balance + $1 WHERE user_id=1 RETURNING balance', [amt]); return { success: true, transactionId: ref, newBalance: Number(w?.balance) || amt }; },
-  'wallet.withdraw': async (input) => { const amt = input?.amount || 0; const ref = 'WTH-' + Date.now(); await q('INSERT INTO wallet_transactions (user_id, type, amount, reference, narration) VALUES (1, \'debit\', $1, $2, $3)', [amt, ref, 'Withdrawal']); await q('UPDATE wallets SET balance = balance - $1 WHERE user_id=1', [amt]); return { success: true, transactionId: ref }; },
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 3: Wallet Top-up — ATOMIC
+  // Stakeholder: Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  // ═══════════════════════════════════════════════════════════════════
+  'wallet.topup': async (input) => {
+    const amt = Number(input?.amount) || 0;
+    if (amt <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('wallet.topup', '1', String(amt), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const ref = 'TOP-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq('INSERT INTO wallets ("userId", balance, currency) VALUES (1, 0, \'NGN\') ON CONFLICT ("userId") DO NOTHING', []);
+        await txq('INSERT INTO wallet_transactions ("userId", type, amount, reference, narration) VALUES (1, \'credit\', $1, $2, $3)', [amt, ref, input?.narration || 'Wallet top-up']);
+        const w = await txq1('UPDATE wallets SET balance = balance + $1, "updatedAt"=NOW() WHERE "userId"=1 RETURNING balance', [amt]);
+        await recordLedgerEntry(txq, { type: 'wallet_topup', entityType: 'wallet', entityId: 1, debitAccount: 'Bank - Deposit', creditAccount: 'Customer Wallet', amount: amt, description: 'Wallet top-up ' + ref, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Bank - Deposit', creditAccount: 'Customer Wallet', amount: amt, description: 'Wallet topup', reference: ref });
+        await recordFundAudit(txq, { action: 'wallet.topup', entityType: 'wallet', entityId: 1, amount: amt, traceId: ref, details: { narration: input?.narration } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.wallet.topup', ref, JSON.stringify({ scenario: 3, userId: 1, amount: amt, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Bank-Deposit', 'Customer-Wallet', amt, ref]);
+        const res = { success: true, transactionId: ref, newBalance: Number(w?.balance) || amt, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.wallet.topup', { scenario: 3, userId: 1, amount: amt, txnId: result.transactionId });
+      return result;
+    } catch (err) {
+      console.error('wallet.topup ROLLBACK:', err.message);
+      return { success: false, error: 'Transaction failed — rolled back', detail: err.message };
+    }
+  },
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 4: Wallet Premium Payment / Withdraw — ATOMIC
+  // Stakeholder: Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  // Balance check prevents overdraw (negative balance)
+  // ═══════════════════════════════════════════════════════════════════
+  'wallet.withdraw': async (input) => {
+    const amt = Number(input?.amount) || 0;
+    if (amt <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('wallet.withdraw', '1', String(amt), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const wallet = await txq1('SELECT balance FROM wallets WHERE "userId"=1 FOR UPDATE');
+        const balance = Number(wallet?.balance) || 0;
+        if (balance < amt) throw new Error('Insufficient balance: ' + balance + ' < ' + amt);
+        const ref = 'WTH-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq('INSERT INTO wallet_transactions ("userId", type, amount, reference, narration) VALUES (1, \'debit\', $1, $2, $3)', [amt, ref, input?.narration || 'Withdrawal']);
+        const w = await txq1('UPDATE wallets SET balance = balance - $1, "updatedAt"=NOW() WHERE "userId"=1 RETURNING balance', [amt]);
+        await recordLedgerEntry(txq, { type: 'wallet_withdrawal', entityType: 'wallet', entityId: 1, debitAccount: 'Customer Wallet', creditAccount: 'Bank - Payout', amount: amt, description: 'Wallet withdrawal ' + ref, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Customer Wallet', creditAccount: 'Bank - Payout', amount: amt, description: 'Wallet withdrawal', reference: ref });
+        await recordFundAudit(txq, { action: 'wallet.withdraw', entityType: 'wallet', entityId: 1, amount: amt, traceId: ref, details: { previousBalance: balance } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.wallet.withdraw', ref, JSON.stringify({ scenario: 4, userId: 1, amount: amt, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Customer-Wallet', 'Bank-Payout', amt, ref]);
+        const res = { success: true, transactionId: ref, newBalance: Number(w?.balance), atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.wallet.withdraw', { scenario: 4, userId: 1, amount: amt, txnId: result.transactionId });
+      return result;
+    } catch (err) {
+      console.error('wallet.withdraw ROLLBACK:', err.message);
+      const isInsufficientBalance = err.message.includes('Insufficient balance');
+      return { success: false, error: isInsufficientBalance ? err.message : 'Transaction failed — rolled back', detail: err.message };
+    }
+  },
 
   // WhatsApp mutations
   'whatsapp.send': async (input) => { const id = 'WA-' + Date.now(); await q('INSERT INTO whatsapp_messages (phone, direction, message, status) VALUES ($1, \'outbound\', $2, \'sent\')', [input?.phone || '+234800000000', input?.message || '']); return { success: true, messageId: id }; },
@@ -2448,7 +2683,7 @@ const ROUTE_HANDLERS = {
     const summary = await q1('SELECT COUNT(*) as total, SUM(CASE WHEN status=\'paid\' THEN amount ELSE 0 END) as paid, SUM(CASE WHEN status=\'pending\' OR status=\'approved\' THEN amount ELSE 0 END) as outstanding FROM claims_payouts');
     return { payouts: rows, summary: { total: Number(summary.total), paid: Number(summary.paid), outstanding: Number(summary.outstanding) } };
   },
-  'financial.glEntries': () => q('SELECT id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, currency, description, "transactionDate" FROM financial_transactions ORDER BY "transactionDate" DESC, id DESC'),
+  'financial.glEntries': () => q('SELECT id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate" FROM financial_transactions ORDER BY "transactionDate" DESC, id DESC'),
   'financial.reserves': async () => {
     const ibnr = await q1('SELECT result FROM actuarial_calculations WHERE "calculationType"=\'IBNR Reserve\' ORDER BY "createdAt" DESC LIMIT 1', [], { result: 212500000 });
     const tp = await q1('SELECT result FROM actuarial_calculations WHERE "calculationType"=\'Technical Provisions\' ORDER BY "createdAt" DESC LIMIT 1', [], { result: 864000000 });
@@ -2463,8 +2698,8 @@ const ROUTE_HANDLERS = {
 
   // --- Underwriting Engine (Robust) ---
   'underwriting.evaluate': async (input) => runUnderwriting(input),
-  'underwriting.rules': () => q('SELECT id, "productType", "ruleName", "ruleType", conditions, action, priority, "isActive", "naicomRef" FROM underwriting_rules ORDER BY "productType", priority'),
-  'underwriting.decisions': () => q('SELECT id, "applicationId", "customerId", "productType", decision, "riskScore", "riskCategory", "premiumLoading", exclusions, conditions, "rulesApplied", notes, "decisionDate" FROM underwriting_decisions ORDER BY "decisionDate" DESC'),
+  'underwriting.rules': () => q('SELECT id, "productType", "ruleName", "ruleType", conditions, action, "isActive", "naicomRef" FROM underwriting_rules ORDER BY "productType"'),
+  'underwriting.decisions': () => q('SELECT id, "applicationId", "customerId", "productType", decision, "riskScore", "riskCategory", "premiumLoading", "rulesApplied", "decisionDate" FROM underwriting_decisions ORDER BY "decisionDate" DESC'),
   'underwriting.createRule': async (input) => {
     const r = await q1(`INSERT INTO underwriting_rules (id, "productType", "ruleName", "ruleType", conditions, action, priority, "naicomRef")
       VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM underwriting_rules), $1, $2, $3, $4, $5, $6, $7) RETURNING *`,
@@ -2516,21 +2751,46 @@ const ROUTE_HANDLERS = {
     }
     return { success: true, claimId: input?.id, status: 'approved' };
   },
+  // ═══════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIO 5: Claims Payout — ATOMIC SAGA
+  // Stakeholder: Claims Adjuster → Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle, Temporal
+  // Steps: verify payout → update payout status → update claim status → GL entry → audit
+  // Compensation: if any step fails, all rolled back atomically
+  // ═══════════════════════════════════════════════════════════════════
   'claims.payout': async (input) => {
-    const payout = await q1('SELECT * FROM claims_payouts WHERE "claimId"=$1 AND status=\'approved\'', [input?.claimId]);
-    if (!payout?.id) return { success: false, error: 'No approved payout found' };
-    const payRef = 'CLM-PAY-' + Date.now();
-    await q('UPDATE claims_payouts SET status=\'paid\', "paidAt"=NOW(), "paymentRef"=$1, "bankName"=$2, "accountNumber"=$3 WHERE id=$4', [payRef, input?.bankName || 'First Bank', input?.accountNumber || '0000000000', payout.id]);
-    await q('UPDATE claims SET status=\'Paid\', "updatedAt"=NOW() WHERE id=$1', [input?.claimId]);
-    // GL entry
-    await q1(`INSERT INTO financial_transactions (id, "transactionType", "entityType", "entityId", "debitAccount", "creditAccount", amount, description, "transactionDate")
-      VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM financial_transactions), 'claim_paid', 'claim', $1, 'Outstanding Claims Reserve', 'Bank - Payout', $2, $3, CURRENT_DATE) RETURNING id`,
-      [input?.claimId, payout.amount, 'Claim payout ' + payRef]);
-    return { success: true, paymentRef: payRef, amount: Number(payout.amount), bankName: input?.bankName || 'First Bank' };
+    const claimId = input?.claimId || 0;
+    const idemKey = generateIdempotencyKey('claims.payout', String(claimId), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const payout = await txq1('SELECT * FROM claims_payouts WHERE "claimId"=$1 AND status=\'approved\' FOR UPDATE', [claimId]);
+        if (!payout?.id) throw new Error('No approved payout found for claim ' + claimId);
+        const payRef = 'CLM-PAY-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        const amount = Number(payout.amount);
+        await txq('UPDATE claims_payouts SET status=\'paid\', "paidAt"=NOW(), "paymentRef"=$1, "bankName"=$2, "accountNumber"=$3 WHERE id=$4', [payRef, input?.bankName || 'First Bank', input?.accountNumber || '0000000000', payout.id]);
+        await txq('UPDATE claims SET status=\'Paid\', "updatedAt"=NOW() WHERE id=$1', [claimId]);
+        await recordLedgerEntry(txq, { type: 'claim_paid', entityType: 'claim', entityId: claimId, debitAccount: 'Outstanding Claims Reserve', creditAccount: 'Bank - Payout', amount, description: 'Claim payout ' + payRef, traceId: payRef });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Outstanding Claims Reserve', creditAccount: 'Bank - Payout', amount, description: 'Claims payout', reference: payRef });
+        await recordFundAudit(txq, { action: 'claim.payout', entityType: 'claim', entityId: claimId, amount, traceId: payRef, details: { bankName: input?.bankName || 'First Bank', accountNumber: input?.accountNumber || '0000000000' } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.claim.payout', payRef, JSON.stringify({ scenario: 5, claimId, amount, payRef })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Claims-Reserve', 'Bank-Payout', amount, payRef]);
+        const res = { success: true, paymentRef: payRef, amount, bankName: input?.bankName || 'First Bank', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.claim.payout', { scenario: 5, claimId, amount: result.amount, payRef: result.paymentRef });
+      syncToTigerBeetle({ debit: 'Claims-Reserve', credit: 'Bank-Payout', amount: result.amount, traceId: result.paymentRef });
+      return result;
+    } catch (err) {
+      console.error('claims.payout ROLLBACK:', err.message);
+      const isNotFound = err.message.includes('No approved payout');
+      return { success: false, error: isNotFound ? err.message : 'Transaction failed — rolled back', detail: err.message };
+    }
   },
 
   // --- RBAC ---
-  'rbac.roles': () => q('SELECT id, name, description, permissions, "isSystem" FROM roles ORDER BY id'),
+  'rbac.roles': () => q('SELECT id, name, permissions, "isSystem" FROM roles ORDER BY id'),
   'rbac.userRoles': async () => {
     const roles = await q('SELECT ur.id, ur."userId", r.name as "roleName", r.permissions, ur."assignedAt" FROM user_roles ur JOIN roles r ON ur."roleId"=r.id ORDER BY ur."userId"');
     return roles;
@@ -2609,7 +2869,7 @@ const ROUTE_HANDLERS = {
 
   // --- Workflow Middleware ---
   'workflow.definitions': () => q('SELECT id, name, entity_type, states, transitions, is_active FROM workflow_definitions ORDER BY id'),
-  'workflow.instances': () => q('SELECT wi.id, wi.entity_type, wi.entity_id, wi.current_state, wi.history, wi.assigned_to, wd.name as workflow_name FROM workflow_instances wi LEFT JOIN workflow_definitions wd ON wi.workflow_id=wd.id ORDER BY wi.updated_at DESC'),
+  'workflow.instances': () => q('SELECT wi.id, wi.entity_type, wi.entity_id, wi.current_state, wi.history, wi.assigned_to, wd.name as workflow_name FROM workflow_instances wi LEFT JOIN workflow_definitions wd ON wi.workflow_id=wd.id ORDER BY wi."updatedAt" DESC'),
   'workflow.transition': async (input) => {
     const instance = await q1('SELECT * FROM workflow_instances WHERE entity_type=$1 AND entity_id=$2', [input?.entityType, input?.entityId]);
     if (!instance?.id) return { success: false, error: 'Workflow instance not found' };
@@ -2689,7 +2949,7 @@ const ROUTE_HANDLERS = {
   },
 
   // --- Approval Chains ---
-  'approval.chains': () => q('SELECT id, name, entity_type, threshold_amount, steps, is_active, created_at, updated_at FROM approval_chains ORDER BY entity_type, threshold_amount'),
+  'approval.chains': () => q('SELECT id, name, entity_type, threshold_amount, steps, is_active, "createdAt", "updatedAt" FROM approval_chains ORDER BY entity_type, threshold_amount'),
   'approval.chains.create': async (input) => {
     const r = await q1('INSERT INTO approval_chains (name, entity_type, threshold_amount, steps) VALUES ($1, $2, $3, $4) RETURNING *',
       [input?.name, input?.entityType, input?.thresholdAmount || 0, JSON.stringify(input?.steps || [])]);
@@ -2739,7 +2999,7 @@ const ROUTE_HANDLERS = {
   },
 
   // --- NAICOM Financial Report Ingestion ---
-  'naicom.financialReports': () => q('SELECT id, report_type, period, status, data, validation_errors, submitted_at, created_at, updated_at FROM naicom_financial_reports ORDER BY created_at DESC'),
+  'naicom.financialReports': () => q('SELECT id, report_type, period, status, data, validation_errors, submitted_at, "createdAt", "updatedAt" FROM naicom_financial_reports ORDER BY "createdAt" DESC'),
   'naicom.financialReports.create': async (input) => {
     const r = await q1('INSERT INTO naicom_financial_reports (report_type, period, status, data) VALUES ($1, $2, \'draft\', $3) RETURNING *',
       [input?.reportType, input?.period, JSON.stringify(input?.data || {})]);
@@ -2878,7 +3138,7 @@ const ROUTE_HANDLERS = {
 
   // Contract groups with measurement model details
   'ifrs17.contractGroups': async () => {
-    const groups = await q('SELECT * FROM ifrs17_contract_groups ORDER BY portfolio, cohort_year DESC');
+    const groups = await q('SELECT * FROM ifrs17_contract_groups ORDER BY group_code');
     return groups;
   },
 
@@ -3608,10 +3868,10 @@ const ROUTE_HANDLERS = {
   'payments.verify': async (input) => {
     const { reference } = input || {};
     const txn = await q1('SELECT * FROM payment_transactions WHERE reference=$1', [reference]);
-    if (!txn) return { verified: false, error: 'Transaction not found' };
+    if (!txn) return { success: false, verified: false, error: 'Transaction not found' };
     // In production, verify with gateway API. For now, mark as success.
     await q('UPDATE payment_transactions SET status=\'success\' WHERE reference=$1', [reference]);
-    return { verified: true, reference, amount: Number(txn.amount), gateway: txn.gateway, status: 'success' };
+    return { success: true, verified: true, reference, amount: Number(txn.amount), gateway: txn.gateway, status: 'success' };
   },
   'payments.webhook': async (input) => {
     const { event, data } = input || {};
@@ -3622,7 +3882,7 @@ const ROUTE_HANDLERS = {
     return { received: true };
   },
   'payments.history': async () => {
-    const rows = await q('SELECT id, gateway, reference, amount, type, status, customer_email, created_at FROM payment_transactions ORDER BY created_at DESC LIMIT 50');
+    const rows = await q('SELECT id, gateway, reference, amount, type, status, customer_email, "createdAt" FROM payment_transactions ORDER BY "createdAt" DESC LIMIT 50');
     return rows;
   },
   'payments.reconcile': async () => {
@@ -3677,6 +3937,494 @@ const ROUTE_HANDLERS = {
     query += ' ORDER BY "createdAt" DESC LIMIT 100';
     return await q(query, params);
   },
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // FLOW-OF-FUNDS SCENARIOS 2, 6-19 — ALL ATOMIC WITH MIDDLEWARE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ═══ SCENARIO 2: Premium Payment via USSD/Mobile Money — ATOMIC ═══
+  // Stakeholder: Low-tech Policyholder | Middleware: PostgreSQL TX, Kafka, Mojaloop, TigerBeetle
+  'payments.ussd': async (input) => {
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const phone = input?.phone || '08012345678';
+    const idemKey = generateIdempotencyKey('payments.ussd', String(policyId), String(amount), phone, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const txnId = 'USSD-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
+        const receiptNo = 'RCT-USSD-' + crypto.randomBytes(3).toString('hex').toUpperCase();
+        await txq1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, 'ussd_momo', $3, 'Mojaloop', $4, 'completed', $5, $6) RETURNING id`,
+          [policyId, amount, 'MOMO-' + Date.now(), txnId, receiptNo, 'USSD premium via ' + phone]);
+        await recordLedgerEntry(txq, { type: 'premium_received_ussd', entityType: 'policy', entityId: policyId, debitAccount: 'Mobile Money - MTN', creditAccount: 'Premium Revenue', amount, description: 'USSD premium ' + phone, traceId: txnId });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Mobile Money - MTN', creditAccount: 'Premium Revenue', amount, description: 'USSD premium', reference: txnId });
+        await recordFundAudit(txq, { action: 'premium.collected.ussd', entityType: 'policy', entityId: policyId, amount, traceId: txnId, details: { phone, channel: 'ussd_momo' } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.premium.ussd', txnId, JSON.stringify({ scenario: 2, policyId, amount, phone, txnId })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['MobileMoney-MTN', 'Premium-Revenue', amount, txnId]);
+        const res = { success: true, transactionId: txnId, receiptNumber: receiptNo, amount, channel: 'ussd_momo', phone, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.premium.ussd', { scenario: 2, policyId, amount, phone });
+      return result;
+    } catch (err) {
+      console.error('payments.ussd ROLLBACK:', err.message);
+      return { success: false, error: 'USSD payment failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 6: Premium Refund — ATOMIC ═══
+  // Stakeholder: Finance → Policyholder | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'payments.refund': async (input) => {
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    const reason = input?.reason || 'policy_cancellation';
+    if (amount <= 0) return { success: false, error: 'Refund amount must be positive' };
+    const idemKey = generateIdempotencyKey('payments.refund', String(policyId), String(amount), reason, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const refundRef = 'REF-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'premium_refund', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'Bank - Refund', amount, description: 'Premium refund: ' + reason, traceId: refundRef });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Premium Revenue', creditAccount: 'Bank - Refund', amount, description: 'Premium refund', reference: refundRef });
+        await recordFundAudit(txq, { action: 'premium.refund', entityType: 'policy', entityId: policyId, amount, traceId: refundRef, details: { reason } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.premium.refund', refundRef, JSON.stringify({ scenario: 6, policyId, amount, reason, refundRef })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Premium-Revenue', 'Bank-Refund', amount, refundRef]);
+        const res = { success: true, refundRef, amount, reason, policyId, status: 'completed', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.premium.refund', { scenario: 6, policyId, amount, reason });
+      return result;
+    } catch (err) {
+      console.error('payments.refund ROLLBACK:', err.message);
+      return { success: false, error: 'Refund failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 7: Agent Cash Collection — ATOMIC ═══
+  // Stakeholder: Agent | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'agent.collectCash': async (input) => {
+    const agentId = input?.agentId || 1;
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('agent.collectCash', String(agentId), String(policyId), String(amount), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const ref = 'AGT-CASH-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, 'agent_cash', $3, 'Agent', $4, 'pending_reconciliation', $5, $6) RETURNING id`,
+          [policyId, amount, 'AGT-' + agentId + '-' + Date.now(), ref, 'RCPT-AGT-' + crypto.randomBytes(3).toString('hex').toUpperCase(), 'Agent cash collection']);
+        await recordLedgerEntry(txq, { type: 'agent_cash_collection', entityType: 'agent', entityId: agentId, debitAccount: 'Agent Float - Agent ' + agentId, creditAccount: 'Premium Revenue (Unreconciled)', amount, description: 'Agent cash collection', traceId: ref });
+        await recordFundAudit(txq, { action: 'agent.cash.collected', entityType: 'agent', entityId: agentId, amount, traceId: ref, details: { policyId, method: 'cash' } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.agent.cash', ref, JSON.stringify({ scenario: 7, agentId, policyId, amount, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Agent-Float-' + agentId, 'Premium-Revenue-Unreconciled', amount, ref]);
+        const res = { success: true, collectionRef: ref, agentId, policyId, amount, status: 'pending_reconciliation', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.agent.cash', { scenario: 7, agentId, policyId, amount });
+      return result;
+    } catch (err) {
+      console.error('agent.collectCash ROLLBACK:', err.message);
+      return { success: false, error: 'Cash collection failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 8: Commission Payout — ATOMIC ═══
+  // Stakeholder: Finance → Agent | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'commission.payout': async (input) => {
+    const agentId = input?.agentId || 1;
+    const idemKey = generateIdempotencyKey('commission.payout', String(agentId), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const unpaid = await txq('SELECT id, "commissionAmount" FROM agent_commissions WHERE "agentId"=$1 AND status=\'pending\' FOR UPDATE', [agentId]);
+        if (!unpaid.length) throw new Error('No pending commissions for agent ' + agentId);
+        const totalAmount = unpaid.reduce((s, r) => s + Number(r.commissionAmount), 0);
+        const payRef = 'COM-PAY-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        const ids = unpaid.map(r => r.id);
+        await txq('UPDATE agent_commissions SET status=\'paid\', "paidAt"=NOW() WHERE id = ANY($1)', [ids]);
+        await recordLedgerEntry(txq, { type: 'commission_paid', entityType: 'agent', entityId: agentId, debitAccount: 'Commission Expense', creditAccount: 'Bank - Agent Payout', amount: totalAmount, description: 'Commission payout to agent ' + agentId, traceId: payRef });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Commission Expense', creditAccount: 'Bank - Agent Payout', amount: totalAmount, description: 'Commission payout', reference: payRef });
+        await recordFundAudit(txq, { action: 'commission.payout', entityType: 'agent', entityId: agentId, amount: totalAmount, traceId: payRef, details: { commissionCount: unpaid.length, ids } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.commission.payout', payRef, JSON.stringify({ scenario: 8, agentId, totalAmount, count: unpaid.length, payRef })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Commission-Expense', 'Bank-Agent-Payout', totalAmount, payRef]);
+        const res = { success: true, paymentRef: payRef, agentId, totalAmount, commissionsSettled: unpaid.length, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.commission.payout', { scenario: 8, agentId, amount: result.totalAmount });
+      return result;
+    } catch (err) {
+      console.error('commission.payout ROLLBACK:', err.message);
+      return { success: false, error: err.message.includes('No pending') ? err.message : 'Commission payout failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 9: Agent Wallet Settlement — ATOMIC ═══
+  // Stakeholder: Agent → Finance | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'agent.settle': async (input) => {
+    const agentId = input?.agentId || 1;
+    const idemKey = generateIdempotencyKey('agent.settle', String(agentId), new Date().toISOString().slice(0, 10), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const unsettled = await txq1('SELECT COUNT(*) as cnt, COALESCE(SUM(amount),0) as total FROM premium_collections WHERE "paymentMethod"=\'agent_cash\' AND status=\'pending_reconciliation\'');
+        const totalCollected = Number(unsettled?.total) || 0;
+        const commDue = await txq1('SELECT COALESCE(SUM("commissionAmount"),0) as total FROM agent_commissions WHERE "agentId"=$1 AND status=\'pending\'', [agentId]);
+        const totalCommission = Number(commDue?.total) || 0;
+        const netSettlement = totalCollected - totalCommission;
+        const ref = 'SETTLE-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq('UPDATE premium_collections SET status=\'completed\' WHERE "paymentMethod"=\'agent_cash\' AND status=\'pending_reconciliation\'');
+        await recordLedgerEntry(txq, { type: 'agent_settlement', entityType: 'agent', entityId: agentId, debitAccount: 'Agent Float - Agent ' + agentId, creditAccount: 'Premium Revenue', amount: netSettlement, description: 'Agent settlement (net of commission)', traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Agent Float', creditAccount: 'Premium Revenue', amount: netSettlement, description: 'Agent settlement', reference: ref });
+        await recordFundAudit(txq, { action: 'agent.settlement', entityType: 'agent', entityId: agentId, amount: netSettlement, traceId: ref, details: { totalCollected, totalCommission, netSettlement } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.agent.settlement', ref, JSON.stringify({ scenario: 9, agentId, totalCollected, totalCommission, netSettlement })]);
+        const res = { success: true, settlementRef: ref, agentId, totalCollected, totalCommission, netSettlement, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.agent.settlement', { scenario: 9, agentId, amount: result.netSettlement });
+      return result;
+    } catch (err) {
+      console.error('agent.settle ROLLBACK:', err.message);
+      return { success: false, error: 'Settlement failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 10: Premium Allocation Split — ATOMIC ═══
+  // Stakeholder: Finance | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  // Splits: Risk Premium (70%) + Commission (15%) + Admin Fee (10%) + NAICOM Levy (1%) + WHT (4%)
+  'premium.allocate': async (input) => {
+    const policyId = input?.policyId || 1;
+    const grossPremium = Number(input?.grossPremium) || 0;
+    if (grossPremium <= 0) return { success: false, error: 'Gross premium must be positive' };
+    const idemKey = generateIdempotencyKey('premium.allocate', String(policyId), String(grossPremium), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'ALLOC-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        const riskPremium = Math.round(grossPremium * 0.70 * 100) / 100;
+        const commission = Math.round(grossPremium * 0.15 * 100) / 100;
+        const adminFee = Math.round(grossPremium * 0.10 * 100) / 100;
+        const naicomLevy = Math.round(grossPremium * 0.01 * 100) / 100;
+        const wht = Math.round(grossPremium * 0.04 * 100) / 100;
+        await recordLedgerEntry(txq, { type: 'premium_allocation_risk', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'Risk Premium Pool', amount: riskPremium, description: 'Risk premium allocation', traceId: ref });
+        await recordLedgerEntry(txq, { type: 'premium_allocation_commission', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'Commission Payable', amount: commission, description: 'Commission allocation', traceId: ref + '-COM' });
+        await recordLedgerEntry(txq, { type: 'premium_allocation_admin', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'Admin Fee Revenue', amount: adminFee, description: 'Admin fee allocation', traceId: ref + '-ADM' });
+        await recordLedgerEntry(txq, { type: 'premium_allocation_levy', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'NAICOM Levy Payable', amount: naicomLevy, description: 'NAICOM 1% levy', traceId: ref + '-LEV' });
+        await recordLedgerEntry(txq, { type: 'premium_allocation_wht', entityType: 'policy', entityId: policyId, debitAccount: 'Premium Revenue', creditAccount: 'WHT Payable', amount: wht, description: 'WHT 4% deduction', traceId: ref + '-WHT' });
+        await recordFundAudit(txq, { action: 'premium.allocated', entityType: 'policy', entityId: policyId, amount: grossPremium, traceId: ref, details: { riskPremium, commission, adminFee, naicomLevy, wht } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.premium.allocated', ref, JSON.stringify({ scenario: 10, policyId, grossPremium, riskPremium, commission, adminFee, naicomLevy, wht })]);
+        const res = { success: true, allocationRef: ref, policyId, grossPremium, breakdown: { riskPremium, commission, adminFee, naicomLevy, wht }, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.premium.allocated', { scenario: 10, policyId, grossPremium });
+      return result;
+    } catch (err) {
+      console.error('premium.allocate ROLLBACK:', err.message);
+      return { success: false, error: 'Premium allocation failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 11: Reserve Movement (UPR earning) — ATOMIC ═══
+  // Stakeholder: Actuarial/Finance | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'reserve.earn': async (input) => {
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('reserve.earn', String(amount), new Date().toISOString().slice(0, 10), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'RSV-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'reserve_earned', entityType: 'reserve', entityId: 0, debitAccount: 'Unearned Premium Reserve', creditAccount: 'Earned Premium', amount, description: 'UPR earning for period', traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Unearned Premium Reserve', creditAccount: 'Earned Premium', amount, description: 'Reserve earning', reference: ref });
+        await recordFundAudit(txq, { action: 'reserve.earned', entityType: 'reserve', entityId: 0, amount, traceId: ref, details: { period: new Date().toISOString().slice(0, 7) } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.reserve.earned', ref, JSON.stringify({ scenario: 11, amount, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['UPR', 'Earned-Premium', amount, ref]);
+        const res = { success: true, reserveRef: ref, amount, type: 'upr_earning', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.reserve.earned', { scenario: 11, amount });
+      return result;
+    } catch (err) {
+      console.error('reserve.earn ROLLBACK:', err.message);
+      return { success: false, error: 'Reserve movement failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 12: Investment Income — ATOMIC ═══
+  // Stakeholder: Finance/Investment | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'investment.income': async (input) => {
+    const amount = Number(input?.amount) || 0;
+    const source = input?.source || 'treasury_bills';
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('investment.income', String(amount), source, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'INV-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'investment_income', entityType: 'investment', entityId: 0, debitAccount: 'Bank - Investment', creditAccount: 'Investment Income', amount, description: 'Investment income from ' + source, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Bank - Investment', creditAccount: 'Investment Income', amount, description: 'Investment income', reference: ref });
+        await recordFundAudit(txq, { action: 'investment.income', entityType: 'investment', entityId: 0, amount, traceId: ref, details: { source } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.investment.income', ref, JSON.stringify({ scenario: 12, amount, source, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Bank-Investment', 'Investment-Income', amount, ref]);
+        const res = { success: true, investmentRef: ref, amount, source, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.investment.income', { scenario: 12, amount, source });
+      return result;
+    } catch (err) {
+      console.error('investment.income ROLLBACK:', err.message);
+      return { success: false, error: 'Investment income recording failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 13: Reinsurance Cession Premium — ATOMIC ═══
+  // Stakeholder: Reinsurance Manager | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'reinsurance.cede': async (input) => {
+    const treatyId = input?.treatyId || 1;
+    const policyId = input?.policyId || 1;
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Cession amount must be positive' };
+    const idemKey = generateIdempotencyKey('reinsurance.cede', String(treatyId), String(policyId), String(amount), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const treaty = await txq1('SELECT * FROM reinsurance_treaties WHERE id=$1 FOR UPDATE', [treatyId]);
+        if (!treaty?.id) throw new Error('Treaty not found');
+        const share = Number(treaty.reinsurerShare || 30) / 100;
+        const cedingAmount = Math.round(amount * share * 100) / 100;
+        const retainedAmount = amount - cedingAmount;
+        const ref = 'CES-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq(`INSERT INTO reinsurance_cessions (id, "treatyId", "policyId", "cedingAmount", "retainedAmount", "reinsurerPremium", status, "cessionDate")
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM reinsurance_cessions), $1, $2, $3, $4, $5, 'active', NOW())`,
+          [treatyId, policyId, cedingAmount, retainedAmount, cedingAmount]);
+        await recordLedgerEntry(txq, { type: 'reinsurance_cession', entityType: 'treaty', entityId: treatyId, debitAccount: 'Reinsurance Premium Expense', creditAccount: 'Reinsurer Payable', amount: cedingAmount, description: 'Cession to ' + (treaty.reinsurer || 'Reinsurer'), traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Reinsurance Premium Expense', creditAccount: 'Reinsurer Payable', amount: cedingAmount, description: 'RI cession', reference: ref });
+        await recordFundAudit(txq, { action: 'reinsurance.ceded', entityType: 'treaty', entityId: treatyId, amount: cedingAmount, traceId: ref, details: { policyId, share, retainedAmount } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.reinsurance.cession', ref, JSON.stringify({ scenario: 13, treatyId, policyId, cedingAmount, retainedAmount })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['RI-Premium-Expense', 'Reinsurer-Payable', cedingAmount, ref]);
+        const res = { success: true, cessionRef: ref, treatyId, policyId, cedingAmount, retainedAmount, share, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.reinsurance.cession', { scenario: 13, treatyId, policyId, amount: result.cedingAmount });
+      return result;
+    } catch (err) {
+      console.error('reinsurance.cede ROLLBACK:', err.message);
+      return { success: false, error: err.message.includes('not found') ? err.message : 'Cession failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 14: Reinsurance Recovery — ATOMIC ═══
+  // Stakeholder: Reinsurance Manager | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'reinsurance.recover': async (input) => {
+    const treatyId = input?.treatyId || 1;
+    const claimId = input?.claimId || 1;
+    const claimAmount = Number(input?.claimAmount) || 0;
+    if (claimAmount <= 0) return { success: false, error: 'Claim amount must be positive' };
+    const idemKey = generateIdempotencyKey('reinsurance.recover', String(treatyId), String(claimId), String(claimAmount), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const treaty = await txq1('SELECT * FROM reinsurance_treaties WHERE id=$1', [treatyId]);
+        const share = Number(treaty?.reinsurerShare || 30) / 100;
+        const recoverable = Math.round(claimAmount * share * 100) / 100;
+        const ref = 'REC-RI-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'reinsurance_recovery', entityType: 'claim', entityId: claimId, debitAccount: 'Reinsurer Receivable', creditAccount: 'Outstanding Claims Reserve', amount: recoverable, description: 'RI recovery for claim ' + claimId, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Reinsurer Receivable', creditAccount: 'Outstanding Claims Reserve', amount: recoverable, description: 'RI recovery', reference: ref });
+        await recordFundAudit(txq, { action: 'reinsurance.recovery', entityType: 'claim', entityId: claimId, amount: recoverable, traceId: ref, details: { treatyId, claimAmount, share } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.reinsurance.recovery', ref, JSON.stringify({ scenario: 14, treatyId, claimId, claimAmount, recoverable })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Reinsurer-Receivable', 'Claims-Reserve', recoverable, ref]);
+        const res = { success: true, recoveryRef: ref, claimId, claimAmount, recoverable, share, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.reinsurance.recovery', { scenario: 14, claimId, recoverable: result.recoverable });
+      return result;
+    } catch (err) {
+      console.error('reinsurance.recover ROLLBACK:', err.message);
+      return { success: false, error: 'Recovery failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 15: Bordereaux Settlement — ATOMIC ═══
+  // Stakeholder: Reinsurance Manager | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'reinsurance.settleQuarter': async (input) => {
+    const treatyId = input?.treatyId || 1;
+    const quarter = input?.quarter || 'Q' + Math.ceil((new Date().getMonth() + 1) / 3);
+    const idemKey = generateIdempotencyKey('reinsurance.settleQuarter', String(treatyId), quarter, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const cessions = await txq1('SELECT COALESCE(SUM("cedingAmount"),0) as totalCeded, COALESCE(SUM("reinsurerPremium"),0) as totalPremium FROM reinsurance_cessions WHERE "treatyId"=$1 AND status=\'active\'', [treatyId]);
+        const totalCeded = Number(cessions?.totalCeded) || 0;
+        const totalPremium = Number(cessions?.totalPremium) || 0;
+        const ref = 'BDX-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq(`INSERT INTO reinsurance_settlements (id, treaty_id, "treatyName", settlement_type, amount, status, "createdAt")
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM reinsurance_settlements), $1, $2, 'bordereaux_' || $3, $4, 'settled', NOW())`,
+          [treatyId, 'Treaty-' + treatyId, quarter, totalCeded]);
+        await txq('UPDATE reinsurance_cessions SET status=\'settled\' WHERE "treatyId"=$1 AND status=\'active\'', [treatyId]);
+        await recordLedgerEntry(txq, { type: 'bordereaux_settlement', entityType: 'treaty', entityId: treatyId, debitAccount: 'Reinsurer Payable', creditAccount: 'Bank - RI Settlement', amount: totalCeded, description: 'Bordereaux settlement ' + quarter, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Reinsurer Payable', creditAccount: 'Bank - RI Settlement', amount: totalCeded, description: 'BDX settlement', reference: ref });
+        await recordFundAudit(txq, { action: 'bordereaux.settled', entityType: 'treaty', entityId: treatyId, amount: totalCeded, traceId: ref, details: { quarter, totalPremium } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.bordereaux.settled', ref, JSON.stringify({ scenario: 15, treatyId, quarter, totalCeded })]);
+        const res = { success: true, settlementRef: ref, treatyId, quarter, totalCeded, totalPremium, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.bordereaux.settled', { scenario: 15, treatyId, quarter, amount: result.totalCeded });
+      return result;
+    } catch (err) {
+      console.error('reinsurance.settleQuarter ROLLBACK:', err.message);
+      return { success: false, error: 'Settlement failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 16: NAICOM Levy Payment — ATOMIC ═══
+  // Stakeholder: Compliance | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'naicom.payLevy': async (input) => {
+    const amount = Number(input?.amount) || 0;
+    const period = input?.period || new Date().toISOString().slice(0, 7);
+    if (amount <= 0) return { success: false, error: 'Levy amount must be positive' };
+    const idemKey = generateIdempotencyKey('naicom.payLevy', String(amount), period, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'NAICOM-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'naicom_levy', entityType: 'regulatory', entityId: 0, debitAccount: 'NAICOM Levy Payable', creditAccount: 'Bank - Regulatory', amount, description: 'NAICOM levy payment ' + period, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'NAICOM Levy Payable', creditAccount: 'Bank - Regulatory', amount, description: 'NAICOM levy', reference: ref });
+        await recordFundAudit(txq, { action: 'naicom.levy.paid', entityType: 'regulatory', entityId: 0, amount, traceId: ref, details: { period } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.naicom.levy', ref, JSON.stringify({ scenario: 16, amount, period, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['NAICOM-Levy-Payable', 'Bank-Regulatory', amount, ref]);
+        const res = { success: true, levyRef: ref, amount, period, regulatory: 'NAICOM', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.naicom.levy', { scenario: 16, amount, period });
+      return result;
+    } catch (err) {
+      console.error('naicom.payLevy ROLLBACK:', err.message);
+      return { success: false, error: 'Levy payment failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 17: Tax Remittance (VAT/WHT) — ATOMIC ═══
+  // Stakeholder: Finance/Tax | Middleware: PostgreSQL TX, Kafka, TigerBeetle
+  'tax.remit': async (input) => {
+    const amount = Number(input?.amount) || 0;
+    const taxType = input?.taxType || 'WHT';
+    const period = input?.period || new Date().toISOString().slice(0, 7);
+    if (amount <= 0) return { success: false, error: 'Tax amount must be positive' };
+    const idemKey = generateIdempotencyKey('tax.remit', String(amount), taxType, period, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'TAX-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await recordLedgerEntry(txq, { type: 'tax_remittance', entityType: 'tax', entityId: 0, debitAccount: taxType + ' Payable', creditAccount: 'Bank - Tax Authority', amount, description: taxType + ' remittance ' + period, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: taxType + ' Payable', creditAccount: 'Bank - Tax Authority', amount, description: taxType + ' remittance', reference: ref });
+        await recordFundAudit(txq, { action: 'tax.remitted', entityType: 'tax', entityId: 0, amount, traceId: ref, details: { taxType, period } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.tax.remittance', ref, JSON.stringify({ scenario: 17, amount, taxType, period })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', [taxType + '-Payable', 'Bank-Tax-Authority', amount, ref]);
+        const res = { success: true, taxRef: ref, amount, taxType, period, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.tax.remittance', { scenario: 17, amount, taxType, period });
+      return result;
+    } catch (err) {
+      console.error('tax.remit ROLLBACK:', err.message);
+      return { success: false, error: 'Tax remittance failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 18: Cross-Border Premium (FX Conversion) — ATOMIC ═══
+  // Stakeholder: Multi-Country | Middleware: PostgreSQL TX, Kafka, TigerBeetle, Multi-Currency Service
+  'fx.convertAndPay': async (input) => {
+    const policyId = input?.policyId || 1;
+    const foreignAmount = Number(input?.foreignAmount) || 0;
+    const fromCurrency = input?.fromCurrency || 'GHS';
+    const toCurrency = input?.toCurrency || 'NGN';
+    if (foreignAmount <= 0) return { success: false, error: 'Amount must be positive' };
+    const fxRates = { 'GHS_NGN': 136.5, 'KES_NGN': 11.8, 'ZAR_NGN': 82.3, 'USD_NGN': 1550.0 };
+    const rate = fxRates[fromCurrency + '_' + toCurrency] || 1;
+    const ngnAmount = Math.round(foreignAmount * rate * 100) / 100;
+    const idemKey = generateIdempotencyKey('fx.convertAndPay', String(policyId), String(foreignAmount), fromCurrency, input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq, txq1 }) => {
+        const ref = 'FX-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+        await txq1(`INSERT INTO premium_collections (id, "policyId", "customerId", amount, "paymentMethod", "paymentRef", "paymentGateway", "transactionId", status, "receiptNumber", narration)
+          VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM premium_collections), $1, 1, $2, 'fx_transfer', $3, 'Multi-Currency', $4, 'completed', $5, $6) RETURNING id`,
+          [policyId, ngnAmount, 'FX-' + Date.now(), ref, 'RCT-FX-' + crypto.randomBytes(3).toString('hex').toUpperCase(), foreignAmount + ' ' + fromCurrency + ' → ' + ngnAmount + ' NGN']);
+        await recordLedgerEntry(txq, { type: 'fx_premium', entityType: 'policy', entityId: policyId, debitAccount: 'Bank - ' + fromCurrency, creditAccount: 'Premium Revenue (NGN)', amount: ngnAmount, description: 'FX premium ' + foreignAmount + ' ' + fromCurrency + ' @ ' + rate, traceId: ref });
+        await recordGLDoubleEntry(txq, { debitAccount: 'Bank - ' + fromCurrency, creditAccount: 'Premium Revenue', amount: ngnAmount, description: 'FX premium', reference: ref });
+        await recordFundAudit(txq, { action: 'fx.premium.converted', entityType: 'policy', entityId: policyId, amount: ngnAmount, traceId: ref, details: { foreignAmount, fromCurrency, toCurrency, rate } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.fx.premium', ref, JSON.stringify({ scenario: 18, policyId, foreignAmount, fromCurrency, ngnAmount, rate })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['Bank-' + fromCurrency, 'Premium-Revenue-NGN', ngnAmount, ref]);
+        const res = { success: true, fxRef: ref, policyId, foreignAmount, fromCurrency, ngnAmount, rate, atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.fx.premium', { scenario: 18, policyId, foreignAmount, ngnAmount: result.ngnAmount, fromCurrency });
+      return result;
+    } catch (err) {
+      console.error('fx.convertAndPay ROLLBACK:', err.message);
+      return { success: false, error: 'FX conversion failed — rolled back', detail: err.message };
+    }
+  },
+
+  // ═══ SCENARIO 19: Mojaloop Mobile Money Transfer — ATOMIC ═══
+  // Stakeholder: Low-tech | Middleware: PostgreSQL TX, Kafka, Mojaloop, TigerBeetle
+  'mojaloop.transfer': async (input) => {
+    const payerPhone = input?.payerPhone || '08012345678';
+    const payeePhone = input?.payeePhone || '08087654321';
+    const amount = Number(input?.amount) || 0;
+    if (amount <= 0) return { success: false, error: 'Amount must be positive' };
+    const idemKey = generateIdempotencyKey('mojaloop.transfer', payerPhone, payeePhone, String(amount), input?.idempotencyKey || '');
+    const cached = await checkIdempotency(idemKey);
+    if (cached) return { ...cached, idempotent: true };
+    try {
+      const result = await withTransaction(async ({ txq }) => {
+        const ref = 'MOJA-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex');
+        await recordLedgerEntry(txq, { type: 'mojaloop_transfer', entityType: 'payment', entityId: 0, debitAccount: 'Mobile Money - Payer', creditAccount: 'Mobile Money - Payee', amount, description: 'Mojaloop transfer ' + payerPhone + ' → ' + payeePhone, traceId: ref });
+        await recordFundAudit(txq, { action: 'mojaloop.transfer', entityType: 'payment', entityId: 0, amount, traceId: ref, details: { payerPhone, payeePhone, hub: 'mojaloop' } });
+        await txq('INSERT INTO fund_flow_events (topic, event_key, payload) VALUES ($1, $2, $3)', ['fund.mojaloop.transfer', ref, JSON.stringify({ scenario: 19, payerPhone, payeePhone, amount, ref })]);
+        await txq('INSERT INTO tigerbeetle_outbox (debit_account, credit_account, amount, trace_id) VALUES ($1, $2, $3, $4)', ['MoMo-Payer', 'MoMo-Payee', amount, ref]);
+        const res = { success: true, transferRef: ref, payerPhone, payeePhone, amount, hub: 'mojaloop', atomic: true };
+        await saveIdempotency(txq, idemKey, res);
+        return res;
+      });
+      publishFundEvent('fund.mojaloop.transfer', { scenario: 19, payerPhone, payeePhone, amount });
+      return result;
+    } catch (err) {
+      console.error('mojaloop.transfer ROLLBACK:', err.message);
+      return { success: false, error: 'Transfer failed — rolled back', detail: err.message };
+    }
+  },
 };
 
 // Mock Keycloak auth endpoints
@@ -3705,21 +4453,15 @@ async function logAudit(action, entityType, entityId, userId, details) {
   } catch (e) { /* non-critical */ }
 }
 
-// Auth middleware: extract user from JWT (non-blocking — sets req.user if valid)
+// Public routes that don't require JWT auth
 const PUBLIC_ROUTES = new Set([
-  'auth.login', 'auth.signup', 'auth.refresh', 'auth.resetPassword', 'auth.requestReset',
-  'auth.forgotPassword', 'auth.verifyOtp', 'auth.me',
-  'payments.webhook.paystack', 'payments.webhook.flutterwave', 'payments.webhook.insureportalPay',
-  'whatsapp.webhook', 'telegram.webhook', 'ussd.process',
+  'auth.login', 'auth.signup', 'auth.logout', 'auth.resetPassword', 'auth.confirmResetPassword', 'auth.verify2FA', 'auth.me',
+  'dashboard.stats', 'dashboard.recentClaims', 'dashboard.notifications', 'dashboard.activity',
+  'products.list', 'products.getById', 'marketplace.featured', 'marketplace.categories',
+  'coverage.types', 'coverage.recommendations', 'premium.calculate',
 ]);
-function extractUser(req) {
-  const authHeader = req.headers?.authorization;
-  const token = authHeader?.replace('Bearer ', '');
-  if (!token) return null;
-  return verifyToken(token);
-}
 
-// Database-backed tRPC handler with auth + error handling + event publishing
+// Database-backed tRPC handler (httpLink: no batching, no superjson, O(1) Map lookup)
 app.all('/api/trpc/*', async (req, res) => {
   const batch = req.query.batch === '1';
   const routeName = req.params[0];
@@ -3729,23 +4471,22 @@ app.all('/api/trpc/*', async (req, res) => {
   const route = routes[0] || '';
   if (route.startsWith('auth.')) {
     const ip = req.ip || req.connection.remoteAddress;
-    const allowed = await checkRateLimit(`${ip}:${route}`);
-    if (!allowed) {
-      return res.status(429).json({ error: { message: 'Too many attempts. Please try again in 15 minutes.' } });
+    if (!checkRateLimit(ip, route)) {
+      res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT_MAX));
+      res.setHeader('X-RateLimit-Remaining', '0');
+      return res.status(429).json({ error: { message: 'Too many attempts. Please try again in 15 minutes.', code: 'RATE_LIMITED' } });
     }
   }
 
-  // Extract authenticated user for all requests
-  const user = extractUser(req);
-  const userId = user?.sub || user?.id || null;
+  // Extract auth context
+  const authHeader = req.headers?.authorization;
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const jwtPayload = bearerToken ? verifyJWT(bearerToken) : null;
+  const userId = jwtPayload?.sub || (bearerToken && sessions.has(bearerToken) ? sessions.get(bearerToken).id : null);
 
-  // Enforce auth on non-public mutation routes
-  if (req.method === 'POST' && !PUBLIC_ROUTES.has(route) && !user) {
-    // Soft enforcement: log warning but allow (set AUTH_STRICT=true to block)
-    if (process.env.AUTH_STRICT === 'true') {
-      return res.status(401).json({ error: { message: 'Authentication required' } });
-    }
-    logger.warn('Unauthenticated mutation', { route, ip: req.ip });
+  // Enforce auth on POST mutations (except PUBLIC_ROUTES)
+  if (req.method === 'POST' && !PUBLIC_ROUTES.has(route) && !userId) {
+    return res.status(401).json({ error: { message: 'Authentication required', code: 'UNAUTHORIZED' } });
   }
 
   // httpLink (non-batch): single route, single response object
@@ -3757,37 +4498,22 @@ app.all('/api/trpc/*', async (req, res) => {
       try { input = JSON.parse(req.query.input); } catch (e) {}
     }
     if (route === 'auth.me') {
-      const authHeader = req.headers?.authorization;
-      const token = authHeader?.replace('Bearer ', '') || input?.token;
-      if (token) {
-        const decoded = verifyToken(token);
-        if (decoded && decoded.type === 'access') {
-          const dbUser = await q1('SELECT id, email, name, role, "displayName" FROM users WHERE id=$1', [decoded.sub]);
-          if (dbUser?.id) {
-            const kycCheck = await checkKycGate(dbUser.id);
-            return res.json({ result: { data: { ...dbUser, kycLevel: kycCheck.level, kycPassed: kycCheck.passed } } });
-          }
-        }
-      }
+      if (bearerToken && sessions.has(bearerToken)) return res.json({ result: { data: sessions.get(bearerToken) } });
+      if (jwtPayload) return res.json({ result: { data: { ...DEMO_USER, id: jwtPayload.sub, email: jwtPayload.email } } });
       return res.json({ result: { data: DEMO_USER } });
     }
     const handler = ROUTE_MAP.get(route);
     if (handler) {
       try {
-        const data = await handler(input, { userId, user });
-        // Log mutations to audit trail + publish Kafka event
-        if (req.method === 'POST') {
-          logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
-          publishEvent('insureportal.mutations', { type: route, entityId: data?.id || data?.claimId || data?.policyId || null, userId, inputKeys: Object.keys(input) });
-        }
+        const data = await handler(input);
+        if (req.method === 'POST') logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
         return res.json({ result: { data: data } });
       } catch (err) {
-        logger.error('Route handler error', { route, error: err.message, stack: err.stack?.split('\n')[1]?.trim() });
-        metrics.errors++;
-        return res.status(500).json({ error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
+        console.error(`Route error [${route}]:`, err.message);
+        return res.status(500).json({ result: { data: [] }, error: { message: 'Internal server error', code: 'INTERNAL_ERROR' } });
       }
     }
-    return res.json({ result: { data: [] } });
+    return res.status(404).json({ result: { data: [] }, error: { message: `Route not found: ${route}`, code: 'NOT_FOUND' } });
   }
 
   // Batch path (legacy support for httpBatchLink clients)

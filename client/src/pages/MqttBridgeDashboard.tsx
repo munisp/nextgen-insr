@@ -26,7 +26,7 @@ export default function MqttBridgeDashboard() {
           <div>
             <h1 className="text-2xl font-bold">MQTT Bridge</h1>
             <p className="text-gray-400 text-sm">
-              Mosquitto MQTT broker integration for POS terminal communication
+              Mosquitto MQTT broker integration for insurance service communication
             </p>
           </div>
           <a href="/" className="text-sm text-gray-400 hover:text-white">

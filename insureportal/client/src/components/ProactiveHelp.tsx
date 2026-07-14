@@ -44,7 +44,7 @@ const pageHelpSuggestions: Record<
   { title: string; tips: string[]; guideLink?: string; chatPrompt?: string }
 > = {
   "/": {
-    title: "POS Terminal Help",
+    title: "Insurance Service Help",
     tips: [
       "Enter your Agent Code (e.g., AGT001) and PIN to log in",
       "Use the PIN pad to enter your 4-digit PIN",
@@ -52,7 +52,7 @@ const pageHelpSuggestions: Record<
     ],
     guideLink: "/user-guide",
     chatPrompt:
-      "I need help logging into the POS terminal. Can you walk me through the login process?",
+      "I need help logging into the insurance service. Can you walk me through the login process?",
   },
   "/hub": {
     title: "Platform Hub",

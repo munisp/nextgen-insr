@@ -42,7 +42,7 @@ import {
   geofenceZones,
   deviceLocations,
   commissionRules,
-} from "../../drizzle/schema";
+} from "@schema";
 import { sendSms, buildConfirmationSms } from "../termii";
 import { getIO } from "../socketSingleton";
 import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
@@ -122,7 +122,7 @@ async function checkVelocityLimits(
   agentId: number,
   tier: string,
   amount: number,
-  agentCode?: string
+  agentId?: string
 ): Promise<{ allowed: boolean; reason?: string }> {
   try {
     const enabled = await getPlatformSetting("velocity_limits_enabled", "true");
@@ -163,12 +163,12 @@ async function checkVelocityLimits(
     const hourlyCount = Number(hourlyRows[0]?.count ?? 0);
 
     // Emit 80% warning before hard block
-    if (agentCode && maxHourly > 0) {
+    if (agentId && maxHourly > 0) {
       const hourlyPct = (hourlyCount + 1) / maxHourly;
       if (hourlyPct >= 0.8 && hourlyPct < 1.0) {
         getIO()
           ?.of("/terminal")
-          .to(`agent:${agentCode}`)
+          .to(`agent:${agentId}`)
           .emit("terminal:velocity_warning", {
             type: "hourly_count",
             used: hourlyCount + 1,
@@ -201,12 +201,12 @@ async function checkVelocityLimits(
     const dailyVolume = Number(dailyRows[0]?.total ?? 0);
 
     // Emit 80% daily volume warning
-    if (agentCode && maxDaily > 0) {
+    if (agentId && maxDaily > 0) {
       const dailyPct = (dailyVolume + amount) / maxDaily;
       if (dailyPct >= 0.8 && dailyPct < 1.0) {
         getIO()
           ?.of("/terminal")
-          .to(`agent:${agentCode}`)
+          .to(`agent:${agentId}`)
           .emit("terminal:velocity_warning", {
             type: "daily_volume",
             used: dailyVolume + amount,
@@ -372,7 +372,6 @@ export const transactionsRouter = router({
         if (!deviceCheck.valid) {
           await writeAuditLog({
             agentId: agent.id,
-            agentCode: agent.agentCode,
             action: "DEVICE_TOKEN_REJECTED",
             resource: "transaction",
             status: "failure",
@@ -393,7 +392,7 @@ export const transactionsRouter = router({
           });
           getIO()
             ?.of("/terminal")
-            .to(`agent:${agent.agentCode}`)
+            .to(`agent:${agent.agentId}`)
             .emit("terminal:fraud_alert", {
               severity: "HIGH",
               type: "DEVICE_TOKEN_FAILURE",
@@ -410,11 +409,11 @@ export const transactionsRouter = router({
         // ── Gate 3: Float sufficiency ──────────────────────────────────────────
         if (
           FLOAT_DEBIT_TYPES.has(input.type) &&
-          Number(agentRecord.floatBalance) < input.amount
+          Number(agentRecord.premiumReserve) < input.amount
         ) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `Insufficient float balance. Available: ₦${Number(agentRecord.floatBalance).toLocaleString()}`,
+            message: `Insufficient premium reserve. Available: ₦${Number(agentRecord.premiumReserve).toLocaleString()}`,
           });
         }
 
@@ -423,7 +422,7 @@ export const transactionsRouter = router({
           agent.id,
           agentRecord.tier,
           input.amount,
-          agent.agentCode
+          agent.agentId
         );
         if (!velocityCheck.allowed) {
           await createFraudAlert({
@@ -437,7 +436,6 @@ export const transactionsRouter = router({
           });
           await writeAuditLog({
             agentId: agent.id,
-            agentCode: agent.agentCode,
             action: "VELOCITY_LIMIT_BREACHED",
             resource: "transaction",
             status: "failure",
@@ -450,7 +448,7 @@ export const transactionsRouter = router({
           // Notify the agent's terminal in real-time
           getIO()
             ?.of("/terminal")
-            .to(`agent:${agent.agentCode}`)
+            .to(`agent:${agent.agentId}`)
             .emit("terminal:fraud_alert", {
               severity: "HIGH",
               type: "VELOCITY_BREACH",
@@ -516,7 +514,6 @@ export const transactionsRouter = router({
                   });
                   await writeAuditLog({
                     agentId: agent.id,
-                    agentCode: agent.agentCode,
                     action: "GEOFENCE_VIOLATION",
                     resource: "transaction",
                     status: "failure",
@@ -524,7 +521,7 @@ export const transactionsRouter = router({
                   });
                   getIO()
                     ?.of("/terminal")
-                    .to(`agent:${agent.agentCode}`)
+                    .to(`agent:${agent.agentId}`)
                     .emit("terminal:fraud_alert", {
                       severity: "HIGH",
                       type: "GEOFENCE_VIOLATION",
@@ -635,7 +632,6 @@ export const transactionsRouter = router({
           if (amlResult.triggered) {
             await writeAuditLog({
               agentId: agent.id,
-              agentCode: agent.agentCode,
               action: "AML_TRIGGER",
               resource: "transaction",
               status: "flagged" as any,
@@ -654,20 +650,20 @@ export const transactionsRouter = router({
         const fee =
           input.type === "Transfer" ? Math.min(input.amount * 0.001, 100) : 0;
 
-        await tbEnsureAgentAccount(agent.agentCode);
+        await tbEnsureAgentAccount(agent.agentId);
         const tbResult = await tbCreateTransfer({
           debitAccountId: FLOAT_CREDIT_TYPES.has(input.type)
             ? "sys-bank-reserve"
-            : `float-${agent.agentCode}`,
+            : `float-${agent.agentId}`,
           creditAccountId: FLOAT_CREDIT_TYPES.has(input.type)
-            ? `float-${agent.agentCode}`
+            ? `float-${agent.agentId}`
             : "sys-bank-reserve",
           amount: Math.round(input.amount * 100),
           ledger: 2000,
           code: 300,
           ref,
           txType: input.type,
-          agentCode: agent.agentCode,
+          agentId: agent.agentId,
         });
 
         if (tbResult) {
@@ -763,7 +759,7 @@ export const transactionsRouter = router({
             transactionAmount: input.amount,
             totalCommission: commission,
             originAgentId: agent.id,
-            originAgentCode: agent.agentCode,
+            originAgentCode: agent.agentId,
             tenantId: (agent as any).tenantId ?? undefined,
           });
           if (!cascadeResult.success) {
@@ -787,7 +783,6 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "TRANSACTION_CREATED",
           resource: "transaction",
           resourceId: ref,
@@ -806,7 +801,7 @@ export const transactionsRouter = router({
               ref,
               type: input.type,
               amount: input.amount,
-              agentCode: agent.agentCode,
+              agentId: agent.agentId,
               agentName: agent.name,
               customerName: input.customerName,
               timestamp: new Date(),
@@ -833,7 +828,7 @@ export const transactionsRouter = router({
         }
 
         const newFloatBalance =
-          Number(agentRecord.floatBalance) +
+          Number(agentRecord.premiumReserve) +
           (FLOAT_CREDIT_TYPES.has(input.type) ? input.amount : 0) -
           (FLOAT_DEBIT_TYPES.has(input.type) ? input.amount : 0);
 
@@ -854,10 +849,10 @@ export const transactionsRouter = router({
                 type: input.type,
                 amount: input.amount,
                 commission,
-                agentCode: agent.agentCode,
+                agentId: agent.agentId,
                 channel: input.channel ?? "Cash",
               },
-              { agentCode: agent.agentCode }
+              { agentId: agent.agentId }
             )
           )
           .catch((e: unknown) =>
@@ -920,7 +915,7 @@ export const transactionsRouter = router({
           transactionId: tx.id,
           commission,
           pointsEarned,
-          floatBalance: newFloatBalance,
+          premiumReserve: newFloatBalance,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -1095,7 +1090,6 @@ export const transactionsRouter = router({
 
           await writeAuditLog({
             agentId: agent.id,
-            agentCode: agent.agentCode,
             action: "REVERSAL_APPROVAL_REQUESTED",
             resource: "transaction",
             resourceId: input.ref,
@@ -1112,7 +1106,7 @@ export const transactionsRouter = router({
             const { notifyOwner } = await import("../_core/notification");
             await notifyOwner({
               title: `Reversal Approval Required — ₦${amount.toLocaleString()}`,
-              content: `Agent ${agent.agentCode} (${agent.name}) requested reversal of ₦${amount.toLocaleString()} for ${input.ref}. Reason: ${input.reason ?? "Not specified"}. Review in Admin Panel → Pending Reversals.`,
+              content: `Agent ${agent.agentId} (${agent.name}) requested reversal of ₦${amount.toLocaleString()} for ${input.ref}. Reason: ${input.reason ?? "Not specified"}. Review in Admin Panel → Pending Reversals.`,
             });
           } catch {
             // Non-critical
@@ -1138,7 +1132,6 @@ export const transactionsRouter = router({
         const reversalRef = generateRef();
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "TRANSACTION_REVERSED",
           resource: "transaction",
           resourceId: input.ref,
@@ -1191,7 +1184,7 @@ export const transactionsRouter = router({
           customerName: transactions.customerName,
           failureReason: transactions.failureReason,
           createdAt: transactions.createdAt,
-          agentCode: agents.agentCode,
+          agentId: agents.agentId,
           agentName: agents.name,
         })
         .from(transactions)
@@ -1259,7 +1252,7 @@ export const transactionsRouter = router({
           .update(transactions)
           .set({
             status: "reversed",
-            approvedBy: agent.agentCode,
+            approvedBy: agent.agentId,
             approvedAt: new Date(),
             approvalRequired: false,
           })
@@ -1273,13 +1266,12 @@ export const transactionsRouter = router({
         const reversalRef = generateRef();
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "REVERSAL_APPROVED",
           resource: "transaction",
           resourceId: tx.ref,
           status: "success",
           metadata: {
-            approvedBy: agent.agentCode,
+            approvedBy: agent.agentId,
             originalRef: tx.ref,
             reversalRef,
             amount,
@@ -1356,12 +1348,11 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "REVERSAL_REJECTED",
           resource: "transaction",
           resourceId: tx.ref,
           status: "warning",
-          metadata: { rejectedBy: agent.agentCode, reason: input.reason },
+          metadata: { rejectedBy: agent.agentId, reason: input.reason },
         });
 
         return { success: true };
@@ -1438,7 +1429,6 @@ export const transactionsRouter = router({
           .where(eq(velocityLimits.tier, input.tier));
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "VELOCITY_LIMIT_UPDATED",
           resource: "velocity_limits",
           resourceId: input.tier,
@@ -1510,13 +1500,12 @@ export const transactionsRouter = router({
           .update(platformSettings)
           .set({
             value: input.value,
-            updatedBy: agent.agentCode,
+            updatedBy: agent.agentId,
             updatedAt: new Date(),
           })
           .where(eq(platformSettings.key, input.key));
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "PLATFORM_SETTING_UPDATED",
           resource: "platform_settings",
           resourceId: input.key,
@@ -1650,14 +1639,13 @@ export const transactionsRouter = router({
           .update(fraudAlerts)
           .set({
             status: "resolved",
-            assignedTo: agent.agentCode,
+            assignedTo: agent.agentId,
             resolvedAt: new Date(),
             updatedAt: new Date(),
           })
           .where(eq(fraudAlerts.id, input.alertId));
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "FRAUD_ALERT_REVIEWED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
@@ -1763,7 +1751,6 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "SECURITY_AUDIT_EXPORTED",
           resource: "fraud_alerts",
           status: "success",
@@ -1816,7 +1803,6 @@ export const transactionsRouter = router({
           .where(eq(fraudAlerts.id, input.alertId));
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "FRAUD_ALERT_SNOOZED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
@@ -1889,7 +1875,6 @@ export const transactionsRouter = router({
         }
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: agent.agentCode,
           action: "FRAUD_ALERT_ESCALATED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
@@ -2216,13 +2201,13 @@ export const transactionsRouter = router({
         count++;
         if (r.status === "success") success++;
       }
-      // Fetch live float balance from agents table
+      // Fetch live premium reserve from agents table
       const agentDbRows = await db
-        .select({ floatBalance: agents.floatBalance })
+        .select({ premiumReserve: agents.premiumReserve })
         .from(agents)
         .where(eq(agents.id, agent.id))
         .limit(1);
-      const floatBalance = Number(agentDbRows[0]?.floatBalance ?? 0);
+      const premiumReserve = Number(agentDbRows[0]?.premiumReserve ?? 0);
       return {
         premiumPayment,
         claimPayout,
@@ -2231,7 +2216,7 @@ export const transactionsRouter = router({
         count,
         successRate:
           count > 0 ? Math.round((success / count) * 1000) / 10 : 100,
-        float: floatBalance,
+        float: premiumReserve,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -2334,8 +2319,8 @@ export const transactionsRouter = router({
   }),
 
   /**
-   * getFloatBalance — fetches live float balance from platform float service.
-   * Falls back to local DB agent.floatBalance if platform is unavailable.
+   * getFloatBalance — fetches live premium reserve from platform float service.
+   * Falls back to local DB agent.premiumReserve if platform is unavailable.
    */
   getFloatBalance: protectedProcedure.query(async ({ ctx }) => {
     try {
@@ -2373,13 +2358,13 @@ export const transactionsRouter = router({
       const db = (await getDb())!;
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const [row] = await db
-        .select({ floatBalance: agents.floatBalance })
+        .select({ premiumReserve: agents.premiumReserve })
         .from(agents)
         .where(eq(agents.id, agent.id))
         .limit(1);
       return {
         source: "local" as const,
-        balance: Number(row?.floatBalance ?? 0),
+        balance: Number(row?.premiumReserve ?? 0),
         currency: "NGN",
       };
     } catch (error) {

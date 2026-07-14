@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * loyalty.ts — Full loyalty program tRPC router
  *
@@ -26,7 +26,7 @@ import { getAgentFromCookie } from "../middleware/agentAuth";
 import { agents, loyaltyHistory } from "../../drizzle/schema";
 import { eq, desc, asc, sql, gte, and, ilike, isNull } from "drizzle-orm";
 
-// ─── Tier thresholds (CBN-aligned agency banking tiers) ──────────────────────
+// ─── Tier thresholds (CBN-aligned insurance tiers) ──────────────────────
 const TIER_THRESHOLDS = {
   Bronze: 0,
   Silver: 5000,
@@ -106,7 +106,7 @@ const REWARD_CATALOG = [
   },
   {
     id: "RWD-007",
-    name: "POS Terminal Upgrade",
+    name: "Insurance Service Upgrade",
     category: "hardware",
     pointsCost: 25000,
     description: "Upgrade to PAX A920 MAX terminal",
@@ -119,7 +119,7 @@ const REWARD_CATALOG = [
     name: "Training Certificate",
     category: "education",
     pointsCost: 3000,
-    description: "54Link certified agent training course",
+    description: "InsurePortal certified agent training course",
     available: true,
     stock: -1,
     imageUrl: null,
@@ -282,7 +282,7 @@ export const loyaltyRouter = router({
           db
             .select({
               id: agents.id,
-              agentCode: agents.agentCode,
+              agentId: agents.agentId,
               name: agents.name,
               tier: agents.tier,
               loyaltyPoints: agents.loyaltyPoints,
@@ -535,7 +535,7 @@ export const loyaltyRouter = router({
         );
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "LOYALTY_CHALLENGE_CLAIMED",
           resource: "loyalty",
           resourceId: input.challengeId,
@@ -625,7 +625,7 @@ export const loyaltyRouter = router({
         );
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "LOYALTY_REWARD_REDEEMED",
           resource: "loyalty",
           resourceId: input.rewardId,
@@ -680,7 +680,7 @@ export const loyaltyRouter = router({
           db
             .select({
               id: agents.id,
-              agentCode: agents.agentCode,
+              agentId: agents.agentId,
               name: agents.name,
               tier: agents.tier,
               loyaltyPoints: agents.loyaltyPoints,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# 54Link TigerBeetle 3-Node Cluster Initialisation Script
+# InsurePortal TigerBeetle 3-Node Cluster Initialisation Script
 # ─────────────────────────────────────────────────────────────────────────────
 # Creates the data files for each replica and starts the cluster.
 # Run this ONCE before starting the cluster for the first time.
@@ -19,7 +19,7 @@ DATA_DIR="${TB_DATA_DIR:-/var/lib/tigerbeetle}"
 CLUSTER_ID=0
 REPLICA_COUNT=3
 
-echo "==> 54Link TigerBeetle Cluster Init"
+echo "==> InsurePortal TigerBeetle Cluster Init"
 echo "    Image:        $TB_IMAGE"
 echo "    Data dir:     $DATA_DIR"
 echo "    Cluster ID:   $CLUSTER_ID"
