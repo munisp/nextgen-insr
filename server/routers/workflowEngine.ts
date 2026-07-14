@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * F15: Workflow Engine
  * Workflow definitions, instance lifecycle, step execution, approval chains

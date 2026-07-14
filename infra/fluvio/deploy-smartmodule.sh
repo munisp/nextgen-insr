@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# 54Link Fluvio SmartModule Deploy Script
+# InsurePortal Fluvio SmartModule Deploy Script
 # Deploys all WASM SmartModules to the Fluvio cluster and creates topics.
 #
 # Usage:
@@ -9,14 +9,14 @@
 # Environment variables:
 #   FLUVIO_ENDPOINT   — Fluvio cluster endpoint (default: localhost:9003)
 #   FLUVIO_API_KEY    — Fluvio Cloud API key (required for --cloud mode)
-#   FLUVIO_PROFILE    — Fluvio profile name (default: 54link-production)
+#   FLUVIO_PROFILE    — Fluvio profile name (default: insureportal-production)
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SMARTMODULE_DIR="${SCRIPT_DIR}/smartmodules"
 FLUVIO_ENDPOINT="${FLUVIO_ENDPOINT:-localhost:9003}"
-FLUVIO_PROFILE="${FLUVIO_PROFILE:-54link-production}"
+FLUVIO_PROFILE="${FLUVIO_PROFILE:-insureportal-production}"
 MODE="${1:---local}"
 
 log()  { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [FLUVIO] $*"; }
@@ -95,12 +95,12 @@ deploy_smartmodule() {
 }
 
 # Deploy all compiled WASM SmartModules
-deploy_smartmodule "54link-fraud-filter"      "${SMARTMODULE_DIR}/fraud_filter.wasm"      "filter"
-deploy_smartmodule "54link-tx-enricher"       "${SMARTMODULE_DIR}/tx_enricher.wasm"        "map"
-deploy_smartmodule "54link-mdm-heartbeat-map" "${SMARTMODULE_DIR}/mdm_heartbeat_map.wasm"  "map"
-deploy_smartmodule "54link-sim-probe-filter"  "${SMARTMODULE_DIR}/sim_probe_filter.wasm"   "filter"
-deploy_smartmodule "54link-kyc-router"        "${SMARTMODULE_DIR}/kyc_router.wasm"         "filter-map"
-deploy_smartmodule "54link-settlement-agg"    "${SMARTMODULE_DIR}/settlement_agg.wasm"     "aggregate"
+deploy_smartmodule "insureportal-fraud-filter"      "${SMARTMODULE_DIR}/fraud_filter.wasm"      "filter"
+deploy_smartmodule "insureportal-tx-enricher"       "${SMARTMODULE_DIR}/tx_enricher.wasm"        "map"
+deploy_smartmodule "insureportal-mdm-heartbeat-map" "${SMARTMODULE_DIR}/mdm_heartbeat_map.wasm"  "map"
+deploy_smartmodule "insureportal-sim-probe-filter"  "${SMARTMODULE_DIR}/sim_probe_filter.wasm"   "filter"
+deploy_smartmodule "insureportal-kyc-router"        "${SMARTMODULE_DIR}/kyc_router.wasm"         "filter-map"
+deploy_smartmodule "insureportal-settlement-agg"    "${SMARTMODULE_DIR}/settlement_agg.wasm"     "aggregate"
 
 # ── Create connectors ─────────────────────────────────────────────────────────
 log "Registering Kafka mirror connectors..."

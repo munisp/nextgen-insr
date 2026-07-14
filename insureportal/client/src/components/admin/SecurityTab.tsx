@@ -656,7 +656,7 @@ function PendingReversalsSection() {
                     className="px-3 py-2 font-semibold text-white"
                     style={{ fontFamily: DISP }}
                   >
-                    {tx.agentCode ?? `#${tx.agentId}`}
+                    {tx.agentId ?? `#${tx.agentId}`}
                   </td>
                   <td
                     className="px-3 py-2 text-gray-300"

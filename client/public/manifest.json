@@ -1,14 +1,18 @@
 {
-  "name": "InsurePortal",
+  "name": "InsurePortal \u2014 Next-Gen Insurance Platform",
   "short_name": "InsurePortal",
-  "description": "InsurePortal — Comprehensive Insurance Management Platform for the Nigerian Market",
-  "start_url": "/",
+  "description": "Nigeria's most advanced insurance platform \u2014 policies, claims, underwriting, and compliance in one app.",
+  "start_url": "/?source=pwa",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0a0a0a",
-  "theme_color": "#3b82f6",
+  "orientation": "any",
+  "background_color": "#0F172A",
+  "theme_color": "#0F172A",
   "lang": "en-NG",
-  "categories": ["insurance", "finance", "productivity"],
+  "categories": [
+    "finance",
+    "insurance",
+    "business"
+  ],
   "icons": [
     {
       "src": "/favicon.ico",
@@ -26,59 +30,140 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "screenshots": [
     {
-      "src": "/screenshot-wide.png",
+      "src": "/screenshots/dashboard-wide.png",
       "sizes": "1280x720",
       "type": "image/png",
       "form_factor": "wide",
       "label": "InsurePortal Dashboard"
     },
     {
-      "src": "/screenshot-narrow.png",
+      "src": "/screenshots/dashboard-narrow.png",
       "sizes": "390x844",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "InsurePortal Mobile"
+      "label": "InsurePortal Mobile Dashboard"
+    },
+    {
+      "src": "/screenshots/claims-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Claims Management"
+    },
+    {
+      "src": "/screenshots/claims-narrow.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Claims on Mobile"
     }
   ],
   "shortcuts": [
     {
-      "name": "New Policy",
-      "short_name": "Policy",
-      "description": "Create a new insurance policy",
-      "url": "/?action=new-policy",
-      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+      "name": "Underwriter Dashboard",
+      "short_name": "Underwrite",
+      "url": "/underwriter-dashboard",
+      "description": "Risk assessment & approval queue"
     },
     {
-      "name": "File Claim",
-      "short_name": "Claim",
-      "description": "Submit an insurance claim",
-      "url": "/?action=file-claim",
-      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+      "name": "Actuary Dashboard",
+      "short_name": "Actuary",
+      "url": "/actuary-dashboard",
+      "description": "IFRS17 reserves & pricing models"
     },
     {
-      "name": "Renewals",
-      "short_name": "Renew",
-      "description": "Manage policy renewals",
-      "url": "/?action=renewals",
-      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+      "name": "Claims Dashboard",
+      "short_name": "Claims",
+      "url": "/claims-dashboard",
+      "description": "FNOL, adjudication & settlement"
     },
     {
-      "name": "Agent Portal",
-      "short_name": "Agents",
-      "description": "Access agent management",
-      "url": "/agent-dashboard",
-      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+      "name": "Broker Dashboard",
+      "short_name": "Broker",
+      "url": "/broker-dashboard",
+      "description": "Client portfolio & commissions"
     },
     {
-      "name": "Claims Status",
-      "short_name": "Status",
-      "description": "Check claim status",
-      "url": "/claims",
-      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+      "name": "My Insurance",
+      "short_name": "My Cover",
+      "url": "/policyholder-dashboard",
+      "description": "Policies, claims & payments"
+    },
+    {
+      "name": "Compliance Dashboard",
+      "short_name": "Compliance",
+      "url": "/compliance-dashboard",
+      "description": "AML/KYC & regulatory"
+    },
+    {
+      "name": "Regulator Dashboard",
+      "short_name": "Regulator",
+      "url": "/regulator-dashboard",
+      "description": "Market oversight \u2014 read only"
+    },
+    {
+      "name": "Reinsurance Dashboard",
+      "short_name": "Reinsurance",
+      "url": "/reinsurer-dashboard",
+      "description": "Treaties, premiums & RI claims"
+    },
+    {
+      "name": "Billing Admin",
+      "short_name": "Billing",
+      "url": "/billing-admin-dashboard",
+      "description": "Ledger, revenue & reconciliation"
+    },
+    {
+      "name": "Supervisor Dashboard",
+      "short_name": "Supervisor",
+      "url": "/supervisor-dashboard",
+      "description": "Agent oversight & operations"
+    },
+    {
+      "name": "Beneficiary Portal",
+      "short_name": "Beneficiary",
+      "url": "/beneficiary-dashboard",
+      "description": "Policy & claim status"
+    },
+    {
+      "name": "IFRS 17 Dashboard",
+      "short_name": "IFRS17",
+      "url": "/ifrs17-dashboard",
+      "description": "Insurance contract accounting"
+    },
+    {
+      "name": "Admin Dashboard",
+      "short_name": "Admin",
+      "url": "/admin-dashboard",
+      "description": "Platform administration"
+    },
+    {
+      "name": "Analytics",
+      "short_name": "Analytics",
+      "url": "/analytics-dashboard",
+      "description": "Platform analytics & lakehouse"
+    },
+    {
+      "name": "New Claim",
+      "short_name": "New Claim",
+      "url": "/fnol-submission",
+      "description": "File a new insurance claim"
+    },
+    {
+      "name": "New Quote",
+      "short_name": "New Quote",
+      "url": "/quote-engine",
+      "description": "Generate an insurance quote"
     }
   ],
   "share_target": {
@@ -89,12 +174,32 @@
       "title": "title",
       "text": "text",
       "url": "url",
-      "files": [{ "name": "documents", "accept": ["application/pdf", "image/*"] }]
+      "files": [
+        {
+          "name": "documents",
+          "accept": [
+            "application/pdf",
+            "image/*"
+          ]
+        }
+      ]
     }
   },
   "launch_handler": {
-    "client_mode": "navigate-existing"
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
   },
   "prefer_related_applications": false,
-  "related_applications": []
+  "related_applications": [],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "scope": "/",
+  "id": "insureportal-pwa-v1",
+  "dir": "ltr",
+  "handle_links": "preferred"
 }

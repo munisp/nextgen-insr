@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Dispute Resolution — DB-backed dispute CRUD and dashboard
  * Sprint 54: Full PostgreSQL + middleware integration
@@ -10,7 +10,7 @@ import { disputes, disputeMessages, sla_breaches } from "../../drizzle/schema";
 import { eq, desc, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
-import logger from "../_core/logger";
+import { logger } from "../_core/logger";
 
 export const disputeResolutionRouter = router({
   dashboard: protectedProcedure.query(async () => {
@@ -54,7 +54,7 @@ export const disputeResolutionRouter = router({
     try {
       const [b] = await db.select({ cnt: count() }).from(sla_breaches);
       breachCount = b?.cnt ?? 0;
-    } catch (err) { console.error("[disputeResolution] operation failed:", err); }
+    } catch (err) { logger.error("[disputeResolution] operation failed:: " + String(err)); }
     const totalD = total?.cnt ?? 0;
     const resolvedD = resolved?.cnt ?? 0;
     const sla24 =
@@ -174,7 +174,7 @@ export const disputeResolutionRouter = router({
           } as any);
         } catch (e) {
           // @ts-expect-error middleware type mismatch
-          logger.warn("[DisputeResolution]", e);
+          logger.warn("[DisputeResolution]: " + e);
         }
         return { id: d.id, ref: d.ref, status: d.status };
       } catch (error) {
@@ -230,7 +230,7 @@ export const disputeResolutionRouter = router({
           } as any);
         } catch (e) {
           // @ts-expect-error middleware type mismatch
-          logger.warn("[DisputeResolution]", e);
+          logger.warn("[DisputeResolution]: " + e);
         }
         return { success: true };
       } catch (error) {

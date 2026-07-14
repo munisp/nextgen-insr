@@ -25,7 +25,8 @@ const PROMETHEUS_PORT = parseInt(process.env.PROMETHEUS_METRICS_PORT || "9464", 
 let sdk: NodeSDK | undefined;
 
 if (OTEL_ENABLED) {
-  const resource = new Resource({
+  const resource = // @ts-ignore - Resource import type mismatch
+ new Resource({
     [ATTR_SERVICE_NAME]: SERVICE_NAME,
     [ATTR_SERVICE_VERSION]: SERVICE_VERSION,
     "deployment.environment": process.env.NODE_ENV || "development",
@@ -47,7 +48,8 @@ if (OTEL_ENABLED) {
     instrumentations: [
       getNodeAutoInstrumentations({
         "@opentelemetry/instrumentation-http": {
-          ignoreIncomingPaths: ["/health", "/metrics", "/favicon.ico"],
+          // @ts-ignore
+      ignoreIncomingPaths: ["/health", "/metrics", "/favicon.ico"],
         },
         "@opentelemetry/instrumentation-express": { enabled: true },
         "@opentelemetry/instrumentation-pg": { enabled: true },

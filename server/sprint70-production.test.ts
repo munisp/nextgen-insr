@@ -132,7 +132,7 @@ describe("Sprint 70: Email Service", () => {
       ref: "TXN-001",
       type: "Cash In",
       amount: 50000,
-      agentCode: "AG001",
+      agentId: "AG001",
       timestamp: new Date(),
     });
     expect(html).toContain("TXN-001");

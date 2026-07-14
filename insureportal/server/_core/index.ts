@@ -101,6 +101,67 @@ async function startServer() {
   } catch (e) {
     console.warn("[DBPool] Monitor failed:", (e as any).message);
   }
+  // ── Infrastructure Service Initialization ──────────────────────────────
+  // Dapr sidecar warm-up
+  try {
+    const { daprClient } = await import("../daprClient");
+    await daprClient.health();
+    console.log("[Dapr] Sidecar connected");
+  } catch (e) {
+    console.warn("[Dapr] Sidecar unavailable (non-fatal):", (e as any).message);
+  }
+
+  // Fluvio streaming bridge warm-up
+  try {
+    const fluvioMod = await import("../lib/fluvioClient");
+    // Module exports named functions; warm-up by checking status
+    if (typeof fluvioMod.getFluvioStatus === "function") {
+      fluvioMod.getFluvioStatus();
+    }
+    console.log("[Fluvio] Streaming bridge ready");
+  } catch (e) {
+    console.warn("[Fluvio] Bridge unavailable (non-fatal):", (e as any).message);
+  }
+
+  // Permify authorization service warm-up
+  try {
+    const { permifyClient } = await import("../lib/permifyClient");
+    await permifyClient.health();
+    console.log("[Permify] Authorization service connected");
+  } catch (e) {
+    console.warn("[Permify] Service unavailable (non-fatal):", (e as any).message);
+  }
+
+  // Python analytics service warm-up
+  try {
+    const analyticsUrl = process.env.PYTHON_ANALYTICS_URL ?? "http://python-analytics:8092";
+    const resp = await fetch(`${analyticsUrl}/health`, { signal: AbortSignal.timeout(3000) });
+    if (resp.ok) console.log("[Analytics] Python analytics service connected");
+    else console.warn("[Analytics] Python analytics service degraded");
+  } catch (e) {
+    console.warn("[Analytics] Python analytics unavailable (non-fatal):", (e as any).message);
+  }
+
+  // Go infra service warm-up
+  try {
+    const goInfraUrl = process.env.GO_INFRA_URL ?? "http://go-infra:8093";
+    const resp = await fetch(`${goInfraUrl}/health`, { signal: AbortSignal.timeout(2000) });
+    if (resp.ok) console.log("[GoInfra] Go infrastructure service connected");
+    else console.warn("[GoInfra] Go infrastructure service degraded");
+  } catch (e) {
+    console.warn("[GoInfra] Go infra unavailable (non-fatal):", (e as any).message);
+  }
+
+  // Rust middleware warm-up
+  try {
+    const rustMwUrl = process.env.RUST_MIDDLEWARE_URL ?? "http://rust-middleware:8091";
+    const resp = await fetch(`${rustMwUrl}/health`, { signal: AbortSignal.timeout(2000) });
+    if (resp.ok) console.log("[RustMW] Rust middleware connected");
+    else console.warn("[RustMW] Rust middleware degraded");
+  } catch (e) {
+    console.warn("[RustMW] Rust middleware unavailable (non-fatal):", (e as any).message);
+  }
+
   // ── Sprint 70: Cron Jobs ──────────────────────────────────────────
   try {
     const cron = require("node-cron");
@@ -629,6 +690,120 @@ async function startServer() {
       checks.tbSidecar = (await tbIsHealthy()) ? "running" : "offline";
     } catch {
       checks.tbSidecar = "offline";
+    }
+
+    // ── Dapr sidecar ─────────────────────────────────────────────────────
+    try {
+      const daprPort = process.env.DAPR_HTTP_PORT ?? "3500";
+      const t0 = Date.now();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      const resp = await fetch(`http://localhost:${daprPort}/v1.0/healthz`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      latencies.dapr = Date.now() - t0;
+      checks.dapr = resp.ok ? "running" : "degraded";
+    } catch {
+      checks.dapr = "offline";
+      latencies.dapr = -1;
+    }
+
+    // ── Fluvio streaming ──────────────────────────────────────────────────
+    try {
+      const fluvioUrl = process.env.FLUVIO_ENDPOINT ?? "http://fluvio:9003";
+      const t0 = Date.now();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      const resp = await fetch(`${fluvioUrl}/health`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      latencies.fluvio = Date.now() - t0;
+      checks.fluvio = resp.ok ? "reachable" : "degraded";
+    } catch {
+      checks.fluvio = "unavailable";
+      latencies.fluvio = -1;
+    }
+
+    // ── Temporal workflow engine ──────────────────────────────────────────
+    try {
+      const { getTemporalClient } = await import("../temporal");
+      const tc = await getTemporalClient();
+      checks.temporal = tc ? "connected" : "offline";
+    } catch {
+      checks.temporal = "offline";
+    }
+
+    // ── Permify authorization service ─────────────────────────────────────
+    try {
+      const permifyUrl = process.env.PERMIFY_URL ?? "http://permify:3476";
+      const t0 = Date.now();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      const resp = await fetch(`${permifyUrl}/healthz`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      latencies.permify = Date.now() - t0;
+      checks.permify = resp.ok ? "reachable" : "degraded";
+    } catch {
+      checks.permify = "unavailable";
+      latencies.permify = -1;
+    }
+
+    // ── Python analytics service ──────────────────────────────────────────
+    try {
+      const analyticsUrl = process.env.PYTHON_ANALYTICS_URL ?? "http://python-analytics:8092";
+      const t0 = Date.now();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      const resp = await fetch(`${analyticsUrl}/health`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      latencies.pythonAnalytics = Date.now() - t0;
+      checks.pythonAnalytics = resp.ok ? "running" : "degraded";
+    } catch {
+      checks.pythonAnalytics = "offline";
+      latencies.pythonAnalytics = -1;
+    }
+
+    // ── Go infra service ──────────────────────────────────────────────────
+    try {
+      const goInfraUrl = process.env.GO_INFRA_URL ?? "http://go-infra:8093";
+      const t0 = Date.now();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      const resp = await fetch(`${goInfraUrl}/health`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      latencies.goInfra = Date.now() - t0;
+      checks.goInfra = resp.ok ? "running" : "degraded";
+    } catch {
+      checks.goInfra = "offline";
+      latencies.goInfra = -1;
+    }
+
+    // ── Rust middleware ───────────────────────────────────────────────────
+    try {
+      const rustMwUrl = process.env.RUST_MIDDLEWARE_URL ?? "http://rust-middleware:8091";
+      const t0 = Date.now();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      const resp = await fetch(`${rustMwUrl}/health`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      latencies.rustMiddleware = Date.now() - t0;
+      checks.rustMiddleware = resp.ok ? "running" : "degraded";
+    } catch {
+      checks.rustMiddleware = "offline";
+      latencies.rustMiddleware = -1;
+    }
+
+    // ── OpenAppSec WAF agent ──────────────────────────────────────────────
+    try {
+      const openappsecUrl = process.env.OPENAPPSEC_AGENT_URL ?? "http://openappsec-agent:8090";
+      const t0 = Date.now();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      const resp = await fetch(`${openappsecUrl}/health`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      latencies.openappsec = Date.now() - t0;
+      checks.openappsec = resp.ok ? "running" : "degraded";
+    } catch {
+      checks.openappsec = "offline";
+      latencies.openappsec = -1;
     }
 
     const allCritical = checks.db === "connected";

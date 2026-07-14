@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { merchantSettlements } from "../../drizzle/schema";
+import { merchantSettlements } from "@schema";
 import { eq, desc, count, sql } from "drizzle-orm";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";

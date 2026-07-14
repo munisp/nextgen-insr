@@ -35,7 +35,7 @@ describe("Sprint 75: USSD Integration Router", () => {
   describe("USSD Menu Tree", () => {
     const MENU_TREE = {
       id: "root",
-      title: "54Link POS",
+      title: "InsurePortal POS",
       shortcode: "*384#",
       children: [
         {

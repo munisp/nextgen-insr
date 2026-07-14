@@ -167,7 +167,7 @@ function SecurityAuditSection() {
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
-          a.download = `54link-security-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+          a.download = `insureportal-security-audit-${new Date().toISOString().slice(0, 10)}.csv`;
           a.click();
           URL.revokeObjectURL(url);
           toast.success(`Exported ${d.rowCount} alerts to CSV`);
@@ -656,7 +656,7 @@ function PendingReversalsSection() {
                     className="px-3 py-2 font-semibold text-white"
                     style={{ fontFamily: DISP }}
                   >
-                    {tx.agentCode ?? `#${tx.agentId}`}
+                    {tx.agentId ?? `#${tx.agentId}`}
                   </td>
                   <td
                     className="px-3 py-2 text-gray-300"

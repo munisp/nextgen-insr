@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ndpr-compliance
+description: Helm chart for Ndpr Compliance
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

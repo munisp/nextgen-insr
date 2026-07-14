@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Agent Commission Calculator — DB-backed tier lookup, calculation, and payout listing
  * Sprint 54: Full PostgreSQL + middleware integration

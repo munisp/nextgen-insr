@@ -1,10 +1,11 @@
 // TypeScript enabled — Sprint 96 security audit
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
+import { logger } from '../_core/logger';
 
 interface AuditSnapshot {
   agentId: number;
-  agentCode: string;
+  agentId: string;
   action: string;
   resource: string;
   resourceId?: string;
@@ -50,7 +51,7 @@ export async function writeEnhancedAuditLog(
 
     await db.insert(auditLog).values({
       agentId: entry.agentId,
-      agentCode: entry.agentCode,
+      agentId: entry.agentId,
       action: entry.action,
       resource: entry.resource,
       resourceId: entry.resourceId ?? null,
@@ -60,6 +61,6 @@ export async function writeEnhancedAuditLog(
       userAgent: entry.userAgent ?? null,
     });
   } catch (err) {
-    console.error("[AuditEnhanced] Write failed:", (err as Error).message);
+    logger.error("[AuditEnhanced] Write failed:: " + (err as Error).message);
   }
 }

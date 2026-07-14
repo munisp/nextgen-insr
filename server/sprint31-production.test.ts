@@ -204,7 +204,7 @@ describe("Docker & Infrastructure Files", () => {
       fs.existsSync(
         require("path").resolve(
           __dirname,
-          "../infrastructure/airflow/dags/posshell_daily_pipeline.py"
+          "../infrastructure/airflow/dags/insurance_portal_daily_pipeline.py"
         )
       )
     ).toBe(true);
@@ -216,7 +216,7 @@ describe("Docker & Infrastructure Files", () => {
       fs.existsSync(
         require("path").resolve(
           __dirname,
-          "../infrastructure/nifi/posshell-flow-template.json"
+          "../infrastructure/nifi/insurance-portal-flow-template.json"
         )
       )
     ).toBe(true);

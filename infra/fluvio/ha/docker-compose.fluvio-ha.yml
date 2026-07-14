@@ -1,6 +1,6 @@
 ###############################################################################
 # Fluvio HA — 3 SPU nodes + SC (Streaming Controller)
-# Production-tuned for POS-54Link: real-time fraud events, MDM heartbeats, CDC
+# Production-tuned for POS-InsurePortal: real-time fraud events, MDM heartbeats, CDC
 ###############################################################################
 version: "3.9"
 

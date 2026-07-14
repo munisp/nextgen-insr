@@ -96,7 +96,7 @@ export default function AgentManagementDashboard() {
                         {a.name || a.openId}
                       </td>
                       <td className="py-2 text-gray-400 font-mono text-xs">
-                        {a.agentCode || `AGT-${a.id}`}
+                        {a.agentId || `AGT-${a.id}`}
                       </td>
                       <td className="py-2">
                         <Badge variant="outline">{a.role || "user"}</Badge>

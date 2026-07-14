@@ -1,10 +1,10 @@
 {
   "dashboard": {
     "id": null,
-    "uid": "54link-billing-overview",
-    "title": "54Link Billing Engine — Overview",
+    "uid": "insureportal-billing-overview",
+    "title": "InsurePortal Billing Engine — Overview",
     "description": "Real-time monitoring of billing operations, ledger health, and revenue metrics",
-    "tags": ["billing", "54link", "production"],
+    "tags": ["billing", "insureportal", "production"],
     "timezone": "Africa/Lagos",
     "refresh": "30s",
     "time": {

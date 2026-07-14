@@ -19,7 +19,7 @@ import {
   agentAchievements,
   agents,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const agentPerformanceIncentivesRouter = router({

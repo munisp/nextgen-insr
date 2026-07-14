@@ -32,7 +32,7 @@ const rules: EnvRule[] = [
     value: ENV.cookieSecret,
     required: true,
     description: "Cookie/JWT signing secret",
-    warnIfDefault: "pos54link-dev-secret-change-in-prod",
+    warnIfDefault: "posinsureportal-dev-secret-change-in-prod",
   },
 
   // Important — features degrade without these
@@ -54,28 +54,28 @@ const rules: EnvRule[] = [
     value: ENV.keycloakClientSecret,
     required: false,
     description: "Keycloak client secret",
-    warnIfDefault: "54link-keycloak-dev-secret",
+    warnIfDefault: "insureportal-keycloak-dev-secret",
   },
   {
     name: "PLATFORM_API_KEY",
     value: ENV.platformApiKey,
     required: false,
     description: "Platform API key",
-    warnIfDefault: "54link-platform-dev-api-key",
+    warnIfDefault: "insureportal-platform-dev-api-key",
   },
   {
     name: "INTERNAL_API_KEY",
     value: ENV.internalApiKey,
     required: false,
     description: "Internal service-to-service key",
-    warnIfDefault: "54link-internal-dev-key-change-in-prod",
+    warnIfDefault: "insureportal-internal-dev-key-change-in-prod",
   },
   {
     name: "CRON_SECRET",
     value: ENV.cronSecret,
     required: false,
     description: "Cron/scheduler shared secret",
-    warnIfDefault: "54link-cron-dev-secret-change-in-prod",
+    warnIfDefault: "insureportal-cron-dev-secret-change-in-prod",
   },
 
   // Kafka

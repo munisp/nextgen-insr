@@ -1,11 +1,11 @@
 {
-  "title": "54Link POS — MDM Fleet Overview",
-  "uid": "54link-mdm-fleet",
+  "title": "InsurePortal POS — MDM Fleet Overview",
+  "uid": "insureportal-mdm-fleet",
   "version": 1,
   "schemaVersion": 38,
   "refresh": "30s",
   "time": { "from": "now-24h", "to": "now" },
-  "tags": ["mdm", "fleet", "devices", "54link"],
+  "tags": ["mdm", "fleet", "devices", "insureportal"],
   "panels": [
     {
       "id": 1,
