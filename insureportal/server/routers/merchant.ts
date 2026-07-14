@@ -18,7 +18,7 @@ import {
   transactions,
   merchantSettlements,
   disputes,
-} from "../../drizzle/schema";
+} from "@schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import crypto from "crypto";
 

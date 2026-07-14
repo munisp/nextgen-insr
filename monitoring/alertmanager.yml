@@ -1,42 +1,29 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Alertmanager Configuration — 54Link POS Shell
-# ─────────────────────────────────────────────────────────────────────────────
-# Incident escalation stack (all open-source):
-#   critical  → Grafana OnCall webhook (on-call rotation + escalation chains)
-#               + Slack #pos-alerts-critical
-#   warning   → Slack #pos-alerts-warning
-#   fraud     → Slack #pos-fraud-alerts (always, regardless of severity)
-#   default   → Slack #pos-alerts-info
-#
-# Grafana OnCall is the open-source alternative to PagerDuty.
-# Docs: https://grafana.com/docs/oncall/latest/
-# Self-hosted: docker-compose.monitoring.yml includes the oncall service.
-#
-# Replace the webhook URLs and Slack tokens with real values before deploying.
-# Inject secrets via environment variables or a secrets manager (Vault, etc.).
+# Alertmanager Configuration — NGApp Platform
+# Covers all insurance microservices, middleware, and infrastructure
 # ─────────────────────────────────────────────────────────────────────────────
 
 global:
   resolve_timeout: 5m
-  smtp_smarthost: "smtp.54link.io:587"
-  smtp_from: "alerts@54link.io"
-  smtp_auth_username: "alerts@54link.io"
-  smtp_auth_password: "smtp-password-change-in-production"
+  smtp_smarthost: "smtp.ngapp.example.com:587"
+  smtp_from: "alerts@ngapp.example.com"
+  smtp_auth_username: "alerts@ngapp.example.com"
+  smtp_auth_password: "${SMTP_PASSWORD}"
   smtp_require_tls: true
 
 # ── Routing tree ──────────────────────────────────────────────────────────────
 route:
   receiver: "slack-info"
-  group_by: ["alertname", "service", "environment"]
+  group_by: ["alertname", "service", "environment", "severity"]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
 
   routes:
-    # Critical → Grafana OnCall (on-call rotation) + Slack critical
+    # Critical severity → PagerDuty/OnCall + Slack critical
     - matchers:
         - severity = "critical"
-      receiver: "grafana-oncall-critical"
+      receiver: "pagerduty-critical"
       continue: true
 
     - matchers:
@@ -50,112 +37,166 @@ route:
 
     # Fraud alerts always go to fraud channel (any severity)
     - matchers:
-        - alertname =~ ".*Fraud.*"
+        - alertname =~ ".*Fraud.*|.*fraud.*"
       receiver: "slack-fraud"
+      continue: true
+
+    # Compliance alerts → compliance channel
+    - matchers:
+        - alertname =~ ".*CBN.*|.*naicom.*|.*ndpr.*|.*gdpr.*|.*compliance.*"
+      receiver: "slack-compliance"
+      continue: true
+
+    # Finance/Payment alerts
+    - matchers:
+        - alertname =~ ".*Settlement.*|.*Premium.*|.*Float.*|.*Payment.*"
+      receiver: "slack-finance"
+      continue: true
+
+    # Network/Telco alerts
+    - matchers:
+        - alertname =~ ".*SIM.*|.*Network.*|.*Telco.*|.*USSD.*"
+      receiver: "slack-network"
       continue: true
 
 # ── Inhibition rules ─────────────────────────────────────────────────────────
 inhibit_rules:
+  # If critical is firing, inhibit related warnings
   - source_matchers:
       - severity = "critical"
     target_matchers:
       - severity = "warning"
     equal: ["alertname", "service"]
+  # If service is down, inhibit all derived alerts from that service
+  - source_matchers:
+      - alertname = "ServiceDown"
+    target_matchers:
+      - alertname != "ServiceDown"
+    equal: ["service"]
 
 # ── Receivers ────────────────────────────────────────────────────────────────
 receivers:
-
-  # ── Grafana OnCall (open-source on-call rotation + escalation) ─────────────
-  # Grafana OnCall exposes a Prometheus-compatible alertmanager webhook.
-  # Obtain the webhook URL from:
-  #   Grafana OnCall UI → Integrations → Alertmanager → Copy webhook URL
-  # Self-hosted OnCall runs on port 8080 (see docker-compose.monitoring.yml).
-  - name: "grafana-oncall-critical"
-    webhook_configs:
-      - url: "http://oncall:8080/integrations/v1/alertmanager/pos-shell-integration-token-change-in-production/"
+  # ── Critical: PagerDuty/OnCall integration ───────────────────────────
+  - name: "pagerduty-critical"
+    pagerduty_configs:
+      - service_key: "${PAGERDUTY_SERVICE_KEY}"
+        severity: critical
         send_resolved: true
-        http_config:
-          # Optional: add a Bearer token if OnCall is behind auth
-          # authorization:
-          #   credentials: "oncall-api-token-change-in-production"
-        max_alerts: 50
-        timeout: 10s
+        description: '{{ .CommonAnnotations.summary }}'
 
-  # ── Slack: critical channel ─────────────────────────────────────────────────
+  # ── Slack: critical channel ──────────────────────────────────────────
   - name: "slack-critical"
     slack_configs:
-      - api_url: "https://hooks.slack.com/services/T00000000/B00000000/slack-webhook-url-change-in-production"
-        channel: "#pos-alerts-critical"
+      - api_url: "${SLACK_WEBHOOK_CRITICAL}"
+        channel: "#ngapp-critical"
         send_resolved: true
         icon_emoji: ":rotating_light:"
-        username: "54Link POS Alertmanager"
+        username: "NGApp Alertmanager"
         title: '{{ template "slack.default.title" . }}'
-        title_link: "https://grafana.54link.io/d/pos-shell-prod-v1"
         text: |
           {{ range .Alerts }}
+          *🚨 CRITICAL ALERT*
           *Alert:* {{ .Annotations.summary }}
-          *Description:* {{ .Annotations.description }}
-          *Severity:* {{ .Labels.severity }}
           *Service:* {{ .Labels.service }}
+          *Description:* {{ .Annotations.description }}
           *Environment:* {{ .Labels.environment }}
           {{ end }}
-        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
-        actions:
-          - type: button
-            text: "View Dashboard"
-            url: "https://grafana.54link.io/d/pos-shell-prod-v1"
-          - type: button
-            text: "Grafana OnCall"
-            url: "http://oncall:3000/a/grafana-oncall-app/incidents"
-          - type: button
-            text: "Runbook"
-            url: "https://wiki.54link.io/runbooks/pos-shell"
+        color: danger
 
-  # ── Slack: warning channel ──────────────────────────────────────────────────
+  # ── Slack: warning channel ───────────────────────────────────────────
   - name: "slack-warning"
     slack_configs:
-      - api_url: "https://hooks.slack.com/services/T00000000/B00000000/slack-webhook-url-change-in-production"
-        channel: "#pos-alerts-warning"
+      - api_url: "${SLACK_WEBHOOK_WARNING}"
+        channel: "#ngapp-warnings"
         send_resolved: true
         icon_emoji: ":warning:"
-        username: "54Link POS Alertmanager"
+        username: "NGApp Alertmanager"
         title: '{{ template "slack.default.title" . }}'
-        title_link: "https://grafana.54link.io/d/pos-shell-prod-v1"
         text: |
           {{ range .Alerts }}
+          *⚠️ WARNING*
           *Alert:* {{ .Annotations.summary }}
-          *Description:* {{ .Annotations.description }}
-          *Severity:* {{ .Labels.severity }}
           *Service:* {{ .Labels.service }}
+          *Description:* {{ .Annotations.description }}
           {{ end }}
-        color: "warning"
+        color: warning
 
-  # ── Slack: fraud-specific channel ──────────────────────────────────────────
+  # ── Slack: fraud alerts ──────────────────────────────────────────────
   - name: "slack-fraud"
     slack_configs:
-      - api_url: "https://hooks.slack.com/services/T00000000/B00000000/slack-webhook-url-change-in-production"
-        channel: "#pos-fraud-alerts"
+      - api_url: "${SLACK_WEBHOOK_FRAUD}"
+        channel: "#ngapp-fraud-alerts"
         send_resolved: true
         icon_emoji: ":shield:"
-        username: "54Link Fraud Monitor"
-        title: ":shield: Fraud Alert Spike — 54Link POS"
-        title_link: "https://grafana.54link.io/d/pos-shell-prod-v1"
+        username: "NGApp Fraud Monitor"
+        title: ":shield: Fraud Alert — NGApp Platform"
         text: |
           {{ range .Alerts }}
           *{{ .Annotations.summary }}*
-          {{ .Annotations.description }}
-          *Severity:* {{ .Labels.severity }}
+          *Service:* {{ .Labels.service }}
+          *Description:* {{ .Annotations.description }}
           {{ end }}
-        color: "danger"
+        color: danger
 
-  # ── Slack: info / default ───────────────────────────────────────────────────
+  # ── Slack: compliance alerts ─────────────────────────────────────────
+  - name: "slack-compliance"
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_COMPLIANCE}"
+        channel: "#ngapp-compliance"
+        send_resolved: true
+        icon_emoji: ":closed_lock_with_key:"
+        username: "NGApp Compliance Monitor"
+        title: ":closed_lock_with_key: Compliance Alert — NGApp"
+        text: |
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          *Service:* {{ .Labels.service }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+        color: warning
+
+  # ── Slack: finance alerts ────────────────────────────────────────────
+  - name: "slack-finance"
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_FINANCE}"
+        channel: "#ngapp-finance"
+        send_resolved: true
+        icon_emoji: ":moneybag:"
+        username: "NGApp Finance Monitor"
+        title: ":moneybag: Finance Alert — NGApp"
+        text: |
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          *Service:* {{ .Labels.service }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+        color: warning
+
+  # ── Slack: network/telco alerts ──────────────────────────────────────
+  - name: "slack-network"
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_NETWORK}"
+        channel: "#ngapp-network"
+        send_resolved: true
+        icon_emoji: ":signal_strength:"
+        username: "NGApp Network Monitor"
+        title: ":signal_strength: Network Alert — NGApp"
+        text: |
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          *Service:* {{ .Labels.service }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+        color: warning
+
+  # ── Default: info / general ──────────────────────────────────────────
   - name: "slack-info"
     slack_configs:
-      - api_url: "https://hooks.slack.com/services/T00000000/B00000000/slack-webhook-url-change-in-production"
-        channel: "#pos-alerts-info"
+      - api_url: "${SLACK_WEBHOOK_INFO}"
+        channel: "#ngapp-alerts"
         send_resolved: true
         icon_emoji: ":information_source:"
-        username: "54Link POS Alertmanager"
+        username: "NGApp Alertmanager"
         title: '{{ template "slack.default.title" . }}'
         text: '{{ template "slack.default.text" . }}'
 

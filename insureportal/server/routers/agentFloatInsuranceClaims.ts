@@ -14,7 +14,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { floatReconciliations, agents, auditLog } from "../../drizzle/schema";
+import { floatReconciliations, agents, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const agentFloatInsuranceClaimsRouter = router({

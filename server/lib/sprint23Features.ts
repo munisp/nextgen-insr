@@ -637,7 +637,7 @@ export function retryDeadLetter(deliveryId: string): WebhookDelivery | null {
 
 export interface AgentPerformanceScore {
   agentId: string;
-  agentCode: string;
+  agentId: string;
   overallScore: number; // 0-100
   breakdown: {
     transactionVolume: { score: number; weight: number; raw: number };
@@ -655,7 +655,7 @@ export interface AgentPerformanceScore {
 
 export function calculateAgentPerformance(
   agentId: string,
-  agentCode: string,
+  agentId: string,
   data: {
     txCount: number;
     txTarget: number;
@@ -711,7 +711,7 @@ export function calculateAgentPerformance(
 
   return {
     agentId,
-    agentCode,
+    agentId,
     overallScore: Math.round(overall * 100) / 100,
     breakdown: {
       transactionVolume: {

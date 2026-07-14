@@ -72,7 +72,7 @@ export default function SupervisorDashboard() {
     "all" | "active" | "suspended"
   >("all");
   const [sortBy, setSortBy] = useState<
-    "name" | "floatBalance" | "volume" | "successRate"
+    "name" | "premiumReserve" | "volume" | "successRate"
   >("volume");
   const [agentPage, setAgentPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
@@ -91,13 +91,13 @@ export default function SupervisorDashboard() {
       { enabled: selectedAgentId !== null }
     );
   const { data: pendingTopUps } =
-    trpc.floatTopUp.supervisorPendingTopUps.useQuery();
+    trpc.premiumTopUp.supervisorPendingTopUps.useQuery();
   const { data: cbnMetrics } = trpc.analytics.cbnMetrics.useQuery({ days: 30 });
 
-  const approveTopUp = trpc.floatTopUp.supervisorApproveTopUp.useMutation({
+  const approveTopUp = trpc.premiumTopUp.supervisorApproveTopUp.useMutation({
     onSuccess: () => {
       toast.success("Top-up approved — admin can now credit the float");
-      utils.floatTopUp.supervisorPendingTopUps.invalidate();
+      utils.premiumTopUp.supervisorPendingTopUps.invalidate();
     },
     onError: (e: any) => toast.error(`Approval failed: ${e.message}`),
   });
@@ -110,7 +110,7 @@ export default function SupervisorDashboard() {
       list = list.filter(
         (a: any) =>
           a.name?.toLowerCase().includes(q) ||
-          a.agentCode?.toLowerCase().includes(q) ||
+          a.agentId?.toLowerCase().includes(q) ||
           a.location?.toLowerCase().includes(q)
       );
     }
@@ -121,8 +121,8 @@ export default function SupervisorDashboard() {
       list = list.filter((a: any) => !a.isActive);
     list = [...list].sort((a: any, b: any) => {
       if (sortBy === "name") return (a.name ?? "").localeCompare(b.name ?? "");
-      if (sortBy === "floatBalance")
-        return Number(b.floatBalance ?? 0) - Number(a.floatBalance ?? 0);
+      if (sortBy === "premiumReserve")
+        return Number(b.premiumReserve ?? 0) - Number(a.premiumReserve ?? 0);
       if (sortBy === "volume")
         return (b.totalVolume7d ?? 0) - (a.totalVolume7d ?? 0);
       if (sortBy === "successRate")
@@ -192,7 +192,7 @@ export default function SupervisorDashboard() {
             className="px-6 py-3 rounded-xl font-bold text-white"
             style={{ background: BLUE, fontFamily: DISP }}
           >
-            ← Return to POS Terminal
+            ← Return to Insurance Service
           </a>
         </div>
       </div>
@@ -389,7 +389,7 @@ export default function SupervisorDashboard() {
                             className="text-xs font-black text-white"
                             style={{ fontFamily: DISP }}
                           >
-                            {req.agentCode}
+                            {req.agentId}
                           </span>
                           <span
                             className="text-xs text-gray-400"
@@ -532,7 +532,7 @@ export default function SupervisorDashboard() {
                 }}
               >
                 <option value="volume">Sort: Volume</option>
-                <option value="floatBalance">Sort: Float</option>
+                <option value="premiumReserve">Sort: Float</option>
                 <option value="successRate">Sort: Success Rate</option>
                 <option value="name">Sort: Name</option>
               </select>
@@ -599,7 +599,7 @@ export default function SupervisorDashboard() {
                             className="text-xs"
                             style={{ color: BLUE, fontFamily: MONO }}
                           >
-                            {a.agentCode}
+                            {a.agentId}
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1">
@@ -637,7 +637,7 @@ export default function SupervisorDashboard() {
                           className="text-lg font-black"
                           style={{ color: GOLD, fontFamily: MONO }}
                         >
-                          {fmtShort(Number(a.floatBalance ?? 0))}
+                          {fmtShort(Number(a.premiumReserve ?? 0))}
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">

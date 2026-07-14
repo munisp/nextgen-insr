@@ -8,11 +8,11 @@ import { TRPCError } from "@trpc/server";
 const API_SPEC = {
   openapi: "3.1.0",
   info: {
-    title: "54Link Agency Banking Platform API",
+    title: "InsurePortal Insurance Platform API",
     version: "1.0.0",
     description:
-      "Comprehensive API for agency banking operations including KYC/KYB, transactions, settlements, and compliance.",
-    contact: { name: "54Link Engineering", email: "engineering@54link.com" },
+      "Comprehensive API for insurance operations including KYC/KYB, transactions, settlements, and compliance.",
+    contact: { name: "InsurePortal Engineering", email: "engineering@insureportal.com" },
     license: { name: "Proprietary" },
   },
   servers: [

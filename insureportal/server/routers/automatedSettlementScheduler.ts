@@ -8,7 +8,7 @@ import { getDb } from "../db";
 import {
   merchantSettlements,
   reconciliationBatches,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import {

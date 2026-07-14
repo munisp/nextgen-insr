@@ -14,7 +14,7 @@ export interface DeviceCheckResult {
 
 export interface DeviceInfo {
   deviceId: string;
-  agentCode: string;
+  agentId: string;
   model: string;
   os: string;
   osVersion: string;
@@ -25,29 +25,29 @@ export interface DeviceInfo {
 
 export async function checkDevice(
   deviceId: string,
-  agentCode: string
+  agentId: string
 ): Promise<AdapterResponse<DeviceCheckResult>> {
   return mdmComplianceEngine.post<DeviceCheckResult>("/api/v1/device/check", {
     deviceId,
-    agentCode,
+    agentId,
   });
 }
 
 export async function listDevices(
-  agentCode?: string
+  agentId?: string
 ): Promise<AdapterResponse<DeviceInfo[]>> {
-  const params = agentCode ? { agentCode } : undefined;
+  const params = agentId ? { agentId } : undefined;
   return mdmComplianceEngine.get<DeviceInfo[]>("/api/v1/device/list", params);
 }
 
 export async function enrollDevice(
   deviceId: string,
-  agentCode: string,
+  agentId: string,
   model: string
 ): Promise<AdapterResponse<DeviceInfo>> {
   return mdmComplianceEngine.post<DeviceInfo>("/api/v1/device/enroll", {
     deviceId,
-    agentCode,
+    agentId,
     model,
   });
 }

@@ -1,5 +1,5 @@
 ###############################################################################
-# Prometheus Configuration — POS-54Link Full Stack Monitoring
+# Prometheus Configuration — POS-InsurePortal Full Stack Monitoring
 ###############################################################################
 global:
   scrape_interval: 15s

@@ -1,5 +1,5 @@
 /**
- * Stripe Integration Router — 54Link POS Shell
+ * Stripe Integration Router — InsurePortal POS Shell
  *
  * Full Stripe integration: checkout sessions, subscription management,
  * payment history, customer creation, and user linking.
@@ -42,7 +42,7 @@ async function getOrCreateStripeCustomer(
   const customer = await getStripe().customers.create({
     email,
     name: name || undefined,
-    metadata: { userId: userId.toString(), platform: "54link-pos" },
+    metadata: { userId: userId.toString(), platform: "insureportal-pos" },
   });
 
   await db

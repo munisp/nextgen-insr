@@ -6,84 +6,261 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: '0 6 * * 1'  # Every Monday at 6 AM UTC
 
 jobs:
-  # ── Dependency Vulnerability Scanning ──
-  dependency-audit:
-    name: Dependency Audit
+  # ── Go Static Analysis: vet + gosec ─────────────────────────────────
+  go-static-analysis:
+    name: Go Static Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        module:
+          - claims-adjudication-engine
+          - fraud-detection-go
+          - ussd-gateway
+          - enhanced-kyc-kyb
+          - enterprise-mdm
+          - disaster-recovery-module
+          - naicom-compliance-module
+          - ab-testing-framework
+          - agent-commission-management
+          - audit-trail-system
+          - bancassurance-integration
+          - batch-processing-engine
+          - customer-360-view
+          - gdpr-compliance
+          - group-life-admin
+          - native-mobile-ios
+          - ndpr-compliance
+          - nmid-integration
+          - performance-monitoring-dashboard
+          - pfa-integration
+          - policy-renewal-automation
+          - reinsurance-management
+          - strategic-implementations
+          - insurance-tech-innovations
+          - blockchain-transparency
+          - microinsurance-engine
+          - takaful-module
+          - instant-payout-service
+          - cross-company-fraud-database
+          - dr-ha-service
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache: false
+          cache: true
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: go vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      - name: golangci-lint
+        working-directory: ${{ matrix.module }}
+        run: golangci-lint run --timeout=5m --enable=errcheck,gosimple,go vet staticcheck
+
+      - name: gosec (SAST)
+        working-directory: ${{ matrix.module }}
+        run: gosec -exclude-generated -severity=high -confidence=high ./...
+
+  # ── Dependency Vulnerability Scanning ─────────────────────────────────
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: govulncheck (Go services)
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          for dir in $(find . -maxdepth 2 -name "go.mod" -exec dirname {} \; | head -10); do
-            echo "=== Scanning $dir ==="
-            (cd "$dir" && GONOSUMCHECK=* govulncheck ./... 2>/dev/null || true)
+          set -euo pipefail
+          FOUND_ISSUES=0
+          for dir in $(find . -maxdepth 2 -name "go.mod" -not -path "*/node_modules/*" -exec dirname {} \; | head -20); do
+            echo "=== govulncheck: $dir ==="
+            if (cd "$dir" && GONOSUMCHECK=* govulncheck ./... 2>&1); then
+              echo "OK: $dir"
+            else
+              echo "WARN: vulnerabilities found in $dir (review above)"
+              FOUND_ISSUES=1
+            fi
+          done
+          if [ "$FOUND_ISSUES" -eq 1 ]; then
+            echo "::warning::Some Go modules have known vulnerabilities. Review govulncheck output above."
+          fi
+
+      - name: npm audit (frontend)
+        run: |
+          echo "=== npm audit (frontend) ==="
+          npm audit --audit-level=high --omit=dev 2>&1 || echo "::warning::npm audit found issues (review above)"
+
+      - name: pip safety check (Python services)
+        run: |
+          pip install safety
+          for svc in ifrs17-engine mlops-governance; do
+            if [ -f "$svc/requirements.txt" ]; then
+              echo "=== safety check: $svc ==="
+              safety check -r "$svc/requirements.txt" --json 2>&1 || echo "::warning::safety found issues in $svc"
+            fi
           done
 
-  # ── Static Application Security Testing ──
+  # ── SAST: Semgrep ────────────────────────────────────────────────────
   sast:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
-    container:
-      image: semgrep/semgrep
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Run Semgrep
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep SAST
         run: |
           semgrep scan \
             --config auto \
             --config p/owasp-top-ten \
             --config p/golang \
+            --config p/python \
+            --config p/javascript \
             --exclude node_modules \
             --exclude vendor \
+            --exclude .git \
             --sarif -o semgrep-results.sarif \
-            . || true
+            . 
 
-  # ── Secret Scanning ──
+      - name: Upload Semgrep SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep
+
+  # ── Secret Scanning: gitleaks ────────────────────────────────────────
   secret-scan:
     name: Secret Scanning
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Custom secret patterns
+      - name: Install gitleaks
         run: |
-          echo "Checking for hardcoded secrets..."
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz -C /usr/local/bin
+          gitleaks version
+
+      - name: gitleaks detect (full repo scan)
+        run: gitleaks detect --report-path=gitleaks-results.json --report-format=json --verbose --no-git 
+
+      - name: gitleaks protect (on recent changes)
+        run: gitleaks protect --report-path=gitleaks-protect-results.json --report-format=json --verbose --no-git 
+
+      - name: Custom secret patterns fallback
+        run: |
+          echo "=== Custom pattern check (fallback) ==="
           FOUND=0
           if grep -rn "AKIA[0-9A-Z]\{16\}" --include="*.ts" --include="*.go" --include="*.py" . 2>/dev/null; then FOUND=1; fi
           if grep -rn "sk_live_" --include="*.ts" --include="*.go" . 2>/dev/null; then FOUND=1; fi
           if grep -rn "BEGIN.*PRIVATE KEY" --include="*.ts" --include="*.go" --include="*.py" . 2>/dev/null; then FOUND=1; fi
+          if grep -rn "password\s*=\s*['\"]" --include="*.go" --include="*.py" --include="*.ts" . 2>/dev/null | grep -v "test\|\.test\." | grep -v "node_modules"; then FOUND=1; fi
           if [ $FOUND -eq 0 ]; then
-            echo "No hardcoded secrets detected"
+            echo "No hardcoded secrets detected by custom patterns"
           else
-            echo "Potential secrets found - review above"
+            echo "Potential secrets found — review above"
+            echo "::warning::Custom secret scan found potential secrets. Investigate the lines above."
           fi
 
-  # ── License Compliance ──
+      - name: Upload gitleaks results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-results
+          path: |
+            gitleaks-results.json
+            gitleaks-protect-results.json
+          retention-days: 30
+
+  # ── License Compliance ───────────────────────────────────────────────
   license-check:
     name: License Compliance
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-          cache: false
+
+      - name: License checker (frontend)
+        run: |
+          pip install license-checker
+          npx license-checker --production --summary --failOn "AGPL-3.0|GPL-3.0|SSPL-1.0" 2>&1 || echo "::warning::license-checker found issues"
+
+      - name: npm audit (known-vulnerable packages)
+        run: |
+          echo "=== npm audit for known-vulnerable packages ==="
+          npm audit --json 2>&1 | head -200 || echo "npm audit completed"
+
       - name: Check Go licenses
         run: |
           go install github.com/google/go-licenses@latest
-          for dir in $(find . -maxdepth 1 -name "go.mod" -exec dirname {} \; | head -5); do
+          FOUND_PROHIBITIVE=0
+          for dir in $(find . -maxdepth 1 -name "go.mod" -exec dirname {} \; | head -10); do
             echo "=== $dir ==="
-            (cd "$dir" && GONOSUMCHECK=* go-licenses check ./... 2>/dev/null || true)
+            if (cd "$dir" && GONOSUMCHECK=* go-licenses check ./... 2>&1); then
+              echo "OK: $dir licenses clean"
+            else
+              echo "WARN: license issues in $dir (review above)"
+              FOUND_PROHIBITIVE=1
+            fi
           done
+          if [ "$FOUND_PROHIBITIVE" -eq 1 ]; then
+            echo "::warning::Some Go modules have license compliance issues. Review go-licenses output above."
+          fi
+
+      - name: pip license check (Python services)
+        run: |
+          pip install license-expression pip-licenses
+          for svc in ifrs17-engine mlops-governance; do
+            if [ -f "$svc/requirements.txt" ]; then
+              echo "=== pip-licenses: $svc ==="
+              pip-licenses -r "$svc/requirements.txt" --format=json 2>/dev/null || echo "No licenses data for $svc"
+            fi
+          done
+
+  # ── Trivy: container & filesystem scan ───────────────────────────────
+  trivy-scan:
+    name: Trivy Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: '0'
+
+      - name: Run Trivy initdb
+        if: always()
+        run: trivy --cache-clean

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: blockchain-transparency
+description: Helm chart for Blockchain Transparency
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

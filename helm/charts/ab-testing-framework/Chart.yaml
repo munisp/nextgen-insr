@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ab-testing-framework
+description: Helm chart for Ab Testing Framework
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

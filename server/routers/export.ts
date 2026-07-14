@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Export router — streams transaction history as CSV.
  * Admin-only: requires agent.role === 'admin'.
@@ -14,14 +14,14 @@ import { getAgentFromCookie } from "../middleware/agentAuth";
 export const exportRouter = router({
   /**
    * Returns a CSV string of all transactions within the given date range.
-   * Filtered by agentCode if provided; otherwise returns all agents (admin only).
+   * Filtered by agentId if provided; otherwise returns all agents (admin only).
    */
   transactionsCsv: protectedProcedure
     .input(
       z.object({
         from: z.string().optional(), // ISO date string e.g. "2026-01-01"
         to: z.string().optional(), // ISO date string e.g. "2026-03-31"
-        agentCode: z.string().optional(), // filter by agent (optional for admin)
+        agentId: z.string().optional(), // filter by agent (optional for admin)
         limit: z.number().default(10000),
       })
     )
@@ -48,12 +48,12 @@ export const exportRouter = router({
         // Non-admins can only export their own transactions
         if (agent.role !== "admin") {
           conditions.push(eq(transactions.agentId, agent.id));
-        } else if (input.agentCode) {
+        } else if (input.agentId) {
           // Admin filtering by specific agent
           const agentRows = await db
             .select({ id: agents.id })
             .from(agents)
-            .where(eq(agents.agentCode, input.agentCode))
+            .where(eq(agents.agentId, input.agentId))
             .limit(1);
           if (agentRows.length > 0) {
             conditions.push(eq(transactions.agentId, agentRows[0].id));
@@ -93,17 +93,17 @@ export const exportRouter = router({
           .orderBy(desc(transactions.createdAt))
           .limit(input.limit);
 
-        // Build agent code lookup map
+        // Build agent ID lookup map
         const agentMap: Record<number, string> = {};
         const uniqueAgentIds = [...new Set(rows.map(r => r.agentId))];
         for (const aid of uniqueAgentIds) {
           const agentRows = await db
-            .select({ agentCode: agents.agentCode })
+            .select({ agentId: agents.agentId })
             .from(agents)
             .where(eq(agents.id, aid))
             .limit(1);
           if (agentRows.length > 0) {
-            agentMap[aid] = agentRows[0].agentCode;
+            agentMap[aid] = agentRows[0].agentId;
           }
         }
 
@@ -216,7 +216,7 @@ export const exportRouter = router({
         const summary: Record<
           number,
           {
-            agentCode: string;
+            agentId: string;
             txCount: number;
             totalVolume: number;
             totalCommission: number;
@@ -226,7 +226,7 @@ export const exportRouter = router({
         for (const row of rows) {
           if (!summary[row.agentId]) {
             summary[row.agentId] = {
-              agentCode: "",
+              agentId: "",
               txCount: 0,
               totalVolume: 0,
               totalCommission: 0,
@@ -237,15 +237,15 @@ export const exportRouter = router({
           summary[row.agentId].totalCommission += Number(row.commission);
         }
 
-        // Attach agent codes
+        // Attach agent IDs
         for (const agentId of Object.keys(summary)) {
           const agentRows = await db
-            .select({ agentCode: agents.agentCode })
+            .select({ agentId: agents.agentId })
             .from(agents)
             .where(eq(agents.id, Number(agentId)))
             .limit(1);
           if (agentRows.length > 0) {
-            summary[Number(agentId)].agentCode = agentRows[0].agentCode;
+            summary[Number(agentId)].agentId = agentRows[0].agentId;
           }
         }
 

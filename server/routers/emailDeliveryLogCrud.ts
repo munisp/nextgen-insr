@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // Sprint 87: Bounce handling, retry logic, deliverability scoring
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

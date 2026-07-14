@@ -1,4 +1,4 @@
-# ─── 54Link Loki Log Aggregation Configuration ───────────────────────────────
+# ─── InsurePortal Loki Log Aggregation Configuration ───────────────────────────────
 auth_enabled: false
 
 server:

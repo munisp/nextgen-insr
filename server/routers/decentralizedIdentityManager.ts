@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
@@ -49,7 +49,7 @@ export const decentralizedIdentityManagerRouter = router({
         return {
           identities: rows.map(a => ({
             id: a.id,
-            agentCode: a.agentCode,
+            agentId: a.agentId,
             name: a.name,
             verified: a.isActive,
             tier: a.tier,

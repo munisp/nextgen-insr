@@ -456,7 +456,7 @@ func main() {
 	config := SyncConfig{
 		TigerBeetleAddresses: []string{getEnv("TIGERBEETLE_ADDRESS", "127.0.0.1:3000")},
 		TigerBeetleClusterID: 0,
-		PostgresConnString:   getEnv("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/insurance"),
+		PostgresConnString:   requireEnv("POSTGRES_URL"),
 		KafkaBrokers:         getEnv("KAFKA_BROKERS", "kafka-0.kafka-headless:9092"),
 		CDCTopic:             getEnv("CDC_TOPIC", "postgres.public.payments"),
 		SyncInterval:         5 * time.Second,
@@ -480,6 +480,14 @@ func main() {
 	if err := sync.Stop(); err != nil {
 		log.Fatalf("Failed to stop sync service: %v", err)
 	}
+}
+
+func requireEnv(key string) string {
+	val := os.Getenv(key)
+	if val == "" {
+		log.Fatalf("FATAL: %s environment variable is required", key)
+	}
+	return val
 }
 
 func getEnv(key, defaultValue string) string {

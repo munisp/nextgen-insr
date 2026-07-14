@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { webhookEndpoints, webhookDeliveries } from "../../drizzle/schema";
+import { webhookEndpoints, webhookDeliveries } from "@schema";
 import { eq, desc, and, count, gte } from "drizzle-orm";
 import crypto from "crypto";
 import { retryPendingDeliveries } from "../lib/webhookDelivery";

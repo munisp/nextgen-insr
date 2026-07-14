@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { sql, gte, eq } from "drizzle-orm";
@@ -12,6 +12,7 @@ import { getDb } from "../db";
 import { fraudAlerts, fraudRules } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
+import { logger } from '../_core/logger';
 
 export const fraudRouter = router({
   // ── List alerts (admin or agent-scoped) ───────────────────────────────────
@@ -31,7 +32,7 @@ export const fraudRouter = router({
         const filtered = search
           ? alerts.filter(
               (a: any) =>
-                (a.agentCode ?? "").toLowerCase().includes(search) ||
+                (a.agentId ?? "").toLowerCase().includes(search) ||
                 (a.customerName ?? "").toLowerCase().includes(search) ||
                 (a.reason ?? "").toLowerCase().includes(search)
             )
@@ -82,7 +83,7 @@ export const fraudRouter = router({
         await updateFraudAlertStatus(input.id, input.status);
         await writeAuditLog({
           agentId: agent?.id,
-          agentCode: agent?.agentCode,
+          agentId: agent?.agentId,
           action: `FRAUD_ALERT_${input.status.toUpperCase()}`,
           resource: "fraud_alert",
           resourceId: String(input.id),
@@ -143,7 +144,7 @@ export const fraudRouter = router({
             })
           )
           .catch((e: unknown) =>
-            console.error("[Fluvio] Fraud alert event failed:", e)
+            logger.error("[Fluvio] Fraud alert event failed:: " + e)
           );
 
         return { success: true, alertId: alert.id };
@@ -475,7 +476,7 @@ export const fraudRouter = router({
         .returning({ id: fraudRules.id });
       await writeAuditLog({
         agentId: agent.id,
-        agentCode: agent.agentCode,
+        agentId: agent.agentId,
         action: "FRAUD_RULES_SEEDED",
         resource: "fraud_rules",
         resourceId: "default",
