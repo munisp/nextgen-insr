@@ -1,0 +1,6 @@
+apiVersion: v2
+name: disaster-recovery-module
+description: Helm chart for Disaster Recovery Module
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

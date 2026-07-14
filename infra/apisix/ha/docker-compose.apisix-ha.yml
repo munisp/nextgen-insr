@@ -1,6 +1,6 @@
 ###############################################################################
 # APISIX HA — 2 gateway nodes + etcd 3-node cluster + Dashboard
-# Production-tuned for POS-54Link: API gateway, rate limiting, auth, circuit breaker
+# Production-tuned for POS-InsurePortal: API gateway, rate limiting, auth, circuit breaker
 ###############################################################################
 version: "3.9"
 

@@ -1,0 +1,119 @@
+{
+  "realm": "insureportal",
+  "displayName": "InsurePortal SSO",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "roles": {
+    "realm": [
+      { "name": "customer", "description": "Insurance customer/policyholder" },
+      { "name": "agent", "description": "Insurance agent/broker" },
+      { "name": "underwriter", "description": "Underwriting officer" },
+      { "name": "claims_officer", "description": "Claims processing officer" },
+      { "name": "admin", "description": "Platform administrator" },
+      { "name": "naicom_officer", "description": "NAICOM compliance officer" },
+      { "name": "partner_bank", "description": "Banking partner (bancassurance)" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "insureportal-web",
+      "name": "InsurePortal Web Portal",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:5002/*",
+        "https://portal.insureportal.ng/*",
+        "https://*.insureportal.ng/*"
+      ],
+      "webOrigins": ["+"],
+      "defaultClientScopes": ["openid", "profile", "email", "roles"],
+      "optionalClientScopes": ["phone", "address"],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:5002/*##https://portal.insureportal.ng/*"
+      }
+    },
+    {
+      "clientId": "insureportal-mobile",
+      "name": "InsurePortal Mobile App",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": ["insureportal://callback/*", "exp://*/--/*"],
+      "defaultClientScopes": ["openid", "profile", "email"]
+    },
+    {
+      "clientId": "insureportal-api",
+      "name": "InsurePortal API (backend)",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": true,
+      "protocol": "openid-connect",
+      "secret": "${KEYCLOAK_API_SECRET}",
+      "defaultClientScopes": ["openid", "profile", "email"]
+    },
+    {
+      "clientId": "partner-bank-saml",
+      "name": "Banking Partner SAML",
+      "enabled": true,
+      "protocol": "saml",
+      "attributes": {
+        "saml.assertion.signature": "true",
+        "saml.server.signature": "true",
+        "saml_name_id_format": "email",
+        "saml.force.post.binding": "true"
+      },
+      "redirectUris": ["https://partner.bank.ng/saml/callback"]
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "providerId": "google",
+      "enabled": true,
+      "config": {
+        "clientId": "${GOOGLE_CLIENT_ID}",
+        "clientSecret": "${GOOGLE_CLIENT_SECRET}",
+        "defaultScope": "openid email profile"
+      }
+    }
+  ],
+  "requiredActions": [
+    { "alias": "VERIFY_EMAIL", "name": "Verify Email", "providerId": "VERIFY_EMAIL", "enabled": true, "defaultAction": true },
+    { "alias": "CONFIGURE_TOTP", "name": "Configure OTP", "providerId": "CONFIGURE_TOTP", "enabled": true, "defaultAction": false },
+    { "alias": "TERMS_AND_CONDITIONS", "name": "Terms and Conditions", "providerId": "TERMS_AND_CONDITIONS", "enabled": true, "defaultAction": true }
+  ],
+  "passwordPolicy": "length(8) and upperCase(1) and digits(1) and specialChars(1) and notUsername(undefined)",
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "smtpServer": {
+    "host": "${SMTP_HOST}",
+    "port": "${SMTP_PORT}",
+    "from": "InsurePortal <noreply@insureportal.ng>",
+    "fromDisplayName": "InsurePortal",
+    "auth": true,
+    "user": "${SMTP_USER}",
+    "password": "${SMTP_PASS}",
+    "starttls": true
+  }
+}

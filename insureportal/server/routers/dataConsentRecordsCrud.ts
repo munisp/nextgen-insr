@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { dataConsentRecords } from "../../drizzle/schema";
+import { dataConsentRecords } from "@schema";
 import { eq, desc, and, count, lt } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

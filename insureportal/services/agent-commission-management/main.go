@@ -1,87 +1,133 @@
 package main
 
 import (
-	"encoding/json"
-	"log"
-	"math"
+	"context"
+	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/insureportal/agent_commission_management/config"
+	"github.com/insureportal/agent_commission_management/db"
+	"github.com/insureportal/agent_commission_management/internal/handlers"
+	"github.com/insureportal/agent_commission_management/internal/middleware"
+	"github.com/insureportal/agent_commission_management/internal/service"
+	"go.uber.org/zap"
 )
 
-// Agent Commission Management Service
-// Calculates, tracks, and pays agent commissions based on tiered structures.
-// Integrates with: TigerBeetle (payments), Kafka, Postgres, Redis
-//
-// Commission Tiers:
-// - New Agent (0-6 months): 8% motor, 12% health, 10% life
-// - Standard (6-24 months): 10% motor, 15% health, 12% life
-// - Senior (24+ months): 12% motor, 18% health, 15% life
-// - Override bonus: 2% on team production for team leads
-
-type CommissionTier struct {
-	Name   string
-	Motor  float64
-	Health float64
-	Life   float64
-	Home   float64
-}
-
-var tiers = map[string]CommissionTier{
-	"new":      {Name: "New Agent", Motor: 0.08, Health: 0.12, Life: 0.10, Home: 0.06},
-	"standard": {Name: "Standard", Motor: 0.10, Health: 0.15, Life: 0.12, Home: 0.08},
-	"senior":   {Name: "Senior", Motor: 0.12, Health: 0.18, Life: 0.15, Home: 0.10},
-}
-
-func calculateCommission(premium float64, product string, tier string) float64 {
-	t, ok := tiers[tier]
-	if !ok { t = tiers["new"] }
-	rates := map[string]float64{"motor": t.Motor, "health": t.Health, "life": t.Life, "home": t.Home}
-	rate := rates[product]
-	if rate == 0 { rate = 0.08 }
-	return math.Round(premium*rate*100) / 100
-}
-
-func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "agent-commission-management"})
-}
-
-func handleCalculate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req struct {
-		AgentID  string  `json:"agent_id"`
-		Premium  float64 `json:"premium"`
-		Product  string  `json:"product"`
-		Tier     string  `json:"tier"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	commission := calculateCommission(req.Premium, req.Product, req.Tier)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"agent_id": req.AgentID, "premium": req.Premium, "product": req.Product,
-		"tier": req.Tier, "commission": commission, "rate": commission / req.Premium,
-		"payment_date": time.Now().AddDate(0, 0, 15).Format("2006-01-02"),
-	})
-}
-
-func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"period": time.Now().Format("2006-01"),
-		"total_payable": 12500000, "agents_due": 342, "avg_payout": 36549,
-		"top_earner": 285000, "pending_approval": 15,
-	})
-}
-
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", handleHealth)
-	mux.HandleFunc("/api/v1/calculate", handleCalculate)
-	mux.HandleFunc("/api/v1/payout-summary", handlePayoutSummary)
-	port := ":8099"
-	log.Printf("Agent Commission Management starting on %s", port)
-	log.Fatal(http.ListenAndServe(port, mux))
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to init logger: %v", err))
+	}
+	defer logger.Sync()
+	zap.ReplaceGlobals(logger)
+	log := zap.L()
+
+	log.Info("Agent Commission Management starting up")
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal("Failed to load config", zap.Error(err))
+	}
+	log.Info("Configuration loaded", zap.String("env", cfg.Env), zap.Int("port", cfg.Port))
+
+	pg, err := db.NewPostgreSQL(cfg)
+	if err != nil {
+		log.Fatal("Failed to init PostgreSQL", zap.Error(err))
+	}
+	defer pg.Close()
+	log.Info("PostgreSQL initialized")
+
+	rdb, err := db.NewRedisCache(cfg)
+	if err != nil {
+		log.Warn("Redis not available, running without cache", zap.Error(err))
+		rdb = &db.RedisCache{}
+	}
+	defer rdb.Close()
+	log.Info("Redis initialized")
+
+	commissionSvc := service.NewCommissionService(pg, rdb, cfg)
+	h := handlers.NewHandlers(commissionSvc)
+
+	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.CORSMiddleware())
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Logger)
+	r.Use(middleware.RealIP)
+
+	r.Get(cfg.HealthCheckPath, h.HealthCheck)
+	r.Get("/ready", h.ReadinessCheck)
+
+	r.Group(func(api chi.Router) {
+		api.Use(middleware.APIKeyAuth)
+
+		// Commission calculation
+		api.Post("/api/v1/commissions/calculate", h.CalculateCommission)
+		api.Get("/api/v1/commissions", h.GetCommission)
+		api.Get("/api/v1/commissions/by-policy", h.GetCommissionByPolicy)
+		api.Get("/api/v1/commissions/by-agent", h.GetCommissionByAgent)
+
+		// Payments
+		api.Post("/api/v1/payments", h.ProcessPayment)
+		api.Get("/api/v1/payments", h.GetPaymentRecords)
+
+		// Agent profiles
+		api.Post("/api/v1/agents", h.CreateAgentProfile)
+		api.Get("/api/v1/agents", h.ListAgentProfiles)
+		api.Get("/api/v1/agents/by-code", h.GetAgentProfile)
+
+		// Period management
+		api.Post("/api/v1/periods", h.CreateCommissionPeriod)
+		api.Get("/api/v1/periods", h.GetCommissionPeriods)
+
+		// Clawbacks
+		api.Post("/api/v1/clawbacks", h.CreateClawback)
+		api.Get("/api/v1/clawbacks/pending", h.GetPendingClawbacks)
+		api.Post("/api/v1/clawbacks/process", h.ProcessClawback)
+
+		// Adjustments
+		api.Post("/api/v1/adjustments", h.CreateAdjustment)
+		api.Get("/api/v1/adjustments", h.GetAdjustments)
+		api.Post("/api/v1/adjustments/approve", h.ApproveAdjustment)
+
+		// Reports
+		api.Post("/api/v1/reports", h.CreateCommissionReport)
+		api.Get("/api/v1/reports", h.GetCommissionReports)
+
+		// Dashboard
+		api.Get("/api/v1/dashboard", h.GetDashboard)
+	})
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
+		Handler:      r,
+		ReadTimeout:  cfg.ReadTimeout,
+		WriteTimeout: cfg.WriteTimeout,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	go func() {
+		log.Info("Starting Agent Commission server", zap.String("address", srv.Addr))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("Server failed", zap.Error(err))
+		}
+	}()
+
+	<-ctx.Done()
+	log.Info("Shutting down Agent Commission server...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("Server forced shutdown", zap.Error(err))
+	}
+	log.Info("Agent Commission server stopped")
 }

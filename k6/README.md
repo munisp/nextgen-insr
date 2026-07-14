@@ -1,6 +1,6 @@
-# 54Link POS Shell — k6 Load Tests
+# InsurePortal POS Shell — k6 Load Tests
 
-This directory contains [k6](https://k6.io) load test scenarios for the three highest-traffic paths in the POS Shell.
+This directory contains [k6](https://k6.io) load test scenarios for the three highest-traffic paths in the InsurePortal Platform.
 
 ## Prerequisites
 
@@ -26,8 +26,8 @@ docker pull grafana/k6
 
 | File                        | Path Under Test                                  | Default VUs | Duration |
 | --------------------------- | ------------------------------------------------ | ----------- | -------- |
-| `transaction-throughput.js` | `transactions.create` (cash-in/out/transfer)     | 50 peak     | ~3.5 min |
-| `float-topup.js`            | `floatTopUp.request` + `floatTopUp.listRequests` | 40 peak     | ~1.7 min |
+| `transaction-throughput.js` | `transactions.create` (premium collection/out/transfer)     | 50 peak     | ~3.5 min |
+| `float-topup.js`            | `premiumTopUp.request` + `premiumTopUp.listRequests` | 40 peak     | ~1.7 min |
 | `dispute-creation.js`       | `disputes.raise` + `disputes.addMessage`         | 30 peak     | ~1.7 min |
 
 ## Running Tests
@@ -41,7 +41,7 @@ k6 run --vus 5 --duration 30s k6/transaction-throughput.js
 ### Full load test against staging
 
 ```bash
-BASE_URL=https://staging.54link.io \
+BASE_URL=https://staging.insureportal.io \
 AGENT_TOKEN=<pre-authenticated-cookie-value> \
 k6 run k6/transaction-throughput.js
 ```
@@ -49,16 +49,16 @@ k6 run k6/transaction-throughput.js
 ### All three scenarios in parallel
 
 ```bash
-BASE_URL=https://staging.54link.io \
+BASE_URL=https://staging.insureportal.io \
 AGENT_TOKEN=<token> \
 k6 run k6/transaction-throughput.js &
 
-BASE_URL=https://staging.54link.io \
+BASE_URL=https://staging.insureportal.io \
 AGENT_TOKEN=<token> \
 ADMIN_TOKEN=<admin-token> \
 k6 run k6/float-topup.js &
 
-BASE_URL=https://staging.54link.io \
+BASE_URL=https://staging.insureportal.io \
 AGENT_TOKEN=<token> \
 k6 run k6/dispute-creation.js &
 
@@ -73,7 +73,7 @@ K6_CLOUD_TOKEN=<token> k6 cloud k6/transaction-throughput.js
 
 ## Getting a Pre-Authenticated Token
 
-1. Log in via the POS Shell UI as an agent.
+1. Log in via the InsurePortal Platform UI as an agent.
 2. Open DevTools → Application → Cookies → copy the `agent_session` value.
 3. Pass it as `AGENT_TOKEN=<value>` in the k6 command.
 

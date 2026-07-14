@@ -1,10 +1,10 @@
 // @ts-nocheck
 /**
- * UserGuide — Comprehensive multi-section user guide for the 54Link POS Shell
+ * UserGuide — Comprehensive multi-section user guide for the InsurePortal POS Shell
  *
  * Sections:
  * 1. Getting Started
- * 2. POS Terminal Operations
+ * 2. Service Node Operations
  * 3. Agent Management
  * 4. Transaction Processing
  * 5. Fraud Detection & Prevention
@@ -82,25 +82,25 @@ const guideSections: GuideSection[] = [
     id: "getting-started",
     title: "Getting Started",
     icon: Zap,
-    description: "Everything you need to begin using the 54Link POS platform",
+    description: "Everything you need to begin using the InsurePortal POS platform",
     subsections: [
       {
         id: "overview",
         title: "Platform Overview",
         content:
-          "The 54Link Agent Banking Platform is a comprehensive POS (Point of Sale) system designed for agent banking operations in Nigeria. It enables agents to process financial transactions including cash-in, cash-out, transfers, bill payments, and airtime purchases on behalf of customers.\n\nThe platform includes multiple portals for different user roles: Agent Portal for field agents, Customer Portal for end-users, Merchant Portal for business partners, Developer Portal for API integrations, and Admin/Supervisor dashboards for management oversight.",
+          "The InsurePortal Agent Banking Platform is a comprehensive POS (Point of Sale) system designed for agent banking operations in Nigeria. It enables agents to process financial transactions including premium collection, claim payout, transfers, bill payments, and airtime purchases on behalf of customers.\n\nThe platform includes multiple portals for different user roles: Agent Portal for field agents, Customer Portal for end-users, Merchant Portal for business partners, Developer Portal for API integrations, and Admin/Supervisor dashboards for management oversight.",
         tags: ["introduction", "overview", "platform"],
       },
       {
         id: "first-login",
         title: "First Login & Setup",
         content:
-          "To access the platform, navigate to the login page and enter your agent code and PIN provided by your supervisor. On first login, you'll be prompted to change your PIN for security.",
+          "To access the platform, navigate to the login page and enter your agent ID and PIN provided by your supervisor. On first login, you'll be prompted to change your PIN for security.",
         steps: [
           {
             title: "Enter Agent Code",
             description:
-              "Type your assigned agent code (e.g., AGT001) in the Agent Code field",
+              "Type your assigned agent ID (e.g., AGT001) in the Agent Code field",
           },
           {
             title: "Enter PIN",
@@ -129,33 +129,33 @@ const guideSections: GuideSection[] = [
         id: "navigation",
         title: "Navigating the Platform",
         content:
-          "The platform uses a sidebar navigation organized into logical groups. Use the sidebar to access different features. The top header shows your notification bell and profile menu. On mobile, tap the hamburger menu to reveal the sidebar.\n\nKey navigation areas:\n- Core: POS Terminal and Platform Hub\n- Portals: Agent, Customer, Merchant, Developer\n- Administration: Admin Panel, Supervisor Dashboard\n- Operations: Transactions, Settlements, Commissions\n- Monitoring: System Health, Fraud Detection, Analytics",
+          "The platform uses a sidebar navigation organized into logical groups. Use the sidebar to access different features. The top header shows your notification bell and profile menu. On mobile, tap the hamburger menu to reveal the sidebar.\n\nKey navigation areas:\n- Core: Service Node and Platform Hub\n- Portals: Agent, Customer, Merchant, Developer\n- Administration: Admin Panel, Supervisor Dashboard\n- Operations: Transactions, Settlements, Commissions\n- Monitoring: System Health, Fraud Detection, Analytics",
         tags: ["navigation", "sidebar", "menu"],
       },
       {
         id: "keyboard-shortcuts",
         title: "Keyboard Shortcuts",
         content:
-          "Power users can navigate faster using keyboard shortcuts:\n\n- Ctrl+K / Cmd+K: Open global search\n- Ctrl+/: Show keyboard shortcuts help\n- Ctrl+H: Go to home/POS Terminal\n- Ctrl+N: Open notification center\n- Escape: Close any open modal or panel",
+          "Power users can navigate faster using keyboard shortcuts:\n\n- Ctrl+K / Cmd+K: Open global search\n- Ctrl+/: Show keyboard shortcuts help\n- Ctrl+H: Go to home/Service Node\n- Ctrl+N: Open notification center\n- Escape: Close any open modal or panel",
         tags: ["keyboard", "shortcuts", "productivity"],
       },
     ],
   },
   {
     id: "pos-terminal",
-    title: "POS Terminal Operations",
+    title: "Service Node Operations",
     icon: Smartphone,
-    description: "Process transactions on the POS terminal",
+    description: "Process transactions on the service node",
     subsections: [
       {
-        id: "cash-in",
+        id: "premium collection",
         title: "Cash-In (Deposits)",
         content:
-          "Cash-in allows customers to deposit money into their accounts through your POS terminal.",
+          "Cash-in allows customers to deposit money into their accounts through your service node.",
         steps: [
           {
             title: "Select Cash-In",
-            description: "From the POS Terminal, tap the Cash-In button",
+            description: "From the Service Node, tap the Cash-In button",
           },
           {
             title: "Enter Customer Details",
@@ -176,17 +176,17 @@ const guideSections: GuideSection[] = [
           },
         ],
         relatedPage: "/",
-        tags: ["cash-in", "deposit", "transaction"],
+        tags: ["premium collection", "deposit", "transaction"],
       },
       {
-        id: "cash-out",
+        id: "claim payout",
         title: "Cash-Out (Withdrawals)",
         content:
-          "Cash-out enables customers to withdraw money from their accounts. Ensure you have sufficient float balance before processing.",
+          "Cash-out enables customers to withdraw money from their accounts. Ensure you have sufficient premium reserve before processing.",
         steps: [
           {
             title: "Select Cash-Out",
-            description: "From the POS Terminal, tap the Cash-Out button",
+            description: "From the Service Node, tap the Cash-Out button",
           },
           {
             title: "Enter Customer Details",
@@ -195,7 +195,7 @@ const guideSections: GuideSection[] = [
           {
             title: "Enter Amount",
             description:
-              "Type the withdrawal amount. Check your float balance first.",
+              "Type the withdrawal amount. Check your premium reserve first.",
           },
           {
             title: "Customer Authorization",
@@ -209,7 +209,7 @@ const guideSections: GuideSection[] = [
           },
         ],
         relatedPage: "/",
-        tags: ["cash-out", "withdrawal", "transaction"],
+        tags: ["claim payout", "withdrawal", "transaction"],
       },
       {
         id: "transfers",
@@ -219,7 +219,7 @@ const guideSections: GuideSection[] = [
         steps: [
           {
             title: "Select Transfer",
-            description: "Tap the Transfer button on the POS Terminal",
+            description: "Tap the Transfer button on the Service Node",
           },
           {
             title: "Enter Source Account",
@@ -250,7 +250,7 @@ const guideSections: GuideSection[] = [
         steps: [
           {
             title: "Select Bill Payment or Airtime",
-            description: "Choose the appropriate option from the POS Terminal",
+            description: "Choose the appropriate option from the Service Node",
           },
           {
             title: "Select Provider",
@@ -302,7 +302,7 @@ const guideSections: GuideSection[] = [
         id: "float-management",
         title: "Float Management",
         content:
-          "Float is the working capital agents use to process transactions. Monitor your float balance on the POS Terminal dashboard. Request top-ups from the Agent Portal when running low.\n\nBest practices:\n- Maintain at least 20% of your daily average as buffer\n- Request top-ups before your balance drops below ₦50,000\n- Reconcile your float daily against transaction records\n- Report any discrepancies immediately to your supervisor",
+          "Float is the working capital agents use to process transactions. Monitor your premium reserve on the POS Terminal dashboard. Request top-ups from the Agent Portal when running low.\n\nBest practices:\n- Maintain at least 20% of your daily average as buffer\n- Request top-ups before your balance drops below ₦50,000\n- Reconcile your float daily against transaction records\n- Report any discrepancies immediately to your supervisor",
         relatedPage: "/agent",
         tags: ["float", "balance", "top-up"],
       },
@@ -453,7 +453,7 @@ const guideSections: GuideSection[] = [
         id: "common-issues",
         title: "Common Issues",
         content:
-          "Frequently encountered problems and solutions:\n\n**Transaction Timeout**: Check your internet connection. If the issue persists, check System Health for service outages. The transaction may have been processed — verify in Transaction History before retrying.\n\n**Insufficient Float**: Request a float top-up from the Agent Portal. Emergency top-ups can be requested from your supervisor.\n\n**Login Failed**: Verify your agent code and PIN. After 5 failed attempts, your account is locked for 30 minutes. Contact your supervisor for PIN reset.\n\n**Receipt Not Printing**: Check printer connection and paper. You can reprint receipts from Transaction History.\n\n**Slow Performance**: Clear your browser cache, close unnecessary tabs, and ensure a stable internet connection.",
+          "Frequently encountered problems and solutions:\n\n**Transaction Timeout**: Check your internet connection. If the issue persists, check System Health for service outages. The transaction may have been processed — verify in Transaction History before retrying.\n\n**Insufficient Float**: Request a float top-up from the Agent Portal. Emergency top-ups can be requested from your supervisor.\n\n**Login Failed**: Verify your agent ID and PIN. After 5 failed attempts, your account is locked for 30 minutes. Contact your supervisor for PIN reset.\n\n**Receipt Not Printing**: Check printer connection and paper. You can reprint receipts from Transaction History.\n\n**Slow Performance**: Clear your browser cache, close unnecessary tabs, and ensure a stable internet connection.",
         tags: ["troubleshooting", "issues", "problems"],
       },
       {
@@ -467,7 +467,7 @@ const guideSections: GuideSection[] = [
         id: "contact-support",
         title: "Contacting Support",
         content:
-          "If you can't resolve an issue:\n\n1. Use the AI Chat Widget (bottom-right corner) for instant help\n2. Check the Live Chat page for human agent support\n3. Email: support@54link.com\n4. Phone: +234-800-54LINK (0800-545465)\n5. WhatsApp: +234-901-234-5678\n\nSupport hours: Monday-Saturday, 7:00 AM - 10:00 PM WAT\nEmergency support (fraud, system outages): 24/7",
+          "If you can't resolve an issue:\n\n1. Use the AI Chat Widget (bottom-right corner) for instant help\n2. Check the Live Chat page for human agent support\n3. Email: support@insureportal.com\n4. Phone: +234-800-54LINK (0800-545465)\n5. WhatsApp: +234-901-234-5678\n\nSupport hours: Monday-Saturday, 7:00 AM - 10:00 PM WAT\nEmergency support (fraud, system outages): 24/7",
         tags: ["support", "contact", "help"],
       },
     ],

@@ -1,5 +1,5 @@
 /**
- * 54Link Permify Client
+ * InsurePortal Permify Client
  * HTTP client for Permify authorization service.
  * FAIL-CLOSED: denies access when Permify is unavailable.
  * Circuit breaker prevents cascading timeouts when Permify is down.
@@ -111,7 +111,7 @@ export async function permifyCheck(params: {
 
     if (!res.ok) {
       logger.warn(
-        `[Permify] Check failed: ${res.status} — falling back to deny`
+        `[Permify] Check failed: ${res.status} — denying access`
       );
       recordFailure();
       return false;
@@ -121,13 +121,14 @@ export async function permifyCheck(params: {
     recordSuccess();
     return json.can === "CHECK_RESULT_ALLOWED";
   } catch (err) {
-    // FAIL-CLOSED: when Permify is unavailable, DENY access.
-    // This prevents unauthorized access during Permify outages.
-    logger.error(
-      { err },
-      "[Permify] Service unavailable — failing closed (deny)"
+    // Fail-closed: when Permify is unavailable, deny access.
+    // This is the safe default — if authorization is down, access is denied.
+    // In development, use the role-based fallback in the caller instead.
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(
+      { err: message },
+      "[Permify] Service unavailable — denying access (fail-closed)"
     );
-    recordFailure();
     return false;
   }
 }
@@ -137,7 +138,7 @@ export async function permifyCheck(params: {
  * Agents can only access their own transactions; admins can access all.
  */
 export async function canAccessTransaction(
-  agentCode: string,
+  agentId: string,
   agentRole: string,
   txRef: string
 ): Promise<boolean> {
@@ -146,7 +147,7 @@ export async function canAccessTransaction(
   // Try Permify first
   const allowed = await permifyCheck({
     subjectType: "agent",
-    subjectId: agentCode,
+    subjectId: agentId,
     entityType: "transaction",
     entityId: txRef,
     permission: "read",
@@ -161,14 +162,14 @@ export async function canAccessTransaction(
  * Requires supervisor or admin role.
  */
 export async function canApproveTopUp(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   if (agentRole === "admin") return true;
 
   return permifyCheck({
     subjectType: "agent",
-    subjectId: agentCode,
+    subjectId: agentId,
     entityType: "float_topup",
     entityId: "*",
     permission: "approve",
@@ -180,14 +181,14 @@ export async function canApproveTopUp(
  * Requires admin role.
  */
 export async function canUpdateFraudAlert(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   if (agentRole === "admin") return true;
 
   return permifyCheck({
     subjectType: "agent",
-    subjectId: agentCode,
+    subjectId: agentId,
     entityType: "fraud_alert",
     entityId: "*",
     permission: "update",

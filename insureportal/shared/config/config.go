@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -107,7 +108,7 @@ func LoadConfig(serviceName string) (*ServiceConfig, error) {
 		RedisDB:       getEnvInt("REDIS_DB", 0),
 
 		// Kafka
-		KafkaBrokers:       getEnvSlice("KAFKA_BROKERS", []string{"localhost:9092"}),
+		KafkaBrokers:       requireEnvSlice("KAFKA_BROKERS"),
 		KafkaConsumerGroup: getEnv("KAFKA_CONSUMER_GROUP", serviceName),
 		KafkaClientID:      getEnv("KAFKA_CLIENT_ID", serviceName),
 
@@ -230,6 +231,14 @@ func getEnvSlice(key string, defaultValue []string) []string {
 		return strings.Split(value, ",")
 	}
 	return defaultValue
+}
+
+func requireEnvSlice(key string) []string {
+	value := os.Getenv(key)
+	if value == "" {
+		log.Fatalf("FATAL: %s environment variable is required", key)
+	}
+	return strings.Split(value, ",")
 }
 
 func getEnvDuration(key string, defaultValue time.Duration) time.Duration {

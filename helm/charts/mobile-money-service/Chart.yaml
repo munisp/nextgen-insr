@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mobile-money-service
+description: Helm chart for Mobile Money Service
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

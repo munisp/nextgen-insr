@@ -92,7 +92,7 @@ export const pinResetRouter = router({
         // Send SMS via shared Termii helper
         const smsResult = await sendSms(
           input.phone,
-          `Your 54Link POS PIN reset code is: ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes. Do not share this code.`
+          `Your InsurePortal POS PIN reset code is: ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes. Do not share this code.`
         );
         if (!smsResult.success) {
           // Redact phone number in logs to avoid PII exposure

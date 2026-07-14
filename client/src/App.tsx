@@ -10,7 +10,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 import { GdprConsentBanner } from "./components/GdprConsentBanner";
 import AgentLogin from "./pages/AgentLogin";
-import POSShell from "./pages/POSShell";
+import InsurancePortal from "./pages/InsurancePortal";
 import GlobalSearch from "./components/GlobalSearch";
 import { LiveChatWidget } from "./components/LiveChatWidget";
 import { ProactiveHelp } from "./components/ProactiveHelp";
@@ -20,7 +20,11 @@ import KeyboardShortcutsHelp, {
 import { ErrorBoundaryRoute } from "./components/ErrorBoundaryRoute";
 import AnnouncementBanner from "./components/AnnouncementBanner";
 import { AccessibilityProvider } from "@/components/AccessibilityProvider";
-// Sprint 28: Nigerian Agency Banking Features
+import { OfflineIndicator } from "./components/OfflineIndicator";
+import { RoleOnboarding } from "./components/RoleOnboarding";
+import { KpiLiveRegion } from "./components/KpiLiveRegion";
+import { SkeletonDashboard } from "./components/SkeletonDashboard";
+// Sprint 28: Nigerian Insurance Features
 // Sprint 29: AI/ML/DL/GNN Integrations
 // Sprint 30: AI/ML Follow-ups
 // Sprint 31: Data Pipelines, Security, Production Features
@@ -48,6 +52,19 @@ import { AccessibilityProvider } from "@/components/AccessibilityProvider";
 const FraudDashboard = lazy(() => import("./pages/FraudDashboard"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const SupervisorDashboard = lazy(() => import("./pages/SupervisorDashboard"));
+// ─── Insurance Role Dashboards ───────────────────────────────────────────────
+const UnderwriterDashboard = lazy(() => import("./pages/UnderwriterDashboard"));
+const ActuaryDashboard = lazy(() => import("./pages/ActuaryDashboard"));
+const ClaimsDashboard = lazy(() => import("./pages/ClaimsDashboard"));
+const BrokerDashboard = lazy(() => import("./pages/BrokerDashboard"));
+const PolicyholderDashboard = lazy(() => import("./pages/PolicyholderDashboard"));
+const ComplianceDashboard = lazy(() => import("./pages/ComplianceDashboard"));
+const RegulatorDashboard = lazy(() => import("./pages/RegulatorDashboard"));
+const ReinsurerDashboard = lazy(() => import("./pages/ReinsurerDashboard"));
+const BillingAdminDashboard = lazy(() => import("./pages/BillingAdminDashboard"));
+const BeneficiaryDashboard = lazy(() => import("./pages/BeneficiaryDashboard"));
+const Ifrs17Dashboard = lazy(() => import("./pages/Ifrs17Dashboard"));
+
 const ManagementPortal = lazy(() => import("./pages/ManagementPortal"));
 const AgentPortal = lazy(() => import("./pages/AgentPortal"));
 const CustomerPortal = lazy(() => import("./pages/CustomerPortal"));
@@ -295,7 +312,6 @@ const TaxCollectionPage = lazy(() => import("./pages/TaxCollectionPage"));
 const PensionCollectionPage = lazy(
   () => import("./pages/PensionCollectionPage")
 );
-const RemittancePage = lazy(() => import("./pages/RemittancePage"));
 const QdrantVectorSearchPage = lazy(
   () => import("./pages/QdrantVectorSearchPage")
 );
@@ -432,7 +448,7 @@ const LoyaltyProgramPage = lazy(() => import("./pages/LoyaltyProgramPage"));
 const FraudCaseManagementPage = lazy(
   () => import("./pages/FraudCaseManagementPage")
 );
-const TerminalFleetPage = lazy(() => import("./pages/TerminalFleetPage"));
+const ServiceFleetPage = lazy(() => import("./pages/ServiceFleetPage"));
 const FinancialReconciliationPage = lazy(
   () => import("./pages/FinancialReconciliationPage")
 );
@@ -534,7 +550,7 @@ const CustomerWalletSystem = lazy(() => import("./pages/CustomerWalletSystem"));
 const MerchantAnalyticsDash = lazy(
   () => import("./pages/MerchantAnalyticsDash")
 );
-const POSFirmwareOTA = lazy(() => import("./pages/POSFirmwareOTA"));
+const POSServiceUpdate = lazy(() => import("./pages/POSServiceUpdate"));
 const TransactionReceiptGenerator = lazy(
   () => import("./pages/TransactionReceiptGenerator")
 );
@@ -642,9 +658,6 @@ const TransactionGraphAnalyzer = lazy(
 );
 const PlatformRevenueOptimizer = lazy(
   () => import("./pages/PlatformRevenueOptimizer")
-);
-const CrossBorderRemittanceHub = lazy(
-  () => import("./pages/CrossBorderRemittanceHub")
 );
 const OperationalCommandBridge = lazy(
   () => import("./pages/OperationalCommandBridge")
@@ -851,7 +864,7 @@ const ADMIN_DASHBOARD_PREFIXES = [
   "/dynamic-pricing",
   "/customer-loyalty",
   "/fraud-case",
-  "/pos-terminal-fleet",
+  "/insurance-service-fleet",
   "/financial-reconciliation",
   "/api-analytics",
   "/agent-communication",
@@ -1244,10 +1257,10 @@ function isAdminDashboardPath(path: string): boolean {
 
 function AuthenticatedApp() {
   const isLoggedIn = usePosStore(s => s.isLoggedIn);
-  const agentCode = usePosStore(s => s.agent?.agentCode);
+  const agentId = usePosStore(s => s.agent?.agentId);
   const [location] = useLocation();
   // Always mount terminal socket (tracks online status + receives fraud alerts)
-  useTerminalSocket(agentCode);
+  useTerminalSocket(agentId);
   // Sync offline queue when back online
   useOfflineSync();
 
@@ -1267,7 +1280,7 @@ function AuthenticatedApp() {
       <Switch>
         {/* Core POS routes */}
         <Route path="/hub" component={PlatformHub} />
-        <Route path="/" component={POSShell} />
+        <Route path="/" component={InsurancePortal} />
         <Route path="/admin/fraud" component={FraudDashboard} />
         <Route path="/admin/analytics" component={AnalyticsDashboard} />
         <Route path="/admin" component={AdminPanel} />
@@ -1422,7 +1435,7 @@ function AuthenticatedApp() {
         <Route path="/api-docs" component={ApiDocs} />
         <Route path="/system-status" component={SystemStatus} />
         <Route path="/audit-trail" component={AuditTrailPage} />
-        {/* Sprint 28: Nigerian Agency Banking Features */}
+        {/* Sprint 28: Nigerian Insurance Features */}
         <Route path="/ussd-gateway" component={UssdGateway} />
         <Route path="/mobile-money" component={MobileMoneyPage} />
         <Route path="/agent-hierarchy" component={AgentHierarchyPage} />
@@ -1443,7 +1456,6 @@ function AuthenticatedApp() {
         <Route path="/account-opening" component={AccountOpeningPage} />
         <Route path="/tax-collection" component={TaxCollectionPage} />
         <Route path="/pension-collection" component={PensionCollectionPage} />
-        <Route path="/remittance" component={RemittancePage} />
         {/* Sprint 29: AI/ML/DL/GNN Integrations */}
         <Route
           path="/qdrant-vector-search"
@@ -1575,7 +1587,7 @@ function AuthenticatedApp() {
           path="/fraud-case-management"
           component={FraudCaseManagementPage}
         />
-        <Route path="/terminal-fleet" component={TerminalFleetPage} />
+        <Route path="/terminal-fleet" component={ServiceFleetPage} />
         <Route
           path="/financial-reconciliation"
           component={FinancialReconciliationPage}
@@ -1715,7 +1727,7 @@ function AuthenticatedApp() {
           path="/merchant-analytics-dash"
           component={MerchantAnalyticsDash}
         />
-        <Route path="/pos-firmware-ota" component={POSFirmwareOTA} />
+        <Route path="/pos-service-update" component={POSServiceUpdate} />
         <Route
           path="/transaction-receipt-generator"
           component={TransactionReceiptGenerator}
@@ -1826,10 +1838,6 @@ function AuthenticatedApp() {
         <Route path="/agent-micro-insurance" component={AgentMicroInsurance} />
         <Route path="/transaction-graph" component={TransactionGraphAnalyzer} />
         <Route path="/revenue-optimizer" component={PlatformRevenueOptimizer} />
-        <Route
-          path="/cross-border-remittance"
-          component={CrossBorderRemittanceHub}
-        />
         <Route
           path="/operational-command-bridge"
           component={OperationalCommandBridge}
@@ -2115,8 +2123,42 @@ function AuthenticatedApp() {
           component={AlertNotificationPreferences}
         />
         <Route path="/network-heatmap" component={NetworkQualityHeatmap} />
-        {/* Fallback — POSShell handles named screens */}
-        <Route path="/:screen" component={POSShell} />
+        {/* ─── Insurance Role Dashboards ─────────────────────────────────── */}
+        <Route path="/underwriter-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><UnderwriterDashboard /></Suspense>
+        </Route>
+        <Route path="/actuary-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><ActuaryDashboard /></Suspense>
+        </Route>
+        <Route path="/claims-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><ClaimsDashboard /></Suspense>
+        </Route>
+        <Route path="/broker-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><BrokerDashboard /></Suspense>
+        </Route>
+        <Route path="/policyholder-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><PolicyholderDashboard /></Suspense>
+        </Route>
+        <Route path="/compliance-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><ComplianceDashboard /></Suspense>
+        </Route>
+        <Route path="/regulator-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><RegulatorDashboard /></Suspense>
+        </Route>
+        <Route path="/reinsurer-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><ReinsurerDashboard /></Suspense>
+        </Route>
+        <Route path="/billing-admin-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><BillingAdminDashboard /></Suspense>
+        </Route>
+        <Route path="/beneficiary-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><BeneficiaryDashboard /></Suspense>
+        </Route>
+        <Route path="/ifrs17-dashboard">
+          <Suspense fallback={<SkeletonDashboard />}><Ifrs17Dashboard /></Suspense>
+        </Route>
+        {/* Fallback — InsurancePortal handles named screens */}
+        <Route path="/:screen" component={InsurancePortal} />
       </Switch>
     </Suspense>
   );
@@ -2143,6 +2185,9 @@ export default function App() {
               shortcuts={shortcuts}
             />
             <PWAInstallBanner />
+        <OfflineIndicator />
+        <RoleOnboarding />
+        <KpiLiveRegion />
             <GdprConsentBanner />
             <LiveChatWidget />
             <ProactiveHelp />

@@ -1,6 +1,6 @@
-# 54Link POS — Flutter Mobile App
+# InsurePortal POS — Flutter Mobile App
 
-Flutter implementation of the 54Link POS Shell for PAX A920 and Android POS terminals.
+Flutter implementation of the InsurePortal InsurePortal Platform for PAX A920 and Android service nodes.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ flutter pub run build_runner build --delete-conflicting-outputs
 
 ```bash
 # Run on connected PAX A920 or emulator
-flutter run --dart-define=API_BASE_URL=https://api.54link.ng/api/trpc
+flutter run --dart-define=API_BASE_URL=https://api.insureportal.ng/api/trpc
 
 # Run with hot reload
 flutter run -d <device_id>
@@ -32,7 +32,7 @@ flutter run -d <device_id>
 # Release APK (PAX A920 is armeabi-v7a)
 flutter build apk --release \
   --target-platform android-arm \
-  --dart-define=API_BASE_URL=https://api.54link.ng/api/trpc
+  --dart-define=API_BASE_URL=https://api.insureportal.ng/api/trpc
 
 # Output: build/app/outputs/flutter-apk/app-release.apk
 ```

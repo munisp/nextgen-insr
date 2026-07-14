@@ -7,7 +7,7 @@ test.describe("SIM Orchestrator Coverage Map", () => {
   test("admin can view SIM orchestrator coverage map", async ({ page }) => {
     // Login as admin
     await page.goto("/");
-    await expect(page.locator("text=54Link POS")).toBeVisible({
+    await expect(page.locator("text=InsurePortal POS")).toBeVisible({
       timeout: 10_000,
     });
     await page.locator('input[placeholder*="AGT"]').fill("AGT001");

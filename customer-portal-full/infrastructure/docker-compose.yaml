@@ -1,0 +1,232 @@
+version: '3.8'
+
+services:
+  # ============ Core Database ============
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ngapp
+      POSTGRES_USER: ${PGUSER:-ngapp}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-ngapp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../seed-all-tables.sql:/docker-entrypoint-initdb.d/01-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ngapp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ============ Caching & Sessions ============
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+
+  # ============ Search Engine ============
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - os_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.15.0
+    ports:
+      - "5601:5601"
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch:9200"]'
+      - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  # ============ Event Streaming ============
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    volumes:
+      - zk_data:/var/lib/zookeeper/data
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ============ API Gateway ============
+  etcd:
+    image: bitnami/etcd:3.5
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+    volumes:
+      - etcd_data:/bitnami/etcd
+
+  apisix:
+    image: apache/apisix:3.9.1-debian
+    ports:
+      - "9080:9080"
+      - "9443:9443"
+      - "9180:9180"
+    volumes:
+      - ./apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml
+    depends_on:
+      - etcd
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9080/apisix/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+
+  # ============ Identity & SSO ============
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/ngapp
+      KC_DB_USERNAME: ${PGUSER:-ngapp}
+      KC_DB_PASSWORD: ${PGPASSWORD:-ngapp}
+      KC_DB_SCHEMA: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ============ Double-Entry Accounting ============
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+    command: start --addresses=0.0.0.0:3000 /data/0_0.tigerbeetle
+    ports:
+      - "3000:3000"
+    volumes:
+      - tb_data:/data
+
+  # ============ Application Services ============
+  portal:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "5002:5002"
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=ngapp
+      - PGUSER=${PGUSER:-ngapp}
+      - PGPASSWORD=${PGPASSWORD:-ngapp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_URL=http://opensearch:9200
+      - KAFKA_BROKERS=kafka:29092
+      - TB_ADDRESSES=tigerbeetle:3000
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5002,http://localhost:5173}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+
+  auth-service:
+    build:
+      context: ../services/auth-service
+    ports:
+      - "5010:5010"
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=ngapp
+      - PGUSER=${PGUSER:-ngapp}
+      - PGPASSWORD=${PGPASSWORD:-ngapp}
+      - JWT_SECRET=${JWT_SECRET}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  payment-service:
+    build:
+      context: ../services/payment-service
+    ports:
+      - "5011:5011"
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=ngapp
+      - PGUSER=${PGUSER:-ngapp}
+      - PGPASSWORD=${PGPASSWORD:-ngapp}
+      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY}
+      - FLUTTERWAVE_SECRET_KEY=${FLUTTERWAVE_SECRET_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  naicom-service:
+    build:
+      context: ../services/naicom-service
+    ports:
+      - "5012:5012"
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=ngapp
+      - PGUSER=${PGUSER:-ngapp}
+      - PGPASSWORD=${PGPASSWORD:-ngapp}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  os_data:
+  zk_data:
+  etcd_data:
+  tb_data:

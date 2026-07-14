@@ -11,7 +11,7 @@ import { trpc } from "@/lib/trpc";
 export default function CrossBorderRemittanceHub() {
   const [search, setSearch] = useState("");
   const stats = trpc.crossBorderRemittanceHub.getStats.useQuery();
-  const list = trpc.crossBorderRemittanceHub.listCorridors.useQuery();
+  const list = trpc.crossBorderRemittanceHub.listInsuranceRegions.useQuery();
   const action = trpc.crossBorderRemittanceHub.initiateTransfer.useMutation({
     onSuccess: () => toast.success("Initiate Transfer completed successfully"),
     onError: (e: any) => toast.error(e.message),
@@ -24,7 +24,7 @@ export default function CrossBorderRemittanceHub() {
           <div>
             <h1 className="text-2xl font-bold">Cross-Border Remittance</h1>
             <p className="text-muted-foreground">
-              Cross-border payment corridors for international transfers
+              Cross-border payment insurance_regions for international transfers
             </p>
           </div>
           <div className="flex gap-2">
@@ -88,7 +88,7 @@ export default function CrossBorderRemittanceHub() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-2">Corridor</th>
+                    <th className="text-left py-3 px-2">InsuranceRegion</th>
                     <th className="text-left py-3 px-2">Rate</th>
                     <th className="text-left py-3 px-2">Fee</th>
                     <th className="text-left py-3 px-2">Volume</th>
@@ -96,7 +96,7 @@ export default function CrossBorderRemittanceHub() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(list.data?.corridors ?? [])
+                  {(list.data?.insurance_regions ?? [])
                     .filter(
                       (item: any) =>
                         !search ||

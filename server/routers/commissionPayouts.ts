@@ -30,7 +30,7 @@ export const commissionPayoutsRouter = router({
             "rejected",
           ])
           .optional(),
-        agentCode: z.string().optional(),
+        agentId: z.string().optional(),
         from: z.string().optional(), // ISO date
         to: z.string().optional(),
       })
@@ -43,8 +43,8 @@ export const commissionPayoutsRouter = router({
         const conditions = [];
         if (input.status)
           conditions.push(eq(commissionPayouts.status, input.status));
-        if (input.agentCode)
-          conditions.push(eq(commissionPayouts.agentCode, input.agentCode));
+        if (input.agentId)
+          conditions.push(eq(commissionPayouts.agentId, input.agentId));
         if (input.from)
           conditions.push(
             gte(commissionPayouts.createdAt, new Date(input.from))
@@ -93,7 +93,7 @@ export const commissionPayoutsRouter = router({
   request: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         amount: z.number().positive(),
         bankCode: z.string().max(10).optional(),
         accountNumber: z.string().max(20).optional(),
@@ -109,7 +109,7 @@ export const commissionPayoutsRouter = router({
         const [agent] = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentId))
           .limit(1);
         if (!agent)
           throw new TRPCError({
@@ -135,7 +135,7 @@ export const commissionPayoutsRouter = router({
           .insert(commissionPayouts)
           .values({
             agentId: agent.id,
-            agentCode: input.agentCode,
+            agentId: input.agentId,
             amount: String(input.amount),
             bankCode: input.bankCode,
             accountNumber: input.accountNumber,
@@ -147,7 +147,7 @@ export const commissionPayoutsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           action: "commission_payout_requested",
           resource: "commission_payout",
           resourceId: String(payout.id),
@@ -198,7 +198,7 @@ export const commissionPayoutsRouter = router({
 
         await dispatchWebhookEvent("commission.payout.approved", {
           payoutId: updated.id,
-          agentCode: updated.agentCode,
+          agentId: updated.agentId,
           amount: updated.amount,
         });
 
@@ -286,7 +286,7 @@ export const commissionPayoutsRouter = router({
 
         await dispatchWebhookEvent("commission.payout.completed", {
           payoutId: updated.id,
-          agentCode: updated.agentCode,
+          agentId: updated.agentId,
           amount: updated.amount,
           nubanRef: updated.nubanRef,
         });

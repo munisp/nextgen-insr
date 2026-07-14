@@ -27,12 +27,12 @@ These routers need standalone management pages:
 15. announcementReactions - Reactions UI (embedded only)
 
 ## Routers With Pages Elsewhere (OK)
-- agentBanking -> AgentPortal, POSShell
+- agentBanking -> AgentPortal, PlatformShell
 - disputes -> AdminPanel, AgentPortal
-- floatTopUp -> POSShell, SupervisorDashboard
+- premiumTopUp -> POSShell, SupervisorDashboard
 - fxRates -> MultiCurrency
 - geofencing -> AdminPanel, GeofenceZoneEditor
-- mdm -> POSShell, ComplianceScheduling
+- mdm -> PlatformShell, ComplianceScheduling
 - pinReset -> AgentLogin
 - transactions -> AdminPanel, AgentPortal
 

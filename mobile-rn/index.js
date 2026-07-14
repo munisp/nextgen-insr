@@ -1,5 +1,5 @@
 /**
- * 54Link Nigerian Remittance — React Native Entry Point
+ * InsurePortal Nigerian Remittance — React Native Entry Point
  * @format
  */
 import { AppRegistry } from 'react-native';

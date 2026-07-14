@@ -34,7 +34,7 @@ export const PaymentRetryScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  const BASE_URL = 'https://api.54link.io/v1';
+  const BASE_URL = 'https://api.insureportal.io/v1';
 
   useEffect(() => {
     fetchFailedPayments();

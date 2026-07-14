@@ -1,0 +1,36 @@
+{{- /*
+  pdb.yaml - PodDisruptionBudgets for all insurance-platform services
+  Ensures minimum availability during voluntary disruptions (upgrades, scaling).
+*/ -}}
+
+{{- $fullName := include "insurance-platform.fullname" . -}}
+
+{{- range $serviceName, $service := .Values }}
+{{- if and (kindIs "map" $service) (hasKey $service "enabled") $service.enabled (hasKey $service "image") }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullName }}-{{ $serviceName | kebabcase }}
+  labels:
+    {{- include "insurance-platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $serviceName | kebabcase }}
+spec:
+  {{- if $service.pdb }}
+  {{- if $service.pdb.minAvailable }}
+  minAvailable: {{ $service.pdb.minAvailable }}
+  {{- else }}
+  minAvailable: 1
+  {{- end }}
+  {{- else }}
+  minAvailable: 1
+  {{- end }}
+  {{- if $service.pdb.maxUnavailable }}
+  maxUnavailable: {{ $service.pdb.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $serviceName | kebabcase }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+{{- end }}
+{{- end }}

@@ -293,7 +293,7 @@ describe("Sprint 48 — Commission Cascade & Hierarchy", () => {
       );
       expect(fs.existsSync(manifestPath)).toBe(true);
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-      expect(manifest.name).toContain("54Link");
+      expect(manifest.name).toContain("InsurePortal");
       expect(manifest.display).toBe("standalone");
     });
   });

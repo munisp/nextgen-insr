@@ -1,4 +1,4 @@
-// Package main implements a circuit breaker proxy for POS-54Link middleware.
+// Package main implements a circuit breaker proxy for InsurePortal middleware.
 // Wraps upstream services with configurable failure thresholds, half-open
 // probing, exponential backoff, and Prometheus metrics.
 package main
@@ -12,11 +12,17 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
+	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 // ── Circuit Breaker States ───────────────────────────────────────────────────
@@ -268,7 +274,46 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+
+// validateQueryParam validates and sanitizes a query parameter.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	val := r.URL.Query().Get(key)
+	if len(val) > maxLen {
+		return "", fmt.Errorf("parameter %q exceeds max length %d", key, maxLen)
+	}
+	return val, nil
+}
+
+// validateRequiredParam validates a required query parameter.
+func validateRequiredParam(r *http.Request, key string, maxLen int) (string, error) {
+	val, err := validateQueryParam(r, key, maxLen)
+	if err != nil {
+		return "", err
+	}
+	if val == "" {
+		return "", fmt.Errorf("parameter %q is required", key)
+	}
+	return val, nil
+}
+
+// validateIntParam validates and converts an integer query parameter.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	val := r.URL.Query().Get(key)
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %q must be a valid integer", key)
+	}
+	return n, nil
+}
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	_ = context.Background()
 	port := envOr("PORT", "8091")
 	pm := NewProxyManager()
@@ -282,8 +327,22 @@ func main() {
 	})
 	mux.Handle("/metrics", promhttp.Handler())
 
+	srv := &http.Server{Addr: ":" + port, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("[CircuitBreaker] Shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("[CircuitBreaker] Forced shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("[CircuitBreaker] Starting proxy on :%s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

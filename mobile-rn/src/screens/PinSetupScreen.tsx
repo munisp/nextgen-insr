@@ -19,7 +19,7 @@ const apiClient = new APIClient();
 
 // --- CONFIGURATION ---
 const PIN_LENGTH = 4;
-const API_ENDPOINT = 'https://api.54link.io/v1/user/set-pin';
+const API_ENDPOINT = 'https://api.insureportal.io/v1/user/set-pin';
 const BIOMETRIC_KEY_ALIAS = 'userPinKey';
 
 // --- TYPESCRIPT INTERFACES ---

@@ -48,13 +48,13 @@ const requirePermify = t.middleware(async opts => {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
   }
 
-  // Permify check: user:<userId> can "access" system:pos-shell
+  // Permify check: user:<userId> can "access" system:insurance-portal
   // This is the base access gate — resource-level checks are done per-procedure.
   const allowed = await permifyCheck({
     subjectType: "user",
     subjectId: String(ctx.user.id),
     entityType: "system",
-    entityId: "pos-shell",
+    entityId: "insurance-portal",
     permission: "access",
   });
 
@@ -101,12 +101,12 @@ export const adminProcedure = t.procedure
         throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
       }
 
-      // Permify check: user:<userId> can "admin_access" system:pos-shell
+      // Permify check: user:<userId> can "admin_access" system:insurance-portal
       const allowed = await permifyCheck({
         subjectType: "user",
         subjectId: String(ctx.user.id),
         entityType: "system",
-        entityId: "pos-shell",
+        entityId: "insurance-portal",
         permission: "admin_access",
       });
 

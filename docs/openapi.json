@@ -1,15 +1,15 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "54Link POS Agent Banking API",
-    "description": "Production API for 54Link POS Agent Banking Platform. Provides endpoints for agent management, transaction processing, fraud detection, KYC verification, settlement, and more.",
+    "title": "InsurePortal POS Agent Banking API",
+    "description": "Production API for InsurePortal POS Agent Banking Platform. Provides endpoints for agent management, transaction processing, fraud detection, KYC verification, settlement, and more.",
     "version": "2.0.0",
-    "contact": { "name": "54Link Engineering", "email": "api@54link.com" },
-    "license": { "name": "Proprietary", "url": "https://54link.com/license" }
+    "contact": { "name": "InsurePortal Engineering", "email": "api@insureportal.com" },
+    "license": { "name": "Proprietary", "url": "https://insureportal.com/license" }
   },
   "servers": [
-    { "url": "https://api.54link.com", "description": "Production" },
-    { "url": "https://staging-api.54link.com", "description": "Staging" },
+    { "url": "https://api.insureportal.com", "description": "Production" },
+    { "url": "https://staging-api.insureportal.com", "description": "Staging" },
     { "url": "http://localhost:3000", "description": "Local Development" }
   ],
   "tags": [
@@ -36,15 +36,15 @@
       "post": {
         "tags": ["Auth"],
         "summary": "Agent PIN Login",
-        "description": "Authenticate an agent using their agent code and 4-6 digit PIN. Returns a JWT session cookie.",
+        "description": "Authenticate an agent using their agent ID and 4-6 digit PIN. Returns a JWT session cookie.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["agentCode", "pin"],
+                "required": ["agentId", "pin"],
                 "properties": {
-                  "agentCode": { "type": "string", "example": "AGT001" },
+                  "agentId": { "type": "string", "example": "AGT001" },
                   "pin": {
                     "type": "string",
                     "minLength": 4,
@@ -79,7 +79,7 @@
       "post": {
         "tags": ["Transactions"],
         "summary": "Process Transaction",
-        "description": "Process a POS transaction (cash-in, cash-out, transfer, bill payment, airtime). Validates float balance, KYC limits, and generates receipt.",
+        "description": "Process a POS transaction (premium collection, claim payout, transfer, bill payment, airtime). Validates premium reserve, KYC limits, and generates receipt.",
         "security": [{ "agentSession": [] }],
         "requestBody": {
           "content": {
@@ -213,7 +213,7 @@
         "responses": { "200": { "description": "Settlement completed" } }
       }
     },
-    "/api/trpc/floatTopUp.request": {
+    "/api/trpc/premiumTopUp.request": {
       "post": {
         "tags": ["Float"],
         "summary": "Request Float Top-Up",
@@ -267,7 +267,7 @@
         "type": "object",
         "properties": {
           "id": { "type": "integer" },
-          "agentCode": { "type": "string", "example": "AGT001" },
+          "agentId": { "type": "string", "example": "AGT001" },
           "businessName": { "type": "string" },
           "phone": { "type": "string" },
           "status": {
@@ -278,7 +278,7 @@
             "type": "string",
             "enum": ["basic", "standard", "enhanced"]
           },
-          "floatBalance": { "type": "number" },
+          "premiumReserve": { "type": "number" },
           "role": { "type": "string", "enum": ["agent", "admin", "supervisor"] }
         }
       },

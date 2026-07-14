@@ -1,0 +1,168 @@
+# Kafka Topics for InsurePortal Platform v2
+# Extended with new service topics
+
+topics:
+  # ── Payment Gateway Events ──────────────────────────────────────────────
+  - name: payment.initiated
+    partitions: 6
+    replication: 3
+    retention_ms: 604800000  # 7 days
+    cleanup_policy: delete
+
+  - name: payment.confirmed
+    partitions: 6
+    replication: 3
+    retention_ms: 2592000000  # 30 days
+
+  - name: payment.failed
+    partitions: 3
+    replication: 3
+    retention_ms: 2592000000
+
+  - name: payment.refunded
+    partitions: 3
+    replication: 3
+    retention_ms: 2592000000
+
+  - name: payment.recurring.created
+    partitions: 3
+    replication: 3
+
+  - name: payment.subscription.event
+    partitions: 3
+    replication: 3
+
+  # ── KYC Verification Events ────────────────────────────────────────────
+  - name: kyc.bvn.verified
+    partitions: 3
+    replication: 3
+    retention_ms: 31536000000  # 1 year (compliance)
+
+  - name: kyc.nin.verified
+    partitions: 3
+    replication: 3
+    retention_ms: 31536000000
+
+  - name: kyc.document.verified
+    partitions: 3
+    replication: 3
+    retention_ms: 31536000000
+
+  - name: kyc.liveness.checked
+    partitions: 3
+    replication: 3
+    retention_ms: 31536000000
+
+  - name: kyc.verification.complete
+    partitions: 3
+    replication: 3
+    retention_ms: 31536000000
+
+  # ── Claims Adjudication Events ─────────────────────────────────────────
+  - name: claims.adjudicated
+    partitions: 6
+    replication: 3
+    retention_ms: 2592000000
+
+  - name: claims.auto_approved
+    partitions: 3
+    replication: 3
+
+  - name: claims.escalated
+    partitions: 3
+    replication: 3
+
+  - name: claims.sla_breach
+    partitions: 3
+    replication: 3
+
+  # ── Churn Prevention Events ────────────────────────────────────────────
+  - name: churn.prediction.scored
+    partitions: 3
+    replication: 3
+    retention_ms: 604800000
+
+  - name: churn.intervention.dispatched
+    partitions: 3
+    replication: 3
+
+  - name: churn.intervention.outcome
+    partitions: 3
+    replication: 3
+    retention_ms: 7776000000  # 90 days
+
+  # ── Real-Time Events ───────────────────────────────────────────────────
+  - name: realtime.broadcast
+    partitions: 12
+    replication: 3
+    retention_ms: 86400000  # 1 day
+    cleanup_policy: delete
+
+  - name: realtime.user_events
+    partitions: 6
+    replication: 3
+    retention_ms: 86400000
+
+  # ── Notification Events ────────────────────────────────────────────────
+  - name: notification.dispatched
+    partitions: 6
+    replication: 3
+
+  - name: notification.delivered
+    partitions: 6
+    replication: 3
+
+  - name: notification.failed
+    partitions: 3
+    replication: 3
+
+  # ── Agent Gamification Events ──────────────────────────────────────────
+  - name: gamification.xp_awarded
+    partitions: 3
+    replication: 3
+
+  - name: gamification.level_up
+    partitions: 3
+    replication: 3
+
+  - name: gamification.challenge_completed
+    partitions: 3
+    replication: 3
+
+  # ── Regulatory Reporting Events ────────────────────────────────────────
+  - name: regulatory.report_generated
+    partitions: 3
+    replication: 3
+    retention_ms: 31536000000  # 1 year
+
+  - name: regulatory.report_submitted
+    partitions: 3
+    replication: 3
+    retention_ms: 31536000000
+
+  - name: regulatory.deadline_alert
+    partitions: 3
+    replication: 3
+
+  # ── Embedded SDK Events ────────────────────────────────────────────────
+  - name: embedded.quote.created
+    partitions: 6
+    replication: 3
+
+  - name: embedded.purchase.completed
+    partitions: 6
+    replication: 3
+
+  - name: embedded.claim.filed
+    partitions: 3
+    replication: 3
+
+  # ── Comparison Engine Events ───────────────────────────────────────────
+  - name: comparison.search
+    partitions: 3
+    replication: 3
+    retention_ms: 604800000
+
+  - name: comparison.recommendation_clicked
+    partitions: 3
+    replication: 3

@@ -50,7 +50,7 @@ groups:
           description: >
             Transaction error rate is {{ printf "%.1f" (mul $value 100) }}%
             over the last 5 minutes. Check platform service connectivity,
-            float balance levels, and DB connection pool health.
+            premium reserve levels, and DB connection pool health.
           runbook: "https://wiki.insureportal.ng/runbooks/insureportal#transaction-errors"
 
       # Transaction volume drops to zero (possible outage)

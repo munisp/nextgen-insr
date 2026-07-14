@@ -1,16 +1,16 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * kafkaClient.ts — Kafka integration for 54Link POS Shell
+ * kafkaClient.ts — Kafka integration for InsurePortal POS Shell
  * ─────────────────────────────────────────────────────────────────────────────
  * Provides a thin wrapper for publishing domain events to Kafka topics.
  * Two modes:
  *
  *  1. Direct KafkaJS (when KAFKA_BROKERS is set) — used in local Docker Compose
- *     and staging environments where the POS Shell has direct broker access.
+ *     and staging environments where the InsurePortal Platform has direct broker access.
  *
  *  2. Platform proxy (when only PLATFORM_BASE_URL is available) — forwards
  *     publish calls to the Go event-bus service via APISix gateway.
- *     This is the default in production where the POS Shell sits behind the
+ *     This is the default in production where the InsurePortal Platform sits behind the
  *     gateway and does not have direct broker access.
  *
  * Fail-open: publish() returns false on error so callers can continue
@@ -18,11 +18,12 @@
  *
  * Environment variables:
  *  - KAFKA_BROKERS        Comma-separated list e.g. kafka:9092,kafka2:9092
- *  - KAFKA_CLIENT_ID      Defaults to "pos-shell"
- *  - KAFKA_GROUP_ID       Consumer group ID, defaults to "pos-shell-group"
+ *  - KAFKA_CLIENT_ID      Defaults to "insurance-portal"
+ *  - KAFKA_GROUP_ID       Consumer group ID, defaults to "insurance-portal-group"
  *  - PLATFORM_BASE_URL    APISix gateway base URL (proxy mode fallback)
  *  - PLATFORM_API_KEY     Bearer token for the gateway
  */
+import { logger } from "./_core/logger";
 
 // Default: local Kafka broker from docker-compose.production.yml
 const KAFKA_BROKERS = process.env.KAFKA_BROKERS ?? "localhost:9092";
@@ -47,10 +48,10 @@ async function getProducer(): Promise<Producer | null> {
     });
     _producer = _kafka.producer({ allowAutoTopicCreation: false });
     await _producer.connect();
-    console.log("[Kafka] Producer connected →", KAFKA_BROKERS);
+    logger.info({ brokers: KAFKA_BROKERS }, "[Kafka] Producer connected");
     return _producer;
   } catch (err) {
-    console.warn("[Kafka] Could not connect producer:", (err as Error).message);
+    logger.warn({ err: (err as Error).message }, "[Kafka] Could not connect producer");
     return null;
   }
 }
@@ -93,7 +94,7 @@ export interface KafkaEvent<T = unknown> {
   eventId: string;
   eventType: KafkaTopic;
   timestamp: string; // ISO 8601
-  agentCode?: string;
+  agentId?: string;
   tenantId?: string;
   payload: T;
 }
@@ -108,13 +109,13 @@ export async function publishEvent<T>(
   topic: KafkaTopic,
   key: string,
   payload: T,
-  metadata?: { agentCode?: string; tenantId?: string }
+  metadata?: { agentId?: string; tenantId?: string }
 ): Promise<boolean> {
   const event: KafkaEvent<T> = {
     eventId: crypto.randomUUID(),
     eventType: topic,
     timestamp: new Date().toISOString(),
-    agentCode: metadata?.agentCode,
+    agentId: metadata?.agentId,
     tenantId: metadata?.tenantId,
     payload,
   };
@@ -131,10 +132,7 @@ export async function publishEvent<T>(
     await proxyPublish(topic, key, event);
     return true;
   } catch (err) {
-    console.error(
-      `[Kafka] Failed to publish ${topic}:`,
-      (err as Error).message
-    );
+    logger.error({ topic, err: (err as Error).message }, "[Kafka] Failed to publish event");
     return false;
   }
 }

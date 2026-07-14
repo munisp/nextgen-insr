@@ -204,7 +204,7 @@ export default function AgentOnboarding() {
                       <div>
                         <p className="font-medium text-sm">{item.agentName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {item.agentCode}
+                          {item.agentId}
                         </p>
                       </div>
                       <Badge

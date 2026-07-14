@@ -12,13 +12,13 @@ import {
   chatSessions,
   chatMessages,
   auditLog,
-  floatTopUpRequests,
+  premiumTopUpRequests,
   type Agent,
   type InsertAgent,
   type InsertTransaction,
   type InsertFraudAlert,
   type InsertUser,
-} from "../drizzle/schema";
+} from "@schema";
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -168,14 +168,14 @@ export async function getUserByOpenId(openId: string) {
 
 // ─── Agents ───────────────────────────────────────────────────────────────────
 export async function getAgentByCode(
-  agentCode: string
+  agentId: string
 ): Promise<Agent | undefined> {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db
     .select()
     .from(agents)
-    .where(eq(agents.agentCode, agentCode))
+    .where(eq(agents.agentId, agentId))
     .limit(1);
   return result[0];
 }
@@ -215,10 +215,10 @@ export async function updateAgentFloat(
   if (!db) return;
   const agent = await getAgentById(id);
   if (!agent) return;
-  const newBalance = (Number(agent.floatBalance) + delta).toFixed(2);
+  const newBalance = (Number(agent.premiumReserve) + delta).toFixed(2);
   await db
     .update(agents)
-    .set({ floatBalance: newBalance })
+    .set({ premiumReserve: newBalance })
     .where(eq(agents.id, id));
 }
 
@@ -483,8 +483,8 @@ export async function getChatMessages(sessionId: number) {
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 export async function writeAuditLog(data: {
-  agentId?: number;
-  agentCode?: string;
+  agentId?: number | string;
+  agentNumericId?: number;
   action: string;
   resource: string;
   resourceId?: string;
@@ -496,8 +496,7 @@ export async function writeAuditLog(data: {
   if (!db) return;
   try {
     await db.insert(auditLog).values({
-      agentId: data.agentId ?? null,
-      agentCode: data.agentCode ?? null,
+      agentId: typeof data.agentId === "number" ? data.agentId : null,
       action: data.action,
       resource: data.resource,
       resourceId: data.resourceId ?? null,

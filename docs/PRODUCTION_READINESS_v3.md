@@ -1,6 +1,6 @@
-# 54Link Agency Banking Platform — Production Readiness Report v3
+# InsurePortal Insurance Platform — Production Readiness Report v3
 
-**Platform:** Full-Stack Agency Banking Platform (POS Shell + Mobile + Microservices + Infra)
+**Platform:** Full-Stack Insurance Platform (POS Shell + Mobile + Microservices + Infra)
 **Sprint:** Phase 159 — Complete Production Readiness
 **Date:** 2026-04-09
 **Prepared by:** Manus AI
@@ -10,9 +10,9 @@
 
 ## Executive Summary
 
-The 54Link Agency Banking Platform has completed its Phase 159 production hardening sprint. The system now comprises:
+The InsurePortal Insurance Platform has completed its Phase 159 production hardening sprint. The system now comprises:
 
-- **POS Shell** — Node.js/TypeScript tRPC backend + React 19 PWA frontend
+- **InsurePortal Platform** — Node.js/TypeScript tRPC backend + React 19 PWA frontend
 - **Mobile Apps** — Flutter (Android/iOS), React Native (Android), iOS Native (Swift)
 - **Android Native** — PAX A920 MAX Kotlin SDK with hardware security
 - **Microservices** — 263+ Python FastAPI services, 6 Rust crates, 1 Go engine
@@ -37,7 +37,7 @@ All **444 tests pass** (313 Node.js + 88 Rust + 35 Rust orchestrator + 8 Go), Ty
 | Load Testing               | 8.5      | 8.8      | 9.5      | k6 scenarios + smoke test                   |
 | Infra as Code              | 8.0      | 8.5      | 9.6      | Vault policies, Kafka topics, MinIO buckets |
 | Data Lakehouse             | 7.0      | 8.0      | 9.4      | Kafka → Bronze/Silver/Gold → MinIO Parquet  |
-| iOS Native                 | 6.0      | 7.5      | 9.3      | 54Link branding, biometric, Apple Pay       |
+| iOS Native                 | 6.0      | 7.5      | 9.3      | InsurePortal branding, biometric, Apple Pay       |
 | PWA Offline                | 8.5      | 9.0      | 9.5      | SW v4, background sync, push notifications  |
 
 ---
@@ -54,9 +54,9 @@ All mock API calls replaced with real `APIClient` calls in:
 - `TransactionDetailsScreen.tsx` — real transaction fetch
 - `ReferralProgramScreen.tsx` — real referral data fetch
 
-### 2. iOS Native 54Link Branding
+### 2. iOS Native InsurePortal Branding
 
-All "Nigerian Remittance Platform" / "Nigerian Remittance" references replaced with "54Link Agency Banking" across all Swift files:
+All "Nigerian Remittance Platform" / "Nigerian Remittance" references replaced with "InsurePortal Insurance" across all Swift files:
 
 - `LoginView.swift` — header text updated
 - `RegisterView.swift` — welcome message updated
@@ -70,14 +70,14 @@ All "Nigerian Remittance Platform" / "Nigerian Remittance" references replaced w
 New files added:
 
 - `infra/alertmanager/alertmanager.yml` — PagerDuty + Slack routing
-- `infra/alertmanager/templates/54link.tmpl` — custom notification templates
+- `infra/alertmanager/templates/insureportal.tmpl` — custom notification templates
 - `infra/dapr/components/pubsub.yaml` — Kafka pub/sub component
 - `infra/dapr/components/statestore.yaml` — Redis state store
 - `infra/dapr/components/secrets.yaml` — Vault secrets component
 - `infra/dapr/config.yaml` — Dapr configuration
 - `infra/minio/init-minio.sh` — bucket provisioning script
 - `infra/kafka/create-topics.sh` — topic provisioning with retention
-- `infra/vault/policies/pos-shell.hcl` — POS Shell Vault policy
+- `infra/vault/policies/insurance-portal.hcl` — POS Shell Vault policy
 - `infra/vault/policies/temporal-worker.hcl` — Temporal worker policy
 - `infra/vault/init-vault-complete.sh` — full Vault init with AppRole
 
@@ -117,22 +117,22 @@ Complete `infra/apisix/routes.yaml` with:
 
 All services use default values that work out-of-the-box in Docker Compose. Override in production:
 
-### Core POS Shell
+### Core InsurePortal Platform
 
 | Variable                 | Default                                                                                   | Production Override       |
 | ------------------------ | ----------------------------------------------------------------------------------------- | ------------------------- |
-| `POSTGRES_URL`           | `postgresql://posadmin:pos54link2026@localhost:5432/pos54link`                            | Managed DB URL            |
-| `JWT_SECRET`             | `54link-jwt-secret-2026-production-key`                                                   | 256-bit random            |
-| `KEYCLOAK_URL`           | `http://keycloak:8080`                                                                    | `https://auth.54link.ng`  |
-| `KEYCLOAK_REALM`         | `54link`                                                                                  | `54link`                  |
-| `KEYCLOAK_CLIENT_ID`     | `pos-shell`                                                                               | `pos-shell`               |
-| `KEYCLOAK_CLIENT_SECRET` | `pos-shell-secret-2026`                                                                   | Vault-injected            |
-| `VAULT_ADDR`             | `http://vault:8200`                                                                       | `https://vault.54link.ng` |
-| `VAULT_TOKEN`            | `54link-vault-root-token`                                                                 | AppRole token             |
-| `TEMPORAL_ADDRESS`       | `temporal:7233`                                                                           | `temporal.54link.ng:7233` |
+| `POSTGRES_URL`           | `postgresql://posadmin:posinsureportal2026@localhost:5432/posinsureportal`                            | Managed DB URL            |
+| `JWT_SECRET`             | `insureportal-jwt-secret-2026-production-key`                                                   | 256-bit random            |
+| `KEYCLOAK_URL`           | `http://keycloak:8080`                                                                    | `https://auth.insureportal.ng`  |
+| `KEYCLOAK_REALM`         | `insureportal`                                                                                  | `insureportal`                  |
+| `KEYCLOAK_CLIENT_ID`     | `insurance-portal`                                                                               | `insurance-portal`               |
+| `KEYCLOAK_CLIENT_SECRET` | `insurance-portal-secret-2026`                                                                   | Vault-injected            |
+| `VAULT_ADDR`             | `http://vault:8200`                                                                       | `https://vault.insureportal.ng` |
+| `VAULT_TOKEN`            | `insureportal-vault-root-token`                                                                 | AppRole token             |
+| `TEMPORAL_ADDRESS`       | `temporal:7233`                                                                           | `temporal.insureportal.ng:7233` |
 | `KAFKA_BROKERS`          | `kafka:9092`                                                                              | `kafka1:9092,kafka2:9092` |
 | `REDIS_URL`              | `redis://redis:6379/0`                                                                    | Redis Cluster URL         |
-| `TERMII_API_KEY`         | `54link-termii-key-2026`                                                                  | Real Termii API key       |
+| `TERMII_API_KEY`         | `insureportal-termii-key-2026`                                                                  | Real Termii API key       |
 | `VAPID_PUBLIC_KEY`       | `BNI_gF4TDVxJopDSnt73YaHP8jpCSXxKXJeSZ8Gm-CoSDYkTeEAYNYsXK5tvYpbxeBTfpSfLE77lC8kLnmI3ca8` | Generated VAPID key       |
 | `VAPID_PRIVATE_KEY`      | `XBsV3B10_jSd8yVkMIB7xD1YulT3FJgBV9WOSPwxUs0`                                             | Generated VAPID key       |
 
@@ -140,17 +140,17 @@ All services use default values that work out-of-the-box in Docker Compose. Over
 
 | Variable           | Default                        | Production Override       |
 | ------------------ | ------------------------------ | ------------------------- |
-| `MINIO_ENDPOINT`   | `http://minio:9000`            | `https://minio.54link.ng` |
-| `MINIO_ACCESS_KEY` | `54link-lakehouse`             | Vault-injected            |
-| `MINIO_SECRET_KEY` | `54link-lakehouse-secret-2026` | Vault-injected            |
+| `MINIO_ENDPOINT`   | `http://minio:9000`            | `https://minio.insureportal.ng` |
+| `MINIO_ACCESS_KEY` | `insureportal-lakehouse`             | Vault-injected            |
+| `MINIO_SECRET_KEY` | `insureportal-lakehouse-secret-2026` | Vault-injected            |
 
 ### Android Native (PAX A920)
 
 | Variable       | Default                                | Production Override |
 | -------------- | -------------------------------------- | ------------------- |
-| `API_BASE_URL` | `https://api.54link.ng`                | Same                |
-| `KEYCLOAK_URL` | `https://auth.54link.ng`               | Same                |
-| `SENTRY_DSN`   | `https://54link@sentry.io/pos-android` | Real Sentry DSN     |
+| `API_BASE_URL` | `https://api.insureportal.ng`                | Same                |
+| `KEYCLOAK_URL` | `https://auth.insureportal.ng`               | Same                |
+| `SENTRY_DSN`   | `https://insureportal@sentry.io/pos-android` | Real Sentry DSN     |
 
 ---
 
@@ -214,7 +214,7 @@ Internet
     ▼
 APISix Gateway (TLS termination, JWT auth, rate limiting)
     │
-    ├── /api/trpc → POS Shell (Node.js/tRPC)
+    ├── /api/trpc → InsurePortal Platform (Node.js/tRPC)
     │       ├── PostgreSQL (Drizzle ORM)
     │       ├── TigerBeetle (double-entry ledger)
     │       ├── Temporal (workflow orchestration)
@@ -247,7 +247,7 @@ Android Native (PAX A920 MAX):
 ## Known Limitations
 
 1. **Temporal Server** — Not running in sandbox (expected). Worker starts gracefully with "startup skipped" log. In production, point `TEMPORAL_ADDRESS` to the Temporal cluster.
-2. **Keycloak** — Not running in sandbox. POS Shell falls back to JWT-only auth. In production, set `KEYCLOAK_URL` to the Keycloak cluster.
+2. **Keycloak** — Not running in sandbox. InsurePortal Platform falls back to JWT-only auth. In production, set `KEYCLOAK_URL` to the Keycloak cluster.
 3. **TigerBeetle** — Not running in sandbox. Health endpoint shows "offline". In production, run the TB sidecar container.
 4. **MinIO** — Not running in sandbox. Lakehouse consumer uploads are non-fatal no-ops. In production, run the MinIO container.
 
@@ -261,7 +261,7 @@ All four limitations are **expected in the development sandbox** and resolve aut
 2. **Set production secrets** in Vault (replace all default values)
 3. **Run Playwright E2E** against staging URL before production cutover
 4. **Configure Alertmanager** with real PagerDuty integration key and Slack webhook
-5. **Enable Keycloak realm** and import the `54link-realm.json` configuration
+5. **Enable Keycloak realm** and import the `insureportal-realm.json` configuration
 6. **Submit to CBN** the AML monitoring reports from `cbn-reporting-engine` service
 
 ---

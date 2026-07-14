@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- 54Link Agency Banking Platform — PostgreSQL Initialisation
+-- InsurePortal Insurance Platform — PostgreSQL Initialisation
 -- Runs once on first container start (docker-entrypoint-initdb.d)
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -9,17 +9,17 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
 
 -- Create application schemas
-CREATE SCHEMA IF NOT EXISTS pos;
+CREATE SCHEMA IF NOT EXISTS insurance;
 CREATE SCHEMA IF NOT EXISTS ledger;
 CREATE SCHEMA IF NOT EXISTS audit;
 CREATE SCHEMA IF NOT EXISTS temporal;
 
 -- Grant privileges to application user (already created by POSTGRES_USER env)
-GRANT ALL PRIVILEGES ON DATABASE "54link" TO "54link";
-GRANT ALL PRIVILEGES ON SCHEMA pos TO "54link";
-GRANT ALL PRIVILEGES ON SCHEMA ledger TO "54link";
-GRANT ALL PRIVILEGES ON SCHEMA audit TO "54link";
-GRANT ALL PRIVILEGES ON SCHEMA temporal TO "54link";
+GRANT ALL PRIVILEGES ON DATABASE "insureportal" TO "insureportal";
+GRANT ALL PRIVILEGES ON SCHEMA pos TO "insureportal";
+GRANT ALL PRIVILEGES ON SCHEMA ledger TO "insureportal";
+GRANT ALL PRIVILEGES ON SCHEMA audit TO "insureportal";
+GRANT ALL PRIVILEGES ON SCHEMA temporal TO "insureportal";
 
 -- Performance settings (applied at session level for init)
 ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';

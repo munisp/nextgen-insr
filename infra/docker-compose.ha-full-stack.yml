@@ -1,5 +1,5 @@
 ###############################################################################
-# POS-54Link Full HA Stack Orchestrator
+# POS-InsurePortal Full HA Stack Orchestrator
 # Composes all 13 middleware HA clusters into a single deployment
 # Usage: docker compose -f docker-compose.ha-full-stack.yml up -d
 ###############################################################################

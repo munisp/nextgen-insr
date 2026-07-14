@@ -5,7 +5,7 @@ import {
   promotions,
   loyaltyAccounts,
   loyaltyTransactions,
-} from "../../drizzle/ecommerce-extended-schema";
+} from "../../drizzle/insurance-extended-schema";
 import { eq, and, sql, lte, gte } from "drizzle-orm";
 import crypto from "crypto";
 

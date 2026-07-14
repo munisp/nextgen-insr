@@ -1,5 +1,5 @@
 /**
- * Admin User Management — 54Link POS Shell (Sprint 89)
+ * Admin User Management — InsurePortal POS Shell (Sprint 89)
  * Dedicated user management page for admins with search, filter, role management.
  */
 import { useState, useMemo } from "react";

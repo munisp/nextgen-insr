@@ -68,9 +68,9 @@ export default function WebSocketServicePage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center p-3 border rounded">
               <div className="text-xl font-bold">
-                {data?.connectionsByType?.posTerminal ?? 0}
+                {data?.connectionsByType?.insuranceService ?? 0}
               </div>
-              <div className="text-xs text-muted-foreground">POS Terminals</div>
+              <div className="text-xs text-muted-foreground">Insurance Services</div>
             </div>
             <div className="text-center p-3 border rounded">
               <div className="text-xl font-bold">

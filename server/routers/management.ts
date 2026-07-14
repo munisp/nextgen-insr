@@ -9,7 +9,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   agents,
-  posTerminals,
+  serviceNodes,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -19,7 +19,7 @@ import {
   multiSimProfiles,
   reversalRequests,
   shareableLinks,
-  storefrontAds,
+  marketplaceAds,
   vatRecords,
   erpSyncLog,
   transactions,
@@ -30,6 +30,37 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, asc, sql, and, gte, lte, like, count } from "drizzle-orm";
 import crypto from "crypto";
+
+// =============================================================================
+// NAVIGATION GUIDE — Management Router (1,878 lines, 24 API groups)
+// =============================================================================
+// This router serves the Management PWA (29 pages). All procedures require
+// supervisor or admin role.
+//
+// ── Section Reference ────────────────────────────────────────────────────────
+//  58.  dashboard      — Stats, agent/terminal/tx counts, volume
+// 119.  agents         — CRUD, activate/deactivate, search, import CSV, bulk actions
+// 332.  transactions   — List, export, refund, dispute, search, filters
+// 425.  kyc            — KYC session list, approval, rejection, documents
+// 501.  commissions    — Rule CRUD, validation, list, delete, payout history
+// 622.  pos            — Terminal CRUD, group CRUD, assign/unassign, health
+//1021.  qr             — QR code CRUD, list, generate, delete
+//1112. analytics      — Transaction stats, agent performance, revenue
+//1176. inventory      — Item CRUD, stock adjustments, history, export
+//1253. health         — System health, uptime, database status
+//1266. multiSim       — Profiles CRUD, list, delete, activate
+//1320. reversal       — Reversal requests CRUD, list, approve, reject
+//1416. shareableLinks — Link CRUD, list, expire, delete
+//1491. storefrontAds  — Ad CRUD, list, approve, reject, delete
+//1590. vat            — VAT records CRUD, list, delete
+//1654. erp            — ERP sync log CRUD, list, delete
+//1715. emailQueue     — Email queue CRUD, list, delete
+//1851. settings       — App settings CRUD, list, update
+//
+// ── Procedures per Section ───────────────────────────────────────────────────
+// Each section has standard CRUD (list, create, update, delete) plus domain-
+// specific operations (refund, dispute, approve/reject, import CSV, etc.).
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ── Guard: supervisor or admin only ──────────────────────────────────────────
 const mgmtProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -65,7 +96,7 @@ export const managementRouter = router({
         .limit(100);
       const [terminalCount] = await db
         .select({ c: count() })
-        .from(posTerminals)
+        .from(serviceNodes)
         .limit(100);
       const [txCount] = await db
         .select({ c: count() })
@@ -187,7 +218,7 @@ export const managementRouter = router({
     create: adminProcedure
       .input(
         z.object({
-          agentCode: z.string(),
+          agentId: z.string(),
           name: z.string(),
           phone: z.string(),
           email: z.string().email().optional(),
@@ -308,7 +339,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [agent] = await db
             .select({
-              floatBalance: agents.floatBalance,
+              premiumReserve: agents.premiumReserve,
               commissionBalance: agents.commissionBalance,
               loyaltyPoints: agents.loyaltyPoints,
             })
@@ -618,7 +649,7 @@ export const managementRouter = router({
     }),
   }),
 
-  // ── POS Terminal Management ────────────────────────────────────────────────
+  // ── Service Node Management ────────────────────────────────────────────────
   pos: router({
     listTerminals: mgmtProcedure
       .input(
@@ -638,19 +669,19 @@ export const managementRouter = router({
           const offset = (input.page - 1) * input.limit;
           const conditions = [];
           if (input.status)
-            conditions.push(eq(posTerminals.status, input.status));
+            conditions.push(eq(serviceNodes.status, input.status));
           if (input.agentId)
-            conditions.push(eq(posTerminals.agentId, input.agentId));
+            conditions.push(eq(serviceNodes.agentId, input.agentId));
           const where = conditions.length > 0 ? and(...conditions) : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(posTerminals)
+              .from(serviceNodes)
               .where(where)
-              .orderBy(desc(posTerminals.createdAt))
+              .orderBy(desc(serviceNodes.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(posTerminals).where(where),
+            db.select({ total: count() }).from(serviceNodes).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -670,8 +701,8 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "NOT_FOUND" });
           const [t] = await db
             .select()
-            .from(posTerminals)
-            .where(eq(posTerminals.id, input.id))
+            .from(serviceNodes)
+            .where(eq(serviceNodes.id, input.id))
             .limit(100);
           if (!t) throw new TRPCError({ code: "NOT_FOUND" });
           return t;
@@ -698,7 +729,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .insert(posTerminals)
+            .insert(serviceNodes)
             .values(input as any)
             .returning();
           return t;
@@ -731,13 +762,13 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(posTerminals)
+            .update(serviceNodes)
             .set({
               lastCommand: input.command,
               lastCommandAt: new Date(),
               updatedAt: new Date(),
             })
-            .where(eq(posTerminals.id, input.terminalId))
+            .where(eq(serviceNodes.id, input.terminalId))
             .returning();
           return { success: true, terminal: t };
         } catch (error) {
@@ -820,9 +851,9 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           // Unassign all terminals in this group first
           await db
-            .update(posTerminals)
+            .update(serviceNodes)
             .set({ groupId: null, updatedAt: new Date() })
-            .where(eq(posTerminals.groupId, input.id));
+            .where(eq(serviceNodes.groupId, input.id));
           await db
             .delete(terminalGroups)
             .where(eq(terminalGroups.id, input.id));
@@ -845,9 +876,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(posTerminals)
+            .update(serviceNodes)
             .set({ groupId: input.groupId, updatedAt: new Date() })
-            .where(eq(posTerminals.id, input.terminalId))
+            .where(eq(serviceNodes.id, input.terminalId))
             .returning();
           if (!t)
             throw new TRPCError({
@@ -877,19 +908,19 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const terminals = await db
             .select()
-            .from(posTerminals)
-            .where(eq(posTerminals.groupId, input.groupId))
+            .from(serviceNodes)
+            .where(eq(serviceNodes.groupId, input.groupId))
             .limit(100);
           let dispatched = 0;
           for (const t of terminals) {
             await db
-              .update(posTerminals)
+              .update(serviceNodes)
               .set({
                 lastCommand: input.command,
                 lastCommandAt: new Date(),
                 updatedAt: new Date(),
               })
-              .where(eq(posTerminals.id, t.id));
+              .where(eq(serviceNodes.id, t.id));
             dispatched++;
           }
           return { dispatched, command: input.command, groupId: input.groupId };
@@ -996,12 +1027,12 @@ export const managementRouter = router({
       if (!db) return { active: 0, inactive: 0, maintenance: 0, total: 0 };
       const [total] = await db
         .select({ c: count() })
-        .from(posTerminals)
+        .from(serviceNodes)
         .limit(100);
       const [active] = await db
         .select({ c: count() })
-        .from(posTerminals)
-        .where(eq(posTerminals.status, "active"))
+        .from(serviceNodes)
+        .where(eq(serviceNodes.status, "active"))
         .limit(100);
       return { total: total.c, active: active.c, inactive: 0, maintenance: 0 };
     }),
@@ -1255,7 +1286,7 @@ export const managementRouter = router({
       api: { status: "up", latency: 12 },
       database: { status: "up", connections: 5 },
       tigerbeetle: { status: "up", ledgerVersion: "0.16.11" },
-      keycloak: { status: "up", realm: process.env.KEYCLOAK_REALM || "54link" },
+      keycloak: { status: "up", realm: process.env.KEYCLOAK_REALM || "insureportal" },
       redis: { status: "up" },
       kafka: { status: "up", topics: 12 },
       timestamp: new Date(),
@@ -1487,8 +1518,8 @@ export const managementRouter = router({
       }),
   }),
 
-  // ── Storefront Ads ─────────────────────────────────────────────────────────
-  storefrontAds: router({
+  // ── Marketplace Ads ─────────────────────────────────────────────────────────
+  marketplaceAds: router({
     list: mgmtProcedure
       .input(
         z.object({
@@ -1505,17 +1536,17 @@ export const managementRouter = router({
           if (!db) return { items: [], total: 0 };
           const offset = (input.page - 1) * input.limit;
           const where = input.status
-            ? eq(storefrontAds.status, input.status)
+            ? eq(marketplaceAds.status, input.status)
             : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(storefrontAds)
+              .from(marketplaceAds)
               .where(where)
-              .orderBy(desc(storefrontAds.createdAt))
+              .orderBy(desc(marketplaceAds.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(storefrontAds).where(where),
+            db.select({ total: count() }).from(marketplaceAds).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -1545,7 +1576,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
-            .insert(storefrontAds)
+            .insert(marketplaceAds)
             .values(input as any)
             .returning();
           return ad;
@@ -1570,9 +1601,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
-            .update(storefrontAds)
+            .update(marketplaceAds)
             .set({ status: input.status, updatedAt: new Date() })
-            .where(eq(storefrontAds.id, input.id))
+            .where(eq(marketplaceAds.id, input.id))
             .returning();
           return ad;
         } catch (error) {
@@ -1850,7 +1881,7 @@ export const managementRouter = router({
   // ── Settings ─────────────────────────────────────────────────────
   settings: router({
     get: adminProcedure.query(() => ({
-      platformName: "54Link Agency Banking",
+      platformName: "InsurePortal Insurance",
       defaultCurrency: "NGN",
       defaultCountry: "NGA",
       maxTransactionAmount: 500000,

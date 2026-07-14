@@ -1,5 +1,5 @@
 /**
- * Multi-SIM Failover — manages multiple SIM slots in POS terminals,
+ * Multi-SIM Failover — manages multiple SIM slots in insurance services,
  * automatic failover on network loss, and SIM health monitoring.
  *
  * Middleware: Redis (SIM state), Kafka (failover events), PostgreSQL (SIM inventory)
@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { posTerminals } from "../../drizzle/schema";
+import { posTerminals as insuranceServices } from "@schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -22,11 +22,11 @@ export const multiSimFailoverRouter = router({
 
         const [terminal] = await db
           .select({
-            simIccid: posTerminals.simIccid,
-            configJson: posTerminals.configJson,
+            simIccid: insuranceServices.simIccid,
+            configJson: insuranceServices.configJson,
           })
-          .from(posTerminals)
-          .where(eq(posTerminals.id, input.terminalId))
+          .from(insuranceServices)
+          .where(eq(insuranceServices.id, input.terminalId))
           .limit(1);
 
         if (!terminal) throw new TRPCError({ code: "NOT_FOUND" });
@@ -78,7 +78,6 @@ export const multiSimFailoverRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "SIM_FAILOVER_TRIGGERED",
           resource: "sim_failover",
           resourceId: String(input.terminalId),
@@ -127,17 +126,16 @@ export const multiSimFailoverRouter = router({
         const activeSim = input.sims.find(s => s.active);
 
         await db
-          .update(posTerminals)
+          .update(insuranceServices)
           .set({
             simIccid: activeSim?.iccid ?? null,
-            configJson: sql`jsonb_set(COALESCE(${posTerminals.configJson}::jsonb, '{}'::jsonb), '{sims}', ${JSON.stringify(input.sims)}::jsonb)`,
+            configJson: sql`jsonb_set(COALESCE(${insuranceServices.configJson}::jsonb, '{}'::jsonb), '{sims}', ${JSON.stringify(input.sims)}::jsonb)`,
             updatedAt: new Date(),
           })
-          .where(eq(posTerminals.id, input.terminalId));
+          .where(eq(insuranceServices.id, input.terminalId));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "SIM_CONFIG_UPDATED",
           resource: "sim_config",
           resourceId: String(input.terminalId),

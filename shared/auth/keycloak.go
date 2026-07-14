@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -120,7 +121,7 @@ func (m *JWTMiddleware) getPublicKey(token *jwt.Token) (interface{}, error) {
 	if _, ok := token.Method.(*jwt.SigningMethodHMAC); ok {
 		secret := os.Getenv("JWT_SECRET")
 		if secret == "" {
-			secret = "dev-secret-change-in-production"
+			log.Fatal("FATAL: JWT_SECRET environment variable is required but not set")
 		}
 		return []byte(secret), nil
 	}

@@ -6,7 +6,7 @@ import {
   reconciliationItems,
   settlementReconciliation,
   transactions,
-} from "../../drizzle/schema";
+} from "@schema";
 import { desc, eq, sql, and, gte, lte, count, sum, isNull } from "drizzle-orm";
 
 /**
@@ -108,8 +108,8 @@ export const reconciliationEngineRouter = router({
       if (!database) return { data: [], total: 0 };
 
       const conditions = [];
-      if (input.status) conditions.push(eq(settlementReconciliation.status, input.status));
-      if (input.agentId) conditions.push(eq(settlementReconciliation.agentId, input.agentId));
+      if (input.status) conditions.push(eq(settlementReconciliation.status, input.status as any));
+      if (input.agentId) conditions.push(eq(settlementReconciliation.agentId, Number(input.agentId)));
 
       const query = database
         .select()

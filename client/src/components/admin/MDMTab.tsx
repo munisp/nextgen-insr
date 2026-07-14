@@ -3,7 +3,7 @@
 /**
  * MDM Device Management Tab — Admin Panel
  *
- * Shows all enrolled POS terminals with live status, allows remote commands,
+ * Shows all enrolled service nodes with live status, allows remote commands,
  * config push, and OTA update triggers.
  */
 
@@ -253,7 +253,7 @@ function TerminalEventsLog() {
                           </span>
                         </td>
                         <td className="px-3 py-2 text-amber-300 font-mono">
-                          {evt.agentCode}
+                          {evt.agentId}
                         </td>
                         <td className="px-3 py-2 text-slate-300">
                           {String(meta.actor ?? "—")}
@@ -321,7 +321,7 @@ export function MDMTab() {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const [killSwitchTarget, setKillSwitchTarget] = useState<{
-    agentCode: string;
+    agentId: string;
     currentlyEnabled: boolean;
   } | null>(null);
   const [killSwitchReason, setKillSwitchReason] = useState("");
@@ -383,7 +383,7 @@ export function MDMTab() {
 
   const disableTerminal = trpc.mdm.disableTerminal.useMutation({
     onSuccess: res => {
-      toast.success(`Terminal ${res.agentCode} disabled — kill-switch sent.`);
+      toast.success(`Terminal ${res.agentId} disabled — kill-switch sent.`);
       setKillSwitchTarget(null);
       setKillSwitchReason("");
       refetch();
@@ -392,7 +392,7 @@ export function MDMTab() {
   });
   const enableTerminal = trpc.mdm.enableTerminal.useMutation({
     onSuccess: res => {
-      toast.success(`Terminal ${res.agentCode} re-enabled.`);
+      toast.success(`Terminal ${res.agentId} re-enabled.`);
       setKillSwitchTarget(null);
       refetch();
     },
@@ -401,14 +401,14 @@ export function MDMTab() {
   const handleKillSwitch = () => {
     if (!killSwitchTarget) return;
     if (!killSwitchTarget.currentlyEnabled) {
-      enableTerminal.mutate({ agentCode: killSwitchTarget.agentCode });
+      enableTerminal.mutate({ agentId: killSwitchTarget.agentId });
     } else {
       if (!killSwitchReason.trim() || killSwitchReason.trim().length < 5) {
         toast.error("Please provide a reason (at least 5 characters).");
         return;
       }
       disableTerminal.mutate({
-        agentCode: killSwitchTarget.agentCode,
+        agentId: killSwitchTarget.agentId,
         reason: killSwitchReason.trim(),
       });
     }
@@ -600,7 +600,7 @@ export function MDMTab() {
                     </tr>
                   ) : (
                     (data?.devices ?? []).map(
-                      ({ device, agentCode, agentName }) => (
+                      ({ device, agentId, agentName }) => (
                         <tr
                           key={device.id}
                           className="hover:bg-slate-800/40 transition-colors cursor-pointer"
@@ -620,7 +620,7 @@ export function MDMTab() {
                               {agentName ?? "—"}
                             </div>
                             <div className="text-slate-500 text-xs">
-                              {agentCode ?? ""}
+                              {agentId ?? ""}
                             </div>
                           </td>
                           <td className="px-4 py-3 text-slate-400 text-xs">
@@ -675,7 +675,7 @@ export function MDMTab() {
                               >
                                 Restart
                               </Button>
-                              {agentCode && (
+                              {agentId && (
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -683,7 +683,7 @@ export function MDMTab() {
                                   title="Remote Kill-Switch"
                                   onClick={() =>
                                     setKillSwitchTarget({
-                                      agentCode,
+                                      agentId,
                                       currentlyEnabled: true,
                                     })
                                   }
@@ -920,7 +920,7 @@ export function MDMTab() {
                   <Input
                     value={otaUrl}
                     onChange={e => setOtaUrl(e.target.value)}
-                    placeholder="https://cdn.54link.com/releases/v2.4.1.apk"
+                    placeholder="https://cdn.insureportal.com/releases/v2.4.1.apk"
                     className="bg-slate-800 border-slate-600"
                   />
                 </div>
@@ -959,9 +959,9 @@ export function MDMTab() {
               {!enrollQrData ? (
                 <div className="space-y-4">
                   <p className="text-sm text-slate-400">
-                    Enter the agent code and (optionally) the device serial
+                    Enter the agent ID and (optionally) the device serial
                     number. A 15-minute enrollment QR code will be generated.
-                    Scan it with the 54link-installer on the POS terminal.
+                    Scan it with the insureportal-installer on the POS terminal.
                   </p>
                   <div className="space-y-2">
                     <Label className="text-slate-300">
@@ -997,7 +997,7 @@ export function MDMTab() {
                     <Button
                       onClick={() =>
                         generateToken.mutate({
-                          agentCode: enrollAgentCode,
+                          agentId: enrollAgentCode,
                           serialNumber: enrollSerial || undefined,
                         })
                       }
@@ -1029,10 +1029,10 @@ export function MDMTab() {
                   )}
                   <div className="bg-slate-800 rounded-lg p-3 text-left">
                     <p className="text-xs text-slate-400 mb-1">
-                      Install command for POS terminal:
+                      Install command for service node:
                     </p>
                     <code className="text-xs text-emerald-300 break-all">
-                      sudo ./54link-installer --enroll-token{" "}
+                      sudo ./insureportal-installer --enroll-token{" "}
                       {enrollQrData.token}
                     </code>
                     <Button
@@ -1041,7 +1041,7 @@ export function MDMTab() {
                       className="mt-2 w-full text-xs"
                       onClick={() => {
                         navigator.clipboard.writeText(
-                          `sudo ./54link-installer --enroll-token ${enrollQrData.token}`
+                          `sudo ./insureportal-installer --enroll-token ${enrollQrData.token}`
                         );
                         toast.success("Copied to clipboard");
                       }}
@@ -1156,9 +1156,9 @@ export function MDMTab() {
                       </span>{" "}
                       terminal for agent{" "}
                       <span className="font-mono text-amber-300">
-                        {killSwitchTarget?.agentCode}
+                        {killSwitchTarget?.agentId}
                       </span>
-                      . The POS Shell will immediately show a kill-switch
+                      . The InsurePortal Platform will immediately show a kill-switch
                       overlay and all transactions will be blocked.
                     </>
                   ) : (
@@ -1169,9 +1169,9 @@ export function MDMTab() {
                       </span>{" "}
                       terminal for agent{" "}
                       <span className="font-mono text-amber-300">
-                        {killSwitchTarget?.agentCode}
+                        {killSwitchTarget?.agentId}
                       </span>
-                      . The POS Shell overlay will dismiss automatically.
+                      . The InsurePortal Platform overlay will dismiss automatically.
                     </>
                   )}
                 </p>
@@ -2067,7 +2067,7 @@ export function GeofenceAlertPanel() {
                     <td className="px-3 py-2 font-mono text-slate-300">
                       {v.serialNumber}
                     </td>
-                    <td className="px-3 py-2 text-slate-400">{v.agentCode}</td>
+                    <td className="px-3 py-2 text-slate-400">{v.agentId}</td>
                     <td className="px-3 py-2 text-amber-300">{v.zoneName}</td>
                     <td className="px-3 py-2 text-red-400 font-medium">
                       {v.distanceMeters ? `${v.distanceMeters}m outside` : "—"}
@@ -2157,7 +2157,7 @@ function OtaManagementPanel() {
               <Input
                 value={downloadUrl}
                 onChange={e => setDownloadUrl(e.target.value)}
-                placeholder="https://cdn.54link.ng/firmware/v2.4.1.apk"
+                placeholder="https://cdn.insureportal.ng/firmware/v2.4.1.apk"
                 className="bg-slate-800 border-slate-700 text-white"
               />
             </div>
@@ -2349,7 +2349,7 @@ function OtaManagementPanel() {
 // ─── Enrollment Token Panel ─────────────────────────────────────────────────
 function EnrollmentTokenPanel() {
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
-  const [agentCode, setAgentCode] = useState("");
+  const [agentId, setAgentCode] = useState("");
   const [copied, setCopied] = useState(false);
 
   const generateToken = trpc.mdm.generateEnrollmentToken.useMutation({
@@ -2371,7 +2371,7 @@ function EnrollmentTokenPanel() {
     <div className="space-y-4">
       <h3 className="text-sm font-bold text-white">Device Enrollment</h3>
       <p className="text-xs text-slate-400">
-        Generate enrollment tokens for new POS terminals. Agents enter this
+        Generate enrollment tokens for new service nodes. Agents enter this
         token during device setup to bind the terminal to their account.
       </p>
 
@@ -2382,7 +2382,7 @@ function EnrollmentTokenPanel() {
               Agent Code (optional)
             </Label>
             <Input
-              value={agentCode}
+              value={agentId}
               onChange={e => setAgentCode(e.target.value)}
               placeholder="e.g. AGT-001 (leave blank for unassigned)"
               className="bg-slate-800 border-slate-700 text-white mt-1"
@@ -2390,7 +2390,7 @@ function EnrollmentTokenPanel() {
           </div>
           <Button
             onClick={() =>
-              generateToken.mutate({ agentCode: agentCode || "UNASSIGNED" })
+              generateToken.mutate({ agentId: agentId || "UNASSIGNED" })
             }
             disabled={generateToken.isPending}
             className="bg-blue-600 hover:bg-blue-700 text-xs"
@@ -2426,7 +2426,7 @@ function EnrollmentTokenPanel() {
                 </Button>
               </div>
               <p className="text-xs text-slate-500 mt-2">
-                Enter this token on the POS terminal during first-time setup.
+                Enter this token on the service node during first-time setup.
                 The device will auto-enroll and appear in the Devices tab.
               </p>
             </div>

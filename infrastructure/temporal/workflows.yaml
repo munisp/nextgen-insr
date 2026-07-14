@@ -1,0 +1,175 @@
+# Temporal Workflow Definitions for InsurePortal Platform
+# Orchestrates long-running, multi-step business processes
+
+namespace: insureportal-production
+
+workflows:
+  # ── Payment Workflows ──────────────────────────────────────────────────
+  - name: PaymentProcessingWorkflow
+    task_queue: payment-gateway
+    timeout: 30m
+    retry_policy:
+      initial_interval: 5s
+      backoff_coefficient: 2.0
+      maximum_attempts: 5
+    activities:
+      - validate_payment_request
+      - initiate_with_provider  # Paystack or Flutterwave
+      - wait_for_confirmation   # Webhook or polling
+      - record_in_ledger        # TigerBeetle double-entry
+      - notify_customer         # Real-time + push
+      - update_policy_status
+
+  - name: RecurringBillingWorkflow
+    task_queue: payment-gateway
+    schedule: "0 8 * * *"  # Daily at 8am WAT
+    timeout: 2h
+    activities:
+      - fetch_due_subscriptions
+      - charge_each_subscription
+      - handle_failures          # Retry logic, grace period
+      - notify_delinquent        # WhatsApp/SMS reminder
+      - suspend_if_expired
+
+  - name: RefundWorkflow
+    task_queue: payment-gateway
+    timeout: 15m
+    activities:
+      - validate_refund_eligibility
+      - process_provider_refund
+      - reverse_ledger_entry     # TigerBeetle
+      - notify_customer
+
+  # ── KYC Workflows ──────────────────────────────────────────────────────
+  - name: KYCVerificationWorkflow
+    task_queue: kyc-verification
+    timeout: 7d  # Allow time for manual document review
+    retry_policy:
+      maximum_attempts: 3
+    activities:
+      - validate_submitted_documents
+      - run_paddle_ocr_extraction
+      - run_vlm_understanding
+      - verify_bvn_nibss          # External API call
+      - verify_nin_nimc           # External API call
+      - perform_liveness_check
+      - calculate_risk_score
+      - assign_tier               # Tier 1/2/3
+      - set_permissions           # Permify
+      - notify_customer_result
+
+  - name: KYCExpiryCheckWorkflow
+    task_queue: kyc-verification
+    schedule: "0 2 * * *"  # Daily at 2am
+    activities:
+      - scan_expiring_documents   # 30-day lookahead
+      - notify_customers_renewal
+      - downgrade_expired_tiers
+
+  # ── Claims Adjudication Workflows ──────────────────────────────────────
+  - name: ClaimAdjudicationWorkflow
+    task_queue: claims-adjudication
+    timeout: 72h
+    signals:
+      - manual_approval
+      - document_uploaded
+      - escalation_override
+    activities:
+      - validate_claim_submission
+      - check_document_completeness
+      - run_fraud_scoring
+      - apply_rules_engine
+      - auto_approve_or_escalate
+      - assign_adjudicator        # If manual review
+      - wait_for_decision         # Signal-based
+      - process_payout            # TigerBeetle
+      - notify_all_parties
+
+  - name: ClaimSLAEnforcementWorkflow
+    task_queue: claims-adjudication
+    timeout: 96h
+    timers:
+      - duration: 24h
+        action: escalate_to_team_lead
+      - duration: 48h
+        action: escalate_to_manager
+      - duration: 72h
+        action: escalate_to_director
+    activities:
+      - monitor_claim_progress
+      - send_sla_warnings
+      - execute_escalation
+      - report_sla_metrics
+
+  # ── Churn Prevention Workflows ─────────────────────────────────────────
+  - name: ChurnScoringBatchWorkflow
+    task_queue: churn-prevention
+    schedule: "0 6 * * *"  # Daily at 6am
+    timeout: 4h
+    activities:
+      - fetch_active_customers
+      - compute_feature_vectors
+      - run_churn_model
+      - identify_at_risk
+      - trigger_interventions
+      - log_predictions           # OpenSearch
+
+  - name: ChurnInterventionWorkflow
+    task_queue: churn-prevention
+    timeout: 30d
+    activities:
+      - select_intervention_type
+      - dispatch_via_channel      # WhatsApp, SMS, email, agent call
+      - wait_for_response         # Up to 7 days
+      - measure_outcome           # Retained or lapsed
+      - update_model_feedback
+
+  # ── Regulatory Reporting Workflows ─────────────────────────────────────
+  - name: QuarterlyReportingWorkflow
+    task_queue: regulatory-reporting
+    schedule: "0 0 1 1,4,7,10 *"  # First day of each quarter
+    timeout: 7d
+    activities:
+      - aggregate_quarterly_data
+      - calculate_reserves        # IBNR, UPR, AURR
+      - calculate_solvency
+      - generate_naicom_format    # XML/CSV
+      - validate_report
+      - submit_to_regulator       # API or portal upload
+      - archive_to_lakehouse
+
+  - name: DeadlineAlertWorkflow
+    task_queue: regulatory-reporting
+    schedule: "0 9 * * *"  # Daily at 9am
+    activities:
+      - check_upcoming_deadlines
+      - send_t_minus_alerts       # T-14, T-7, T-3, T-1
+      - escalate_overdue
+
+  # ── Notification Workflows ─────────────────────────────────────────────
+  - name: NotificationDispatchWorkflow
+    task_queue: notification-orchestrator
+    timeout: 5m
+    retry_policy:
+      maximum_attempts: 3
+      initial_interval: 10s
+    activities:
+      - resolve_user_preferences
+      - check_quiet_hours
+      - select_channel            # Priority routing
+      - render_template           # i18n
+      - dispatch_to_provider
+      - track_delivery_status
+
+  # ── Embedded Insurance Workflows ───────────────────────────────────────
+  - name: EmbeddedPurchaseWorkflow
+    task_queue: embedded-sdk
+    timeout: 30m
+    activities:
+      - validate_partner_request
+      - create_policy
+      - collect_payment           # Via payment gateway
+      - split_commission          # TigerBeetle
+      - generate_certificate
+      - webhook_partner           # Notify partner
+      - notify_customer

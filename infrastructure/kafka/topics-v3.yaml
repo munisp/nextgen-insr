@@ -1,0 +1,74 @@
+# Kafka Topics — v3 (additional topics for v3 recommendations)
+# Total: 52 topics (34 existing + 18 new)
+
+topics:
+  # AI Advisor
+  - name: ai.advisor.conversation
+    partitions: 6
+    replication: 3
+    retention_ms: 604800000
+  - name: ai.advisor.escalation
+    partitions: 3
+    replication: 3
+  - name: ai.advisor.proactive
+    partitions: 6
+    replication: 3
+
+  # Fraud Network Graph
+  - name: fraud.graph.ingestion
+    partitions: 12
+    replication: 3
+    retention_ms: 2592000000
+  - name: fraud.graph.cluster.alert
+    partitions: 3
+    replication: 3
+  - name: fraud.graph.investigation
+    partitions: 3
+    replication: 3
+
+  # Micro-Moment Insurance
+  - name: micro.policy.activated
+    partitions: 12
+    replication: 3
+  - name: micro.policy.deactivated
+    partitions: 6
+    replication: 3
+  - name: micro.policy.expired
+    partitions: 6
+    replication: 3
+  - name: micro.trigger.event
+    partitions: 12
+    replication: 3
+
+  # Health Wearables
+  - name: health.telemetry.ingest
+    partitions: 24
+    replication: 3
+    retention_ms: 86400000
+  - name: health.score.updated
+    partitions: 6
+    replication: 3
+  - name: health.challenge.completed
+    partitions: 3
+    replication: 3
+
+  # Smart Contract / Oracle
+  - name: oracle.data.feed
+    partitions: 12
+    replication: 3
+  - name: oracle.trigger.evaluated
+    partitions: 6
+    replication: 3
+  - name: oracle.settlement.completed
+    partitions: 6
+    replication: 3
+
+  # Multi-Country
+  - name: country.config.updated
+    partitions: 3
+    replication: 3
+
+  # Data Mesh
+  - name: data.product.published
+    partitions: 6
+    replication: 3

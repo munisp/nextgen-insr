@@ -1,8 +1,8 @@
 /**
- * PlatformHub.tsx — Central navigation hub for the 54Link Agency Banking Platform.
+ * PlatformHub.tsx — Central navigation hub for the InsurePortal Insurance Platform.
  *
  * Displays all available portals with role-based visibility:
- *   - All agents: POS Shell, Agent Banking Portal
+ *   - All agents: InsurePortal Platform, Agent Banking Portal
  *   - Supervisor / Admin: Management Portal, Supervisor Dashboard
  *   - Admin only: Admin Panel, Super Admin Portal
  *   - All: Customer Portal (for assisted customer onboarding)
@@ -33,9 +33,9 @@ interface PortalCard {
 
 const PORTALS: PortalCard[] = [
   {
-    title: "POS Shell",
+    title: "InsurePortal Platform",
     description:
-      "Core agency banking terminal — cash in/out, transfers, airtime, bills, NFC & QR payments.",
+      "Core insurance terminal — cash in/out, transfers, airtime, bills, NFC & QR payments.",
     path: "/",
     icon: "🏧",
     badge: "Core",
@@ -79,7 +79,7 @@ const PORTALS: PortalCard[] = [
   {
     title: "Management Portal",
     description:
-      "Full platform management — agents, transactions, KYC, commissions, POS terminals, analytics.",
+      "Full platform management — agents, transactions, KYC, commissions, service nodes, analytics.",
     path: "/management",
     icon: "⚙️",
     badge: "Admin",
@@ -219,10 +219,10 @@ export default function PlatformHub() {
             <span className="text-2xl">🏦</span>
             <div>
               <h1 className="text-lg font-bold text-foreground leading-tight">
-                54Link POS Shell
+                InsurePortal POS Shell
               </h1>
               <p className="text-xs text-muted-foreground">
-                Agency Banking Platform
+                Insurance Platform
               </p>
             </div>
           </div>
@@ -230,7 +230,7 @@ export default function PlatformHub() {
             {agent && (
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-foreground">
-                  {agent.agentCode}
+                  {agent.agentId}
                 </p>
                 <p className="text-xs text-muted-foreground capitalize">
                   {role}
@@ -261,7 +261,7 @@ export default function PlatformHub() {
           </h2>
           <p className="text-muted-foreground text-sm">
             Select a portal to navigate to. Access is based on your role
-            {agent ? ` (${agent.agentCode} · ${role})` : ""}.
+            {agent ? ` (${agent.agentId} · ${role})` : ""}.
           </p>
         </div>
 
@@ -311,7 +311,7 @@ export default function PlatformHub() {
             {[
               {
                 label: "Float Balance",
-                value: `₦${(agent.floatBalance ?? 0).toLocaleString()}`,
+                value: `₦${(agent.premiumReserve ?? 0).toLocaleString()}`,
                 icon: "💰",
               },
               {

@@ -1,6 +1,6 @@
-# 54Link Agency Banking Platform — Production Readiness Report
+# InsurePortal Insurance Platform — Production Readiness Report
 
-**Platform:** POS Shell (Node.js/TypeScript tRPC + React PWA)  
+**Platform:** InsurePortal Platform (Node.js/TypeScript tRPC + React PWA)  
 **Sprint:** Production Readiness Sprint — Final Assessment  
 **Date:** 2026-03-31  
 **Prepared by:** Manus AI  
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-The 54Link Agency Banking Platform POS Shell has completed its production readiness sprint. The system comprises a Node.js/TypeScript tRPC backend, a React 18 PWA frontend, and integration bridges to nine platform microservices (KYC, Fraud, Settlement, Float, Analytics, Geofencing, Disputes, Loyalty, Notification). All 149 unit and integration tests pass, TypeScript compiles with zero errors, and every major production hardening item has been addressed.
+The InsurePortal Insurance Platform POS Shell has completed its production readiness sprint. The system comprises a Node.js/TypeScript tRPC backend, a React 18 PWA frontend, and integration bridges to nine platform microservices (KYC, Fraud, Settlement, Float, Analytics, Geofencing, Disputes, Loyalty, Notification). All 149 unit and integration tests pass, TypeScript compiles with zero errors, and every major production hardening item has been addressed.
 
 This report scores each domain on a 0–10 scale, identifies any remaining gaps, and provides a prioritised remediation roadmap.
 
@@ -58,7 +58,7 @@ The test suite spans 12 test files with 149 passing tests and 2 skipped tests (t
 | Integration — Agent Auth   | `tests/integration/agent-auth.test.ts`   | 9                           |
 | **Total**                  | **12 files**                             | **149 passing / 2 skipped** |
 
-**Gap:** No coverage for `settlement.ts`, `geofencing.ts`, `floatTopUp.ts`, or `auditLog.ts` routers. These are covered by integration tests but lack dedicated unit tests.
+**Gap:** No coverage for `settlement.ts`, `geofencing.ts`, `premiumTopUp.ts`, or `auditLog.ts` routers. These are covered by integration tests but lack dedicated unit tests.
 
 **Remediation:** Add unit test files for the four uncovered routers. Estimated effort: 2 days.
 
@@ -105,14 +105,14 @@ The 19 tRPC routers expose a total of approximately 120 procedures covering the 
 
 ### 4. Platform Proxy Integration (9.0 / 10)
 
-The platform proxy pattern is consistently applied across all nine downstream services. Each procedure first attempts to call the platform service; on failure it falls back to the local PostgreSQL implementation. This ensures the POS Shell remains operational even when platform services are unreachable.
+The platform proxy pattern is consistently applied across all nine downstream services. Each procedure first attempts to call the platform service; on failure it falls back to the local PostgreSQL implementation. This ensures the InsurePortal Platform remains operational even when platform services are unreachable.
 
 | Service       | Router                                   | Fallback                         | Status |
 | ------------- | ---------------------------------------- | -------------------------------- | ------ |
 | KYC/KYB       | `kyc.ts`                                 | Local `kyc_sessions` table       | ✅     |
 | Fraud Scoring | `fraud.ts`                               | Local `fraud_alerts` table       | ✅     |
 | Settlement    | `settlement.ts`                          | Local `settlement_records` table | ✅     |
-| Float Balance | `transactions.ts` (getFloatBalance)      | Local `agents.floatBalance`      | ✅     |
+| Float Balance | `transactions.ts` (getFloatBalance)      | Local `agents.premiumReserve`      | ✅     |
 | Float History | `transactions.ts` (getFloatHistory)      | Local `transactions` table       | ✅     |
 | Analytics     | `transactions.ts` (analytics procedures) | Local aggregation queries        | ✅     |
 | Geofencing    | `geofencing.ts`                          | Local `geofence_zones` table     | ✅     |
@@ -195,7 +195,7 @@ Three k6 load test scenarios are defined:
 
 ### 9. Frontend Completeness (9.5 / 10)
 
-The React PWA implements 33 screens in the `screenMap`, all wired to live tRPC data. The tile-based POS terminal UI supports drag-to-reorder, configurable tile grid, live terminal status bar, and Socket.IO real-time fraud alerts.
+The React PWA implements 33 screens in the `screenMap`, all wired to live tRPC data. The tile-based service node UI supports drag-to-reorder, configurable tile grid, live terminal status bar, and Socket.IO real-time fraud alerts.
 
 | Category         | Screens                                                                            |
 | ---------------- | ---------------------------------------------------------------------------------- |
@@ -213,7 +213,7 @@ All screens previously showing mock/hardcoded data have been upgraded to live tR
 
 ### 10. Mobile Parity (7.5 / 10)
 
-The React Native and Flutter mobile apps exist in the platform monorepo (`/home/ubuntu/platform/platform/pos-shell/`). However, a formal parity audit against the 33 PWA screens has not been completed in this sprint.
+The React Native and Flutter mobile apps exist in the platform monorepo (`/home/ubuntu/platform/platform/insurance-portal/`). However, a formal parity audit against the 33 PWA screens has not been completed in this sprint.
 
 **Gap:** Mobile apps may lack implementations for newer screens (KYC Verify, Disputes, Fraud Alerts, My Limits). A parity matrix is needed.
 
@@ -247,7 +247,6 @@ The React Native and Flutter mobile apps exist in the platform monorepo (`/home/
 | Middleware Integration Audit   | `docs/middleware-integration-audit.md` | All 10 middleware components                             |
 | KYC/KYB Audit                  | `docs/kyc-audit.md`                    | Full KYC flow with compliance notes                      |
 | Redundancy Audit               | `docs/redundancy-audit.md`             | Failover and resilience patterns                         |
-| TigerBeetle Sidecar Deployment | `docs/tb-sidecar-deployment.md`        | Offline-sync verification guide                          |
 | mTLS Microservices             | `docs/mtls-microservices.md`           | CA hierarchy, cert rotation, per-service config          |
 | golang-migrate                 | `docs/golang-migrate.md`               | Migration files, CI/CD integration, dirty-state recovery |
 | Production Readiness Report    | `docs/production-readiness-report.md`  | This document                                            |
@@ -265,7 +264,7 @@ The following gaps are ranked by risk to production launch:
 | P2       | Add Prometheus metrics endpoint (`/api/metrics`)                        | Medium — no runtime visibility                   | 1 day    | Next sprint |
 | P2       | Add Pino structured logging                                             | Medium — log aggregation quality                 | 1 day    | Next sprint |
 | P2       | Mobile parity audit (React Native + Flutter)                            | Medium — agent experience gap                    | 3 days   | Next sprint |
-| P3       | Add unit tests for settlement, geofencing, floatTopUp, auditLog routers | Low — covered by integration tests               | 2 days   | Sprint +2   |
+| P3       | Add unit tests for settlement, geofencing, premiumTopUp, auditLog routers | Low — covered by integration tests               | 2 days   | Sprint +2   |
 | P3       | Generate OpenAPI spec via `trpc-openapi`                                | Low — developer experience                       | 1 day    | Sprint +2   |
 | P3       | Deploy Temporal worker                                                  | Low — async workflow execution                   | 3 days   | Sprint +2   |
 | P3       | Deploy Fluvio consumer                                                  | Low — streaming analytics                        | 2 days   | Sprint +2   |
@@ -314,7 +313,7 @@ The following items must be confirmed before go-live:
 
 ## Conclusion
 
-The 54Link POS Shell achieves a production readiness score of **9.4 / 10**. The two P1 items (k6 load test execution and mTLS wiring) should be resolved before the first production traffic is directed to the system. All other gaps are non-blocking and can be addressed in the next sprint without impacting the launch timeline.
+The InsurePortal POS Shell achieves a production readiness score of **9.4 / 10**. The two P1 items (k6 load test execution and mTLS wiring) should be resolved before the first production traffic is directed to the system. All other gaps are non-blocking and can be addressed in the next sprint without impacting the launch timeline.
 
 The platform demonstrates a mature, defence-in-depth security posture, comprehensive platform proxy integration with fail-open resilience, and a well-structured test suite. It is ready for controlled production launch with the P1 items addressed.
 

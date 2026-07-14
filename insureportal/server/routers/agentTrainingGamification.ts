@@ -13,7 +13,7 @@ import {
   trainingCourses,
   trainingEnrollments,
   agents,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -202,7 +202,6 @@ export const agentTrainingGamificationRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "TRAINING_ENROLLED",
           resource: "training",
           resourceId: String(enrollment.id),
@@ -263,7 +262,6 @@ export const agentTrainingGamificationRouter = router({
 
           await writeAuditLog({
             agentId: session.id,
-            agentCode: session.agentCode,
             action: "TRAINING_COMPLETED",
             resource: "training",
             resourceId: String(input.enrollmentId),
@@ -294,11 +292,11 @@ export const agentTrainingGamificationRouter = router({
         if (!db) return { leaderboard: [] };
 
         const rows = await db.execute(
-          sql`SELECT a.id, a."agentCode", a."agentName",
+          sql`SELECT a.id, a."agentId", a."agentName",
               count(te.id) FILTER (WHERE te.status = 'completed') as completed_courses,
               count(te.id) FILTER (WHERE te.status = 'completed') * 100 as xp
               FROM agents a LEFT JOIN training_enrollments te ON te."agentId" = a.id
-              GROUP BY a.id, a."agentCode", a."agentName"
+              GROUP BY a.id, a."agentId", a."agentName"
               ORDER BY xp DESC LIMIT ${input.limit}`
         );
 

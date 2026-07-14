@@ -1,4 +1,4 @@
-# Contributing to 54Link Agency Banking Platform
+# Contributing to InsurePortal Insurance Platform
 
 ## Development Setup
 

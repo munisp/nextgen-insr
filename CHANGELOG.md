@@ -1,4 +1,4 @@
-# 54Link Agency Banking Platform — Changelog
+# InsurePortal Insurance Platform — Changelog
 
 All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
@@ -142,7 +142,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Coverage map with signal quality heatmap
 - SIM failover history and analytics
 - WiFi-first policy with cellular fallback
-- `pos-sim-orchestrator` with FreeRTOS HAL for embedded POS terminals
+- `pos-sim-orchestrator` with FreeRTOS HAL for embedded service nodes
 
 ---
 
@@ -152,10 +152,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Agent registration and onboarding workflow
 - Float management with TigerBeetle double-entry ledger
-- Cash-in/cash-out transaction processing
+- Cash-in/claim payout transaction processing
 - P2P transfer with daily limits
 - Bill payment integration
-- Agent dashboard with real-time float balance
+- Agent dashboard with real-time premium reserve
 - Admin panel with agent management
 
 ---

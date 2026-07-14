@@ -16,7 +16,7 @@ import { APIClient } from '../api/APIClient';
 const apiClient = new APIClient();
 
 
-const API_BASE_URL = 'https://api.54link.io/v1';
+const API_BASE_URL = 'https://api.insureportal.io/v1';
 const PRIMARY_COLOR = '#6C63FF';
 const BACKGROUND_COLOR = '#1A1A2E';
 const CARD_COLOR = '#FFFFFF';
@@ -190,7 +190,7 @@ const SecuritySettingsScreen = () => {
       <View style={styles.infoBox}>
         <Text style={styles.infoText}>
           For your security, we recommend enabling Biometric Login and Two-Factor Authentication. 
-          Never share your PIN or OTP with anyone, including 54Link staff.
+          Never share your PIN or OTP with anyone, including InsurePortal staff.
         </Text>
       </View>
 

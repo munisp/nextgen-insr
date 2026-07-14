@@ -1,6 +1,6 @@
 // SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 /**
- * seed.mjs — 54Link POS Shell Master Seed Script (Phase 163 — All 65 Tables)
+ * seed.mjs — InsurePortal InsurePortal Platform Master Seed Script (Phase 163 — All 65 Tables)
  *
  * Usage:
  *   POSTGRES_URL=postgresql://... node seed.mjs
@@ -18,7 +18,7 @@ const { Pool } = pg;
 const POSTGRES_URL =
   process.env.POSTGRES_URL ??
   process.env.DATABASE_URL ??
-  "postgresql://posadmin:pos54link2026@localhost:5432/pos54link";
+  "postgresql://posadmin:posinsureportal2026@localhost:5432/posinsureportal";
 
 const pool = new Pool({ connectionString: POSTGRES_URL, ssl: false });
 
@@ -78,7 +78,7 @@ const CUSTOMER_NAMES = [
 async function seed() {
   const client = await pool.connect();
   try {
-    console.log("🌱 Seeding 54Link POS database (all 65 tables)...\n");
+    console.log("🌱 Seeding InsurePortal POS database (all 65 tables)...\n");
 
     // ── 1. Agents ─────────────────────────────────────────────────────────────
     console.log("👤 [1/65] agents...");
@@ -267,7 +267,7 @@ async function seed() {
       await client.query(
         `INSERT INTO users (id, open_id, name, email, role, created_at)
          VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
-        [uid(), `open_id_${a.code}`, a.name, `${a.code.toLowerCase()}@54link.ng`,
+        [uid(), `open_id_${a.code}`, a.name, `${a.code.toLowerCase()}@insureportal.ng`,
          a.role === "admin" ? "admin" : "user", daysAgo(60 - i * 5)]
       );
     }
@@ -312,7 +312,7 @@ async function seed() {
     }
     console.log(`  ✓ ${merchantData.length} merchants`);
 
-    // ── 12. POS Terminals ─────────────────────────────────────────────────────
+    // ── 12. Service Nodes ─────────────────────────────────────────────────────
     console.log("🖥️  [12/65] pos_terminals...");
     const terminalData = [
       { serial: "TRM-001-LAGOS", model: "Newland N910",    agent: "AGT001" },
@@ -329,7 +329,7 @@ async function seed() {
         [id, t.serial, t.model, t.agent, true, "3.2.1", daysAgo(20)]
       );
     }
-    console.log(`  ✓ ${terminalData.length} POS terminals`);
+    console.log(`  ✓ ${terminalData.length} service nodes`);
 
     // ── 13. Devices ───────────────────────────────────────────────────────────
     console.log("📱 [13/65] devices...");
@@ -498,7 +498,7 @@ async function seed() {
         `INSERT INTO ota_releases (id, version, channel, release_notes, firmware_url, checksum, is_active, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
         [uid(), rel.version, rel.channel, rel.notes,
-         `https://cdn.54link.ng/firmware/${rel.version}.bin`,
+         `https://cdn.insureportal.ng/firmware/${rel.version}.bin`,
          `sha256:${uid().replace(/-/g, "")}`,
          rel.channel === "stable", daysAgo(rel.channel === "stable" ? 30 : 5)]
       );
@@ -584,7 +584,7 @@ async function seed() {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
       [uid(), "AGT001", "Transaction Webhook",
        `sha256:${uid().replace(/-/g, "")}`,
-       "https://webhook.site/54link-demo",
+       "https://webhook.site/insureportal-demo",
        JSON.stringify(["transaction.completed", "transaction.failed"]), true, daysAgo(30)]
     );
     console.log("[REDACTED sensitive data]");
@@ -592,9 +592,9 @@ async function seed() {
     // ── 34. Email Queue ───────────────────────────────────────────────────────
     console.log("📧 [34/65] email_queue...");
     for (const email of [
-      { to: "agent1@54link.ng", subject: "Transaction Receipt",                status: "sent"    },
-      { to: "agent2@54link.ng", subject: "Float Top-Up Approved",              status: "sent"    },
-      { to: "admin@54link.ng",  subject: "Fraud Alert: High Risk Transaction", status: "pending" },
+      { to: "agent1@insureportal.ng", subject: "Transaction Receipt",                status: "sent"    },
+      { to: "agent2@insureportal.ng", subject: "Float Top-Up Approved",              status: "sent"    },
+      { to: "admin@insureportal.ng",  subject: "Fraud Alert: High Risk Transaction", status: "pending" },
     ]) {
       await client.query(
         `INSERT INTO email_queue (id, to_address, subject, body, status, created_at)
@@ -779,7 +779,7 @@ async function seed() {
         `INSERT INTO compliance_reports (id, report_type, period, status, file_url, created_at)
          VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
         [uid(), report.type, report.period, "submitted",
-         `https://cdn.54link.ng/reports/${report.type}-${report.period}.pdf`, daysAgo(7)]
+         `https://cdn.insureportal.ng/reports/${report.type}-${report.period}.pdf`, daysAgo(7)]
       );
     }
     console.log("  ✓ 3 compliance reports");
@@ -807,7 +807,7 @@ async function seed() {
       { key: "maintenance_mode",       value: "false",          description: "Enable/disable maintenance mode" },
       { key: "max_daily_transactions", value: "1000",           description: "Max transactions per agent per day" },
       { key: "support_phone",          value: "+234-800-54LINK", description: "Customer support phone number" },
-      { key: "support_email",          value: "support@54link.ng", description: "Customer support email" },
+      { key: "support_email",          value: "support@insureportal.ng", description: "Customer support email" },
       { key: "app_version_min",        value: "3.0.0",          description: "Minimum required app version" },
     ]) {
       await client.query(
@@ -835,7 +835,7 @@ async function seed() {
     await client.query(
       `INSERT INTO erp_config (id, provider, base_url, api_key, is_active, created_at)
        VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
-      [uid(), "erpnext", "http://erpnext:8000", "54LinkERP@2026!APIKey", true, daysAgo(60)]
+      [uid(), "erpnext", "http://erpnext:8000", "InsurePortalERP@2026!APIKey", true, daysAgo(60)]
     );
     console.log("  ✓ 1 ERP config");
 
@@ -874,7 +874,7 @@ async function seed() {
     console.log("📢 [57/65] storefront_ads...");
     for (const ad of [
       { title: "Send Money to 50+ Countries",  body: "Best rates guaranteed. No hidden fees.",        cta: "Send Now" },
-      { title: "Earn More with 54Link Gold",   body: "Upgrade your tier and earn 2x commission.",     cta: "Upgrade"  },
+      { title: "Earn More with InsurePortal Gold",   body: "Upgrade your tier and earn 2x commission.",     cta: "Upgrade"  },
       { title: "Pay Bills Instantly",          body: "DSTV, EKEDC, IKEDC, and 200+ billers.",         cta: "Pay Bills" },
     ]) {
       await client.query(
@@ -935,7 +935,7 @@ async function seed() {
     await client.query(
       `INSERT INTO tenants (id, name, slug, plan, is_active, created_at)
        VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
-      [uid(), "54Link Demo Tenant", "54link-demo", "enterprise", true, daysAgo(90)]
+      [uid(), "InsurePortal Demo Tenant", "insureportal-demo", "enterprise", true, daysAgo(90)]
     );
     console.log("  ✓ 1 tenant");
 

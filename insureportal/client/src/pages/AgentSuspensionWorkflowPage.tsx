@@ -96,7 +96,7 @@ export default function AgentSuspensionWorkflowPage() {
                   <div>
                     <p className="font-medium">{a.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {a.agentCode} • {a.territory}
+                      {a.agentId} • {a.territory}
                     </p>
                     {a.suspensionReason && (
                       <p className="text-xs text-red-500">

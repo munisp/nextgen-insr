@@ -1,5 +1,5 @@
 /**
- * 54Link POS Shell — OWASP Top 10 Security Test Suite
+ * InsurePortal POS Shell — OWASP Top 10 Security Test Suite
  *
  * Tests for:
  *   A01: Broken Access Control
@@ -118,17 +118,17 @@ describe("A01: Broken Access Control", () => {
     await expect(caller.agent.me()).rejects.toThrow(/login|unauthorized/i);
   });
 
-  it("agent login rejects non-existent agent code", async () => {
+  it("agent login rejects non-existent agent ID", async () => {
     const caller = appRouter.createCaller(unauthCtx());
     await expect(
-      caller.agent.login({ agentCode: "NONEXISTENT", pin: "1234" })
+      caller.agent.login({ agentId: "NONEXISTENT", pin: "1234" })
     ).rejects.toThrow();
   });
 
   it("agent login rejects empty PIN", async () => {
     const caller = appRouter.createCaller(unauthCtx());
     await expect(
-      caller.agent.login({ agentCode: "AG-LOS-000001", pin: "" })
+      caller.agent.login({ agentId: "AG-LOS-000001", pin: "" })
     ).rejects.toThrow();
   });
 });
@@ -137,10 +137,10 @@ describe("A01: Broken Access Control", () => {
 // A03: Injection Prevention
 // ═══════════════════════════════════════════════════════════════════════════
 describe("A03: Injection Prevention", () => {
-  it("rejects SQL injection in agent code", async () => {
+  it("rejects SQL injection in agent ID", async () => {
     const caller = appRouter.createCaller(unauthCtx());
     await expect(
-      caller.agent.login({ agentCode: "'; DROP TABLE agents; --", pin: "1234" })
+      caller.agent.login({ agentId: "'; DROP TABLE agents; --", pin: "1234" })
     ).rejects.toThrow();
   });
 
@@ -149,7 +149,7 @@ describe("A03: Injection Prevention", () => {
     // The input validation should reject or sanitize HTML
     try {
       await caller.agent.register({
-        agentCode: "AG-TEST-XSS",
+        agentId: "AG-TEST-XSS",
         name: '<script>alert("xss")</script>',
         pin: "123456",
         phone: "08012345678",
@@ -165,7 +165,7 @@ describe("A03: Injection Prevention", () => {
     const caller = appRouter.createCaller(unauthCtx());
     const longString = "A".repeat(10000);
     await expect(
-      caller.agent.login({ agentCode: longString, pin: "1234" })
+      caller.agent.login({ agentId: longString, pin: "1234" })
     ).rejects.toThrow();
   });
 });
@@ -237,14 +237,14 @@ describe("A07: Authentication Failures", () => {
   it("PIN must be at least 4 characters", async () => {
     const caller = appRouter.createCaller(unauthCtx());
     await expect(
-      caller.agent.login({ agentCode: "AG-LOS-000001", pin: "12" })
+      caller.agent.login({ agentId: "AG-LOS-000001", pin: "12" })
     ).rejects.toThrow();
   });
 
   it("Agent code format is validated", async () => {
     const caller = appRouter.createCaller(unauthCtx());
     await expect(
-      caller.agent.login({ agentCode: "", pin: "1234" })
+      caller.agent.login({ agentId: "", pin: "1234" })
     ).rejects.toThrow();
   });
 });

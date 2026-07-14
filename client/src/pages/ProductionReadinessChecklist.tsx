@@ -292,7 +292,7 @@ export default function ProductionReadinessChecklist() {
             Production Readiness Checklist
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Comprehensive pre-deployment verification for the 54Link Agent
+            Comprehensive pre-deployment verification for the InsurePortal Agent
             Banking Platform
           </p>
         </div>

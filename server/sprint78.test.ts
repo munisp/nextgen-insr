@@ -542,8 +542,8 @@ describe("offlineQueueMiddleware", () => {
     const { createQueueEntry } = await import(
       "./middleware/offlineQueueMiddleware"
     );
-    const cashIn = createQueueEntry("cash_in", {}, "AGT-001", "DEV-001", "4g");
-    expect(cashIn.priority).toBe(1);
+    const premiumCollection = createQueueEntry("cash_in", {}, "AGT-001", "DEV-001", "4g");
+    expect(premiumCollection.priority).toBe(1);
     const notification = createQueueEntry(
       "notification",
       {},

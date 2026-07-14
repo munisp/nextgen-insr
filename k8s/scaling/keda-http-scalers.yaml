@@ -1,0 +1,83 @@
+# KEDA ScaledObjects for HTTP request rate-based autoscaling
+# Scales pods based on Prometheus HTTP request rate metrics
+# Apply: kubectl apply -f k8s/scaling/keda-http-scalers.yaml
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: policy-lifecycle-http-scaler
+  namespace: insurance
+spec:
+  scaleTargetRef:
+    name: policy-lifecycle-service
+  pollingInterval: 15
+  cooldownPeriod: 60
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.monitoring:9090
+      metricName: http_requests_per_second
+      query: sum(rate(http_requests_total{service="policy-lifecycle-service"}[1m]))
+      threshold: "100"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: underwriting-http-scaler
+  namespace: insurance
+spec:
+  scaleTargetRef:
+    name: underwriting-engine
+  pollingInterval: 15
+  cooldownPeriod: 60
+  minReplicaCount: 2
+  maxReplicaCount: 8
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.monitoring:9090
+      metricName: http_requests_per_second
+      query: sum(rate(http_requests_total{service="underwriting-engine"}[1m]))
+      threshold: "50"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: communication-http-scaler
+  namespace: insurance
+spec:
+  scaleTargetRef:
+    name: communication-service
+  pollingInterval: 15
+  cooldownPeriod: 60
+  minReplicaCount: 2
+  maxReplicaCount: 12
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.monitoring:9090
+      metricName: http_requests_per_second
+      query: sum(rate(http_requests_total{service="communication-service"}[1m]))
+      threshold: "200"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: agent-commission-http-scaler
+  namespace: insurance
+spec:
+  scaleTargetRef:
+    name: agent-commission-management
+  pollingInterval: 15
+  cooldownPeriod: 120
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.monitoring:9090
+      metricName: http_requests_per_second
+      query: sum(rate(http_requests_total{service="agent-commission-management"}[1m]))
+      threshold: "50"

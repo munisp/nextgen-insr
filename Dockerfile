@@ -18,7 +18,7 @@ COPY . .
 
 # Build (Vite client + esbuild server bundle)
 ARG VITE_APP_ID=""
-ARG VITE_APP_TITLE="54Link POS Shell"
+ARG VITE_APP_TITLE="InsurePortal InsurePortal Platform"
 ENV NODE_ENV=production
 RUN pnpm build
 

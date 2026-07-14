@@ -1,12 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Redis HA Kubernetes StatefulSet — 54Link Platform
+# Redis HA Kubernetes StatefulSet — InsurePortal Platform
 # Deploys 1 primary + 2 replicas + 3 Sentinel instances
 # ─────────────────────────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: redis-ha
-  namespace: 54link
+  namespace: insureportal
   labels:
     app: redis
     component: ha
@@ -37,7 +37,7 @@ spec:
                 redis-server --appendonly yes --requirepass $REDIS_PASSWORD
               else
                 redis-server --appendonly yes --requirepass $REDIS_PASSWORD \
-                  --replicaof redis-ha-0.redis-ha.54link.svc.cluster.local 6379 \
+                  --replicaof redis-ha-0.redis-ha.insureportal.svc.cluster.local 6379 \
                   --masterauth $REDIS_PASSWORD
               fi
           env:
@@ -80,7 +80,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis-ha
-  namespace: 54link
+  namespace: insureportal
 spec:
   clusterIP: None
   selector:
@@ -95,7 +95,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis-primary
-  namespace: 54link
+  namespace: insureportal
 spec:
   selector:
     app: redis
