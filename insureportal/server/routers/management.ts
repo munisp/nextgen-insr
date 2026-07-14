@@ -27,7 +27,7 @@ import {
   kycSessions,
   auditLog,
   emailQueue,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, asc, sql, and, gte, lte, like, count } from "drizzle-orm";
 import crypto from "crypto";
 

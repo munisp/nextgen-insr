@@ -1,53 +1,53 @@
-// 54Link POS — Permify Authorization Schema
-// Version: 1.0.0
-// Enforces role-based and relationship-based access control
-// across all POS platform resources.
+// InsurePortal — Permify Authorization Schema
+// Version: 2.0.0 — Full Insurance Domain
+// Enforces RBAC + ReBAC across all POS + Insurance platform resources.
+//
+// Stakeholder roles: policyholder, broker, underwriter, claims_adjuster,
+//   actuary, compliance_officer, reinsurer, agent, supervisor, admin
 
-// ── Entity: User ──────────────────────────────────────────────────────────────
 entity user {}
 
-// ── Entity: Tenant ────────────────────────────────────────────────────────────
 entity tenant {
-    // Relations
-    relation owner   @user
-    relation admin   @user
-    relation member  @user
+    relation owner              @user
+    relation admin              @user
+    relation member             @user
+    relation compliance_officer @user
+    relation actuary            @user
+    relation reinsurer          @user
 
-    // Permissions
-    action view_dashboard    = owner or admin or member
-    action manage_agents     = owner or admin
-    action manage_settings   = owner or admin
-    action view_reports      = owner or admin
-    action export_data       = owner or admin
-    action manage_users      = owner
-    action delete_tenant     = owner
+    action view_dashboard       = owner or admin or member
+    action manage_agents        = owner or admin
+    action manage_settings      = owner or admin
+    action view_reports         = owner or admin or compliance_officer or actuary
+    action export_data          = owner or admin or compliance_officer or actuary
+    action manage_users         = owner
+    action delete_tenant        = owner
+    action view_actuarial       = owner or admin or actuary
+    action view_compliance      = owner or admin or compliance_officer
+    action manage_reinsurance   = owner or admin or reinsurer
 }
 
-// ── Entity: Agent ─────────────────────────────────────────────────────────────
 entity agent {
-    // Relations
     relation tenant      @tenant
     relation supervisor  @user
     relation owner_user  @user
+    relation broker      @user
 
-    // Permissions
-    action view          = tenant.admin or tenant.owner or supervisor or owner_user
+    action view          = tenant.admin or tenant.owner or supervisor or owner_user or broker
     action edit          = tenant.admin or tenant.owner or supervisor
     action suspend       = tenant.admin or tenant.owner or supervisor
     action delete        = tenant.owner
     action view_balance  = tenant.admin or tenant.owner or supervisor or owner_user
     action top_up_float  = tenant.admin or tenant.owner or supervisor
     action process_tx    = owner_user
+    action sell_policy   = owner_user or broker
 }
 
-// ── Entity: Transaction ───────────────────────────────────────────────────────
 entity transaction {
-    // Relations
     relation tenant    @tenant
     relation agent     @agent
     relation initiator @user
 
-    // Permissions
     action view        = tenant.admin or tenant.owner or agent.supervisor or initiator
     action void        = tenant.admin or tenant.owner or agent.supervisor
     action reverse     = tenant.admin or tenant.owner
@@ -55,60 +55,186 @@ entity transaction {
     action view_fraud  = tenant.admin or tenant.owner
 }
 
-// ── Entity: FraudAlert ────────────────────────────────────────────────────────
 entity fraud_alert {
-    // Relations
-    relation tenant    @tenant
-    relation agent     @agent
+    relation tenant     @tenant
+    relation assignee   @user
 
-    // Permissions
-    action view        = tenant.admin or tenant.owner or agent.supervisor
-    action resolve     = tenant.admin or tenant.owner
-    action escalate    = tenant.admin or tenant.owner or agent.supervisor
-    action dismiss     = tenant.admin or tenant.owner
+    action view         = tenant.admin or tenant.owner or assignee
+    action resolve      = tenant.admin or tenant.owner or assignee
+    action escalate     = tenant.admin or tenant.owner
+    action dismiss      = tenant.admin
 }
 
-// ── Entity: FloatRequest ──────────────────────────────────────────────────────
 entity float_request {
-    // Relations
     relation tenant    @tenant
     relation requester @agent
 
-    // Permissions
     action view        = tenant.admin or tenant.owner or requester.owner_user
     action approve     = tenant.admin or tenant.owner
     action reject      = tenant.admin or tenant.owner
     action cancel      = requester.owner_user
 }
 
-// ── Entity: Report ────────────────────────────────────────────────────────────
 entity report {
-    // Relations
     relation tenant    @tenant
 
-    // Permissions
     action view        = tenant.admin or tenant.owner
     action download    = tenant.admin or tenant.owner
     action schedule    = tenant.owner
 }
 
-// ── Entity: SimCard ───────────────────────────────────────────────────────────
 entity sim_card {
-    // Relations
     relation tenant    @tenant
 
-    // Permissions
     action view        = tenant.admin or tenant.owner
     action manage      = tenant.admin or tenant.owner
     action view_probes = tenant.admin or tenant.owner
 }
 
-// ── Entity: AuditLog ─────────────────────────────────────────────────────────
 entity audit_log {
-    // Relations
     relation tenant    @tenant
 
-    // Permissions
     action view        = tenant.admin or tenant.owner
     action export      = tenant.owner
+}
+
+// ── INSURANCE DOMAIN ENTITIES ─────────────────────────────────────────────────
+
+entity policy {
+    relation tenant             @tenant
+    relation policyholder       @user
+    relation broker             @user
+    relation underwriter        @user
+    relation agent              @agent
+
+    action view                 = tenant.admin or tenant.owner or policyholder or broker or underwriter or agent.owner_user
+    action edit                 = tenant.admin or tenant.owner or underwriter or broker
+    action cancel               = tenant.admin or tenant.owner or policyholder or broker
+    action renew                = tenant.admin or tenant.owner or policyholder or broker or agent.owner_user
+    action endorse              = tenant.admin or tenant.owner or underwriter or broker
+    action view_premium         = tenant.admin or tenant.owner or policyholder or broker or underwriter
+    action process_payment      = policyholder or broker or agent.owner_user
+    action view_documents       = tenant.admin or tenant.owner or policyholder or broker or underwriter
+    action download_certificate = policyholder or broker or agent.owner_user
+}
+
+entity claim {
+    relation tenant          @tenant
+    relation claimant        @user
+    relation adjuster        @user
+    relation broker          @user
+    relation policy          @policy
+
+    action view              = tenant.admin or tenant.owner or claimant or adjuster or broker or policy.underwriter
+    action submit            = claimant or broker
+    action edit              = adjuster or tenant.admin or tenant.owner
+    action approve           = adjuster or tenant.admin or tenant.owner
+    action reject            = adjuster or tenant.admin or tenant.owner
+    action request_documents = adjuster or tenant.admin
+    action pay               = tenant.admin or tenant.owner
+    action escalate          = adjuster or tenant.admin or tenant.owner
+    action view_fraud_score  = adjuster or tenant.admin or tenant.owner
+    action close             = adjuster or tenant.admin or tenant.owner
+}
+
+entity underwriting_case {
+    relation tenant      @tenant
+    relation underwriter @user
+    relation broker      @user
+    relation applicant   @user
+
+    action view          = tenant.admin or tenant.owner or underwriter or broker or applicant
+    action assess        = underwriter or tenant.admin or tenant.owner
+    action approve       = underwriter or tenant.admin or tenant.owner
+    action decline       = underwriter or tenant.admin or tenant.owner
+    action refer         = underwriter or tenant.admin or tenant.owner
+    action request_info  = underwriter or broker
+    action view_risk     = underwriter or tenant.admin or tenant.owner
+}
+
+entity insurance_product {
+    relation tenant      @tenant
+    relation manager     @user
+    relation actuary     @user
+
+    action view          = tenant.admin or tenant.owner or manager or actuary or tenant.member
+    action create        = tenant.admin or tenant.owner or manager
+    action edit          = tenant.admin or tenant.owner or manager or actuary
+    action publish       = tenant.admin or tenant.owner
+    action archive       = tenant.admin or tenant.owner
+    action view_pricing  = tenant.admin or tenant.owner or actuary or manager
+    action edit_pricing  = actuary or tenant.admin or tenant.owner
+}
+
+entity actuarial_reserve {
+    relation tenant      @tenant
+    relation actuary     @user
+    relation approver    @user
+
+    action view          = tenant.admin or tenant.owner or actuary or approver or tenant.compliance_officer
+    action calculate     = actuary or tenant.admin or tenant.owner
+    action approve       = approver or tenant.admin or tenant.owner
+    action export        = actuary or approver or tenant.admin or tenant.owner or tenant.compliance_officer
+    action view_ifrs17   = actuary or approver or tenant.admin or tenant.owner or tenant.compliance_officer
+}
+
+entity reinsurance_treaty {
+    relation tenant      @tenant
+    relation reinsurer   @user
+    relation manager     @user
+
+    action view          = tenant.admin or tenant.owner or reinsurer or manager or tenant.reinsurer
+    action create        = tenant.admin or tenant.owner or manager
+    action edit          = tenant.admin or tenant.owner or manager or reinsurer
+    action activate      = tenant.admin or tenant.owner
+    action terminate     = tenant.admin or tenant.owner
+    action view_cessions = tenant.admin or tenant.owner or reinsurer or manager or tenant.reinsurer
+    action add_cession   = tenant.admin or tenant.owner or manager
+}
+
+entity compliance_report {
+    relation tenant              @tenant
+    relation compliance_officer  @user
+    relation approver            @user
+
+    action view                  = tenant.admin or tenant.owner or compliance_officer or approver or tenant.compliance_officer
+    action create                = compliance_officer or tenant.admin or tenant.owner or tenant.compliance_officer
+    action submit_to_naicom      = compliance_officer or tenant.admin or tenant.owner
+    action approve               = approver or tenant.admin or tenant.owner
+    action view_audit_trail      = tenant.admin or tenant.owner or compliance_officer or tenant.compliance_officer
+}
+
+entity broker {
+    relation tenant      @tenant
+    relation owner_user  @user
+    relation supervisor  @user
+
+    action view          = tenant.admin or tenant.owner or supervisor or owner_user
+    action edit          = tenant.admin or tenant.owner or supervisor
+    action approve       = tenant.admin or tenant.owner
+    action suspend       = tenant.admin or tenant.owner or supervisor
+    action view_book     = tenant.admin or tenant.owner or supervisor or owner_user
+    action sell_policy   = owner_user
+    action view_commissions = tenant.admin or tenant.owner or supervisor or owner_user
+}
+
+entity risk_assessment {
+    relation tenant      @tenant
+    relation assessor    @user
+    relation underwriter @user
+
+    action view          = tenant.admin or tenant.owner or assessor or underwriter
+    action create        = assessor or underwriter or tenant.admin or tenant.owner
+    action edit          = assessor or underwriter or tenant.admin or tenant.owner
+    action approve       = underwriter or tenant.admin or tenant.owner
+    action view_score    = tenant.admin or tenant.owner or assessor or underwriter
+}
+
+entity lakehouse_export {
+    relation tenant      @tenant
+    relation requester   @user
+
+    action view          = tenant.admin or tenant.owner or requester or tenant.actuary or tenant.compliance_officer
+    action create        = tenant.admin or tenant.owner or tenant.actuary or tenant.compliance_officer
+    action download      = tenant.admin or tenant.owner or requester or tenant.actuary or tenant.compliance_officer
 }

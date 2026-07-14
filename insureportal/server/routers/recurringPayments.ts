@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { platformSettings } from "../../drizzle/schema";
+import { platformSettings } from "@schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -63,7 +63,6 @@ export const recurringPaymentsRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "RECURRING_PAYMENT_CREATED",
           resource: "recurring_payment",
           resourceId: scheduleId,
@@ -153,7 +152,6 @@ export const recurringPaymentsRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "RECURRING_PAYMENT_CANCELLED",
           resource: "recurring_payment",
           resourceId: input.scheduleId,

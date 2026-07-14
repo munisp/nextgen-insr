@@ -28,7 +28,7 @@ import {
   commissionSplits,
   commissionPayouts,
   commissionAuditTrail,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
 import {
   publishCommissionEvent,
@@ -405,7 +405,6 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.tier.updated" as any,
           agentId: 0,
-          agentId: "SYSTEM",
           amount: 0,
           metadata: { tierId: input.id, changes: input },
         });
@@ -499,7 +498,6 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.tier.created" as any,
           agentId: 0,
-          agentId: "SYSTEM",
           amount: 0,
           metadata: { tierId, tier: input },
         });
@@ -557,7 +555,6 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.tier.deleted" as any,
           agentId: 0,
-          agentId: "SYSTEM",
           amount: 0,
           metadata: { tierId: input.id },
         });
@@ -684,7 +681,6 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.split.updated",
           agentId: 0,
-          agentId: "SYSTEM",
           amount: 0,
           metadata: { splitId: input.id, newShares: input },
         });
@@ -784,7 +780,6 @@ export const commissionEngineRouter = router({
         await publishCommissionEvent({
           eventType: "commission.split.created" as any,
           agentId: 0,
-          agentId: "SYSTEM",
           amount: 0,
           metadata: { splitId, split: input },
         });
@@ -1006,7 +1001,6 @@ export const commissionEngineRouter = router({
           transactionId: 0,
           transactionRef: input.id,
           agentId: payout.agentId,
-          agentId: payout.agentId,
           amount: parseFloat(payout.amount as string),
           entryType: "direct",
           hierarchyLevel: 0,
@@ -1027,7 +1021,6 @@ export const commissionEngineRouter = router({
         // [Kafka] Publish payout approved event
         await publishCommissionEvent({
           eventType: "commission.payout.approved" as any,
-          agentId: payout.agentId,
           agentId: payout.agentId,
           amount: parseFloat(payout.amount as string),
           metadata: { payoutId: input.id, tbTransferId: tbResult?.transferId },

@@ -5,7 +5,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb } from "../db";
-import { agents, premiumTopUpRequests } from "../../drizzle/schema";
+import { agents, premiumTopUpRequests } from "@schema";
 import { eq, desc, asc } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -116,7 +116,6 @@ export const agentManagementRouter = router({
           .where(eq(agents.id, input.agentId));
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "AGENT_ROLE_CHANGED",
           resource: "agent",
           resourceId: String(input.agentId),
@@ -163,7 +162,6 @@ export const agentManagementRouter = router({
           .where(eq(agents.id, input.agentId));
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: input.isActive ? "AGENT_ACTIVATED" : "AGENT_SUSPENDED",
           resource: "agent",
           resourceId: String(input.agentId),
@@ -204,7 +202,7 @@ export const agentManagementRouter = router({
             notes: premiumTopUpRequests.notes,
             createdAt: premiumTopUpRequests.createdAt,
             updatedAt: premiumTopUpRequests.updatedAt,
-            agentId: agents.agentId,
+            agentUserId: agents.agentId,
             agentName: agents.name,
             agentFloat: agents.premiumReserve,
             agentTier: agents.tier,
@@ -294,7 +292,6 @@ export const agentManagementRouter = router({
         });
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FLOAT_TOPUP_APPROVED",
           resource: "float_topup",
           resourceId: String(input.requestId),
@@ -403,7 +400,6 @@ export const agentManagementRouter = router({
           .where(eq(premiumTopUpRequests.id, input.requestId));
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FLOAT_TOPUP_REJECTED",
           resource: "float_topup",
           resourceId: String(input.requestId),
@@ -466,7 +462,6 @@ export const agentManagementRouter = router({
         });
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FLOAT_TOPUP_REQUESTED",
           resource: "float_topup",
           resourceId: session.agentId,

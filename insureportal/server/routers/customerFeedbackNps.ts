@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { customerFeedbackNps as customerFeedbackNpsTable } from "../../drizzle/schema";
+import { customerFeedbackNps as customerFeedbackNpsTable } from "@schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

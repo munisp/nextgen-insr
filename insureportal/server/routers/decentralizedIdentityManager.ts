@@ -15,7 +15,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { agents, auditLog, systemConfig } from "../../drizzle/schema";
+import { agents, auditLog, systemConfig } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const decentralizedIdentityManagerRouter = router({

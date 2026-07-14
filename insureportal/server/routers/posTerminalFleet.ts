@@ -13,7 +13,7 @@ import {
   terminalGroups,
   serviceRecords,
   agents,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -166,7 +166,6 @@ export const insuranceServiceFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TERMINAL_PROVISIONED",
           resource: "insurance_service",
           resourceId: String(terminal.id),
@@ -224,7 +223,6 @@ export const insuranceServiceFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TERMINAL_ASSIGNED",
           resource: "insurance_service",
           resourceId: String(input.terminalId),
@@ -319,7 +317,6 @@ export const insuranceServiceFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TERMINAL_COMMAND_SENT",
           resource: "insurance_service",
           resourceId: String(input.terminalId),
@@ -364,7 +361,6 @@ export const insuranceServiceFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TERMINAL_DECOMMISSIONED",
           resource: "insurance_service",
           resourceId: String(input.terminalId),
@@ -455,7 +451,6 @@ export const insuranceServiceFleetRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TERMINAL_GROUP_CREATED",
           resource: "terminal_group",
           resourceId: String(group.id),

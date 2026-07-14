@@ -34,7 +34,7 @@ import {
   fraudAlerts,
   deviceLocations,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { writeAuditLog } from "../db";
 import { sql, gte, lte, and, eq, desc } from "drizzle-orm";
 import logger from "../_core/logger";
@@ -638,7 +638,6 @@ export const lakehouseRouter = router({
             rows: Array<{
               summaryDate: string;
               agentId: number;
-              agentId: string;
               agentTier: string;
               txCount: number;
               txVolume: number;
@@ -669,7 +668,6 @@ export const lakehouseRouter = router({
         const rows = await db
           .select({
             agentId: transactions.agentId,
-            agentId: agents.agentId,
             agentTier: agents.tier,
             txCount: sql<number>`count(*)::int`,
             txVolume: sql<number>`sum(${transactions.amount})::float`,
@@ -698,7 +696,6 @@ export const lakehouseRouter = router({
           rows: rows.map((r: any) => ({
             summaryDate: date,
             agentId: r.agentId ?? 0,
-            agentId: r.agentId,
             agentTier: r.agentTier ?? "bronze",
             txCount: r.txCount ?? 0,
             txVolume: r.txVolume ?? 0,

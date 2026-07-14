@@ -7,7 +7,7 @@ import {
   tenantUsers,
   tenantBranding,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const multiTenantIsolationRouter = router({

@@ -16,7 +16,7 @@ import {
   transactions,
   customers,
   disputes,
-} from "../../drizzle/schema";
+} from "@schema";
 import { ilike, or, sql, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

@@ -13,7 +13,7 @@ import {
   trainingCourses,
   trainingEnrollments,
   agents,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -202,7 +202,6 @@ export const agentTrainingGamificationRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TRAINING_ENROLLED",
           resource: "training",
           resourceId: String(enrollment.id),
@@ -263,7 +262,6 @@ export const agentTrainingGamificationRouter = router({
 
           await writeAuditLog({
             agentId: session.id,
-            agentId: session.agentId,
             action: "TRAINING_COMPLETED",
             resource: "training",
             resourceId: String(input.enrollmentId),

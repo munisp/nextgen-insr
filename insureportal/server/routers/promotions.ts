@@ -28,8 +28,8 @@ export const promotionsRouter = router({
         query = query.where(
           and(
             eq(promotions.isActive, true),
-            lte(promotions.startDate, now),
-            gte(promotions.endDate, now)
+            lte(promotions.startsAt, now),
+            gte(promotions.endsAt, now)
           )
         ) as typeof query;
       }
@@ -150,7 +150,7 @@ export const promotionsRouter = router({
 
       await database
         .update(promotions)
-        .set({ usedCount: sql`${promotions.usedCount} + 1` })
+        .set({ usedCount: sql`${promotions.usageCount} + 1` })
         .where(eq(promotions.code, input.code));
       return { success: true };
     }),

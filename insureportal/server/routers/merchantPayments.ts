@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents, merchants } from "../../drizzle/schema";
+import { transactions, agents, merchants } from "@schema";
 import { eq, desc, and, sql, gte, like } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -116,7 +116,6 @@ export const merchantPaymentsRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "MERCHANT_PAYMENT_PROCESSED",
           resource: "merchant_payment",
           resourceId: ref,

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { referrals, agents, loyaltyHistory } from "../../drizzle/schema";
+import { referrals, agents, loyaltyHistory } from "@schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 import crypto from "crypto";
 

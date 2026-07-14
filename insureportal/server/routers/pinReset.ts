@@ -14,7 +14,7 @@ import { z } from "zod";
 import { eq, and, gt } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb } from "../db";
-import { agents, otpTokens } from "../../drizzle/schema";
+import { agents, otpTokens } from "@schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { sendSms } from "../termii";
 import crypto from "crypto";

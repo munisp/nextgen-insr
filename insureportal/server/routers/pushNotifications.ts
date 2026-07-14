@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agentPushSubscriptions } from "../../drizzle/schema";
+import { agentPushSubscriptions } from "@schema";
 import { eq, and } from "drizzle-orm";
 import { sendPushToAgent } from "../push";
 import { TRPCError } from "@trpc/server";

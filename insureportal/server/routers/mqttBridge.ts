@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { mqttBridgeConfig } from "../../drizzle/schema";
+import { mqttBridgeConfig } from "@schema";
 import { eq } from "drizzle-orm";
 import { ENV } from "../_core/env";
 import { fluvioProduce, type FluvioEvent } from "../lib/fluvioClient";

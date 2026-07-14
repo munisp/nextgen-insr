@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { agents, platformSettings } from "../../drizzle/schema";
+import { agents, platformSettings } from "@schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -126,7 +126,6 @@ export const offlinePosModeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "OFFLINE_SESSION_STARTED",
           resource: "offline_session",
           resourceId: sessionId,
@@ -174,7 +173,6 @@ export const offlinePosModeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "OFFLINE_SESSION_ENDED",
           resource: "offline_session",
           resourceId: input.sessionId,
@@ -232,7 +230,6 @@ export const offlinePosModeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "OFFLINE_CONFIG_UPDATED",
           resource: "offline_config",
           status: "success",

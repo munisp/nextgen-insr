@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { insuranceServices } from "../../drizzle/schema";
+import { posTerminals as insuranceServices } from "@schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -78,7 +78,6 @@ export const multiSimFailoverRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "SIM_FAILOVER_TRIGGERED",
           resource: "sim_failover",
           resourceId: String(input.terminalId),
@@ -137,7 +136,6 @@ export const multiSimFailoverRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "SIM_CONFIG_UPDATED",
           resource: "sim_config",
           resourceId: String(input.terminalId),

@@ -8,7 +8,7 @@ import {
   insuranceCartItems,
   insuranceCarts,
   type InsuranceCartItem,
-} from "../../drizzle/schema";
+} from "@schema";
 import { desc, eq, and, sql, count } from "drizzle-orm";
 import crypto from "crypto";
 

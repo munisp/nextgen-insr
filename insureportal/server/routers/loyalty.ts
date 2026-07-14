@@ -23,7 +23,7 @@ import {
 } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { agents, loyaltyHistory } from "../../drizzle/schema";
+import { agents, loyaltyHistory } from "@schema";
 import { eq, desc, asc, sql, gte, and, ilike, isNull } from "drizzle-orm";
 
 // ─── Tier thresholds (NAICOM-aligned insurance agent tiers) ──────────────────
@@ -535,7 +535,6 @@ export const loyaltyRouter = router({
         );
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "LOYALTY_CHALLENGE_CLAIMED",
           resource: "loyalty",
           resourceId: input.challengeId,
@@ -625,7 +624,6 @@ export const loyaltyRouter = router({
         );
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "LOYALTY_REWARD_REDEEMED",
           resource: "loyalty",
           resourceId: input.rewardId,

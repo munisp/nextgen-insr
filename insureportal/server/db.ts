@@ -18,7 +18,7 @@ import {
   type InsertTransaction,
   type InsertFraudAlert,
   type InsertUser,
-} from "../drizzle/schema";
+} from "@schema";
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -483,8 +483,8 @@ export async function getChatMessages(sessionId: number) {
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 export async function writeAuditLog(data: {
-  agentId?: number;
-  agentId?: string;
+  agentId?: number | string;
+  agentNumericId?: number;
   action: string;
   resource: string;
   resourceId?: string;
@@ -496,8 +496,7 @@ export async function writeAuditLog(data: {
   if (!db) return;
   try {
     await db.insert(auditLog).values({
-      agentId: data.agentId ?? null,
-      agentId: data.agentId ?? null,
+      agentId: typeof data.agentId === "number" ? data.agentId : null,
       action: data.action,
       resource: data.resource,
       resourceId: data.resourceId ?? null,

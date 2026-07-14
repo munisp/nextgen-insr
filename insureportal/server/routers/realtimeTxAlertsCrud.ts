@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { realtime_tx_alerts } from "../../drizzle/schema";
+import { realtime_tx_alerts } from "@schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

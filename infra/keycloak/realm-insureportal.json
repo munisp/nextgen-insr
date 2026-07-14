@@ -21,7 +21,56 @@
       ],
       "publicClient": false,
       "protocol": "openid-connect",
-      "fullScopeAllowed": true
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "id": "73d297a8-201c-4471-9756-22d0c0f0d074",
+          "name": "realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "id": "97f2c393-2230-4e7a-9034-aa88ab2c65ea",
+          "name": "tenant-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "tenantId",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "tenantId",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "id": "8d2b7566-d48d-4bde-aa5f-398a42249434",
+      "clientId": "insureportal-backend",
+      "name": "InsurePortal Backend Service",
+      "description": "Backend service account for server-to-server auth",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEYCLOAK_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
     }
   ],
   "roles": {
@@ -41,6 +90,102 @@
       {
         "name": "customer",
         "description": "Customer role"
+      },
+      {
+        "id": "bc30c440-d28d-4dc5-91a5-d939877adfdc",
+        "name": "underwriter",
+        "description": "Insurance underwriter \u2014 evaluates and prices risk",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "c8eee090-e85f-4e08-b7fb-8dd1008931c6",
+        "name": "actuary",
+        "description": "Actuary \u2014 reserve calculations and IFRS17",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "158ecca0-8cac-4798-a02a-972e0d5a8168",
+        "name": "claims_adjuster",
+        "description": "Claims adjuster \u2014 investigates and settles claims",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "52d46951-1ae5-49cd-8c84-d1f67cbf2686",
+        "name": "broker",
+        "description": "Insurance broker \u2014 intermediary between customer and insurer",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "eace8ce9-814f-49d9-ae27-47e28b38a834",
+        "name": "compliance_officer",
+        "description": "Compliance officer \u2014 regulatory oversight",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "0f7c23aa-e5e9-4fb2-b425-8f11eeadb868",
+        "name": "reinsurer",
+        "description": "Reinsurance counterparty \u2014 treaty and facultative",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "2bb79c48-5f70-4f51-9df5-78571146bb74",
+        "name": "finance_officer",
+        "description": "Finance officer \u2014 GL, settlements, TigerBeetle ledger",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "c53def5b-ecd2-4cea-a291-a3efbedf8f1e",
+        "name": "risk_manager",
+        "description": "Risk manager \u2014 enterprise risk and exposure",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "6d191aa5-fa66-43ba-aae1-f4ef87b80e6d",
+        "name": "product_manager",
+        "description": "Insurance product manager \u2014 product catalog",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "e95b8b1e-e78c-4a84-b190-d5920665289f",
+        "name": "data_analyst",
+        "description": "Data analyst \u2014 lakehouse, actuarial reports",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "f3810408-e88b-4927-bdf3-9e43a9610c90",
+        "name": "auditor",
+        "description": "Internal/external auditor \u2014 read-only audit access",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
+      },
+      {
+        "id": "33f8aa87-eb7c-4bd7-b874-da56cc3ce7a9",
+        "name": "api_service",
+        "description": "Machine-to-machine service account role",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal"
       }
     ]
   },

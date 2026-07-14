@@ -25,7 +25,7 @@ import {
   geofenceZones,
   otaReleases,
   otaUpdateLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { getIO } from "../socketSingleton";
@@ -953,7 +953,6 @@ export const mdmRouter = router({
         }
         await writeAuditLog({
           agentId: agent.id,
-          agentId: input.agentId,
           action: "TERMINAL_DISABLED",
           resource: "agent",
           resourceId: String(agent.id),
@@ -1424,7 +1423,6 @@ export const mdmRouter = router({
       }
       await writeAuditLog({
         agentId: agent.id,
-        agentId: input.agentId,
         action: "TERMINAL_ENABLED",
         resource: "agent",
         resourceId: String(agent.id),

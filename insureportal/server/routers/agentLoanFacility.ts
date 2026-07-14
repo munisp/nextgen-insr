@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { agentLoans, agents, transactions } from "../../drizzle/schema";
+import { agentLoans, agents, transactions } from "@schema";
 import { eq, desc, and, gte, count, sum, avg, sql } from "drizzle-orm";
 
 // Business rules

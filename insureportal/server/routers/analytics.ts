@@ -25,7 +25,7 @@ import {
   premiumTopUpRequests,
   customers,
   kycSessions,
-} from "../../drizzle/schema";
+} from "@schema";
 import { gte, lte, sql, eq, and, desc, asc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

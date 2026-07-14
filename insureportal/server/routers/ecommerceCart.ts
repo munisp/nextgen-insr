@@ -6,7 +6,7 @@ import {
   insuranceCartItems,
   insuranceInventory,
   type InsuranceCartItem,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, and, sql, count } from "drizzle-orm";
 
 const CART_SERVICE_URL =

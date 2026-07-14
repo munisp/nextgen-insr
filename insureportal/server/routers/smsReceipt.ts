@@ -5,7 +5,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb, writeAuditLog } from "../db";
-import { transactions } from "../../drizzle/schema";
+import { transactions } from "@schema";
 import { eq } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -145,7 +145,6 @@ export const smsReceiptRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: smsResult.success ? "SMS_RECEIPT_SENT" : "SMS_RECEIPT_FAILED",
           resource: "transaction",
           resourceId: tx.ref,
