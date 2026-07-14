@@ -2,7 +2,7 @@
 name = "transaction-filter"
 version = "1.0.0"
 edition = "2021"
-description = "54Link Fluvio SmartModule: filters transactions by amount threshold and status"
+description = "InsurePortal Fluvio SmartModule: filters transactions by amount threshold and status"
 
 [lib]
 name = "transaction_filter"

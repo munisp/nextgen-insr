@@ -19,7 +19,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { kycSessions, kycDocuments, auditLog } from "../../drizzle/schema";
+import { kycSessions, kycDocuments, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const agentKycRouter = router({

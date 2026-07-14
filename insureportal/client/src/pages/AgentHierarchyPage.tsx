@@ -38,7 +38,7 @@ import {
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface HierarchyAgent {
   id: string;
-  agentCode: string;
+  agentId: string;
   name: string;
   role: string;
   territory: string;
@@ -106,7 +106,7 @@ function TreeNode({
           <div className="flex items-center gap-2">
             <span className="font-semibold text-sm truncate">{agent.name}</span>
             <span className="font-mono text-xs text-muted-foreground">
-              {agent.agentCode}
+              {agent.agentId}
             </span>
             <Badge className={`text-xs ${roleColors[agent.role] ?? ""}`}>
               {agent.role.replace("_", " ")}
@@ -391,7 +391,7 @@ export default function AgentHierarchyPage() {
                         <tr key={a.id} className="border-b hover:bg-muted/50">
                           <td className="p-2 font-semibold">{a.name}</td>
                           <td className="p-2 font-mono text-xs">
-                            {a.agentCode}
+                            {a.agentId}
                           </td>
                           <td className="p-2">
                             <Badge variant="outline">
@@ -522,7 +522,7 @@ export default function AgentHierarchyPage() {
             <div className="space-y-3">
               <p className="text-sm">
                 Moving <strong>{reassignAgent?.name}</strong> (
-                {reassignAgent?.agentCode}) to a new parent agent.
+                {reassignAgent?.agentId}) to a new parent agent.
               </p>
               <Input
                 placeholder="New Parent Agent ID"

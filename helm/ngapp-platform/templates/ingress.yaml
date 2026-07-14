@@ -1,0 +1,89 @@
+{{- /*
+  ingress.yaml - API Ingress for NGApp platform
+  Routes all microservice traffic through a single ingress with TLS.
+*/ -}}
+
+{{- if .Values.apiIngress.enabled -}}
+{{- $fullName := include "ngapp.fullname" . -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-api
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.apiIngress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.apiIngress.className }}
+  {{- if .Values.apiIngress.tls }}
+  tls:
+    {{- range .Values.apiIngress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.apiIngress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $fullName }}-{{ .service }}
+                port:
+                  number: {{ .port }}
+          {{- end }}
+    {{- end }}
+{{- end }}
+---
+{{- /* Frontend Ingress */ -}}
+{{- if and .Values.frontend.enabled .Values.frontend.ingress.enabled -}}
+{{- $fullName := include "ngapp.fullname" . -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-frontend
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.frontend.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.frontend.ingress.className }}
+  {{- if .Values.frontend.ingress.tls }}
+  tls:
+    {{- range .Values.frontend.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.frontend.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $fullName }}-frontend
+                port:
+                  number: {{ $.Values.frontend.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

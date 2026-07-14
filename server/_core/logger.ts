@@ -1,5 +1,5 @@
 /**
- * 54Link Structured Logger
+ * InsurePortal Structured Logger
  * Uses pino for JSON-structured logging with request ID correlation.
  * Log level is controlled by LOG_LEVEL env var (default: info in prod, debug in dev).
  *
@@ -11,7 +11,7 @@ import type { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 
 const isDev = process.env.NODE_ENV !== "production";
-const SERVICE_NAME = process.env.SERVICE_NAME ?? "pos-shell";
+const SERVICE_NAME = process.env.SERVICE_NAME ?? "insurance-portal";
 const SERVICE_VERSION = process.env.SERVICE_VERSION ?? "1.0.0";
 
 export const logger = pino({

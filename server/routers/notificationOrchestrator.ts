@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 import { TRPCError } from "@trpc/server";
 /**
  * F03: Multi-Channel Notification Orchestrator
@@ -25,7 +25,7 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   float_low: {
     subject: "Low Float Alert",
-    body: "Your float balance is {{balance}}. Please top up.",
+    body: "Your premium reserve is {{balance}}. Please top up.",
   },
   kyc_approved: {
     subject: "KYC Approved",
@@ -44,7 +44,7 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     body: "Unusual activity detected on your account. {{details}}",
   },
   welcome: {
-    subject: "Welcome to POS Shell",
+    subject: "Welcome to Insurance Portal",
     body: "Welcome {{name}}! Your account is ready.",
   },
 };

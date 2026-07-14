@@ -41,7 +41,7 @@ export async function publishSettlementEvent(params: {
     | "settlement.disbursement.initiated";
   batchId?: string;
   agentId?: number;
-  agentCode?: string;
+  agentId?: string;
   amount?: number;
   currency?: string;
   metadata?: Record<string, unknown>;
@@ -49,16 +49,16 @@ export async function publishSettlementEvent(params: {
   try {
     const published = await publishEvent(
       SETTLEMENT_KAFKA_TOPIC,
-      params.batchId ?? params.agentCode ?? "system",
+      params.batchId ?? params.agentId ?? "system",
       {
         eventType: params.eventType,
         timestamp: new Date().toISOString(),
         batchId: params.batchId,
-        agentCode: params.agentCode,
+        agentId: params.agentId,
         amount: params.amount,
         ...params.metadata,
       },
-      { agentCode: params.agentCode }
+      { agentId: params.agentId }
     );
     if (!published) {
       throw new Error("Kafka publishEvent returned false");
@@ -124,20 +124,20 @@ export async function getCachedSettlementBatchStatus(
 export async function tbRecordSettlementTransfer(params: {
   batchId: string;
   agentId: number;
-  agentCode: string;
+  agentId: string;
   amount: number;
   transactionCount: number;
 }): Promise<{ transferId: string; syncStatus: string } | null> {
   try {
     const req: TBTransferRequest = {
       debitAccountId: "platform-settlement-pool",
-      creditAccountId: `agent-settlement-${params.agentCode}`,
+      creditAccountId: `agent-settlement-${params.agentId}`,
       amount: Math.round(params.amount * 100),
       ledger: 4000,
       code: 401,
       ref: params.batchId,
       txType: "settlement_disbursement",
-      agentCode: params.agentCode,
+      agentId: params.agentId,
     };
     const result = await tbCreateTransfer(req);
     if (result && result.id) {
@@ -177,13 +177,13 @@ export async function getSettlementWorkflowStatus(batchId: string): Promise<{
 // ── Permify: RBAC for Settlement Operations ──────────────────────────────
 // permifyCheck({ subjectType, subjectId, entityType, entityId, permission })
 export async function canTriggerSettlement(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   try {
     return await permifyCheck({
       subjectType: "agent",
-      subjectId: agentCode,
+      subjectId: agentId,
       entityType: "settlement",
       entityId: "*",
       permission: "trigger",
@@ -194,13 +194,13 @@ export async function canTriggerSettlement(
 }
 
 export async function canApproveSettlement(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   try {
     return await permifyCheck({
       subjectType: "agent",
-      subjectId: agentCode,
+      subjectId: agentId,
       entityType: "settlement",
       entityId: "*",
       permission: "approve",
@@ -221,7 +221,7 @@ const FLUVIO_CRITICAL_EVENTS = new Set([
 export async function streamSettlementEvent(params: {
   eventType: string;
   batchId?: string;
-  agentCode?: string;
+  agentId?: string;
   amount?: number;
 }): Promise<void> {
   const isCritical = FLUVIO_CRITICAL_EVENTS.has(params.eventType);
@@ -232,7 +232,7 @@ export async function streamSettlementEvent(params: {
       payload: {
         eventType: params.eventType,
         batchId: params.batchId,
-        agentCode: params.agentCode,
+        agentId: params.agentId,
         amount: params.amount,
         source: "settlement-engine",
       },
@@ -280,7 +280,7 @@ const DAPR_HTTP_PORT = process.env.DAPR_HTTP_PORT ?? "3500";
 
 export async function daprPublishSettlementNotification(params: {
   batchId: string;
-  agentCode: string;
+  agentId: string;
   amount: number;
   status: string;
 }): Promise<boolean> {

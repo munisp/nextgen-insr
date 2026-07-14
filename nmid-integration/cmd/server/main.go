@@ -1,15 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"github.com/unified-insurance/nmid-integration/internal/handlers"
 	"github.com/unified-insurance/nmid-integration/internal/repository"
 	"github.com/unified-insurance/nmid-integration/internal/service"
-	"os"
 
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"database/sql"
 
@@ -62,7 +67,11 @@ func main() {
 	if port == "" {
 		port = "8094"
 	}
-	db, err := gorm.Open(sqlite.Open("nmid.db"), &gorm.Config{})
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("FATAL: DATABASE_URL environment variable is required")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -75,8 +84,22 @@ func main() {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 	addr := fmt.Sprintf(":%s", port)
+	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("Shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Forced shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("NMID integration starting on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

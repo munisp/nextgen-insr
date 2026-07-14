@@ -7,7 +7,7 @@ import { revenueReconciler, type AdapterResponse } from "./goServiceAdapter";
 export interface ReconciliationRequest {
   periodStart: string;
   periodEnd: string;
-  agentCode?: string;
+  agentId?: string;
   includeDetails?: boolean;
 }
 
@@ -30,7 +30,7 @@ export interface ReconciliationReport {
   totalVariance: number;
   matchRate: number;
   agentBreakdown: Array<{
-    agentCode: string;
+    agentId: string;
     expected: number;
     actual: number;
     variance: number;

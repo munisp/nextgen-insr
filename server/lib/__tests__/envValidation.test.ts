@@ -39,7 +39,7 @@ describe("envValidation", () => {
 
     it("should fail in production with hardcoded dev placeholder", () => {
       process.env.NODE_ENV = "production";
-      process.env.JWT_SECRET = "pos54link-secret";
+      process.env.JWT_SECRET = "posinsureportal-secret";
       process.env.DATABASE_URL = "postgresql://localhost/test";
 
       const result = validateEnvironment();

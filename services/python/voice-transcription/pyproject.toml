@@ -1,0 +1,17 @@
+[project]
+name = "voice-transcription"
+version = "0.1.0"
+description = "Voice-to-text transcription service for claim submission in Nigerian languages"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.6.0",
+    "numpy>=1.26.0",
+    "redis>=5.0.0",
+    "python-multipart>=0.0.9",
+    "opentelemetry-api>=1.24.0",
+]
+
+[tool.setuptools]
+packages = ["app"]

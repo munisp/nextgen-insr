@@ -1,5 +1,5 @@
 """
-54Link Data Lakehouse: Bronze → Silver ETL Pipeline
+InsurePortal Data Lakehouse: Bronze → Silver ETL Pipeline
 Runs as a Spark Structured Streaming job reading from Kafka,
 writing to Iceberg Silver layer on MinIO.
 
@@ -24,10 +24,10 @@ import os
 
 KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "kafka:9092")
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "54link-admin")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "54link-minio-secret-2024")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "insureportal-admin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "insureportal-minio-secret-2024")
 ICEBERG_CATALOG_URI = os.getenv("ICEBERG_CATALOG_URI", "http://nessie:19120/api/v1")
-CHECKPOINT_LOCATION = os.getenv("CHECKPOINT_LOCATION", "s3a://54link-lakehouse/checkpoints/bronze-to-silver")
+CHECKPOINT_LOCATION = os.getenv("CHECKPOINT_LOCATION", "s3a://insureportal-lakehouse/checkpoints/bronze-to-silver")
 
 TX_SCHEMA = StructType([
     StructField("id", LongType()),
@@ -52,12 +52,12 @@ TX_SCHEMA = StructType([
 def create_spark_session() -> SparkSession:
     return (
         SparkSession.builder
-        .appName("54link-bronze-to-silver")
+        .appName("insureportal-bronze-to-silver")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.54link", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.54link.type", "nessie")
-        .config("spark.sql.catalog.54link.uri", ICEBERG_CATALOG_URI)
-        .config("spark.sql.catalog.54link.warehouse", "s3a://54link-lakehouse/warehouse")
+        .config("spark.sql.catalog.insureportal", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.insureportal.type", "nessie")
+        .config("spark.sql.catalog.insureportal.uri", ICEBERG_CATALOG_URI)
+        .config("spark.sql.catalog.insureportal.warehouse", "s3a://insureportal-lakehouse/warehouse")
         .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
         .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS_KEY)
         .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET_KEY)
@@ -69,12 +69,12 @@ def create_spark_session() -> SparkSession:
 
 
 def run_etl(spark: SparkSession):
-    # Read from Kafka topic: 54link.transactions.bronze
+    # Read from Kafka topic: insureportal.transactions.bronze
     raw_stream = (
         spark.readStream
         .format("kafka")
         .option("kafka.bootstrap.servers", KAFKA_BROKERS)
-        .option("subscribe", "54link.transactions.bronze")
+        .option("subscribe", "insureportal.transactions.bronze")
         .option("startingOffsets", "latest")
         .option("maxOffsetsPerTrigger", 50_000)
         .load()
@@ -110,7 +110,7 @@ def run_etl(spark: SparkSession):
         silver.writeStream
         .format("iceberg")
         .outputMode("append")
-        .option("path", "54link.silver.transactions")
+        .option("path", "insureportal.silver.transactions")
         .option("checkpointLocation", CHECKPOINT_LOCATION)
         .trigger(processingTime="30 seconds")
         .start()

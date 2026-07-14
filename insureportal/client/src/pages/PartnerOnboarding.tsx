@@ -45,7 +45,7 @@ const STEPS = [
   },
   {
     id: 4,
-    label: "Corridors & Fees",
+    label: "InsuranceRegions & Fees",
     icon: DollarSign,
     description: "Set up remittance routes",
   },
@@ -83,8 +83,8 @@ export default function PartnerOnboarding() {
   const [tagline, setTagline] = useState("");
   const [fontFamily, setFontFamily] = useState("Inter");
 
-  // Step 4 corridors
-  const [corridors, setCorridors] = useState<
+  // Step 4 insurance_regions
+  const [insurance_regions, setInsuranceRegions] = useState<
     Array<{
       sourceCountry: string;
       sourceCurrency: string;
@@ -123,8 +123,8 @@ export default function PartnerOnboarding() {
     onError: (err: any) => toast.error(err.message),
   });
 
-  const addCorridor = trpc.partnerOnboarding.addCorridor.useMutation({
-    onSuccess: () => toast.success("Corridor added!"),
+  const addInsuranceRegion = trpc.partnerOnboarding.addInsuranceRegion.useMutation({
+    onSuccess: () => toast.success("InsuranceRegion added!"),
     onError: (err: any) => toast.error(err.message),
   });
 
@@ -189,9 +189,9 @@ export default function PartnerOnboarding() {
     });
   }
 
-  function handleAddCorridor() {
+  function handleAddInsuranceRegion() {
     if (!tenantId) return;
-    addCorridor.mutate({
+    addInsuranceRegion.mutate({
       // @ts-ignore Sprint 85
       tenantId,
       sourceCountry: newCorrSrc,
@@ -199,7 +199,7 @@ export default function PartnerOnboarding() {
       destinationCountry: newCorrDst,
       destinationCurrency: newCorrDstCur,
     });
-    setCorridors(prev => [
+    setInsuranceRegions(prev => [
       ...prev,
       {
         sourceCountry: newCorrSrc,
@@ -236,7 +236,7 @@ export default function PartnerOnboarding() {
             <div className="mx-auto w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
               <Check className="h-8 w-8 text-green-500" />
             </div>
-            <CardTitle className="text-2xl">Welcome to RemitFlow!</CardTitle>
+            <CardTitle className="text-2xl">Welcome to InsurePortal!</CardTitle>
             <CardDescription>
               Your white-label remittance platform is now live. You can manage
               your instance from the Tenant Admin Dashboard.
@@ -263,7 +263,7 @@ export default function PartnerOnboarding() {
           <div className="flex items-center gap-3">
             <Globe className="h-6 w-6 text-primary" />
             <span className="font-bold text-lg">
-              RemitFlow Partner Onboarding
+              InsurePortal Partner Onboarding
             </span>
           </div>
           <Badge variant="outline">Step {step} of 5</Badge>
@@ -562,7 +562,7 @@ export default function PartnerOnboarding() {
                     className="px-6 py-3 text-center text-xs opacity-50"
                     style={{ backgroundColor: secondaryColor }}
                   >
-                    Powered by RemitFlow &middot; {brandName}
+                    Powered by InsurePortal &middot; {brandName}
                   </div>
                 </div>
               </div>
@@ -587,20 +587,20 @@ export default function PartnerOnboarding() {
           </Card>
         )}
 
-        {/* Step 4: Corridors & Fees */}
+        {/* Step 4: InsuranceRegions & Fees */}
         {step === 4 && (
           <Card className="max-w-3xl mx-auto">
             <CardHeader>
-              <CardTitle>Remittance Corridors & Fee Structure</CardTitle>
+              <CardTitle>Remittance InsuranceRegions & Fee Structure</CardTitle>
               <CardDescription>
-                Define which corridors you want to operate and set your fee
+                Define which insurance_regions you want to operate and set your fee
                 structure
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Add corridor */}
+              {/* Add insurance_region */}
               <div>
-                <Label className="mb-2 block">Add Corridor</Label>
+                <Label className="mb-2 block">Add InsuranceRegion</Label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <Label className="text-xs">Source Country</Label>
@@ -636,17 +636,17 @@ export default function PartnerOnboarding() {
                   </div>
                 </div>
                 <Button
-                  onClick={handleAddCorridor}
+                  onClick={handleAddInsuranceRegion}
                   size="sm"
                   className="mt-2"
-                  disabled={addCorridor.isPending}
+                  disabled={addInsuranceRegion.isPending}
                 >
-                  Add Corridor
+                  Add InsuranceRegion
                 </Button>
               </div>
 
-              {/* Corridors list */}
-              {corridors.length > 0 && (
+              {/* InsuranceRegions list */}
+              {insurance_regions.length > 0 && (
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50">
@@ -657,7 +657,7 @@ export default function PartnerOnboarding() {
                       </tr>
                     </thead>
                     <tbody>
-                      {corridors.map((c, i) => (
+                      {insurance_regions.map((c, i) => (
                         <tr key={i} className="border-t">
                           <td className="px-4 py-2">
                             {c.sourceCountry} → {c.destinationCountry}
@@ -780,12 +780,12 @@ export default function PartnerOnboarding() {
                 <Card>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Corridors
+                      InsuranceRegions
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="font-semibold">
-                      {corridors.length} corridor(s)
+                      {insurance_regions.length} insurance_region(s)
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Fee: {feeValue}
@@ -840,7 +840,7 @@ export default function PartnerOnboarding() {
                     className="grid grid-cols-3 gap-4 px-6 py-8"
                     style={{ backgroundColor: secondaryColor + "20" }}
                   >
-                    {corridors.slice(0, 3).map((c, i) => (
+                    {insurance_regions.slice(0, 3).map((c, i) => (
                       <div
                         key={i}
                         className="text-center p-4 rounded-lg"
@@ -859,7 +859,7 @@ export default function PartnerOnboarding() {
                     className="px-6 py-3 text-center text-xs opacity-40"
                     style={{ backgroundColor: secondaryColor }}
                   >
-                    Powered by RemitFlow Platform
+                    Powered by InsurePortal Platform
                   </div>
                 </div>
               </div>

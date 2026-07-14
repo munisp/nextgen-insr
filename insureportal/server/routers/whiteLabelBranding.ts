@@ -15,7 +15,7 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { tenants, auditLog, systemConfig } from "../../drizzle/schema";
+import { tenants, auditLog, systemConfig } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const whiteLabelBrandingRouter = router({

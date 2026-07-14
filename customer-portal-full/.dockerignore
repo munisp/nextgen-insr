@@ -1,0 +1,10 @@
+node_modules
+.env
+.env.*
+!.env.example
+tests/
+mobile/
+client/src/
+*.md
+.git
+.agents

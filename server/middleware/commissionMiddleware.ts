@@ -39,7 +39,7 @@ export async function publishCommissionEvent(params: {
   transactionId?: number;
   transactionRef?: string;
   agentId: number;
-  agentCode: string;
+  agentId: string;
   amount: number;
   currency?: string;
   hierarchyLevel?: number;
@@ -49,7 +49,7 @@ export async function publishCommissionEvent(params: {
     // publishEvent(topic, key, payload, metadata) — positional args
     const published = await publishEvent(
       COMMISSION_KAFKA_TOPIC,
-      params.agentCode,
+      params.agentId,
       {
         eventType: params.eventType,
         timestamp: new Date().toISOString(),
@@ -61,13 +61,13 @@ export async function publishCommissionEvent(params: {
         hierarchyLevel: params.hierarchyLevel,
         ...params.metadata,
       },
-      { agentCode: params.agentCode }
+      { agentId: params.agentId }
     );
     if (!published) {
       throw new Error("Kafka publishEvent returned false");
     }
     logger.info(
-      `[Kafka] Commission event published: ${params.eventType} for agent ${params.agentCode}`
+      `[Kafka] Commission event published: ${params.eventType} for agent ${params.agentId}`
     );
   } catch (e) {
     logger.error(
@@ -131,7 +131,7 @@ export async function invalidateSplitCache(txType?: string): Promise<void> {
 
 export async function getCachedHierarchyChain(agentId: number): Promise<Array<{
   id: number;
-  agentCode: string;
+  agentId: string;
   hierarchyRole: string;
   level: number;
 }> | null> {
@@ -147,7 +147,7 @@ export async function setCachedHierarchyChain(
   agentId: number,
   chain: Array<{
     id: number;
-    agentCode: string;
+    agentId: string;
     hierarchyRole: string;
     level: number;
   }>
@@ -169,7 +169,7 @@ export async function tbRecordCommissionCredit(params: {
   transactionId: number;
   transactionRef: string;
   agentId: number;
-  agentCode: string;
+  agentId: string;
   amount: number;
   entryType: "direct" | "hierarchy_split";
   hierarchyLevel: number;
@@ -177,13 +177,13 @@ export async function tbRecordCommissionCredit(params: {
   try {
     const req: TBTransferRequest = {
       debitAccountId: "platform-commission-pool",
-      creditAccountId: `agent-commission-${params.agentCode}`,
+      creditAccountId: `agent-commission-${params.agentId}`,
       amount: Math.round(params.amount * 100), // kobo
       ledger: 3000,
       code: params.entryType === "direct" ? 301 : 302,
       ref: params.transactionRef,
       txType: "commission_credit",
-      agentCode: params.agentCode,
+      agentId: params.agentId,
     };
     const result = await tbCreateTransfer(req);
     if (result && result.id) {
@@ -235,13 +235,13 @@ export async function triggerCommissionPayoutWorkflow(params: {
 // ── Permify: RBAC for Commission Operations ──────────────────────────────
 // permifyCheck({ subjectType, subjectId, entityType, entityId, permission })
 export async function canUpdateSplitRatios(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   try {
     return await permifyCheck({
       subjectType: "agent",
-      subjectId: agentCode,
+      subjectId: agentId,
       entityType: "commission_config",
       entityId: "split_ratios",
       permission: "edit",
@@ -252,13 +252,13 @@ export async function canUpdateSplitRatios(
 }
 
 export async function canApproveCommissionPayout(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   try {
     return await permifyCheck({
       subjectType: "agent",
-      subjectId: agentCode,
+      subjectId: agentId,
       entityType: "commission_payout",
       entityId: "*",
       permission: "approve",
@@ -278,7 +278,7 @@ const FLUVIO_CRITICAL_COMMISSION_EVENTS = new Set([
 
 export async function streamCommissionEvent(params: {
   eventType: string;
-  agentCode: string;
+  agentId: string;
   amount: number;
   transactionRef?: string;
   hierarchyLevel?: number;
@@ -287,10 +287,10 @@ export async function streamCommissionEvent(params: {
   try {
     await fluvioProduce({
       topic: "commission-events",
-      key: params.agentCode,
+      key: params.agentId,
       payload: {
         eventType: params.eventType,
-        agentCode: params.agentCode,
+        agentId: params.agentId,
         amount: params.amount,
         transactionRef: params.transactionRef,
         hierarchyLevel: params.hierarchyLevel,
@@ -426,7 +426,7 @@ export async function initiateIlpCommissionTransfer(params: {
   payeeFsp: string;
   amount: number;
   currency: string;
-  agentCode: string;
+  agentId: string;
   transactionRef: string;
 }): Promise<{
   transferId: string;
@@ -444,7 +444,7 @@ export async function initiateIlpCommissionTransfer(params: {
           payeeFsp: params.payeeFsp,
           amount: params.amount,
           currency: params.currency,
-          agentCode: params.agentCode,
+          agentId: params.agentId,
           transactionRef: params.transactionRef,
         }),
         signal: AbortSignal.timeout(5000),

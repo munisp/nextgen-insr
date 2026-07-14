@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: 54Link POS Shell
+  - name: InsurePortal POS Shell
     orgId: 1
-    folder: "54Link"
+    folder: "InsurePortal"
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30

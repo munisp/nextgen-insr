@@ -1,0 +1,6 @@
+apiVersion: v2
+name: group-life-admin
+description: Helm chart for Group Life Admin
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

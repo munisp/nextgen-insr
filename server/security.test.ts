@@ -32,7 +32,7 @@ function makeCtx(overrides?: Partial<TrpcContext>): TrpcContext {
   const user: AuthenticatedUser = {
     id: 1,
     openId: "test-open-id",
-    email: "admin@54link.test",
+    email: "admin@insureportal.test",
     name: "Test Admin",
     loginMethod: "manus",
     role: "admin",
@@ -61,12 +61,12 @@ describe("Phase 44 — SMS confirmation message builder", () => {
    * We test the message format independently of the Termii API call.
    * The buildConfirmationSms function is a pure function — no DB, no network.
    */
-  it("includes transaction ref, amount, and agent code in the message", () => {
+  it("includes transaction ref, amount, and agent ID in the message", () => {
     const msg = buildSmsMessage({
       ref: "TXNABC123",
       type: "Cash Out",
       amount: 25000,
-      agentCode: "AGT001",
+      agentId: "AGT001",
       agentName: "John Doe",
       customerName: "Jane Smith",
       timestamp: new Date("2025-01-15T10:00:00Z"),
@@ -82,7 +82,7 @@ describe("Phase 44 — SMS confirmation message builder", () => {
       ref: "TXNXYZ999",
       type: "Transfer",
       amount: 10000,
-      agentCode: "AGT002",
+      agentId: "AGT002",
       agentName: "Alice",
       timestamp: new Date(),
     });
@@ -95,7 +95,7 @@ describe("Phase 44 — SMS confirmation message builder", () => {
       ref: "TXNTEST",
       type: "Cash Out",
       amount: 5000,
-      agentCode: "AGT003",
+      agentId: "AGT003",
       agentName: "Bob",
       customerName: "Charlie Brown",
       timestamp: new Date(),
@@ -265,7 +265,7 @@ interface SmsInput {
   ref: string;
   type: string;
   amount: number;
-  agentCode: string;
+  agentId: string;
   agentName: string;
   customerName?: string;
   timestamp: Date;
@@ -279,8 +279,8 @@ function buildSmsMessage(input: SmsInput): string {
   });
   const customer = input.customerName ? ` for ${input.customerName}` : "";
   return (
-    `54Link POS: ${input.type}${customer} of ${amountStr} processed at ${timeStr}. ` +
-    `Ref: ${input.ref}. Agent: ${input.agentCode} (${input.agentName}). ` +
+    `InsurePortal POS: ${input.type}${customer} of ${amountStr} processed at ${timeStr}. ` +
+    `Ref: ${input.ref}. Agent: ${input.agentId} (${input.agentName}). ` +
     `If you did not authorise this, call 0800-54LINK immediately.`
   );
 }

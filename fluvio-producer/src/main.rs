@@ -41,7 +41,7 @@ pub struct ProduceRequest {
     pub source: String,
 }
 
-fn default_source() -> String { "pos-shell".to_string() }
+fn default_source() -> String { "insureportal".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchProduceRequest {
@@ -489,10 +489,9 @@ async fn main() -> std::io::Result<()> {
 
     // Attempt Fluvio connection (non-blocking)
     {
-        let connected = state.fluvio_connected.clone();
-        let endpoint = state.fluvio_endpoint.clone();
+        let state_clone = state.clone();
         actix_web::rt::spawn(async move {
-            // Try to connect to Fluvio cluster
+            let endpoint = &state_clone.fluvio_endpoint;
             match reqwest::Client::new()
                 .get(format!("{}/health", endpoint))
                 .timeout(std::time::Duration::from_secs(5))
@@ -500,7 +499,7 @@ async fn main() -> std::io::Result<()> {
                 .await
             {
                 Ok(resp) if resp.status().is_success() => {
-                    *connected.lock().unwrap() = true;
+                    *state_clone.fluvio_connected.lock().unwrap() = true;
                     tracing::info!("Connected to Fluvio cluster at {}", endpoint);
                 }
                 _ => {
@@ -510,7 +509,7 @@ async fn main() -> std::io::Result<()> {
         });
     }
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
             .app_data(state.clone())
@@ -533,8 +532,17 @@ async fn main() -> std::io::Result<()> {
             .route("/produce/kyc", web::post().to(produce_kyc))
     })
     .bind(("0.0.0.0", port))?
-    .run()
-    .await
+    .shutdown_timeout(30)
+    .run();
+
+    let srv = server.handle();
+    actix_web::rt::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("Received shutdown signal, draining...");
+        srv.stop(true).await;
+    });
+
+    server.await
 }
 
 

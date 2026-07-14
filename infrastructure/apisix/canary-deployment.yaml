@@ -1,0 +1,65 @@
+# APISIX Canary Deployment Configuration
+# Automated traffic splitting with Prometheus alerting for auto-rollback
+
+routes:
+  - name: canary-payment-gateway
+    uri: /api/v1/payments/*
+    upstream:
+      type: roundrobin
+      nodes:
+        - host: payment-gateway-stable
+          port: 8100
+          weight: 95
+        - host: payment-gateway-canary
+          port: 8100
+          weight: 5
+    plugins:
+      traffic-split:
+        rules:
+          - weighted_upstreams:
+              - upstream_id: stable
+                weight: 95
+              - upstream_id: canary
+                weight: 5
+      prometheus:
+        prefer_name: true
+      limit-req:
+        rate: 100
+        burst: 50
+
+  - name: canary-ai-advisor
+    uri: /api/v1/advisor/*
+    upstream:
+      type: roundrobin
+      nodes:
+        - host: ai-advisor-stable
+          port: 8110
+          weight: 90
+        - host: ai-advisor-canary
+          port: 8110
+          weight: 10
+    plugins:
+      traffic-split:
+        rules:
+          - weighted_upstreams:
+              - upstream_id: stable
+                weight: 90
+              - upstream_id: canary
+                weight: 10
+
+# Auto-rollback rules (monitored by Prometheus)
+rollback_rules:
+  - metric: http_error_rate_5xx
+    threshold: 0.05  # 5% error rate triggers rollback
+    window: 5m
+    action: rollback_canary
+
+  - metric: http_latency_p99
+    threshold: 5000  # 5s p99 latency triggers rollback
+    window: 5m
+    action: rollback_canary
+
+  - metric: health_check_failures
+    threshold: 3  # 3 consecutive health check failures
+    window: 1m
+    action: rollback_canary

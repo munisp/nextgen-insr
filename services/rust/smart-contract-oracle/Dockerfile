@@ -1,10 +1,13 @@
-FROM rust:1.75-slim AS builder
+FROM rust:1.75-alpine AS builder
+RUN apk add --no-cache musl-dev openssl-dev pkgconf
 WORKDIR /app
-COPY . .
-RUN cargo build --release 2>/dev/null || true
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/smart-contract-oracle /usr/local/bin/
-ENV PORT=8116
-EXPOSE 8116
-CMD ["smart-contract-oracle"]
+COPY Cargo.toml Cargo.lock* ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release 2>/dev/null || true
+COPY src/ src/
+RUN cargo build --release
+
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /app/target/release/smart-contract-oracle /service
+EXPOSE 8123
+ENTRYPOINT ["/service"]

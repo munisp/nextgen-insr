@@ -1,5 +1,5 @@
 /**
- * P1-B: Business Logic Tests — floatTopUp.approve
+ * P1-B: Business Logic Tests — premiumTopUp.approve
  *
  * Covers:
  *   - Admin-only access enforcement
@@ -82,7 +82,7 @@ vi.mock("jose", () => ({
   jwtVerify: vi.fn().mockResolvedValue({
     payload: {
       sub: "1",
-      agentCode: "ADM001",
+      agentId: "ADM001",
       name: "Admin User",
       role: "admin",
       tier: "Gold",
@@ -120,7 +120,7 @@ describe("agentManagement.approveTopUp — access control", () => {
     const { getAgentFromCookie } = await import("./middleware/agentAuth");
     vi.mocked(getAgentFromCookie).mockResolvedValueOnce({
       id: 2,
-      agentCode: "AGT002",
+      agentId: "AGT002",
       name: "Regular Agent",
       role: "agent",
       tier: "Bronze",
@@ -151,12 +151,12 @@ describe("agentManagement.approveTopUp — validation", () => {
   });
 });
 
-describe("floatTopUp.supervisorApproveTopUp — access control", () => {
+describe("premiumTopUp.supervisorApproveTopUp — access control", () => {
   it("rejects non-supervisor agents", async () => {
     const { getAgentFromCookie } = await import("./middleware/agentAuth");
     vi.mocked(getAgentFromCookie).mockResolvedValueOnce({
       id: 3,
-      agentCode: "AGT003",
+      agentId: "AGT003",
       name: "Regular Agent",
       role: "agent",
       tier: "Bronze",
@@ -164,7 +164,7 @@ describe("floatTopUp.supervisorApproveTopUp — access control", () => {
 
     const caller = appRouter.createCaller(makeCtx());
     await expect(
-      caller.floatTopUp.supervisorApproveTopUp({ requestId: 1 })
+      caller.premiumTopUp.supervisorApproveTopUp({ requestId: 1 })
     ).rejects.toThrow();
   });
 
@@ -174,7 +174,7 @@ describe("floatTopUp.supervisorApproveTopUp — access control", () => {
 
     const caller = appRouter.createCaller(makeCtx());
     await expect(
-      caller.floatTopUp.supervisorApproveTopUp({ requestId: 1 })
+      caller.premiumTopUp.supervisorApproveTopUp({ requestId: 1 })
     ).rejects.toThrow();
   });
 });

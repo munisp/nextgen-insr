@@ -1,0 +1,802 @@
+{
+  "id": "insureportal",
+  "realm": "insureportal",
+  "displayName": "InsurePortal",
+  "displayNameHtml": "<b>InsurePortal</b>",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "offlineSessionMaxLifespanEnabled": false,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800,
+  "actionTokenGeneratedByAdminLifespan": 43200,
+  "actionTokenGeneratedByUserLifespan": 300,
+  "defaultSignatureAlgorithm": "RS256",
+  "roles": {
+    "realm": [
+      {
+        "id": "role-insureportal-super-admin",
+        "name": "insureportal-super-admin",
+        "description": "Super-administrator: unrestricted access to all tenants, system config, billing, and infrastructure.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "super_admin"
+          ],
+          "tier": [
+            "system"
+          ],
+          "can_impersonate": [
+            "true"
+          ],
+          "can_manage_tenants": [
+            "true"
+          ],
+          "can_view_all_data": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-admin",
+            "insureportal-supervisor",
+            "insureportal-underwriter",
+            "insureportal-actuary",
+            "insureportal-claims-adjuster",
+            "insureportal-broker",
+            "insureportal-agent",
+            "insureportal-compliance-officer",
+            "insureportal-reinsurer",
+            "insureportal-policyholder",
+            "insureportal-beneficiary",
+            "insureportal-regulator",
+            "insureportal-billing-admin",
+            "insureportal-billing-analyst",
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-admin",
+        "name": "insureportal-admin",
+        "description": "Tenant administrator: manages users, products, settings, and reports within a single tenant.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "admin"
+          ],
+          "tier": [
+            "tenant"
+          ],
+          "can_manage_users": [
+            "true"
+          ],
+          "can_manage_products": [
+            "true"
+          ],
+          "can_view_reports": [
+            "true"
+          ],
+          "can_configure_workflows": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user",
+            "insureportal-billing-analyst"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-supervisor",
+        "name": "insureportal-supervisor",
+        "description": "Operations supervisor: approves overrides, monitors SLA breaches, escalates issues, and manages agent teams.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "supervisor"
+          ],
+          "tier": [
+            "operations"
+          ],
+          "can_approve_overrides": [
+            "true"
+          ],
+          "can_monitor_sla": [
+            "true"
+          ],
+          "can_escalate": [
+            "true"
+          ],
+          "can_manage_agents": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user",
+            "insureportal-agent"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-underwriter",
+        "name": "insureportal-underwriter",
+        "description": "Underwriter: assesses risk, approves/declines/refers applications, sets policy conditions and pricing.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "underwriter"
+          ],
+          "tier": [
+            "insurance"
+          ],
+          "can_assess_risk": [
+            "true"
+          ],
+          "can_approve_policy": [
+            "true"
+          ],
+          "can_decline_policy": [
+            "true"
+          ],
+          "can_refer_policy": [
+            "true"
+          ],
+          "can_set_conditions": [
+            "true"
+          ],
+          "can_view_actuarial_data": [
+            "true"
+          ],
+          "max_sum_insured_authority": [
+            "50000000"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-actuary",
+        "name": "insureportal-actuary",
+        "description": "Actuary: computes reserves, runs mortality/morbidity tables, produces IFRS 17 reports, and performs pricing analysis.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "actuary"
+          ],
+          "tier": [
+            "insurance"
+          ],
+          "can_compute_reserves": [
+            "true"
+          ],
+          "can_run_actuarial_tables": [
+            "true"
+          ],
+          "can_generate_ifrs17_reports": [
+            "true"
+          ],
+          "can_run_pricing_models": [
+            "true"
+          ],
+          "can_export_actuarial_data": [
+            "true"
+          ],
+          "can_view_all_policies": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-claims-adjuster",
+        "name": "insureportal-claims-adjuster",
+        "description": "Claims adjuster: receives, investigates, adjudicates, and settles insurance claims within authority limits.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "claims_adjuster"
+          ],
+          "tier": [
+            "insurance"
+          ],
+          "can_receive_claims": [
+            "true"
+          ],
+          "can_investigate_claims": [
+            "true"
+          ],
+          "can_adjudicate_claims": [
+            "true"
+          ],
+          "can_approve_settlement": [
+            "true"
+          ],
+          "can_reject_claim": [
+            "true"
+          ],
+          "can_request_documents": [
+            "true"
+          ],
+          "max_settlement_authority": [
+            "5000000"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-broker",
+        "name": "insureportal-broker",
+        "description": "Licensed insurance broker: submits policy applications on behalf of clients, manages a client portfolio, earns commission.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "broker"
+          ],
+          "tier": [
+            "distribution"
+          ],
+          "can_submit_applications": [
+            "true"
+          ],
+          "can_manage_portfolio": [
+            "true"
+          ],
+          "can_view_commission": [
+            "true"
+          ],
+          "can_renew_policies": [
+            "true"
+          ],
+          "can_endorse_policies": [
+            "true"
+          ],
+          "requires_license": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-agent",
+        "name": "insureportal-agent",
+        "description": "Field insurance agent: sells policies, collects premiums, services customers, and manages a float account.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "agent"
+          ],
+          "tier": [
+            "distribution"
+          ],
+          "can_sell_policies": [
+            "true"
+          ],
+          "can_collect_premiums": [
+            "true"
+          ],
+          "can_manage_float": [
+            "true"
+          ],
+          "can_service_customers": [
+            "true"
+          ],
+          "can_view_own_commission": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-compliance-officer",
+        "name": "insureportal-compliance-officer",
+        "description": "Compliance officer: manages NAICOM filings, NDPR audits, AML/KYC checks, and regulatory reporting.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "compliance_officer"
+          ],
+          "tier": [
+            "compliance"
+          ],
+          "can_file_naicom_reports": [
+            "true"
+          ],
+          "can_run_aml_checks": [
+            "true"
+          ],
+          "can_run_kyc_checks": [
+            "true"
+          ],
+          "can_view_audit_trail": [
+            "true"
+          ],
+          "can_export_compliance_data": [
+            "true"
+          ],
+          "can_manage_sanctions_list": [
+            "true"
+          ],
+          "can_freeze_accounts": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-reinsurer",
+        "name": "insureportal-reinsurer",
+        "description": "Reinsurer: manages treaty administration, cession records, recovery claims, and premium accounting.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "reinsurer"
+          ],
+          "tier": [
+            "reinsurance"
+          ],
+          "can_manage_treaties": [
+            "true"
+          ],
+          "can_view_cessions": [
+            "true"
+          ],
+          "can_submit_recovery_claims": [
+            "true"
+          ],
+          "can_view_premium_accounting": [
+            "true"
+          ],
+          "can_manage_quota_share": [
+            "true"
+          ],
+          "can_manage_excess_of_loss": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-policyholder",
+        "name": "insureportal-policyholder",
+        "description": "Policyholder: purchases insurance, pays premiums, files claims, manages beneficiaries, and renews/cancels policies.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "policyholder"
+          ],
+          "tier": [
+            "customer"
+          ],
+          "can_get_quote": [
+            "true"
+          ],
+          "can_bind_policy": [
+            "true"
+          ],
+          "can_pay_premium": [
+            "true"
+          ],
+          "can_file_claim": [
+            "true"
+          ],
+          "can_manage_beneficiaries": [
+            "true"
+          ],
+          "can_request_renewal": [
+            "true"
+          ],
+          "can_cancel_policy": [
+            "true"
+          ],
+          "can_request_endorsement": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-beneficiary",
+        "name": "insureportal-beneficiary",
+        "description": "Beneficiary: views policy details and claim status for policies on which they are named beneficiaries.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "beneficiary"
+          ],
+          "tier": [
+            "customer"
+          ],
+          "can_view_policy": [
+            "true"
+          ],
+          "can_view_claim_status": [
+            "true"
+          ],
+          "can_update_contact_info": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-regulator",
+        "name": "insureportal-regulator",
+        "description": "Regulator (NAICOM/CBN): read-only access to regulatory reports, audit trails, solvency data, and compliance dashboards.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "regulator"
+          ],
+          "tier": [
+            "regulatory"
+          ],
+          "can_view_regulatory_reports": [
+            "true"
+          ],
+          "can_view_audit_trail": [
+            "true"
+          ],
+          "can_view_solvency_data": [
+            "true"
+          ],
+          "can_view_compliance_dashboard": [
+            "true"
+          ],
+          "read_only": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-billing-admin",
+        "name": "insureportal-billing-admin",
+        "description": "Billing administrator: manages platform billing ledger, revenue splits, invoicing, and reconciliation.",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "billing_admin"
+          ],
+          "tier": [
+            "billing"
+          ],
+          "can_manage_billing": [
+            "true"
+          ],
+          "can_record_splits": [
+            "true"
+          ],
+          "can_run_reconciliation": [
+            "true"
+          ],
+          "can_view_ledger": [
+            "true"
+          ]
+        },
+        "composites": {
+          "realm": [
+            "insureportal-user",
+            "insureportal-billing-analyst"
+          ],
+          "client": {}
+        }
+      },
+      {
+        "id": "role-insureportal-billing-analyst",
+        "name": "insureportal-billing-analyst",
+        "description": "Billing analyst: read-only access to billing ledger, revenue splits, and reconciliation reports.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "billing_analyst"
+          ],
+          "tier": [
+            "billing"
+          ],
+          "can_view_ledger": [
+            "true"
+          ],
+          "can_view_splits": [
+            "true"
+          ],
+          "can_view_reconciliation": [
+            "true"
+          ]
+        }
+      },
+      {
+        "id": "role-insureportal-user",
+        "name": "insureportal-user",
+        "description": "Authenticated user: base role assigned to every registered user. Grants access to the platform but no specific insurance domain permissions.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "insureportal",
+        "attributes": {
+          "platform_role": [
+            "user"
+          ],
+          "tier": [
+            "base"
+          ]
+        }
+      }
+    ],
+    "client": {}
+  },
+  "defaultRoles": [
+    "insureportal-user"
+  ],
+  "clients": [
+    {
+      "clientId": "insureportal",
+      "name": "InsurePortal Application",
+      "description": "Main InsurePortal confidential OIDC client",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "insureportal-secret-change-in-production",
+      "redirectUris": [
+        "https://insureportal.io/*",
+        "https://app.insureportal.io/*",
+        "https://admin.insureportal.io/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "https://insureportal.io",
+        "https://app.insureportal.io",
+        "https://admin.insureportal.io",
+        "http://localhost:3000"
+      ],
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": true,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "platform-role",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "platform_role",
+            "jsonType.label": "String",
+            "user.attribute": "platform_role"
+          }
+        },
+        {
+          "name": "tenant-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "user.attribute": "tenant_id"
+          }
+        },
+        {
+          "name": "license-number",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "claim.name": "license_number",
+            "jsonType.label": "String",
+            "user.attribute": "license_number"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "insureportal-go-infra",
+      "name": "InsurePortal Go Infrastructure Service",
+      "description": "Service account for the Go infra sidecar (TigerBeetle, Fluvio, Temporal, Dapr)",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "go-infra-secret-change-in-production",
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "insureportal-python-analytics",
+      "name": "InsurePortal Python Analytics Service",
+      "description": "Service account for the Python analytics service (Lakehouse, Actuarial, IFRS17, Fraud ML)",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "python-analytics-secret-change-in-production",
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@insureportal.io",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Platform",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Admin@1234!",
+          "temporary": true
+        }
+      ],
+      "realmRoles": [
+        "insureportal-super-admin",
+        "insureportal-admin",
+        "insureportal-user"
+      ],
+      "attributes": {
+        "platform_role": [
+          "super_admin"
+        ],
+        "tenant_id": [
+          "system"
+        ]
+      }
+    }
+  ],
+  "passwordPolicy": "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername(undefined)",
+  "smtpServer": {},
+  "loginTheme": "insureportal",
+  "accountTheme": "insureportal",
+  "adminTheme": "keycloak",
+  "emailTheme": "insureportal",
+  "eventsEnabled": true,
+  "eventsListeners": [
+    "jboss-logging",
+    "email"
+  ],
+  "enabledEventTypes": [
+    "LOGIN",
+    "LOGIN_ERROR",
+    "LOGOUT",
+    "LOGOUT_ERROR",
+    "REGISTER",
+    "REGISTER_ERROR",
+    "TOKEN_EXCHANGE",
+    "UPDATE_PASSWORD",
+    "UPDATE_PASSWORD_ERROR",
+    "RESET_PASSWORD",
+    "RESET_PASSWORD_ERROR"
+  ],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true
+}

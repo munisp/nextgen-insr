@@ -1,0 +1,248 @@
+version: "3.8"
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # CORE APPLICATION
+  # ═══════════════════════════════════════════════════════════════
+  customer-portal:
+    build: ./customer-portal-full
+    ports:
+      - "5002:5002"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+      - AUTH_STRICT=true
+    depends_on:
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════
+  # GO MICROSERVICES
+  # ═══════════════════════════════════════════════════════════════
+  fraud-detection:
+    build: ./services/go/fraud-detection
+    ports:
+      - "8081:8081"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+
+  ussd-gateway:
+    build: ./services/go/ussd-gateway
+    ports:
+      - "8082:8082"
+
+  telematics-engine:
+    build: ./services/go/telematics-engine
+    ports:
+      - "8083:8083"
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - kafka
+      - redis
+
+  parametric-insurance:
+    build: ./services/go/parametric-insurance
+    ports:
+      - "8084:8084"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - postgres
+      - kafka
+
+  p2p-pools:
+    build: ./services/go/p2p-pools
+    ports:
+      - "8085:8085"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+
+  api-marketplace:
+    build: ./services/go/api-marketplace
+    ports:
+      - "8086:8086"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+
+  # ═══════════════════════════════════════════════════════════════
+  # PYTHON ML SERVICES
+  # ═══════════════════════════════════════════════════════════════
+  ml-fraud-scoring:
+    build: ./services/python/ml-fraud-scoring
+    ports:
+      - "8087:8000"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=kafka:9092
+
+  cv-claims-adjuster:
+    build: ./services/python/cv-claims-adjuster
+    ports:
+      - "8088:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+
+  voice-transcription:
+    build: ./services/python/voice-transcription
+    ports:
+      - "8089:8000"
+
+  # ═══════════════════════════════════════════════════════════════
+  # RUST HIGH-PERFORMANCE SERVICES
+  # ═══════════════════════════════════════════════════════════════
+  ledger-sidecar:
+    build: ./services/rust/ledger-sidecar
+    ports:
+      - "8090:8090"
+    environment:
+      - TIGERBEETLE_ADDRESSES=tigerbeetle:3000
+      - KAFKA_BROKERS=kafka:9092
+
+  realtime-streaming:
+    build: ./services/rust/realtime-streaming
+    ports:
+      - "8091:8091"
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379
+
+  # ═══════════════════════════════════════════════════════════════
+  # TYPESCRIPT SERVICES
+  # ═══════════════════════════════════════════════════════════════
+  whatsapp-integration:
+    build: ./services/typescript/whatsapp-integration
+    ports:
+      - "8092:8092"
+    environment:
+      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
+      - WHATSAPP_PHONE_ID=${WHATSAPP_PHONE_ID}
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379
+
+  # ═══════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE
+  # ═══════════════════════════════════════════════════════════════
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ngapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: InsurePortalKafkaCluster2026
+
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=InsurePortal2026!
+    volumes:
+      - osdata:/usr/share/opensearch/data
+
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+    ports:
+      - "3000:3000"
+    command: start --addresses=0.0.0.0:3000 /data/0_0.tigerbeetle
+    volumes:
+      - tbdata:/data
+
+  temporal:
+    image: temporalio/auto-setup:1.24.0
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgres
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    ports:
+      - "8180:8080"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
+    command: start-dev
+
+  apisix:
+    image: apache/apisix:3.8.0-debian
+    ports:
+      - "9080:9080"
+      - "9443:9443"
+    volumes:
+      - ./infrastructure/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml
+    depends_on:
+      - etcd
+
+  etcd:
+    image: bitnami/etcd:3.5
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+
+  # Fluvio streaming (lightweight Kafka alternative for real-time)
+  fluvio:
+    image: infinyon/fluvio:0.11.0
+    ports:
+      - "9003:9003"
+
+volumes:
+  pgdata:
+  osdata:
+  tbdata:

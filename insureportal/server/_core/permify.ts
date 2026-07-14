@@ -93,7 +93,7 @@ export async function permifyCheck(params: {
  * Agents can only access their own transactions; admins can access all.
  */
 export async function canAccessTransaction(
-  agentCode: string,
+  agentId: string,
   agentRole: string,
   txRef: string
 ): Promise<boolean> {
@@ -102,7 +102,7 @@ export async function canAccessTransaction(
   // Try Permify first
   const allowed = await permifyCheck({
     subjectType: "agent",
-    subjectId: agentCode,
+    subjectId: agentId,
     entityType: "transaction",
     entityId: txRef,
     permission: "read",
@@ -117,14 +117,14 @@ export async function canAccessTransaction(
  * Requires supervisor or admin role.
  */
 export async function canApproveTopUp(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   if (agentRole === "admin") return true;
 
   return permifyCheck({
     subjectType: "agent",
-    subjectId: agentCode,
+    subjectId: agentId,
     entityType: "float_topup",
     entityId: "*",
     permission: "approve",
@@ -136,14 +136,14 @@ export async function canApproveTopUp(
  * Requires admin role.
  */
 export async function canUpdateFraudAlert(
-  agentCode: string,
+  agentId: string,
   agentRole: string
 ): Promise<boolean> {
   if (agentRole === "admin") return true;
 
   return permifyCheck({
     subjectType: "agent",
-    subjectId: agentCode,
+    subjectId: agentId,
     entityType: "fraud_alert",
     entityId: "*",
     permission: "update",

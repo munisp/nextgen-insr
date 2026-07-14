@@ -11,12 +11,15 @@ metadata:
     {{- include "insurance-platform.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $serviceName | kebabcase }}
 spec:
-  type: {{ $service.service.type }}
+  type: {{ $service.service.type | default "ClusterIP" }}
   ports:
     - port: {{ $service.service.port }}
       targetPort: http
       protocol: TCP
       name: http
+      {{- if and (eq $service.service.type "NodePort") $service.service.nodePort }}
+      nodePort: {{ $service.service.nodePort }}
+      {{- end }}
     - port: 9090
       targetPort: metrics
       protocol: TCP

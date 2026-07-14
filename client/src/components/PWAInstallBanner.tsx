@@ -1,6 +1,6 @@
 /**
  * PWAInstallBanner — Displays a non-intrusive banner prompting users to install
- * the 54Link POS Shell as a PWA. Automatically hides if already installed or
+ * the InsurePortal POS Shell as a PWA. Automatically hides if already installed or
  * if the user dismisses it (stored in localStorage).
  */
 import { useState, useEffect } from "react";
@@ -41,7 +41,7 @@ export function PWAInstallBanner() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-card-foreground">
-            Install 54Link POS Shell
+            Install InsurePortal POS Shell
           </p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Install for faster access, offline support, and push notifications.

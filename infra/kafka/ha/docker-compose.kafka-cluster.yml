@@ -1,6 +1,6 @@
 ###############################################################################
 # Kafka HA Cluster — 3 brokers + KRaft (no ZooKeeper) + Schema Registry
-# Production-tuned for POS-54Link: low-latency transactions, fraud events,
+# Production-tuned for POS-InsurePortal: low-latency transactions, fraud events,
 # MDM heartbeats, and lakehouse CDC.
 ###############################################################################
 version: "3.9"

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // Sprint 87: Regenerated — configManagement with real DB queries
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { merchantKycDocs } from "../../drizzle/schema";
+import { merchantKycDocs } from "@schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
 
 const KYC_DOC_TYPES = [

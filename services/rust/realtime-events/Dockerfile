@@ -1,10 +1,11 @@
 FROM rust:1.75-slim AS builder
 WORKDIR /app
-COPY . .
-RUN cargo build --release 2>/dev/null || true
+COPY Cargo.toml .
+COPY src/ src/
+RUN cargo build --release
+
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/realtime-events /usr/local/bin/
-ENV PORT=8114
-EXPOSE 8114
+EXPOSE 8104
 CMD ["realtime-events"]

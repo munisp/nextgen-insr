@@ -177,7 +177,7 @@ const navGroups: NavGroup[] = [
     label: "Core",
     icon: LayoutDashboard,
     items: [
-      { icon: LayoutDashboard, label: "POS Terminal", path: "/" },
+      { icon: LayoutDashboard, label: "Insurance Service", path: "/" },
       { icon: Globe, label: "Platform Hub", path: "/hub" },
     ],
   },
@@ -453,7 +453,7 @@ const navGroups: NavGroup[] = [
   },
   // ── 12. Nigerian Insurance ──
   {
-    id: "agency-banking",
+    id: "insurance",
     label: "Insurance",
     icon: Banknote,
     items: [
@@ -1016,7 +1016,7 @@ const navGroups: NavGroup[] = [
         label: "Merchant Analytics",
         path: "/merchant-analytics-dash",
       },
-      { icon: Cpu, label: "Firmware OTA", path: "/pos-firmware-ota" },
+      { icon: Cpu, label: "Firmware OTA", path: "/pos-service-update" },
       {
         icon: Receipt,
         label: "Receipt Generator",
@@ -1795,7 +1795,7 @@ function DashboardLayoutContent({
               {!isCollapsed && (
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-semibold tracking-tight truncate">
-                    RemitFlow
+                    InsurePortal
                   </span>
                 </div>
               )}

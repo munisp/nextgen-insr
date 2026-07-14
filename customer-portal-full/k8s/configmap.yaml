@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insureportal-config
+  namespace: insureportal
+data:
+  NODE_ENV: "production"
+  PORT: "5002"
+  PGHOST: "postgres-primary.insureportal.svc.cluster.local"
+  PGPORT: "5432"
+  PGDATABASE: "ngapp"
+  REDIS_HOST: "redis.insureportal.svc.cluster.local"
+  REDIS_PORT: "6379"
+  CORS_ORIGINS: "https://insureportal.ng,https://www.insureportal.ng"
+  AUTH_STRICT: "true"
+  RATE_LIMIT_WINDOW: "60000"
+  RATE_LIMIT_MAX: "100"
+  LOG_LEVEL: "info"
+  EMAIL_FROM: "InsurePortal <noreply@insureportal.ng>"
+  SMTP_HOST: "smtp.mailgun.org"
+  SMTP_PORT: "587"
+  S3_BUCKET: "insureportal-uploads"
+  S3_REGION: "af-south-1"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insureportal-secrets
+  namespace: insureportal
+type: Opaque
+stringData:
+  PGUSER: "$PGUSER"
+  PGPASSWORD: "$PGPASSWORD"
+  JWT_SECRET: "$JWT_SECRET"
+  REDIS_PASSWORD: "$REDIS_PASSWORD"
+  SMTP_USER: "$SMTP_USER"
+  SMTP_PASS: "$SMTP_PASS"
+  S3_ACCESS_KEY: "$S3_ACCESS_KEY"
+  S3_SECRET_KEY: "$S3_SECRET_KEY"
