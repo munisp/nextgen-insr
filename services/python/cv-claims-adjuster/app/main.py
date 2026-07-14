@@ -1,8 +1,7 @@
 """Computer Vision Claims Adjuster - Automated vehicle damage assessment via image analysis."""
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel
 from datetime import datetime
 import uuid
 

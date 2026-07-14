@@ -1,9 +1,8 @@
 """Voice Transcription Service - Speech-to-text for Nigerian languages (Hausa, Yoruba, Igbo, English)."""
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
 import uuid
 
 app = FastAPI(

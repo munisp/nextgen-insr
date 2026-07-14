@@ -1,0 +1,212 @@
+# APISIX API Gateway Routes — InsurePortal Platform v2
+# All new services routed through APISIX with auth, rate limiting, and observability
+
+upstreams:
+  - id: payment-gateway
+    nodes:
+      "payment-gateway:8100": 1
+    type: roundrobin
+    checks:
+      active:
+        http_path: /health
+        interval: 5
+
+  - id: kyc-verification
+    nodes:
+      "kyc-verification:8101": 1
+    type: roundrobin
+    checks:
+      active:
+        http_path: /health
+        interval: 5
+
+  - id: claims-adjudication
+    nodes:
+      "claims-adjudication:8102": 1
+    type: roundrobin
+
+  - id: churn-prevention
+    nodes:
+      "churn-prevention:8103": 1
+    type: roundrobin
+
+  - id: realtime-events
+    nodes:
+      "realtime-events:8104": 1
+    type: roundrobin
+
+  - id: notification-orchestrator
+    nodes:
+      "notification-orchestrator:8105": 1
+    type: roundrobin
+
+  - id: agent-gamification
+    nodes:
+      "agent-gamification:8106": 1
+    type: roundrobin
+
+  - id: regulatory-reporting
+    nodes:
+      "regulatory-reporting:8107": 1
+    type: roundrobin
+
+  - id: comparison-engine
+    nodes:
+      "comparison-engine:8108": 1
+    type: roundrobin
+
+  - id: embedded-sdk
+    nodes:
+      "embedded-sdk:8109": 1
+    type: roundrobin
+
+routes:
+  # ── Payment Gateway ────────────────────────────────────────────────────
+  - uri: /api/v1/payments/*
+    upstream_id: payment-gateway
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 100
+        time_window: 60
+        key: consumer_name
+      prometheus: {}
+      opentelemetry: {}
+
+  - uri: /api/v1/payments/webhook/*
+    upstream_id: payment-gateway
+    plugins:
+      ip-restriction:
+        whitelist:
+          - "52.31.139.75"    # Paystack webhook IPs
+          - "52.49.173.169"
+          - "3.249.22.0/24"   # Flutterwave webhook IPs
+      prometheus: {}
+
+  # ── KYC Verification ───────────────────────────────────────────────────
+  - uri: /api/v1/kyc/*
+    upstream_id: kyc-verification
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 30
+        time_window: 60
+      request-validation:
+        body_schema:
+          type: object
+      prometheus: {}
+
+  # ── Claims Adjudication ────────────────────────────────────────────────
+  - uri: /api/v1/claims/adjudicate
+    upstream_id: claims-adjudication
+    methods: [POST]
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 50
+        time_window: 60
+      prometheus: {}
+
+  - uri: /api/v1/claims/batch-adjudicate
+    upstream_id: claims-adjudication
+    methods: [POST]
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 10
+        time_window: 60
+
+  # ── Churn Prevention ───────────────────────────────────────────────────
+  - uri: /api/v1/churn/*
+    upstream_id: churn-prevention
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 60
+        time_window: 60
+      prometheus: {}
+
+  # ── Real-Time Events (WebSocket + SSE) ─────────────────────────────────
+  - uri: /api/v1/ws
+    upstream_id: realtime-events
+    plugins:
+      jwt-auth: {}
+    enable_websocket: true
+
+  - uri: /api/v1/stream/*
+    upstream_id: realtime-events
+    plugins:
+      jwt-auth: {}
+
+  - uri: /api/v1/events/*
+    upstream_id: realtime-events
+    plugins:
+      jwt-auth: {}
+      prometheus: {}
+
+  # ── Notifications ──────────────────────────────────────────────────────
+  - uri: /api/v1/notifications/*
+    upstream_id: notification-orchestrator
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 200
+        time_window: 60
+      prometheus: {}
+
+  # ── Agent Gamification ─────────────────────────────────────────────────
+  - uri: /api/v1/gamification/*
+    upstream_id: agent-gamification
+    plugins:
+      jwt-auth: {}
+      prometheus: {}
+
+  # ── Regulatory Reporting ───────────────────────────────────────────────
+  - uri: /api/v1/regulatory/*
+    upstream_id: regulatory-reporting
+    plugins:
+      jwt-auth: {}
+      limit-count:
+        count: 30
+        time_window: 60
+      prometheus: {}
+
+  # ── Comparison Engine (public — no auth for quotes) ────────────────────
+  - uri: /api/v1/compare
+    upstream_id: comparison-engine
+    plugins:
+      limit-count:
+        count: 200
+        time_window: 60
+      prometheus: {}
+
+  - uri: /api/v1/recommend
+    upstream_id: comparison-engine
+    plugins:
+      limit-count:
+        count: 100
+        time_window: 60
+      prometheus: {}
+
+  - uri: /api/v1/quote
+    upstream_id: comparison-engine
+    plugins:
+      limit-count:
+        count: 300
+        time_window: 60
+      prometheus: {}
+
+  # ── Embedded SDK (API key auth, not JWT) ───────────────────────────────
+  - uri: /api/v1/embedded/*
+    upstream_id: embedded-sdk
+    plugins:
+      key-auth:
+        header: X-API-Key
+      limit-count:
+        count: 1000
+        time_window: 60
+        key: consumer_name
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET, POST, OPTIONS"
+      prometheus: {}
