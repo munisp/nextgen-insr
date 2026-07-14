@@ -37,7 +37,7 @@ async function getRedisClient() {
 }
 async function getFluvioClient() {
   if (_fluvioClient) return _fluvioClient;
-  try { const { fluvioClient } = await import("../lib/fluvioClient"); _fluvioClient = fluvioClient; return _fluvioClient; } catch { return null; }
+  try { const fluvioMod = await import("../lib/fluvioClient"); _fluvioClient = fluvioMod; return _fluvioClient; } catch { return null; }
 }
 async function getPermifyClient() {
   if (_permifyClient) return _permifyClient;

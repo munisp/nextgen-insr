@@ -35,7 +35,7 @@ import { simOrchestratorRouter } from "./routers/simOrchestrator";
 import { pushNotificationsRouter } from "./routers/pushNotifications";
 import { cbnReportingRouter } from "./routers/cbnReporting";
 import { businessRulesRouter } from "./routers/businessRules";
-import { lakehouseRouter } from "./routers/lakehouse";
+import { lakehouseRouter, insuranceLakehouseExtensions } from "./routers/lakehouse";
 import { webhooksRouter } from "./routers/webhooks";
 import { commissionPayoutsRouter } from "./routers/commissionPayouts";
 import { referralsRouter } from "./routers/referrals";
@@ -592,6 +592,8 @@ export const appRouter = router({
   businessRules: businessRulesRouter,
   // Data Lakehouse: snapshot management, Sedona spatial queries, DataFusion proxy, Gold-layer metrics
   lakehouse: lakehouseRouter,
+  // Insurance Lakehouse Extensions: per-connector sync triggers, data catalog, role-gated queries
+  insuranceLakehouse: router(insuranceLakehouseExtensions),
   // Outbound webhook endpoint management + delivery history
   webhooks: webhooksRouter,
   // Commission payout lifecycle (request → approve → process → complete)

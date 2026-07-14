@@ -923,3 +923,359 @@ export const lakehouseRouter = router({
       }
     }),
 });
+
+// =============================================================================
+// INSURANCE LAKEHOUSE EXTENSIONS
+// =============================================================================
+// The procedures below extend the base lakehouse router with insurance-domain
+// operations: per-connector sync triggers, data catalog browsing, and
+// role-gated dataset queries.  All sync triggers call the Python analytics
+// service at PYTHON_ANALYTICS_URL (default: http://python-analytics:8001).
+// =============================================================================
+
+// ── Insurance-specific Python analytics service URL ───────────────────────────
+const PYTHON_ANALYTICS_URL =
+  process.env.PYTHON_ANALYTICS_URL ?? "http://python-analytics:8001";
+
+async function analyticsFetch(
+  path: string,
+  options: RequestInit = {}
+): Promise<unknown> {
+  const url = `${PYTHON_ANALYTICS_URL}${path}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers ?? {}),
+    },
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Analytics service error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+// ── Role whitelist for sync operations ────────────────────────────────────────
+const SYNC_ALLOWED_ROLES = new Set([
+  "super-admin",
+  "admin",
+  "actuary",
+  "billing-admin",
+  "regulator",
+  "compliance-officer",
+]);
+
+function assertSyncRole(role: string | undefined): void {
+  if (!role || !SYNC_ALLOWED_ROLES.has(role)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only actuaries, billing admins, regulators, and admins may trigger lakehouse syncs",
+    });
+  }
+}
+
+// ── Shared sync input schema ──────────────────────────────────────────────────
+const syncInput = z.object({
+  tenantId: z.string().optional(),
+  sinceHours: z.number().int().min(1).max(168).default(24),
+  includeSnapshot: z.boolean().default(false),
+});
+
+export const insuranceLakehouseExtensions = {
+  // ── 15. Trigger full pipeline sync (all 8 connectors) ─────────────────────
+  triggerFullSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        const result = await analyticsFetch("/lakehouse/sync/all", {
+          method: "POST",
+          body: JSON.stringify({
+            tenant_id: input.tenantId,
+            since_hours: input.sinceHours,
+            include_snapshot: input.includeSnapshot,
+          }),
+        });
+        logger.info({ userId: (ctx.user as any)?.id }, "[Lakehouse] Full sync triggered");
+        return result as {
+          status: string;
+          total_rows: number;
+          duration_seconds: number;
+          completed_at: string;
+          connectors: Record<string, unknown>;
+          failed_connectors: string[];
+        };
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Sync failed",
+        });
+      }
+    }),
+
+  // ── 16. Trigger PostgreSQL CDC sync ───────────────────────────────────────
+  triggerPostgresSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/sync/postgres", {
+          method: "POST",
+          body: JSON.stringify({ since_hours: input.sinceHours }),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "PostgreSQL CDC sync failed",
+        });
+      }
+    }),
+
+  // ── 17. Trigger Fluvio stream ingestion ───────────────────────────────────
+  triggerFluvioSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/sync/fluvio", {
+          method: "POST",
+          body: JSON.stringify({ since_hours: input.sinceHours }),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Fluvio sync failed",
+        });
+      }
+    }),
+
+  // ── 18. Trigger TigerBeetle ledger export ─────────────────────────────────
+  triggerTigerBeetleSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/sync/tigerbeetle", {
+          method: "POST",
+          body: JSON.stringify({ tenant_id: input.tenantId }),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "TigerBeetle sync failed",
+        });
+      }
+    }),
+
+  // ── 19. Trigger Temporal workflow history export ───────────────────────────
+  triggerTemporalSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/sync/temporal", {
+          method: "POST",
+          body: JSON.stringify({ since_hours: input.sinceHours }),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Temporal sync failed",
+        });
+      }
+    }),
+
+  // ── 20. Trigger Redis cache snapshot ──────────────────────────────────────
+  triggerRedisSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/sync/redis", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Redis sync failed",
+        });
+      }
+    }),
+
+  // ── 21. Trigger Dapr pub/sub event export ─────────────────────────────────
+  triggerDaprSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/sync/dapr", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Dapr sync failed",
+        });
+      }
+    }),
+
+  // ── 22. Trigger Keycloak auth event export ────────────────────────────────
+  triggerKeycloakSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/sync/keycloak", {
+          method: "POST",
+          body: JSON.stringify({ since_hours: input.sinceHours }),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Keycloak sync failed",
+        });
+      }
+    }),
+
+  // ── 23. Trigger OpenAppSec WAF event export ───────────────────────────────
+  triggerOpenAppSecSync: protectedProcedure
+    .input(syncInput)
+    .mutation(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/sync/openappsec", {
+          method: "POST",
+          body: JSON.stringify({ since_hours: input.sinceHours }),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "OpenAppSec sync failed",
+        });
+      }
+    }),
+
+  // ── 24. Get connector health status ───────────────────────────────────────
+  getConnectorStatus: protectedProcedure.query(async ({ ctx }) => {
+    assertSyncRole((ctx.user as any)?.role);
+    try {
+      return await analyticsFetch("/lakehouse/status");
+    } catch (error) {
+      return {
+        status: "analytics_service_unavailable",
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }),
+
+  // ── 25. Get data catalog ──────────────────────────────────────────────────
+  getDataCatalog: protectedProcedure
+    .input(
+      z.object({
+        tier: z.enum(["bronze", "silver", "gold", "all"]).default("all"),
+        source: z.string().optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        const catalog = (await analyticsFetch("/lakehouse/catalog")) as {
+          status: string;
+          dataset_count: number;
+          datasets: Array<{
+            path: string;
+            tier: string;
+            source: string;
+            dataset: string;
+            file_count: number;
+            total_bytes: number;
+            last_updated: string;
+          }>;
+          generated_at: string;
+        };
+        let datasets = catalog.datasets ?? [];
+        if (input.tier !== "all") {
+          datasets = datasets.filter((d) => d.tier === input.tier);
+        }
+        if (input.source) {
+          datasets = datasets.filter((d) => d.source === input.source);
+        }
+        return { ...catalog, datasets };
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Could not fetch data catalog",
+        });
+      }
+    }),
+
+  // ── 26. Query a dataset (ad-hoc Parquet query via Python) ─────────────────
+  queryDataset: protectedProcedure
+    .input(
+      z.object({
+        datasetPath: z.string().min(1),
+        sqlQuery: z.string().min(1).max(2000),
+        limit: z.number().int().min(1).max(10000).default(1000),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      assertSyncRole((ctx.user as any)?.role);
+      try {
+        return await analyticsFetch("/lakehouse/query", {
+          method: "POST",
+          body: JSON.stringify({
+            dataset_path: input.datasetPath,
+            sql: input.sqlQuery,
+            limit: input.limit,
+          }),
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error instanceof Error ? error.message : "Dataset query failed",
+        });
+      }
+    }),
+
+  // ── 27. Get sync status / last run metadata ───────────────────────────────
+  getSyncStatus: protectedProcedure.query(async ({ ctx }) => {
+    assertSyncRole((ctx.user as any)?.role);
+    try {
+      const snapshots = (await analyticsFetch(
+        "/lakehouse/snapshots?prefix=bronze/"
+      )) as { snapshots: Array<{ key: string; size: number; last_modified: string }> };
+      const bySource: Record<string, { lastSync: string; fileCount: number; totalBytes: number }> = {};
+      for (const snap of snapshots.snapshots ?? []) {
+        const parts = snap.key.split("/");
+        const source = parts[1] ?? "unknown";
+        if (!bySource[source]) {
+          bySource[source] = { lastSync: "", fileCount: 0, totalBytes: 0 };
+        }
+        bySource[source].fileCount += 1;
+        bySource[source].totalBytes += snap.size;
+        if (snap.last_modified > bySource[source].lastSync) {
+          bySource[source].lastSync = snap.last_modified;
+        }
+      }
+      return {
+        status: "ok",
+        connectors: bySource,
+        generatedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      return {
+        status: "analytics_service_unavailable",
+        connectors: {},
+        generatedAt: new Date().toISOString(),
+      };
+    }
+  }),
+};
+
+// Re-export the extended router by merging with the base lakehouseRouter
+// Usage in routers.ts: import { insuranceLakehouseExtensions } from "./routers/lakehouse"
+// and spread into the router definition.

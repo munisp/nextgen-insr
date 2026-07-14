@@ -426,6 +426,195 @@ routes:
         regex_uri: ["/analytics/lakehouse/(.*)", "/lakehouse/$1"]
       prometheus: {}
 
+  # ── Lakehouse Sync Endpoints (per-connector + full pipeline) ───────────────
+  - id: lakehouse-sync-all
+    uri: /analytics/lakehouse/sync/all
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 2
+        burst: 1
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/all
+      prometheus: {}
+
+  - id: lakehouse-sync-postgres
+    uri: /analytics/lakehouse/sync/postgres
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 2
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/postgres
+      prometheus: {}
+
+  - id: lakehouse-sync-fluvio
+    uri: /analytics/lakehouse/sync/fluvio
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 10
+        burst: 3
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/fluvio
+      prometheus: {}
+
+  - id: lakehouse-sync-tigerbeetle
+    uri: /analytics/lakehouse/sync/tigerbeetle
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 2
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/tigerbeetle
+      prometheus: {}
+
+  - id: lakehouse-sync-temporal
+    uri: /analytics/lakehouse/sync/temporal
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 2
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/temporal
+      prometheus: {}
+
+  - id: lakehouse-sync-redis
+    uri: /analytics/lakehouse/sync/redis
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 10
+        burst: 3
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/redis
+      prometheus: {}
+
+  - id: lakehouse-sync-dapr
+    uri: /analytics/lakehouse/sync/dapr
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 2
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/dapr
+      prometheus: {}
+
+  - id: lakehouse-sync-keycloak
+    uri: /analytics/lakehouse/sync/keycloak
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 2
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/keycloak
+      prometheus: {}
+
+  - id: lakehouse-sync-openappsec
+    uri: /analytics/lakehouse/sync/openappsec
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 2
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/sync/openappsec
+      prometheus: {}
+
+  - id: lakehouse-status
+    uri: /analytics/lakehouse/status
+    methods: [GET]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 30
+        burst: 10
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/status
+      prometheus: {}
+
+  - id: lakehouse-catalog
+    uri: /analytics/lakehouse/catalog
+    methods: [GET]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 20
+        burst: 5
+        key: remote_addr
+        rejected_code: 429
+      jwt-auth: {}
+      proxy-rewrite:
+        uri: /lakehouse/catalog
+      prometheus: {}
+
+  - id: lakehouse-dapr-subscribe
+    uri: /dapr/subscribe
+    methods: [GET]
+    upstream_id: python-analytics
+    plugins:
+      proxy-rewrite:
+        uri: /lakehouse/dapr/subscribe
+      prometheus: {}
+
+  - id: lakehouse-dapr-event
+    uri: /lakehouse/dapr/event
+    methods: [POST]
+    upstream_id: python-analytics
+    plugins:
+      limit-req:
+        rate: 1000
+        burst: 200
+        key: remote_addr
+        rejected_code: 429
+      proxy-rewrite:
+        uri: /lakehouse/dapr/event
+      prometheus: {}
+
   # ── Go Infra Service (TigerBeetle + Fluvio bridge) ────────────────────────
   - id: go-infra-tigerbeetle
     uri: /infra/tb/*

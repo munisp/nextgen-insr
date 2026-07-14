@@ -113,9 +113,12 @@ async function startServer() {
 
   // Fluvio streaming bridge warm-up
   try {
-    const { fluvioClient } = await import("../lib/fluvioClient");
-    await fluvioClient.connect();
-    console.log("[Fluvio] Streaming bridge connected");
+    const fluvioMod = await import("../lib/fluvioClient");
+    // Module exports named functions; warm-up by checking status
+    if (typeof fluvioMod.getFluvioStatus === "function") {
+      fluvioMod.getFluvioStatus();
+    }
+    console.log("[Fluvio] Streaming bridge ready");
   } catch (e) {
     console.warn("[Fluvio] Bridge unavailable (non-fatal):", (e as any).message);
   }
