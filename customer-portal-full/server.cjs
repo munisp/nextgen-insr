@@ -8,12 +8,16 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 function uuidv4() { return crypto.randomUUID(); }
 
-const compression = require('compression');
 const multer = require('multer');
 const { renderEmail } = require('./email-templates.cjs');
 const app = express();
-app.use(compression());
 app.use(express.json({ limit: '10mb' }));
+
+// Disable HTTP keep-alive to prevent browser connection pool exhaustion
+app.use((req, res, next) => {
+  res.setHeader('Connection', 'close');
+  next();
+});
 
 // ═══════════════════════════════════════════════════════════════════════
 // API VERSIONING (v1 prefix with backward compatibility)
@@ -4249,6 +4253,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info('Database config', { host: process.env.PGHOST || 'localhost', port: process.env.PGPORT || '5432', db: process.env.PGDATABASE || 'ngapp', replica: !!replicaPool });
   logger.info('Middleware status', { kafka: KAFKA_ENABLED, tigerbeetle: TB_ENABLED, opensearch: OS_ENABLED, redis: !!redis, multiTenant: MULTI_TENANT_ENABLED, s3: !!S3_BUCKET });
 });
+server.keepAliveTimeout = 5000;
+server.headersTimeout = 10000;
 
 // ═══════════════════════════════════════════════════════════════════════
 // WEBSOCKET SERVER (real-time updates for claims, payments, notifications)

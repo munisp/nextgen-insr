@@ -6,9 +6,23 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Shield, Mail, Lock, User, Phone, Eye, EyeOff, ArrowRight, CheckCircle, AlertTriangle, Loader2, KeyRound, LogOut } from "lucide-react";
 import { Link, useLocation, useSearch } from "wouter";
-import { trpc } from "@/lib/trpc";
 
 type AuthView = "login" | "signup" | "forgot" | "reset" | "2fa";
+
+async function authApi(route: string, input: Record<string, unknown>) {
+  const res = await fetch(`/api/trpc/${route}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ json: input }),
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    const msg = json?.error?.message || json?.message || `Request failed (${res.status})`;
+    return { error: msg };
+  }
+  return json?.result?.data ?? json;
+}
 
 export default function Auth() {
   const [view, setView] = useState<AuthView>("login");
@@ -38,12 +52,7 @@ export default function Auth() {
     twoFACode: "",
   });
 
-  const loginMutation = trpc.auth.login.useMutation();
-  const signupMutation = trpc.auth.signup.useMutation();
-  const resetPasswordMutation = trpc.auth.resetPassword.useMutation();
-  const confirmResetMutation = trpc.auth.confirmResetPassword.useMutation();
-  const validate2FAMutation = trpc.auth.validate2FA.useMutation();
-  const logoutMutation = trpc.auth.logout.useMutation();
+
 
   // Handle ?action=logout (also handles direct navigation/page reload)
   useEffect(() => {
@@ -52,7 +61,7 @@ export default function Auth() {
     if (urlAction === "logout" || action === "logout") {
       const token = localStorage.getItem("insureportal-token");
       if (token) {
-        logoutMutation.mutateAsync({ token }).catch(() => {});
+        authApi('auth.logout', { token }).catch(() => {});
       }
       localStorage.removeItem("insureportal-token");
       localStorage.removeItem("insureportal-user");
@@ -61,7 +70,7 @@ export default function Auth() {
   }, []);
 
   const handleLogin = async () => {
-    const result = await loginMutation.mutateAsync({
+    const result = await authApi('auth.login', {
       email: formData.email,
       password: formData.password,
     });
@@ -112,7 +121,7 @@ export default function Auth() {
       return;
     }
 
-    const result = await signupMutation.mutateAsync({
+    const result = await authApi('auth.signup', {
       email: formData.email,
       password: formData.password,
       fullName: formData.fullName,
@@ -139,7 +148,7 @@ export default function Auth() {
   };
 
   const handleForgotPassword = async () => {
-    const result = await resetPasswordMutation.mutateAsync({ email: formData.email });
+    const result = await authApi('auth.resetPassword', { email: formData.email });
     if (result?.error) {
       setError(result.error);
       setLoading(false);
@@ -157,7 +166,7 @@ export default function Auth() {
       setLoading(false);
       return;
     }
-    const result = await confirmResetMutation.mutateAsync({
+    const result = await authApi('auth.confirmResetPassword', {
       email: pendingEmail,
       otp: formData.otp,
       newPassword: formData.newPassword,
@@ -172,7 +181,7 @@ export default function Auth() {
   };
 
   const handle2FA = async () => {
-    const result = await validate2FAMutation.mutateAsync({
+    const result = await authApi('auth.validate2FA', {
       email: pendingEmail,
       code: formData.twoFACode,
     });
@@ -182,7 +191,7 @@ export default function Auth() {
       return;
     }
     // 2FA passed — now complete login
-    const loginResult = await loginMutation.mutateAsync({
+    const loginResult = await authApi('auth.login', {
       email: pendingEmail,
       password: formData.password,
     });
