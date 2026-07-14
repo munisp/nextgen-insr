@@ -1,0 +1,163 @@
+# InsurePortal Kafka Topics Configuration
+# All topics follow the pattern: insureportal.<domain>.<event-type>
+topics:
+  # Claims domain
+  - name: insureportal.claims.submitted
+    partitions: 6
+    replication_factor: 3
+    config:
+      retention.ms: 604800000  # 7 days
+      cleanup.policy: delete
+
+  - name: insureportal.claims.approved
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: 604800000
+
+  - name: insureportal.claims.rejected
+    partitions: 3
+    replication_factor: 3
+
+  - name: insureportal.claims.paid-out
+    partitions: 3
+    replication_factor: 3
+
+  - name: insureportal.claims.fraud-scored
+    partitions: 6
+    replication_factor: 3
+
+  # Policy domain
+  - name: insureportal.policies.created
+    partitions: 6
+    replication_factor: 3
+
+  - name: insureportal.policies.renewed
+    partitions: 3
+    replication_factor: 3
+
+  - name: insureportal.policies.expired
+    partitions: 3
+    replication_factor: 3
+
+  - name: insureportal.policies.cancelled
+    partitions: 3
+    replication_factor: 3
+
+  # Payment domain
+  - name: insureportal.payments.received
+    partitions: 6
+    replication_factor: 3
+    config:
+      retention.ms: 2592000000  # 30 days (financial compliance)
+
+  - name: insureportal.payments.failed
+    partitions: 3
+    replication_factor: 3
+
+  - name: insureportal.payments.refunded
+    partitions: 3
+    replication_factor: 3
+
+  # Fraud domain
+  - name: insureportal.fraud.alerts
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: 7776000000  # 90 days
+
+  - name: insureportal.fraud.network-signals
+    partitions: 3
+    replication_factor: 3
+
+  # Parametric insurance domain
+  - name: insureportal.parametric.weather-data
+    partitions: 12
+    replication_factor: 3
+    config:
+      retention.ms: 31536000000  # 365 days
+      cleanup.policy: compact
+
+  - name: insureportal.parametric.triggers
+    partitions: 3
+    replication_factor: 3
+
+  - name: insureportal.parametric.payouts
+    partitions: 3
+    replication_factor: 3
+
+  # Telematics domain
+  - name: insureportal.telematics.events
+    partitions: 12
+    replication_factor: 3
+    config:
+      retention.ms: 86400000  # 1 day (high volume)
+      max.message.bytes: 1048576
+
+  - name: insureportal.telematics.trip-completed
+    partitions: 6
+    replication_factor: 3
+
+  - name: insureportal.telematics.score-updated
+    partitions: 3
+    replication_factor: 3
+
+  # P2P Pools domain
+  - name: insureportal.p2p.contributions
+    partitions: 3
+    replication_factor: 3
+
+  - name: insureportal.p2p.claims-submitted
+    partitions: 3
+    replication_factor: 3
+
+  - name: insureportal.p2p.votes
+    partitions: 6
+    replication_factor: 3
+
+  - name: insureportal.p2p.payouts
+    partitions: 3
+    replication_factor: 3
+
+  # Notifications domain
+  - name: insureportal.notifications.email
+    partitions: 6
+    replication_factor: 3
+
+  - name: insureportal.notifications.sms
+    partitions: 6
+    replication_factor: 3
+
+  - name: insureportal.notifications.whatsapp
+    partitions: 6
+    replication_factor: 3
+
+  - name: insureportal.notifications.push
+    partitions: 6
+    replication_factor: 3
+
+  # Ledger domain
+  - name: insureportal.ledger.transfers
+    partitions: 6
+    replication_factor: 3
+    config:
+      retention.ms: 31536000000  # 365 days (audit trail)
+      cleanup.policy: compact
+
+  - name: insureportal.ledger.reconciliation
+    partitions: 1
+    replication_factor: 3
+
+  # System domain
+  - name: insureportal.system.audit-log
+    partitions: 6
+    replication_factor: 3
+    config:
+      retention.ms: 31536000000  # 365 days
+      cleanup.policy: compact
+
+  - name: insureportal.system.dead-letter
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: 2592000000  # 30 days

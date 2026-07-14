@@ -260,7 +260,7 @@ export default function SystemHealth() {
             href="/"
             className="text-sm text-orange-400 hover:text-orange-300 underline"
           >
-            ← Back to POS Shell
+            ← Back to InsurePortal Platform
           </a>
           <a
             href="/admin"

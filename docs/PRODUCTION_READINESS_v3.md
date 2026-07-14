@@ -12,7 +12,7 @@
 
 The InsurePortal Insurance Platform has completed its Phase 159 production hardening sprint. The system now comprises:
 
-- **POS Shell** — Node.js/TypeScript tRPC backend + React 19 PWA frontend
+- **InsurePortal Platform** — Node.js/TypeScript tRPC backend + React 19 PWA frontend
 - **Mobile Apps** — Flutter (Android/iOS), React Native (Android), iOS Native (Swift)
 - **Android Native** — PAX A920 MAX Kotlin SDK with hardware security
 - **Microservices** — 263+ Python FastAPI services, 6 Rust crates, 1 Go engine
@@ -117,7 +117,7 @@ Complete `infra/apisix/routes.yaml` with:
 
 All services use default values that work out-of-the-box in Docker Compose. Override in production:
 
-### Core POS Shell
+### Core InsurePortal Platform
 
 | Variable                 | Default                                                                                   | Production Override       |
 | ------------------------ | ----------------------------------------------------------------------------------------- | ------------------------- |
@@ -214,7 +214,7 @@ Internet
     ▼
 APISix Gateway (TLS termination, JWT auth, rate limiting)
     │
-    ├── /api/trpc → POS Shell (Node.js/tRPC)
+    ├── /api/trpc → InsurePortal Platform (Node.js/tRPC)
     │       ├── PostgreSQL (Drizzle ORM)
     │       ├── TigerBeetle (double-entry ledger)
     │       ├── Temporal (workflow orchestration)
@@ -247,7 +247,7 @@ Android Native (PAX A920 MAX):
 ## Known Limitations
 
 1. **Temporal Server** — Not running in sandbox (expected). Worker starts gracefully with "startup skipped" log. In production, point `TEMPORAL_ADDRESS` to the Temporal cluster.
-2. **Keycloak** — Not running in sandbox. POS Shell falls back to JWT-only auth. In production, set `KEYCLOAK_URL` to the Keycloak cluster.
+2. **Keycloak** — Not running in sandbox. InsurePortal Platform falls back to JWT-only auth. In production, set `KEYCLOAK_URL` to the Keycloak cluster.
 3. **TigerBeetle** — Not running in sandbox. Health endpoint shows "offline". In production, run the TB sidecar container.
 4. **MinIO** — Not running in sandbox. Lakehouse consumer uploads are non-fatal no-ops. In production, run the MinIO container.
 

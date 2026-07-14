@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 type SecurityEvent struct {
@@ -68,7 +71,7 @@ func NewOpenAppSecKafkaBridge() *OpenAppSecKafkaBridge {
 	
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(kafkaBrokers),
-		Topic:        "security.waf.events",
+		Topic:        "54link.security.waf_events",
 		Balancer:     &kafka.Hash{},
 		RequiredAcks: kafka.RequireAll,
 		Compression:  kafka.Snappy,
@@ -78,7 +81,7 @@ func NewOpenAppSecKafkaBridge() *OpenAppSecKafkaBridge {
 
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        []string{kafkaBrokers},
-		Topic:          "security.waf.commands",
+		Topic:          "54link.security.waf_commands",
 		GroupID:        "openappsec-bridge",
 		MinBytes:       1,
 		MaxBytes:       10e6,
@@ -315,7 +318,7 @@ func (b *OpenAppSecKafkaBridge) processCommand(data []byte) {
 
 func (b *OpenAppSecKafkaBridge) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil)})
 }
 
 func (b *OpenAppSecKafkaBridge) handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +387,48 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for openappsec_apisix_integration")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS openappsec_apisix_integration (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	bridge := NewOpenAppSecKafkaBridge()
 	
 	if err := bridge.Start(); err != nil {

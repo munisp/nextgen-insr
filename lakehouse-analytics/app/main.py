@@ -375,3 +375,8 @@ async def ingest_data(batch: dict):
         "status": "accepted",
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+@app.on_event("startup")
+async def startup():
+    init_db()

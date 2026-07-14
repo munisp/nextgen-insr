@@ -1,29 +1,134 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
+// FluvioNativeClient wraps the Fluvio HTTP API (SmartModule-capable)
+// to replace unsafe exec.Command("fluvio", ...) shelling.
+// Uses the Fluvio Cloud HTTP producer/consumer API.
+type FluvioNativeClient struct {
+	endpoint   string
+	httpClient *http.Client
+}
+
+func NewFluvioNativeClient(endpoint string) *FluvioNativeClient {
+	return &FluvioNativeClient{
+		endpoint: endpoint,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}
+}
+
+func (f *FluvioNativeClient) Produce(ctx context.Context, topic string, data []byte) error {
+	url := fmt.Sprintf("%s/api/v1/topics/%s/produce", f.endpoint, topic)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create produce request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Body = http.NoBody
+
+	// Build the proper body
+	body := make([]byte, len(data))
+	copy(body, data)
+	req.Body = nopCloser{reader: body}
+	req.ContentLength = int64(len(body))
+
+	resp, err := f.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fluvio produce failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("fluvio produce returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (f *FluvioNativeClient) Consume(ctx context.Context, topic string, offset int64) (<-chan []byte, error) {
+	ch := make(chan []byte, 100)
+
+	go func() {
+		defer close(ch)
+
+		url := fmt.Sprintf("%s/api/v1/topics/%s/consume?offset=%d", f.endpoint, topic, offset)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			log.Printf("[Fluvio] Failed to create consume request: %v", err)
+			return
+		}
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := f.httpClient.Do(req)
+		if err != nil {
+			log.Printf("[Fluvio] Consume connection failed: %v", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		decoder := json.NewDecoder(resp.Body)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				var record map[string]interface{}
+				if err := decoder.Decode(&record); err != nil {
+					return
+				}
+				if value, ok := record["value"].(string); ok {
+					ch <- []byte(value)
+				}
+			}
+		}
+	}()
+
+	return ch, nil
+}
+
+// nopCloser wraps a byte slice as io.ReadCloser
+type nopCloser struct {
+	reader []byte
+	pos    int
+}
+
+func (n nopCloser) Read(p []byte) (int, error) {
+	if n.pos >= len(n.reader) {
+		return 0, fmt.Errorf("EOF")
+	}
+	copied := copy(p, n.reader[n.pos:])
+	n.pos += copied
+	return copied, nil
+}
+
+func (n nopCloser) Close() error { return nil }
+
 type FluvioKafkaBridge struct {
-	kafkaReaders  map[string]*kafka.Reader
-	kafkaWriters  map[string]*kafka.Writer
-	fluvioTopics  map[string]string
-	wg            sync.WaitGroup
-	ctx           context.Context
-	cancel        context.CancelFunc
-	mu            sync.RWMutex
+	kafkaReaders   map[string]*kafka.Reader
+	kafkaWriters   map[string]*kafka.Writer
+	fluvioClient   *FluvioNativeClient
+	fluvioTopics   map[string]string
+	wg             sync.WaitGroup
+	ctx            context.Context
+	cancel         context.CancelFunc
+	mu             sync.RWMutex
 }
 
 type BridgeConfig struct {
@@ -38,6 +143,7 @@ func NewFluvioKafkaBridge(config BridgeConfig) *FluvioKafkaBridge {
 	return &FluvioKafkaBridge{
 		kafkaReaders:  make(map[string]*kafka.Reader),
 		kafkaWriters:  make(map[string]*kafka.Writer),
+		fluvioClient:  NewFluvioNativeClient(config.FluvioEndpoint),
 		fluvioTopics:  config.TopicMappings,
 		ctx:           ctx,
 		cancel:        cancel,
@@ -120,7 +226,7 @@ func (b *FluvioKafkaBridge) consumeKafkaToFluvio(kafkaTopic, fluvioTopic string,
 				continue
 			}
 
-			if err := b.publishToFluvio(fluvioTopic, msg.Value); err != nil {
+			if err := b.fluvioClient.Produce(b.ctx, fluvioTopic, msg.Value); err != nil {
 				log.Printf("Failed to publish to Fluvio topic %s: %v", fluvioTopic, err)
 			}
 		}
@@ -130,39 +236,31 @@ func (b *FluvioKafkaBridge) consumeKafkaToFluvio(kafkaTopic, fluvioTopic string,
 func (b *FluvioKafkaBridge) consumeFluvioToKafka(fluvioTopic, kafkaTopic string, writer *kafka.Writer) {
 	defer b.wg.Done()
 
-	cmd := exec.CommandContext(b.ctx, "fluvio", "consume", fluvioTopic, "--output", "json", "-B")
-	
-	stdout, err := cmd.StdoutPipe()
+	// Use native HTTP client instead of exec.Command("fluvio", ...)
+	ch, err := b.fluvioClient.Consume(b.ctx, fluvioTopic, -1)
 	if err != nil {
-		log.Printf("Failed to create stdout pipe for Fluvio consumer: %v", err)
+		log.Printf("Failed to start Fluvio native consumer for %s: %v", fluvioTopic, err)
 		return
 	}
 
-	if err := cmd.Start(); err != nil {
-		log.Printf("Failed to start Fluvio consumer: %v", err)
-		return
-	}
-
-	decoder := json.NewDecoder(stdout)
-	
 	for {
 		select {
 		case <-b.ctx.Done():
-			cmd.Process.Kill()
 			return
-		default:
-			var record map[string]interface{}
-			if err := decoder.Decode(&record); err != nil {
-				continue
-			}
-
-			value, ok := record["value"].(string)
+		case data, ok := <-ch:
 			if !ok {
+				log.Printf("[Fluvio] Consumer channel closed for topic %s, reconnecting...", fluvioTopic)
+				time.Sleep(2 * time.Second)
+				ch, err = b.fluvioClient.Consume(b.ctx, fluvioTopic, -1)
+				if err != nil {
+					log.Printf("[Fluvio] Reconnect failed for %s: %v", fluvioTopic, err)
+					return
+				}
 				continue
 			}
 
 			msg := kafka.Message{
-				Value: []byte(value),
+				Value: data,
 				Time:  time.Now(),
 			}
 
@@ -171,19 +269,6 @@ func (b *FluvioKafkaBridge) consumeFluvioToKafka(fluvioTopic, kafkaTopic string,
 			}
 		}
 	}
-}
-
-func (b *FluvioKafkaBridge) publishToFluvio(topic string, data []byte) error {
-	cmd := exec.CommandContext(b.ctx, "fluvio", "produce", topic)
-	
-	cmd.Stdin = bytes.NewReader(data)
-	
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("fluvio produce failed: %w, output: %s", err, string(output))
-	}
-
-	return nil
 }
 
 func (b *FluvioKafkaBridge) Stop() error {
@@ -210,7 +295,48 @@ func (b *FluvioKafkaBridge) Stop() error {
 	return nil
 }
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for fluvio_integration")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS fluvio_integration (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	config := BridgeConfig{
 		KafkaBrokers:   getEnv("KAFKA_BROKERS", "kafka-0.kafka-headless:9092"),
 		FluvioEndpoint: getEnv("FLUVIO_ENDPOINT", "fluvio-sc:9003"),

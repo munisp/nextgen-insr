@@ -184,21 +184,6 @@ describe("Sprint 44: Middleware Wiring Verification", () => {
   });
 
   describe("Sidecar files exist", () => {
-    it("Go TigerBeetle sidecar binary exists", () => {
-      expect(
-        fs.existsSync(
-          path.join(
-            __dirname,
-            "..",
-            "tb-commission-sidecar",
-            "cmd",
-            "sidecar",
-            "main.go"
-          )
-        )
-      ).toBe(true);
-    });
-
     it("Rust Fluvio producer source exists", () => {
       expect(
         fs.existsSync(

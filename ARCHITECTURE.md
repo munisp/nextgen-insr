@@ -16,7 +16,7 @@ InsurePortal is a full-stack insurance platform built for Nigerian financial ins
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          CLIENT LAYER                                        │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
-│  │  POSShell    │  │ AdminPanel   │  │ Flutter App  │  │  RN App      │    │
+│  │  PlatformShell    │  │ AdminPanel   │  │ Flutter App  │  │  RN App      │    │
 │  │  (React PWA) │  │ (React SPA)  │  │ (iOS/Android)│  │ (iOS/Android)│    │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘    │
 └─────────┼─────────────────┼─────────────────┼─────────────────┼────────────┘
@@ -70,7 +70,7 @@ InsurePortal is a full-stack insurance platform built for Nigerian financial ins
 
 | Layer          | Technology                   | Purpose                                     |
 | -------------- | ---------------------------- | ------------------------------------------- |
-| Frontend       | React 19 + Vite + Tailwind 4 | Web PWA (POSShell, AdminPanel, all portals) |
+| Frontend       | React 19 + Vite + Tailwind 4 | Web PWA (PlatformShell, AdminPanel, all portals) |
 | API            | tRPC 11 + Express 4          | Type-safe RPC with superjson                |
 | Auth           | Manus OAuth + JWT + FIDO2    | Session management + biometric              |
 | Database       | PostgreSQL + Drizzle ORM     | Primary relational store                    |
@@ -89,7 +89,7 @@ InsurePortal is a full-stack insurance platform built for Nigerian financial ins
 | Error Tracking | Sentry                       | Frontend/backend error monitoring           |
 | SMS            | Termii                       | OTP delivery, transaction alerts            |
 | Push           | Web Push (VAPID)             | Browser push notifications                  |
-| IoT            | MQTT                         | POS terminal messaging                      |
+| IoT            | MQTT                         | service node messaging                      |
 
 ---
 

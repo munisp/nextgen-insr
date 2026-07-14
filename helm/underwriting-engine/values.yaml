@@ -1,0 +1,45 @@
+replicaCount: 2
+
+image:
+  repository: insureportal/underwriting-engine
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8092
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+env:
+  DATABASE_URL: postgres://ngapp:ngapp@postgres:5432/ngapp?sslmode=disable
+  KAFKA_REST_URL: http://kafka-rest:8082
+
+livenessProbe:
+  httpGet:
+    path: /live
+    port: 8092
+  initialDelaySeconds: 10
+  periodSeconds: 15
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8092
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  minAvailable: 1

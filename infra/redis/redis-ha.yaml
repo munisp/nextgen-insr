@@ -103,3 +103,95 @@ spec:
   ports:
     - port: 6379
       targetPort: 6379
+---
+# Sentinel Deployment — runs alongside the StatefulSet for automatic failover.
+# Requires 3 instances for a quorum of 2.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-sentinel
+  namespace: 54link
+  labels:
+    app: redis-sentinel
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis-sentinel
+  template:
+    metadata:
+      labels:
+        app: redis-sentinel
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["redis-sentinel"]
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: sentinel
+          image: redis:7-alpine
+          ports:
+            - containerPort: 26379
+              name: sentinel
+          command:
+            - sh
+            - -c
+            - |
+              cp /etc/redis/sentinel.conf /tmp/sentinel.conf
+              sed -i "s/\${REDIS_PASSWORD}/$REDIS_PASSWORD/" /tmp/sentinel.conf
+              redis-sentinel /tmp/sentinel.conf
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: password
+          volumeMounts:
+            - name: sentinel-config
+              mountPath: /etc/redis
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "-p", "26379", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: sentinel-config
+          configMap:
+            name: redis-sentinel-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel
+  namespace: 54link
+spec:
+  selector:
+    app: redis-sentinel
+  ports:
+    - port: 26379
+      targetPort: 26379
+---
+# PodDisruptionBudget — ensures at least 2 Redis pods are always available
+# during voluntary disruptions (node drains, upgrades).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-ha-pdb
+  namespace: 54link
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: redis

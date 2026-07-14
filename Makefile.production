@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# 54Link Agency Banking Platform — Production Makefile
+# InsurePortal Agency Banking Platform — Production Makefile
 # ─────────────────────────────────────────────────────────────────────────────
 .PHONY: help up-infra up-app up-gateway up-obs up-all down logs ps \
         vault-init vault-unseal vault-status \
@@ -17,7 +17,7 @@ COMPOSE_MON  = docker compose -f monitoring/docker-compose.monitoring.yml --env-
 # ── Help ──────────────────────────────────────────────────────────────────────
 help:
 	@echo ""
-	@echo "54Link Production Deployment Commands"
+	@echo "InsurePortal Production Deployment Commands"
 	@echo "======================================"
 	@echo ""
 	@echo "  Infrastructure:"
@@ -136,7 +136,7 @@ db-backup:
 	@echo "==> Backing up PostgreSQL..."
 	$(COMPOSE_PROD) exec postgres pg_dump \
 	  -U $${POSTGRES_USER} $${POSTGRES_DB} \
-	  | gzip > backups/54link-$$(date +%Y%m%d-%H%M%S).sql.gz
+	  | gzip > backups/insureportal-$$(date +%Y%m%d-%H%M%S).sql.gz
 	@echo "==> Backup complete."
 
 # ── TLS certificates ──────────────────────────────────────────────────────────
@@ -147,13 +147,13 @@ cert-init:
 	  -v $$(pwd)/infra/nginx/www:/var/www/certbot \
 	  certbot/certbot certonly \
 	  --webroot -w /var/www/certbot \
-	  --email admin@54link.ng \
+	  --email admin@insureportal.ng \
 	  --agree-tos --no-eff-email \
-	  -d 54link.ng -d www.54link.ng \
-	  -d keycloak.54link.ng \
-	  -d grafana.54link.ng \
-	  -d temporal.54link.ng \
-	  -d vault.54link.ng
+	  -d insureportal.ng -d www.insureportal.ng \
+	  -d keycloak.insureportal.ng \
+	  -d grafana.insureportal.ng \
+	  -d temporal.insureportal.ng \
+	  -d vault.insureportal.ng
 
 cert-renew:
 	$(COMPOSE_PROD) exec certbot certbot renew --quiet
@@ -161,7 +161,7 @@ cert-renew:
 # ── Health checks ─────────────────────────────────────────────────────────────
 health:
 	@echo "==> Checking service health..."
-	@curl -sf http://localhost:3000/health  && echo "✅ POS Shell"   || echo "❌ POS Shell"
+	@curl -sf http://localhost:3000/health  && echo "✅ InsurePortal Platform"   || echo "❌ InsurePortal Platform"
 	@curl -sf http://localhost:8081/health  && echo "✅ OTA Service" || echo "❌ OTA Service"
 	@curl -sf http://localhost:8083/health  && echo "✅ FIDO2"       || echo "❌ FIDO2"
 	@curl -sf http://localhost:8084/health  && echo "✅ i18n"        || echo "❌ i18n"
@@ -195,7 +195,7 @@ build-all:
 
 # ── Deploy ────────────────────────────────────────────────────────────────────
 deploy: test-all build-all up-all kafka-topics
-	@echo "==> 54Link Platform deployed successfully!"
+	@echo "==> InsurePortal Platform deployed successfully!"
 	@make health
 
 # ── Backup & Restore ──────────────────────────────────────────────────────────
@@ -260,7 +260,7 @@ $(COMPOSE_PROD) up -d minio
 minio-lifecycle:
 @echo "==> Applying MinIO lifecycle policies..."
 @for policy in infra/minio/lifecycle/*.json; do \
-ame $$policy -lifecycle.json | sed 's/54link-//'); \
+ame $$policy -lifecycle.json | sed 's/insureportal-//'); \
 "  Applying lifecycle to bucket: $$bucket"; \
 ilm import myminio/$$bucket < $$policy 2>/dev/null || echo "  (skipped: bucket may not exist yet)"; \
 done
@@ -346,7 +346,7 @@ health-all: health health-mdm health-cbn health-ota
 
 # ── One-command production bootstrap ─────────────────────────────────────────
 bootstrap-production:
-@echo "==> Starting 54Link full production bootstrap..."
+@echo "==> Starting InsurePortal full production bootstrap..."
 @bash scripts/bootstrap-production.sh
 @echo "==> Bootstrap complete!"
 
@@ -386,6 +386,6 @@ sole.log('Sessions invalidated'); process.exit(0); \
 minio-rotate-creds: ## Rotate MinIO root credentials (requires MINIO_NEW_PASSWORD)
 @if [ -z "$(MINIO_NEW_PASSWORD)" ]; then echo "Usage: make minio-rotate-creds MINIO_NEW_PASSWORD=<new-password>"; exit 1; fi
 @echo "Rotating MinIO root credentials..."
-@docker exec pos-shell-demo-minio-1 mc admin user add myminio 54link-admin "$(MINIO_NEW_PASSWORD)" || true
-@docker exec pos-shell-demo-minio-1 mc admin policy attach myminio consoleAdmin --user=54link-admin || true
+@docker exec pos-shell-demo-minio-1 mc admin user add myminio insureportal-admin "$(MINIO_NEW_PASSWORD)" || true
+@docker exec pos-shell-demo-minio-1 mc admin policy attach myminio consoleAdmin --user=insureportal-admin || true
 @echo "MinIO credentials rotated. Update MINIO_ROOT_PASSWORD in .env.production"

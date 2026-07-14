@@ -1,7 +1,7 @@
 /**
  * MQTTBridgeTab — Fluvio MQTT Source Connector configuration UI
  * Allows admins to configure, test, publish synthetic events, and generate
- * InfinyOn connector YAML for bridging POS terminal MQTT events into Fluvio topics.
+ * InfinyOn connector YAML for bridging service node MQTT events into Fluvio topics.
  */
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
@@ -250,7 +250,7 @@ export function MQTTBridgeTab() {
         <div>
           <h2 className="text-xl font-semibold">MQTT Bridge Configuration</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure InfinyOn MQTT Source Connector to bridge POS terminal
+            Configure InfinyOn MQTT Source Connector to bridge service node
             events into Fluvio topics.
           </p>
         </div>

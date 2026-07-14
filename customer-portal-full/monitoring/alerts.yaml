@@ -1,0 +1,108 @@
+# Prometheus Alerting Rules for InsurePortal
+# Load into Prometheus via rule_files in prometheus.yml
+groups:
+  - name: insureportal.availability
+    rules:
+      - alert: HighErrorRate
+        expr: rate(insureportal_requests_total{status=~"5.."}[5m]) / rate(insureportal_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: insureportal
+        annotations:
+          summary: "High error rate (>5%) on InsurePortal"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(insureportal_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: insureportal
+        annotations:
+          summary: "P95 latency exceeds 2s on InsurePortal"
+          description: "P95 latency is {{ $value | humanizeDuration }}."
+
+      - alert: ServiceDown
+        expr: up{job="insureportal"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: insureportal
+        annotations:
+          summary: "InsurePortal service is down"
+          description: "The service has been unreachable for more than 1 minute."
+
+  - name: insureportal.infrastructure
+    rules:
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="insureportal"} / 1024 / 1024 > 450
+        for: 10m
+        labels:
+          severity: warning
+          service: insureportal
+        annotations:
+          summary: "High memory usage on InsurePortal (>450MB)"
+          description: "Memory usage is {{ $value | humanize }}MB."
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: insureportal_db_pool_waiting > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: insureportal
+        annotations:
+          summary: "DB connection pool has >5 waiting clients"
+          description: "{{ $value }} clients waiting for a database connection."
+
+      - alert: CircuitBreakerOpen
+        expr: insureportal_circuit_breaker_state{state="open"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          service: insureportal
+        annotations:
+          summary: "Circuit breaker {{ $labels.service_name }} is OPEN"
+          description: "Service {{ $labels.service_name }} circuit breaker has been open for >1m."
+
+      - alert: RedisDown
+        expr: insureportal_redis_connected == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: insureportal
+        annotations:
+          summary: "Redis connection lost"
+          description: "InsurePortal has lost connection to Redis for >2 minutes."
+
+  - name: insureportal.business
+    rules:
+      - alert: HighClaimVolume
+        expr: rate(insureportal_claims_submitted_total[1h]) > 50
+        for: 30m
+        labels:
+          severity: warning
+          service: insureportal
+        annotations:
+          summary: "Unusually high claim submission rate"
+          description: "{{ $value | humanize }} claims per second over the last 30 minutes."
+
+      - alert: PaymentFailureRate
+        expr: rate(insureportal_payment_failures_total[15m]) / rate(insureportal_payment_attempts_total[15m]) > 0.1
+        for: 15m
+        labels:
+          severity: critical
+          service: insureportal
+        annotations:
+          summary: "Payment failure rate >10%"
+          description: "{{ $value | humanizePercentage }} of payment attempts are failing."
+
+      - alert: RateLimitTriggered
+        expr: rate(insureportal_rate_limited_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: insureportal
+        annotations:
+          summary: "High rate limiting on InsurePortal"
+          description: "{{ $value | humanize }} requests/sec being rate-limited."

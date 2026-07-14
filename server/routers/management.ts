@@ -9,7 +9,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   agents,
-  posTerminals,
+  serviceNodes,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -19,7 +19,7 @@ import {
   multiSimProfiles,
   reversalRequests,
   shareableLinks,
-  storefrontAds,
+  marketplaceAds,
   vatRecords,
   erpSyncLog,
   transactions,
@@ -96,7 +96,7 @@ export const managementRouter = router({
         .limit(100);
       const [terminalCount] = await db
         .select({ c: count() })
-        .from(posTerminals)
+        .from(serviceNodes)
         .limit(100);
       const [txCount] = await db
         .select({ c: count() })
@@ -649,7 +649,7 @@ export const managementRouter = router({
     }),
   }),
 
-  // ── POS Terminal Management ────────────────────────────────────────────────
+  // ── Service Node Management ────────────────────────────────────────────────
   pos: router({
     listTerminals: mgmtProcedure
       .input(
@@ -669,19 +669,19 @@ export const managementRouter = router({
           const offset = (input.page - 1) * input.limit;
           const conditions = [];
           if (input.status)
-            conditions.push(eq(posTerminals.status, input.status));
+            conditions.push(eq(serviceNodes.status, input.status));
           if (input.agentId)
-            conditions.push(eq(posTerminals.agentId, input.agentId));
+            conditions.push(eq(serviceNodes.agentId, input.agentId));
           const where = conditions.length > 0 ? and(...conditions) : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(posTerminals)
+              .from(serviceNodes)
               .where(where)
-              .orderBy(desc(posTerminals.createdAt))
+              .orderBy(desc(serviceNodes.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(posTerminals).where(where),
+            db.select({ total: count() }).from(serviceNodes).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -701,8 +701,8 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "NOT_FOUND" });
           const [t] = await db
             .select()
-            .from(posTerminals)
-            .where(eq(posTerminals.id, input.id))
+            .from(serviceNodes)
+            .where(eq(serviceNodes.id, input.id))
             .limit(100);
           if (!t) throw new TRPCError({ code: "NOT_FOUND" });
           return t;
@@ -729,7 +729,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .insert(posTerminals)
+            .insert(serviceNodes)
             .values(input as any)
             .returning();
           return t;
@@ -762,13 +762,13 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(posTerminals)
+            .update(serviceNodes)
             .set({
               lastCommand: input.command,
               lastCommandAt: new Date(),
               updatedAt: new Date(),
             })
-            .where(eq(posTerminals.id, input.terminalId))
+            .where(eq(serviceNodes.id, input.terminalId))
             .returning();
           return { success: true, terminal: t };
         } catch (error) {
@@ -851,9 +851,9 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           // Unassign all terminals in this group first
           await db
-            .update(posTerminals)
+            .update(serviceNodes)
             .set({ groupId: null, updatedAt: new Date() })
-            .where(eq(posTerminals.groupId, input.id));
+            .where(eq(serviceNodes.groupId, input.id));
           await db
             .delete(terminalGroups)
             .where(eq(terminalGroups.id, input.id));
@@ -876,9 +876,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(posTerminals)
+            .update(serviceNodes)
             .set({ groupId: input.groupId, updatedAt: new Date() })
-            .where(eq(posTerminals.id, input.terminalId))
+            .where(eq(serviceNodes.id, input.terminalId))
             .returning();
           if (!t)
             throw new TRPCError({
@@ -908,19 +908,19 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const terminals = await db
             .select()
-            .from(posTerminals)
-            .where(eq(posTerminals.groupId, input.groupId))
+            .from(serviceNodes)
+            .where(eq(serviceNodes.groupId, input.groupId))
             .limit(100);
           let dispatched = 0;
           for (const t of terminals) {
             await db
-              .update(posTerminals)
+              .update(serviceNodes)
               .set({
                 lastCommand: input.command,
                 lastCommandAt: new Date(),
                 updatedAt: new Date(),
               })
-              .where(eq(posTerminals.id, t.id));
+              .where(eq(serviceNodes.id, t.id));
             dispatched++;
           }
           return { dispatched, command: input.command, groupId: input.groupId };
@@ -1027,12 +1027,12 @@ export const managementRouter = router({
       if (!db) return { active: 0, inactive: 0, maintenance: 0, total: 0 };
       const [total] = await db
         .select({ c: count() })
-        .from(posTerminals)
+        .from(serviceNodes)
         .limit(100);
       const [active] = await db
         .select({ c: count() })
-        .from(posTerminals)
-        .where(eq(posTerminals.status, "active"))
+        .from(serviceNodes)
+        .where(eq(serviceNodes.status, "active"))
         .limit(100);
       return { total: total.c, active: active.c, inactive: 0, maintenance: 0 };
     }),
@@ -1518,8 +1518,8 @@ export const managementRouter = router({
       }),
   }),
 
-  // ── Storefront Ads ─────────────────────────────────────────────────────────
-  storefrontAds: router({
+  // ── Marketplace Ads ─────────────────────────────────────────────────────────
+  marketplaceAds: router({
     list: mgmtProcedure
       .input(
         z.object({
@@ -1536,17 +1536,17 @@ export const managementRouter = router({
           if (!db) return { items: [], total: 0 };
           const offset = (input.page - 1) * input.limit;
           const where = input.status
-            ? eq(storefrontAds.status, input.status)
+            ? eq(marketplaceAds.status, input.status)
             : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(storefrontAds)
+              .from(marketplaceAds)
               .where(where)
-              .orderBy(desc(storefrontAds.createdAt))
+              .orderBy(desc(marketplaceAds.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(storefrontAds).where(where),
+            db.select({ total: count() }).from(marketplaceAds).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -1576,7 +1576,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
-            .insert(storefrontAds)
+            .insert(marketplaceAds)
             .values(input as any)
             .returning();
           return ad;
@@ -1601,9 +1601,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
-            .update(storefrontAds)
+            .update(marketplaceAds)
             .set({ status: input.status, updatedAt: new Date() })
-            .where(eq(storefrontAds.id, input.id))
+            .where(eq(marketplaceAds.id, input.id))
             .returning();
           return ad;
         } catch (error) {

@@ -15,16 +15,16 @@
 | `/home/ubuntu/archives/`             | ~120 MB | ZIP archives of previous phases                   | Archival — safe to keep          |
 | `/home/ubuntu/.archived-stale/`      | ~80 MB  | Stale phase archives (65–70, production-overhaul) | **Stale — can be deleted**       |
 | `/home/ubuntu/tb-data/`              | ~2 MB   | TigerBeetle sidecar data files                    | Active — used by sidecar         |
-| `/home/ubuntu/webdev-static-assets/` | ~5 MB   | CDN-uploaded static assets                        | Active — referenced by POS Shell |
+| `/home/ubuntu/webdev-static-assets/` | ~5 MB   | CDN-uploaded static assets                        | Active — referenced by InsurePortal Platform |
 | `/home/ubuntu/skills/`               | <1 MB   | Manus skill definitions                           | System — do not touch            |
 
 ---
 
-## 2. Platform Service vs POS Shell Router Overlap
+## 2. Platform Service vs InsurePortal Platform Router Overlap
 
-The following table maps each POS Shell internal router to its canonical platform service equivalent. Where a platform service exists, the POS Shell router should become a thin proxy (calling `platformClient.ts`) rather than owning the business logic.
+The following table maps each InsurePortal Platform internal router to its canonical platform service equivalent. Where a platform service exists, the InsurePortal Platform router should become a thin proxy (calling `platformClient.ts`) rather than owning the business logic.
 
-| POS Shell Router     | Internal Logic              | Platform Service                                   | Platform Path                                                                                        | Integration Status                                                                         |
+| InsurePortal Platform Router     | Internal Logic              | Platform Service                                   | Platform Path                                                                                        | Integration Status                                                                         |
 | -------------------- | --------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `kyc.ts`             | KYC sessions, liveness, OCR | `kyc-enhanced` + `compliance-kyc`                  | `platform/services/kyc-enhanced/`, `platform/services/compliance-kyc/`                               | **Wired** — `kycClient.ts` proxies to `:5001/:5002/:5003`                                  |
 | `fraud.ts`           | Fraud reports, ML scoring   | `fraud-detection`                                  | `platform/services/fraud-detection/`                                                                 | **Wired** — `fraudPlatform` client, local DB fallback                                      |
@@ -66,7 +66,7 @@ The platform monorepo contains multiple implementations of the same service in d
 | ----------------------- | -------------------------------------------------------- | -------------- | ---- | ------------------------------------- |
 | Go notification         | `platform/services/go-services/notification-service/`    | Go             | 8110 | Multi-channel (SMS/email/push/in-app) |
 | Python notification     | `platform/backend/python-services/notification-service/` | Python/FastAPI | 8110 | Same API                              |
-| POS Shell Termii direct | `server/routers/smsReceipt.ts`                           | TypeScript     | —    | Direct Termii API call                |
+| InsurePortal Platform Termii direct | `server/routers/smsReceipt.ts`                           | TypeScript     | —    | Direct Termii API call                |
 | Manus notifyOwner       | `server/_core/notification.ts`                           | TypeScript     | —    | Owner-only, Manus built-in            |
 
 **Canonical:** Go notification service (`:8110`) for agent/customer notifications. Manus notifyOwner for owner alerts. Termii direct for SMS receipts (acceptable — low complexity).
@@ -77,9 +77,9 @@ The platform monorepo contains multiple implementations of the same service in d
 | --------------------- | -------------------------------------------------- | -------------- | -------- | --------------------- |
 | Go analytics          | `platform/services/go-services/analytics-service/` | Go             | 8109     | Real-time metrics     |
 | Python analytics      | `platform/core-services/analytics-service/`        | Python/FastAPI | 8109     | Lakehouse-backed      |
-| POS Shell hourlyStats | `server/routers/transactions.ts`                   | TypeScript     | internal | PostgreSQL aggregates |
+| InsurePortal Platform hourlyStats | `server/routers/transactions.ts`                   | TypeScript     | internal | PostgreSQL aggregates |
 
-**Canonical:** Python analytics service (`:8109`) for historical/lakehouse analytics. POS Shell PostgreSQL aggregates for real-time dashboard (acceptable — low latency).
+**Canonical:** Python analytics service (`:8109`) for historical/lakehouse analytics. InsurePortal Platform PostgreSQL aggregates for real-time dashboard (acceptable — low latency).
 
 ### 3.4 Audit Service
 
@@ -87,9 +87,9 @@ The platform monorepo contains multiple implementations of the same service in d
 | ------------------------- | ------------------------------------------------- | ---------- | -------- | -------------------- |
 | Go audit-service          | `platform/services/go-services/audit-service/`    | Go         | —        | Writes to Fluvio     |
 | Go audit-compliance       | `platform/services/go-services/audit-compliance/` | Go         | —        | Compliance reporting |
-| POS Shell auditLog router | `server/routers/auditLog.ts`                      | TypeScript | internal | PostgreSQL only      |
+| InsurePortal Platform auditLog router | `server/routers/auditLog.ts`                      | TypeScript | internal | PostgreSQL only      |
 
-**Canonical:** Go audit-service for platform-wide audit trail. POS Shell PostgreSQL for local queries (dual-write pattern recommended — see middleware audit doc).
+**Canonical:** Go audit-service for platform-wide audit trail. InsurePortal Platform PostgreSQL for local queries (dual-write pattern recommended — see middleware audit doc).
 
 ---
 
@@ -126,13 +126,13 @@ The following directories/files are stale and can be safely deleted to reclaim ~
 
 ## 6. Files Safe to Delete Now
 
-The following files in the POS Shell project are dead code or superseded:
+The following files in the InsurePortal Platform project are dead code or superseded:
 
 | File            | Reason                                          |
 | --------------- | ----------------------------------------------- |
 | None identified | All server files are actively imported and used |
 
-The POS Shell codebase is clean — no dead code identified. The redundancy is entirely at the workspace level (platform monorepo vs POS Shell internal implementations), not within the POS Shell itself.
+The InsurePortal Platform codebase is clean — no dead code identified. The redundancy is entirely at the workspace level (platform monorepo vs InsurePortal Platform internal implementations), not within the InsurePortal Platform itself.
 
 ---
 

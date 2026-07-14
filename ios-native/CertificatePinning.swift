@@ -13,7 +13,9 @@ class CertificatePinning: NSObject, URLSessionDelegate {
     
     private let pinnedDomains: Set<String> = [
         "api.remittance.ng",
-        "secure.remittance.ng"
+        "secure.remittance.ng",
+        "api.54link.ng",
+        "staging.54link.ng"
     ]
     
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {

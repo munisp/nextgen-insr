@@ -1,15 +1,51 @@
 import os
 """AML Screening Python SDK — PEP/sanctions list screening for Nigerian insurance.
 
-Business Rules:
-- Screening sources: OFAC SDN, UN Sanctions, EFCC Watch List, CBN BVN blacklist
-- Match threshold: Fuzzy name match > 85% similarity = flag for review
-- Auto-clear: Score < 50% = no match, pass through
-- Enhanced Due Diligence: Score 50-85% = EDD required
-- Block: Score > 85% = immediate block + STR filing
-- Re-screening: All customers re-screened quarterly
-- Response SLA: < 500ms for real-time, < 5min for batch
 """
+
+import os
+import psycopg2
+import psycopg2.extras
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ── Database Connection ──────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+_db_conn = None
+
+def get_db():
+    global _db_conn
+    if _db_conn is None or _db_conn.closed:
+        try:
+            _db_conn = psycopg2.connect(DATABASE_URL)
+            _db_conn.autocommit = True
+            logger.info(f"Connected to PostgreSQL for aml_screening_python_sdk")
+        except Exception as e:
+            logger.warning(f"Database connection failed: {e} (running in degraded mode)")
+            return None
+    return _db_conn
+
+def init_db():
+    conn = get_db()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS aml_screening_python_sdk (
+                        id SERIAL PRIMARY KEY,
+                        data JSONB NOT NULL DEFAULT '{}',
+                        status VARCHAR(50) DEFAULT 'active',
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW(),
+                        tenant_id INTEGER DEFAULT 1
+                    )
+                """)
+            logger.info(f"Table aml_screening_python_sdk initialized")
+        except Exception as e:
+            logger.warning(f"Table creation failed: {e}")
+
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from difflib import SequenceMatcher
@@ -224,3 +260,8 @@ def batch_screen(names: list[str]):
         decision = "clear" if max_score < 50 else "edd_required" if max_score < 85 else "blocked"
         results.append({"name": name, "score": round(max_score, 1), "decision": decision})
     return {"results": results, "total": len(results)}
+
+
+@app.on_event("startup")
+async def startup():
+    init_db()

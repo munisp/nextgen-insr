@@ -312,7 +312,6 @@ const TaxCollectionPage = lazy(() => import("./pages/TaxCollectionPage"));
 const PensionCollectionPage = lazy(
   () => import("./pages/PensionCollectionPage")
 );
-const RemittancePage = lazy(() => import("./pages/RemittancePage"));
 const QdrantVectorSearchPage = lazy(
   () => import("./pages/QdrantVectorSearchPage")
 );
@@ -659,9 +658,6 @@ const TransactionGraphAnalyzer = lazy(
 );
 const PlatformRevenueOptimizer = lazy(
   () => import("./pages/PlatformRevenueOptimizer")
-);
-const CrossBorderRemittanceHub = lazy(
-  () => import("./pages/CrossBorderRemittanceHub")
 );
 const OperationalCommandBridge = lazy(
   () => import("./pages/OperationalCommandBridge")
@@ -1460,7 +1456,6 @@ function AuthenticatedApp() {
         <Route path="/account-opening" component={AccountOpeningPage} />
         <Route path="/tax-collection" component={TaxCollectionPage} />
         <Route path="/pension-collection" component={PensionCollectionPage} />
-        <Route path="/remittance" component={RemittancePage} />
         {/* Sprint 29: AI/ML/DL/GNN Integrations */}
         <Route
           path="/qdrant-vector-search"
@@ -1843,10 +1838,6 @@ function AuthenticatedApp() {
         <Route path="/agent-micro-insurance" component={AgentMicroInsurance} />
         <Route path="/transaction-graph" component={TransactionGraphAnalyzer} />
         <Route path="/revenue-optimizer" component={PlatformRevenueOptimizer} />
-        <Route
-          path="/cross-border-remittance"
-          component={CrossBorderRemittanceHub}
-        />
         <Route
           path="/operational-command-bridge"
           component={OperationalCommandBridge}

@@ -107,7 +107,6 @@ import { cardRequestRouter } from "./routers/cardRequest";
 import { accountOpeningRouter } from "./routers/accountOpening";
 import { taxCollectionRouter } from "./routers/taxCollection";
 import { pensionCollectionRouter } from "./routers/pensionCollection";
-import { remittanceRouter } from "./routers/remittance";
 import { qdrantVectorSearchRouter } from "./routers/qdrantVectorSearch";
 import { falkordbGraphRouter } from "./routers/falkordbGraph";
 import { cocoIndexPipelineRouter } from "./routers/cocoIndexPipeline";
@@ -180,7 +179,7 @@ import { agentTerritoryMgmtRouter } from "./routers/agentTerritoryMgmt";
 import { dynamicPricingEngineRouter } from "./routers/dynamicPricingEngine";
 import { customerLoyaltyProgramRouter } from "./routers/customerLoyaltyProgram";
 import { fraudCaseManagementRouter } from "./routers/fraudCaseManagement";
-import { posTerminalFleetRouter } from "./routers/posTerminalFleet";
+import { serviceNodeFleetRouter } from "./routers/serviceNodeFleet";
 import { financialReconciliationDashRouter } from "./routers/financialReconciliationDash";
 import { apiAnalyticsDashRouter } from "./routers/apiAnalyticsDash";
 import { agentCommunicationHubRouter } from "./routers/agentCommunicationHub";
@@ -269,7 +268,6 @@ import { merchantAcquirerGatewayRouter } from "./routers/merchantAcquirerGateway
 import { agentMicroInsuranceRouter } from "./routers/agentMicroInsurance";
 import { transactionGraphAnalyzerRouter } from "./routers/transactionGraphAnalyzer";
 import { platformRevenueOptimizerRouter } from "./routers/platformRevenueOptimizer";
-import { crossBorderRemittanceHubRouter } from "./routers/crossBorderRemittanceHub";
 import { operationalCommandBridgeRouter } from "./routers/operationalCommandBridge";
 // ── Sprint 41 Imports ──
 import { agentKycDocVaultRouter } from "./routers/agentKycDocVault";
@@ -319,7 +317,7 @@ import { agentPerformanceLeaderboardRouter } from "./routers/agentPerformanceLea
 import { automatedSettlementSchedulerRouter } from "./routers/automatedSettlementScheduler";
 import { customerWalletSystemRouter } from "./routers/customerWalletSystem";
 import { merchantAnalyticsDashRouter } from "./routers/merchantAnalyticsDash";
-import { posFirmwareOTARouter } from "./routers/posFirmwareOTA";
+import { firmwareOTARouter } from "./routers/firmwareOTA";
 import { transactionReceiptGeneratorRouter } from "./routers/transactionReceiptGenerator";
 import { agentLoanAdvanceRouter } from "./routers/agentLoanAdvance";
 import { multiChannelPaymentOrchRouter } from "./routers/multiChannelPaymentOrch";
@@ -464,9 +462,7 @@ import { multiSimFailoverRouter } from "./routers/multiSimFailover";
 import { agentFloatTransferRouter } from "./routers/agentFloatTransfer";
 import { splitPaymentsRouter } from "./routers/splitPayments";
 import { recurringPaymentsRouter } from "./routers/recurringPayments";
-import { terminalLeasingRouter } from "./routers/terminalLeasing";
 import { posDisputeRouter } from "./routers/posDispute";
-import { crossBorderRemittanceRouter } from "./routers/crossBorderRemittance";
 import { agentTrainingGamificationRouter } from "./routers/agentTrainingGamification";
 // Sprint 97: Frontend-Backend Gap Closure
 import { activityAuditLogRouter } from "./routers/activityAuditLog";
@@ -482,9 +478,6 @@ import { transactionMonitoringRouter } from "./routers/transactionMonitoring";
 import { transactionReversalWorkflowRouter } from "./routers/transactionReversalWorkflow";
 import { ussdLocalizationRouter } from "./routers/ussdLocalization";
 import { geoFenceDedicatedRouter } from "./routers/geoFenceDedicated";
-import { ecommerceCatalogRouter } from "./routers/ecommerceCatalog";
-import { ecommerceCartRouter } from "./routers/ecommerceCart";
-import { ecommerceOrdersRouter } from "./routers/ecommerceOrders";
 import { supplyChainRouter } from "./routers/supplyChain";
 import { marketplaceRouter } from "./routers/marketplace";
 import { promotionsRouter } from "./routers/promotions";
@@ -715,7 +708,6 @@ export const appRouter = router({
   accountOpening: accountOpeningRouter,
   taxCollection: taxCollectionRouter,
   pensionCollection: pensionCollectionRouter,
-  remittanceDedicated: remittanceRouter,
   // Sprint 29: AI/ML/DL/GNN/LLM Production Integration
   qdrantVectorSearch: qdrantVectorSearchRouter,
   falkordbGraph: falkordbGraphRouter,
@@ -794,7 +786,7 @@ export const appRouter = router({
   dynamicPricingEngine: dynamicPricingEngineRouter,
   customerLoyaltyProgram: customerLoyaltyProgramRouter,
   fraudCaseManagement: fraudCaseManagementRouter,
-  posTerminalFleet: posTerminalFleetRouter,
+  serviceNodeFleet: serviceNodeFleetRouter,
   financialReconciliationDash: financialReconciliationDashRouter,
   apiAnalyticsDash: apiAnalyticsDashRouter,
   agentCommunicationHub: agentCommunicationHubRouter,
@@ -853,7 +845,7 @@ export const appRouter = router({
   automatedSettlementScheduler: automatedSettlementSchedulerRouter,
   customerWalletSystem: customerWalletSystemRouter,
   merchantAnalyticsDash: merchantAnalyticsDashRouter,
-  posFirmwareOTA: posFirmwareOTARouter,
+  firmwareOTA: firmwareOTARouter,
   transactionReceiptGenerator: transactionReceiptGeneratorRouter,
   agentLoanAdvance: agentLoanAdvanceRouter,
   multiChannelPaymentOrch: multiChannelPaymentOrchRouter,
@@ -905,7 +897,6 @@ export const appRouter = router({
   agentMicroInsurance: agentMicroInsuranceRouter,
   transactionGraphAnalyzer: transactionGraphAnalyzerRouter,
   platformRevenueOptimizer: platformRevenueOptimizerRouter,
-  crossBorderRemittanceHub: crossBorderRemittanceHubRouter,
   operationalCommandBridge: operationalCommandBridgeRouter,
   // Sprint 41
   agentKycDocVault: agentKycDocVaultRouter,
@@ -1060,9 +1051,7 @@ export const appRouter = router({
   agentFloatTransfer: agentFloatTransferRouter,
   splitPayments: splitPaymentsRouter,
   recurringPayments: recurringPaymentsRouter,
-  terminalLeasing: terminalLeasingRouter,
   posDispute: posDisputeRouter,
-  crossBorderRemittance: crossBorderRemittanceRouter,
   agentTrainingGamification: agentTrainingGamificationRouter,
   // Sprint 97: Frontend-Backend Gap Closure
   activityAuditLog: activityAuditLogRouter,
@@ -1082,9 +1071,6 @@ export const appRouter = router({
   amlScreening: amlScreeningRouter,
   receiptTemplates: receiptTemplatesRouter,
   // E-commerce & Supply Chain
-  ecommerceCatalog: ecommerceCatalogRouter,
-  ecommerceCart: ecommerceCartRouter,
-  ecommerceOrders: ecommerceOrdersRouter,
   supplyChain: supplyChainRouter,
   marketplace: marketplaceRouter,
   promotions: promotionsRouter,

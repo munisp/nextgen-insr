@@ -1,5 +1,5 @@
 """
-analytics-service — 54Link Nigeria Transaction Success-Rate Analytics
+analytics-service — InsurePortal Nigeria Transaction Success-Rate Analytics
 ======================================================================
 A FastAPI service that queries PostgreSQL directly and computes rolling
 statistics used by the POS Admin Panel and home-screen success badge.

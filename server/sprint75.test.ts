@@ -622,12 +622,12 @@ describe("Sprint 75: Integration", () => {
     expect(langs.has("Rust")).toBe(true);
   });
 
-  it("should have 2 new POSShell screens", () => {
+  it("should have 2 new PlatformShell screens", () => {
     const screens = ["UssdTransaction", "CarrierSwitch"];
     expect(screens).toHaveLength(2);
   });
 
-  it("should have 2 new POSShell tiles", () => {
+  it("should have 2 new PlatformShell tiles", () => {
     const tiles = [
       { id: "ussd-tx", screen: "UssdTransaction" },
       { id: "carrier-switch", screen: "CarrierSwitch" },

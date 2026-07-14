@@ -1,0 +1,6 @@
+apiVersion: v2
+name: microinsurance-engine
+description: Helm chart for microinsurance-engine microservice
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

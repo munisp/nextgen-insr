@@ -70,7 +70,7 @@ export const ONE_TIME_PRODUCTS = [
   {
     id: "device-activation",
     name: "POS Device Activation Fee",
-    description: "One-time activation fee for new POS terminal",
+    description: "One-time activation fee for new service node",
     priceNGN: 1000000, // ₦10,000
     priceUSD: 1000, // $10.00
   },

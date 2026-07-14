@@ -87,7 +87,7 @@ groups:
           severity: warning
           service: insurance-portal
         annotations:
-          summary: "POS Shell p95 latency above 500 ms SLA"
+          summary: "InsurePortal Platform p95 latency above 500 ms SLA"
           description: "p95 HTTP latency is {{ $value | humanizeDuration }} — above the 500 ms SLA threshold."
 
       # ── Error rate > 5% for 1 minute ────────────────────────────────────────
@@ -101,7 +101,7 @@ groups:
           severity: critical
           service: insurance-portal
         annotations:
-          summary: "POS Shell transaction error rate above 5%"
+          summary: "InsurePortal Platform transaction error rate above 5%"
           description: "Transaction error rate is {{ $value | humanizePercentage }}."
 
       # ── High fraud alert volume ──────────────────────────────────────────────

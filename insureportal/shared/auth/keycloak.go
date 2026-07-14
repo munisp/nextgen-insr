@@ -64,12 +64,13 @@ func NewJWTMiddleware(cfg KeycloakConfig) *JWTMiddleware {
 
 func (m *JWTMiddleware) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Dev bypass
-		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
+		// Dev bypass — ONLY allowed when NODE_ENV=development AND DEV_AUTH_BYPASS=true.
+		// Blocked entirely in production to prevent accidental admin escalation.
+		if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("NODE_ENV") == "development" {
 			claims := &Claims{
 				PreferredUser: "dev-user",
 				Email:         "dev@ngapp.local",
-				RealmAccess:   RealmAccess{Roles: []string{"admin", "user"}},
+				RealmAccess:   RealmAccess{Roles: []string{"user"}},
 				TenantID:      "default",
 			}
 			ctx := context.WithValue(r.Context(), ClaimsKey, claims)

@@ -1,6 +1,6 @@
 # Comprehensive KYC/KYB/Liveness Improvement Recommendations
 
-**Platform:** POS Shell — Agent Banking & Financial Services  
+**Platform:** InsurePortal Platform — Agent Banking & Financial Services  
 **Date:** May 2026  
 **Scope:** Identity verification, business verification, and biometric liveness detection for Nigerian POS agent networks
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The POS Shell platform currently implements a multi-layered KYC/KYB system with active liveness detection, document verification, and device fingerprinting. This document provides actionable recommendations across six categories to bring the platform to ISO 30107-3 compliance, defend against deepfake injection attacks, meet CBN 2026 baseline standards, and improve conversion rates on budget African devices.
+The InsurePortal Platform platform currently implements a multi-layered KYC/KYB system with active liveness detection, document verification, and device fingerprinting. This document provides actionable recommendations across six categories to bring the platform to ISO 30107-3 compliance, defend against deepfake injection attacks, meet CBN 2026 baseline standards, and improve conversion rates on budget African devices.
 
 ---
 

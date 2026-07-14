@@ -368,11 +368,18 @@ func (s *PFAService) HandleGroupLifePremium(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *PFAService) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "pfa-integration",
 		"timestamp": time.Now(),
+		"database":  dbStatus,
 		"features": []string{
 			"rsa_validation",
 			"annuity_quotes",
@@ -1184,4 +1191,5 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+	log.Printf(`{"level":"info","msg":"server stopped","service":"pfa-integration"}`)
 }

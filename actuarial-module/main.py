@@ -1,16 +1,50 @@
 """
 Actuarial Module (Python)
 
-Provides actuarial calculations for insurance pricing, reserving, and capital modeling.
-Integrates with: Postgres, Redis, Kafka
 
-Calculations:
-- Loss ratio analysis by product line
-- IBNR (Incurred But Not Reported) reserves
-- Chain-ladder development factors
-- Risk margin calculation (Cost of Capital method)
-- Solvency capital requirement (SCR) under NAICOM RBS
 """
+import os
+import psycopg2
+import psycopg2.extras
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ── Database Connection ──────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+_db_conn = None
+
+def get_db():
+    global _db_conn
+    if _db_conn is None or _db_conn.closed:
+        try:
+            _db_conn = psycopg2.connect(DATABASE_URL)
+            _db_conn.autocommit = True
+            logger.info(f"Connected to PostgreSQL for actuarial_module")
+        except Exception as e:
+            logger.warning(f"Database connection failed: {e} (running in degraded mode)")
+            return None
+    return _db_conn
+
+def init_db():
+    conn = get_db()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS actuarial_module (
+                        id SERIAL PRIMARY KEY,
+                        data JSONB NOT NULL DEFAULT '{}',
+                        status VARCHAR(50) DEFAULT 'active',
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW(),
+                        tenant_id INTEGER DEFAULT 1
+                    )
+                """)
+            logger.info(f"Table actuarial_module initialized")
+        except Exception as e:
+            logger.warning(f"Table creation failed: {e}")
+
 
 import json
 import math
@@ -426,6 +460,8 @@ def create_app() -> HTTPServer:
     logger.info("Actuarial Module starting on port %d", port)
     return server
 
+
+init_db()
 
 if __name__ == "__main__":
     server = create_app()

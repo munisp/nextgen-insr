@@ -1,0 +1,6 @@
+apiVersion: v2
+name: underwriting-engine
+description: Helm chart for underwriting-engine microservice
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

@@ -21,7 +21,7 @@ The InsurePortal Insurance Platform is a full-stack, multi-service insurance sol
 | Database                | PostgreSQL (Drizzle ORM)           | Primary data store with 55 tables             |
 | Real-time               | Socket.IO + SSE                    | Live fraud alerts, terminal presence          |
 | Auth                    | Manus OAuth + JWT + FIDO2/WebAuthn | Multi-factor, biometric agent login           |
-| OTA Service             | Go (Gin)                           | Firmware update delivery for POS terminals    |
+| OTA Service             | Go (Gin)                           | Firmware update delivery for service nodes    |
 | FIDO2 Service           | Go (Gin)                           | WebAuthn challenge/verify for biometric auth  |
 | Credit Scoring          | Python (Flask + scikit-learn)      | Agent creditworthiness scoring                |
 | Analytics               | Python (Flask + pandas)            | Transaction success rates, trend analysis     |
@@ -36,7 +36,7 @@ The InsurePortal Insurance Platform is a full-stack, multi-service insurance sol
 
 ## Feature Inventory
 
-### Core POS Terminal (`/`)
+### Core Service Node (`/`)
 
 - Cash In, Cash Out, Transfer, Bill Payment, Airtime, Data
 - Offline queue with IndexedDB + sync-on-reconnect

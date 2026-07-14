@@ -4,7 +4,7 @@
  *
  * Sections:
  * 1. Getting Started
- * 2. POS Terminal Operations
+ * 2. Service Node Operations
  * 3. Agent Management
  * 4. Transaction Processing
  * 5. Fraud Detection & Prevention
@@ -129,33 +129,33 @@ const guideSections: GuideSection[] = [
         id: "navigation",
         title: "Navigating the Platform",
         content:
-          "The platform uses a sidebar navigation organized into logical groups. Use the sidebar to access different features. The top header shows your notification bell and profile menu. On mobile, tap the hamburger menu to reveal the sidebar.\n\nKey navigation areas:\n- Core: POS Terminal and Platform Hub\n- Portals: Agent, Customer, Merchant, Developer\n- Administration: Admin Panel, Supervisor Dashboard\n- Operations: Transactions, Settlements, Commissions\n- Monitoring: System Health, Fraud Detection, Analytics",
+          "The platform uses a sidebar navigation organized into logical groups. Use the sidebar to access different features. The top header shows your notification bell and profile menu. On mobile, tap the hamburger menu to reveal the sidebar.\n\nKey navigation areas:\n- Core: Service Node and Platform Hub\n- Portals: Agent, Customer, Merchant, Developer\n- Administration: Admin Panel, Supervisor Dashboard\n- Operations: Transactions, Settlements, Commissions\n- Monitoring: System Health, Fraud Detection, Analytics",
         tags: ["navigation", "sidebar", "menu"],
       },
       {
         id: "keyboard-shortcuts",
         title: "Keyboard Shortcuts",
         content:
-          "Power users can navigate faster using keyboard shortcuts:\n\n- Ctrl+K / Cmd+K: Open global search\n- Ctrl+/: Show keyboard shortcuts help\n- Ctrl+H: Go to home/POS Terminal\n- Ctrl+N: Open notification center\n- Escape: Close any open modal or panel",
+          "Power users can navigate faster using keyboard shortcuts:\n\n- Ctrl+K / Cmd+K: Open global search\n- Ctrl+/: Show keyboard shortcuts help\n- Ctrl+H: Go to home/Service Node\n- Ctrl+N: Open notification center\n- Escape: Close any open modal or panel",
         tags: ["keyboard", "shortcuts", "productivity"],
       },
     ],
   },
   {
     id: "pos-terminal",
-    title: "POS Terminal Operations",
+    title: "Service Node Operations",
     icon: Smartphone,
-    description: "Process transactions on the POS terminal",
+    description: "Process transactions on the service node",
     subsections: [
       {
         id: "premium collection",
         title: "Cash-In (Deposits)",
         content:
-          "Cash-in allows customers to deposit money into their accounts through your POS terminal.",
+          "Cash-in allows customers to deposit money into their accounts through your service node.",
         steps: [
           {
             title: "Select Cash-In",
-            description: "From the POS Terminal, tap the Cash-In button",
+            description: "From the Service Node, tap the Cash-In button",
           },
           {
             title: "Enter Customer Details",
@@ -186,7 +186,7 @@ const guideSections: GuideSection[] = [
         steps: [
           {
             title: "Select Cash-Out",
-            description: "From the POS Terminal, tap the Cash-Out button",
+            description: "From the Service Node, tap the Cash-Out button",
           },
           {
             title: "Enter Customer Details",
@@ -219,7 +219,7 @@ const guideSections: GuideSection[] = [
         steps: [
           {
             title: "Select Transfer",
-            description: "Tap the Transfer button on the POS Terminal",
+            description: "Tap the Transfer button on the Service Node",
           },
           {
             title: "Enter Source Account",
@@ -250,7 +250,7 @@ const guideSections: GuideSection[] = [
         steps: [
           {
             title: "Select Bill Payment or Airtime",
-            description: "Choose the appropriate option from the POS Terminal",
+            description: "Choose the appropriate option from the Service Node",
           },
           {
             title: "Select Provider",

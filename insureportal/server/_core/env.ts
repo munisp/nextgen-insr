@@ -41,16 +41,16 @@ export const ENV = {
 
   // ── Platform APISix gateway ─────────────────────────────────────────────────
   platformBaseUrl: process.env.PLATFORM_BASE_URL ?? "http://apisix:9080",
-  platformApiKey: process.env.PLATFORM_API_KEY ?? "insureportal-platform-dev-api-key",
+  platformApiKey: process.env.PLATFORM_API_KEY ?? "",
   platformServiceToken:
-    process.env.PLATFORM_SERVICE_TOKEN ?? "insureportal-service-token-dev",
+    process.env.PLATFORM_SERVICE_TOKEN ?? "",
 
   // ── Keycloak OIDC ───────────────────────────────────────────────────────────
   keycloakUrl: process.env.KEYCLOAK_URL ?? "http://keycloak:8080",
   keycloakRealm: process.env.KEYCLOAK_REALM ?? "insureportal",
   keycloakClientId: process.env.KEYCLOAK_CLIENT_ID ?? "insureportal",
   keycloakClientSecret:
-    process.env.KEYCLOAK_CLIENT_SECRET ?? "insureportal-keycloak-dev-secret",
+    process.env.KEYCLOAK_CLIENT_SECRET ?? "",
 
   // ── Temporal workflow engine ─────────────────────────────────────────────────
   temporalAddress: process.env.TEMPORAL_ADDRESS ?? "temporal:7233",

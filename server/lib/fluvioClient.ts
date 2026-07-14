@@ -10,7 +10,7 @@
  *   • Agent activity telemetry (agent-telemetry)
  *
  * Architecture:
- *   POS Shell → fluvioClient.produce() → Fluvio cluster → consumers (fraud engine,
+ *   InsurePortal Platform → fluvioClient.produce() → Fluvio cluster → consumers (fraud engine,
  *   analytics, settlement, notification services)
  *
  * Fallback strategy:
@@ -60,7 +60,7 @@ const FLUVIO_API_KEY = ENV.fluvioApiKey;
 const PLATFORM_BASE_URL = ENV.platformBaseUrl; // APISix proxy fallback
 const PLATFORM_API_KEY = ENV.platformApiKey;
 
-/** Well-known topics this POS Shell produces to or consumes from */
+/** Well-known topics this InsurePortal Platform produces to or consumes from */
 export const FLUVIO_TOPICS = {
   TRANSACTIONS: "pos.transactions.created",
   FRAUD_ALERTS: "fraud-alerts",
