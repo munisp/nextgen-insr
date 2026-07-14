@@ -1,0 +1,130 @@
+# TigerBeetle Configuration — Financial-grade ledger for InsurePortal
+# Provides: 1M+ TPS, strict serializability, no double-spending, byzantine fault tolerance
+
+cluster:
+  id: 0
+  replica_count: 3
+  replica_addresses:
+    - "tigerbeetle-0:3000"
+    - "tigerbeetle-1:3001"
+    - "tigerbeetle-2:3002"
+
+storage:
+  data_file: "/data/tigerbeetle/0_0.tigerbeetle"
+  cache_grid_blocks: 1024  # 512MB cache (1024 * 512KB blocks)
+
+# Account ledgers (maps to InsurePortal financial domains)
+ledgers:
+  # NGN ledgers
+  - id: 1
+    name: "customer_wallets_ngn"
+    description: "Customer wallet balances in Naira"
+    currency: "NGN"
+
+  - id: 2
+    name: "premium_pool_ngn"
+    description: "Collected premiums awaiting allocation"
+    currency: "NGN"
+
+  - id: 3
+    name: "claims_reserve_ngn"
+    description: "Reserved funds for approved claims"
+    currency: "NGN"
+
+  - id: 4
+    name: "commission_ngn"
+    description: "Agent and broker commission accounts"
+    currency: "NGN"
+
+  - id: 5
+    name: "reinsurance_ngn"
+    description: "Reinsurance cession holding"
+    currency: "NGN"
+
+  - id: 6
+    name: "investment_returns_ngn"
+    description: "Returns from invested premiums"
+    currency: "NGN"
+
+  - id: 7
+    name: "regulatory_fees_ngn"
+    description: "NAICOM fees and levies"
+    currency: "NGN"
+
+  - id: 8
+    name: "p2p_pools_ngn"
+    description: "Peer-to-peer microinsurance pool funds"
+    currency: "NGN"
+
+  - id: 9
+    name: "parametric_reserves_ngn"
+    description: "Parametric insurance auto-payout reserves"
+    currency: "NGN"
+
+  - id: 10
+    name: "marketplace_revenue_ngn"
+    description: "API marketplace fee collection"
+    currency: "NGN"
+
+  # USD ledgers (for international reinsurance)
+  - id: 11
+    name: "reinsurance_usd"
+    description: "International reinsurance settlements"
+    currency: "USD"
+
+# Transfer types (maps to financial operations)
+transfer_types:
+  - code: 100
+    name: "premium_payment"
+    debit_ledger: 1   # customer wallet
+    credit_ledger: 2  # premium pool
+
+  - code: 200
+    name: "claim_payout"
+    debit_ledger: 3   # claims reserve
+    credit_ledger: 1  # customer wallet
+
+  - code: 300
+    name: "wallet_topup"
+    debit_ledger: 10  # external (placeholder)
+    credit_ledger: 1  # customer wallet
+
+  - code: 301
+    name: "wallet_withdrawal"
+    debit_ledger: 1   # customer wallet
+    credit_ledger: 10 # external (placeholder)
+
+  - code: 400
+    name: "commission_credit"
+    debit_ledger: 2   # premium pool
+    credit_ledger: 4  # commission
+
+  - code: 500
+    name: "reinsurance_cession"
+    debit_ledger: 2   # premium pool
+    credit_ledger: 5  # reinsurance
+
+  - code: 600
+    name: "p2p_contribution"
+    debit_ledger: 1   # customer wallet
+    credit_ledger: 8  # p2p pool
+
+  - code: 601
+    name: "p2p_payout"
+    debit_ledger: 8   # p2p pool
+    credit_ledger: 1  # customer wallet
+
+  - code: 700
+    name: "parametric_payout"
+    debit_ledger: 9   # parametric reserves
+    credit_ledger: 1  # customer wallet
+
+  - code: 800
+    name: "refund"
+    debit_ledger: 2   # premium pool
+    credit_ledger: 1  # customer wallet
+
+  - code: 900
+    name: "naicom_fee"
+    debit_ledger: 2   # premium pool
+    credit_ledger: 7  # regulatory fees

@@ -5,19 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
+	tigerbeetle_go "github.com/tigerbeetle/tigerbeetle-go"
+	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"gorm.io/gorm"
 
+	"nextgen-insr/tigerbeetle-implementation/ledger"
 )
 
 type MojaloopPaymentService struct {
-	db              *gorm.DB
-	mojaloopClient  *MojaloopClient
-	tigerBeetleClient interface{}
-	kafkaWriter     *kafka.Writer
+	db                *gorm.DB
+	mojaloopClient    *MojaloopClient
+	tigerBeetleClient *ledger.TigerBeetleClient
+	kafkaWriter       *kafka.Writer
 }
 
 type Payment struct {
@@ -49,21 +53,23 @@ func NewMojaloopPaymentService(
 	fspiID string,
 	apiKey string,
 	kafkaBrokers string,
+	tbClient *ledger.TigerBeetleClient,
 ) *MojaloopPaymentService {
 	mojaloopClient := NewMojaloopClient(mojaloopBaseURL, fspiID, apiKey)
 
 	kafkaWriter := &kafka.Writer{
 		Addr:         kafka.TCP(kafkaBrokers),
-		Topic:        "payments.events",
+		Topic:        "54link.payments.events",
 		Balancer:     &kafka.Hash{},
 		RequiredAcks: kafka.RequireAll,
 		Compression:  kafka.Snappy,
 	}
 
 	return &MojaloopPaymentService{
-		db:             db,
-		mojaloopClient: mojaloopClient,
-		kafkaWriter:    kafkaWriter,
+		db:                db,
+		mojaloopClient:    mojaloopClient,
+		tigerBeetleClient: tbClient,
+		kafkaWriter:       kafkaWriter,
 	}
 }
 
@@ -253,8 +259,39 @@ func (s *MojaloopPaymentService) completePayment(payment *Payment) {
 	payment.Status = "completed"
 	payment.CompletedAt = &now
 	payment.UpdatedAt = now
-	s.db.Save(payment)
 
+	// Record the transfer in TigerBeetle for double-entry ledger
+	if s.tigerBeetleClient != nil {
+		amountFloat, err := strconv.ParseFloat(payment.Amount, 64)
+		if err == nil {
+			amountSmallest := ledger.AmountToSmallestUnit(amountFloat, 2)
+			transferID := ledger.GenerateTransferID(
+				fmt.Sprintf("mojaloop-%s", payment.MojaloopTransferID), 1,
+			)
+			customerAccountID := ledger.GenerateAccountID("customer", payment.CustomerID.ID())
+			companyAccountID := ledger.GenerateAccountID("company", 1)
+
+			transfer := types.Transfer{
+				ID:              transferID,
+				DebitAccountID:  customerAccountID,
+				CreditAccountID: companyAccountID,
+				Amount:          ledger.Uint128FromUint64(amountSmallest),
+				Ledger:          1,
+				Code:            100, // Premium payment
+			}
+
+			if _, err := s.tigerBeetleClient.CreateTransfer(
+				context.Background(), transfer,
+			); err != nil {
+				log.Printf("TigerBeetle transfer failed for payment %s: %v", payment.ID, err)
+			} else {
+				payment.TigerBeetleTransferID = fmt.Sprintf("%v", transferID)
+				log.Printf("TigerBeetle transfer recorded for payment %s", payment.ID)
+			}
+		}
+	}
+
+	s.db.Save(payment)
 	s.publishEvent("payment.completed", payment)
 	log.Printf("Payment completed: %s", payment.ID)
 }

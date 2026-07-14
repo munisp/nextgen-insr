@@ -2,7 +2,7 @@
  * PlatformHub.tsx — Central navigation hub for the InsurePortal Insurance Platform.
  *
  * Displays all available portals with role-based visibility:
- *   - All agents: POS Shell, Agent Banking Portal
+ *   - All agents: InsurePortal Platform, Agent Banking Portal
  *   - Supervisor / Admin: Management Portal, Supervisor Dashboard
  *   - Admin only: Admin Panel, Super Admin Portal
  *   - All: Customer Portal (for assisted customer onboarding)
@@ -33,7 +33,7 @@ interface PortalCard {
 
 const PORTALS: PortalCard[] = [
   {
-    title: "POS Shell",
+    title: "InsurePortal Platform",
     description:
       "Core insurance terminal — cash in/out, transfers, airtime, bills, NFC & QR payments.",
     path: "/",
@@ -79,7 +79,7 @@ const PORTALS: PortalCard[] = [
   {
     title: "Management Portal",
     description:
-      "Full platform management — agents, transactions, KYC, commissions, POS terminals, analytics.",
+      "Full platform management — agents, transactions, KYC, commissions, service nodes, analytics.",
     path: "/management",
     icon: "⚙️",
     badge: "Admin",

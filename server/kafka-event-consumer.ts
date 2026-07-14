@@ -93,47 +93,187 @@ type EventHandler = (event: PosEvent) => Promise<void>;
 
 const eventHandlers: Map<string, EventHandler> = new Map();
 
+// ─── Event Store ────────────────────────────────────────────────────────────
+// Persists every event to the event store table for audit trail and replay.
+async function persistToEventStore(event: PosEvent): Promise<void> {
+  const { db } = await import("./db");
+  await db.execute(
+    `INSERT INTO event_store (event_id, event_type, source, correlation_id, causation_id, payload, metadata, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+     ON CONFLICT (event_id) DO NOTHING`,
+    [
+      event.id,
+      event.type,
+      event.source,
+      event.correlationId,
+      event.causationId ?? null,
+      JSON.stringify(event.payload),
+      JSON.stringify(event.metadata),
+    ]
+  );
+}
+
 // Transaction events
 eventHandlers.set("payment.created", async event => {
-  const { agentId, amount, currency, reference } = event.payload as any;
+  const { agentId, amount, currency, reference } = event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  await db.execute(
+    `INSERT INTO pending_transactions (reference, agent_id, amount, currency, status, created_at)
+     VALUES ($1, $2, $3, $4, 'pending', NOW())
+     ON CONFLICT (reference) DO NOTHING`,
+    [reference, agentId, amount, currency]
+  );
   console.log(
     `[Kafka] Payment created: agent=${agentId} amount=${amount} ${currency} ref=${reference}`
   );
-  // Persist to event store, update read model
 });
 
 eventHandlers.set("payment.completed", async event => {
-  const { transactionId, agentId, amount, fee } = event.payload as any;
+  const { transactionId, agentId, amount, fee } = event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  // Atomically update transaction status and agent balance
+  await db.execute(`BEGIN`);
+  try {
+    await db.execute(
+      `UPDATE pending_transactions SET status = 'completed', completed_at = NOW() WHERE reference = $1`,
+      [transactionId]
+    );
+    await db.execute(
+      `UPDATE agent_balances SET available_balance = available_balance - $1, pending_balance = pending_balance + $1, updated_at = NOW() WHERE agent_id = $2`,
+      [fee, agentId]
+    );
+    // Queue for next settlement batch
+    await db.execute(
+      `INSERT INTO settlement_queue (transaction_id, agent_id, amount, fee, queued_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (transaction_id) DO NOTHING`,
+      [transactionId, agentId, amount, fee]
+    );
+    await db.execute(`COMMIT`);
+  } catch (err) {
+    await db.execute(`ROLLBACK`);
+    throw err;
+  }
   console.log(
     `[Kafka] Payment completed: tx=${transactionId} agent=${agentId} amount=${amount} fee=${fee}`
   );
-  // Update agent balance, trigger settlement calculation, emit notification
 });
 
 eventHandlers.set("payment.failed", async event => {
-  const { transactionId, reason, agentId } = event.payload as any;
+  const { transactionId, reason, agentId } = event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  await db.execute(`BEGIN`);
+  try {
+    await db.execute(
+      `UPDATE pending_transactions SET status = 'failed', failure_reason = $1, completed_at = NOW() WHERE reference = $2`,
+      [reason, transactionId]
+    );
+    // Reverse any pending hold on agent balance
+    await db.execute(
+      `UPDATE agent_balances SET pending_balance = GREATEST(pending_balance - (
+        SELECT COALESCE(amount, 0) FROM pending_transactions WHERE reference = $1
+       ), 0), updated_at = NOW() WHERE agent_id = $2`,
+      [transactionId, agentId]
+    );
+    await db.execute(`COMMIT`);
+  } catch (err) {
+    await db.execute(`ROLLBACK`);
+    throw err;
+  }
+  // Log to fraud detection if repeated failures
+  await db.execute(
+    `INSERT INTO fraud_signals (agent_id, signal_type, reference, details, created_at)
+     VALUES ($1, 'repeated_failure', $2, $3, NOW())`,
+    [agentId, transactionId, JSON.stringify({ reason })]
+  );
   console.log(`[Kafka] Payment failed: tx=${transactionId} reason=${reason}`);
-  // Reverse pending balance, alert agent, log to fraud system
 });
 
 // Agent lifecycle events
 eventHandlers.set("agent.registered", async event => {
-  const { agentId, name, region, tier } = event.payload as any;
+  const { agentId, name, region, tier } = event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  // Initialize float account with zero balance
+  await db.execute(
+    `INSERT INTO agent_balances (agent_id, available_balance, pending_balance, tier, region, created_at)
+     VALUES ($1, 0, 0, $2, $3, NOW())
+     ON CONFLICT (agent_id) DO NOTHING`,
+    [agentId, tier, region]
+  );
+  // Queue welcome notification
+  await db.execute(
+    `INSERT INTO notification_queue (recipient_id, channel, template, payload, status, created_at)
+     VALUES ($1, 'sms', 'agent_welcome', $2, 'pending', NOW())`,
+    [agentId, JSON.stringify({ name, region, tier })]
+  );
   console.log(
     `[Kafka] Agent registered: ${agentId} name=${name} region=${region}`
   );
-  // Initialize float account, send welcome notification, assign to region
 });
 
 eventHandlers.set("agent.suspended", async event => {
-  const { agentId, reason, suspendedBy } = event.payload as any;
+  const { agentId, reason, suspendedBy } = event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  await db.execute(`BEGIN`);
+  try {
+    // Lock float — set available balance to 0, move to frozen
+    await db.execute(
+      `UPDATE agent_balances SET frozen_balance = available_balance, available_balance = 0, status = 'suspended', updated_at = NOW() WHERE agent_id = $1`,
+      [agentId]
+    );
+    // Disable all active terminals
+    await db.execute(
+      `UPDATE agent_terminals SET status = 'disabled', disabled_at = NOW(), disabled_reason = $1 WHERE agent_id = $2 AND status = 'active'`,
+      [reason, agentId]
+    );
+    await db.execute(`COMMIT`);
+  } catch (err) {
+    await db.execute(`ROLLBACK`);
+    throw err;
+  }
+  // Notify compliance team
+  await db.execute(
+    `INSERT INTO notification_queue (recipient_id, channel, template, payload, status, created_at)
+     VALUES ('compliance_team', 'email', 'agent_suspended', $1, 'pending', NOW())`,
+    [JSON.stringify({ agentId, reason, suspendedBy })]
+  );
   console.log(`[Kafka] Agent suspended: ${agentId} reason=${reason}`);
-  // Lock float, disable terminal, notify compliance
 });
 
 // Float events
 eventHandlers.set("float.topup", async event => {
-  const { agentId, amount, source, reference } = event.payload as any;
+  const { agentId, amount, source, reference } = event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  await db.execute(`BEGIN`);
+  try {
+    await db.execute(
+      `UPDATE agent_balances SET available_balance = available_balance + $1, updated_at = NOW() WHERE agent_id = $2`,
+      [amount, agentId]
+    );
+    await db.execute(
+      `INSERT INTO float_transactions (reference, agent_id, amount, source, type, created_at)
+       VALUES ($1, $2, $3, $4, 'topup', NOW())
+       ON CONFLICT (reference) DO NOTHING`,
+      [reference, agentId, amount, source]
+    );
+    // Check and update daily limit tracking
+    await db.execute(
+      `INSERT INTO daily_float_limits (agent_id, date, total_topup, tx_count)
+       VALUES ($1, CURRENT_DATE, $2, 1)
+       ON CONFLICT (agent_id, date) DO UPDATE SET total_topup = daily_float_limits.total_topup + $2, tx_count = daily_float_limits.tx_count + 1`,
+      [agentId, amount]
+    );
+    await db.execute(`COMMIT`);
+  } catch (err) {
+    await db.execute(`ROLLBACK`);
+    throw err;
+  }
   console.log(
     `[Kafka] Float topup: agent=${agentId} amount=${amount} source=${source}`
   );
@@ -142,28 +282,81 @@ eventHandlers.set("float.topup", async event => {
 
 eventHandlers.set("float.reconciled", async event => {
   const { batchId, agentCount, totalAmount, discrepancies } =
-    event.payload as any;
+    event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  await db.execute(
+    `INSERT INTO reconciliation_batches (batch_id, agent_count, total_amount, discrepancy_count, status, completed_at)
+     VALUES ($1, $2, $3, $4, 'completed', NOW())
+     ON CONFLICT (batch_id) DO UPDATE SET status = 'completed', completed_at = NOW()`,
+    [batchId, agentCount, totalAmount, Array.isArray(discrepancies) ? (discrepancies as unknown[]).length : 0]
+  );
+  // Flag discrepancies for compliance review
+  if (Array.isArray(discrepancies) && (discrepancies as unknown[]).length > 0) {
+    await db.execute(
+      `INSERT INTO compliance_reviews (type, reference, details, status, created_at)
+       VALUES ('float_discrepancy', $1, $2, 'pending', NOW())`,
+      [batchId, JSON.stringify(discrepancies)]
+    );
+  }
   console.log(
     `[Kafka] Float reconciled: batch=${batchId} agents=${agentCount} total=${totalAmount}`
   );
-  // Update reconciliation status, flag discrepancies for review
 });
 
 // Settlement events
 eventHandlers.set("settlement.initiated", async event => {
-  const { settlementId, agentId, amount, bankAccount } = event.payload as any;
+  const { settlementId, agentId, amount, bankAccount } = event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  await db.execute(`BEGIN`);
+  try {
+    // Debit agent float for settlement
+    await db.execute(
+      `UPDATE agent_balances SET pending_balance = pending_balance - $1, updated_at = NOW() WHERE agent_id = $2`,
+      [amount, agentId]
+    );
+    // Record settlement with pending status
+    await db.execute(
+      `INSERT INTO settlements (settlement_id, agent_id, amount, bank_account, status, initiated_at)
+       VALUES ($1, $2, $3, $4, 'pending', NOW())
+       ON CONFLICT (settlement_id) DO NOTHING`,
+      [settlementId, agentId, amount, bankAccount]
+    );
+    await db.execute(`COMMIT`);
+  } catch (err) {
+    await db.execute(`ROLLBACK`);
+    throw err;
+  }
   console.log(
     `[Kafka] Settlement initiated: ${settlementId} agent=${agentId} amount=${amount}`
   );
-  // Debit agent float, initiate bank transfer, set pending status
 });
 
 eventHandlers.set("settlement.completed", async event => {
-  const { settlementId, bankReference, completedAt } = event.payload as any;
+  const { settlementId, bankReference, completedAt } = event.payload as Record<string, unknown>;
+  await persistToEventStore(event);
+  const { db } = await import("./db");
+  await db.execute(
+    `UPDATE settlements SET status = 'completed', bank_reference = $1, completed_at = $2 WHERE settlement_id = $3`,
+    [bankReference, completedAt, settlementId]
+  );
+  // Notify agent of successful settlement
+  const result = await db.execute(
+    `SELECT agent_id, amount FROM settlements WHERE settlement_id = $1`,
+    [settlementId]
+  );
+  if (result.rows && result.rows.length > 0) {
+    const { agent_id, amount } = result.rows[0] as { agent_id: string; amount: number };
+    await db.execute(
+      `INSERT INTO notification_queue (recipient_id, channel, template, payload, status, created_at)
+       VALUES ($1, 'sms', 'settlement_completed', $2, 'pending', NOW())`,
+      [agent_id, JSON.stringify({ settlementId, amount, bankReference })]
+    );
+  }
   console.log(
     `[Kafka] Settlement completed: ${settlementId} ref=${bankReference}`
   );
-  // Update status, notify agent, emit receipt
 });
 
 // ─── Consumer Metrics ───────────────────────────────────────────────────────

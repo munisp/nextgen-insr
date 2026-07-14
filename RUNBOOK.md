@@ -23,7 +23,7 @@
 
 | Service               | Technology           | Port      | Health Endpoint          | Critical |
 | --------------------- | -------------------- | --------- | ------------------------ | -------- |
-| POS Shell (main app)  | Node.js + React      | 3000      | `/api/health`            | Yes      |
+| InsurePortal Platform (main app)  | Node.js + React      | 3000      | `/api/health`            | Yes      |
 | OTA Service           | Go                   | 8081      | `/health`                | Yes      |
 | MDM Compliance Engine | Go                   | 8091      | `/health`                | Yes      |
 | MDM Geofence Service  | Go                   | 8092      | `/health`                | Yes      |
@@ -163,10 +163,10 @@ pnpm db:push
 
 ### P0: Transaction Processing Down
 
-**Symptoms:** Agents cannot process transactions; POS terminal shows "Service Unavailable"
+**Symptoms:** Agents cannot process transactions; service node shows "Service Unavailable"
 
 ```bash
-# 1. Check POS Shell health
+# 1. Check InsurePortal Platform health
 curl -sf http://localhost:3000/api/health | jq .
 
 # 2. Check database connectivity

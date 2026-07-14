@@ -1974,7 +1974,7 @@ export const transactionsRouter = router({
 
   /**
    * getMyVelocityUsage — returns the agent's tier limits and real-time usage
-   * for the current hour and current day. Used by the POS Shell "My Limits" screen.
+   * for the current hour and current day. Used by the InsurePortal Platform "My Limits" screen.
    */
   getMyVelocityUsage: protectedProcedure.query(async ({ ctx }) => {
     try {

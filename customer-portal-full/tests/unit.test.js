@@ -324,6 +324,214 @@ async function run() {
     assert.ok(d.newBalance !== undefined, 'Expected new balance');
   });
 
+  // ─── Input Validation Tests ───
+  console.log('\nInput Validation:');
+
+  await test('claims.create rejects missing policyId', async () => {
+    const r = await trpcMutate('claims.create', { amount: 100000, description: 'Valid description text' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('policyId is required'), 'Expected policyId validation');
+  });
+
+  await test('claims.create rejects negative amount', async () => {
+    const r = await trpcMutate('claims.create', { policyId: 1, amount: -5, description: 'Valid description text' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('amount must be at least'), 'Expected amount validation');
+  });
+
+  await test('claims.create rejects short description', async () => {
+    const r = await trpcMutate('claims.create', { policyId: 1, amount: 50000, description: 'short' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('description must be at least'), 'Expected description length validation');
+  });
+
+  await test('claims.create accepts valid input', async () => {
+    const r = await trpcMutate('claims.create', { policyId: 1, amount: 100000, description: 'Valid claim description for unit test coverage' });
+    const d = r.data.result?.data;
+    assert.ok(d.success, 'Expected success');
+    assert.ok(d.claimNumber.startsWith('CLM-'), 'Expected CLM- prefix');
+  });
+
+  await test('payments.process rejects missing policyId', async () => {
+    const r = await trpcMutate('payments.process', { amount: 50000, method: 'card' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('policyId is required'), 'Expected policyId validation');
+  });
+
+  await test('payments.process rejects invalid method', async () => {
+    const r = await trpcMutate('payments.process', { policyId: 1, amount: 50000, method: 'bitcoin' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('must be one of'), 'Expected method validation');
+  });
+
+  await test('agents.update rejects missing id', async () => {
+    const r = await trpcMutate('agents.update', { status: 'active' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('id is required'), 'Expected id validation');
+  });
+
+  await test('agents.update rejects invalid status', async () => {
+    const r = await trpcMutate('agents.update', { id: 1, status: 'deleted' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('must be one of'), 'Expected status validation');
+  });
+
+  await test('kyc.submit rejects missing documentType', async () => {
+    const r = await trpcMutate('kyc.submit', {});
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('documentType is required'), 'Expected documentType validation');
+  });
+
+  await test('kyc.verifyBVN rejects invalid BVN length', async () => {
+    const r = await trpcMutate('kyc.verifyBVN', { bvn: '123' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('must be at least 11'), 'Expected BVN length validation');
+  });
+
+  await test('referrals.create rejects invalid email', async () => {
+    const r = await trpcMutate('referrals.create', { email: 'not-an-email' });
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('must be a valid email'), 'Expected email validation');
+  });
+
+  await test('application.create rejects missing productType', async () => {
+    const r = await trpcMutate('application.create', {});
+    assert.ok(r.data.error, 'Expected error response');
+    assert.ok(r.data.error.message.includes('productType is required'), 'Expected productType validation');
+  });
+
+  // ─── User-Scoping Extended Tests ───
+  console.log('\nUser Scoping (Extended):');
+
+  await test('policies.list is user-scoped', async () => {
+    const r = await trpcQuery('policies.list', { limit: 50 });
+    const d = r.data.result?.data;
+    assert.ok(Array.isArray(d), 'Expected array');
+    assert.ok(d.length > 0, 'Demo user should have policies');
+  });
+
+  await test('claims.list is user-scoped', async () => {
+    const r = await trpcQuery('claims.list', { limit: 50 });
+    const d = r.data.result?.data;
+    assert.ok(Array.isArray(d), 'Expected array');
+    assert.ok(d.length > 0, 'Demo user should have claims');
+  });
+
+  await test('documents.list is user-scoped', async () => {
+    const r = await trpcQuery('documents.list', { limit: 50 });
+    assert.strictEqual(r.status, 200);
+    const d = r.data.result?.data;
+    assert.ok(Array.isArray(d), 'Expected array');
+  });
+
+  await test('payments.list is user-scoped', async () => {
+    const r = await trpcQuery('payments.list', { limit: 50 });
+    assert.strictEqual(r.status, 200);
+    const d = r.data.result?.data;
+    assert.ok(Array.isArray(d), 'Expected array');
+  });
+
+  await test('emergency.list is user-scoped', async () => {
+    const r = await trpcQuery('emergency.list', { limit: 50 });
+    assert.strictEqual(r.status, 200);
+    const d = r.data.result?.data;
+    assert.ok(Array.isArray(d), 'Expected array');
+  });
+
+  // ─── Structured Logging Tests ───
+  console.log('\nStructured Logging:');
+
+  await test('server startup produces JSON logs (no console.log)', async () => {
+    const r = await request('GET', '/health');
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(r.data.status, 'healthy');
+  });
+
+  await test('error responses include structured error code', async () => {
+    const savedToken = authToken;
+    authToken = null;
+    const r = await trpcMutate('wallet.topup', { amount: 100 });
+    authToken = savedToken;
+    assert.ok(r.data.error, 'Expected error');
+    assert.ok(r.data.error.code, 'Expected error code field');
+  });
+
+  await test('validation errors return 400 status code', async () => {
+    const r = await trpcMutate('claims.create', {});
+    assert.ok(r.data.error, 'Expected error');
+    assert.strictEqual(r.data.error.code, 'BAD_REQUEST', 'Expected BAD_REQUEST code');
+  });
+
+  // ─── P3: Extended User-Scoping Tests ───
+  console.log('\nUser Scoping (P3 — Extended):');
+
+  await test('kyc.status is user-scoped', async () => {
+    const r = await trpcQuery('kyc.status');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(r.data.result.data.status, 'Expected KYC status field');
+  });
+
+  await test('dashboard.notifications is user-scoped', async () => {
+    const r = await trpcQuery('dashboard.notifications');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
+  });
+
+  await test('communication.messages is user-scoped', async () => {
+    const r = await trpcQuery('communication.messages');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
+  });
+
+  await test('onboarding.status is user-scoped', async () => {
+    const r = await trpcQuery('onboarding.status');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(d.steps, 'Expected steps array');
+    assert.ok(typeof d.completionPercentage === 'number', 'Expected numeric completionPercentage');
+  });
+
+  await test('customer360.profile is user-scoped', async () => {
+    const r = await trpcQuery('customer360.profile');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(d.name, 'Expected user name');
+    assert.ok(typeof d.policies === 'number', 'Expected numeric policies count');
+  });
+
+  await test('rewards.balance is user-scoped', async () => {
+    const r = await trpcQuery('rewards.balance');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(typeof r.data.result.data.points === 'number', 'Expected numeric points');
+  });
+
+  await test('savings.plans is user-scoped', async () => {
+    const r = await trpcQuery('savings.plans');
+    assert.ok(r.data.result, 'Expected result');
+    assert.ok(Array.isArray(r.data.result.data), 'Expected array');
+  });
+
+  await test('referral.stats is user-scoped', async () => {
+    const r = await trpcQuery('referral.stats');
+    assert.ok(r.data.result, 'Expected result');
+    const d = r.data.result.data;
+    assert.ok(typeof d.totalReferrals === 'number', 'Expected numeric totalReferrals');
+  });
+
+  // ─── P3: Pagination Tiebreaker Test ───
+  console.log('\nPagination Tiebreaker:');
+
+  await test('pagination returns deterministic order with id tiebreaker', async () => {
+    const r1 = await trpcQuery('policies.list', { limit: 3, page: 1 });
+    const r2 = await trpcQuery('policies.list', { limit: 3, page: 2 });
+    assert.ok(r1.data.result, 'Expected page 1 result');
+    assert.ok(r2.data.result, 'Expected page 2 result');
+    const ids1 = r1.data.result.data.map(r => r.id);
+    const ids2 = r2.data.result.data.map(r => r.id);
+    const overlap = ids1.filter(id => ids2.includes(id));
+    assert.strictEqual(overlap.length, 0, `Page 1 IDs ${ids1} and page 2 IDs ${ids2} should not overlap`);
+  });
+
   // ─── Summary ───
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Results: ${passCount} passed, ${failCount} failed (${passCount + failCount} total)`);

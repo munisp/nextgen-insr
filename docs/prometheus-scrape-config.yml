@@ -3,7 +3,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Add this job to your existing prometheus.yml under the `scrape_configs:` key.
 #
-# The POS Shell exposes metrics at GET /api/metrics in Prometheus text format.
+# The InsurePortal Platform exposes metrics at GET /api/metrics in Prometheus text format.
 # All metrics are prefixed with `pos_` to avoid collision with other services.
 #
 # Metric inventory:

@@ -33,7 +33,18 @@ class OfflineManager: ObservableObject {
         persistentContainer = NSPersistentContainer(name: "RemittanceOffline")
         persistentContainer.loadPersistentStores { description, error in
             if let error = error {
-                fatalError("Unable to load persistent stores: \(error)")
+                // Graceful degradation: log the error and report to monitoring.
+                // Do NOT crash — offline features will be unavailable but the
+                // app remains functional for online operations.
+                print("[OfflineManager] Failed to load persistent stores: \(error)")
+                #if canImport(os)
+                os_log(.error, "CoreData persistent store load failed: %{public}@", error.localizedDescription)
+                #endif
+                // Attempt to delete corrupted store and retry on next launch
+                if let storeURL = description.url {
+                    try? FileManager.default.removeItem(at: storeURL)
+                    print("[OfflineManager] Removed corrupted store, will retry on next launch")
+                }
             }
         }
         

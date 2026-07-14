@@ -374,11 +374,18 @@ func (s *GroupLifeService) HandleRenewalQuote(w http.ResponseWriter, r *http.Req
 }
 
 func (s *GroupLifeService) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	dbStatus := "disconnected"
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "group-life-admin",
 		"timestamp": time.Now(),
+		"database":  dbStatus,
 		"features": []string{
 			"scheme_management",
 			"member_enrollment",
@@ -1170,6 +1177,68 @@ func bodyLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// Panic recovery middleware - catches panics and returns 500
+func prodRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+
+var db *sql.DB
+
+func initDB() {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+		return
+	}
+	log.Printf(`{"level":"info","msg":"database connected","service":"group-life-admin","driver":"postgresql"}`)
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS group_policies (id TEXT PRIMARY KEY, group_name TEXT NOT NULL, employer_id TEXT, member_count INT DEFAULT 0, total_premium NUMERIC(15,2), coverage_type TEXT, status TEXT DEFAULT 'active', effective_date DATE, created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
 func main() {
 	initDB()
 	initMiddleware()
@@ -1210,4 +1279,5 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+	log.Printf(`{"level":"info","msg":"server stopped","service":"group-life-admin"}`)
 }

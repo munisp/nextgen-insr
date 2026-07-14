@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: Agent Commission Management
+  version: 1.0.0
+  description: Agent commission calculation, tiered rates, and payout management
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/calculate:
+    post:
+      summary: Calculate agent commission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_id, policy_type, premium]
+              properties:
+                agent_id: { type: string }
+                policy_type: { type: string }
+                premium: { type: number }
+      responses:
+        '200':
+          description: Commission calculation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_id: { type: string }
+                  commission: { type: number }
+                  rate: { type: number }
+                  tier: { type: string }
+  /api/v1/payout-summary:
+    get:
+      summary: Get payout summary across all agents
+      responses:
+        '200':
+          description: Payout summary

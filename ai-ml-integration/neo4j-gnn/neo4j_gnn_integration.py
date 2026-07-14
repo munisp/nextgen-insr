@@ -45,7 +45,7 @@ class Neo4jConfig:
     """Configuration for Neo4j connection"""
     uri: str = "bolt://localhost:7687"
     username: str = "neo4j"
-    password: str = "password"
+    password: str = os.getenv("NEO4J_PASSWORD", "")
     database: str = "neo4j"
     max_connection_pool_size: int = 50
     connection_timeout: int = 30
@@ -702,7 +702,7 @@ async def neo4j_gnn_fraud_detection_activity(
 def create_neo4j_gnn_service(
     neo4j_uri: str = "bolt://localhost:7687",
     neo4j_username: str = "neo4j",
-    neo4j_password: str = "password",
+    neo4j_password: str = os.getenv("NEO4J_PASSWORD", ""),
 ) -> Neo4jGNNIntegration:
     """Create Neo4j-GNN integration service"""
     config = Neo4jConfig(

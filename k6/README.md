@@ -1,6 +1,6 @@
 # InsurePortal POS Shell — k6 Load Tests
 
-This directory contains [k6](https://k6.io) load test scenarios for the three highest-traffic paths in the POS Shell.
+This directory contains [k6](https://k6.io) load test scenarios for the three highest-traffic paths in the InsurePortal Platform.
 
 ## Prerequisites
 
@@ -73,7 +73,7 @@ K6_CLOUD_TOKEN=<token> k6 cloud k6/transaction-throughput.js
 
 ## Getting a Pre-Authenticated Token
 
-1. Log in via the POS Shell UI as an agent.
+1. Log in via the InsurePortal Platform UI as an agent.
 2. Open DevTools → Application → Cookies → copy the `agent_session` value.
 3. Pass it as `AGENT_TOKEN=<value>` in the k6 command.
 

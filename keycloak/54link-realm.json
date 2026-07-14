@@ -1,0 +1,218 @@
+{
+  "realm": "insureportal",
+  "displayName": "InsurePortal Agency Banking",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "accessTokenLifespan": 900,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800,
+  "defaultSignatureAlgorithm": "RS256",
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "InsurePortal platform administrator"
+      },
+      {
+        "name": "supervisor",
+        "description": "InsurePortal agent supervisor"
+      },
+      {
+        "name": "user",
+        "description": "Standard authenticated user"
+      },
+      {
+        "name": "underwriter",
+        "description": "Insurance underwriting specialist"
+      },
+      {
+        "name": "claims_adjuster",
+        "description": "Claims processing and adjudication specialist"
+      },
+      {
+        "name": "agent",
+        "description": "Insurance agent/broker"
+      },
+      {
+        "name": "compliance",
+        "description": "Regulatory compliance officer"
+      },
+      {
+        "name": "actuary",
+        "description": "Actuarial and risk assessment specialist"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "platform-shell",
+      "name": "InsurePortal InsurePortal Platform",
+      "description": "InsurePortal Agency Banking InsurePortal Platform web application",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://pos.insureportal.io/api/auth/callback",
+        "http://localhost:3000/api/auth/callback"
+      ],
+      "webOrigins": ["https://pos.insureportal.io", "http://localhost:3000"],
+      "postLogoutRedirectUris": [
+        "https://pos.insureportal.io/",
+        "http://localhost:3000/"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "900",
+        "client.session.idle.timeout": "1800",
+        "client.session.max.lifespan": "36000",
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://pos.insureportal.io/++"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA256",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyInitialCounter": 0,
+  "otpPolicyLookAheadWindow": 1,
+  "otpSupportedApplications": ["FreeOTP", "Google Authenticator", "Microsoft Authenticator"],
+  "authenticationFlows": [
+    {
+      "alias": "54link-browser-mfa",
+      "description": "Browser flow with mandatory TOTP for financial operations",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "requirement": "ALTERNATIVE",
+          "priority": 10
+        },
+        {
+          "authenticator": "auth-spnego",
+          "requirement": "DISABLED",
+          "priority": 20
+        },
+        {
+          "flowAlias": "54link-mfa-forms",
+          "requirement": "ALTERNATIVE",
+          "priority": 30
+        }
+      ]
+    },
+    {
+      "alias": "54link-mfa-forms",
+      "description": "Username/password + OTP",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "requirement": "REQUIRED",
+          "priority": 10
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "requirement": "REQUIRED",
+          "priority": 20
+        }
+      ]
+    }
+  ],
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": true,
+      "priority": 10
+    }
+  ],
+  "passwordPolicy": "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername(undefined) and passwordHistory(3)",
+  "smtpServer": {
+    "replyToDisplayName": "InsurePortal Support",
+    "port": "587",
+    "host": "",
+    "replyTo": "support@insureportal.com",
+    "from": "noreply@insureportal.com",
+    "fromDisplayName": "InsurePortal Agency Banking",
+    "ssl": "false",
+    "starttls": "true"
+  },
+  "browserFlow": "54link-browser-mfa",
+  "loginTheme": "keycloak",
+  "accountTheme": "keycloak.v3",
+  "adminTheme": "keycloak.v2",
+  "emailTheme": "keycloak",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["en"],
+  "defaultLocale": "en"
+}

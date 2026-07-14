@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
 )
+
+var validWorkflowID = regexp.MustCompile(`^[a-zA-Z0-9_\-.:]+$`)
 
 type TemporalClient struct {
 	baseURL   string
@@ -156,7 +159,9 @@ func (t *TemporalClient) StartWorkflow(ctx context.Context, req StartWorkflowReq
 		return nil, err
 	}
 	var result WorkflowExecution
-	json.Unmarshal(respBody, &result)
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("temporal response parse error: %w", err)
+	}
 	result.WorkflowID = req.WorkflowID
 	return &result, nil
 }

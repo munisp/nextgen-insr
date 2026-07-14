@@ -2,7 +2,7 @@ groups:
   - name: availability_alerts
     interval: 30s
     rules:
-      # ── POS Shell app down ──────────────────────────────────────────────────
+      # ── InsurePortal Platform app down ──────────────────────────────────────────────────
       - alert: PosShellAppDown
         expr: up{job="insurance-portal-app"} == 0
         for: 1m
@@ -89,7 +89,7 @@ groups:
           severity: critical
           team: backend
         annotations:
-          summary: "Error rate > 5% on POS Shell API"
+          summary: "Error rate > 5% on InsurePortal Platform API"
           description: "{{ $value | humanizePercentage }} of API requests are returning 5xx errors over the last 5 minutes."
 
       # ── Low transaction success rate ────────────────────────────────────────

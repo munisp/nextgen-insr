@@ -20,7 +20,9 @@ object CertificatePinning {
     
     private val pinnedDomains = setOf(
         "api.remittance.ng",
-        "secure.remittance.ng"
+        "secure.remittance.ng",
+        "api.54link.ng",
+        "staging.54link.ng"
     )
     
     /**

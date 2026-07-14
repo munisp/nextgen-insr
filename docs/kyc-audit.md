@@ -42,9 +42,9 @@ Three KYC/KYB services already exist in `/home/ubuntu/platform/platform/services
 - **Capabilities**: Full onboarding pipeline — document OCR, biometric verification, liveness, fraud detection, edge/offline support
 - **Status**: Most complete end-to-end pipeline
 
-## Integration Plan for POS Shell
+## Integration Plan for InsurePortal Platform
 
-The POS Shell KYC flow will:
+The InsurePortal Platform KYC flow will:
 
 1. Call the `video-kyc` liveness detection service for liveness check (challenge-response)
 2. Call the `enhanced_paddleocr_service` for document OCR (NIN/BVN card/passport)

@@ -11,6 +11,48 @@ Detection Models:
 - Network Analysis: Detect fraud rings via graph analysis
 - Behavioral Scoring: LSTM model for sequence anomalies
 """
+import os
+import psycopg2
+import psycopg2.extras
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ── Database Connection ──────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+_db_conn = None
+
+def get_db():
+    global _db_conn
+    if _db_conn is None or _db_conn.closed:
+        try:
+            _db_conn = psycopg2.connect(DATABASE_URL)
+            _db_conn.autocommit = True
+            logger.info(f"Connected to PostgreSQL for fraud_detection_engine")
+        except Exception as e:
+            logger.warning(f"Database connection failed: {e} (running in degraded mode)")
+            return None
+    return _db_conn
+
+def init_db():
+    conn = get_db()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS fraud_detection_engine (
+                        id SERIAL PRIMARY KEY,
+                        data JSONB NOT NULL DEFAULT '{}',
+                        status VARCHAR(50) DEFAULT 'active',
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW(),
+                        tenant_id INTEGER DEFAULT 1
+                    )
+                """)
+            logger.info(f"Table fraud_detection_engine initialized")
+        except Exception as e:
+            logger.warning(f"Table creation failed: {e}")
+
 
 import json
 import math
@@ -177,6 +219,12 @@ class FraudHandler(BaseHTTPRequestHandler):
 
         if self.path == "/api/v1/evaluate":
             result = calculate_fraud_score(body)
+            publish_event("fraud.evaluations", result["transaction_id"], {
+                "event": "fraud.evaluated",
+                "transaction_id": result["transaction_id"],
+                "decision": result["decision"],
+                "fraud_score": result["fraud_score"],
+            })
             self._respond(200, result)
         elif self.path == "/api/v1/ml/predict":
             from ml_models.fraud_model import predict_fraud
@@ -210,6 +258,8 @@ class FraudHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+
+init_db()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8094"))

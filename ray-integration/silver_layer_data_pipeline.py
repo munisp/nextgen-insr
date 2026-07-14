@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 class PipelineConfig:
     """Configuration for the data pipeline"""
     s3_endpoint: str = "http://minio:9000"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
+    s3_access_key: str = os.getenv("S3_ACCESS_KEY", "")
+    s3_secret_key: str = os.getenv("S3_SECRET_KEY", "")
     lakehouse_bucket: str = "lakehouse"
     bronze_path: str = "s3a://lakehouse/bronze"
     silver_path: str = "s3a://lakehouse/silver"
@@ -52,8 +52,8 @@ class SilverLayerDataPipeline:
     def __init__(self, config: Optional[PipelineConfig] = None):
         self.config = config or PipelineConfig(
             s3_endpoint=os.getenv("S3_ENDPOINT", "http://minio:9000"),
-            s3_access_key=os.getenv("S3_ACCESS_KEY", "minioadmin"),
-            s3_secret_key=os.getenv("S3_SECRET_KEY", "minioadmin"),
+            s3_access_key=os.getenv("S3_ACCESS_KEY", ""),
+            s3_secret_key=os.getenv("S3_SECRET_KEY", ""),
             kafka_brokers=os.getenv("KAFKA_BROKERS", "kafka-0:9092,kafka-1:9092,kafka-2:9092")
         )
         

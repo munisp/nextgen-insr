@@ -76,7 +76,8 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100">
-      <nav className="bg-white border-b">
+      <a href="#dashboard-main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-blue-600 focus:text-white">Skip to main content</a>
+      <nav className="bg-white border-b" role="navigation" aria-label="Dashboard navigation">
         <div className="container mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-blue-600" />
@@ -91,11 +92,11 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      <main className="container mx-auto px-6 py-12">
+      <main id="dashboard-main" className="container mx-auto px-6 py-12" role="main" aria-label="Dashboard overview">
         <h1 className="text-4xl font-bold mb-2">Welcome back, {user?.name || "User"}</h1>
         <p className="text-muted-foreground mb-12">Manage your insurance policies and claims</p>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12" role="region" aria-label="Policy and claims summary">
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-blue-600">

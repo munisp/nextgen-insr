@@ -107,7 +107,6 @@ import { cardRequestRouter } from "./routers/cardRequest";
 import { accountOpeningRouter } from "./routers/accountOpening";
 import { taxCollectionRouter } from "./routers/taxCollection";
 import { pensionCollectionRouter } from "./routers/pensionCollection";
-import { remittanceRouter } from "./routers/remittance";
 import { qdrantVectorSearchRouter } from "./routers/qdrantVectorSearch";
 import { falkordbGraphRouter } from "./routers/falkordbGraph";
 import { cocoIndexPipelineRouter } from "./routers/cocoIndexPipeline";
@@ -269,7 +268,6 @@ import { merchantAcquirerGatewayRouter } from "./routers/merchantAcquirerGateway
 import { agentMicroInsuranceRouter } from "./routers/agentMicroInsurance";
 import { transactionGraphAnalyzerRouter } from "./routers/transactionGraphAnalyzer";
 import { platformRevenueOptimizerRouter } from "./routers/platformRevenueOptimizer";
-import { crossBorderRemittanceHubRouter } from "./routers/crossBorderRemittanceHub";
 import { operationalCommandBridgeRouter } from "./routers/operationalCommandBridge";
 // ── Sprint 41 Imports ──
 import { agentKycDocVaultRouter } from "./routers/agentKycDocVault";
@@ -464,9 +462,7 @@ import { multiSimFailoverRouter } from "./routers/multiSimFailover";
 import { agentFloatTransferRouter } from "./routers/agentFloatTransfer";
 import { splitPaymentsRouter } from "./routers/splitPayments";
 import { recurringPaymentsRouter } from "./routers/recurringPayments";
-import { terminalLeasingRouter } from "./routers/terminalLeasing";
 import { posDisputeRouter } from "./routers/posDispute";
-import { crossBorderRemittanceRouter } from "./routers/crossBorderRemittance";
 import { agentTrainingGamificationRouter } from "./routers/agentTrainingGamification";
 // Sprint 97: Frontend-Backend Gap Closure
 import { activityAuditLogRouter } from "./routers/activityAuditLog";
@@ -715,7 +711,6 @@ export const appRouter = router({
   accountOpening: accountOpeningRouter,
   taxCollection: taxCollectionRouter,
   pensionCollection: pensionCollectionRouter,
-  remittanceDedicated: remittanceRouter,
   // Sprint 29: AI/ML/DL/GNN/LLM Production Integration
   qdrantVectorSearch: qdrantVectorSearchRouter,
   falkordbGraph: falkordbGraphRouter,
@@ -905,7 +900,6 @@ export const appRouter = router({
   agentMicroInsurance: agentMicroInsuranceRouter,
   transactionGraphAnalyzer: transactionGraphAnalyzerRouter,
   platformRevenueOptimizer: platformRevenueOptimizerRouter,
-  crossBorderRemittanceHub: crossBorderRemittanceHubRouter,
   operationalCommandBridge: operationalCommandBridgeRouter,
   // Sprint 41
   agentKycDocVault: agentKycDocVaultRouter,
@@ -1060,9 +1054,7 @@ export const appRouter = router({
   agentFloatTransfer: agentFloatTransferRouter,
   splitPayments: splitPaymentsRouter,
   recurringPayments: recurringPaymentsRouter,
-  terminalLeasing: terminalLeasingRouter,
   posDispute: posDisputeRouter,
-  crossBorderRemittance: crossBorderRemittanceRouter,
   agentTrainingGamification: agentTrainingGamificationRouter,
   // Sprint 97: Frontend-Backend Gap Closure
   activityAuditLog: activityAuditLogRouter,

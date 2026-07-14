@@ -1,0 +1,223 @@
+# Docker Compose — InsurePortal Platform Services v2
+# All 10 new services + 14 middleware integrations
+
+version: "3.9"
+
+services:
+  # ══════════════════════════════════════════════════════════════════════════
+  # Go Services
+  # ══════════════════════════════════════════════════════════════════════════
+
+  payment-gateway:
+    build: ./services/go/payment-gateway
+    ports: ["8100:8100"]
+    environment:
+      - PORT=8100
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/5
+      - TIGERBEETLE_URL=http://tigerbeetle:3001
+      - TEMPORAL_URL=http://temporal:7233
+      - MOJALOOP_URL=http://mojaloop:3002
+      - OPENSEARCH_URL=http://opensearch:9200
+      - KEYCLOAK_URL=http://keycloak:8080
+      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-}
+      - FLUTTERWAVE_SECRET_KEY=${FLUTTERWAVE_SECRET_KEY:-}
+    depends_on: [kafka, redis, temporal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8100/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  notification-orchestrator:
+    build: ./services/go/notification-orchestrator
+    ports: ["8105:8105"]
+    environment:
+      - PORT=8105
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/9
+      - TEMPORAL_URL=http://temporal:7233
+    depends_on: [kafka, redis]
+
+  agent-gamification:
+    build: ./services/go/agent-gamification
+    ports: ["8106:8106"]
+    environment:
+      - PORT=8106
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/10
+    depends_on: [kafka, redis]
+
+  regulatory-reporting:
+    build: ./services/go/regulatory-reporting
+    ports: ["8107:8107"]
+    environment:
+      - PORT=8107
+      - KAFKA_BROKERS=kafka:9092
+      - TEMPORAL_URL=http://temporal:7233
+      - DATABASE_URL=postgresql://ngapp:ngapp@postgres:5432/ngapp
+    depends_on: [kafka, postgres, temporal]
+
+  comparison-engine:
+    build: ./services/go/comparison-engine
+    ports: ["8108:8108"]
+    environment:
+      - PORT=8108
+      - REDIS_URL=redis://redis:6379/11
+    depends_on: [redis]
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Rust Services
+  # ══════════════════════════════════════════════════════════════════════════
+
+  realtime-events:
+    build: ./services/rust/realtime-events
+    ports: ["8104:8104"]
+    environment:
+      - PORT=8104
+      - FLUVIO_ENDPOINT=fluvio:9003
+      - REDIS_URL=redis://redis:6379/8
+      - KAFKA_BROKERS=kafka:9092
+      - KEYCLOAK_URL=http://keycloak:8080
+    depends_on: [redis, kafka]
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Python Services
+  # ══════════════════════════════════════════════════════════════════════════
+
+  kyc-verification:
+    build: ./services/python/kyc-verification
+    ports: ["8101:8101"]
+    environment:
+      - PORT=8101
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/6
+      - DATABASE_URL=postgresql://ngapp:ngapp@postgres:5432/ngapp
+      - TEMPORAL_URL=http://temporal:7233
+      - KEYCLOAK_URL=http://keycloak:8080
+      - PERMIFY_URL=http://permify:3476
+      - OPENSEARCH_URL=http://opensearch:9200
+      - NIBSS_API_KEY=${NIBSS_API_KEY:-}
+      - NIMC_API_KEY=${NIMC_API_KEY:-}
+    depends_on: [kafka, redis, postgres]
+
+  claims-adjudication:
+    build: ./services/python/claims-adjudication
+    ports: ["8102:8102"]
+    environment:
+      - PORT=8102
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/7
+      - TEMPORAL_URL=http://temporal:7233
+      - ML_FRAUD_SERVICE_URL=http://ml-fraud-scoring:8087
+    depends_on: [kafka, redis]
+
+  churn-prevention:
+    build: ./services/python/churn-prevention
+    ports: ["8103:8103"]
+    environment:
+      - PORT=8103
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/12
+      - DATABASE_URL=postgresql://ngapp:ngapp@postgres:5432/ngapp
+      - OPENSEARCH_URL=http://opensearch:9200
+    depends_on: [kafka, redis, postgres]
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # TypeScript Services
+  # ══════════════════════════════════════════════════════════════════════════
+
+  embedded-sdk:
+    build: ./services/typescript/embedded-sdk
+    ports: ["8109:8109"]
+    environment:
+      - PORT=8109
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/13
+      - KEYCLOAK_URL=http://keycloak:8080
+      - TIGERBEETLE_URL=http://tigerbeetle:3001
+    depends_on: [kafka, redis]
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Middleware Infrastructure
+  # ══════════════════════════════════════════════════════════════════════════
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    command: redis-server --appendonly yes
+
+  postgres:
+    image: postgres:16-alpine
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: ngapp
+      POSTGRES_USER: ngapp
+      POSTGRES_PASSWORD: ngapp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  temporal:
+    image: temporalio/auto-setup:1.22
+    ports: ["7233:7233"]
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: ngapp
+      POSTGRES_PWD: ngapp
+      POSTGRES_SEEDS: postgres
+    depends_on: [postgres]
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    ports: ["9200:9200"]
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    ports: ["8080:8080"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    command: start-dev
+
+  apisix:
+    image: apache/apisix:3.7.0-debian
+    ports: ["9080:9080", "9443:9443"]
+    volumes:
+      - ./infrastructure/apisix:/usr/local/apisix/conf
+
+  fluvio:
+    image: infinyon/fluvio:latest
+    ports: ["9003:9003"]
+
+  permify:
+    image: ghcr.io/permify/permify:latest
+    ports: ["3476:3476"]
+
+  tigerbeetle:
+    image: tigerbeetle/tigerbeetle:latest
+    ports: ["3001:3001"]
+
+  dapr:
+    image: daprio/dapr:1.12.0
+    ports: ["3500:3500"]
+
+volumes:
+  pgdata:

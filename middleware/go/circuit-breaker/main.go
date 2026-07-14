@@ -20,6 +20,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 // ── Circuit Breaker States ───────────────────────────────────────────────────
@@ -307,6 +310,10 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 }
 
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	_ = context.Background()
 	port := envOr("PORT", "8091")
 	pm := NewProxyManager()

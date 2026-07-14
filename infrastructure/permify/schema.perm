@@ -1,0 +1,117 @@
+// InsurePortal Authorization Schema (Permify/Zanzibar-style)
+// Fine-grained, relationship-based access control
+
+entity user {}
+
+entity organization {
+  relation admin @user
+  relation member @user
+  relation auditor @user
+
+  permission manage = admin
+  permission view = admin or member or auditor
+  permission audit = admin or auditor
+}
+
+entity tenant {
+  relation owner @user
+  relation admin @user
+  relation member @user
+
+  permission manage = owner or admin
+  permission view = owner or admin or member
+}
+
+entity policy {
+  relation owner @user
+  relation tenant @tenant
+  relation underwriter @user
+  relation agent @user
+
+  permission view = owner or underwriter or agent or tenant.admin
+  permission edit = underwriter or tenant.admin
+  permission cancel = owner or underwriter or tenant.admin
+  permission renew = owner or agent
+}
+
+entity claim {
+  relation claimant @user
+  relation policy @policy
+  relation adjuster @user
+  relation reviewer @user
+
+  permission view = claimant or adjuster or reviewer or policy.underwriter
+  permission submit = claimant
+  permission approve = adjuster or reviewer
+  permission reject = adjuster or reviewer
+  permission payout = adjuster and policy.tenant.admin
+}
+
+entity pool {
+  relation admin @user
+  relation member @user
+  relation tenant @tenant
+
+  permission manage = admin
+  permission join = tenant.member
+  permission contribute = member
+  permission vote = member
+  permission claim = member
+  permission view = admin or member
+}
+
+entity pool_claim {
+  relation pool @pool
+  relation claimant @user
+
+  permission vote = pool.member and not claimant
+  permission view = pool.member
+  permission submit = pool.member
+}
+
+entity document {
+  relation owner @user
+  relation policy @policy
+  relation claim @claim
+
+  permission view = owner or policy.underwriter or claim.adjuster
+  permission upload = owner
+  permission delete = owner or policy.tenant.admin
+}
+
+entity wallet {
+  relation owner @user
+
+  permission view_balance = owner
+  permission topup = owner
+  permission withdraw = owner
+  permission transfer = owner
+}
+
+entity api_key {
+  relation partner @user
+  relation organization @organization
+
+  permission use = partner
+  permission revoke = partner or organization.admin
+  permission view_usage = partner or organization.admin
+}
+
+entity parametric_policy {
+  relation owner @user
+  relation tenant @tenant
+
+  permission view = owner or tenant.admin
+  permission create = owner
+  permission trigger_payout = tenant.admin
+}
+
+entity report {
+  relation generator @user
+  relation tenant @tenant
+  relation regulator @user
+
+  permission view = generator or tenant.admin or regulator
+  permission generate = tenant.admin
+  permission submit_to_naicom = tenant.admin
+}

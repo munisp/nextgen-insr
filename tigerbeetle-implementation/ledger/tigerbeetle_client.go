@@ -6,12 +6,17 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tigerbeetle_go "github.com/tigerbeetle/tigerbeetle-go"
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 )
+
+// Atomic counter to prevent same-nanosecond collisions across concurrent goroutines.
+var transferIDCounter uint64
 
 // TigerBeetleClient provides a high-level wrapper around the TigerBeetle database client.
 type TigerBeetleClient struct {
@@ -235,12 +240,21 @@ func (c *TigerBeetleClient) IsClosed() bool {
 }
 
 // GenerateTransferID generates a deterministic transfer ID based on a unique business identifier.
+// Uses nanosecond timestamp + atomic counter to prevent collisions for concurrent requests.
 func GenerateTransferID(businessID string, sequence int) types.Uint128 {
-	data := fmt.Sprintf("%s-%d-%d", businessID, sequence, time.Now().Unix())
+	counter := atomic.AddUint64(&transferIDCounter, 1)
+	data := fmt.Sprintf("%s-%d-%d-%d", businessID, sequence, time.Now().UnixNano(), counter)
 	hash := sha256.Sum256([]byte(data))
 	var bytes [16]byte
 	copy(bytes[:], hash[0:16])
 	return types.BytesToUint128(bytes)
+}
+
+// AmountToSmallestUnit safely converts a float64 amount to the smallest currency unit
+// (e.g. kobo for NGN, cents for USD) without floating-point truncation.
+func AmountToSmallestUnit(amount float64, decimals int) uint64 {
+	multiplier := math.Pow(10, float64(decimals))
+	return uint64(math.Round(amount * multiplier))
 }
 
 // GenerateAccountID generates a deterministic account ID based on entity type and ID.

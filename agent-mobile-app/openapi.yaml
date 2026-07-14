@@ -1,0 +1,49 @@
+openapi: 3.0.3
+info:
+  title: Agent Mobile App
+  description: API for insurance agent field operations — onboarding, check-in, commission
+    tracking
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      summary: Service health check
+      responses:
+        '200':
+          description: Service health status
+  /api/v1/agent/{id}/dashboard:
+    get:
+      summary: Get agent dashboard data
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Agent dashboard with KPIs and recent activity
+  /api/v1/agent/{id}/checkin:
+    post:
+      summary: Record agent check-in with geolocation
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Check-in recorded
+  /api/v1/agent/{id}/commission:
+    get:
+      summary: Get agent commission details
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Commission breakdown and wallet balance

@@ -45,7 +45,9 @@ class VirtualScrollOptimizer {
         }
         
         required init?(coder: NSCoder) {
-            fatalError("init(coder:) has not been implemented")
+            // Graceful degradation: return nil instead of crashing.
+            // This init path is only hit via Interface Builder which we don't use.
+            return nil
         }
         
         private func setupOptimizations() {

@@ -1,0 +1,176 @@
+# Apache Iceberg Lakehouse Configuration for InsurePortal
+# Data lakehouse for analytics, reporting, and ML training data
+
+catalog:
+  name: insureportal_lakehouse
+  type: rest
+  uri: "${ICEBERG_REST_CATALOG_URI}"
+  warehouse: "s3://insureportal-lakehouse/warehouse"
+  io-impl: "org.apache.iceberg.aws.s3.S3FileIO"
+
+# Storage configuration
+storage:
+  type: s3
+  bucket: "insureportal-lakehouse"
+  region: "af-south-1"  # AWS Cape Town (closest to Nigeria)
+  prefix: "warehouse"
+  credentials:
+    access_key: "${AWS_ACCESS_KEY_ID}"
+    secret_key: "${AWS_SECRET_ACCESS_KEY}"
+
+# Namespace (database) definitions
+namespaces:
+  - name: raw
+    description: "Raw ingested data from operational systems"
+    tables:
+      - claims_raw
+      - policies_raw
+      - payments_raw
+      - telematics_raw
+      - weather_raw
+
+  - name: curated
+    description: "Cleaned and enriched data for analytics"
+    tables:
+      - claims_enriched
+      - policy_lifecycle
+      - customer_360
+      - fraud_features
+      - telematics_aggregated
+      - weather_daily
+
+  - name: analytics
+    description: "Pre-computed analytics and dashboards"
+    tables:
+      - loss_ratio_monthly
+      - premium_revenue_daily
+      - claims_by_region
+      - fraud_detection_metrics
+      - customer_lifetime_value
+      - naicom_quarterly_reports
+
+  - name: ml_training
+    description: "Feature stores and training datasets for ML models"
+    tables:
+      - fraud_training_data
+      - telematics_driving_profiles
+      - parametric_trigger_history
+      - claim_text_embeddings
+
+# Table schemas
+tables:
+  - namespace: curated
+    name: claims_enriched
+    schema:
+      - name: claim_id
+        type: long
+      - name: user_id
+        type: long
+      - name: policy_id
+        type: long
+      - name: policy_type
+        type: string
+      - name: amount
+        type: decimal(15,2)
+      - name: status
+        type: string
+      - name: fraud_score
+        type: float
+      - name: risk_level
+        type: string
+      - name: region
+        type: string
+      - name: processing_time_hours
+        type: float
+      - name: created_at
+        type: timestamp
+      - name: processed_at
+        type: timestamp
+    partition_spec:
+      - field: created_at
+        transform: month
+      - field: policy_type
+        transform: identity
+    sort_order:
+      - field: created_at
+        direction: desc
+
+  - namespace: analytics
+    name: loss_ratio_monthly
+    schema:
+      - name: month
+        type: date
+      - name: policy_type
+        type: string
+      - name: region
+        type: string
+      - name: earned_premium
+        type: decimal(15,2)
+      - name: incurred_claims
+        type: decimal(15,2)
+      - name: loss_ratio
+        type: float
+      - name: combined_ratio
+        type: float
+      - name: policies_in_force
+        type: int
+      - name: claims_count
+        type: int
+    partition_spec:
+      - field: month
+        transform: month
+
+  - namespace: ml_training
+    name: fraud_training_data
+    schema:
+      - name: claim_id
+        type: long
+      - name: features
+        type: list(float)
+      - name: label
+        type: int  # 0=legitimate, 1=fraudulent
+      - name: claim_amount
+        type: decimal(15,2)
+      - name: policy_type
+        type: string
+      - name: days_since_policy_start
+        type: int
+      - name: previous_claims_count
+        type: int
+      - name: created_at
+        type: timestamp
+    partition_spec:
+      - field: created_at
+        transform: year
+
+# Data pipelines (Spark/Flink jobs)
+pipelines:
+  - name: claims_etl
+    source: "kafka://insureportal.claims.*"
+    destination: "iceberg://raw.claims_raw"
+    schedule: "every 5 minutes"
+    format: json
+
+  - name: telematics_aggregation
+    source: "kafka://insureportal.telematics.events"
+    destination: "iceberg://curated.telematics_aggregated"
+    schedule: "every 1 hour"
+    aggregation: "trip_level"
+
+  - name: weather_daily_rollup
+    source: "iceberg://raw.weather_raw"
+    destination: "iceberg://curated.weather_daily"
+    schedule: "daily at 00:00 UTC"
+    aggregation: "daily_average_by_region"
+
+  - name: fraud_feature_refresh
+    source: "iceberg://curated.claims_enriched"
+    destination: "iceberg://ml_training.fraud_training_data"
+    schedule: "weekly on Sunday"
+    transformation: "extract_fraud_features"
+
+  - name: naicom_quarterly
+    source: "iceberg://curated.*"
+    destination: "iceberg://analytics.naicom_quarterly_reports"
+    schedule: "quarterly"
+    transformation: "generate_naicom_reports"

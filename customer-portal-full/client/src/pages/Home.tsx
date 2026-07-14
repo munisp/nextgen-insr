@@ -127,9 +127,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-slate-900">
-      <nav className="container mx-auto px-6 py-6 flex justify-between items-center">
+      <nav className="container mx-auto px-6 py-6 flex justify-between items-center" role="navigation" aria-label="Main navigation">
         <div className="flex items-center gap-2 text-white">
-          <Shield className="h-8 w-8" />
+          <Shield className="h-8 w-8" aria-hidden="true" />
           <span className="text-2xl font-bold">InsurePortal</span>
         </div>
         <div className="flex items-center gap-4">

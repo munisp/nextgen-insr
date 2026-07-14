@@ -5,6 +5,21 @@ const API_BASE = process.env.API_URL || 'https://api.insureportal.ng';
 const TOKEN_KEY = '@insureportal/auth_token';
 const REFRESH_KEY = '@insureportal/refresh_token';
 
+// Certificate pinning domains — all production endpoints must be pinned.
+// The native module (react-native-ssl-pinning or TrustKit) must be configured
+// in the native iOS/Android projects with SHA-256 leaf certificate hashes for:
+//   - api.insureportal.ng
+//   - auth.insureportal.ng
+//   - api.54link.ng
+//   - staging.54link.ng
+// Pin rotation: include both current and next certificate hashes.
+export const PINNED_DOMAINS = [
+  'api.insureportal.ng',
+  'auth.insureportal.ng',
+  'api.54link.ng',
+  'staging.54link.ng',
+] as const;
+
 export const api = axios.create({
   baseURL: API_BASE,
   timeout: 30_000,
