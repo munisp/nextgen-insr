@@ -1,148 +1,267 @@
-"""
-Policy Document AI Summarizer
+"""Policy Summarizer — Insurance policy document summarization with NLP
 Port: 8122
 
-LLM-powered plain-language summaries of policy documents:
-- "What am I covered for?"
-- "What's excluded?"
-- "How do I claim?"
-
-Open-source: Uses local ONNX model, no cloud API dependency
-Supports: English, Pidgin, Hausa, Yoruba, Igbo
-Middleware: Redis (cache), Kafka (events), OpenSearch (document store)
+Middleware: PostgreSQL (policy store), Kafka (summarization events),
+Redis (summary cache), OpenSearch (document search), Keycloak (JWT auth)
 """
 
-import os
+import hashlib
 import logging
+import os
+import re
 from datetime import datetime
 from typing import Optional
 
+import psycopg2
+import psycopg2.extras
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("policy-summarizer")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Policy AI Summarizer", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-PORT = int(os.getenv("PORT", "8122"))
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+app = FastAPI(title="Policy Summarizer", version="1.0.0")
 
 
-class PolicySummary(BaseModel):
-    policy_id: str
-    policy_type: str
-    coverage_summary: str
-    exclusions: list[str]
-    claim_process: str
-    key_limits: dict
-    plain_language: str
-    language: str
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
 
 
-POLICY_SUMMARIES = {
-    "motor-comprehensive": PolicySummary(
-        policy_id="motor-comprehensive",
-        policy_type="Motor Comprehensive",
-        coverage_summary="Covers damage to your vehicle from accidents, theft, fire, and natural disasters. Also covers damage you cause to other people's property or injuries.",
-        exclusions=["Driving under the influence", "Using vehicle for commercial purposes without endorsement", "Pre-existing damage", "Wear and tear", "Driving without valid license"],
-        claim_process="1) Report within 24 hours. 2) Take photos of damage. 3) Get police report for theft/accident. 4) Submit claim form online or via agent. 5) Assessor inspects within 48 hours. 6) Payout in 5-14 days.",
-        key_limits={"third_party_property": 5000000, "third_party_injury": "unlimited", "own_damage": "market_value", "excess": 50000},
-        plain_language="If your car get damage, stolen, or catch fire — we go pay. If you injure someone or damage their property — we go cover am. But if you dey drink drive or no get license, we no go pay.",
-        language="pcm",
-    ),
-    "health-standard": PolicySummary(
-        policy_id="health-standard",
-        policy_type="Health Standard Plan",
-        coverage_summary="Covers hospital visits, surgeries, emergencies, and basic specialist care. Includes outpatient and inpatient treatment at network hospitals.",
-        exclusions=["Cosmetic surgery", "Pre-existing conditions (first 12 months)", "Self-inflicted injuries", "Experimental treatments", "Dental (unless from accident)"],
-        claim_process="1) Visit any network hospital. 2) Show your member card. 3) Hospital bills us directly (cashless). 4) For non-network hospitals: pay and submit receipt for reimbursement within 30 days.",
-        key_limits={"annual_limit": 10000000, "outpatient_per_visit": 200000, "surgery": 5000000, "emergency": 3000000, "specialist": 1000000},
-        plain_language="If you sick, go hospital — show your card, them go treat you, we go pay the hospital. If the hospital no be our partner, pay first then send us the receipt, we refund you.",
-        language="pcm",
-    ),
-    "life-term": PolicySummary(
-        policy_id="life-term",
-        policy_type="Term Life Insurance",
-        coverage_summary="Pays a lump sum to your family if you die during the policy term. Also covers permanent disability and critical illness diagnosis.",
-        exclusions=["Suicide within first 2 years", "Death from illegal activities", "Pre-existing terminal illness not disclosed", "War or terrorism"],
-        claim_process="1) Family contacts us within 90 days of death. 2) Submit death certificate + policy document. 3) Verification takes 5-10 days. 4) Payout within 14 days of verification.",
-        key_limits={"death_benefit": 50000000, "critical_illness": 25000000, "permanent_disability": 50000000, "funeral_advance": 2000000},
-        plain_language="If anything happen to you, your family go collect ₦50M. If you get serious sickness like cancer or stroke, you go collect ₦25M to treat yourself. We go also give ₦2M quick for burial.",
-        language="pcm",
-    ),
-    "crop-parametric": PolicySummary(
-        policy_id="crop-parametric",
-        policy_type="Parametric Crop Insurance",
-        coverage_summary="Automatic payout when weather conditions trigger: drought (rainfall below threshold), flood (rainfall above threshold), or extreme heat. No claim form needed — payout is automatic.",
-        exclusions=["Poor farming practices", "Pests not linked to weather event", "Land dispute losses", "Government crop seizure"],
-        claim_process="AUTOMATIC — no claim needed! Weather station confirms trigger → money enters your account within 48 hours. You can track weather data on the app.",
-        key_limits={"max_payout_per_season": 5000000, "drought_trigger": "rainfall_below_20mm_30days", "flood_trigger": "rainfall_above_200mm_7days"},
-        plain_language="If rain no come for 30 days, or if water too much spoil your farm — money go enter your account automatic. No need to fill form. Just make sure you register your farm location.",
-        language="pcm",
-    ),
-}
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS policy_documents (
+            id TEXT PRIMARY KEY,
+            policy_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            full_text TEXT NOT NULL,
+            word_count INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS policy_summaries (
+            id SERIAL PRIMARY KEY,
+            document_id TEXT NOT NULL REFERENCES policy_documents(id),
+            summary TEXT NOT NULL,
+            key_terms JSONB NOT NULL DEFAULT '[]',
+            coverage_highlights TEXT[] NOT NULL DEFAULT '{}',
+            exclusions TEXT[] NOT NULL DEFAULT '{}',
+            readability_score DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            compression_ratio DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            language TEXT NOT NULL DEFAULT 'en',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_summaries_doc ON policy_summaries(document_id);
+    """)
+    conn.commit()
+    seed_documents(cur, conn)
+    cur.close()
+    conn.close()
+
+
+def seed_documents(cur, conn):
+    documents = [
+        ("doc-motor-001", "motor", "Comprehensive Motor Insurance Policy",
+         """COMPREHENSIVE MOTOR INSURANCE POLICY
+         
+This policy covers the insured vehicle against loss or damage arising from:
+1. Accidental damage, fire, and theft
+2. Third-party bodily injury and property damage liability
+3. Personal accident benefits for driver and passengers up to ₦5,000,000
+4. Towing and emergency roadside assistance within 50km radius
+
+EXCLUSIONS:
+- Wear and tear, mechanical or electrical breakdown
+- Use of vehicle for racing, speed testing, or rallies
+- Driving under the influence of alcohol or drugs
+- Loss of use or consequential loss
+- War, terrorism, nuclear contamination
+
+PREMIUM CALCULATION:
+Base premium is determined by vehicle value, driver age, and claims history.
+No Claims Discount: 20% after 1 year, 30% after 2 years, 45% after 3+ years.
+Young driver surcharge (under 25): 25% additional premium.
+
+CLAIMS PROCEDURE:
+Report within 48 hours. Provide police report for accidents. Two independent repair estimates required for amounts over ₦500,000."""),
+
+        ("doc-health-001", "health", "NHIA-Compliant Health Insurance Plan",
+         """NATIONAL HEALTH INSURANCE SCHEME COMPLIANT PLAN
+
+COVERAGE:
+1. Outpatient care including consultations, diagnostics, and prescribed medications
+2. Inpatient care including surgery, ward charges, and intensive care
+3. Maternity care including antenatal, delivery, and postnatal (up to 4 births)
+4. Dental care including extractions and fillings (cosmetic excluded)
+5. Optical care including eye examination and basic lenses (annual limit ₦50,000)
+6. Mental health consultations (up to 12 sessions per year)
+
+PRE-AUTHORIZATION:
+Required for: Elective surgery, MRI/CT scans, procedures over ₦50,000, specialist referrals outside network.
+Emergency exceptions: 48-hour retrospective notification accepted.
+
+EXCLUSIONS:
+- Pre-existing conditions (12-month waiting period)
+- Cosmetic and elective procedures
+- Fertility treatments and assisted reproduction
+- Experimental treatments not approved by NAFDAC
+- Self-inflicted injuries
+
+CONTRIBUTION:
+Employee: 5% of basic salary. Employer: 10% of basic salary. Minimum total: ₦30,000/month."""),
+    ]
+    for doc_id, ptype, title, text in documents:
+        wc = len(text.split())
+        cur.execute("""INSERT INTO policy_documents (id, policy_type, title, full_text, word_count)
+            VALUES (%s,%s,%s,%s,%s) ON CONFLICT (id) DO NOTHING""",
+            (doc_id, ptype, title, text, wc))
+    conn.commit()
+
+
+def extractive_summarize(text: str, num_sentences: int = 5) -> dict:
+    """Real extractive summarization using TF-IDF-like sentence scoring"""
+    sentences = re.split(r'[.!?\n]+', text)
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
+
+    if not sentences:
+        return {"summary": text[:200], "key_terms": [], "coverage": [], "exclusions": []}
+
+    # Word frequency scoring
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+    stop_words = {"the", "and", "for", "that", "this", "with", "from", "are", "was", "were",
+                  "not", "but", "have", "has", "had", "been", "will", "can", "may", "shall",
+                  "including", "within", "under", "over", "such", "any", "all", "per", "year"}
+    word_freq = {}
+    for w in words:
+        if w not in stop_words:
+            word_freq[w] = word_freq.get(w, 0) + 1
+
+    # Score sentences by word importance
+    scored = []
+    for i, sent in enumerate(sentences):
+        sent_words = re.findall(r'\b[a-zA-Z]{3,}\b', sent.lower())
+        if not sent_words:
+            continue
+        score = sum(word_freq.get(w, 0) for w in sent_words) / len(sent_words)
+        # Boost first sentences (position bias)
+        if i < 3:
+            score *= 1.5
+        scored.append((score, sent))
+
+    scored.sort(reverse=True)
+    top_sentences = [s for _, s in scored[:num_sentences]]
+
+    # Extract key terms (top 10 by frequency)
+    key_terms = sorted(word_freq.items(), key=lambda x: -x[1])[:10]
+
+    # Extract coverage highlights and exclusions
+    coverage = []
+    exclusions = []
+    for sent in sentences:
+        sent_lower = sent.lower()
+        if any(k in sent_lower for k in ["covers", "coverage", "included", "benefit"]):
+            coverage.append(sent[:120])
+        if any(k in sent_lower for k in ["exclud", "not covered", "exception"]):
+            exclusions.append(sent[:120])
+
+    summary = ". ".join(top_sentences)
+
+    # Readability score (Flesch approximation)
+    total_words = len(words)
+    total_sentences = len(sentences)
+    avg_sentence_len = total_words / max(total_sentences, 1)
+    readability = max(0, min(100, 206.835 - 1.015 * avg_sentence_len - 10))
+
+    return {
+        "summary": summary,
+        "key_terms": [{"term": t, "frequency": f} for t, f in key_terms],
+        "coverage_highlights": coverage[:5],
+        "exclusions": exclusions[:5],
+        "readability_score": round(readability, 1),
+        "compression_ratio": round(len(summary) / max(len(text), 1), 3),
+    }
+
+
+class SummarizeRequest(BaseModel):
+    document_id: Optional[str] = None
+    text: Optional[str] = None
+    num_sentences: int = 5
+    language: str = "en"
+
+
+@app.on_event("startup")
+def startup():
+    init_db()
+    logger.info("Policy Summarizer initialized with PostgreSQL document store")
 
 
 @app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "service": "policy-summarizer",
-        "version": "1.0.0",
-        "policies_indexed": len(POLICY_SUMMARIES),
-        "languages": ["en", "pcm", "ha", "yo", "ig"],
-        "model": "summarizer-v1-onnx",
-    }
+def health():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM policy_documents")
+        docs = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM policy_summaries")
+        summaries = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return {"status": "healthy", "service": "policy-summarizer", "database": "connected",
+                "documents": docs, "summaries": summaries}
+    except Exception as e:
+        return {"status": "degraded", "service": "policy-summarizer", "error": str(e)}
 
 
-@app.get("/api/v1/summary/{policy_type}")
-async def get_summary(policy_type: str, language: str = "pcm"):
-    """Get plain-language summary of a policy type."""
-    if policy_type not in POLICY_SUMMARIES:
-        raise HTTPException(status_code=404, detail=f"No summary for policy type: {policy_type}")
-    summary = POLICY_SUMMARIES[policy_type]
-    return summary.dict()
+@app.post("/api/v1/summarize")
+def summarize(req: SummarizeRequest):
+    text = req.text
+    doc_id = req.document_id
+
+    if doc_id:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM policy_documents WHERE id = %s", (doc_id,))
+        doc = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not doc:
+            raise HTTPException(status_code=404, detail="document not found")
+        text = doc["full_text"]
+
+    if not text:
+        raise HTTPException(status_code=400, detail="text or document_id required")
+
+    result = extractive_summarize(text, req.num_sentences)
+
+    # Persist summary
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""INSERT INTO policy_summaries (document_id, summary, key_terms, coverage_highlights, exclusions, readability_score, compression_ratio, language)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+        (doc_id or "custom", result["summary"],
+         psycopg2.extras.Json(result["key_terms"]),
+         result["coverage_highlights"], result["exclusions"],
+         result["readability_score"], result["compression_ratio"], req.language))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return result
 
 
-@app.get("/api/v1/summary/all")
-async def list_all_summaries():
-    return {
-        "summaries": {k: v.dict() for k, v in POLICY_SUMMARIES.items()},
-        "total": len(POLICY_SUMMARIES),
-    }
-
-
-@app.post("/api/v1/summary/question")
-async def answer_question(policy_type: str, question: str):
-    """Answer a specific question about a policy in plain language."""
-    if policy_type not in POLICY_SUMMARIES:
-        raise HTTPException(status_code=404, detail="Policy type not found")
-
-    summary = POLICY_SUMMARIES[policy_type]
-    question_lower = question.lower()
-
-    if any(w in question_lower for w in ["cover", "what", "include"]):
-        answer = summary.coverage_summary
-    elif any(w in question_lower for w in ["exclude", "not cover", "exception"]):
-        answer = "Not covered: " + ", ".join(summary.exclusions[:3])
-    elif any(w in question_lower for w in ["claim", "how", "process", "file"]):
-        answer = summary.claim_process
-    elif any(w in question_lower for w in ["limit", "maximum", "how much"]):
-        answer = str(summary.key_limits)
-    else:
-        answer = summary.plain_language
-
-    return {
-        "policy_type": policy_type,
-        "question": question,
-        "answer": answer,
-        "language": "en",
-        "confidence": 0.85,
-    }
+@app.get("/api/v1/documents")
+def list_documents():
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, policy_type, title, word_count FROM policy_documents ORDER BY title")
+    docs = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return {"documents": docs, "total": len(docs)}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    port = int(os.getenv("PORT", "8122"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

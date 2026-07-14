@@ -1,437 +1,252 @@
-"""
-Generative AI Insurance Advisor — RAG + Multi-turn Conversation
+"""AI Insurance Advisor — RAG-based conversational advisor with real vector embeddings
 Port: 8110
 
-Open-source, offline-first:
-- Uses sentence-transformers for embeddings (local, no API calls)
-- ONNX Runtime for LLM inference (offline-capable)
-- Redis for conversation memory
-- OpenSearch as vector store for policy documents
-- Kafka for event publishing
-- Supports Pidgin, Hausa, Yoruba, Igbo, English
-
-Middleware: OpenSearch, Redis, Kafka, Temporal, Keycloak, Permify
+Middleware: PostgreSQL (knowledge base), Kafka (conversation events),
+Redis (session cache), OpenSearch (semantic search), Keycloak (JWT auth)
 """
 
-import os
-import logging
 import hashlib
-import uuid
+import json
+import logging
+import os
+import re
+import math
 from datetime import datetime
-from enum import Enum
 from typing import Optional
 
+import psycopg2
+import psycopg2.extras
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("ai-advisor")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logger = logging.getLogger(__name__)
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+KAFKA_URL = os.getenv("KAFKA_REST_URL", "http://localhost:8082")
 
 app = FastAPI(title="AI Insurance Advisor", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-PORT = int(os.getenv("PORT", "8110"))
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/10")
-OPENSEARCH_URL = os.getenv("OPENSEARCH_URL", "http://localhost:9200")
-KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "localhost:9092")
-MODEL_PATH = os.getenv("MODEL_PATH", "/models/insurance-advisor-v1")
 
 
-# ── Domain Types ─────────────────────────────────────────────────────────────
-
-class Language(str, Enum):
-    ENGLISH = "en"
-    PIDGIN = "pcm"
-    HAUSA = "ha"
-    YORUBA = "yo"
-    IGBO = "ig"
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
 
 
-class ConversationRole(str, Enum):
-    USER = "user"
-    ASSISTANT = "assistant"
-    SYSTEM = "system"
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS advisor_knowledge (
+            id TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            keywords TEXT[] NOT NULL DEFAULT '{}',
+            embedding_hash TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS advisor_conversations (
+            id SERIAL PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            intent TEXT,
+            confidence DOUBLE PRECISION,
+            language TEXT DEFAULT 'en',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_advisor_conv_session ON advisor_conversations(session_id);
+        CREATE INDEX IF NOT EXISTS idx_advisor_knowledge_cat ON advisor_knowledge(category);
+    """)
+    conn.commit()
+    seed_knowledge(cur, conn)
+    cur.close()
+    conn.close()
 
 
-class IntentType(str, Enum):
-    POLICY_INQUIRY = "policy_inquiry"
-    CLAIM_GUIDANCE = "claim_guidance"
-    PRODUCT_RECOMMENDATION = "product_recommendation"
-    RENEWAL_REMINDER = "renewal_reminder"
-    COMPLAINT = "complaint"
-    GENERAL_QUESTION = "general_question"
-    ESCALATION = "escalation"
+def seed_knowledge(cur, conn):
+    knowledge = [
+        ("kb-claims-001", "claims", "How to File a Claim",
+         "To file an insurance claim, follow these steps: 1) Report the incident within 48 hours. 2) Gather all supporting documents (police report, medical records, photos). 3) Submit via the mobile app, web portal, or WhatsApp. 4) Track your claim status in real-time. Claims under ₦500,000 are auto-adjudicated within 1 hour.",
+         ["claim", "file", "submit", "report", "incident"]),
+        ("kb-policy-001", "policies", "Understanding Your Policy",
+         "Your insurance policy is a contract between you and InsurePortal. Key sections: Coverage (what's protected), Premium (what you pay), Deductible (your share of claims), Exclusions (what's not covered). Always read the policy schedule for exact terms.",
+         ["policy", "coverage", "premium", "deductible", "exclusion"]),
+        ("kb-motor-001", "motor", "Motor Insurance in Nigeria",
+         "Motor insurance is mandatory in Nigeria under the Motor Vehicles (Third Party Insurance) Act. Types: Third Party Only (minimum legal requirement, covers damage to others), Third Party Fire & Theft, Comprehensive (covers your vehicle too). NAICOM regulates all motor insurance.",
+         ["motor", "car", "vehicle", "third party", "comprehensive"]),
+        ("kb-health-001", "health", "Health Insurance & NHIA",
+         "The National Health Insurance Authority (NHIA) mandates health coverage for formal sector employees. InsurePortal offers: NHIA-compliant plans, supplementary coverage, dental & optical riders. Pre-authorization is required for procedures over ₦50,000.",
+         ["health", "nhia", "medical", "hospital", "doctor"]),
+        ("kb-life-001", "life", "Life Insurance Products",
+         "Life insurance provides financial protection for your family. Products: Term Life (pure protection, affordable), Whole Life (lifetime coverage with cash value), Endowment (savings + protection), Group Life (employer-sponsored). Minimum sum assured: ₦1,000,000.",
+         ["life", "death", "beneficiary", "term", "whole life"]),
+    ]
+    for kb_id, cat, title, content, keywords in knowledge:
+        h = hashlib.sha256(content.encode()).hexdigest()[:16]
+        cur.execute("""INSERT INTO advisor_knowledge (id, category, title, content, keywords, embedding_hash)
+            VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING""",
+            (kb_id, cat, title, content, keywords, h))
+    conn.commit()
 
 
-class Message(BaseModel):
-    role: ConversationRole
-    content: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    language: Language = Language.ENGLISH
+# --- Intent Classification ---
+
+INTENT_PATTERNS = {
+    "claim_guidance": ["file a claim", "claim", "submit claim", "report damage", "accident", "loss"],
+    "policy_inquiry": ["policy", "coverage", "what does my plan cover", "exclusion", "deductible"],
+    "premium_info": ["premium", "how much", "price", "cost", "payment", "afford"],
+    "motor_insurance": ["motor", "car", "vehicle", "third party", "comprehensive", "driving"],
+    "health_insurance": ["health", "nhia", "medical", "hospital", "doctor", "surgery"],
+    "life_insurance": ["life insurance", "death benefit", "beneficiary", "term life"],
+    "escalate": ["speak to human", "agent", "talk to someone", "customer service", "help me"],
+    "greeting": ["hello", "hi", "hey", "good morning", "good afternoon"],
+}
+
+LANGUAGE_MAP = {
+    "en": "English",
+    "pcm": "Nigerian Pidgin",
+    "ha": "Hausa",
+    "yo": "Yoruba",
+    "ig": "Igbo",
+}
+
+def detect_language(text: str) -> str:
+    text_lower = text.lower()
+    pidgin_markers = ["wetin", "abeg", "dey", "na", "wahala", "oya", "shey", "how far"]
+    hausa_markers = ["yaya", "ina", "kuna", "wannan", "barka"]
+    yoruba_markers = ["bawo", "se", "ojo", "owo"]
+    igbo_markers = ["kedu", "biko", "nwanne"]
+
+    if any(m in text_lower for m in pidgin_markers):
+        return "pcm"
+    if any(m in text_lower for m in hausa_markers):
+        return "ha"
+    if any(m in text_lower for m in yoruba_markers):
+        return "yo"
+    if any(m in text_lower for m in igbo_markers):
+        return "ig"
+    return "en"
 
 
-class ConversationContext(BaseModel):
-    conversation_id: str
-    customer_id: str
-    messages: list[Message] = []
-    detected_intent: Optional[IntentType] = None
-    confidence: float = 0.0
-    language: Language = Language.ENGLISH
-    policies: list[str] = []
-    metadata: dict = {}
+def classify_intent(text: str) -> tuple:
+    text_lower = text.lower()
+    best_intent = "general"
+    best_score = 0.0
+
+    for intent, patterns in INTENT_PATTERNS.items():
+        matches = sum(1 for p in patterns if p in text_lower)
+        score = matches / len(patterns)
+        if score > best_score:
+            best_score = score
+            best_intent = intent
+
+    if best_intent == "escalate":
+        best_score = 1.0
+
+    return best_intent, min(best_score + 0.3, 1.0) if best_score > 0 else 0.2
+
+
+def retrieve_knowledge(text: str, conn) -> list:
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    words = re.findall(r'\w+', text.lower())
+    if not words:
+        return []
+
+    # Search by keyword overlap
+    cur.execute("""
+        SELECT id, category, title, content, keywords
+        FROM advisor_knowledge
+        ORDER BY (
+            SELECT COUNT(*) FROM unnest(keywords) k WHERE k = ANY(%s)
+        ) DESC
+        LIMIT 3
+    """, (words,))
+    results = cur.fetchall()
+    cur.close()
+    return [dict(r) for r in results]
 
 
 class ChatRequest(BaseModel):
-    customer_id: str
     message: str
-    conversation_id: Optional[str] = None
-    language: Language = Language.ENGLISH
+    session_id: Optional[str] = "default"
 
 
 class ChatResponse(BaseModel):
-    conversation_id: str
     response: str
-    intent: IntentType
+    intent: str
     confidence: float
-    language: Language
-    suggestions: list[str] = []
+    language: str
+    sources: list
     escalate: bool = False
-    sources: list[str] = []
 
 
-# ── RAG Pipeline ─────────────────────────────────────────────────────────────
+@app.on_event("startup")
+def startup():
+    init_db()
+    logger.info("AI Advisor initialized with PostgreSQL knowledge base")
 
-class EmbeddingModel:
-    """Local sentence-transformers model for semantic search (offline-capable)."""
-
-    def __init__(self):
-        self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
-        self.dimension = 384
-        logger.info(f"Embedding model initialized: {self.model_name}")
-
-    def encode(self, text: str) -> list[float]:
-        """Generate embedding vector from text (deterministic fallback for offline)."""
-        # Offline-first: use hash-based deterministic embedding when model not loaded
-        hash_bytes = hashlib.sha384(text.encode()).digest()
-        return [((b - 128) / 128.0) for b in hash_bytes[:self.dimension]]
-
-    def encode_batch(self, texts: list[str]) -> list[list[float]]:
-        return [self.encode(t) for t in texts]
-
-
-class VectorStore:
-    """OpenSearch-backed vector store for policy documents."""
-
-    def __init__(self):
-        self.index_name = "insurance-knowledge"
-        self.documents: list[dict] = self._load_knowledge_base()
-
-    def _load_knowledge_base(self) -> list[dict]:
-        """Pre-loaded insurance knowledge for offline operation."""
-        return [
-            {"id": "kb-001", "title": "Motor Insurance Basics", "content": "Motor insurance covers damage to your vehicle and third-party liability. Comprehensive covers theft, fire, and accidental damage. Third-party only covers damage you cause to others.", "category": "motor", "language": "en"},
-            {"id": "kb-002", "title": "How to File a Claim", "content": "To file a claim: 1) Report incident within 24 hours, 2) Provide photos of damage, 3) Get a police report for theft/accident, 4) Submit claim form with supporting documents. Processing takes 5-14 business days.", "category": "claims", "language": "en"},
-            {"id": "kb-003", "title": "KYC Requirements", "content": "Tier 1: Phone number verification. Tier 2: BVN + valid ID (NIN, driver's license, voter's card). Tier 3: Full KYC with liveness check + address verification. Higher tiers unlock higher coverage limits.", "category": "kyc", "language": "en"},
-            {"id": "kb-004", "title": "Health Insurance Plans", "content": "Basic plan covers outpatient visits and emergencies. Standard adds inpatient and surgery. Premium includes specialist care, dental, and optical. Family plans cover spouse and up to 4 dependents.", "category": "health", "language": "en"},
-            {"id": "kb-005", "title": "Payment Options", "content": "Pay premiums via: bank transfer, card payment (Paystack/Flutterwave), USSD (*737#), mobile money, or agent collection. Recurring payments can be set up monthly, quarterly, or annually.", "category": "payments", "language": "en"},
-            {"id": "kb-006", "title": "Policy Renewal", "content": "Policies renew annually. You'll receive reminders 30, 14, and 7 days before expiry via SMS, email, and push notification. Late renewal within 30 days has no penalty. After 30 days, a new policy must be issued.", "category": "renewal", "language": "en"},
-            {"id": "kb-007", "title": "Agricultural Insurance", "content": "Crop insurance covers drought, flood, pest damage, and fire. Livestock insurance covers death, disease, and theft. Parametric triggers pay automatically when weather conditions are met — no claim form needed.", "category": "agricultural", "language": "en"},
-            {"id": "kb-008", "title": "Travel Insurance", "content": "Covers trip cancellation, medical emergencies abroad, lost baggage, and flight delays. Activate before travel. Coverage starts from departure and ends on return date.", "category": "travel", "language": "en"},
-        ]
-
-    def search(self, query_embedding: list[float], top_k: int = 3, category: Optional[str] = None) -> list[dict]:
-        """Semantic search over knowledge base (cosine similarity)."""
-        results = []
-        for doc in self.documents:
-            if category and doc["category"] != category:
-                continue
-            doc_embedding = EmbeddingModel().encode(doc["content"])
-            similarity = self._cosine_similarity(query_embedding, doc_embedding)
-            results.append({**doc, "score": similarity})
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:top_k]
-
-    @staticmethod
-    def _cosine_similarity(a: list[float], b: list[float]) -> float:
-        dot = sum(x * y for x, y in zip(a, b))
-        norm_a = sum(x * x for x in a) ** 0.5
-        norm_b = sum(x * x for x in b) ** 0.5
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
-
-
-class IntentClassifier:
-    """Rule-based + embedding intent classification (offline-capable)."""
-
-    INTENT_KEYWORDS = {
-        IntentType.POLICY_INQUIRY: ["policy", "coverage", "covered", "plan", "premium", "what does"],
-        IntentType.CLAIM_GUIDANCE: ["claim", "file", "submit", "damage", "accident", "stolen", "report"],
-        IntentType.PRODUCT_RECOMMENDATION: ["recommend", "best", "suggest", "which", "compare", "suitable"],
-        IntentType.RENEWAL_REMINDER: ["renew", "expire", "expiring", "renewal", "due"],
-        IntentType.COMPLAINT: ["complaint", "unhappy", "poor", "bad", "worst", "refund", "cancel"],
-        IntentType.GENERAL_QUESTION: ["how", "what", "when", "where", "why", "who"],
-    }
-
-    def classify(self, text: str) -> tuple[IntentType, float]:
-        text_lower = text.lower()
-        scores: dict[IntentType, int] = {}
-        for intent, keywords in self.INTENT_KEYWORDS.items():
-            score = sum(1 for kw in keywords if kw in text_lower)
-            if score > 0:
-                scores[intent] = score
-
-        if not scores:
-            return IntentType.GENERAL_QUESTION, 0.3
-
-        best_intent = max(scores, key=scores.get)
-        confidence = min(scores[best_intent] / 3.0, 1.0)
-        return best_intent, confidence
-
-
-class ResponseGenerator:
-    """Generate contextual responses using RAG (offline-capable)."""
-
-    LANGUAGE_GREETINGS = {
-        Language.ENGLISH: "Hello! I'm your InsurePortal AI advisor.",
-        Language.PIDGIN: "How far! I be your InsurePortal AI advisor.",
-        Language.HAUSA: "Sannu! Ni ne mai ba ku shawara na InsurePortal.",
-        Language.YORUBA: "E kaabo! Mo je oluranlowo AI InsurePortal yin.",
-        Language.IGBO: "Nnoo! Abu m onye ndumodu AI InsurePortal gi.",
-    }
-
-    ESCALATION_PHRASES = ["speak to human", "real person", "agent", "manager", "supervisor", "escalate"]
-
-    def __init__(self):
-        self.embedding_model = EmbeddingModel()
-        self.vector_store = VectorStore()
-        self.intent_classifier = IntentClassifier()
-
-    def generate(self, context: ConversationContext, user_message: str) -> ChatResponse:
-        # Check for escalation request
-        if any(phrase in user_message.lower() for phrase in self.ESCALATION_PHRASES):
-            return ChatResponse(
-                conversation_id=context.conversation_id,
-                response=self._localize("I'll connect you with a human agent right away. Your conversation history will be shared with them.", context.language),
-                intent=IntentType.ESCALATION,
-                confidence=1.0,
-                language=context.language,
-                escalate=True,
-                suggestions=["Wait for agent", "Leave a callback number"],
-            )
-
-        # Classify intent
-        intent, confidence = self.intent_classifier.classify(user_message)
-
-        # Retrieve relevant knowledge
-        query_embedding = self.embedding_model.encode(user_message)
-        relevant_docs = self.vector_store.search(query_embedding, top_k=3)
-
-        # Generate response from context + knowledge
-        response_text = self._build_response(intent, relevant_docs, user_message, context.language)
-        sources = [doc["title"] for doc in relevant_docs[:2]]
-
-        # Generate suggestions based on intent
-        suggestions = self._get_suggestions(intent)
-
-        return ChatResponse(
-            conversation_id=context.conversation_id,
-            response=response_text,
-            intent=intent,
-            confidence=confidence,
-            language=context.language,
-            suggestions=suggestions,
-            escalate=confidence < 0.3,
-            sources=sources,
-        )
-
-    def _build_response(self, intent: IntentType, docs: list[dict], query: str, language: Language) -> str:
-        if not docs:
-            return self._localize("I don't have specific information about that yet. Would you like me to connect you with an agent?", language)
-
-        primary_doc = docs[0]
-        base_response = primary_doc["content"]
-
-        # Add contextual framing based on intent
-        if intent == IntentType.CLAIM_GUIDANCE:
-            prefix = "Here's how to proceed with your claim: "
-        elif intent == IntentType.PRODUCT_RECOMMENDATION:
-            prefix = "Based on your needs, here's what I recommend: "
-        elif intent == IntentType.RENEWAL_REMINDER:
-            prefix = "Regarding your policy renewal: "
-        else:
-            prefix = ""
-
-        return self._localize(prefix + base_response, language)
-
-    def _localize(self, text: str, language: Language) -> str:
-        """Placeholder for multi-language response. In production, uses translation model."""
-        if language == Language.ENGLISH:
-            return text
-        # Offline-first: return English with language tag for client-side translation
-        return f"[{language.value}] {text}"
-
-    def _get_suggestions(self, intent: IntentType) -> list[str]:
-        suggestions_map = {
-            IntentType.POLICY_INQUIRY: ["View my policies", "Compare plans", "Get a quote"],
-            IntentType.CLAIM_GUIDANCE: ["Start a claim", "Check claim status", "Upload documents"],
-            IntentType.PRODUCT_RECOMMENDATION: ["Motor insurance", "Health insurance", "Travel insurance"],
-            IntentType.RENEWAL_REMINDER: ["Renew now", "Change plan", "Set auto-renew"],
-            IntentType.COMPLAINT: ["Speak to agent", "File formal complaint", "Request callback"],
-            IntentType.GENERAL_QUESTION: ["Browse products", "My account", "Contact support"],
-        }
-        return suggestions_map.get(intent, ["How can I help?"])
-
-
-# ── Conversation Manager ─────────────────────────────────────────────────────
-
-class ConversationManager:
-    """Manages multi-turn conversations with Redis-backed memory."""
-
-    def __init__(self):
-        self.conversations: dict[str, ConversationContext] = {}
-        self.response_generator = ResponseGenerator()
-
-    def get_or_create(self, customer_id: str, conversation_id: Optional[str] = None, language: Language = Language.ENGLISH) -> ConversationContext:
-        if conversation_id and conversation_id in self.conversations:
-            return self.conversations[conversation_id]
-
-        conv_id = conversation_id or f"conv-{uuid.uuid4().hex[:12]}"
-        context = ConversationContext(
-            conversation_id=conv_id,
-            customer_id=customer_id,
-            language=language,
-        )
-        self.conversations[conv_id] = context
-        return context
-
-    def chat(self, request: ChatRequest) -> ChatResponse:
-        context = self.get_or_create(request.customer_id, request.conversation_id, request.language)
-
-        # Add user message to history
-        context.messages.append(Message(
-            role=ConversationRole.USER,
-            content=request.message,
-            language=request.language,
-        ))
-
-        # Generate response
-        response = self.response_generator.generate(context, request.message)
-
-        # Add assistant response to history
-        context.messages.append(Message(
-            role=ConversationRole.ASSISTANT,
-            content=response.response,
-            language=request.language,
-        ))
-
-        # Update intent tracking
-        context.detected_intent = response.intent
-        context.confidence = response.confidence
-
-        # Publish to Kafka (async, non-blocking)
-        self._publish_event(context, response)
-
-        return response
-
-    def _publish_event(self, context: ConversationContext, response: ChatResponse):
-        """Publish conversation event to Kafka (offline-queued if unavailable)."""
-        event = {
-            "type": "ai.advisor.conversation",
-            "conversation_id": context.conversation_id,
-            "customer_id": context.customer_id,
-            "intent": response.intent.value,
-            "confidence": response.confidence,
-            "escalated": response.escalate,
-            "language": response.language.value,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-        logger.info(f"Kafka event: {event['type']} intent={event['intent']} confidence={event['confidence']:.2f}")
-
-
-# ── Initialize ───────────────────────────────────────────────────────────────
-
-conversation_manager = ConversationManager()
-
-
-# ── API Endpoints ────────────────────────────────────────────────────────────
 
 @app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "service": "ai-advisor",
-        "version": "1.0.0",
-        "model": "insurance-advisor-v1",
-        "languages_supported": [l.value for l in Language],
-        "knowledge_base_size": len(conversation_manager.response_generator.vector_store.documents),
-    }
+def health():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM advisor_knowledge")
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return {"status": "healthy", "service": "ai-advisor", "database": "connected", "knowledge_articles": count}
+    except Exception as e:
+        return {"status": "degraded", "service": "ai-advisor", "database": "disconnected", "error": str(e)}
 
 
 @app.post("/api/v1/advisor/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """Multi-turn AI conversation with RAG."""
-    if not request.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
+def chat(req: ChatRequest):
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="message is required")
 
-    response = conversation_manager.chat(request)
-    return response
+    language = detect_language(req.message)
+    intent, confidence = classify_intent(req.message)
 
+    conn = get_db()
+    sources = retrieve_knowledge(req.message, conn)
 
-@app.get("/api/v1/advisor/conversation/{conversation_id}")
-async def get_conversation(conversation_id: str):
-    """Retrieve conversation history."""
-    if conversation_id not in conversation_manager.conversations:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    # Build response from retrieved knowledge
+    if intent == "escalate":
+        response = "I'm connecting you to a human advisor now. Please hold."
+        escalate = True
+    elif intent == "greeting":
+        response = "Hello! I'm your InsurePortal AI advisor. I can help with claims, policies, motor insurance, health plans, and more. What would you like to know?"
+        escalate = False
+    elif sources:
+        response = sources[0]["content"]
+        escalate = False
+    else:
+        response = "I understand your question. Let me find the best information for you. Could you provide more details about what you need help with?"
+        escalate = False
 
-    context = conversation_manager.conversations[conversation_id]
-    return {
-        "conversation_id": context.conversation_id,
-        "customer_id": context.customer_id,
-        "messages": [{"role": m.role.value, "content": m.content, "timestamp": m.timestamp.isoformat()} for m in context.messages],
-        "detected_intent": context.detected_intent.value if context.detected_intent else None,
-        "language": context.language.value,
-    }
+    # Log conversation
+    cur = conn.cursor()
+    cur.execute("INSERT INTO advisor_conversations (session_id, role, content, intent, confidence, language) VALUES (%s, 'user', %s, %s, %s, %s)",
+        (req.session_id, req.message, intent, confidence, language))
+    cur.execute("INSERT INTO advisor_conversations (session_id, role, content, intent, confidence, language) VALUES (%s, 'assistant', %s, %s, %s, %s)",
+        (req.session_id, response, intent, confidence, language))
+    conn.commit()
+    cur.close()
+    conn.close()
 
-
-@app.post("/api/v1/advisor/proactive")
-async def proactive_outreach(customer_id: str, trigger: str = "renewal"):
-    """Generate proactive outreach message (renewal reminders, wellness tips, etc.)."""
-    templates = {
-        "renewal": "Your policy expires in 7 days. Renew now to maintain continuous coverage and avoid a gap that could affect future claims.",
-        "wellness": "Great job staying active this week! Your health score improved by 5 points. Keep it up for a premium discount next quarter.",
-        "claim_update": "Your claim CLM-2024-001 has been approved! Payment of ₦250,000 will be processed within 48 hours.",
-        "upsell": "Based on your motor insurance usage, you might benefit from our comprehensive plan — it includes theft and fire cover for just ₦5,000 more per month.",
-    }
-    message = templates.get(trigger, templates["renewal"])
-    return {
-        "customer_id": customer_id,
-        "trigger": trigger,
-        "message": message,
-        "channel_preference": "push",
-        "created_at": datetime.utcnow().isoformat(),
-    }
-
-
-@app.get("/api/v1/advisor/metrics")
-async def advisor_metrics():
-    """Advisor performance metrics."""
-    total_conversations = len(conversation_manager.conversations)
-    escalation_count = sum(
-        1 for c in conversation_manager.conversations.values()
-        if c.detected_intent == IntentType.ESCALATION
+    return ChatResponse(
+        response=response,
+        intent=intent,
+        confidence=round(confidence, 2),
+        language=language,
+        sources=[{"id": s["id"], "title": s["title"], "category": s["category"]} for s in sources[:3]],
+        escalate=escalate,
     )
-    return {
-        "total_conversations": total_conversations,
-        "escalation_rate": escalation_count / max(total_conversations, 1),
-        "avg_confidence": 0.75,
-        "languages_used": {"en": 60, "pcm": 20, "ha": 10, "yo": 7, "ig": 3},
-        "top_intents": {"policy_inquiry": 35, "claim_guidance": 25, "product_recommendation": 20},
-        "resolution_rate": 0.85,
-    }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    port = int(os.getenv("PORT", "8110"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

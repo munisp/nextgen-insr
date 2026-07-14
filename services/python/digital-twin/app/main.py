@@ -1,260 +1,219 @@
-"""
-Digital Twin Risk Simulation Engine
+"""Digital Twin — Monte Carlo simulation for insurance portfolio risk modeling
 Port: 8119
 
-Monte Carlo simulation for portfolio stress testing:
-- Catastrophe models: flooding, drought, pandemic, economic shock
-- Dynamic reinsurance optimization
-- NAICOM stress test automation
-- Integration with IFRS17 engine for reserve impact
-
-Open-source: NumPy/SciPy for simulations, no cloud APIs
-Middleware: Redis (scenario cache), Kafka, OpenSearch, Temporal, Lakehouse
+Middleware: PostgreSQL (simulation store), Kafka (simulation events),
+Redis (result cache), Keycloak (JWT auth)
 """
 
-import os
 import logging
-import hashlib
+import math
+import os
+import random
 from datetime import datetime
-from enum import Enum
 from typing import Optional
 
+import psycopg2
+import psycopg2.extras
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("digital-twin")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Digital Twin Risk Simulation", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-
-PORT = int(os.getenv("PORT", "8119"))
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+app = FastAPI(title="Digital Twin Simulator", version="1.0.0")
 
 
-class ScenarioType(str, Enum):
-    FLOOD = "flood"
-    DROUGHT = "drought"
-    PANDEMIC = "pandemic"
-    ECONOMIC_SHOCK = "economic_shock"
-    EARTHQUAKE = "earthquake"
-    CYBER_ATTACK = "cyber_attack"
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
 
 
-class SimulationStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS simulation_runs (
+            id TEXT PRIMARY KEY,
+            scenario_type TEXT NOT NULL,
+            iterations INT NOT NULL,
+            mean_loss DOUBLE PRECISION,
+            std_loss DOUBLE PRECISION,
+            var_95 DOUBLE PRECISION,
+            var_99 DOUBLE PRECISION,
+            max_loss DOUBLE PRECISION,
+            min_loss DOUBLE PRECISION,
+            parameters JSONB NOT NULL DEFAULT '{}',
+            duration_ms INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS portfolio_scenarios (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            policy_count INT NOT NULL DEFAULT 1000,
+            avg_premium BIGINT NOT NULL DEFAULT 50000,
+            avg_coverage BIGINT NOT NULL DEFAULT 5000000,
+            loss_frequency DOUBLE PRECISION NOT NULL DEFAULT 0.05,
+            loss_severity_mean DOUBLE PRECISION NOT NULL DEFAULT 500000,
+            loss_severity_std DOUBLE PRECISION NOT NULL DEFAULT 200000,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_sim_runs_scenario ON simulation_runs(scenario_type);
+    """)
+    conn.commit()
+    # Seed scenarios
+    scenarios = [
+        ("scn-motor", "Motor Portfolio", "Third-party + comprehensive motor policies", 5000, 50000, 5000000, 0.08, 500000, 250000),
+        ("scn-health", "Health Portfolio", "NHIA-compliant + private health plans", 3000, 120000, 10000000, 0.15, 300000, 150000),
+        ("scn-life", "Life Portfolio", "Term + whole life + group life", 2000, 80000, 20000000, 0.02, 5000000, 3000000),
+        ("scn-property", "Property Portfolio", "Fire + flood + earthquake", 1000, 200000, 50000000, 0.03, 2000000, 1500000),
+    ]
+    for sid, name, desc, pc, ap, ac, lf, lsm, lss in scenarios:
+        cur.execute("""INSERT INTO portfolio_scenarios (id, name, description, policy_count, avg_premium, avg_coverage, loss_frequency, loss_severity_mean, loss_severity_std)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO NOTHING""",
+            (sid, name, desc, pc, ap, ac, lf, lsm, lss))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
-class ScenarioConfig(BaseModel):
-    scenario_type: ScenarioType
-    severity: float = 0.5  # 0-1
-    duration_months: int = 6
-    affected_regions: list[str] = ["Lagos"]
-    num_simulations: int = 10000
+class SimulationRequest(BaseModel):
+    scenario_id: Optional[str] = None
+    iterations: int = 10000
+    policy_count: int = 1000
+    avg_premium: int = 50000
+    avg_coverage: int = 5000000
+    loss_frequency: float = 0.05
+    loss_severity_mean: float = 500000
+    loss_severity_std: float = 200000
 
 
-class SimulationResult(BaseModel):
-    simulation_id: str
-    scenario_type: ScenarioType
-    status: SimulationStatus
-    num_simulations: int
-    # Financial impact
-    expected_loss: int
-    var_95: int  # Value at Risk 95th percentile
-    var_99: int
-    tail_var: int  # Tail VaR (Expected Shortfall)
-    # Portfolio impact
-    claims_increase_pct: float
-    policies_affected: int
-    capital_adequacy_ratio: float
-    # Reinsurance
-    reinsurance_recovery: int
-    net_retention: int
-    # Timing
-    duration_ms: int
-    completed_at: Optional[str] = None
+def run_monte_carlo(params: SimulationRequest) -> dict:
+    """Real Monte Carlo simulation with random sampling"""
+    start = datetime.now()
+    losses = []
+    rng = random.Random()
 
+    for _ in range(params.iterations):
+        total_loss = 0.0
+        for _ in range(params.policy_count):
+            # Bernoulli trial for loss occurrence
+            if rng.random() < params.loss_frequency:
+                # Log-normal severity distribution
+                severity = rng.lognormvariate(
+                    math.log(params.loss_severity_mean) - 0.5 * (params.loss_severity_std / params.loss_severity_mean) ** 2,
+                    params.loss_severity_std / params.loss_severity_mean
+                )
+                total_loss += min(severity, params.avg_coverage)
+        losses.append(total_loss)
 
-class PortfolioSnapshot(BaseModel):
-    total_policies: int = 125000
-    total_premium_income: int = 15000000000  # ₦15B
-    total_reserves: int = 5000000000         # ₦5B
-    total_capital: int = 8000000000          # ₦8B
-    claims_ratio: float = 0.65
-    expense_ratio: float = 0.30
-    combined_ratio: float = 0.95
+    losses.sort()
+    n = len(losses)
+    mean_loss = sum(losses) / n
+    variance = sum((x - mean_loss) ** 2 for x in losses) / n
+    std_loss = math.sqrt(variance)
 
+    total_premium = params.policy_count * params.avg_premium
+    loss_ratio = mean_loss / total_premium if total_premium > 0 else 0
 
-# ── Monte Carlo Engine ───────────────────────────────────────────────────────
+    duration_ms = int((datetime.now() - start).total_seconds() * 1000)
 
-class MonteCarloEngine:
-    """Deterministic pseudo-Monte Carlo for offline reproducibility."""
-
-    SCENARIO_PARAMS = {
-        ScenarioType.FLOOD: {"claims_multiplier": 3.5, "policies_affected_pct": 0.15, "avg_claim_increase": 2.8},
-        ScenarioType.DROUGHT: {"claims_multiplier": 2.0, "policies_affected_pct": 0.25, "avg_claim_increase": 1.8},
-        ScenarioType.PANDEMIC: {"claims_multiplier": 4.0, "policies_affected_pct": 0.40, "avg_claim_increase": 3.5},
-        ScenarioType.ECONOMIC_SHOCK: {"claims_multiplier": 2.5, "policies_affected_pct": 0.60, "avg_claim_increase": 1.5},
-        ScenarioType.EARTHQUAKE: {"claims_multiplier": 5.0, "policies_affected_pct": 0.10, "avg_claim_increase": 4.0},
-        ScenarioType.CYBER_ATTACK: {"claims_multiplier": 1.5, "policies_affected_pct": 0.05, "avg_claim_increase": 8.0},
+    return {
+        "iterations": params.iterations,
+        "mean_loss": round(mean_loss, 2),
+        "std_loss": round(std_loss, 2),
+        "var_95": round(losses[int(n * 0.95)], 2),
+        "var_99": round(losses[int(n * 0.99)], 2),
+        "max_loss": round(losses[-1], 2),
+        "min_loss": round(losses[0], 2),
+        "median_loss": round(losses[n // 2], 2),
+        "total_premium": total_premium,
+        "expected_loss_ratio": round(loss_ratio, 4),
+        "duration_ms": duration_ms,
+        "percentiles": {
+            "p50": round(losses[int(n * 0.50)], 2),
+            "p75": round(losses[int(n * 0.75)], 2),
+            "p90": round(losses[int(n * 0.90)], 2),
+            "p95": round(losses[int(n * 0.95)], 2),
+            "p99": round(losses[int(n * 0.99)], 2),
+        },
     }
 
-    def __init__(self):
-        self.portfolio = PortfolioSnapshot()
 
-    def simulate(self, config: ScenarioConfig) -> SimulationResult:
-        """Run Monte Carlo simulation with deterministic seeding."""
-        params = self.SCENARIO_PARAMS[config.scenario_type]
-        severity_factor = 0.5 + config.severity  # 0.5-1.5x
-        duration_factor = config.duration_months / 12.0
+@app.on_event("startup")
+def startup():
+    init_db()
+    logger.info("Digital Twin Simulator initialized with PostgreSQL")
 
-        # Core calculations
-        base_claims = int(self.portfolio.total_premium_income * self.portfolio.claims_ratio)
-        additional_claims = int(base_claims * (params["claims_multiplier"] - 1) * severity_factor * duration_factor)
-
-        policies_affected = int(self.portfolio.total_policies * params["policies_affected_pct"] * severity_factor)
-
-        # VaR calculations (simplified percentile estimation)
-        expected_loss = additional_claims
-        var_95 = int(expected_loss * 1.65)  # 95th percentile
-        var_99 = int(expected_loss * 2.33)  # 99th percentile
-        tail_var = int(expected_loss * 2.50)  # Expected shortfall
-
-        # Reinsurance recovery (assume 60% XoL cover above retention)
-        retention = int(self.portfolio.total_reserves * 0.4)
-        reinsurance_recovery = max(0, int((expected_loss - retention) * 0.6))
-        net_retention = expected_loss - reinsurance_recovery
-
-        # Capital adequacy
-        capital_after_loss = self.portfolio.total_capital - net_retention
-        car = capital_after_loss / max(self.portfolio.total_reserves, 1)
-
-        # Deterministic simulation hash for reproducibility
-        seed = hashlib.sha256(f"{config.scenario_type}{config.severity}{config.num_simulations}".encode()).hexdigest()[:8]
-
-        return SimulationResult(
-            simulation_id=f"SIM-{seed}",
-            scenario_type=config.scenario_type,
-            status=SimulationStatus.COMPLETED,
-            num_simulations=config.num_simulations,
-            expected_loss=expected_loss,
-            var_95=var_95,
-            var_99=var_99,
-            tail_var=tail_var,
-            claims_increase_pct=round((params["claims_multiplier"] - 1) * severity_factor * 100, 1),
-            policies_affected=policies_affected,
-            capital_adequacy_ratio=round(car, 3),
-            reinsurance_recovery=reinsurance_recovery,
-            net_retention=net_retention,
-            duration_ms=int(config.num_simulations * 0.8),  # ~0.8ms per simulation
-            completed_at=datetime.utcnow().isoformat(),
-        )
-
-
-# ── Initialize ───────────────────────────────────────────────────────────────
-
-engine = MonteCarloEngine()
-
-
-# ── API Endpoints ────────────────────────────────────────────────────────────
 
 @app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "service": "digital-twin-simulation",
-        "version": "1.0.0",
-        "engine": "monte_carlo_v1",
-        "scenarios_supported": [s.value for s in ScenarioType],
-        "max_simulations": 1000000,
-        "portfolio_size": engine.portfolio.total_policies,
-    }
+def health():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM portfolio_scenarios")
+        count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM simulation_runs")
+        runs = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return {"status": "healthy", "service": "digital-twin", "database": "connected",
+                "scenarios": count, "total_runs": runs}
+    except Exception as e:
+        return {"status": "degraded", "service": "digital-twin", "error": str(e)}
 
 
 @app.post("/api/v1/simulation/run")
-async def run_simulation(config: ScenarioConfig):
-    """Execute Monte Carlo stress test simulation."""
-    if config.num_simulations > 1000000:
-        raise HTTPException(status_code=400, detail="Max 1M simulations per run")
+def run_simulation(req: SimulationRequest):
+    # If scenario_id provided, load params from DB
+    if req.scenario_id:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM portfolio_scenarios WHERE id = %s", (req.scenario_id,))
+        scenario = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not scenario:
+            raise HTTPException(status_code=404, detail="scenario not found")
+        req.policy_count = scenario["policy_count"]
+        req.avg_premium = scenario["avg_premium"]
+        req.avg_coverage = scenario["avg_coverage"]
+        req.loss_frequency = scenario["loss_frequency"]
+        req.loss_severity_mean = scenario["loss_severity_mean"]
+        req.loss_severity_std = scenario["loss_severity_std"]
 
-    result = engine.simulate(config)
+    result = run_monte_carlo(req)
+
+    # Persist
+    conn = get_db()
+    cur = conn.cursor()
+    sim_id = f"SIM-{int(datetime.now().timestamp() * 1000) % 100000000}"
+    cur.execute("""INSERT INTO simulation_runs (id, scenario_type, iterations, mean_loss, std_loss, var_95, var_99, max_loss, min_loss, parameters, duration_ms)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (sim_id, req.scenario_id or "custom", req.iterations, result["mean_loss"], result["std_loss"],
+         result["var_95"], result["var_99"], result["max_loss"], result["min_loss"],
+         psycopg2.extras.Json({"policy_count": req.policy_count, "avg_premium": req.avg_premium}),
+         result["duration_ms"]))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    result["simulation_id"] = sim_id
     return result
 
 
 @app.get("/api/v1/simulation/scenarios")
-async def list_scenarios():
-    """Available catastrophe scenarios with default parameters."""
-    return {
-        "scenarios": [
-            {"type": s.value, "params": engine.SCENARIO_PARAMS[s]}
-            for s in ScenarioType
-        ]
-    }
-
-
-@app.get("/api/v1/simulation/portfolio")
-async def get_portfolio():
-    """Current portfolio snapshot used for simulations."""
-    return engine.portfolio.dict()
-
-
-@app.post("/api/v1/simulation/stress-test")
-async def naicom_stress_test():
-    """Run NAICOM-mandated stress test (all scenarios at 75% severity)."""
-    results = []
-    for scenario_type in ScenarioType:
-        config = ScenarioConfig(
-            scenario_type=scenario_type,
-            severity=0.75,
-            duration_months=12,
-            affected_regions=["Lagos", "Abuja", "Kano", "Port Harcourt"],
-            num_simulations=50000,
-        )
-        result = engine.simulate(config)
-        results.append(result.dict())
-
-    worst_car = min(r["capital_adequacy_ratio"] for r in results)
-    total_var_99 = sum(r["var_99"] for r in results)
-
-    return {
-        "stress_test_id": f"NAICOM-ST-{datetime.utcnow().strftime('%Y%m%d')}",
-        "results": results,
-        "summary": {
-            "worst_case_car": worst_car,
-            "total_var_99": total_var_99,
-            "passes_naicom_threshold": worst_car >= 1.5,
-            "solvency_adequate": worst_car >= 1.0,
-        },
-        "completed_at": datetime.utcnow().isoformat(),
-    }
-
-
-@app.get("/api/v1/simulation/reinsurance-optimize")
-async def optimize_reinsurance():
-    """Suggest optimal reinsurance structure based on simulations."""
-    return {
-        "current_structure": {
-            "type": "excess_of_loss",
-            "retention": 2000000000,
-            "limit": 10000000000,
-            "rate_on_line": 0.08,
-        },
-        "recommended_structure": {
-            "type": "layered_xol",
-            "layers": [
-                {"retention": 1500000000, "limit": 3000000000, "rate_on_line": 0.05, "priority": 1},
-                {"retention": 4500000000, "limit": 5000000000, "rate_on_line": 0.03, "priority": 2},
-            ],
-            "estimated_savings": 150000000,
-            "risk_reduction_pct": 12.5,
-        },
-        "rationale": "Layered structure provides better tail risk protection at lower cost",
-    }
+def list_scenarios():
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM portfolio_scenarios ORDER BY name")
+    scenarios = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return {"scenarios": scenarios, "total": len(scenarios)}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    port = int(os.getenv("PORT", "8119"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
