@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * resilience router
  *
@@ -30,6 +30,7 @@ import {
 } from "../../drizzle/schema";
 import webpush from "web-push";
 import { TRPCError } from "@trpc/server";
+import { logger } from '../_core/logger';
 
 // Configure VAPID keys for Web Push
 // SECURITY: Guard against empty VAPID keys (test/dev environments may not have them set)
@@ -40,7 +41,7 @@ if (ENV.vapidPublicKey && ENV.vapidPrivateKey) {
     ENV.vapidPrivateKey
   );
 } else {
-  console.warn(
+  logger.warn(
     "[WebPush] VAPID keys not configured — push notifications disabled. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in production."
   );
 }
@@ -66,6 +67,50 @@ async function safeFetch<T>(
     return fallback ?? null;
   }
 }
+
+// =============================================================================
+// NAVIGATION GUIDE — Resilience Router (1,352 lines, 30+ procedures)
+// =============================================================================
+// Offline queue, retry/DLQ, USSD encoding, connectivity monitoring,
+// push notification subscriptions, and telemetry.
+//
+// ── Section Reference ────────────────────────────────────────────────────────
+//  73. probe                      — System probe health check
+//  90. detectCarrier              — Carrier detection
+// 119. encodeUssd                — USSD string encoding/decoding
+// 164. queueCount                — Offline queue item count
+// 172. enqueueOffline            — Add transaction to offline queue
+// 216. dequeueOffline            — Process next offline queue item
+// 261. agentSuccessRates         — Per-agent success rates
+// 299. successRate               — Overall success rate
+// 341. systemStatus              — Full system health status
+// 470. listPendingOffline        — List pending offline transactions
+// 488. discardOfflineItem        — Remove item from offline queue
+// 514. savePushSubscription      — Save push notification subscription
+// 559. notifyPendingSync         — Notify agent of pending sync
+// 632. printUssdReceipt          — Print USSD receipt
+// 679. statsByType               — Stats grouped by transaction type
+// 705. retryDeadLetter           — Retry all DLQ messages
+// 722. logConnectivity           — Log connectivity event
+// 752. getConnectivityHistory    — Connectivity history
+// 802. alertOnPoorConnectivity   — Alert when connectivity is poor
+// 922. listDlqMessages           — DLQ message list
+// 960. createDlqMessage          — Create DLQ message entry
+// 996. resolveDlqMessage         — Mark DLQ message as resolved
+//1017. retryDlqMessage           — Retry a single DLQ message
+//1049. getPushSubscriptions      — Get all push subscriptions
+//1084. getAdaptiveFlags          — Get adaptive retry flags
+//1214. reportTerminalTelemetry   — Terminal telemetry submission
+//1282. getTierDistribution       — Device tier distribution
+//1314. getResilienceDashboard    — Resilience dashboard data
+//1334. list                      — General list (generic endpoint)
+//
+// ── Microservice Bridge ──────────────────────────────────────────────────────
+// Go  resilience-agent  :8031  → probe, carrier, retry
+// Rust offline-queue    :8032  → queue CRUD, USSD encode
+// Python analytics      :8033  → success-rate stats
+// All wrapped with 3-second timeout + safe fallbacks.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const resilienceRouter = router({
   // ── Go: connection probe ──────────────────────────────────────────────────
@@ -513,7 +558,7 @@ export const resilienceRouter = router({
   savePushSubscription: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         endpoint: z.string().url(),
         p256dhKey: z.string(),
         authKey: z.string(),
@@ -527,7 +572,7 @@ export const resilienceRouter = router({
         await db
           .insert(agentPushSubscriptions)
           .values({
-            agentCode: input.agentCode,
+            agentId: input.agentId,
             endpoint: input.endpoint,
             p256dhKey: input.p256dhKey,
             authKey: input.authKey,
@@ -536,7 +581,7 @@ export const resilienceRouter = router({
           .onConflictDoUpdate({
             target: agentPushSubscriptions.endpoint,
             set: {
-              agentCode: input.agentCode,
+              agentId: input.agentId,
               p256dhKey: input.p256dhKey,
               authKey: input.authKey,
               userAgent: input.userAgent,
@@ -558,7 +603,7 @@ export const resilienceRouter = router({
   notifyPendingSync: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         pendingCount: z.number().int().min(1),
       })
     )
@@ -569,7 +614,7 @@ export const resilienceRouter = router({
         const subs = await db
           .select()
           .from(agentPushSubscriptions)
-          .where(eq(agentPushSubscriptions.agentCode, input.agentCode));
+          .where(eq(agentPushSubscriptions.agentId, input.agentId));
 
         if (subs.length === 0) return { sent: 0, failed: 0 };
 
@@ -631,7 +676,7 @@ export const resilienceRouter = router({
   printUssdReceipt: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         txType: z.string(),
         amount: z.number().positive(),
         ussdString: z.string(),
@@ -645,7 +690,7 @@ export const resilienceRouter = router({
         const printerUrl = ENV.posPrinterUrl;
         const receiptPayload = {
           receipt_type: "ussd_fallback",
-          agent_code: input.agentCode,
+          agent_code: input.agentId,
           tx_type: input.txType,
           amount: input.amount,
           ussd_string: input.ussdString,
@@ -721,7 +766,7 @@ export const resilienceRouter = router({
   logConnectivity: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         quality: z.enum(["Excellent", "Good", "Poor", "Offline"]),
         latencyMs: z.number().nullable(),
       })
@@ -731,7 +776,7 @@ export const resilienceRouter = router({
         const db = (await getDb())!;
         if (!db) return { logged: false };
         await db.insert(connectivityLog).values({
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           quality: input.quality,
           latencyMs: input.latencyMs ?? undefined,
           recordedAt: new Date(),
@@ -751,7 +796,7 @@ export const resilienceRouter = router({
   getConnectivityHistory: protectedProcedure
     .input(
       z.object({
-        agentCode: z.string(),
+        agentId: z.string(),
         hours: z.number().int().min(1).max(168).default(24),
       })
     )
@@ -765,7 +810,7 @@ export const resilienceRouter = router({
           .from(connectivityLog)
           .where(
             and(
-              eq(connectivityLog.agentCode, input.agentCode),
+              eq(connectivityLog.agentId, input.agentId),
               gte(connectivityLog.recordedAt, since)
             )
           )
@@ -799,7 +844,7 @@ export const resilienceRouter = router({
 
   // ── Connectivity alert: VAPID push + owner notification when uptime < 80% ──
   alertOnPoorConnectivity: protectedProcedure
-    .input(z.object({ agentCode: z.string() }))
+    .input(z.object({ agentId: z.string() }))
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
@@ -811,7 +856,7 @@ export const resilienceRouter = router({
           .from(connectivityLog)
           .where(
             and(
-              eq(connectivityLog.agentCode, input.agentCode),
+              eq(connectivityLog.agentId, input.agentId),
               gte(connectivityLog.recordedAt, since)
             )
           )
@@ -837,23 +882,23 @@ export const resilienceRouter = router({
         const allSubs = await db
           .select()
           .from(agentPushSubscriptions)
-          .where(eq(agentPushSubscriptions.agentCode, input.agentCode))
+          .where(eq(agentPushSubscriptions.agentId, input.agentId))
           .limit(50);
         if (allSubs.length > 0) {
           const eligibleSubs = allSubs.filter(
             s => !s.lastAlertedAt || s.lastAlertedAt < throttleWindow
           );
           if (eligibleSubs.length === 0) {
-            console.log(
-              `[alertOnPoorConnectivity] Agent ${input.agentCode}: throttled — all subs alerted within 30 min`
+            logger.info(
+              `[alertOnPoorConnectivity] Agent ${input.agentId}: throttled — all subs alerted within 30 min`
             );
             return { alerted: false, reason: "throttled" as const, uptimePct };
           }
         }
 
-        const alertTitle = `[InsurePortal POS] Poor connectivity — Agent ${input.agentCode}`;
+        const alertTitle = `[InsurePortal POS] Poor connectivity — Agent ${input.agentId}`;
         const alertContent =
-          `Agent ${input.agentCode} has had ${uptimePct}% uptime in the last hour ` +
+          `Agent ${input.agentId} has had ${uptimePct}% uptime in the last hour ` +
           `(${online}/${rows.length} probes online). Immediate attention may be required.`;
 
         const ownerNotified = await notifyOwner({
@@ -866,14 +911,14 @@ export const resilienceRouter = router({
           const subs = await db
             .select()
             .from(agentPushSubscriptions)
-            .where(eq(agentPushSubscriptions.agentCode, input.agentCode))
+            .where(eq(agentPushSubscriptions.agentId, input.agentId))
             .limit(50);
 
           const payload = JSON.stringify({
             title: `Poor Connectivity (${uptimePct}% uptime)`,
-            body: `Agent ${input.agentCode}: only ${uptimePct}% uptime in the last hour.`,
-            tag: `connectivity-alert-${input.agentCode}`,
-            data: { agentCode: input.agentCode, uptimePct },
+            body: `Agent ${input.agentId}: only ${uptimePct}% uptime in the last hour.`,
+            tag: `connectivity-alert-${input.agentId}`,
+            data: { agentId: input.agentId, uptimePct },
           });
 
           const results = await Promise.allSettled(
@@ -895,14 +940,14 @@ export const resilienceRouter = router({
             await db
               .update(agentPushSubscriptions)
               .set({ lastAlertedAt: now, updatedAt: now })
-              .where(eq(agentPushSubscriptions.agentCode, input.agentCode));
+              .where(eq(agentPushSubscriptions.agentId, input.agentId));
           }
         } catch (err) {
-          console.warn("[alertOnPoorConnectivity] VAPID push error:", err);
+          logger.warn("[alertOnPoorConnectivity] VAPID push error:: " + String(err));
         }
 
-        console.log(
-          `[alertOnPoorConnectivity] Agent ${input.agentCode}: ${uptimePct}% uptime — ` +
+        logger.info(
+          `[alertOnPoorConnectivity] Agent ${input.agentId}: ${uptimePct}% uptime — ` +
             `ownerNotified=${ownerNotified}, pushCount=${pushCount}`
         );
 
@@ -1046,7 +1091,7 @@ export const resilienceRouter = router({
 
   // ── List push subscriptions for the dashboard panel (shows lastAlertedAt) ────────────────────────
   getPushSubscriptions: protectedProcedure
-    .input(z.object({ agentCode: z.string().min(1).max(32) }))
+    .input(z.object({ agentId: z.string().min(1).max(32) }))
     .query(async ({ input }) => {
       try {
         const db = (await getDb())!;
@@ -1054,7 +1099,7 @@ export const resilienceRouter = router({
         const subs = await db
           .select()
           .from(agentPushSubscriptions)
-          .where(eq(agentPushSubscriptions.agentCode, input.agentCode))
+          .where(eq(agentPushSubscriptions.agentId, input.agentId))
           .orderBy(agentPushSubscriptions.createdAt);
         return {
           subscriptions: subs.map(s => ({

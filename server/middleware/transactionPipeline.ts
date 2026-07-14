@@ -8,7 +8,7 @@
  * Pipeline stages:
  * 1. Input validation & sanitization
  * 2. Rate limit check
- * 3. Business rule evaluation (limits, KYC tier, region)
+ * 3. Business rule evaluation (limits, KYC tier, insurance_region)
  * 4. Fraud scoring & risk assessment
  * 5. Commission calculation
  * 6. Compliance screening (AML/CFT)
@@ -17,6 +17,7 @@
  */
 
 import { z } from "zod";
+import { logger } from '../_core/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ export interface TransactionRequest {
   senderAccountId?: string;
   recipientPhone?: string;
   recipientAccountId?: string;
-  region?: string;
+  insurance_region?: string;
   metadata?: Record<string, string>;
 }
 
@@ -67,7 +68,7 @@ export const transactionRequestSchema = z.object({
   senderAccountId: z.string().optional(),
   recipientPhone: z.string().optional(),
   recipientAccountId: z.string().optional(),
-  region: z.string().optional(),
+  insurance_region: z.string().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
@@ -238,13 +239,13 @@ function calculateRiskScore(ctx: PipelineContext): void {
   else if (ctx.request.amount > 500_000) score += 10;
   else if (ctx.request.amount > 100_000) score += 5;
 
-  // Region risk
+  // InsuranceRegion risk
   if (
-    ctx.request.region &&
-    HIGH_RISK_REGIONS.includes(ctx.request.region)
+    ctx.request.insurance_region &&
+    HIGH_RISK_REGIONS.includes(ctx.request.insurance_region)
   ) {
     score += 40;
-    ctx.complianceFlags.push("HIGH_RISK_CORRIDOR");
+    ctx.complianceFlags.push("HIGH_RISK_REGION");
   }
 
   // Structuring detection (just below reporting threshold)
@@ -279,12 +280,12 @@ async function screenCompliance(ctx: PipelineContext): Promise<void> {
     const result = await screenTransaction(
       {
         fullName: ctx.request.senderAgentCode || "",
-        nationality: ctx.request.region?.split("-")[0],
+        nationality: ctx.request.insurance_region?.split("-")[0],
       },
       {
         fullName:
           ctx.request.recipientPhone || ctx.request.recipientAccountId || "",
-        nationality: ctx.request.region?.split("-")[1],
+        nationality: ctx.request.insurance_region?.split("-")[1],
       },
       ctx.request.amount,
       ctx.request.currency
@@ -301,7 +302,7 @@ async function screenCompliance(ctx: PipelineContext): Promise<void> {
     if (err.message?.startsWith("SANCTIONS_BLOCKED")) throw err;
     // Log screening failure but don't block — regulatory requirement is to screen,
     // temporary unavailability should not halt all transactions
-    console.warn("[Compliance] Screening service unavailable:", err.message);
+    logger.warn("[Compliance] Screening service unavailable:: " + err.message);
     ctx.complianceFlags.push("SCREENING_UNAVAILABLE");
   }
 

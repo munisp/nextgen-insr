@@ -24,9 +24,9 @@ describe("Keycloak config defaults", () => {
     expect(keycloakConfig.realm).toBe(process.env.KEYCLOAK_REALM ?? "insureportal");
   });
 
-  it("clientId defaults to 'platform-shell' when KEYCLOAK_CLIENT_ID is not set", () => {
+  it("clientId defaults to 'insurance-portal' when KEYCLOAK_CLIENT_ID is not set", () => {
     expect(keycloakConfig.clientId).toBe(
-      process.env.KEYCLOAK_CLIENT_ID ?? "platform-shell"
+      process.env.KEYCLOAK_CLIENT_ID ?? "insurance-portal"
     );
   });
 });

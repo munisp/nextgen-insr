@@ -1,0 +1,135 @@
+# Temporal Workflows — v3 (additional workflows for v3 recommendations)
+# Total: 25 workflows (13 existing + 12 new)
+
+workflows:
+  # AI Advisor
+  - name: ai-advisor-conversation-workflow
+    task_queue: ai-advisor
+    activities:
+      - retrieve_context
+      - generate_response
+      - publish_event
+      - escalate_to_human
+    timeout: 30s
+
+  # Compliance Calendar
+  - name: compliance-deadline-workflow
+    task_queue: compliance
+    schedule: "0 9 * * 1"  # Every Monday 9am
+    activities:
+      - scan_upcoming_deadlines
+      - generate_preparation_tasks
+      - notify_responsible_parties
+      - track_completion
+    timeout: 5m
+
+  - name: regulatory-report-generation
+    task_queue: compliance
+    activities:
+      - gather_report_data
+      - compute_metrics
+      - generate_document
+      - validate_compliance
+      - submit_to_authority
+    timeout: 30m
+
+  # Micro-Moment Insurance
+  - name: micro-policy-lifecycle
+    task_queue: micro-moment
+    activities:
+      - validate_activation
+      - debit_premium
+      - issue_policy
+      - schedule_expiry
+      - process_refund
+    timeout: 10s
+
+  # Fraud Network Graph
+  - name: fraud-investigation-workflow
+    task_queue: fraud
+    activities:
+      - analyze_cluster
+      - gather_evidence
+      - assign_investigator
+      - track_resolution
+      - update_risk_scores
+    timeout: 24h
+
+  # Health Wearables
+  - name: wellness-challenge-workflow
+    task_queue: health
+    activities:
+      - enroll_participant
+      - track_daily_progress
+      - evaluate_completion
+      - distribute_rewards
+      - update_premium_discount
+    timeout: 30d
+
+  # Smart Contract Settlement
+  - name: parametric-settlement-workflow
+    task_queue: oracle
+    activities:
+      - fetch_oracle_data
+      - evaluate_trigger
+      - generate_proof
+      - debit_reserve
+      - execute_payout
+      - record_on_chain
+    timeout: 30s
+
+  # Agent Super-App
+  - name: agent-commission-payout
+    task_queue: agent
+    activities:
+      - calculate_commission
+      - verify_policy_active
+      - credit_agent_wallet
+      - notify_agent
+    timeout: 5m
+
+  # Multi-Country
+  - name: country-onboarding-workflow
+    task_queue: multi-country
+    activities:
+      - validate_regulatory_requirements
+      - setup_country_schema
+      - configure_payment_providers
+      - deploy_country_config
+      - run_compliance_checks
+    timeout: 1h
+
+  # Data Mesh
+  - name: data-product-refresh
+    task_queue: data-mesh
+    schedule: "0 */1 * * *"  # Every hour
+    activities:
+      - extract_domain_data
+      - transform_to_product
+      - validate_quality
+      - publish_to_lakehouse
+      - update_catalog
+    timeout: 15m
+
+  # Digital Twin
+  - name: naicom-stress-test-workflow
+    task_queue: simulation
+    schedule: "0 2 1 */3 *"  # Quarterly at 2am on 1st
+    activities:
+      - load_portfolio_snapshot
+      - run_all_scenarios
+      - compute_capital_adequacy
+      - generate_naicom_report
+      - submit_to_regulator
+    timeout: 2h
+
+  # WhatsApp Claims
+  - name: whatsapp-claim-submission
+    task_queue: whatsapp
+    activities:
+      - validate_policy
+      - process_media
+      - create_claim_record
+      - assign_assessor
+      - send_confirmation
+    timeout: 5m

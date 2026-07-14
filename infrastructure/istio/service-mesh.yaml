@@ -1,0 +1,74 @@
+# Istio Service Mesh — mTLS for zero-trust service-to-service communication
+# All 15+ services communicate over mutual TLS with automatic cert rotation
+
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default-mtls
+  namespace: insureportal
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# Destination rules for each service with mTLS
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: insureportal-services-mtls
+  namespace: insureportal
+spec:
+  host: "*.insureportal.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        h2UpgradePolicy: UPGRADE
+        maxRequestsPerConnection: 10
+
+---
+# Authorization policy — service-to-service access control
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: payment-gateway-access
+  namespace: insureportal
+spec:
+  selector:
+    matchLabels:
+      app: payment-gateway
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/insureportal/sa/api-gateway"
+              - "cluster.local/ns/insureportal/sa/micro-moment-insurance"
+              - "cluster.local/ns/insureportal/sa/agent-superapp-bff"
+      to:
+        - operation:
+            methods: ["POST", "GET"]
+            paths: ["/api/v1/payments/*"]
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: fraud-graph-access
+  namespace: insureportal
+spec:
+  selector:
+    matchLabels:
+      app: fraud-network-graph
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/insureportal/sa/claims-adjudication"
+              - "cluster.local/ns/insureportal/sa/api-gateway"
+      to:
+        - operation:
+            methods: ["POST", "GET"]
+            paths: ["/api/v1/fraud-graph/*"]

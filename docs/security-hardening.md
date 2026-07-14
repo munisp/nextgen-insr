@@ -1,4 +1,4 @@
-# Security Hardening Guide — InsurePortal Agency Banking Platform
+# Security Hardening Guide — InsurePortal Insurance Platform
 
 ## OWASP Top 10 Compliance Matrix
 

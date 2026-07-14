@@ -19,6 +19,7 @@ import { requireBillingPermission } from "./billingRbac";
 import { recordBillingAudit } from "./billingAudit";
 import { Client, Connection } from "@temporalio/client";
 import { TRPCError } from "@trpc/server";
+import { logger } from '../_core/logger';
 
 // Temporal client singleton for billing provisioning
 let temporalClient: Client | null = null;
@@ -34,7 +35,7 @@ async function getTemporalClient(): Promise<Client | null> {
     });
     return temporalClient;
   } catch {
-    console.warn(
+    logger.warn(
       "[BillingOnboarding] Temporal not available, using local execution"
     );
     return null;
@@ -70,7 +71,7 @@ export const BILLING_TEMPLATES = {
     revenueShareConfig: null,
     subscriptionConfig: {
       perAgentFee: 15000, // NGN per agent per month
-      perPosFee: 5000, // NGN per service node per month
+      perPosFee: 5000, // NGN per insurance service per month
       implementationFee: 5000000, // NGN one-time implementation
       billingCycle: "monthly" as const,
     },

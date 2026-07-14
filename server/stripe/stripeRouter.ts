@@ -1,5 +1,5 @@
 /**
- * Stripe Integration Router — InsurePortal InsurePortal Platform
+ * Stripe Integration Router — InsurePortal POS Shell
  *
  * Full Stripe integration: checkout sessions, subscription management,
  * payment history, customer creation, and user linking.

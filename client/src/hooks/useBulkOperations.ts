@@ -149,7 +149,7 @@ export function exportToPdf<T extends Record<string, any>>(
           ${data.map(row => `<tr>${cols.map(c => `<td>${row[c.key] ?? ""}</td>`).join("")}</tr>`).join("")}
         </tbody>
       </table>
-      <div class="footer">InsurePortal InsurePortal Platform — Confidential</div>
+      <div class="footer">InsurePortal POS Shell — Confidential</div>
     </body>
     </html>
   `;

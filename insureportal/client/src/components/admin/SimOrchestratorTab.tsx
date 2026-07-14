@@ -66,7 +66,7 @@ const SLOT_LABELS: Record<string, string> = {
 
 type ProbeRow = {
   id: number;
-  agentCode: string;
+  agentId: string;
   terminalId: string;
   slot: string;
   carrier: string;
@@ -116,10 +116,10 @@ function SimSlotBadge({ slot, isActive }: { slot: string; isActive: boolean }) {
 
 // ─── Agent probe card ─────────────────────────────────────────────────────────
 function AgentProbeCard({
-  agentCode,
+  agentId,
   probes,
 }: {
-  agentCode: string;
+  agentId: string;
   probes: ProbeRow[];
 }) {
   const latest = probes[0];
@@ -185,7 +185,7 @@ function AgentProbeCard({
             style={{ fontFamily: DISP }}
           >
             Agent{" "}
-            <span style={{ color: BLUE, fontFamily: MONO }}>{agentCode}</span>
+            <span style={{ color: BLUE, fontFamily: MONO }}>{agentId}</span>
             {latest?.terminalId && (
               <span
                 className="ml-2 text-xs text-gray-500"
@@ -535,20 +535,20 @@ export function SimOrchestratorTab() {
     }
   );
 
-  // Get history for the selected agent or all agents (use a known agent code)
+  // Get history for the selected agent or all agents (use a known agent ID)
   // We query per-agent; if no agent selected we show the first config's terminal
-  const agentCode = selectedAgent ?? configs?.[0]?.terminalId ?? "DEMO-001";
+  const agentId = selectedAgent ?? configs?.[0]?.terminalId ?? "DEMO-001";
 
   const { data: history, isLoading } = trpc.simOrchestrator.getHistory.useQuery(
-    { agentCode, hours },
-    { refetchInterval: 30_000, enabled: !!agentCode }
+    { agentId, hours },
+    { refetchInterval: 30_000, enabled: !!agentId }
   );
 
-  // Group probes by agentCode
+  // Group probes by agentId
   const byAgent = useMemo(() => {
     const map: Record<string, ProbeRow[]> = {};
     (history ?? []).forEach((p: any) => {
-      const key = p.agentCode as string;
+      const key = p.agentId as string;
       if (!map[key]) map[key] = [];
       map[key].push(p as ProbeRow);
     });
@@ -707,7 +707,7 @@ export function SimOrchestratorTab() {
                 className="text-xs text-gray-500 max-w-sm"
                 style={{ fontFamily: DISP }}
               >
-                Deploy the Rust SIM Orchestrator daemon on your service nodes.
+                Deploy the Rust SIM Orchestrator daemon on your insurance services.
                 It will POST probe data to:
               </div>
               <div
@@ -732,7 +732,7 @@ export function SimOrchestratorTab() {
 
           {/* Agent probe cards */}
           {agentIds.map(aid => (
-            <AgentProbeCard key={aid} agentCode={aid} probes={byAgent[aid]} />
+            <AgentProbeCard key={aid} agentId={aid} probes={byAgent[aid]} />
           ))}
         </>
       )}

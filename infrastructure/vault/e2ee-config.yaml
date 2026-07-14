@@ -1,0 +1,93 @@
+# HashiCorp Vault — End-to-End Encryption Configuration
+# Client-side encryption for PII (BVN, NIN, medical records)
+
+vault:
+  address: ${VAULT_ADDR:-http://localhost:8200}
+  auth:
+    method: kubernetes
+    role: insureportal-app
+
+secrets_engines:
+  - path: transit/pii
+    type: transit
+    config:
+      default_lease_ttl: 0
+      max_lease_ttl: 0
+    keys:
+      - name: bvn-encryption
+        type: aes256-gcm96
+        exportable: false
+        allow_plaintext_backup: false
+        min_decryption_version: 1
+        min_encryption_version: 1
+
+      - name: nin-encryption
+        type: aes256-gcm96
+        exportable: false
+
+      - name: medical-records
+        type: aes256-gcm96
+        exportable: false
+
+      - name: financial-data
+        type: aes256-gcm96
+        exportable: false
+
+  - path: transit/document
+    type: transit
+    keys:
+      - name: policy-documents
+        type: rsa-4096
+        exportable: false
+
+      - name: claim-evidence
+        type: aes256-gcm96
+        exportable: false
+
+policies:
+  - name: insureportal-encrypt
+    rules: |
+      path "transit/pii/encrypt/*" {
+        capabilities = ["update"]
+      }
+      path "transit/pii/decrypt/*" {
+        capabilities = ["update"]
+      }
+      path "transit/document/encrypt/*" {
+        capabilities = ["update"]
+      }
+
+  - name: insureportal-decrypt-pii
+    rules: |
+      path "transit/pii/decrypt/bvn-encryption" {
+        capabilities = ["update"]
+      }
+      path "transit/pii/decrypt/nin-encryption" {
+        capabilities = ["update"]
+      }
+
+  - name: insureportal-kyc-only
+    rules: |
+      path "transit/pii/decrypt/bvn-encryption" {
+        capabilities = ["update"]
+      }
+      path "transit/pii/decrypt/nin-encryption" {
+        capabilities = ["update"]
+      }
+      path "transit/pii/encrypt/*" {
+        capabilities = ["update"]
+      }
+
+key_rotation:
+  schedule: "0 2 1 * *"  # Monthly at 2am on 1st
+  notification: compliance-team@insureportal.ng
+  auto_rotate: true
+  min_version_keep: 3
+
+ndpr_compliance:
+  data_minimization: true
+  purpose_limitation: true
+  storage_limitation: "5_years_after_policy_expiry"
+  data_subject_access_request: true
+  right_to_erasure: true
+  breach_notification_hours: 72

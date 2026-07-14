@@ -1,24 +1,77 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/unified-insurance/group-life-admin/internal/handlers"
-	"github.com/unified-insurance/group-life-admin/internal/repository"
-	"github.com/unified-insurance/group-life-admin/internal/service"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"gorm.io/driver/sqlite"
+	"github.com/unified-insurance/group-life-admin/internal/handlers"
+	"github.com/unified-insurance/group-life-admin/internal/repository"
+	"github.com/unified-insurance/group-life-admin/internal/service"
+
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for group_life_admin")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS group_life_admin (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8095"
 	}
-	db, err := gorm.Open(sqlite.Open("grouplife.db"), &gorm.Config{})
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("FATAL: DATABASE_URL environment variable is required")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -31,8 +84,22 @@ func main() {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 	addr := fmt.Sprintf(":%s", port)
+	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+		<-sigCh
+		log.Println("Shutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Forced shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("Group Life Admin starting on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

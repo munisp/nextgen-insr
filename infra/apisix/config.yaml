@@ -46,6 +46,7 @@ plugin_attr:
     max_kept: 168
 
 plugins:
+  - openappsec
   - real-ip
   - ai
   - client-control

@@ -91,7 +91,7 @@ export default function AuditLogViewer() {
         (l.action ?? "").toLowerCase().includes(q) ||
         (l.entityType ?? "").toLowerCase().includes(q) ||
         (l.entityId ?? "").toLowerCase().includes(q) ||
-        (l.agentCode ?? "").toLowerCase().includes(q) ||
+        (l.agentId ?? "").toLowerCase().includes(q) ||
         JSON.stringify(l.metadata ?? {})
           .toLowerCase()
           .includes(q)
@@ -120,7 +120,7 @@ export default function AuditLogViewer() {
       l.action ?? "",
       l.entityType ?? "",
       l.entityId ?? "",
-      l.agentCode ?? "",
+      l.agentId ?? "",
       l.ipAddress ?? "",
       JSON.stringify(l.metadata ?? {}),
     ]);
@@ -206,7 +206,7 @@ export default function AuditLogViewer() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Search action, entity, agent code..."
+              placeholder="Search action, entity, agent ID..."
               value={search}
               onChange={e => {
                 setSearch(e.target.value);
@@ -295,7 +295,7 @@ export default function AuditLogViewer() {
                           )}
                         </td>
                         <td className="py-2 px-3 text-xs font-mono">
-                          {log.agentCode ?? "—"}
+                          {log.agentId ?? "—"}
                         </td>
                         <td className="py-2 px-3 text-xs text-muted-foreground font-mono">
                           {log.ipAddress ?? "—"}

@@ -123,11 +123,11 @@ vi.mock("./_core/kycClient.js", () => ({
 vi.mock("./middleware/agentAuth.js", () => ({
   getAgentFromCookie: vi.fn().mockResolvedValue({
     id: 1,
-    agentCode: "AGT001",
+    agentId: "AGT001",
     name: "Test Agent",
     role: "agent",
     tier: "Silver",
-    floatBalance: 100000,
+    premiumReserve: 100000,
     commissionBalance: 5000,
     loyaltyPoints: 250,
   }),
@@ -150,7 +150,7 @@ function makeCaller(role: "agent" | "admin" = "agent") {
             id: 2,
             name: "Test Agent",
             role: "user",
-            agentCode: "AGT001",
+            agentId: "AGT001",
             username: "test-agent",
             email: "agent@insureportal.io",
           } as any),

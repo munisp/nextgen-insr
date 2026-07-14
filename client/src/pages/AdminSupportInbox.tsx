@@ -1,5 +1,5 @@
 /**
- * Admin Support Inbox — InsurePortal InsurePortal Platform
+ * Admin Support Inbox — InsurePortal POS Shell
  * Bloomberg Terminal dark theme with electric blue accents.
  *
  * Features:

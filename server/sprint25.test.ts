@@ -106,7 +106,7 @@ describe("Sprint 25: Video Tutorials Page", () => {
     );
     expect(content).toContain("tutorials");
     // 5 most complex features
-    expect(content).toContain("Service Node");
+    expect(content).toContain("Insurance Service");
     expect(content).toContain("Fraud");
     expect(content).toContain("KYC");
     expect(content).toContain("Settlement");
@@ -216,7 +216,7 @@ describe("Sprint 25: Reusable Skill (insureportal-pos-builder)", () => {
       "utf-8"
     );
     expect(content).toContain("Agent Authentication");
-    expect(content).toContain("Service Node");
+    expect(content).toContain("Insurance Service");
     expect(content).toContain("Float Management");
     expect(content).toContain("Transaction Processing");
     expect(content).toContain("Fraud Detection");

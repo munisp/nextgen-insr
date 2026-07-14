@@ -49,7 +49,7 @@ vi.mock("./tbClient", () => ({
 vi.mock("./middleware/agentAuth", () => ({
   getAgentFromCookie: vi.fn().mockResolvedValue({
     id: 1,
-    agentCode: "ADM001",
+    agentId: "ADM001",
     name: "Admin User",
     role: "admin",
     tier: "Gold",
@@ -91,7 +91,7 @@ vi.mock("jose", () => ({
   jwtVerify: vi.fn().mockResolvedValue({
     payload: {
       sub: "1",
-      agentCode: "ADM001",
+      agentId: "ADM001",
       name: "Admin User",
       role: "admin",
       tier: "Gold",
@@ -107,7 +107,7 @@ function makeCtx(): TrpcContext {
       id: 1,
       username: "test-agent",
       role: "admin" as const,
-      agentCode: "AGT001",
+      agentId: "AGT001",
       name: "Test Agent",
       email: "test@insureportal.io",
     },
@@ -156,7 +156,7 @@ describe("settlement.runNow — access control", () => {
     const { getAgentFromCookie } = await import("./middleware/agentAuth");
     vi.mocked(getAgentFromCookie).mockResolvedValueOnce({
       id: 2,
-      agentCode: "AGT002",
+      agentId: "AGT002",
       name: "Regular Agent",
       role: "agent",
       tier: "Bronze",

@@ -114,7 +114,7 @@ export function MQTTBridgeTab() {
       {
         type: "MQTT_BRIDGE_TEST",
         ref: "TEST-001",
-        agentCode: "AGT-54LINK",
+        agentId: "AGT-54LINK",
         amount: 5000,
         currency: "NGN",
         channel: "POS",

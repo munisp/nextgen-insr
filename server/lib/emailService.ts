@@ -178,16 +178,16 @@ export function buildTransactionReceiptEmail(data: {
   ref: string;
   type: string;
   amount: number;
-  agentCode: string;
+  agentId: string;
   customerName?: string;
   timestamp: Date;
 }): string {
-  return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:#1a1a2e;color:white;padding:20px;text-align:center"><h1 style="margin:0">InsurePortal POS</h1><p style="margin:5px 0 0">Transaction Receipt</p></div><div style="padding:20px;background:#f8f9fa"><table style="width:100%;border-collapse:collapse"><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Reference</strong></td><td>${data.ref}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Type</strong></td><td>${data.type}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Amount</strong></td><td>₦${data.amount.toLocaleString()}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Agent</strong></td><td>${data.agentCode}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Date</strong></td><td>${data.timestamp.toLocaleString()}</td></tr></table></div></div>`;
+  return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:#1a1a2e;color:white;padding:20px;text-align:center"><h1 style="margin:0">InsurePortal POS</h1><p style="margin:5px 0 0">Transaction Receipt</p></div><div style="padding:20px;background:#f8f9fa"><table style="width:100%;border-collapse:collapse"><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Reference</strong></td><td>${data.ref}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Type</strong></td><td>${data.type}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Amount</strong></td><td>₦${data.amount.toLocaleString()}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Agent</strong></td><td>${data.agentId}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #dee2e6"><strong>Date</strong></td><td>${data.timestamp.toLocaleString()}</td></tr></table></div></div>`;
 }
 
 export function buildRateAlertEmail(data: {
   agentName?: string;
-  agentCode?: string;
+  agentId?: string;
   alertType?: string;
   baseCurrency?: string;
   targetCurrency?: string;
@@ -210,7 +210,7 @@ export function buildRateAlertEmail(data: {
   if (data.baseCurrency) tags.push(data.baseCurrency);
   if (data.targetCurrency) tags.push(data.targetCurrency);
   tags.push("rate_alert");
-  const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:#e74c3c;color:white;padding:20px;text-align:center"><h1 style="margin:0">Rate Alert</h1></div><div style="padding:20px"><p>Dear ${data.agentName ?? data.agentCode ?? "Agent"},</p>${pair ? `<p>The exchange rate for <strong>${pair}</strong> has ${dirText} your target rate of <strong>${data.targetRate}</strong>.</p>` : ""}<p>Current Rate: <strong>${data.currentRate}</strong></p>${data.triggeredAt ? `<p style="color:#999;font-size:12px">Triggered at: ${data.triggeredAt.toISOString()}</p>` : ""}</div></div>`;
+  const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:#e74c3c;color:white;padding:20px;text-align:center"><h1 style="margin:0">Rate Alert</h1></div><div style="padding:20px"><p>Dear ${data.agentName ?? data.agentId ?? "Agent"},</p>${pair ? `<p>The exchange rate for <strong>${pair}</strong> has ${dirText} your target rate of <strong>${data.targetRate}</strong>.</p>` : ""}<p>Current Rate: <strong>${data.currentRate}</strong></p>${data.triggeredAt ? `<p style="color:#999;font-size:12px">Triggered at: ${data.triggeredAt.toISOString()}</p>` : ""}</div></div>`;
   return {
     to: "",
     subject,
@@ -223,14 +223,14 @@ export function buildRateAlertEmail(data: {
 
 export function buildWelcomeEmail(data: {
   agentName: string;
-  agentCode: string;
+  agentId: string;
 }): EmailMessage {
-  const html = `<!DOCTYPE html><html><body><div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:#1a1a2e;color:white;padding:20px;text-align:center"><h1 style="margin:0">InsurePortal POS</h1><p>Welcome to the Platform</p></div><div style="padding:20px"><p>Dear ${data.agentName},</p><p>Welcome to InsurePortal POS! Your agent code: <strong>${data.agentCode}</strong></p></div></div></body></html>`;
+  const html = `<!DOCTYPE html><html><body><div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:#1a1a2e;color:white;padding:20px;text-align:center"><h1 style="margin:0">InsurePortal POS</h1><p>Welcome to the Platform</p></div><div style="padding:20px"><p>Dear ${data.agentName},</p><p>Welcome to InsurePortal POS! Your agent ID: <strong>${data.agentId}</strong></p></div></div></body></html>`;
   return {
     to: "",
-    subject: `Welcome to InsurePortal POS — Agent ${data.agentCode}`,
+    subject: `Welcome to InsurePortal POS — Agent ${data.agentId}`,
     html,
-    text: `Welcome ${data.agentName}! Agent code: ${data.agentCode}`,
+    text: `Welcome ${data.agentName}! Agent code: ${data.agentId}`,
     category: "welcome",
     tags: ["welcome", "onboarding"],
   };
@@ -283,10 +283,10 @@ export function buildDigestEmail(data: {
 }
 
 export function buildKycExpiryWarningEmail(
-  agentCode: string,
+  agentId: string,
   daysUntilExpiry: number
 ): string {
-  return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:#e74c3c;color:white;padding:20px;text-align:center"><h1 style="margin:0">KYC Expiry Warning</h1></div><div style="padding:20px"><p>Dear Agent <strong>${agentCode}</strong>,</p><p>Your KYC documents will expire in <strong>${daysUntilExpiry} days</strong>.</p></div></div>`;
+  return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><div style="background:#e74c3c;color:white;padding:20px;text-align:center"><h1 style="margin:0">KYC Expiry Warning</h1></div><div style="padding:20px"><p>Dear Agent <strong>${agentId}</strong>,</p><p>Your KYC documents will expire in <strong>${daysUntilExpiry} days</strong>.</p></div></div>`;
 }
 
 export function extractEmailFromString(formatted: string): string {

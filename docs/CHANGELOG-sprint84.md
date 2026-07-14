@@ -5,7 +5,7 @@
 
 ## Summary
 
-Sprint 84 delivered end-to-end Stripe billing integration for the InsurePortal InsurePortal Platform platform, including webhook handlers for invoice lifecycle events, automated dunning on payment failures, a billing analytics dashboard with Chart.js visualizations, and an automated monthly invoice cron job.
+Sprint 84 delivered end-to-end Stripe billing integration for the InsurePortal POS Shell platform, including webhook handlers for invoice lifecycle events, automated dunning on payment failures, a billing analytics dashboard with Chart.js visualizations, and an automated monthly invoice cron job.
 
 ## Changes Delivered
 

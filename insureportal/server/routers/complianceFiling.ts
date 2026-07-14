@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { complianceFilings } from "../../drizzle/schema";
+import { complianceFilings } from "@schema";
 import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
 
 const FILING_TYPES = [

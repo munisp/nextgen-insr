@@ -1,7 +1,7 @@
 /**
  * MQTT Bridge Router — InsurePortal Fluvio MQTT Source Connector management
  * Manages InfinyOn MQTT Source Connector configuration for bridging
- * service node MQTT events into Fluvio topics.
+ * insurance service MQTT events into Fluvio topics.
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -37,7 +37,7 @@ const DEFAULT_TOPIC_MAPPINGS = [
   { mqttTopic: "pos/+/kyc", fluvioTopic: "pos.kyc-events", transform: "json" },
   {
     mqttTopic: "pos/+/heartbeat",
-    fluvioTopic: "pos.terminal-heartbeat",
+    fluvioTopic: "insurance.service-heartbeat",
     transform: "json",
   },
 ];
@@ -237,7 +237,7 @@ export const mqttBridgeRouter = router({
         const testPayload = input.payload ?? {
           type: "MQTT_BRIDGE_TEST",
           ref: `TEST-${Date.now()}`,
-          agentCode: ctx.user?.keycloakSub
+          agentId: ctx.user?.keycloakSub
             ? `AGT-${ctx.user.keycloakSub.slice(0, 8)}`
             : "AGT-TEST",
           amount: 0,

@@ -1,4 +1,4 @@
--- ── InsurePortal Data Lakehouse: Iceberg Table Definitions ──────────────────
+-- ── InsurePortal Data Lakehouse: Iceberg Table Definitions ─────────────────────────
 -- Engine: Apache Spark + Iceberg on MinIO (S3-compatible)
 -- Catalog: REST catalog via Nessie or Iceberg REST
 -- Namespace: insureportal

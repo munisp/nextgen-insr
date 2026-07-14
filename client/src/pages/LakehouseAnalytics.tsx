@@ -1,7 +1,7 @@
 /**
  * LakehouseAnalytics.tsx
  *
- * Production-grade Data Lakehouse dashboard for the InsurePortal InsurePortal Platform.
+ * Production-grade Data Lakehouse dashboard for the InsurePortal POS Shell.
  * Covers:
  *  1. Snapshot Browser  — list/download MinIO snapshots per bucket
  *  2. Spatial Heatmap   — transaction density map (Sedona-style grid)
@@ -677,7 +677,7 @@ function GoldLayerMetrics() {
                   {dailySummary.rows.map((row: any) => (
                     <TableRow key={row.agentId}>
                       <TableCell className="font-mono text-xs">
-                        {row.agentCode}
+                        {row.agentId}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs capitalize">

@@ -15,7 +15,7 @@ openssl req -new -x509 -days 3650 -key ca.key -out ca.crt \
 # 2. Generate InsurePortal Platform certificate
 openssl genrsa -out tls.key 2048
 openssl req -new -key tls.key -out tls.csr \
-  -subj "/CN=platform-shell.svc.insureportal.internal/O=InsurePortal/C=NG"
+  -subj "/CN=insurance-portal.svc.insureportal.internal/O=InsurePortal/C=NG"
 openssl x509 -req -days 30 -in tls.csr -CA ca.crt -CAkey ca.key \
   -CAcreateserial -out tls.crt
 

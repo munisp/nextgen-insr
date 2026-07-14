@@ -7,7 +7,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { agentAchievements, agentBadges, agents } from "../../drizzle/schema";
+import { agentAchievements, agentBadges, agents } from "@schema";
 import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
 
 const BADGE_DEFINITIONS = [

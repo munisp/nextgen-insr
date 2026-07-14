@@ -9,7 +9,7 @@ import { loyaltyRouter } from "./routers/loyalty";
 import { chatRouter } from "./routers/chat";
 import { auditLogRouter } from "./routers/auditLog";
 import { agentManagementRouter } from "./routers/agentManagement";
-import { floatTopUpRouter } from "./routers/floatTopUp";
+import { premiumTopUpRouter } from "./routers/premiumTopUp";
 import { smsReceiptRouter } from "./routers/smsReceipt";
 import { exportRouter } from "./routers/export";
 import { pinResetRouter } from "./routers/pinReset";
@@ -483,6 +483,10 @@ import { marketplaceRouter } from "./routers/marketplace";
 import { promotionsRouter } from "./routers/promotions";
 // ── KYC/KYB Enforcement & Compliance Services ──
 import { kycEnforcementRouter } from "./routers/kycEnforcement";
+// ── Insurance Domain Workflows (Sprint 98) ──
+import { insuranceWorkflowsRouter } from "./routers/insuranceWorkflows";
+// ── Insurance KPI Dashboards (all 16 roles) ──
+import { insuranceKpiDashboardRouter } from "./routers/insuranceKpiDashboard";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -540,7 +544,7 @@ export const appRouter = router({
   chat: chatRouter,
   auditLog: auditLogRouter,
   agentMgmt: agentManagementRouter,
-  floatTopUp: floatTopUpRouter,
+  premiumTopUp: premiumTopUpRouter,
   smsReceipt: smsReceiptRouter,
   export: exportRouter,
   pinReset: pinResetRouter,
@@ -581,7 +585,7 @@ export const appRouter = router({
   push: pushNotificationsRouter,
   // CBN Regulatory Reporting (Monthly Activity, Quarterly Fraud, SAR)
   cbnReporting: cbnReportingRouter,
-  // Agency Banking Business Rules Engine (CBN limits, KYC, fraud scoring, commissions, loyalty)
+  // Insurance Business Rules Engine (CBN limits, KYC, fraud scoring, commissions, loyalty)
   businessRules: businessRulesRouter,
   // Data Lakehouse: snapshot management, Sedona spatial queries, DataFusion proxy, Gold-layer metrics
   lakehouse: lakehouseRouter,
@@ -683,7 +687,7 @@ export const appRouter = router({
   guideFeedback: guideFeedbackRouter,
   // Sprint 27: Enhanced data export with audit trail
   sprint27Export: sprint27DataExportRouter,
-  // Sprint 28: Nigerian Agency Banking Services
+  // Sprint 28: Nigerian Insurance Services
   ussdGateway: ussdGatewayRouter,
   mobileMoney: mobileMoneyRouter,
   agentHierarchy: agentHierarchyRouter,
@@ -697,6 +701,7 @@ export const appRouter = router({
   airtimeVending: airtimeVendingRouter,
   loanDisbursement: loanDisbursementRouter,
   insuranceProducts: insuranceProductsRouter,
+  insuranceWorkflows: insuranceWorkflowsRouter,
   savingsProducts: savingsProductsRouter,
   referralProgramDedicated: referralProgramRouter,
   cardRequest: cardRequestRouter,
@@ -1071,6 +1076,8 @@ export const appRouter = router({
   promotions: promotionsRouter,
   // KYC/KYB Enforcement & Compliance
   kycEnforcement: kycEnforcementRouter,
+  // Insurance KPI Dashboards — all 16 roles
+  insuranceKpiDashboard: insuranceKpiDashboardRouter,
 });
 
 export type AppRouter = typeof appRouter;

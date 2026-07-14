@@ -14,7 +14,7 @@
  *
  * Configuration:
  *   KAFKA_BROKERS   — comma-separated broker list (default: localhost:9092)
- *   KAFKA_CLIENT_ID — client identifier (default: platform-shell-demo)
+ *   KAFKA_CLIENT_ID — client identifier (default: insurance-portal-demo)
  *   KAFKA_ENABLED   — set to "false" to disable (default: true)
  *
  * When KAFKA_ENABLED=false or brokers are unreachable, all publish calls
@@ -22,6 +22,7 @@
  */
 
 import { Kafka, Producer, Consumer, logLevel, CompressionTypes } from "kafkajs";
+import { logger } from './_core/logger';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ const KAFKA_ENABLED = process.env.KAFKA_ENABLED !== "false";
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS ?? "localhost:9092")
   .split(",")
   .map(b => b.trim());
-const KAFKA_CLIENT_ID = process.env.KAFKA_CLIENT_ID ?? "platform-shell-demo";
+const KAFKA_CLIENT_ID = process.env.KAFKA_CLIENT_ID ?? "insurance-portal-demo";
 
 // ─── Topic definitions ────────────────────────────────────────────────────────
 
@@ -76,12 +77,10 @@ async function getProducer(): Promise<Producer | null> {
     });
     await producer.connect();
     producerConnected = true;
-    console.log("[Kafka] Producer connected to", KAFKA_BROKERS.join(", "));
+    logger.info("[Kafka] Producer connected to: " + KAFKA_BROKERS.join(", "));
     return producer;
   } catch (err) {
-    console.warn(
-      "[Kafka] Producer connection failed (non-critical):",
-      (err as Error).message
+    logger.warn("[Kafka] Producer connection failed (non-critical):: " + (err as Error).message
     );
     producer = null;
     producerConnected = false;
@@ -123,7 +122,7 @@ export async function kafkaPublish(
     });
     return true;
   } catch (err) {
-    console.warn(`[Kafka] Publish to ${topic} failed:`, (err as Error).message);
+    logger.warn(`[Kafka] Publish to ${topic} failed:: ` + (err as Error).message);
     // Reset producer so next call reconnects
     producerConnected = false;
     return false;
@@ -158,24 +157,20 @@ export async function kafkaConsume(
           const value = JSON.parse(raw) as Record<string, unknown>;
           await handler(key, value);
         } catch (err) {
-          console.warn(
-            `[Kafka] Handler error for topic ${topic}:`,
-            (err as Error).message
+          logger.warn(`[Kafka] Handler error for topic ${topic}:: ` + (err as Error).message
           );
         }
       },
     });
 
-    console.log(`[Kafka] Consumer '${groupId}' subscribed to ${topic}`);
+    logger.info(`[Kafka] Consumer '${groupId}' subscribed to ${topic}`);
 
     return async () => {
       await consumer?.disconnect();
-      console.log(`[Kafka] Consumer '${groupId}' disconnected`);
+      logger.info(`[Kafka] Consumer '${groupId}' disconnected`);
     };
   } catch (err) {
-    console.warn(
-      `[Kafka] Consumer '${groupId}' failed to start:`,
-      (err as Error).message
+    logger.warn(`[Kafka] Consumer '${groupId}' failed to start:: ` + (err as Error).message
     );
     await consumer?.disconnect().catch(() => {});
     return null;
@@ -188,7 +183,7 @@ export async function kafkaDisconnect(): Promise<void> {
   if (producer && producerConnected) {
     await producer.disconnect().catch(() => {});
     producerConnected = false;
-    console.log("[Kafka] Producer disconnected");
+    logger.info("[Kafka] Producer disconnected");
   }
 }
 
@@ -196,7 +191,7 @@ export async function kafkaDisconnect(): Promise<void> {
 
 export interface TxCreatedEvent {
   txRef: string;
-  agentCode: string;
+  agentId: string;
   terminalId?: string;
   type: string;
   amount: number;
@@ -219,7 +214,7 @@ export async function publishTxCreated(
 
 export interface TxSettledEvent {
   settlementDate: string;
-  agentCode: string;
+  agentId: string;
   txCount: number;
   totalVolume: number;
   totalCommission: number;
@@ -231,14 +226,14 @@ export async function publishTxSettled(
 ): Promise<boolean> {
   return kafkaPublish(
     TOPICS.TX_SETTLED,
-    `${event.settlementDate}-${event.agentCode}`,
+    `${event.settlementDate}-${event.agentId}`,
     event as unknown as Record<string, unknown>
   );
 }
 
 export interface FraudAlertEvent {
   alertId: number;
-  agentCode: string;
+  agentId: string;
   txRef?: string;
   severity: string;
   type: string;
@@ -259,7 +254,7 @@ export async function publishFraudAlert(
 
 export interface SimFailoverEvent {
   terminalId: string;
-  agentCode: string;
+  agentId: string;
   fromSlot: number;
   toSlot: number;
   reason: string;

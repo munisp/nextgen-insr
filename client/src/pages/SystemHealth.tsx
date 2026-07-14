@@ -1,9 +1,9 @@
 /**
- * SystemHealth — InsurePortal Agency Banking Platform
+ * SystemHealth — InsurePortal Insurance Platform
  *
  * Real-time infrastructure health dashboard. Polls /api/health every 15 seconds
  * and displays the status of all critical services: database, Keycloak, TigerBeetle,
- * Temporal, Kafka, Vault, Redis, and the InsurePortal platform itself.
+ * Temporal, Kafka, Vault, Redis, and the insurance portal itself.
  */
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -133,7 +133,7 @@ export default function SystemHealth() {
           <div>
             <h1 className="text-3xl font-bold text-white">System Health</h1>
             <p className="text-slate-400 mt-1">
-              InsurePortal Agency Banking Platform — Infrastructure Status
+              InsurePortal Insurance Platform — Infrastructure Status
             </p>
           </div>
           <div className="flex items-center gap-4">

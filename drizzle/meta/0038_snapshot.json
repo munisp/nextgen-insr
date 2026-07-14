@@ -626,8 +626,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true
@@ -682,7 +682,7 @@
           "name": "agent_push_subscriptions_agent_code_idx",
           "columns": [
             {
-              "expression": "agentCode",
+              "expression": "agentId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -779,8 +779,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true
@@ -843,8 +843,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "floatBalance": {
-          "name": "floatBalance",
+        "premiumReserve": {
+          "name": "premiumReserve",
           "type": "numeric(15, 2)",
           "primaryKey": false,
           "notNull": true,
@@ -994,11 +994,11 @@
         }
       },
       "indexes": {
-        "agents_agentCode_idx": {
-          "name": "agents_agentCode_idx",
+        "agents_agentId_idx": {
+          "name": "agents_agentId_idx",
           "columns": [
             {
-              "expression": "agentCode",
+              "expression": "agentId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1103,10 +1103,10 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "agents_agentCode_unique": {
-          "name": "agents_agentCode_unique",
+        "agents_agentId_unique": {
+          "name": "agents_agentId_unique",
           "nullsNotDistinct": false,
-          "columns": ["agentCode"]
+          "columns": ["agentId"]
         }
       },
       "policies": {},
@@ -1537,8 +1537,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": false
@@ -2170,8 +2170,8 @@
           "notNull": true,
           "default": 0
         },
-        "active_service_nodes": {
-          "name": "active_service_nodes",
+        "active_field_agent_devicess": {
+          "name": "active_field_agent_devicess",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -3744,8 +3744,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true
@@ -3776,7 +3776,7 @@
           "name": "connectivity_log_agent_recorded_idx",
           "columns": [
             {
-              "expression": "agentCode",
+              "expression": "agentId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4965,8 +4965,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": false
@@ -9011,8 +9011,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": false
@@ -9915,10 +9915,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "multi_sim_profiles_terminalId_service_nodes_id_fk": {
-          "name": "multi_sim_profiles_terminalId_service_nodes_id_fk",
+        "multi_sim_profiles_terminalId_field_agent_devicess_id_fk": {
+          "name": "multi_sim_profiles_terminalId_field_agent_devicess_id_fk",
           "tableFrom": "multi_sim_profiles",
-          "tableTo": "service_nodes",
+          "tableTo": "field_agent_devicess",
           "columnsFrom": ["terminalId"],
           "columnsTo": ["id"],
           "onDelete": "no action",
@@ -10683,8 +10683,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "service_node_id": {
-          "name": "service_node_id",
+        "field_agent_devices_id": {
+          "name": "field_agent_devices_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -11206,8 +11206,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.service_nodes": {
-      "name": "service_nodes",
+    "public.field_agent_devicess": {
+      "name": "field_agent_devicess",
       "schema": "",
       "columns": {
         "id": {
@@ -11400,8 +11400,8 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "service_nodes_serialNumber_unique": {
-          "name": "service_nodes_serialNumber_unique",
+        "field_agent_devicess_serialNumber_unique": {
+          "name": "field_agent_devicess_serialNumber_unique",
           "nullsNotDistinct": false,
           "columns": ["serialNumber"]
         }
@@ -12633,10 +12633,10 @@
         }
       },
       "foreignKeys": {
-        "service_records_terminalId_service_nodes_id_fk": {
-          "name": "service_records_terminalId_service_nodes_id_fk",
+        "service_records_terminalId_field_agent_devicess_id_fk": {
+          "name": "service_records_terminalId_field_agent_devicess_id_fk",
           "tableFrom": "service_records",
-          "tableTo": "service_nodes",
+          "tableTo": "field_agent_devicess",
           "columnsFrom": ["terminalId"],
           "columnsTo": ["id"],
           "onDelete": "no action",
@@ -12917,8 +12917,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true
@@ -13000,7 +13000,7 @@
           "name": "sim_failover_log_agent_switched_idx",
           "columns": [
             {
-              "expression": "agentCode",
+              "expression": "agentId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -13124,8 +13124,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true
@@ -13228,7 +13228,7 @@
           "name": "sim_probe_log_agent_probed_idx",
           "columns": [
             {
-              "expression": "agentCode",
+              "expression": "agentId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -13501,8 +13501,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.marketplace_ads": {
-      "name": "marketplace_ads",
+    "public.insurance_product_promotions": {
+      "name": "insurance_product_promotions",
       "schema": "",
       "columns": {
         "id": {
@@ -13605,9 +13605,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "marketplace_ads_agentId_agents_id_fk": {
-          "name": "marketplace_ads_agentId_agents_id_fk",
-          "tableFrom": "marketplace_ads",
+        "insurance_product_promotions_agentId_agents_id_fk": {
+          "name": "insurance_product_promotions_agentId_agents_id_fk",
+          "tableFrom": "insurance_product_promotions",
           "tableTo": "agents",
           "columnsFrom": ["agentId"],
           "columnsTo": ["id"],
@@ -13945,8 +13945,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.tenant_corridors": {
-      "name": "tenant_corridors",
+    "public.tenant_cross_border_remittances": {
+      "name": "tenant_cross_border_remittances",
       "schema": "",
       "columns": {
         "id": {
@@ -13987,7 +13987,7 @@
         },
         "status": {
           "name": "status",
-          "type": "corridor_status",
+          "type": "cross_border_remittance_status",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
@@ -14051,8 +14051,8 @@
         }
       },
       "indexes": {
-        "tenant_corridors_tenantId_idx": {
-          "name": "tenant_corridors_tenantId_idx",
+        "tenant_cross_border_remittances_tenantId_idx": {
+          "name": "tenant_cross_border_remittances_tenantId_idx",
           "columns": [
             {
               "expression": "tenantId",
@@ -14066,8 +14066,8 @@
           "method": "btree",
           "with": {}
         },
-        "tenant_corridors_route_idx": {
-          "name": "tenant_corridors_route_idx",
+        "tenant_cross_border_remittances_route_idx": {
+          "name": "tenant_cross_border_remittances_route_idx",
           "columns": [
             {
               "expression": "sourceCountry",
@@ -14174,8 +14174,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "corridorId": {
-          "name": "corridorId",
+        "cross_border_remittanceId": {
+          "name": "cross_border_remittanceId",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -14266,11 +14266,11 @@
           "method": "btree",
           "with": {}
         },
-        "tenant_fee_overrides_corridorId_idx": {
-          "name": "tenant_fee_overrides_corridorId_idx",
+        "tenant_fee_overrides_cross_border_remittanceId_idx": {
+          "name": "tenant_fee_overrides_cross_border_remittanceId_idx",
           "columns": [
             {
-              "expression": "corridorId",
+              "expression": "cross_border_remittanceId",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -16191,8 +16191,8 @@
       "schema": "public",
       "values": ["Excellent", "Good", "Poor", "Offline"]
     },
-    "public.corridor_status": {
-      "name": "corridor_status",
+    "public.cross_border_remittance_status": {
+      "name": "cross_border_remittance_status",
       "schema": "public",
       "values": ["active", "paused", "disabled"]
     },

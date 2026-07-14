@@ -1,5 +1,5 @@
 /**
- * keycloak.ts — Keycloak OIDC integration for InsurePortal InsurePortal Platform
+ * keycloak.ts — Keycloak OIDC integration for InsurePortal POS Shell
  *
  * Responsibilities:
  *  1. Discover Keycloak OIDC configuration (JWKS, endpoints)
@@ -12,7 +12,7 @@
  * Environment variables required:
  *  - KEYCLOAK_URL          e.g. https://auth.insureportal.io
  *  - KEYCLOAK_REALM        e.g. insureportal
- *  - KEYCLOAK_CLIENT_ID    e.g. platform-shell
+ *  - KEYCLOAK_CLIENT_ID    e.g. insurance-portal
  *  - KEYCLOAK_CLIENT_SECRET (confidential client secret)
  *
  * The platform uses a confidential OIDC client with PKCE disabled.
@@ -37,10 +37,10 @@ function getConfig(): KeycloakConfig {
   // Override KEYCLOAK_URL in .env.production for remote deployments
   const url = process.env.KEYCLOAK_URL ?? "http://localhost:8080";
   const realm = process.env.KEYCLOAK_REALM ?? "insureportal";
-  const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "platform-shell";
+  const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "insurance-portal";
   const clientSecret =
     process.env.KEYCLOAK_CLIENT_SECRET ??
-    "platform-shell-secret-change-in-production";
+    "insurance-portal-secret-change-in-production";
 
   return { url, realm, clientId, clientSecret };
 }

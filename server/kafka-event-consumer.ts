@@ -44,8 +44,8 @@ export interface KafkaConsumerConfig {
 
 const DEFAULT_CONFIG: KafkaConsumerConfig = {
   brokers: (process.env.KAFKA_BROKERS || "localhost:9092").split(","),
-  groupId: "platform-shell-consumer-group",
-  clientId: "platform-shell-event-consumer",
+  groupId: "insurance-portal-consumer-group",
+  clientId: "insurance-portal-event-consumer",
   topics: [
     "pos.transactions.events",
     "pos.agents.lifecycle",
@@ -137,7 +137,7 @@ eventHandlers.set("float.topup", async event => {
   console.log(
     `[Kafka] Float topup: agent=${agentId} amount=${amount} source=${source}`
   );
-  // Credit float balance, emit receipt, update daily limits
+  // Credit premium reserve, emit receipt, update daily limits
 });
 
 eventHandlers.set("float.reconciled", async event => {

@@ -9,7 +9,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   agents,
-  serviceNodes,
+  insuranceServices,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -19,7 +19,7 @@ import {
   multiSimProfiles,
   reversalRequests,
   shareableLinks,
-  marketplaceAds,
+  insurance_portalAds,
   vatRecords,
   erpSyncLog,
   transactions,
@@ -27,7 +27,7 @@ import {
   kycSessions,
   auditLog,
   emailQueue,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, asc, sql, and, gte, lte, like, count } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -65,7 +65,7 @@ export const managementRouter = router({
         .limit(100);
       const [terminalCount] = await db
         .select({ c: count() })
-        .from(serviceNodes)
+        .from(insuranceServices)
         .limit(100);
       const [txCount] = await db
         .select({ c: count() })
@@ -187,7 +187,7 @@ export const managementRouter = router({
     create: adminProcedure
       .input(
         z.object({
-          agentCode: z.string(),
+          agentId: z.string(),
           name: z.string(),
           phone: z.string(),
           email: z.string().email().optional(),
@@ -308,7 +308,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [agent] = await db
             .select({
-              floatBalance: agents.floatBalance,
+              premiumReserve: agents.premiumReserve,
               commissionBalance: agents.commissionBalance,
               loyaltyPoints: agents.loyaltyPoints,
             })
@@ -618,7 +618,7 @@ export const managementRouter = router({
     }),
   }),
 
-  // ── Service Node Management ────────────────────────────────────────────────
+  // ── Insurance Service Management ────────────────────────────────────────────────
   pos: router({
     listTerminals: mgmtProcedure
       .input(
@@ -638,19 +638,19 @@ export const managementRouter = router({
           const offset = (input.page - 1) * input.limit;
           const conditions = [];
           if (input.status)
-            conditions.push(eq(serviceNodes.status, input.status));
+            conditions.push(eq(insuranceServices.status, input.status));
           if (input.agentId)
-            conditions.push(eq(serviceNodes.agentId, input.agentId));
+            conditions.push(eq(insuranceServices.agentId, input.agentId));
           const where = conditions.length > 0 ? and(...conditions) : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(serviceNodes)
+              .from(insuranceServices)
               .where(where)
-              .orderBy(desc(serviceNodes.createdAt))
+              .orderBy(desc(insuranceServices.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(serviceNodes).where(where),
+            db.select({ total: count() }).from(insuranceServices).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -670,8 +670,8 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "NOT_FOUND" });
           const [t] = await db
             .select()
-            .from(serviceNodes)
-            .where(eq(serviceNodes.id, input.id))
+            .from(insuranceServices)
+            .where(eq(insuranceServices.id, input.id))
             .limit(100);
           if (!t) throw new TRPCError({ code: "NOT_FOUND" });
           return t;
@@ -698,7 +698,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .insert(serviceNodes)
+            .insert(insuranceServices)
             .values(input as any)
             .returning();
           return t;
@@ -731,13 +731,13 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(serviceNodes)
+            .update(insuranceServices)
             .set({
               lastCommand: input.command,
               lastCommandAt: new Date(),
               updatedAt: new Date(),
             })
-            .where(eq(serviceNodes.id, input.terminalId))
+            .where(eq(insuranceServices.id, input.terminalId))
             .returning();
           return { success: true, terminal: t };
         } catch (error) {
@@ -820,9 +820,9 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           // Unassign all terminals in this group first
           await db
-            .update(serviceNodes)
+            .update(insuranceServices)
             .set({ groupId: null, updatedAt: new Date() })
-            .where(eq(serviceNodes.groupId, input.id));
+            .where(eq(insuranceServices.groupId, input.id));
           await db
             .delete(terminalGroups)
             .where(eq(terminalGroups.id, input.id));
@@ -845,9 +845,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(serviceNodes)
+            .update(insuranceServices)
             .set({ groupId: input.groupId, updatedAt: new Date() })
-            .where(eq(serviceNodes.id, input.terminalId))
+            .where(eq(insuranceServices.id, input.terminalId))
             .returning();
           if (!t)
             throw new TRPCError({
@@ -877,19 +877,19 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const terminals = await db
             .select()
-            .from(serviceNodes)
-            .where(eq(serviceNodes.groupId, input.groupId))
+            .from(insuranceServices)
+            .where(eq(insuranceServices.groupId, input.groupId))
             .limit(100);
           let dispatched = 0;
           for (const t of terminals) {
             await db
-              .update(serviceNodes)
+              .update(insuranceServices)
               .set({
                 lastCommand: input.command,
                 lastCommandAt: new Date(),
                 updatedAt: new Date(),
               })
-              .where(eq(serviceNodes.id, t.id));
+              .where(eq(insuranceServices.id, t.id));
             dispatched++;
           }
           return { dispatched, command: input.command, groupId: input.groupId };
@@ -996,12 +996,12 @@ export const managementRouter = router({
       if (!db) return { active: 0, inactive: 0, maintenance: 0, total: 0 };
       const [total] = await db
         .select({ c: count() })
-        .from(serviceNodes)
+        .from(insuranceServices)
         .limit(100);
       const [active] = await db
         .select({ c: count() })
-        .from(serviceNodes)
-        .where(eq(serviceNodes.status, "active"))
+        .from(insuranceServices)
+        .where(eq(insuranceServices.status, "active"))
         .limit(100);
       return { total: total.c, active: active.c, inactive: 0, maintenance: 0 };
     }),
@@ -1487,8 +1487,8 @@ export const managementRouter = router({
       }),
   }),
 
-  // ── Marketplace Ads ─────────────────────────────────────────────────────────
-  marketplaceAds: router({
+  // ── InsurancePortal Ads ─────────────────────────────────────────────────────────
+  insurance_portalAds: router({
     list: mgmtProcedure
       .input(
         z.object({
@@ -1505,17 +1505,17 @@ export const managementRouter = router({
           if (!db) return { items: [], total: 0 };
           const offset = (input.page - 1) * input.limit;
           const where = input.status
-            ? eq(marketplaceAds.status, input.status)
+            ? eq(insurance_portalAds.status, input.status)
             : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(marketplaceAds)
+              .from(insurance_portalAds)
               .where(where)
-              .orderBy(desc(marketplaceAds.createdAt))
+              .orderBy(desc(insurance_portalAds.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(marketplaceAds).where(where),
+            db.select({ total: count() }).from(insurance_portalAds).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -1545,7 +1545,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
-            .insert(marketplaceAds)
+            .insert(insurance_portalAds)
             .values(input as any)
             .returning();
           return ad;
@@ -1570,9 +1570,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [ad] = await db
-            .update(marketplaceAds)
+            .update(insurance_portalAds)
             .set({ status: input.status, updatedAt: new Date() })
-            .where(eq(marketplaceAds.id, input.id))
+            .where(eq(insurance_portalAds.id, input.id))
             .returning();
           return ad;
         } catch (error) {

@@ -1,5 +1,5 @@
 /**
- * Sprint 89 Tests — InsurePortal InsurePortal Platform
+ * Sprint 89 Tests — InsurePortal POS Shell
  *
  * Covers:
  *   - webhookHandler: test event detection, calculateNextRetry, publishBillingEvent

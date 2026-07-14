@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: InsurePortal InsurePortal Platform — Billing Engine API
+  title: InsurePortal POS Shell — Billing Engine API
   description: |
-    Comprehensive billing API for the InsurePortal Agency Banking Platform.
+    Comprehensive billing API for the InsurePortal Insurance Platform.
     Covers ledger management, invoice lifecycle, revenue reconciliation,
     tenant onboarding, RBAC, audit trails, and production billing operations.
     

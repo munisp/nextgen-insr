@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Transaction Lifecycle State Machine — InsurePortal Agency Banking Platform
+ * Transaction Lifecycle State Machine — InsurePortal Insurance Platform
  *
  * Enforces valid state transitions:
  * initiated → validated → processing → processed → settled → reconciled
@@ -163,8 +163,8 @@ export function canSettlementTransition(
 
 export interface CommissionTierRate {
   tier: string;
-  cashInRate: number;
-  cashOutRate: number;
+  premiumCollectionRate: number;
+  claimPayoutRate: number;
   transferRate: number;
   airtimeRate: number;
   billsRate: number;
@@ -173,32 +173,32 @@ export interface CommissionTierRate {
 const COMMISSION_RATES: CommissionTierRate[] = [
   {
     tier: "basic",
-    cashInRate: 0.005,
-    cashOutRate: 0.008,
+    premiumCollectionRate: 0.005,
+    claimPayoutRate: 0.008,
     transferRate: 0.003,
     airtimeRate: 0.025,
     billsRate: 0.01,
   },
   {
     tier: "standard",
-    cashInRate: 0.007,
-    cashOutRate: 0.01,
+    premiumCollectionRate: 0.007,
+    claimPayoutRate: 0.01,
     transferRate: 0.005,
     airtimeRate: 0.03,
     billsRate: 0.015,
   },
   {
     tier: "premium",
-    cashInRate: 0.01,
-    cashOutRate: 0.015,
+    premiumCollectionRate: 0.01,
+    claimPayoutRate: 0.015,
     transferRate: 0.008,
     airtimeRate: 0.04,
     billsRate: 0.02,
   },
   {
     tier: "enterprise",
-    cashInRate: 0.012,
-    cashOutRate: 0.018,
+    premiumCollectionRate: 0.012,
+    claimPayoutRate: 0.018,
     transferRate: 0.01,
     airtimeRate: 0.05,
     billsRate: 0.025,
@@ -209,13 +209,13 @@ export function getCommissionRate(tier: string, txType: string): number {
   const tierRates =
     COMMISSION_RATES.find(r => r.tier === tier) ?? COMMISSION_RATES[0];
   const typeMap: Record<string, keyof CommissionTierRate> = {
-    cash_in: "cashInRate",
-    cash_out: "cashOutRate",
+    cash_in: "premiumCollectionRate",
+    cash_out: "claimPayoutRate",
     transfer: "transferRate",
     airtime: "airtimeRate",
     bills: "billsRate",
   };
-  const rateKey = typeMap[txType] ?? "cashInRate";
+  const rateKey = typeMap[txType] ?? "premiumCollectionRate";
   return tierRates[rateKey] as number;
 }
 

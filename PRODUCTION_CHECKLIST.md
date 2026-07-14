@@ -1,4 +1,4 @@
-# InsurePortal Agency Banking Platform — Production Deployment Checklist
+# InsurePortal Insurance Platform — Production Deployment Checklist
 
 > Version: Phase 163 | Last updated: April 2026
 
@@ -103,8 +103,8 @@ curl https://your-domain.com/api/health
 ### 5. Smoke Tests
 
 - [ ] Login with test agent credentials
-- [ ] Perform a cash-in transaction
-- [ ] Perform a cash-out transaction
+- [ ] Perform a premium collection transaction
+- [ ] Perform a claim payout transaction
 - [ ] Send an airtime purchase
 - [ ] Verify OTP SMS delivery via Termii
 - [ ] Check push notification delivery

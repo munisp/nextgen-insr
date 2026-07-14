@@ -13,6 +13,7 @@
  */
 
 import { notifyOwner } from "../_core/notification";
+import { logger } from '../_core/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -130,7 +131,7 @@ function seedDefaults() {
   adminPreferences.set("admin-001", {
     adminId: "admin-001",
     adminName: "System Administrator",
-    adminEmail: "admin@platform-shell.ng",
+    adminEmail: "admin@insurance-portal.ng",
     adminPhone: "+2348012345678",
     channels: {
       push: true,
@@ -162,7 +163,7 @@ function seedDefaults() {
   adminPreferences.set("admin-002", {
     adminId: "admin-002",
     adminName: "Security Officer",
-    adminEmail: "security@platform-shell.ng",
+    adminEmail: "security@insurance-portal.ng",
     adminPhone: "+2348098765432",
     channels: {
       push: true,
@@ -179,7 +180,7 @@ function seedDefaults() {
       overrideForCritical: true,
     },
     categories: ["ransomware", "exfiltration", "deepfake", "canary_trigger"],
-    webhookUrl: "https://hooks.platform-shell.ng/security-alerts",
+    webhookUrl: "https://hooks.insurance-portal.ng/security-alerts",
     slackWebhookUrl: "https://hooks.slack.com/services/T00/B00/xxx",
   });
 
@@ -338,7 +339,7 @@ async function deliverViaEmail(
         formatAlertContent(event),
         "",
         "---",
-        "This is an automated security alert from InsurePortal Platform Platform.",
+        "This is an automated security alert from Insurance Portal Platform.",
         "To manage your notification preferences, visit the Security Alert Preferences page.",
       ].join("\n"),
     });
@@ -483,7 +484,7 @@ async function deliverViaSlack(
             color: colorMap[event.severity],
             title: formatAlertTitle(event),
             text: formatAlertContent(event),
-            footer: "InsurePortal Platform Security Alert System",
+            footer: "Insurance Portal Security Alert System",
             ts: Math.floor(event.timestamp / 1000),
           },
         ],
@@ -597,7 +598,7 @@ export async function dispatchSecurityAlert(
     startEscalationTimer(event);
   }
 
-  console.log(
+  logger.info(
     `[SecurityAlertNotifier] Alert ${event.alertId} dispatched: ` +
       `${eligibleAdmins.length} recipients, ${successCount} delivered, ${failCount} failed`
   );
@@ -621,7 +622,7 @@ function startEscalationTimer(event: SecurityAlertEvent): void {
   for (const rule of applicableRules) {
     const timer = setTimeout(
       async () => {
-        console.log(
+        logger.info(
           `[SecurityAlertNotifier] Escalation triggered: ${rule.name} for alert ${event.alertId}`
         );
 

@@ -8,7 +8,7 @@ import {
   tenants,
   auditLog,
   webhookEndpoints,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

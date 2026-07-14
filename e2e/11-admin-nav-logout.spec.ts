@@ -115,7 +115,7 @@ test.describe("Agent Logout Flow", () => {
 
     // Should be on login screen, not dashboard
     await expect(
-      page.locator("text=/InsurePortal POS|agent code|login/i").first()
+      page.locator("text=/InsurePortal POS|agent ID|login/i").first()
     ).toBeVisible({ timeout: 10_000 });
   });
 });

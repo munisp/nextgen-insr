@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-## InsurePortal Agency Banking Platform
+## InsurePortal Insurance Platform
 
 All environment variables required for production deployment.
 
@@ -14,7 +14,7 @@ All environment variables required for production deployment.
 | `REDIS_URL`              | Yes      | `redis://localhost:6379` | Redis connection URL                   |
 | `KEYCLOAK_URL`           | Yes      | —                        | Keycloak base URL                      |
 | `KEYCLOAK_REALM`         | Yes      | `insureportal`                 | Keycloak realm name                    |
-| `KEYCLOAK_CLIENT_ID`     | Yes      | `platform-shell`              | OIDC client ID                         |
+| `KEYCLOAK_CLIENT_ID`     | Yes      | `insurance-portal`              | OIDC client ID                         |
 | `KEYCLOAK_CLIENT_SECRET` | Yes      | —                        | OIDC client secret                     |
 | `SES_SMTP_HOST`          | No       | `smtp.mailtrap.io`       | SMTP server host                       |
 | `SES_SMTP_PORT`          | No       | `587`                    | SMTP server port                       |

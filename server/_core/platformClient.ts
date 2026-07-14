@@ -1,7 +1,7 @@
 /**
  * platformClient.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Thin HTTP gateway that forwards InsurePortal Platform requests to the canonical platform
+ * Thin HTTP gateway that forwards Insurance Portal requests to the canonical platform
  * microservices.  Every call attaches the Keycloak access_token from the
  * current request context so the downstream services can enforce their own
  * RBAC policies.
@@ -384,7 +384,7 @@ export const loyaltyPlatform = {
 // ─── Float Service ────────────────────────────────────────────────────────────
 
 export const floatPlatform = {
-  /** Get float balance for an agent (Go float-management service) */
+  /** Get premium reserve for an agent (Go float-management service) */
   getBalance: (agentId: string, token: string) =>
     platformFetch(
       "float",

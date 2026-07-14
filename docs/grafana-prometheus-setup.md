@@ -2,7 +2,7 @@
 
 ## Overview
 
-The InsurePortal InsurePortal Platform exposes a Prometheus-compatible metrics endpoint at `GET /api/metrics`. This guide walks through connecting it to a Prometheus scraper and importing the pre-built Grafana dashboard.
+The InsurePortal POS Shell exposes a Prometheus-compatible metrics endpoint at `GET /api/metrics`. This guide walks through connecting it to a Prometheus scraper and importing the pre-built Grafana dashboard.
 
 ---
 
@@ -12,17 +12,17 @@ Copy the job block from `docs/prometheus-scrape-config.yml` into your `prometheu
 
 ```yaml
 scrape_configs:
-  - job_name: "platform-shell"
+  - job_name: "insurance-portal"
     scrape_interval: 15s
     scrape_timeout: 10s
     metrics_path: /api/metrics
     scheme: https
     static_configs:
       - targets:
-          - "platform-shell.insureportal.internal:443"
+          - "insurance-portal.insureportal.internal:443"
         labels:
           environment: "production"
-          service: "platform-shell"
+          service: "insurance-portal"
           region: "ng-west-1"
 ```
 
@@ -36,7 +36,7 @@ curl -X POST http://localhost:9090/-/reload
 kill -HUP $(pgrep prometheus)
 ```
 
-Verify the target is healthy at `http://localhost:9090/targets` — the `platform-shell` job should show **UP**.
+Verify the target is healthy at `http://localhost:9090/targets` — the `insurance-portal` job should show **UP**.
 
 ---
 
@@ -47,7 +47,7 @@ Verify the target is healthy at `http://localhost:9090/targets` — the `platfor
 3. When prompted, select your Prometheus data source from the `DS_PROMETHEUS` dropdown.
 4. Click **Import**.
 
-The dashboard UID is `platform-shell-prod-v1`. If you already have a dashboard with that UID, Grafana will offer to overwrite it.
+The dashboard UID is `insurance-portal-prod-v1`. If you already have a dashboard with that UID, Grafana will offer to overwrite it.
 
 ---
 
@@ -68,10 +68,10 @@ The **Environment** template variable (top-left) filters all panels by the `envi
 
 ## Step 3 — Configure Alerting Rules
 
-Add these recording and alerting rules to a new file `platform-shell-rules.yml` and reference it in `prometheus.yml` under `rule_files:`:
+Add these recording and alerting rules to a new file `insurance-portal-rules.yml` and reference it in `prometheus.yml` under `rule_files:`:
 
 ```yaml
-# platform-shell-rules.yml
+# insurance-portal-rules.yml
 groups:
   - name: pos_shell_alerts
     interval: 1m
@@ -85,7 +85,7 @@ groups:
         for: 2m
         labels:
           severity: warning
-          service: platform-shell
+          service: insurance-portal
         annotations:
           summary: "InsurePortal Platform p95 latency above 500 ms SLA"
           description: "p95 HTTP latency is {{ $value | humanizeDuration }} — above the 500 ms SLA threshold."
@@ -99,7 +99,7 @@ groups:
         for: 1m
         labels:
           severity: critical
-          service: platform-shell
+          service: insurance-portal
         annotations:
           summary: "InsurePortal Platform transaction error rate above 5%"
           description: "Transaction error rate is {{ $value | humanizePercentage }}."
@@ -110,7 +110,7 @@ groups:
         for: 0m
         labels:
           severity: critical
-          service: platform-shell
+          service: insurance-portal
         annotations:
           summary: "Critical fraud alert spike detected"
           description: "{{ $value }} critical fraud alerts in the last 10 minutes."
@@ -124,7 +124,7 @@ groups:
         for: 2m
         labels:
           severity: warning
-          service: platform-shell
+          service: insurance-portal
         annotations:
           summary: "Platform service error rate above 10%"
           description: "Platform call error rate is {{ $value | humanizePercentage }}."
@@ -143,7 +143,7 @@ export K6_CLOUD_PROJECT_ID="your-project-id"
 
 # Run with cloud output
 k6 run --out cloud tests/load/transaction-throughput.js \
-  -e BASE_URL=https://platform-shell.insureportal.internal \
+  -e BASE_URL=https://insurance-portal.insureportal.internal \
   -e AGENT_CODE=AGT001 \
   -e AGENT_PIN=1234
 ```

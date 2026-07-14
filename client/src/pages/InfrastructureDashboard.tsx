@@ -85,7 +85,7 @@ function MetricCard({
 
 // ── TigerBeetle Tab ──────────────────────────────────────────────────────────
 function TigerBeetleTab() {
-  const [agentCode, setAgentCode] = useState("");
+  const [agentId, setAgentCode] = useState("");
   const summary = trpc.ledger.summary.useQuery();
   const accounts = trpc.ledger.listAccounts.useQuery({ limit: 20 });
   const syncStatus = trpc.ledger.syncStatus.useQuery();
@@ -104,8 +104,8 @@ function TigerBeetleTab() {
       ),
   });
   const agentBal = trpc.ledger.agentBalance.useQuery(
-    { agentCode },
-    { enabled: agentCode.length > 3 }
+    { agentId },
+    { enabled: agentId.length > 3 }
   );
 
   const s = summary.data;
@@ -191,7 +191,7 @@ function TigerBeetleTab() {
           <div className="flex gap-2 items-center">
             <Input
               placeholder="Agent code (e.g. AGT001)"
-              value={agentCode}
+              value={agentId}
               onChange={e => setAgentCode(e.target.value)}
               className="max-w-xs"
             />
@@ -246,7 +246,7 @@ function TigerBeetleTab() {
                   <TableCell className="font-mono text-xs">
                     {acc.id.slice(0, 16)}…
                   </TableCell>
-                  <TableCell>{acc.agentCode ?? "—"}</TableCell>
+                  <TableCell>{acc.agentId ?? "—"}</TableCell>
                   <TableCell>{acc.ledger}</TableCell>
                   <TableCell>₦{acc.balanceNGN.toLocaleString()}</TableCell>
                   <TableCell className="text-xs">

@@ -29,7 +29,7 @@ These routers need standalone management pages:
 ## Routers With Pages Elsewhere (OK)
 - agentBanking -> AgentPortal, PlatformShell
 - disputes -> AdminPanel, AgentPortal
-- floatTopUp -> PlatformShell, SupervisorDashboard
+- premiumTopUp -> POSShell, SupervisorDashboard
 - fxRates -> MultiCurrency
 - geofencing -> AdminPanel, GeofenceZoneEditor
 - mdm -> PlatformShell, ComplianceScheduling

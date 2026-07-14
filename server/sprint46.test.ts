@@ -183,7 +183,7 @@ describe("Sprint 46: Procedure Structure", () => {
     expect(procedures).toContain("getHistory");
     expect(procedures).toContain("getStats");
     expect(procedures).toContain("setSpread");
-    expect(procedures).toContain("getRegions");
+    expect(procedures).toContain("getInsuranceRegions");
     expect(procedures.length).toBe(6);
   });
 
@@ -213,7 +213,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -234,7 +234,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -253,7 +253,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -272,7 +272,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -292,7 +292,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -300,8 +300,8 @@ describe("Sprint 46: Data Integrity", () => {
     const stats = await caller.getStats({});
     expect(stats.supportedCurrencies).toBe(15);
     expect(stats.activePairs).toBe(42);
-    expect(stats.regions).toContain("NGN-USD");
-    expect(stats.regions).toContain("NGN-GBP");
+    expect(stats.insurance_regions).toContain("NGN-USD");
+    expect(stats.insurance_regions).toContain("NGN-GBP");
   });
 
   it("compliance reporting should have valid compliance score", async () => {
@@ -312,7 +312,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -337,7 +337,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -357,7 +357,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -377,7 +377,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -395,7 +395,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -414,7 +414,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -435,7 +435,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -453,7 +453,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },
@@ -471,7 +471,7 @@ describe("Sprint 46: Data Integrity", () => {
         id: 1,
         username: "test",
         role: "admin",
-        agentCode: "AGT001",
+        agentId: "AGT001",
         name: "Test",
         email: "t@t.io",
       },

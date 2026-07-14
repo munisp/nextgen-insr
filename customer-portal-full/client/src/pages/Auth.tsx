@@ -243,7 +243,7 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-slate-900 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-slate-900 flex flex-col" role="main" aria-label="Authentication">
       {/* Header */}
       <nav className="container mx-auto px-6 py-6 flex justify-between items-center">
         <Link href="/">
@@ -314,8 +314,8 @@ export default function Auth() {
 
               {/* Error Message */}
               {error && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2" role="alert" aria-live="polite">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
                   {error}
                 </div>
               )}
@@ -328,7 +328,7 @@ export default function Auth() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4" aria-label={view === 'login' ? 'Sign in' : view === 'signup' ? 'Create account' : view === 'forgot' ? 'Reset password' : 'Verify identity'}>
                 {/* Signup Fields */}
                 {view === "signup" && (
                   <>
@@ -367,8 +367,8 @@ export default function Auth() {
                     <div className="relative">
                       <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                       <Input id="password" name="password" type={showPassword ? "text" : "password"} placeholder="Enter your password" className="pl-10 pr-10" value={formData.password} onChange={handleInputChange} required />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600">
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600" aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                        {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                       </button>
                     </div>
                   </div>

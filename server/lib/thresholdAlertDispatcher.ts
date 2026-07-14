@@ -1,9 +1,9 @@
-// TypeScript enabled — Sprint 96 security audit
 /**
  * Threshold Alert Notification Dispatcher
  * Connects breach events from the data threshold alert system to email and SMS services.
  * Supports cooldown periods, notification history, and multi-channel dispatch.
  */
+import { logger } from '../_core/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Severity = "info" | "warning" | "critical";
@@ -145,7 +145,7 @@ function buildBreachEmailHtml(event: BreachEvent): string {
   </div>
 
   <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #9ca3af;">
-    <p>This is an automated alert from InsurePortal InsurePortal Platform. Rule ID: ${event.ruleId} | Event ID: ${event.eventId}</p>
+    <p>This is an automated alert from InsurePortal POS Shell. Rule ID: ${event.ruleId} | Event ID: ${event.eventId}</p>
     <p>To manage your alert preferences, visit the Data Threshold Alerts page in your dashboard.</p>
   </div>
 </body>
@@ -233,7 +233,7 @@ async function sendEmailNotification(
   // In production, this calls:
   // import { sendEmail } from './emailService';
   // return sendEmail({ to, subject, html, text, priority, tags: ['threshold-alert'] });
-  console.log(`[ThresholdDispatcher] EMAIL → ${to}: ${subject}`);
+  logger.info(`[ThresholdDispatcher] EMAIL → ${to}: ${subject}`);
   return {
     success: true,
     messageId: `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -247,7 +247,7 @@ async function sendSmsNotification(
   // In production, this calls:
   // import { sendSms } from './smsService';
   // return sendSms({ to, message, provider: 'auto' });
-  console.log(`[ThresholdDispatcher] SMS → ${to}: ${message.slice(0, 50)}...`);
+  logger.info(`[ThresholdDispatcher] SMS → ${to}: ${message.slice(0, 50)}...`);
   return {
     success: true,
     messageId: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -259,7 +259,7 @@ async function sendPushNotification(
   title: string,
   _body: string
 ): Promise<{ success: boolean }> {
-  console.log(`[ThresholdDispatcher] PUSH: ${title}`);
+  logger.info(`[ThresholdDispatcher] PUSH: ${title}`);
   return { success: true };
 }
 
@@ -267,9 +267,7 @@ async function sendWebhookNotification(
   _url: string,
   payload: object
 ): Promise<{ success: boolean }> {
-  console.log(
-    `[ThresholdDispatcher] WEBHOOK:`,
-    JSON.stringify(payload).slice(0, 100)
+  logger.info(`[ThresholdDispatcher] WEBHOOK:: ` + JSON.stringify(payload).slice(0, 100)
   );
   return { success: true };
 }

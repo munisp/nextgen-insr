@@ -1,5 +1,5 @@
 /**
- * Transaction Analytics — InsurePortal InsurePortal Platform (Sprint 89)
+ * Transaction Analytics — InsurePortal POS Shell (Sprint 89)
  *
  * Real-time analytics dashboard powered by Fluvio→OpenSearch pipeline.
  * Displays transaction volume, time-series charts, search, and pipeline health.

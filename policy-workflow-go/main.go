@@ -1,332 +1,129 @@
 package main
 
 import (
-	"database/sql"
-	"bytes"
-	"encoding/json"
-	"log"
+	"context"
+	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"context"
-	"fmt"
-	"math"
-	"os/signal"
-	"sync"
-	"sync/atomic"
-	"syscall"
-
-	_ "github.com/lib/pq"
+	"github.com/insureportal/policy_workflow_go/config"
+	"github.com/insureportal/policy_workflow_go/db"
+	"github.com/insureportal/policy_workflow_go/internal/handlers"
+	"github.com/insureportal/policy_workflow_go/internal/middleware"
+	"github.com/insureportal/policy_workflow_go/internal/service"
+	"go.uber.org/zap"
 )
-
-// Policy Workflow Engine — state machine for policy lifecycle management
-// States: draft → submitted → underwriting → approved/declined → issued → active → renewal/lapsed/cancelled
-// Business Rules:
-// - Draft → Submitted: Requires all mandatory fields + KYC verification
-// - Submitted → Underwriting: Auto-routed based on risk score (< 50 = auto, >= 50 = manual)
-// - Underwriting SLA: 24h for auto, 72h for manual
-// - Approved → Issued: Payment must be confirmed within 7 days
-// - Active → Cancelled: Pro-rata refund if within cooling-off period (14 days)
-
-var validTransitions = map[string][]string{
-	"draft":        {"submitted"},
-	"submitted":    {"underwriting", "rejected"},
-	"underwriting": {"approved", "declined", "referred"},
-	"approved":     {"issued", "expired"},
-	"issued":       {"active"},
-	"active":       {"renewal", "lapsed", "cancelled"},
-	"renewal":      {"active", "lapsed"},
-}
-
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
-// --- Production Middleware ---
-
-type statusResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.statusCode = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-// Tracing middleware - adds X-Request-ID to all requests
-func prodTracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqID := r.Header.Get("X-Request-Id")
-		if reqID == "" {
-			reqID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-Id", reqID)
-		start := time.Now()
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf(`{"level":"debug","msg":"request","method":"%s","path":"%s","status":%d,"duration":"%s","request_id":"%s"}`, r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
-	})
-}
-
-// CORS middleware - handles preflight and sets headers
-func prodCorsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Rate limiting - token bucket per IP, 100 req/min
-var (
-	prodRateLimitMu      sync.Mutex
-	prodRateLimitBuckets = make(map[string]*prodTokenBucket)
-)
-
-type prodTokenBucket struct {
-	tokens     float64
-	lastRefill time.Time
-}
-
-func prodRateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		prodRateLimitMu.Lock()
-		bucket, ok := prodRateLimitBuckets[ip]
-		if !ok {
-			bucket = &prodTokenBucket{tokens: 100, lastRefill: time.Now()}
-			prodRateLimitBuckets[ip] = bucket
-		}
-		elapsed := time.Since(bucket.lastRefill).Seconds()
-		bucket.tokens = math.Min(100, bucket.tokens+elapsed*(100.0/60.0))
-		bucket.lastRefill = time.Now()
-		if bucket.tokens < 1 {
-			prodRateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
-			return
-		}
-		bucket.tokens--
-		prodRateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Prometheus-compatible metrics
-var (
-	prodMetricsReqCount   int64
-	prodMetricsErrCount   int64
-	prodMetricsStartTime  = time.Now()
-)
-
-func prodMetricsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&prodMetricsReqCount, 1)
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		if wrapped.statusCode >= 400 {
-			atomic.AddInt64(&prodMetricsErrCount, 1)
-		}
-	})
-}
-
-func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(prodMetricsStartTime).Seconds()
-	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
-	errCount := atomic.LoadInt64(&prodMetricsErrCount)
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
-}
-
-// Panic recovery middleware - catches panics and returns 500
-func prodRecoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
-				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-
-var db *sql.DB
-
-func initDB() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v", err)
-		return
-	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v", err)
-		return
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"policy-workflow-go","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS workflow_instances (id TEXT PRIMARY KEY, workflow_type TEXT NOT NULL, policy_id TEXT, current_step TEXT, status TEXT DEFAULT 'active', assignee TEXT, started_at TIMESTAMPTZ DEFAULT NOW(), completed_at TIMESTAMPTZ)`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
 
 func main() {
-	initKafka()
-	initDB()
-	r := chi.NewRouter()
-	r.Use(middleware.Logger, middleware.Recoverer)
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		dbStatus := "disconnected"
-		if db != nil {
-			if err := db.Ping(); err == nil {
-				dbStatus = "connected"
-			}
-		}
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "policy-workflow-go", "database": dbStatus})
-	})
-	r.Get("/ready", handleReady)
-	r.Get("/live", handleLive)
-	r.Post("/api/v1/workflow/transition", transitionPolicy)
-	r.Get("/api/v1/workflow/valid-transitions/{state}", getValidTransitions)
-	r.Get("/metrics", prodMetricsHandler)
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to init logger: %v", err))
+	}
+	defer logger.Sync()
+	zap.ReplaceGlobals(logger)
+	log := zap.L()
 
-	port := os.Getenv("PORT")
-	if port == "" { port = "8106" }
-	log.Printf("Policy Workflow Engine starting on :%s", port)
-	handler := prodRecoveryMiddleware(prodMetricsMiddleware(prodTracingMiddleware(prodCorsMiddleware(prodRateLimitMiddleware(r)))))
+	log.Info("Policy Workflow Engine starting up")
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal("Failed to load config", zap.Error(err))
+	}
+	log.Info("Configuration loaded", zap.String("env", cfg.Env), zap.Int("port", cfg.Port))
+
+	pg, err := db.NewPostgreSQL(cfg)
+	if err != nil {
+		log.Fatal("Failed to init PostgreSQL", zap.Error(err))
+	}
+	defer pg.Close()
+	log.Info("PostgreSQL initialized")
+
+	rdb, err := db.NewRedisCache(cfg)
+	if err != nil {
+		log.Warn("Redis not available, running without cache", zap.Error(err))
+		rdb = &db.RedisCache{}
+	}
+	defer rdb.Close()
+	log.Info("Redis initialized")
+
+	policySvc := service.NewPolicyService(pg, rdb, cfg)
+	h := handlers.NewHandlers(policySvc)
+
+	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(middleware.CORSMiddleware())
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Logger)
+	r.Use(middleware.RealIP)
+
+	r.Get(cfg.HealthCheckPath, h.HealthCheck)
+	r.Get("/ready", h.ReadinessCheck)
+
+	r.Group(func(api chi.Router) {
+		api.Use(middleware.APIKeyAuth)
+
+		// Policies
+		api.Post("/api/v1/policies", h.CreatePolicy)
+		api.Get("/api/v1/policies", h.ListPolicies)
+		api.Get("/api/v1/policies/by-id", h.GetPolicy)
+		api.Get("/api/v1/policies/by-number", h.GetPolicyByNumber)
+
+		// State Machine
+		api.Post("/api/v1/workflow/transition", h.TransitionPolicy)
+		api.Get("/api/v1/workflow/valid-transitions", h.GetValidTransitions)
+
+		// Underwriting
+		api.Post("/api/v1/underwriting/start", h.StartUnderwriting)
+		api.Get("/api/v1/underwriting/record", h.GetUnderwritingRecord)
+
+		// Renewals
+		api.Post("/api/v1/renewals", h.CreateRenewal)
+		api.Post("/api/v1/renewals/process", h.ProcessRenewal)
+		api.Get("/api/v1/renewals", h.GetRenewals)
+
+		// Endorsements
+		api.Post("/api/v1/endorsements", h.CreateEndorsement)
+		api.Get("/api/v1/endorsements", h.GetEndorsements)
+
+		// Lapse Management
+		api.Post("/api/v1/lapses/check", h.CheckLapses)
+
+		// Cancellation
+		api.Post("/api/v1/policies/cancel", h.CancelPolicy)
+
+		// Dashboard
+		api.Get("/api/v1/dashboard", h.GetDashboard)
+	})
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	srv := &http.Server{
-		Addr:         ":"+port,
-		Handler:      handler,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
+		Handler:      r,
+		ReadTimeout:  cfg.ReadTimeout,
+		WriteTimeout: cfg.WriteTimeout,
 		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
+		log.Info("Starting Policy Workflow server", zap.String("address", srv.Addr))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			log.Fatal("Server failed", zap.Error(err))
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"policy-workflow-go"}`)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	<-ctx.Done()
+	log.Info("Shutting down Policy Workflow server...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error("Server forced shutdown", zap.Error(err))
 	}
-	log.Printf(`{"level":"info","msg":"server stopped","service":"policy-workflow-go"}`)
-}
-
-func transitionPolicy(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		PolicyID     string `json:"policy_id"`
-		CurrentState string `json:"current_state"`
-		NewState     string `json:"new_state"`
-		Actor        string `json:"actor"`
-	}
-	json.NewDecoder(r.Body).Decode(&body)
-	allowed, ok := validTransitions[body.CurrentState]
-	if !ok { http.Error(w, `{"error":"invalid_current_state"}`, 400); return }
-	valid := false
-	for _, s := range allowed { if s == body.NewState { valid = true; break } }
-	if !valid {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid_transition", "current": body.CurrentState, "requested": body.NewState, "allowed": allowed})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true, "policy_id": body.PolicyID, "previous_state": body.CurrentState,
-		"new_state": body.NewState, "transitioned_at": time.Now().Format(time.RFC3339), "actor": body.Actor,
-	})
-}
-
-func getValidTransitions(w http.ResponseWriter, r *http.Request) {
-	state := chi.URLParam(r, "state")
-	transitions, ok := validTransitions[state]
-	if !ok { http.Error(w, `{"error":"unknown_state"}`, 400); return }
-	json.NewEncoder(w).Encode(map[string]interface{}{"current_state": state, "valid_transitions": transitions})
+	log.Info("Policy Workflow server stopped")
 }

@@ -15,11 +15,17 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 import type { User } from "../../drizzle/schema";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./keycloakAuth";
 import { getUserByKeycloakSub } from "../db";
+import { logger } from './logger';
 
 const isDev = process.env.NODE_ENV === "development";
 const isTest = process.env.NODE_ENV === "test";
+
+// CRITICAL: DEV_AUTH_BYPASS must NEVER activate in production.
+// We explicitly block it when NODE_ENV !== "development" even if the
+// env var is set — this prevents accidental leaks from CI/staging.
 const devBypassEnabled =
-  (isDev && process.env.DEV_AUTH_BYPASS === "true") || isTest;
+  isTest ||
+  (isDev && process.env.DEV_AUTH_BYPASS === "true");
 
 if (
   !isDev &&
@@ -27,7 +33,7 @@ if (
   (!process.env.JWT_SECRET ||
     process.env.JWT_SECRET === "posinsureportal-secret-change-in-production")
 ) {
-  console.error(
+  logger.error(
     "[SECURITY] FATAL: JWT_SECRET is not set or is using the default value. Set a strong secret in production."
   );
 }
@@ -83,7 +89,7 @@ export async function createContext(
           dbUser = await getUserByKeycloakSub(session.sub);
         } catch (dbErr) {
           if (devBypassEnabled) {
-            console.warn("[context] DB lookup failed, using dev fallback user");
+            logger.warn("[context] DB lookup failed, using dev fallback user");
           }
         }
 

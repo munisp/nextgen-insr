@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Input Validation & Sanitization — InsurePortal Agency Banking Platform
+ * Input Validation & Sanitization — InsurePortal Insurance Platform
  *
  * Centralized Zod schemas and sanitization for all tRPC inputs.
  * Prevents:
@@ -63,7 +63,7 @@ export const SafePhone = z
   .transform(sanitizePhoneNumber);
 export const SafeAgentCode = z
   .string()
-  .regex(/^[A-Z0-9]{3,10}$/, "Invalid agent code format");
+  .regex(/^[A-Z0-9]{3,10}$/, "Invalid agent ID format");
 export const SafePin = z.string().regex(/^\d{4,6}$/, "PIN must be 4-6 digits");
 export const SafeTransactionRef = z
   .string()
@@ -102,7 +102,7 @@ export const TransactionInputSchema = z.object({
 // ── Agent Input Schema ──────────────────────────────────────────────────
 
 export const AgentRegistrationSchema = z.object({
-  agentCode: SafeAgentCode,
+  agentId: SafeAgentCode,
   name: SafeString,
   phone: SafePhone,
   email: SafeEmail.optional(),

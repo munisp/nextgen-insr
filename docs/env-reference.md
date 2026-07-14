@@ -1,4 +1,4 @@
-# InsurePortal InsurePortal Platform — Environment Variables Reference
+# InsurePortal POS Shell — Environment Variables Reference
 
 Copy and rename this file to `.env` for your environment. Never commit `.env` to version control.
 
@@ -14,7 +14,7 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 
 | Variable       | Default                                                     | Description                  |
 | -------------- | ----------------------------------------------------------- | ---------------------------- |
-| `POSTGRES_URL` | `postgresql://posshell:changeme@localhost:5432/posshell_db` | PostgreSQL connection string |
+| `POSTGRES_URL` | `postgresql://insureportal:changeme@localhost:5432/insureportal_db` | PostgreSQL connection string |
 
 ## Redis
 
@@ -36,7 +36,7 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 | -------------------- | ---------------------- | ------------------- |
 | `KEYCLOAK_URL`       | `http://keycloak:8080` | Keycloak server URL |
 | `KEYCLOAK_REALM`     | `insureportal`               | Realm name          |
-| `KEYCLOAK_CLIENT_ID` | `platform-shell`            | Client ID           |
+| `KEYCLOAK_CLIENT_ID` | `insurance-portal`            | Client ID           |
 
 ## MinIO / S3 Object Storage
 
@@ -45,15 +45,15 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 | `MINIO_ENDPOINT`   | `http://minio:9000` | MinIO endpoint |
 | `MINIO_ACCESS_KEY` | `minioadmin`        | Access key     |
 | `MINIO_SECRET_KEY` | `minioadmin123`     | Secret key     |
-| `MINIO_BUCKET`     | `insureportal-platform-shell`  | Default bucket |
+| `MINIO_BUCKET`     | `insureportal-insurance-portal`  | Default bucket |
 
 ## Kafka / Redpanda
 
 | Variable          | Default               | Description    |
 | ----------------- | --------------------- | -------------- |
 | `KAFKA_BROKERS`   | `redpanda:9092`       | Broker list    |
-| `KAFKA_CLIENT_ID` | `platform-shell-server`    | Client ID      |
-| `KAFKA_GROUP_ID`  | `platform-shell-consumers` | Consumer group |
+| `KAFKA_CLIENT_ID` | `insurance-portal-server`    | Client ID      |
+| `KAFKA_GROUP_ID`  | `insurance-portal-consumers` | Consumer group |
 
 ## HashiCorp Vault
 
@@ -61,15 +61,15 @@ Copy and rename this file to `.env` for your environment. Never commit `.env` to
 | ------------------- | ----------------------- | -------------------- |
 | `VAULT_ADDR`        | `http://vault:8200`     | Vault server address |
 | `VAULT_TOKEN`       | _(must set)_            | Root/service token   |
-| `VAULT_SECRET_PATH` | `secret/data/platform-shell` | Secret mount path    |
+| `VAULT_SECRET_PATH` | `secret/data/insurance-portal` | Secret mount path    |
 
 ## Temporal Workflow Engine
 
 | Variable              | Default           | Description             |
 | --------------------- | ----------------- | ----------------------- |
 | `TEMPORAL_ADDRESS`    | `localhost:7233`  | Temporal server address |
-| `TEMPORAL_NAMESPACE`  | `platform-shell`       | Namespace               |
-| `TEMPORAL_TASK_QUEUE` | `platform-shell-tasks` | Task queue name         |
+| `TEMPORAL_NAMESPACE`  | `insurance-portal`       | Namespace               |
+| `TEMPORAL_TASK_QUEUE` | `insurance-portal-tasks` | Task queue name         |
 
 ## Email (SMTP)
 

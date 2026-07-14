@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Prometheus Scrape Configuration — InsurePortal InsurePortal Platform
+# Prometheus Scrape Configuration — InsurePortal POS Shell
 # ─────────────────────────────────────────────────────────────────────────────
 # Add this job to your existing prometheus.yml under the `scrape_configs:` key.
 #
@@ -22,24 +22,24 @@
 
 scrape_configs:
 
-  # ── InsurePortal Platform application metrics ──────────────────────────────────────────
-  - job_name: "platform-shell"
+  # ── POS Shell application metrics ──────────────────────────────────────────
+  - job_name: "insurance-portal"
     scrape_interval: 15s
     scrape_timeout: 10s
     metrics_path: /api/metrics
     scheme: https                  # Use http for local dev
     static_configs:
       - targets:
-          - "platform-shell.insureportal.internal:443"   # Replace with your actual host
+          - "insurance-portal.insureportal.internal:443"   # Replace with your actual host
         labels:
           environment: "production"
-          service: "platform-shell"
+          service: "insurance-portal"
           region: "ng-west-1"
 
   # ── Local development override ──────────────────────────────────────────────
   # Uncomment for local dev / staging:
   #
-  # - job_name: "platform-shell-dev"
+  # - job_name: "insurance-portal-dev"
   #   scrape_interval: 15s
   #   metrics_path: /api/metrics
   #   scheme: http
@@ -48,7 +48,7 @@ scrape_configs:
   #         - "localhost:3000"
   #       labels:
   #         environment: "development"
-  #         service: "platform-shell"
+  #         service: "insurance-portal"
 
   # ── Kubernetes pod discovery (if deployed on K8s) ──────────────────────────
   # Uncomment if using Kubernetes and annotate pods with:
@@ -56,11 +56,11 @@ scrape_configs:
   #   prometheus.io/path: "/api/metrics"
   #   prometheus.io/port: "3000"
   #
-  # - job_name: "platform-shell-k8s"
+  # - job_name: "insurance-portal-k8s"
   #   kubernetes_sd_configs:
   #     - role: pod
   #       namespaces:
-  #         names: ["platform-shell"]
+  #         names: ["insurance-portal"]
   #   relabel_configs:
   #     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
   #       action: keep

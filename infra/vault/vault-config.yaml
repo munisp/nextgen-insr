@@ -1,0 +1,112 @@
+# HashiCorp Vault Configuration for InsurePortal
+# Manages: JWT_SECRET, DATABASE_URL, KAFKA_BROKERS, REDIS_URL, API keys
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-agent-config
+  namespace: insureportal
+data:
+  vault-agent-config.hcl: |
+    exit_after_auth = false
+
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "insureportal-app"
+        }
+      }
+      sink "file" {
+        config = {
+          path = "/vault/token"
+        }
+      }
+    }
+
+    template {
+      source      = "/vault/templates/env.ctmpl"
+      destination = "/vault/secrets/env"
+    }
+
+  env.ctmpl: |
+    {{ with secret "secret/data/insureportal/production" }}
+    DATABASE_URL={{ .Data.data.database_url }}
+    JWT_SECRET={{ .Data.data.jwt_secret }}
+    KAFKA_BROKERS={{ .Data.data.kafka_brokers }}
+    REDIS_URL={{ .Data.data.redis_url }}
+    BACKUP_ENCRYPTION_KEY={{ .Data.data.backup_encryption_key }}
+    SLACK_WEBHOOK_URL={{ .Data.data.slack_webhook_url }}
+    SMTP_PASSWORD={{ .Data.data.smtp_password }}
+    PAYSTACK_SECRET_KEY={{ .Data.data.paystack_secret_key }}
+    FLUTTERWAVE_SECRET_KEY={{ .Data.data.flutterwave_secret_key }}
+    {{ end }}
+
+---
+# Vault secret policy for InsurePortal
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-policy
+  namespace: insureportal
+data:
+  insureportal-policy.hcl: |
+    # Read access to InsurePortal secrets
+    path "secret/data/insureportal/*" {
+      capabilities = ["read"]
+    }
+
+    # No write access from application pods
+    path "secret/data/insureportal/*" {
+      capabilities = ["deny"]
+      required_parameters = ["data"]
+    }
+
+    # Allow token renewal
+    path "auth/token/renew-self" {
+      capabilities = ["update"]
+    }
+
+---
+# Vault setup commands (run once)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-setup-script
+  namespace: insureportal
+data:
+  setup.sh: |
+    #!/bin/bash
+    # Run these commands against your Vault server to configure InsurePortal secrets
+
+    # Enable KV secrets engine
+    vault secrets enable -path=secret kv-v2
+
+    # Write InsurePortal production secrets
+    vault kv put secret/insureportal/production \
+      database_url="$DATABASE_URL" \
+      jwt_secret="$JWT_SECRET" \
+      kafka_brokers="$KAFKA_BROKERS" \
+      redis_url="$REDIS_URL" \
+      backup_encryption_key="$BACKUP_ENCRYPTION_KEY" \
+      slack_webhook_url="$SLACK_WEBHOOK_URL" \
+      smtp_password="$SMTP_PASSWORD" \
+      paystack_secret_key="$PAYSTACK_SECRET_KEY" \
+      flutterwave_secret_key="$FLUTTERWAVE_SECRET_KEY"
+
+    # Create InsurePortal policy
+    vault policy write insureportal-app /vault/config/insureportal-policy.hcl
+
+    # Enable Kubernetes auth
+    vault auth enable kubernetes
+    vault write auth/kubernetes/config \
+      kubernetes_host="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT"
+
+    # Create role for InsurePortal pods
+    vault write auth/kubernetes/role/insureportal-app \
+      bound_service_account_names=insureportal-sa \
+      bound_service_account_namespaces=insureportal \
+      policies=insureportal-app \
+      ttl=1h
+
+    echo "Vault configured for InsurePortal"

@@ -194,9 +194,9 @@ describe("Redis cache — commission rate caching pattern", () => {
     cache.set(CACHE_KEY, JSON.stringify(mockRules), TTL_SECONDS);
     const raw = cache.get(CACHE_KEY);
     const rules: typeof mockRules = JSON.parse(raw!);
-    const cashInRule = rules.find(r => r.txType === "cash_in");
-    expect(cashInRule).toBeDefined();
-    expect(parseFloat(cashInRule!.rate)).toBeCloseTo(0.005);
+    const premiumCollectionRule = rules.find(r => r.txType === "cash_in");
+    expect(premiumCollectionRule).toBeDefined();
+    expect(parseFloat(premiumCollectionRule!.rate)).toBeCloseTo(0.005);
   });
 
   it("cache invalidation removes the key", () => {

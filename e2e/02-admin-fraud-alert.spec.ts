@@ -11,8 +11,8 @@ test.describe("Admin Panel Fraud Alert Flow", () => {
     await expect(page.locator("text=InsurePortal POS")).toBeVisible({
       timeout: 10_000,
     });
-    const agentCodeInput = page.locator('input[placeholder*="AGT"]');
-    await agentCodeInput.fill("AGT001");
+    const agentIdInput = page.locator('input[placeholder*="AGT"]');
+    await agentIdInput.fill("AGT001");
     await page.locator("button", { hasText: "Continue" }).click();
     for (const digit of ["1", "2", "3", "4"]) {
       await page.locator(`button[data-digit="${digit}"]`).first().click();

@@ -16,7 +16,7 @@ export function useKeyboardShortcuts() {
   const shortcuts: Shortcut[] = [
     {
       keys: "g h",
-      description: "Go to Home / Service Node",
+      description: "Go to Home / Insurance Service",
       action: () => navigate("/"),
       category: "Navigation",
     },

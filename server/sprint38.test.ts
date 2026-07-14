@@ -19,7 +19,7 @@ const sprint38Routers = [
   },
   { name: "customerWalletSystem", file: "./routers/customerWalletSystem" },
   { name: "merchantAnalyticsDash", file: "./routers/merchantAnalyticsDash" },
-  { name: "firmwareOTA", file: "./routers/firmwareOTA" },
+  { name: "posServiceUpdate", file: "./routers/posServiceUpdate" },
   {
     name: "transactionReceiptGenerator",
     file: "./routers/transactionReceiptGenerator",

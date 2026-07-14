@@ -1,11 +1,12 @@
-// TypeScript enabled — Sprint 96 security audit
+// @ts-check
 /**
- * Deep Health Check & Circuit Breaker — InsurePortal Agency Banking Platform
+ * Deep Health Check & Circuit Breaker — InsurePortal Insurance Platform
  *
  * F13: Health check with deep dependency checks (DB, Redis, TB sidecar)
  * F14: Circuit breaker pattern for external services
  * F15: Environment config validation on startup
  */
+import { logger } from "../_core/logger";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // F13: Deep Health Check
@@ -28,42 +29,44 @@ export interface DependencyCheck {
 
 const startTime = Date.now();
 
-export async function checkDatabase(dbPool: any): Promise<DependencyCheck> {
+export async function checkDatabase(dbPool: { query: (sql: string) => Promise<{ rows: unknown[] }> }): Promise<DependencyCheck> {
   const start = Date.now();
   try {
     if (dbPool?.query) {
       await dbPool.query("SELECT 1");
     }
     return { name: "postgresql", status: "up", latencyMs: Date.now() - start };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       name: "postgresql",
       status: "down",
       latencyMs: Date.now() - start,
-      message: err.message,
+      message,
     };
   }
 }
 
-export async function checkRedis(redisClient: any): Promise<DependencyCheck> {
+export async function checkRedis(redisClient: { ping: () => Promise<string> }): Promise<DependencyCheck> {
   const start = Date.now();
   try {
     if (redisClient?.ping) {
       await redisClient.ping();
     }
     return { name: "redis", status: "up", latencyMs: Date.now() - start };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       name: "redis",
       status: "down",
       latencyMs: Date.now() - start,
-      message: err.message,
+      message,
     };
   }
 }
 
 export async function checkTigerBeetle(
-  tbClient: any
+  tbClient: { lookupAccounts: (ids: unknown[]) => Promise<unknown[]> }
 ): Promise<DependencyCheck> {
   const start = Date.now();
   try {
@@ -71,20 +74,21 @@ export async function checkTigerBeetle(
       await tbClient.lookupAccounts([]);
     }
     return { name: "tigerbeetle", status: "up", latencyMs: Date.now() - start };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       name: "tigerbeetle",
       status: "down",
       latencyMs: Date.now() - start,
-      message: err.message,
+      message,
     };
   }
 }
 
 export async function getHealthStatus(deps: {
-  db?: any;
-  redis?: any;
-  tb?: any;
+  db?: { query: (sql: string) => Promise<{ rows: unknown[] }> };
+  redis?: { ping: () => Promise<string> };
+  tb?: { lookupAccounts: (ids: unknown[]) => Promise<unknown[]> };
 }): Promise<HealthStatus> {
   const checks: DependencyCheck[] = [];
 
@@ -137,13 +141,44 @@ export interface CircuitBreakerState {
   lastSuccessAt: number;
   openedAt: number;
   halfOpenAttempts: number;
+  recoveryAttempts: number;
+  lastRecoveryTimeout: number;
 }
+
+export interface CircuitBreakerConfig {
+  failureThreshold: number;
+  resetTimeoutMs: number;
+  halfOpenMaxAttempts: number;
+  monitorWindowMs: number;
+  // Innovation: Adaptive recovery
+  adaptiveRecovery?: boolean;
+  maxRecoveryTimeoutMs?: number;
+  recoveryBackoffFactor?: number;
+  // Innovation: Predictive recovery
+  predictiveRecovery?: boolean;
+  minHalfOpenSuccesses?: number;
+  // Innovation: Graceful degradation
+  degradationStrategy?: "fallback" | "cache" | "queue" | "none";
+}
+
+export const DEFAULT_INNOVATIVE_CB_CONFIG: CircuitBreakerConfig = {
+  failureThreshold: 5,
+  resetTimeoutMs: 30_000,
+  halfOpenMaxAttempts: 3,
+  monitorWindowMs: 60_000,
+  adaptiveRecovery: true,
+  maxRecoveryTimeoutMs: 300_000, // 5 minutes max
+  recoveryBackoffFactor: 1.5,
+  predictiveRecovery: true,
+  minHalfOpenSuccesses: 2,
+  degradationStrategy: "none",
+};
 
 export function createCircuitBreaker(
   name: string,
   config: Partial<CircuitBreakerConfig> = {}
 ) {
-  const cfg = { ...DEFAULT_CB_CONFIG, ...config };
+  const cfg = { ...DEFAULT_INNOVATIVE_CB_CONFIG, ...config };
   let cbState: CircuitBreakerState = {
     state: "closed",
     failures: 0,
@@ -152,17 +187,58 @@ export function createCircuitBreaker(
     lastSuccessAt: 0,
     openedAt: 0,
     halfOpenAttempts: 0,
+    recoveryAttempts: 0,
+    lastRecoveryTimeout: cfg.resetTimeoutMs,
   };
+
+  // Innovation: Adaptive recovery timeout calculation
+  function calculateRecoveryTimeout(): number {
+    if (!cfg.adaptiveRecovery) return cfg.resetTimeoutMs;
+
+    cbState.recoveryAttempts++;
+    const exponentialTimeout =
+      cfg.resetTimeoutMs *
+      Math.pow(cfg.recoveryBackoffFactor || 1.5, cbState.recoveryAttempts - 1);
+    return Math.min(exponentialTimeout, cfg.maxRecoveryTimeoutMs || 300_000);
+  }
+
+  // Innovation: Predictive recovery based on historical patterns
+  function shouldAttemptRecovery(): boolean {
+    if (!cfg.predictiveRecovery) return true;
+
+    const timeSinceFailure = Date.now() - cbState.lastFailureAt;
+    const timeSinceLastRecovery = Date.now() - cbState.lastSuccessAt;
+
+    // If we have recent successes, be more aggressive
+    if (timeSinceLastRecovery < 60_000 && cbState.successes >= 3) {
+      return true;
+    }
+
+    // If failures are clustered in time, wait longer
+    const failureRate = cbState.failures / Math.max(1, timeSinceFailure / 60_000);
+    return failureRate < 0.5; // Only attempt if failure rate < 50% per minute
+  }
 
   function getState(): CircuitBreakerState {
     // Auto-transition from open to half_open after timeout
     if (
       cbState.state === "open" &&
-      Date.now() - cbState.openedAt >= cfg.resetTimeoutMs
+      Date.now() - cbState.openedAt >= cbState.lastRecoveryTimeout
     ) {
-      cbState.state = "half_open";
-      cbState.halfOpenAttempts = 0;
-      console.log(`[CircuitBreaker:${name}] Transitioning to half_open`);
+      // Innovation: Predictive recovery check
+      if (shouldAttemptRecovery()) {
+        cbState.state = "half_open";
+        cbState.halfOpenAttempts = 0;
+        logger.info(
+          {
+            service: name,
+            state: "half_open",
+            recoveryTimeout: cbState.lastRecoveryTimeout,
+            recoveryAttempts: cbState.recoveryAttempts,
+          },
+          `[CircuitBreaker:${name}] Transitioning to half_open (adaptive timeout: ${cbState.lastRecoveryTimeout}ms)`
+        );
+      }
     }
     return { ...cbState };
   }
@@ -171,6 +247,15 @@ export function createCircuitBreaker(
     const current = getState();
 
     if (current.state === "open") {
+      // Innovation: Graceful degradation fallback
+      if (cfg.degradationStrategy === "fallback" && current.lastSuccessAt > 0) {
+        logger.info(
+          { service: name },
+          `[CircuitBreaker:${name}] Returning cached/stale data (degradation)`
+        );
+        // Return fallback - caller should handle
+        throw new Error(`Service unavailable, using fallback`);
+      }
       throw new Error(
         `Circuit breaker [${name}] is OPEN. Service unavailable.`
       );
@@ -201,10 +286,28 @@ export function createCircuitBreaker(
   function onSuccess() {
     cbState.successes++;
     cbState.lastSuccessAt = Date.now();
+
     if (cbState.state === "half_open") {
-      cbState.state = "closed";
-      cbState.failures = 0;
-      console.log(`[CircuitBreaker:${name}] Closed (recovered)`);
+      // Innovation: Check if we have enough successes for recovery
+      if (
+        cbState.successes >= (cfg.minHalfOpenSuccesses || 2)
+      ) {
+        cbState.state = "closed";
+        cbState.failures = 0;
+        cbState.recoveryAttempts = 0;
+        cbState.lastRecoveryTimeout = cfg.resetTimeoutMs;
+        logger.info(
+          {
+            service: name,
+            state: "closed",
+            successesRequired: cfg.minHalfOpenSuccesses,
+          },
+          `[CircuitBreaker:${name}] Closed (recovered after ${cbState.successes} successes)`
+        );
+      }
+    } else {
+      // Reset failure count for gradual recovery
+      cbState.failures = Math.max(0, cbState.failures - 1);
     }
   }
 
@@ -219,8 +322,16 @@ export function createCircuitBreaker(
     ) {
       cbState.state = "open";
       cbState.openedAt = Date.now();
-      console.warn(
-        `[CircuitBreaker:${name}] OPENED after ${cbState.failures} failures`
+      cbState.lastRecoveryTimeout = calculateRecoveryTimeout();
+
+      logger.warn(
+        {
+          service: name,
+          failures: cbState.failures,
+          nextRecoveryTimeout: cbState.lastRecoveryTimeout,
+          recoveryAttempts: cbState.recoveryAttempts + 1,
+        },
+        `[CircuitBreaker:${name}] OPENED after ${cbState.failures} failures (next recovery in ${cbState.lastRecoveryTimeout}ms)`
       );
     }
   }
@@ -234,6 +345,8 @@ export function createCircuitBreaker(
       lastSuccessAt: 0,
       openedAt: 0,
       halfOpenAttempts: 0,
+      recoveryAttempts: 0,
+      lastRecoveryTimeout: cfg.resetTimeoutMs,
     };
   }
 
@@ -334,28 +447,26 @@ export function logEnvironmentValidation(): void {
   const result = validateEnvironment();
 
   if (result.errors.length > 0) {
-    console.error(
-      "╔══════════════════════════════════════════════════════════╗"
-    );
-    console.error(
-      "║  ENVIRONMENT CONFIGURATION ERRORS                       ║"
-    );
-    console.error(
-      "╚══════════════════════════════════════════════════════════╝"
+    logger.error(
+      { errors: result.errors },
+      `Environment configuration has ${result.errors.length} error(s)`
     );
     for (const err of result.errors) {
-      console.error(`  ❌ ${err}`);
+      logger.error({ error: err }, `  ❌ ${err}`);
     }
   }
 
   if (result.warnings.length > 0) {
-    console.warn("  ⚠️  Environment warnings:");
+    logger.warn(
+      { warnings: result.warnings },
+      `Environment configuration has ${result.warnings.length} warning(s)`
+    );
     for (const warn of result.warnings) {
-      console.warn(`     ${warn}`);
+      logger.warn({ warning: warn }, `     ${warn}`);
     }
   }
 
   if (result.valid && result.warnings.length === 0) {
-    console.log("  ✅ Environment configuration validated successfully");
+    logger.info("Environment configuration validated successfully");
   }
 }

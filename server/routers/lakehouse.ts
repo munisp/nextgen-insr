@@ -16,6 +16,38 @@
  *                ──► PostgreSQL (spatial fallback via haversine)
  */
 
+// =============================================================================
+// NAVIGATION GUIDE — Lakehouse Router (928 lines, 14 procedures)
+// =============================================================================
+// Data Lakehouse: snapshot management, spatial analytics, DataFusion proxy,
+// Gold-layer metrics. Architecture: Node.js tRPC → MinIO S3 → Python service.
+//
+// ── Snapshot Management ──────────────────────────────────────────────────────
+//  93. triggerTransactionSnapshot  — Snapshot transaction data
+// 141. triggerFraudSnapshot        — Snapshot fraud events
+// 183. listSnapshots               — List all snapshots
+// 222. getDownloadUrl              — Presigned download URL
+// 268. snapshotStats               — Snapshot stats (count/size)
+//
+// ── Spatial Analytics ────────────────────────────────────────────────────────
+// 298. agentDensityGrid            — Agent density heatmap grid
+// 385. transactionHeatmap          — Transaction volume heatmap
+// 492. nearestAgents               — Radius search for nearest agents
+//
+// ── DataFusion Proxy ─────────────────────────────────────────────────────────
+// 582. lakehouseQuery              — Ad-hoc query via Python DataFusion
+// 613. goldDailyAgentSummary       — Daily agent summary from Gold tables
+// 726. goldHourlyMetrics           — Hourly transaction metrics
+//
+// ── ETL Pipeline ─────────────────────────────────────────────────────────────
+// 806. triggerEtl                  — Trigger ETL pipeline
+// 879. pipelineStatus              — ETL pipeline status
+//
+// ── Architecture ─────────────────────────────────────────────────────────────
+// Node.js tRPC ──► MinIO S3 (snapshot storage)
+//                ──► Python lakehouse-service :8156 (DataFusion/Iceberg)
+//                ──► PostgreSQL (spatial fallback via haversine)
+// ─────────────────────────────────────────────────────────────────────────────
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
@@ -517,7 +549,7 @@ export const lakehouseRouter = router({
             agents: Array<{
               id: number;
               name: string;
-              agentCode: string;
+              agentId: string;
               distanceMetres: number;
               tier: string;
             }>;
@@ -535,9 +567,9 @@ export const lakehouseRouter = router({
           .select({
             id: agents.id,
             name: agents.name,
-            agentCode: agents.agentCode,
+            agentId: agents.agentId,
             tier: agents.tier,
-            floatBalance: agents.floatBalance,
+            premiumReserve: agents.premiumReserve,
             lat: deviceLocations.latitude,
             lon: deviceLocations.longitude,
           })
@@ -551,9 +583,9 @@ export const lakehouseRouter = router({
           .map((a: any) => ({
             id: a.id,
             name: a.name,
-            agentCode: a.agentCode,
+            agentId: a.agentId,
             tier: a.tier,
-            floatBalance: a.floatBalance,
+            premiumReserve: a.premiumReserve,
             distanceMetres: Math.round(
               haversineMetres(
                 input.latitude,
@@ -638,7 +670,7 @@ export const lakehouseRouter = router({
             rows: Array<{
               summaryDate: string;
               agentId: number;
-              agentCode: string;
+              agentId: string;
               agentTier: string;
               txCount: number;
               txVolume: number;
@@ -669,7 +701,7 @@ export const lakehouseRouter = router({
         const rows = await db
           .select({
             agentId: transactions.agentId,
-            agentCode: agents.agentCode,
+            agentId: agents.agentId,
             agentTier: agents.tier,
             txCount: sql<number>`count(*)::int`,
             txVolume: sql<number>`sum(${transactions.amount})::float`,
@@ -690,7 +722,7 @@ export const lakehouseRouter = router({
                 : [])
             )
           )
-          .groupBy(transactions.agentId, agents.agentCode, agents.tier)
+          .groupBy(transactions.agentId, agents.agentId, agents.tier)
           .orderBy(desc(sql`sum(${transactions.amount})`))
           .limit(input.limit);
 
@@ -698,7 +730,7 @@ export const lakehouseRouter = router({
           rows: rows.map((r: any) => ({
             summaryDate: date,
             agentId: r.agentId ?? 0,
-            agentCode: r.agentCode,
+            agentId: r.agentId,
             agentTier: r.agentTier ?? "bronze",
             txCount: r.txCount ?? 0,
             txVolume: r.txVolume ?? 0,

@@ -1,4 +1,4 @@
-# InsurePortal InsurePortal Platform — k6 Load Tests
+# InsurePortal POS Shell — k6 Load Tests
 
 This directory contains [k6](https://k6.io) load test scenarios for the three highest-traffic paths in the InsurePortal Platform.
 
@@ -26,8 +26,8 @@ docker pull grafana/k6
 
 | File                        | Path Under Test                                  | Default VUs | Duration |
 | --------------------------- | ------------------------------------------------ | ----------- | -------- |
-| `transaction-throughput.js` | `transactions.create` (cash-in/out/transfer)     | 50 peak     | ~3.5 min |
-| `float-topup.js`            | `floatTopUp.request` + `floatTopUp.listRequests` | 40 peak     | ~1.7 min |
+| `transaction-throughput.js` | `transactions.create` (premium collection/out/transfer)     | 50 peak     | ~3.5 min |
+| `float-topup.js`            | `premiumTopUp.request` + `premiumTopUp.listRequests` | 40 peak     | ~1.7 min |
 | `dispute-creation.js`       | `disputes.raise` + `disputes.addMessage`         | 30 peak     | ~1.7 min |
 
 ## Running Tests

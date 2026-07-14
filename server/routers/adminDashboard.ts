@@ -1,6 +1,6 @@
-// @ts-nocheck
+// @ts-check
 /**
- * Admin Dashboard Router — InsurePortal InsurePortal Platform (Sprint 89)
+ * Admin Dashboard Router — InsurePortal POS Shell (Sprint 89)
  *
  * Role-gated admin procedures for user management, system statistics,
  * audit log viewing, and platform health monitoring.

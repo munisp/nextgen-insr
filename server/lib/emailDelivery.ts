@@ -43,7 +43,7 @@ export function weeklyReportTemplate(data: {
   totalCommission: number;
   fraudAlerts: number;
   topTransactionType: string;
-  floatBalance: number;
+  premiumReserve: number;
 }): string {
   return `
 <!DOCTYPE html>
@@ -64,7 +64,7 @@ export function weeklyReportTemplate(data: {
         <tr><td style="padding:12px;border-bottom:1px solid #eee;color:#666;">Commission Earned</td><td style="padding:12px;border-bottom:1px solid #eee;font-weight:bold;text-align:right;color:#16a34a;">₦${data.totalCommission.toLocaleString()}</td></tr>
         <tr><td style="padding:12px;border-bottom:1px solid #eee;color:#666;">Fraud Alerts</td><td style="padding:12px;border-bottom:1px solid #eee;font-weight:bold;text-align:right;color:${data.fraudAlerts > 0 ? "#dc2626" : "#16a34a"};">${data.fraudAlerts}</td></tr>
         <tr><td style="padding:12px;border-bottom:1px solid #eee;color:#666;">Top Transaction Type</td><td style="padding:12px;border-bottom:1px solid #eee;font-weight:bold;text-align:right;">${data.topTransactionType}</td></tr>
-        <tr><td style="padding:12px;color:#666;">Current Float Balance</td><td style="padding:12px;font-weight:bold;text-align:right;">₦${data.floatBalance.toLocaleString()}</td></tr>
+        <tr><td style="padding:12px;color:#666;">Current Float Balance</td><td style="padding:12px;font-weight:bold;text-align:right;">₦${data.premiumReserve.toLocaleString()}</td></tr>
       </table>
       <p style="color:#666;font-size:14px;">Keep up the great work! Log in to your dashboard for detailed analytics.</p>
     </div>
@@ -83,7 +83,7 @@ export function transactionReceiptTemplate(data: {
   amount: number;
   fee: number;
   customerName: string;
-  agentCode: string;
+  agentId: string;
   timestamp: string;
   status: string;
 }): string {
@@ -103,7 +103,7 @@ export function transactionReceiptTemplate(data: {
         <tr><td style="padding:8px 0;color:#666;">Amount</td><td style="padding:8px 0;font-weight:bold;text-align:right;">₦${data.amount.toLocaleString()}</td></tr>
         <tr><td style="padding:8px 0;color:#666;">Fee</td><td style="padding:8px 0;text-align:right;">₦${data.fee.toLocaleString()}</td></tr>
         <tr><td style="padding:8px 0;color:#666;">Customer</td><td style="padding:8px 0;text-align:right;">${data.customerName}</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Agent</td><td style="padding:8px 0;text-align:right;">${data.agentCode}</td></tr>
+        <tr><td style="padding:8px 0;color:#666;">Agent</td><td style="padding:8px 0;text-align:right;">${data.agentId}</td></tr>
         <tr><td style="padding:8px 0;color:#666;">Date</td><td style="padding:8px 0;text-align:right;">${data.timestamp}</td></tr>
         <tr><td style="padding:8px 0;color:#666;">Status</td><td style="padding:8px 0;font-weight:bold;text-align:right;color:#16a34a;">${data.status}</td></tr>
       </table>

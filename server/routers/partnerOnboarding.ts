@@ -93,7 +93,7 @@ export const partnerOnboardingRouter = router({
       return results;
     }),
 
-  addRegion: protectedProcedure
+  addInsuranceRegion: protectedProcedure
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
@@ -121,7 +121,7 @@ export const partnerOnboardingRouter = router({
     return { data: [], total: 0 };
   }),
 
-  listRegions: protectedProcedure.query(async () => {
+  listInsuranceRegions: protectedProcedure.query(async () => {
     return { data: [], total: 0 };
   }),
 
@@ -153,8 +153,8 @@ export const partnerOnboardingRouter = router({
   getProgress: protectedProcedure
     .input(z.object({ tenantId: z.string().optional() }).default({}))
     .query(async () => ({ step: 1, totalSteps: 5, complete: false })),
-  removeRegion: protectedProcedure
-    .input(z.object({ regionId: z.string() }))
+  removeInsuranceRegion: protectedProcedure
+    .input(z.object({ insurance_regionId: z.string() }))
     .mutation(async () => ({ success: true })),
   removeFee: protectedProcedure
     .input(z.object({ feeId: z.string() }))

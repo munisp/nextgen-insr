@@ -91,7 +91,7 @@ describe("Email Service", () => {
       const { buildWelcomeEmail } = await import("./lib/emailService");
       const msg = buildWelcomeEmail({
         agentName: "Adebayo",
-        agentCode: "AG-001",
+        agentId: "AG-001",
       });
       expect(msg.subject).toContain("Welcome");
       expect(msg.html).toContain("AG-001");
@@ -185,7 +185,7 @@ describe("Email Helper Functions", () => {
   it("should extract email from formatted string", async () => {
     // Test internal helper via template output
     const { buildWelcomeEmail } = await import("./lib/emailService");
-    const msg = buildWelcomeEmail({ agentName: "Test", agentCode: "AG-001" });
+    const msg = buildWelcomeEmail({ agentName: "Test", agentId: "AG-001" });
     expect(msg.html).toContain("InsurePortal POS");
     expect(msg.html).toContain("DOCTYPE html");
   });

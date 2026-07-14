@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+import { VitePWA } from "vite-plugin-pwa";
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -156,6 +157,201 @@ const plugins = [
   jsxLocPlugin(),
   vitePluginManusRuntime(),
   vitePluginManusDebugCollector(),
+  // ── PWA Configuration ──────────────────────────────────────────────────────
+  VitePWA({
+    registerType: "autoUpdate",
+    includeAssets: [
+      "favicon.ico",
+      "apple-touch-icon.png",
+      "masked-icon.svg",
+      "screenshot-wide.png",
+      "screenshot-narrow.png",
+    ],
+    workbox: {
+      globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+      runtimeCaching: [
+        {
+          urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
+          handler: "CacheFirst",
+          options: {
+            cacheName: "google-fonts-cache",
+            expiration: {
+              maxEntries: 4,
+              maxAgeSeconds: 365 * 24 * 60 * 60, // 365 days
+            },
+            cacheableResponse: {
+              statuses: [0, 200],
+            },
+          },
+        },
+        {
+          urlPattern: ({ request }) => request.destination === "image",
+          handler: "CacheFirst",
+          options: {
+            cacheName: "image-cache",
+            expiration: {
+              maxEntries: 50,
+              maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+            },
+          },
+        },
+        {
+          urlPattern: /^\/api\/trpc\//i,
+          handler: "NetworkFirst",
+          options: {
+            cacheName: "trpc-api-cache",
+            networkTimeoutSeconds: 10,
+            expiration: {
+              maxEntries: 50,
+              maxAgeSeconds: 5 * 60, // 5 minutes
+            },
+            cacheableResponse: {
+              statuses: [0, 200],
+            },
+          },
+        },
+        {
+          urlPattern: ({ request }) => request.destination === "script",
+          handler: "StaleWhileRevalidate",
+          options: {
+            cacheName: "scripts-cache",
+            expiration: {
+              maxEntries: 30,
+              maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days
+            },
+          },
+        },
+        {
+          urlPattern: ({ request }) => request.destination === "style",
+          handler: "StaleWhileRevalidate",
+          options: {
+            cacheName: "styles-cache",
+            expiration: {
+              maxEntries: 20,
+              maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days
+            },
+          },
+        },
+      ],
+    },
+    devOptions: {
+      enabled: true,
+      type: "module",
+    },
+    manifest: {
+      name: "InsurePortal — Insurance Insurance Platform",
+      short_name: "InsurePortal",
+      description:
+        "Comprehensive Insurance Management Platform for the Nigerian Market",
+      theme_color: "#3b82f6",
+      background_color: "#0a0a0a",
+      display: "standalone",
+      orientation: "portrait",
+      scope: "/",
+      start_url: "/",
+      categories: ["insurance", "finance", "productivity", "business"],
+      icons: [
+        {
+          src: "/icon-192.png",
+          sizes: "192x192",
+          type: "image/png",
+          purpose: "any maskable",
+        },
+        {
+          src: "/icon-512.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "any maskable",
+        },
+        {
+          src: "/icon-192.png",
+          sizes: "192x192",
+          type: "image/png",
+          purpose: "any",
+        },
+        {
+          src: "/icon-512.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "any",
+        },
+      ],
+      shortcuts: [
+        {
+          name: "New Policy",
+          short_name: "Policy",
+          description: "Create a new insurance policy",
+          url: "/?action=new-policy",
+          icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+        },
+        {
+          name: "File Claim",
+          short_name: "Claim",
+          description: "Submit an insurance claim",
+          url: "/?action=file-claim",
+          icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+        },
+        {
+          name: "Renewals",
+          short_name: "Renew",
+          description: "Manage policy renewals",
+          url: "/?action=renewals",
+          icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+        },
+        {
+          name: "Agent Portal",
+          short_name: "Agents",
+          description: "Access agent management",
+          url: "/agent-dashboard",
+          icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+        },
+        {
+          name: "Claims Status",
+          short_name: "Status",
+          description: "Check claim status",
+          url: "/claims",
+          icons: [{ src: "/icon-192.png", sizes: "192x192" }],
+        },
+      ],
+      share_target: {
+        action: "/share",
+        method: "POST",
+        enctype: "multipart/form-data",
+        params: {
+          title: "title",
+          text: "text",
+          url: "url",
+          files: [
+            {
+              name: "documents",
+              accept: ["application/pdf", "image/*"],
+            },
+          ],
+        },
+      },
+      launch_handler: {
+        client_mode: "navigate-existing",
+      },
+      screenshots: [
+        {
+          src: "/screenshot-wide.png",
+          sizes: "1280x720",
+          type: "image/png",
+          form_factor: "wide",
+          label: "InsurePortal Dashboard",
+        },
+        {
+          src: "/screenshot-narrow.png",
+          sizes: "390x844",
+          type: "image/png",
+          form_factor: "narrow",
+          label: "InsurePortal Mobile",
+        },
+      ],
+      related_applications: [],
+      prefer_related_applications: false,
+    },
+  }),
 ];
 
 export default defineConfig({

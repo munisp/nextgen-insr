@@ -49,10 +49,10 @@ describe("Keycloak config — default values (no env vars set)", () => {
     });
   });
 
-  it("defaults clientId to 'platform-shell'", () => {
+  it("defaults clientId to 'insurance-portal'", () => {
     withEnv({ KEYCLOAK_CLIENT_ID: undefined }, () => {
-      const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "platform-shell";
-      expect(clientId).toBe("platform-shell");
+      const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "insurance-portal";
+      expect(clientId).toBe("insurance-portal");
     });
   });
 
@@ -80,9 +80,9 @@ describe("Keycloak config — env var overrides", () => {
   });
 
   it("picks up custom clientId", () => {
-    withEnv({ KEYCLOAK_CLIENT_ID: "platform-shell-prod" }, () => {
-      const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "platform-shell";
-      expect(clientId).toBe("platform-shell-prod");
+    withEnv({ KEYCLOAK_CLIENT_ID: "insurance-portal-prod" }, () => {
+      const clientId = process.env.KEYCLOAK_CLIENT_ID ?? "insurance-portal";
+      expect(clientId).toBe("insurance-portal-prod");
     });
   });
 });
@@ -133,8 +133,8 @@ describe("Keycloak — buildAuthorizationUrl", () => {
     const base =
       "https://auth.insureportal.io/realms/insureportal/protocol/openid-connect/auth";
     const params = new URLSearchParams({
-      client_id: "platform-shell",
-      redirect_uri: "https://platform-shell.manus.space/api/auth/keycloak/callback",
+      client_id: "insurance-portal",
+      redirect_uri: "https://insurance-portal.manus.space/api/auth/keycloak/callback",
       response_type: "code",
       scope: "openid profile email",
       state: "random-state-value",
@@ -143,7 +143,7 @@ describe("Keycloak — buildAuthorizationUrl", () => {
     const url = `${base}?${params.toString()}`;
     const parsed = new URL(url);
 
-    expect(parsed.searchParams.get("client_id")).toBe("platform-shell");
+    expect(parsed.searchParams.get("client_id")).toBe("insurance-portal");
     expect(parsed.searchParams.get("response_type")).toBe("code");
     expect(parsed.searchParams.get("scope")).toContain("openid");
     expect(parsed.searchParams.get("state")).toBe("random-state-value");

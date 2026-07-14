@@ -2,7 +2,7 @@
 
 ## Overview
 
-Mutual TLS (mTLS) ensures that both the InsurePortal Platform server and each downstream microservice authenticate each other before any data is exchanged. This document describes the certificate authority (CA) hierarchy, certificate issuance workflow, and per-service configuration for all InsurePortal platform microservices.
+Mutual TLS (mTLS) ensures that both the POS Shell server and each downstream microservice authenticate each other before any data is exchanged. This document describes the certificate authority (CA) hierarchy, certificate issuance workflow, and per-service configuration for all InsurePortal platform microservices.
 
 ---
 
@@ -11,7 +11,7 @@ Mutual TLS (mTLS) ensures that both the InsurePortal Platform server and each do
 ```
 InsurePortal Root CA  (offline, HSM-protected)
 └── InsurePortal Intermediate CA  (online, rotated every 90 days)
-    ├── platform-shell.svc.insureportal.internal
+    ├── insurance-portal.svc.insureportal.internal
     ├── kyc-service.svc.insureportal.internal
     ├── fraud-service.svc.insureportal.internal
     ├── settlement-service.svc.insureportal.internal
@@ -28,22 +28,22 @@ All leaf certificates have a 30-day validity period and are automatically rotate
 ## Certificate Issuance (cert-manager)
 
 ```yaml
-# k8s/certs/platform-shell-cert.yaml
+# k8s/certs/insurance-portal-cert.yaml
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-shell-mtls
+  name: insurance-portal-mtls
   namespace: insureportal
 spec:
-  secretName: platform-shell-mtls-tls
+  secretName: insurance-portal-mtls-tls
   duration: 720h # 30 days
   renewBefore: 168h # Renew 7 days before expiry
   subject:
     organizations: ["InsurePortal"]
-  commonName: platform-shell.svc.insureportal.internal
+  commonName: insurance-portal.svc.insureportal.internal
   dnsNames:
-    - platform-shell.svc.insureportal.internal
-    - platform-shell.insureportal.svc.cluster.local
+    - insurance-portal.svc.insureportal.internal
+    - insurance-portal.insureportal.svc.cluster.local
   issuerRef:
     name: insureportal-intermediate-ca
     kind: ClusterIssuer
@@ -147,17 +147,17 @@ export async function callPlatformService(
 When running under Dapr, mTLS between services is handled automatically by the Dapr control plane (SPIFFE/SPIRE). The InsurePortal Platform server communicates with Dapr via its local sidecar on `http://localhost:3500`, and Dapr handles certificate rotation transparently.
 
 ```yaml
-# dapr/components/platform-shell-subscription.yaml
+# dapr/components/insurance-portal-subscription.yaml
 apiVersion: dapr.io/v1alpha1
 kind: Subscription
 metadata:
-  name: platform-shell-events
+  name: insurance-portal-events
 spec:
   pubsubname: kafka-pubsub
   topic: transaction.created
   route: /api/dapr/transaction-created
   scopes:
-    - platform-shell
+    - insurance-portal
 ```
 
 Dapr mTLS is enabled by default in production mode. Verify with:
@@ -192,7 +192,7 @@ process.on("SIGHUP", () => {
 ```bash
 # Verify InsurePortal Platform certificate
 openssl s_client \
-  -connect platform-shell.svc.insureportal.internal:8443 \
+  -connect insurance-portal.svc.insureportal.internal:8443 \
   -cert /etc/insureportal/certs/tls.crt \
   -key  /etc/insureportal/certs/tls.key \
   -CAfile /etc/insureportal/certs/ca.crt \

@@ -140,7 +140,7 @@ describe("buildConfirmationSms", () => {
     ref: "TXN-20260330-001",
     type: "Cash Out",
     amount: 5000,
-    agentCode: "AGT001",
+    agentId: "AGT001",
     agentName: "John Doe",
     customerName: "Jane Smith",
     timestamp: new Date("2026-03-30T10:00:00Z"),
@@ -161,7 +161,7 @@ describe("buildConfirmationSms", () => {
     expect(sms).toContain("5,000.00");
   });
 
-  it("includes agent code and name", () => {
+  it("includes agent ID and name", () => {
     const sms = buildConfirmationSms(baseData);
     expect(sms).toContain("AGT001");
     expect(sms).toContain("John Doe");
@@ -190,7 +190,7 @@ describe("buildReceiptSms", () => {
     type: "Transfer",
     amount: 10000,
     fee: 50,
-    agentCode: "AGT002",
+    agentId: "AGT002",
     agentName: "Mary Jane",
     customerName: "Bob Builder",
   };

@@ -1,5 +1,5 @@
 /**
- * Admin User Management — InsurePortal InsurePortal Platform (Sprint 89)
+ * Admin User Management — InsurePortal POS Shell (Sprint 89)
  * Dedicated user management page for admins with search, filter, role management.
  */
 import { useState, useMemo } from "react";

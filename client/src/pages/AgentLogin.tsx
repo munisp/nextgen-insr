@@ -16,7 +16,7 @@ const RED = "#ef4444";
 type Screen = "code" | "pin" | "forgot_phone" | "forgot_newpin";
 
 export default function AgentLogin() {
-  const [agentCode, setAgentCode] = useState("");
+  const [agentId, setAgentCode] = useState("");
   const [pin, setPin] = useState("");
   const [step, setStep] = useState<Screen>("code");
   const [loading, setLoading] = useState(false);
@@ -45,8 +45,8 @@ export default function AgentLogin() {
   });
 
   const handleCodeSubmit = () => {
-    if (agentCode.trim().length < 3) {
-      toast.error("Enter a valid agent code");
+    if (agentId.trim().length < 3) {
+      toast.error("Enter a valid agent ID");
       return;
     }
     setStep("pin");
@@ -63,7 +63,7 @@ export default function AgentLogin() {
     if (newPin.length === 4) {
       setLoading(true);
       loginMutation.mutate({
-        agentCode: agentCode.trim().toUpperCase(),
+        agentId: agentId.trim().toUpperCase(),
         pin: newPin,
       });
     }
@@ -87,7 +87,7 @@ export default function AgentLogin() {
 
   const handleRequestOtp = () => {
     if (resetAgentCode.trim().length < 3) {
-      toast.error("Enter your agent code");
+      toast.error("Enter your agent ID");
       return;
     }
     if (resetPhone.trim().length < 10) {
@@ -96,7 +96,7 @@ export default function AgentLogin() {
     }
     setLoading(true);
     requestOtpMutation.mutate({
-      agentCode: resetAgentCode.trim().toUpperCase(),
+      agentId: resetAgentCode.trim().toUpperCase(),
       phone: resetPhone.trim(),
     });
   };
@@ -136,7 +136,7 @@ export default function AgentLogin() {
     }
     setLoading(true);
     resetPinMutation.mutate({
-      agentCode: resetAgentCode.trim().toUpperCase(),
+      agentId: resetAgentCode.trim().toUpperCase(),
       otp: resetOtp.trim(),
       newPin: resetNewPin,
     });
@@ -189,7 +189,7 @@ export default function AgentLogin() {
           InsurePortal POS
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Agency Banking Terminal
+          Insurance Terminal
         </div>
       </div>
 
@@ -199,7 +199,7 @@ export default function AgentLogin() {
           <div className="text-sm text-gray-400 mb-2">Agent Code</div>
           <input
             type="text"
-            value={agentCode}
+            value={agentId}
             onChange={e => setAgentCode(e.target.value.toUpperCase())}
             onKeyDown={e => e.key === "Enter" && handleCodeSubmit()}
             placeholder="e.g. AGT001"
@@ -220,11 +220,11 @@ export default function AgentLogin() {
             Continue →
           </button>
           <div className="text-center mt-4 text-xs text-gray-600">
-            Contact your supervisor if you do not have an agent code
+            Contact your supervisor if you do not have an agent ID
           </div>
           <button
             onClick={() => {
-              setResetAgentCode(agentCode);
+              setResetAgentCode(agentId);
               setStep("forgot_phone");
             }}
             className="w-full mt-3 py-2 rounded-xl text-xs text-gray-500 hover:text-gray-300 transition-colors"
@@ -297,7 +297,7 @@ export default function AgentLogin() {
               className="text-base font-bold text-white"
               style={{ fontFamily: MONO }}
             >
-              {agentCode}
+              {agentId}
             </div>
           </div>
           <div className="flex justify-center gap-4 mb-8">
@@ -343,11 +343,11 @@ export default function AgentLogin() {
             }}
             className="w-full mt-4 py-3 rounded-xl text-sm text-gray-500 hover:text-gray-300 transition-colors"
           >
-            ← Change agent code
+            ← Change agent ID
           </button>
           <button
             onClick={() => {
-              setResetAgentCode(agentCode);
+              setResetAgentCode(agentId);
               setStep("forgot_phone");
             }}
             className="w-full py-2 rounded-xl text-xs text-gray-600 hover:text-gray-400 transition-colors"
@@ -363,7 +363,7 @@ export default function AgentLogin() {
           <div className="text-center mb-6">
             <div className="text-lg font-bold text-white mb-1">Reset PIN</div>
             <div className="text-xs text-gray-500">
-              Enter your agent code and registered phone to receive an OTP
+              Enter your agent ID and registered phone to receive an OTP
             </div>
           </div>
           <div className="text-sm text-gray-400 mb-2">Agent Code</div>

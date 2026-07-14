@@ -1,5 +1,5 @@
 /**
- * Payments Page — InsurePortal InsurePortal Platform
+ * Payments Page — InsurePortal POS Shell
  *
  * Displays subscription plans, one-time products, payment history,
  * active subscription management (cancel, portal), and checkout status.

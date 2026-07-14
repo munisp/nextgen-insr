@@ -151,6 +151,7 @@ import {
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -177,7 +178,7 @@ const navGroups: NavGroup[] = [
     label: "Core",
     icon: LayoutDashboard,
     items: [
-      { icon: LayoutDashboard, label: "Service Node", path: "/" },
+      { icon: LayoutDashboard, label: "Insurance Service", path: "/" },
       { icon: Globe, label: "Platform Hub", path: "/hub" },
     ],
   },
@@ -451,10 +452,10 @@ const navGroups: NavGroup[] = [
       { icon: Shield, label: "Audit Trail", path: "/audit-trail" },
     ],
   },
-  // ── 12. Nigerian Agency Banking ──
+  // ── 12. Nigerian Insurance ──
   {
-    id: "agency-banking",
-    label: "Agency Banking",
+    id: "insurance",
+    label: "Insurance",
     icon: Banknote,
     items: [
       { icon: Phone, label: "USSD Gateway", path: "/ussd-gateway" },
@@ -1016,7 +1017,7 @@ const navGroups: NavGroup[] = [
         label: "Merchant Analytics",
         path: "/merchant-analytics-dash",
       },
-      { icon: Cpu, label: "Firmware OTA", path: "/pos-firmware-ota" },
+      { icon: Cpu, label: "Firmware OTA", path: "/pos-service-update" },
       {
         icon: Receipt,
         label: "Receipt Generator",
@@ -1669,13 +1670,13 @@ export default function DashboardLayout({
         } as CSSProperties
       }
     >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
+            <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
         {children}
       </DashboardLayoutContent>
+      <MobileBottomNav />
     </SidebarProvider>
   );
 }
-
 type DashboardLayoutContentProps = {
   children: React.ReactNode;
   setSidebarWidth: (width: number) => void;

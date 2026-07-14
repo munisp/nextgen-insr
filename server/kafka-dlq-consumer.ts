@@ -19,6 +19,7 @@ import { ENV } from "./_core/env";
 import { notifyOwner } from "./_core/notification";
 import { getDb } from "./db";
 import { dlqMessages } from "../drizzle/schema";
+import { logger } from './_core/logger';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 5_000;
@@ -105,18 +106,18 @@ async function persistToDlqLog(
       createdAt: new Date(),
     });
   } catch (e: unknown) {
-    console.error("[DLQ] Failed to persist to DB:", e);
+    logger.error("[DLQ] Failed to persist to DB:: " + e);
   }
 }
 
 async function handleTransactionDlq(payload: DlqPayload): Promise<void> {
-  console.error(
+  logger.error(
     `[DLQ][transactions] Failed — topic=${payload.originalTopic} retries=${payload.retryCount}`
   );
 
   if (payload.retryCount < MAX_RETRIES) {
     await retryMessage(payload).catch((e: unknown) =>
-      console.error("[DLQ] Retry failed:", e)
+      logger.error("[DLQ] Retry failed:: " + e)
     );
     await persistToDlqLog(payload, "pending_retry");
     return;
@@ -130,7 +131,7 @@ async function handleTransactionDlq(payload: DlqPayload): Promise<void> {
 }
 
 async function handleSettlementDlq(payload: DlqPayload): Promise<void> {
-  console.error(
+  logger.error(
     `[DLQ][settlements] Failed — topic=${payload.originalTopic} retries=${payload.retryCount}`
   );
 
@@ -147,7 +148,7 @@ async function handleSettlementDlq(payload: DlqPayload): Promise<void> {
 }
 
 async function handleNotificationDlq(payload: DlqPayload): Promise<void> {
-  console.warn(`[DLQ][notifications] Dropped — retries=${payload.retryCount}`);
+  logger.warn(`[DLQ][notifications] Dropped — retries=${payload.retryCount}`);
   await persistToDlqLog(payload, "dropped");
 }
 
@@ -162,7 +163,7 @@ async function processMessage(
   } else if (topic.includes("notifications")) {
     await handleNotificationDlq(payload);
   } else {
-    console.warn(`[DLQ] Unknown DLQ topic: ${topic}`);
+    logger.warn(`[DLQ] Unknown DLQ topic: ${topic}`);
   }
 }
 
@@ -221,7 +222,7 @@ export async function startDlqConsumer(): Promise<void> {
             },
           ]);
         } catch (err: unknown) {
-          console.error(`[DLQ] Error processing message from ${topic}:`, err);
+          logger.error(`[DLQ] Error processing message from ${topic}:: ` + String(err));
           // Do not commit — message will be reprocessed on next poll
         }
       },
@@ -229,7 +230,7 @@ export async function startDlqConsumer(): Promise<void> {
 
     console.info("[DLQ] ✅ DLQ consumer started — monitoring 3 topics");
   } catch (err: unknown) {
-    console.error("[DLQ] Failed to start DLQ consumer:", err);
+    logger.error("[DLQ] Failed to start DLQ consumer:: " + String(err));
   }
 }
 

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // TypeScript enabled — Sprint 96 security audit
 /**
  * Webhook Delivery Service
@@ -17,6 +17,7 @@ import crypto from "crypto";
 import { getDb } from "../db";
 import { webhookEndpoints, webhookDeliveries } from "../../drizzle/schema";
 import { eq, and, lte } from "drizzle-orm";
+import { logger } from '../_core/logger';
 
 export type WebhookEventType =
   | "transaction.completed"
@@ -102,10 +103,7 @@ export async function dispatchWebhookEvent(
 
     // Attempt delivery (non-blocking)
     attemptDelivery(endpoint, delivery.id, body, endpoint.secret).catch(err =>
-      console.error(
-        `[Webhook] Delivery error for endpoint ${endpoint.id}:`,
-        err
-      )
+      logger.error(`[Webhook] Delivery error for endpoint ${endpoint.id}:: ` + err)
     );
   }
 }
@@ -239,7 +237,7 @@ export async function retryPendingDeliveries(): Promise<number> {
       body,
       endpoint.secret,
       delivery.attemptCount + 1
-    ).catch(err => console.error(`[Webhook] Retry error:`, err));
+    ).catch(err => logger.error(`[Webhook] Retry error:: ` + String(err)));
   }
 
   return pending.length;

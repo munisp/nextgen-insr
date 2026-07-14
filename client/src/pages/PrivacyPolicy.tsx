@@ -1,5 +1,5 @@
 /**
- * InsurePortal Agency Banking Platform — Privacy Policy & NDPR Compliance Page
+ * InsurePortal Insurance Platform — Privacy Policy & NDPR Compliance Page
  * Covers NDPR (Nigeria Data Protection Regulation) and GDPR-aligned disclosures.
  */
 import { Link } from "wouter";
@@ -13,7 +13,7 @@ const DISP = "'Inter', sans-serif";
 const SECTIONS = [
   {
     title: "1. Introduction",
-    content: `InsurePortal Financial Services Limited ("InsurePortal", "we", "us", or "our") is committed to protecting the privacy and personal data of all individuals who interact with our Agency Banking Platform. This Privacy Policy describes how we collect, use, store, and disclose personal data in compliance with the Nigeria Data Protection Regulation (NDPR) 2019, the Nigeria Data Protection Act (NDPA) 2023, and applicable international standards including the General Data Protection Regulation (GDPR) where relevant.`,
+    content: `InsurePortal Financial Services Limited ("InsurePortal", "we", "us", or "our") is committed to protecting the privacy and personal data of all individuals who interact with our Insurance Platform. This Privacy Policy describes how we collect, use, store, and disclose personal data in compliance with the Nigeria Data Protection Regulation (NDPR) 2019, the Nigeria Data Protection Act (NDPA) 2023, and applicable international standards including the General Data Protection Regulation (GDPR) where relevant.`,
   },
   {
     title: "2. Data Controller Information",
@@ -21,11 +21,11 @@ const SECTIONS = [
   },
   {
     title: "3. Categories of Personal Data Collected",
-    content: `We collect and process the following categories of personal data:\n\n• Identity Data: Full name, date of birth, BVN (Bank Verification Number), NIN (National Identification Number), passport photograph, signature.\n• Contact Data: Phone number, email address, residential address, state of origin.\n• Financial Data: Bank account details, transaction history, float balance, commission records, settlement account information.\n• Device & Technical Data: Terminal serial number, device fingerprint, IP address, geolocation coordinates, operating system version.\n• KYC Data: Government-issued ID documents, utility bills, business registration certificates, facial biometrics.\n• Usage Data: Login timestamps, transaction logs, audit trails, session data.`,
+    content: `We collect and process the following categories of personal data:\n\n• Identity Data: Full name, date of birth, BVN (Bank Verification Number), NIN (National Identification Number), passport photograph, signature.\n• Contact Data: Phone number, email address, residential address, state of origin.\n• Financial Data: Bank account details, transaction history, premium reserve, commission records, settlement account information.\n• Device & Technical Data: Terminal serial number, device fingerprint, IP address, geolocation coordinates, operating system version.\n• KYC Data: Government-issued ID documents, utility bills, business registration certificates, facial biometrics.\n• Usage Data: Login timestamps, transaction logs, audit trails, session data.`,
   },
   {
     title: "4. Legal Basis for Processing",
-    content: `We process personal data on the following legal bases under the NDPR and NDPA:\n\n• Contractual Necessity: Processing required to fulfil our agency banking agreement with you.\n• Legal Obligation: Compliance with CBN regulations, FIRS requirements, NFIU reporting obligations, and anti-money laundering (AML) laws.\n• Legitimate Interests: Fraud detection, security monitoring, platform improvement, and risk management.\n• Consent: Where you have provided explicit consent, such as for marketing communications or optional biometric verification.`,
+    content: `We process personal data on the following legal bases under the NDPR and NDPA:\n\n• Contractual Necessity: Processing required to fulfil our insurance agreement with you.\n• Legal Obligation: Compliance with CBN regulations, FIRS requirements, NFIU reporting obligations, and anti-money laundering (AML) laws.\n• Legitimate Interests: Fraud detection, security monitoring, platform improvement, and risk management.\n• Consent: Where you have provided explicit consent, such as for marketing communications or optional biometric verification.`,
   },
   {
     title: "5. How We Use Your Data",
@@ -120,7 +120,7 @@ export default function PrivacyPolicy() {
           </div>
           <div className="text-xs text-gray-400">
             This document governs the collection, use, and protection of
-            personal data on the InsurePortal Agency Banking Platform. It is compliant
+            personal data on the InsurePortal Insurance Platform. It is compliant
             with the Nigeria Data Protection Regulation (NDPR) 2019, the Nigeria
             Data Protection Act (NDPA) 2023, and applicable GDPR standards. Last
             updated: 1 April 2026.

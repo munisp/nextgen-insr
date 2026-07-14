@@ -1,0 +1,6 @@
+apiVersion: v2
+name: openimis-insurance-ops-integrated
+description: Helm chart for Openimis Insurance Ops Integrated
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

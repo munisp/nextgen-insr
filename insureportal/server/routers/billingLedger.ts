@@ -7,7 +7,7 @@ import { getDb } from "../db";
 import {
   platformBillingLedger,
   tenantBillingConfig,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, and, desc, gte, lte, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
@@ -36,7 +36,7 @@ export const billingLedgerRouter = router({
         billingModel: z.enum(["revenue_share", "subscription", "hybrid"]),
         clientId: z.string().optional(),
         agentId: z.union([z.string(), z.number()]),
-        serviceNodeId: z.number().optional(),
+        insuranceServiceId: z.number().optional(),
         revenueSharePct: z.number().default(70),
         currency: z.string().default("NGN"),
         region: z.string().optional(),

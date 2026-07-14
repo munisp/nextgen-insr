@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Input Validation & Sanitization — InsurePortal Agency Banking Platform
+ * Input Validation & Sanitization — InsurePortal Insurance Platform
  *
  * Provides:
  * 1. XSS sanitization for all text inputs
@@ -169,7 +169,7 @@ export const zodSchemas = {
     .transform(s => sanitizeText(s, 200)),
 
   /** Agent code */
-  agentCode: z.string().regex(/^AGT\d{4,6}$/, "Invalid agent code format"),
+  agentId: z.string().regex(/^AGT\d{4,6}$/, "Invalid agent ID format"),
 
   /** Transaction reference */
   transactionRef: z

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // TypeScript enabled — Sprint 96 security audit
 /**
  * lakehouseCron.ts — Daily lakehouse snapshot jobs
@@ -104,7 +104,7 @@ async function snapshotAgentMetrics(date: string): Promise<void> {
   const rows = await db
     .select({
       agentId: transactions.agentId,
-      agentCode: agents.agentCode,
+      agentId: agents.agentId,
       tier: agents.tier,
       txCount: sql<number>`count(*)::int`,
       txVolume: sql<number>`sum(${transactions.amount})::float`,
@@ -120,12 +120,12 @@ async function snapshotAgentMetrics(date: string): Promise<void> {
     .where(
       and(gte(transactions.createdAt, start), lte(transactions.createdAt, end))
     )
-    .groupBy(transactions.agentId, agents.agentCode, agents.tier);
+    .groupBy(transactions.agentId, agents.agentId, agents.tier);
 
   const metrics = rows.map(r => ({
     date,
     agentId: r.agentId,
-    agentCode: r.agentCode,
+    agentId: r.agentId,
     tier: r.tier,
     txCount: r.txCount ?? 0,
     txVolume: r.txVolume ?? 0,

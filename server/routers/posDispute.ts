@@ -1,5 +1,5 @@
 /**
- * Dispute from POS — agent-initiated dispute filing directly from the service node,
+ * Dispute from POS — agent-initiated dispute filing directly from the insurance service,
  * with evidence upload and real-time status tracking.
  *
  * Middleware: Kafka (dispute events), PostgreSQL (dispute records), Redis (status cache)
@@ -78,7 +78,7 @@ export const posDisputeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
+          agentId: session.agentId,
           action: "POS_DISPUTE_FILED",
           resource: "dispute",
           resourceId: String(dispute.id),

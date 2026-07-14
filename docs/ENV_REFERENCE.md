@@ -1,4 +1,4 @@
-# InsurePortal InsurePortal Platform — Environment Variables Reference
+# InsurePortal POS Shell — Environment Variables Reference
 
 This document lists every environment variable used by the platform, grouped by service. Variables marked **Required** must be set for production deployment. Variables marked **Optional** have sensible defaults.
 
@@ -39,7 +39,7 @@ This document lists every environment variable used by the platform, grouped by 
 | ------------------------ | -------- | ---------------------- | ---------------------- |
 | `KEYCLOAK_URL`           | No       | `http://keycloak:8080` | Keycloak server URL    |
 | `KEYCLOAK_REALM`         | No       | `insureportal`               | Keycloak realm name    |
-| `KEYCLOAK_CLIENT_ID`     | No       | `platform-shell`            | Keycloak client ID     |
+| `KEYCLOAK_CLIENT_ID`     | No       | `insurance-portal`            | Keycloak client ID     |
 | `KEYCLOAK_CLIENT_SECRET` | No       | —                      | Keycloak client secret |
 
 ## TigerBeetle Sidecar

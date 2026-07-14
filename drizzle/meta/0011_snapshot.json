@@ -58,8 +58,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true
@@ -122,8 +122,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "floatBalance": {
-          "name": "floatBalance",
+        "premiumReserve": {
+          "name": "premiumReserve",
           "type": "numeric(15, 2)",
           "primaryKey": false,
           "notNull": true,
@@ -216,10 +216,10 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "agents_agentCode_unique": {
-          "name": "agents_agentCode_unique",
+        "agents_agentId_unique": {
+          "name": "agents_agentId_unique",
           "nullsNotDistinct": false,
-          "columns": ["agentCode"]
+          "columns": ["agentId"]
         }
       },
       "policies": {},
@@ -242,8 +242,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "agentCode": {
-          "name": "agentCode",
+        "agentId": {
+          "name": "agentId",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": false
@@ -2040,10 +2040,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "multi_sim_profiles_terminalId_service_nodes_id_fk": {
-          "name": "multi_sim_profiles_terminalId_service_nodes_id_fk",
+        "multi_sim_profiles_terminalId_field_agent_devicess_id_fk": {
+          "name": "multi_sim_profiles_terminalId_field_agent_devicess_id_fk",
           "tableFrom": "multi_sim_profiles",
-          "tableTo": "service_nodes",
+          "tableTo": "field_agent_devicess",
           "columnsFrom": ["terminalId"],
           "columnsTo": ["id"],
           "onDelete": "no action",
@@ -2163,8 +2163,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.service_nodes": {
-      "name": "service_nodes",
+    "public.field_agent_devicess": {
+      "name": "field_agent_devicess",
       "schema": "",
       "columns": {
         "id": {
@@ -2290,9 +2290,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "service_nodes_agentId_agents_id_fk": {
-          "name": "service_nodes_agentId_agents_id_fk",
-          "tableFrom": "service_nodes",
+        "field_agent_devicess_agentId_agents_id_fk": {
+          "name": "field_agent_devicess_agentId_agents_id_fk",
+          "tableFrom": "field_agent_devicess",
           "tableTo": "agents",
           "columnsFrom": ["agentId"],
           "columnsTo": ["id"],
@@ -2302,8 +2302,8 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "service_nodes_serialNumber_unique": {
-          "name": "service_nodes_serialNumber_unique",
+        "field_agent_devicess_serialNumber_unique": {
+          "name": "field_agent_devicess_serialNumber_unique",
           "nullsNotDistinct": false,
           "columns": ["serialNumber"]
         }
@@ -2603,10 +2603,10 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "service_records_terminalId_service_nodes_id_fk": {
-          "name": "service_records_terminalId_service_nodes_id_fk",
+        "service_records_terminalId_field_agent_devicess_id_fk": {
+          "name": "service_records_terminalId_field_agent_devicess_id_fk",
           "tableFrom": "service_records",
-          "tableTo": "service_nodes",
+          "tableTo": "field_agent_devicess",
           "columnsFrom": ["terminalId"],
           "columnsTo": ["id"],
           "onDelete": "no action",
@@ -2811,8 +2811,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.marketplace_ads": {
-      "name": "marketplace_ads",
+    "public.insurance_product_promotions": {
+      "name": "insurance_product_promotions",
       "schema": "",
       "columns": {
         "id": {
@@ -2915,9 +2915,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "marketplace_ads_agentId_agents_id_fk": {
-          "name": "marketplace_ads_agentId_agents_id_fk",
-          "tableFrom": "marketplace_ads",
+        "insurance_product_promotions_agentId_agents_id_fk": {
+          "name": "insurance_product_promotions_agentId_agents_id_fk",
+          "tableFrom": "insurance_product_promotions",
           "tableTo": "agents",
           "columnsFrom": ["agentId"],
           "columnsTo": ["id"],

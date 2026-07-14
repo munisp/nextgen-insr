@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * cbnReporting.ts — tRPC router for CBN regulatory reporting
  *
@@ -129,7 +129,7 @@ export const cbnReportingRouter = router({
         year: z.number().int().min(2020).max(2100),
         month: z.number().int().min(1).max(12),
         institutionCode: z.string().default("54LINK001"),
-        institutionName: z.string().default("InsurePortal Agency Banking Platform"),
+        institutionName: z.string().default("InsurePortal Insurance Platform"),
       })
     )
     .mutation(async ({ input }) => {

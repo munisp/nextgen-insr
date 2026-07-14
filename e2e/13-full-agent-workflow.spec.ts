@@ -12,7 +12,7 @@ test.describe("Full Agent Workflow E2E", () => {
       timeout: 10_000,
     });
 
-    // 2. Enter agent code
+    // 2. Enter agent ID
     const agentInput = page.locator('input[placeholder*="AGT"]');
     if (await agentInput.isVisible()) {
       await agentInput.fill("AGT001");

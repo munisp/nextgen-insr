@@ -1,5 +1,5 @@
 /**
- * useAuth.ts — Authentication hook for InsurePortal InsurePortal Platform
+ * useAuth.ts — Authentication hook for InsurePortal POS Shell
  *
  * Uses Keycloak OIDC for authentication.
  *  - Login: redirect to /api/auth/login (Keycloak Authorization Code flow)

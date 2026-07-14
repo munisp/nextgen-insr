@@ -66,7 +66,7 @@ export interface TxResult {
   ref: string;
   commission: number;
   pointsEarned: number;
-  floatBalance: number;
+  premiumReserve: number;
 }
 
 export function useTransactionCreate() {
@@ -123,7 +123,7 @@ export function useTransactionCreate() {
             (ussdResult as any).instructions ??
             `Dial ${ussdString} to pay via USSD.`;
           await printUssd.mutateAsync({
-            agentCode: agent?.agentCode ?? "UNKNOWN",
+            agentId: agent?.agentId ?? "UNKNOWN",
             txType: input.type,
             amount: input.amount,
             ussdString,
@@ -146,7 +146,7 @@ export function useTransactionCreate() {
         ref: offlineRef,
         commission: 0,
         pointsEarned: 0,
-        floatBalance: 0,
+        premiumReserve: 0,
       };
     }
 
@@ -187,8 +187,8 @@ export function useTransactionCreate() {
       const ref = (result as any).ref;
       const commission = (result as any).commission ?? 0;
       const pointsEarned = (result as any).pointsEarned ?? 0;
-      const floatBalance = (result as any).floatBalance ?? 0;
-      return { ref, commission, pointsEarned, floatBalance };
+      const premiumReserve = (result as any).premiumReserve ?? 0;
+      return { ref, commission, pointsEarned, premiumReserve };
     } catch (err: unknown) {
       setIsProcessing(false);
       const message =

@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Request Correlation ID & Structured Logging — InsurePortal Agency Banking Platform
+ * Request Correlation ID & Structured Logging — InsurePortal Insurance Platform
  *
  * F16: Correlation ID propagation across all middleware
  * F17: Structured JSON logging with levels and rotation

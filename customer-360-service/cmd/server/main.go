@@ -16,9 +16,53 @@ import (
 	"github.com/gorilla/mux"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for customer_360_service")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS customer_360_service (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8130"
@@ -26,7 +70,7 @@ func main() {
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "host=localhost user=ngapp password=ngapp dbname=ngapp port=5432 sslmode=disable"
+		log.Fatal("FATAL: DATABASE_URL environment variable is required")
 	}
 
 	var db *gorm.DB
@@ -39,8 +83,8 @@ func main() {
 	}
 
 	config := &service.Customer360Config{
-		KafkaBrokers:     []string{envOrDefault("KAFKA_BROKERS", "localhost:9092")},
-		RedisAddr:        envOrDefault("REDIS_ADDR", "localhost:6379"),
+		KafkaBrokers:     []string{requireEnv("KAFKA_BROKERS")},
+		RedisAddr:        requireEnv("REDIS_ADDR"),
 		RedisPassword:    os.Getenv("REDIS_PASSWORD"),
 		DaprPort:         3500,
 		KeycloakURL:      envOrDefault("KEYCLOAK_URL", "http://localhost:8080"),
@@ -125,3 +169,12 @@ func envOrDefault(key, defaultVal string) string {
 	}
 	return defaultVal
 }
+
+func requireEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("FATAL: %s environment variable is required", key)
+	}
+	return v
+}
+

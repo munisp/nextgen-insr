@@ -1,4 +1,4 @@
-# InsurePortal Agency Banking Platform — System Architecture
+# InsurePortal Insurance Platform — System Architecture
 
 > Version: Phase 163 | Last updated: April 2026
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-InsurePortal is a full-stack agency banking platform built for Nigerian financial institutions. It provides a Point-of-Sale (POS) shell, multi-portal admin system, mobile apps (Flutter + React Native), and a microservices backend. The platform is CBN-compliant and supports cash-in/cash-out, airtime, bill payments, FX transfers, KYC, fraud detection, and USSD.
+InsurePortal is a full-stack insurance platform built for Nigerian financial institutions. It provides a Point-of-Sale (POS) shell, multi-portal admin system, mobile apps (Flutter + React Native), and a microservices backend. The platform is CBN-compliant and supports premium collection/claim payout, airtime, bill payments, FX transfers, KYC, fraud detection, and USSD.
 
 ---
 
@@ -120,13 +120,13 @@ The schema is defined in `drizzle/schema.ts` and covers:
 ### Cash-In Transaction
 
 ```
-Agent → PlatformShell → tRPC transactions.cashIn
-  → Validate float balance (Redis cache)
+Agent → POSShell → tRPC transactions.premiumCollection
+  → Validate premium reserve (Redis cache)
   → Insert transaction (PostgreSQL)
   → Post to TigerBeetle ledger
   → Publish to Kafka topic "transactions"
   → Send SMS receipt via Termii
-  → Update agent float balance
+  → Update agent premium reserve
   → Return success with reference
 ```
 
@@ -181,7 +181,7 @@ The platform is designed for Docker Compose (single-server) or Kubernetes (multi
 
 ## CBN Compliance
 
-The platform is designed to meet CBN (Central Bank of Nigeria) requirements for agency banking:
+The platform is designed to meet CBN (Central Bank of Nigeria) requirements for insurance:
 
 - Transaction limits enforced per KYC tier (Basic: ₦300k/day, Standard: ₦1M/day, Premium: ₦5M/day)
 - Daily reconciliation reports generated at 23:00 WAT

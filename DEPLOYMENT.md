@@ -1,4 +1,4 @@
-# InsurePortal InsurePortal Platform — Production Deployment Guide
+# InsurePortal POS Shell — Production Deployment Guide
 
 **Version:** Phase 136  
 **Target:** Ubuntu 22.04 LTS, Docker 24+, 8 vCPU / 32 GB RAM minimum
@@ -57,8 +57,8 @@ sudo apt-get install -y certbot
 ## Step 1: Clone and Configure
 
 ```bash
-git clone https://github.com/insureportal/platform-shell-demo.git
-cd platform-shell-demo
+git clone https://github.com/insureportal/insurance-portal-demo.git
+cd insurance-portal-demo
 
 # Copy environment template
 cp .env.production.example .env.production
@@ -126,7 +126,7 @@ This runs `infra/vault/init-vault.sh` which:
 1. Initialises Vault (generates unseal keys + root token)
 2. Unseals Vault with 3 of 5 keys
 3. Enables AppRole auth method
-4. Creates `platform-shell-demo` policy
+4. Creates `insurance-portal-demo` policy
 5. Seeds secrets: DB password, JWT secret, VAPID keys, Termii key
 
 **Save the unseal keys and root token securely — they cannot be recovered.**
@@ -169,7 +169,7 @@ This starts all services in the correct dependency order:
 
 ```bash
 # Create admin agent (AGT001 / PIN: 1234)
-docker compose -f docker-compose.production.yml exec platform-shell pnpm seed
+docker compose -f docker-compose.production.yml exec insurance-portal pnpm seed
 
 # Or run against local DB
 pnpm seed
@@ -186,7 +186,7 @@ make -f Makefile.production health
 Expected output:
 
 ```
-✅ platform-shell      healthy (3000)
+✅ insurance-portal      healthy (3000)
 ✅ postgres       healthy (5432)
 ✅ redis          healthy (6379)
 ✅ kafka          healthy (9092)
@@ -237,8 +237,8 @@ The `deploy` target runs `docker compose pull` then `docker compose up -d --buil
 
 ```bash
 # Rollback to previous image tag
-docker compose -f docker-compose.production.yml up -d --no-deps platform-shell \
-  --image ghcr.io/insureportal/platform-shell:previous-tag
+docker compose -f docker-compose.production.yml up -d --no-deps insurance-portal \
+  --image ghcr.io/insureportal/insurance-portal:previous-tag
 ```
 
 ---
@@ -246,8 +246,8 @@ docker compose -f docker-compose.production.yml up -d --no-deps platform-shell \
 ## Scaling
 
 ```bash
-# Scale InsurePortal Platform horizontally (requires Redis session sharing — already implemented)
-docker compose -f docker-compose.production.yml up -d --scale platform-shell=3
+# Scale POS Shell horizontally (requires Redis session sharing — already implemented)
+docker compose -f docker-compose.production.yml up -d --scale insurance-portal=3
 ```
 
 Note: Socket.IO requires sticky sessions at the nginx level. The provided nginx config includes `ip_hash` for this purpose.

@@ -1,25 +1,58 @@
 package main
 
 import (
-	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-func TestHealthEndpoint(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "api-marketplace", "database": "true"})
-	})
-	req := httptest.NewRequest("GET", "/health", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+func TestValidateQueryParam(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		key    string
+		maxLen int
+		want   string
+		err    bool
+	}{
+		{"valid", "?name=test", "name", 100, "test", false},
+		{"empty", "", "name", 100, "", false},
+		{"too long", "?name=toolongvalue", "name", 5, "", true},
 	}
-	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp["status"] != "healthy" {
-		t.Errorf("expected healthy status, got %v", resp["status"])
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateQueryParam(req, tt.key, tt.maxLen)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+func TestValidateIntParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		key   string
+		want  int
+		err   bool
+	}{
+		{"valid", "?page=5", "page", 5, false},
+		{"empty", "", "page", 0, false},
+		{"invalid", "?page=abc", "page", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test"+tt.query, nil)
+			got, err := validateIntParam(req, tt.key)
+			if (err != nil) != tt.err {
+				t.Errorf("err = %v, wantErr %v", err, tt.err)
+			}
+			if !tt.err && got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

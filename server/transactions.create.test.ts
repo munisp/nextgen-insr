@@ -51,11 +51,11 @@ vi.mock("./tbClient", () => ({
 vi.mock("./middleware/agentAuth", () => ({
   getAgentFromCookie: vi.fn().mockResolvedValue({
     id: 1,
-    agentCode: "AGT001",
+    agentId: "AGT001",
     name: "Emeka Obi",
     role: "agent",
     tier: "Gold",
-    floatBalance: 50000,
+    premiumReserve: 50000,
     pin: "$2b$10$hashedpin",
   }),
 }));
@@ -97,7 +97,7 @@ vi.mock("jose", () => ({
   jwtVerify: vi.fn().mockResolvedValue({
     payload: {
       sub: "1",
-      agentCode: "AGT001",
+      agentId: "AGT001",
       name: "Emeka Obi",
       role: "agent",
       tier: "Gold",
@@ -113,7 +113,7 @@ function makeCtx(): TrpcContext {
       id: 1,
       username: "test-agent",
       role: "admin" as const,
-      agentCode: "AGT001",
+      agentId: "AGT001",
       name: "Test Agent",
       email: "test@insureportal.io",
     },

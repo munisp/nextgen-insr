@@ -45,7 +45,7 @@ interface ChatMessage {
 
 // ─── Page Context Map ────────────────────────────────────────────────────────
 const pageContextMap: Record<string, string> = {
-  "/": "Service Node",
+  "/": "Insurance Service",
   "/hub": "Platform Hub",
   "/agent": "Agent Portal",
   "/customer": "Customer Portal",

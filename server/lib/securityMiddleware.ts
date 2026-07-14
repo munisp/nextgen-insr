@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Security Hardening Middleware — InsurePortal Agency Banking Platform
+ * Security Hardening Middleware — InsurePortal Insurance Platform
  *
  * Implements: CSP headers, HSTS, X-Frame-Options, X-Content-Type-Options,
  * Referrer-Policy, Permissions-Policy, CSRF protection, request sanitization,

@@ -1,4 +1,4 @@
-# Contributing to InsurePortal Agency Banking Platform
+# Contributing to InsurePortal Insurance Platform
 
 ## Development Setup
 

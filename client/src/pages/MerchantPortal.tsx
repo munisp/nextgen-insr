@@ -1,5 +1,5 @@
 /**
- * InsurePortal Agency Banking Platform — Merchant Portal
+ * InsurePortal Insurance Platform — Merchant Portal
  * Full CRUD interface for merchant profile, transactions, settlements, and disputes.
  * Includes a multi-step self-service onboarding wizard for new merchants.
  */
@@ -89,7 +89,7 @@ function PortalGate({
         <div className="text-2xl font-black text-white">Merchant Portal</div>
         <div className="text-sm text-gray-400 text-center max-w-sm">
           Manage your business transactions, settlements, and disputes on the
-          InsurePortal Agency Banking Network.
+          InsurePortal Insurance Network.
         </div>
       </div>
       <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -1332,7 +1332,7 @@ export default function MerchantPortal() {
           </a>
         </Link>
         <span>·</span>
-        <span>© 2026 InsurePortal Agency Banking</span>
+        <span>© 2026 InsurePortal Insurance</span>
       </div>
     </div>
   );

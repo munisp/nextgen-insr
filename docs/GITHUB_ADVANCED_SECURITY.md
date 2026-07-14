@@ -1,7 +1,7 @@
 # GitHub Advanced Security — Setup Guide
 
 This guide explains how to enable and configure GitHub Advanced Security (GHAS) for the
-InsurePortal InsurePortal Platform repository to activate CodeQL SAST, secret scanning, and Dependabot security alerts.
+InsurePortal POS Shell repository to activate CodeQL SAST, secret scanning, and Dependabot security alerts.
 
 ---
 
@@ -56,7 +56,7 @@ the repository. This is the strongest protection available.
 # Enable via GitHub CLI
 gh api \
   --method PATCH \
-  /repos/YOUR_ORG/platform-shell \
+  /repos/YOUR_ORG/insurance-portal \
   -f security_and_analysis[secret_scanning][status]=enabled \
   -f security_and_analysis[secret_scanning_push_protection][status]=enabled
 ```

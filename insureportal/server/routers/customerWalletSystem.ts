@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, sum } from "drizzle-orm";
-import { customers, transactions, auditLog } from "../../drizzle/schema";
+import { customers, transactions, auditLog } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────

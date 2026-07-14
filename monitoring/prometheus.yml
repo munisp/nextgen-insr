@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Prometheus Configuration — InsurePortal InsurePortal Platform
+# Prometheus Configuration — InsurePortal POS Shell
 # ─────────────────────────────────────────────────────────────────────────────
 # Used by docker-compose.monitoring.yml
 # ─────────────────────────────────────────────────────────────────────────────
@@ -10,11 +10,11 @@ global:
   scrape_timeout: 10s
   external_labels:
     environment: production
-    service: platform-shell
+    service: insurance-portal
 
 # Load alerting rules
 rule_files:
-  - /etc/prometheus/rules/platform-shell-rules.yml
+  - /etc/prometheus/rules/insurance-portal-rules.yml
 
 # Alertmanager integration
 alerting:
@@ -26,17 +26,17 @@ alerting:
 
 scrape_configs:
 
-  # ── InsurePortal Platform application metrics ────────────────────────────────────────────
-  - job_name: platform-shell
+  # ── POS Shell application metrics ────────────────────────────────────────────
+  - job_name: insurance-portal
     static_configs:
       - targets:
-          - platform-shell:3000   # Docker service name; use localhost:3000 for bare-metal
+          - insurance-portal:3000   # Docker service name; use localhost:3000 for bare-metal
     metrics_path: /api/metrics
     scrape_interval: 15s
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
-        replacement: platform-shell-prod
+        replacement: insurance-portal-prod
 
   # ── Node Exporter (host metrics) ─────────────────────────────────────────────
   - job_name: node-exporter
@@ -66,12 +66,12 @@ scrape_configs:
 
   # ── Kubernetes pod discovery (production K8s deployment) ─────────────────────
   # Uncomment when deploying to Kubernetes.
-  # - job_name: platform-shell-k8s
+  # - job_name: insurance-portal-k8s
   #   kubernetes_sd_configs:
   #     - role: pod
   #       namespaces:
   #         names:
-  #           - platform-shell-prod
+  #           - insurance-portal-prod
   #   relabel_configs:
   #     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
   #       action: keep

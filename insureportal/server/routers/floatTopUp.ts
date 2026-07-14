@@ -1,5 +1,5 @@
 /**
- * floatTopUp router — agent-facing procedures for submitting float top-up requests.
+ * premiumTopUp router — agent-facing procedures for submitting float top-up requests.
  *
  * Phase 48: Float top-up requests > ₦50,000 require supervisor approval
  * before admin can credit the agent's float.
@@ -14,10 +14,10 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getDb } from "../db";
 import {
-  floatTopUpRequests,
+  premiumTopUpRequests,
   agents,
   supervisorAgents,
-} from "../../drizzle/schema";
+} from "@schema";
 import { eq, desc, and } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -32,7 +32,7 @@ import { permifyCheck } from "../_core/permify";
 
 const SUPERVISOR_APPROVAL_THRESHOLD = 50_000;
 
-export const floatTopUpRouter = router({
+export const premiumTopUpRouter = router({
   // ── Submit a top-up request ───────────────────────────────────────────────
   submit: protectedProcedure
     .input(
@@ -60,9 +60,9 @@ export const floatTopUpRouter = router({
         // Check for existing pending request
         const existing = await db
           .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.agentId, session.id))
-          .orderBy(desc(floatTopUpRequests.createdAt))
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.agentId, session.id))
+          .orderBy(desc(premiumTopUpRequests.createdAt))
           .limit(1);
         if (existing[0] && existing[0].status === "pending") {
           throw new TRPCError({
@@ -76,7 +76,7 @@ export const floatTopUpRouter = router({
         const requiresSupervisor = input.amount > SUPERVISOR_APPROVAL_THRESHOLD;
 
         const result = await db
-          .insert(floatTopUpRequests)
+          .insert(premiumTopUpRequests)
           .values({
             agentId: session.id,
             requestedAmount: String(input.amount),
@@ -88,7 +88,6 @@ export const floatTopUpRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "FLOAT_TOPUP_REQUESTED",
           resource: "float_topup",
           resourceId: String(result[0].id),
@@ -102,7 +101,7 @@ export const floatTopUpRouter = router({
             const { notifyOwner } = await import("../_core/notification");
             await notifyOwner({
               title: `Large Float Top-Up Requires Supervisor Approval — ₦${input.amount.toLocaleString()}`,
-              content: `Agent ${session.agentCode} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
+              content: `Agent ${session.agentId} (${session.name}) has requested a float top-up of ₦${input.amount.toLocaleString()} (above ₦${SUPERVISOR_APPROVAL_THRESHOLD.toLocaleString()} threshold). Please review in the Supervisor Dashboard → Pending Float Approvals.`,
             });
           } catch {
             // Non-critical
@@ -142,9 +141,9 @@ export const floatTopUpRouter = router({
       if (!db) throw new Error("Database connection unavailable");
       const rows = await db
         .select()
-        .from(floatTopUpRequests)
-        .where(eq(floatTopUpRequests.agentId, session.id))
-        .orderBy(desc(floatTopUpRequests.createdAt))
+        .from(premiumTopUpRequests)
+        .where(eq(premiumTopUpRequests.agentId, session.id))
+        .orderBy(desc(premiumTopUpRequests.createdAt))
         .limit(20);
       return rows.map((r: any) => ({
         ...r,
@@ -193,30 +192,30 @@ export const floatTopUpRouter = router({
 
       const rows = await db
         .select({
-          id: floatTopUpRequests.id,
-          agentId: floatTopUpRequests.agentId,
-          requestedAmount: floatTopUpRequests.requestedAmount,
-          status: floatTopUpRequests.status,
+          id: premiumTopUpRequests.id,
+          agentId: premiumTopUpRequests.agentId,
+          requestedAmount: premiumTopUpRequests.requestedAmount,
+          status: premiumTopUpRequests.status,
           supervisorApprovalRequired:
-            floatTopUpRequests.supervisorApprovalRequired,
-          supervisorApprovedBy: floatTopUpRequests.supervisorApprovedBy,
-          supervisorApprovedAt: floatTopUpRequests.supervisorApprovedAt,
-          notes: floatTopUpRequests.notes,
-          createdAt: floatTopUpRequests.createdAt,
-          agentCode: agents.agentCode,
+            premiumTopUpRequests.supervisorApprovalRequired,
+          supervisorApprovedBy: premiumTopUpRequests.supervisorApprovedBy,
+          supervisorApprovedAt: premiumTopUpRequests.supervisorApprovedAt,
+          notes: premiumTopUpRequests.notes,
+          createdAt: premiumTopUpRequests.createdAt,
+          agentUserId: agents.agentId,
           agentName: agents.name,
-          agentFloat: agents.floatBalance,
+          agentFloat: agents.premiumReserve,
           agentTier: agents.tier,
         })
-        .from(floatTopUpRequests)
-        .leftJoin(agents, eq(floatTopUpRequests.agentId, agents.id))
+        .from(premiumTopUpRequests)
+        .leftJoin(agents, eq(premiumTopUpRequests.agentId, agents.id))
         .where(
           and(
-            eq(floatTopUpRequests.supervisorApprovalRequired, true),
-            eq(floatTopUpRequests.status, "pending")
+            eq(premiumTopUpRequests.supervisorApprovalRequired, true),
+            eq(premiumTopUpRequests.status, "pending")
           )
         )
-        .orderBy(desc(floatTopUpRequests.createdAt));
+        .orderBy(desc(premiumTopUpRequests.createdAt));
 
       // Filter by assigned agents for supervisors
       const filtered =
@@ -273,8 +272,8 @@ export const floatTopUpRouter = router({
 
         const rows = await db
           .select()
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.id, input.requestId))
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.id, input.requestId))
           .limit(1);
         const req = rows[0];
         if (!req)
@@ -310,20 +309,19 @@ export const floatTopUpRouter = router({
         }
 
         await db
-          .update(floatTopUpRequests)
+          .update(premiumTopUpRequests)
           .set({
-            supervisorApprovedBy: session.agentCode,
+            supervisorApprovedBy: session.agentId,
             supervisorApprovedAt: new Date(),
             notes: input.notes
               ? `${req.notes ?? ""}\nSupervisor note: ${input.notes}`.trim()
               : req.notes,
             updatedAt: new Date(),
           })
-          .where(eq(floatTopUpRequests.id, input.requestId));
+          .where(eq(premiumTopUpRequests.id, input.requestId));
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "FLOAT_TOPUP_SUPERVISOR_APPROVED",
           resource: "float_topup",
           resourceId: String(input.requestId),

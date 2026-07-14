@@ -76,8 +76,8 @@ export class KafkaConnector {
   constructor(config?: Partial<KafkaConfig>) {
     this.config = {
       brokers: (process.env.KAFKA_BROKERS ?? "localhost:9092").split(","),
-      clientId: process.env.KAFKA_CLIENT_ID ?? "platform-shell",
-      groupId: process.env.KAFKA_GROUP_ID ?? "platform-shell-group",
+      clientId: process.env.KAFKA_CLIENT_ID ?? "insurance-portal",
+      groupId: process.env.KAFKA_GROUP_ID ?? "insurance-portal-group",
       ...config,
     };
   }
@@ -253,7 +253,7 @@ export class TemporalConnector {
     workflowId: string,
     workflowType: string,
     args: any[],
-    taskQueue: string = "platform-shell"
+    taskQueue: string = "insurance-portal"
   ): Promise<string | null> {
     if (!canAttempt("temporal")) return null;
     try {
@@ -308,8 +308,8 @@ export class KeycloakConnector {
       process.env.KEYCLOAK_URL ??
       process.env.OAUTH_SERVER_URL ??
       "http://localhost:8080";
-    this.realm = process.env.KEYCLOAK_REALM ?? "platform-shell";
-    this.clientId = process.env.KEYCLOAK_CLIENT_ID ?? "platform-shell-app";
+    this.realm = process.env.KEYCLOAK_REALM ?? "insurance-portal";
+    this.clientId = process.env.KEYCLOAK_CLIENT_ID ?? "insurance-portal-app";
     this.clientSecret = process.env.KEYCLOAK_CLIENT_SECRET ?? "";
   }
 
@@ -518,7 +518,7 @@ export class MojalloopConnector {
 
   constructor() {
     this.hubUrl = process.env.MOJALOOP_HUB_URL ?? "http://localhost:4000";
-    this.dfspId = process.env.MOJALOOP_DFSP_ID ?? "platform-shell-dfsp";
+    this.dfspId = process.env.MOJALOOP_DFSP_ID ?? "insurance-portal-dfsp";
   }
 
   async initiateTransfer(transfer: {
@@ -801,7 +801,7 @@ export class LakehouseConnector {
         method: "POST",
         headers: {
           "Content-Type": "text/plain",
-          "X-Trino-User": "platform-shell",
+          "X-Trino-User": "insurance-portal",
           "X-Trino-Catalog": this.catalog,
           "X-Trino-Schema": this.schema,
         },

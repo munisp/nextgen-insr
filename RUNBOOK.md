@@ -1,4 +1,4 @@
-# InsurePortal Agency Banking Platform — Production Runbook
+# InsurePortal Insurance Platform — Production Runbook
 
 **Version:** Phase 161 | **Last Updated:** April 2026 | **Owner:** InsurePortal SRE Team
 
@@ -56,8 +56,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/insureportal/platform-shell-demo.git
-cd platform-shell-demo
+git clone https://github.com/insureportal/insurance-portal-demo.git
+cd insurance-portal-demo
 
 # Run the full bootstrap (creates network, volumes, starts all services)
 bash scripts/bootstrap-production.sh
@@ -128,7 +128,7 @@ make -f Makefile.production health-check
 docker compose -f docker-compose.production.yml logs --tail=100
 
 # Specific service
-docker compose -f docker-compose.production.yml logs -f platform-shell
+docker compose -f docker-compose.production.yml logs -f insurance-portal
 
 # Error logs only
 docker compose -f docker-compose.production.yml logs --tail=200 | grep -i "error\|fatal\|panic"
@@ -151,7 +151,7 @@ docker compose -f docker-compose.production.yml up -d --force-recreate <service-
 docker compose -f docker-compose.production.yml pull
 
 # Rolling restart (zero downtime for stateless services)
-docker compose -f docker-compose.production.yml up -d --no-deps --build platform-shell
+docker compose -f docker-compose.production.yml up -d --no-deps --build insurance-portal
 
 # Run migrations if schema changed
 pnpm db:push
@@ -181,10 +181,10 @@ done
 # 4. Check Kafka consumer lag
 docker exec pos-kafka kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 \
-  --describe --group platform-shell-consumers
+  --describe --group insurance-portal-consumers
 
 # 5. Check recent error logs
-docker compose -f docker-compose.production.yml logs --tail=50 platform-shell | grep -i error
+docker compose -f docker-compose.production.yml logs --tail=50 insurance-portal | grep -i error
 ```
 
 **Resolution:**
@@ -283,8 +283,8 @@ docker compose -f docker-compose.production.yml logs --tail=100 fraud-engine | g
 ### 5.1 Horizontal Scaling (Stateless Services)
 
 ```bash
-# Scale InsurePortal Platform to 3 replicas
-docker compose -f docker-compose.production.yml up -d --scale platform-shell=3
+# Scale POS Shell to 3 replicas
+docker compose -f docker-compose.production.yml up -d --scale insurance-portal=3
 
 # Scale MDM compliance engine
 docker compose -f docker-compose.production.yml up -d --scale mdm-compliance-engine=3
@@ -359,7 +359,7 @@ docker exec pos-vault vault kv put secret/insureportal/jwt JWT_SECRET="$NEW_SECR
 sed -i "s/JWT_SECRET=.*/JWT_SECRET=$NEW_SECRET/" .env.production
 
 # 4. Rolling restart (existing sessions will be invalidated)
-docker compose -f docker-compose.production.yml up -d --force-recreate platform-shell
+docker compose -f docker-compose.production.yml up -d --force-recreate insurance-portal
 echo "JWT secret rotated. All active sessions have been invalidated."
 ```
 
@@ -375,7 +375,7 @@ docker exec pos-postgres psql -U postgres -c \
 
 # 3. Update .env.production and restart services
 sed -i "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW_PASS/" .env.production
-docker compose -f docker-compose.production.yml up -d --force-recreate platform-shell
+docker compose -f docker-compose.production.yml up -d --force-recreate insurance-portal
 ```
 
 ---
@@ -428,7 +428,7 @@ curl -X POST http://localhost:8095/api/v1/reports/generate \
 # Generate enrollment QR code for a new device
 curl -X POST http://localhost:3000/api/trpc/mdm.generateEnrollmentCode \
   -H "Content-Type: application/json" \
-  -d '{"agentCode": "AGT001", "deviceModel": "Sunmi V2 Pro"}'
+  -d '{"agentId": "AGT001", "deviceModel": "Sunmi V2 Pro"}'
 ```
 
 ### 9.2 Push MDM Command
@@ -507,7 +507,7 @@ count(time() - mdm_device_last_seen_seconds > 1800)
 pos_agent_daily_volume_naira / pos_agent_daily_limit_naira
 
 # Kafka consumer lag
-kafka_consumer_group_lag{group="platform-shell-consumers"}
+kafka_consumer_group_lag{group="insurance-portal-consumers"}
 
 # OTA download success rate
 rate(ota_download_total{status="success"}[5m]) /

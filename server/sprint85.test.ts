@@ -1,5 +1,5 @@
 /**
- * Sprint 85 Tests — InsurePortal InsurePortal Platform
+ * Sprint 85 Tests — InsurePortal POS Shell
  *
  * Validates:
  * H1: TypeScript strict-mode compliance (0 errors after @ts-nocheck removal)

@@ -1,4 +1,4 @@
-# ─── InsurePortal Agency Banking Platform — Docker Compose Override ────────────────
+# ─── InsurePortal Insurance Platform — Docker Compose Override ────────────────
 # Local development overrides for docker-compose.yml.
 # This file is automatically merged by `docker compose up` in development.
 # DO NOT commit secrets to this file — use .env.local or Docker secrets instead.

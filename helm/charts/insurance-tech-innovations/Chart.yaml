@@ -1,0 +1,6 @@
+apiVersion: v2
+name: insurance-tech-innovations
+description: Helm chart for Insurance Tech Innovations
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * InsurePortal POS — Temporal Workflow Definitions
  * These run inside the Temporal sandbox (no direct I/O).

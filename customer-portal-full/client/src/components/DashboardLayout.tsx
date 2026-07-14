@@ -158,6 +158,7 @@ function DashboardLayoutContent({
           collapsible="icon"
           className="border-r-0"
           disableTransition={isResizing}
+          aria-label="Main navigation"
         >
           <SidebarHeader className="h-16 justify-center">
             <div className="flex items-center gap-3 px-2 transition-all w-full">
@@ -179,7 +180,7 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           <SidebarContent className="gap-0">
-            <SidebarMenu className="px-2 py-1">
+            <SidebarMenu className="px-2 py-1" role="navigation" aria-label="Primary menu">
               {menuItems.map(item => {
                 const isActive = location === item.path;
                 return (
@@ -201,7 +202,7 @@ function DashboardLayoutContent({
             </SidebarMenu>
           </SidebarContent>
 
-          <SidebarFooter className="p-3">
+          <SidebarFooter className="p-3" role="contentinfo">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -257,7 +258,7 @@ function DashboardLayoutContent({
             </div>
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main className="flex-1 p-4" role="main" aria-label="Page content">{children}</main>
       </SidebarInset>
     </>
   );

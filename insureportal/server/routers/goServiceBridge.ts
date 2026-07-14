@@ -7,7 +7,7 @@ import {
   systemConfig,
   auditLog,
   transactions,
-} from "../../drizzle/schema";
+} from "@schema";
 import { TRPCError } from "@trpc/server";
 
 // Service adapter imports — ../adapters/ barrel for typed Go microservice connectors

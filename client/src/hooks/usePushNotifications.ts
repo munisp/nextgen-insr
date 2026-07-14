@@ -1,5 +1,5 @@
 /**
- * usePushNotifications — Web Push API integration for InsurePortal InsurePortal Platform.
+ * usePushNotifications — Web Push API integration for InsurePortal POS Shell.
  *
  * Responsibilities:
  *  1. Register the Service Worker (sw.js)
@@ -101,7 +101,7 @@ export function usePushNotifications(): PushState {
 
   // ── Notify server when app is backgrounded with pending offline items ──────
   useEffect(() => {
-    if (!isSubscribed || !agent?.agentCode) return;
+    if (!isSubscribed || !agent?.agentId) return;
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
@@ -110,7 +110,7 @@ export function usePushNotifications(): PushState {
         if (pendingCount > 0 && pendingCount !== lastNotifiedCount.current) {
           lastNotifiedCount.current = pendingCount;
           notifyPending.mutate({
-            agentCode: agent.agentCode,
+            agentId: agent.agentId,
             pendingCount,
           });
         }
@@ -165,12 +165,12 @@ export function usePushNotifications(): PushState {
       setIsSubscribed(true);
 
       // ── Persist subscription server-side ──────────────────────────────────
-      if (agent?.agentCode) {
+      if (agent?.agentId) {
         const subJson = subscription.toJSON();
         const keys = subJson.keys ?? {};
         try {
           await savePushSub.mutateAsync({
-            agentCode: agent.agentCode,
+            agentId: agent.agentId,
             endpoint: subscription.endpoint,
             p256dhKey: keys.p256dh ?? "",
             authKey: keys.auth ?? "",
@@ -178,7 +178,7 @@ export function usePushNotifications(): PushState {
           });
           console.info(
             "[PushNotifications] Subscription saved to server for agent:",
-            agent.agentCode
+            agent.agentId
           );
         } catch (saveErr) {
           // Non-fatal: subscription works locally even if server save fails

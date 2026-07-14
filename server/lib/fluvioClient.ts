@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * InsurePortal InsurePortal Platform — Fluvio Streaming Client
+ * InsurePortal POS Shell — Fluvio Streaming Client
  *
  * Fluvio is a cloud-native, Rust-based event streaming platform used by the
  * InsurePortal platform for:
@@ -26,6 +26,7 @@
 
 import { ENV } from "../_core/env.js";
 import axios from "axios";
+import { logger } from '../_core/logger';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -189,7 +190,7 @@ async function flushBuffer(): Promise<void> {
     }
   }
   if (flushed > 0) {
-    console.log(
+    logger.info(
       `[Fluvio] Flushed ${flushed} buffered events (${failed} re-buffered)`
     );
   }
@@ -199,7 +200,7 @@ async function flushBuffer(): Promise<void> {
 function startFlushTimer(): void {
   if (_flushTimer) return;
   _flushTimer = setInterval(() => {
-    flushBuffer().catch(e => console.error("[Fluvio] Flush error:", e));
+    flushBuffer().catch(e => logger.error("[Fluvio] Flush error:: " + e));
   }, 30_000);
   if (
     _flushTimer &&
@@ -250,11 +251,11 @@ export async function fluvioProduce(event: FluvioEvent): Promise<void> {
     .catch(() => {});
   if (!sent) {
     bufferEvent(event);
-    console.warn(
+    logger.warn(
       `[Fluvio] Topic=${event.topic} buffered (direct+proxy unavailable). Buffer size: ${eventBuffer.length}`
     );
   } else {
-    console.log(`[Fluvio] Produced → ${event.topic} (mode=${_mode})`);
+    logger.info(`[Fluvio] Produced → ${event.topic} (mode=${_mode})`);
   }
 }
 
@@ -284,7 +285,7 @@ export async function publishTransactionEvent(tx: {
       status: tx.status,
       channel: tx.channel ?? "POS",
       customerId: tx.customerId ?? null,
-      source: "platform-shell",
+      source: "insurance-portal",
     },
     timestamp: new Date().toISOString(),
   });
@@ -310,14 +311,14 @@ export async function publishFraudAlertEvent(alert: {
       severity: alert.severity,
       agentId: alert.agentId,
       transactionRef: alert.transactionRef ?? null,
-      source: "platform-shell",
+      source: "insurance-portal",
     },
     timestamp: new Date().toISOString(),
   });
 }
 
 /**
- * Convenience: publish a float balance change event.
+ * Convenience: publish a premium reserve change event.
  */
 export async function publishFloatEvent(data: {
   agentId: number;
@@ -333,7 +334,7 @@ export async function publishFloatEvent(data: {
     payload: {
       event: "float.balance.changed",
       ...data,
-      source: "platform-shell",
+      source: "insurance-portal",
     },
     timestamp: new Date().toISOString(),
   });
@@ -355,7 +356,7 @@ export async function publishKycEvent(data: {
     payload: {
       event: "kyc.session.updated",
       ...data,
-      source: "platform-shell",
+      source: "insurance-portal",
     },
     timestamp: new Date().toISOString(),
   });
@@ -472,7 +473,7 @@ export async function shutdownFluvio(): Promise<void> {
     _flushTimer = null;
   }
   if (eventBuffer.length > 0) {
-    console.log(
+    logger.info(
       `[Fluvio] Shutdown flush: ${eventBuffer.length} buffered events`
     );
     await flushBuffer();

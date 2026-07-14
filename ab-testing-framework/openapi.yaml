@@ -1,15 +1,20 @@
-openapi: '3.0.3'
+openapi: "3.0.3"
 info:
   title: Ab Testing Framework
-  description: A/B Testing Framework — manages experiments, traffic allocation, and statistical analysis Business Rules: - Minimum sample size: 1000 users per variant for statistical significance
-  version: 1.0.0
+  version: "1.0.0"
+  description: |
+    Circuit breaker for external HTTP calls
+servers:
+  - url: http://localhost:{port}
+    description: Local development
 paths:
   /health:
     get:
-      summary: Service health check
+      summary: Health check
+      operationId: getHealth
       responses:
-        '200':
-          description: Service health status
+        "200":
+          description: Service is healthy
           content:
             application/json:
               schema:
@@ -23,94 +28,63 @@ paths:
                     example: ab-testing-framework
                   database:
                     type: string
-                    example: 'true'
-  /:
+                    example: connected
+  /ready:
     get:
-      summary: List experiments
+      summary: Readiness probe
+      operationId: getReady
       responses:
-        '200':
-          description: Successful list experiments
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /{id}:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Service is not ready
+  /live:
     get:
-      summary: Get experiment
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Liveness probe
+      operationId: getLive
       responses:
-        '200':
-          description: Successful get experiment
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /{id}/assign:
-    post:
-      summary: Assign user
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        '200':
-          description: Successful assign user
-        '201':
-          description: Resource created
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /{id}/record:
-    post:
-      summary: Record conversion
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        '200':
-          description: Successful record conversion
-        '201':
-          description: Resource created
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
-  /{id}/results:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+  /stats:
     get:
-      summary: Get results
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Domain statistics
+      operationId: getStats
       responses:
-        '200':
-          description: Successful get results
-        '400':
-          description: Bad request
-        '500':
-          description: Internal server error
+        "200":
+          description: Table row count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  table:
+                    type: string
+                  count:
+                    type: integer
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string

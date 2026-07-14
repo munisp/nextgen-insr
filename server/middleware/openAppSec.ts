@@ -11,6 +11,7 @@
  * - Threat intelligence feed integration
  */
 import type { Request, Response, NextFunction } from "express";
+import { logger } from '../_core/logger';
 
 // ─── Threat Classification ───────────────────────────────────────────────────
 export type ThreatCategory =
@@ -106,7 +107,7 @@ function logThreat(event: ThreatEvent) {
   threatLog.push(event);
   if (threatLog.length > MAX_THREAT_LOG) threatLog.shift();
   if (event.severity === "critical" || event.severity === "high") {
-    console.warn(
+    logger.warn(
       `[WAF] ${event.severity.toUpperCase()} threat: ${event.category} from ${event.ip} on ${event.method} ${event.path}`
     );
   }

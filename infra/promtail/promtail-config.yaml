@@ -18,7 +18,7 @@ scrape_configs:
         refresh_interval: 5s
         filters:
           - name: label
-            values: ["com.docker.compose.project=platform-shell-demo"]
+            values: ["com.docker.compose.project=insurance-portal-demo"]
     relabel_configs:
       - source_labels: [__meta_docker_container_name]
         regex: "/(.*)"

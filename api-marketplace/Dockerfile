@@ -1,13 +1,13 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.21-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o service .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /api-marketplace .
 
 FROM alpine:3.19
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
-COPY --from=builder /app/service .
-EXPOSE 8098
-CMD ["./service"]
+COPY --from=builder /api-marketplace .
+EXPOSE 8108
+CMD ["./api-marketplace"]

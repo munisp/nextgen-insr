@@ -1,5 +1,5 @@
 /**
- * InsurePortal InsurePortal Platform -- Service Worker v4
+ * InsurePortal POS Shell -- Service Worker v4
  * Features: Web Push (failover/fraud/float/settlement), offline shell cache,
  * background sync for offline TX queue, periodic sync for fraud status.
  */
@@ -429,5 +429,176 @@ self.addEventListener("message", event => {
         )
       )
     );
+  }
+});
+
+// ── Insurance Domain Extensions (Sprint 99 UI/UX) ───────────────────────────
+
+// Additional insurance-specific cacheable API routes
+const INSURANCE_CACHE = "insureportal-insurance-v3";
+const INSURANCE_KPI_ENDPOINTS = [
+  "/api/trpc/insuranceKpiDashboard.getUnderwriterKpi",
+  "/api/trpc/insuranceKpiDashboard.getClaimsKpi",
+  "/api/trpc/insuranceKpiDashboard.getActuaryKpi",
+  "/api/trpc/insuranceKpiDashboard.getBrokerKpi",
+  "/api/trpc/insuranceKpiDashboard.getPolicyholderKpi",
+  "/api/trpc/insuranceKpiDashboard.getPremiumCollectionKpi",
+  "/api/trpc/insuranceKpiDashboard.getIfrs17Dashboard",
+  "/api/trpc/insuranceKpiDashboard.getReinsurerKpi",
+  "/api/trpc/insuranceKpiDashboard.getComplianceKpi",
+  "/api/trpc/insuranceKpiDashboard.getBillingAdminKpi",
+  "/api/trpc/insuranceKpiDashboard.getSupervisorKpi",
+  "/api/trpc/insuranceKpiDashboard.getRegulatorKpi",
+  "/api/trpc/insuranceKpiDashboard.getPolicyLifecycleKpi",
+  "/api/trpc/insuranceKpiDashboard.getSuperAdminKpi",
+];
+
+// Background sync queue names for insurance domain
+const SYNC_INSURANCE_CLAIM   = "sync-insurance-claim-submit";
+const SYNC_INSURANCE_POLICY  = "sync-insurance-policy-apply";
+const SYNC_INSURANCE_PAYMENT = "sync-insurance-premium-payment";
+const SYNC_INSURANCE_DOCS    = "sync-insurance-document-upload";
+
+// Cache insurance KPI data on fetch
+self.addEventListener("fetch", event => {
+  const url = new URL(event.request.url);
+  const isInsuranceKpi = INSURANCE_KPI_ENDPOINTS.some(ep =>
+    url.pathname.startsWith(ep.split("?")[0])
+  );
+
+  if (isInsuranceKpi && event.request.method === "GET") {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches
+              .open(INSURANCE_CACHE)
+              .then(cache => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(event.request).then(cached =>
+            cached ||
+            new Response(JSON.stringify({ error: "offline", cached: false }), {
+              status: 503,
+              headers: { "Content-Type": "application/json", "X-SW-Offline": "1" },
+            })
+          )
+        )
+    );
+  }
+});
+
+// Insurance background sync handlers
+self.addEventListener("sync", event => {
+  if (event.tag === SYNC_INSURANCE_CLAIM) {
+    event.waitUntil(
+      self.clients.matchAll().then(clients =>
+        clients.forEach(c => c.postMessage({ type: "REPLAY_CLAIM_QUEUE" }))
+      )
+    );
+  }
+  if (event.tag === SYNC_INSURANCE_POLICY) {
+    event.waitUntil(
+      self.clients.matchAll().then(clients =>
+        clients.forEach(c => c.postMessage({ type: "REPLAY_POLICY_QUEUE" }))
+      )
+    );
+  }
+  if (event.tag === SYNC_INSURANCE_PAYMENT) {
+    event.waitUntil(
+      self.clients.matchAll().then(clients =>
+        clients.forEach(c => c.postMessage({ type: "REPLAY_PAYMENT_QUEUE" }))
+      )
+    );
+  }
+  if (event.tag === SYNC_INSURANCE_DOCS) {
+    event.waitUntil(
+      self.clients.matchAll().then(clients =>
+        clients.forEach(c => c.postMessage({ type: "REPLAY_DOCUMENT_QUEUE" }))
+      )
+    );
+  }
+});
+
+// Insurance periodic sync — refresh KPI cache every hour
+self.addEventListener("periodicsync", event => {
+  if (event.tag === "insurance-kpi-refresh") {
+    event.waitUntil(
+      (async () => {
+        const cache = await caches.open(INSURANCE_CACHE);
+        await Promise.allSettled(
+          INSURANCE_KPI_ENDPOINTS.map(ep =>
+            fetch(ep)
+              .then(r => r.ok && cache.put(new Request(ep), r))
+              .catch(() => null)
+          )
+        );
+      })()
+    );
+  }
+  if (event.tag === "policy-renewal-check") {
+    event.waitUntil(
+      (async () => {
+        try {
+          const r = await fetch("/api/trpc/insuranceKpiDashboard.getPolicyholderKpi");
+          if (!r.ok) return;
+          const data = await r.json();
+          const renewals = data?.result?.data?.upcomingRenewals || 0;
+          if (renewals > 0) {
+            await self.registration.showNotification("Policy Renewal Reminder", {
+              body: `You have ${renewals} polic${renewals === 1 ? "y" : "ies"} due for renewal.`,
+              icon: "/favicon.ico",
+              badge: "/favicon.ico",
+              tag: "policy-renewal",
+              data: { url: "/policyholder-dashboard" },
+              actions: [
+                { action: "renew", title: "Renew Now" },
+                { action: "dismiss", title: "Later" },
+              ],
+            });
+          }
+        } catch {}
+      })()
+    );
+  }
+});
+
+// Insurance-specific message handlers
+self.addEventListener("message", event => {
+  const { type, payload } = event.data || {};
+
+  if (type === "QUEUE_INSURANCE_CLAIM") {
+    self.registration.sync
+      .register(SYNC_INSURANCE_CLAIM)
+      .catch(() => {});
+  }
+  if (type === "QUEUE_INSURANCE_POLICY") {
+    self.registration.sync
+      .register(SYNC_INSURANCE_POLICY)
+      .catch(() => {});
+  }
+  if (type === "QUEUE_INSURANCE_PAYMENT") {
+    self.registration.sync
+      .register(SYNC_INSURANCE_PAYMENT)
+      .catch(() => {});
+  }
+  if (type === "QUEUE_INSURANCE_DOCS") {
+    self.registration.sync
+      .register(SYNC_INSURANCE_DOCS)
+      .catch(() => {});
+  }
+  if (type === "REGISTER_PERIODIC_SYNC") {
+    self.registration.periodicSync
+      ?.register("insurance-kpi-refresh", { minInterval: 60 * 60 * 1000 })
+      .catch(() => {});
+    self.registration.periodicSync
+      ?.register("policy-renewal-check", { minInterval: 24 * 60 * 60 * 1000 })
+      .catch(() => {});
+  }
+  if (type === "CLEAR_INSURANCE_CACHE") {
+    caches.delete(INSURANCE_CACHE);
   }
 });

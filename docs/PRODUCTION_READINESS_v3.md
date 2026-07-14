@@ -1,6 +1,6 @@
-# InsurePortal Agency Banking Platform — Production Readiness Report v3
+# InsurePortal Insurance Platform — Production Readiness Report v3
 
-**Platform:** Full-Stack Agency Banking Platform (InsurePortal Platform + Mobile + Microservices + Infra)
+**Platform:** Full-Stack Insurance Platform (POS Shell + Mobile + Microservices + Infra)
 **Sprint:** Phase 159 — Complete Production Readiness
 **Date:** 2026-04-09
 **Prepared by:** Manus AI
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-The InsurePortal Agency Banking Platform has completed its Phase 159 production hardening sprint. The system now comprises:
+The InsurePortal Insurance Platform has completed its Phase 159 production hardening sprint. The system now comprises:
 
 - **InsurePortal Platform** — Node.js/TypeScript tRPC backend + React 19 PWA frontend
 - **Mobile Apps** — Flutter (Android/iOS), React Native (Android), iOS Native (Swift)
@@ -56,7 +56,7 @@ All mock API calls replaced with real `APIClient` calls in:
 
 ### 2. iOS Native InsurePortal Branding
 
-All "Nigerian Remittance Platform" / "Nigerian Remittance" references replaced with "InsurePortal Agency Banking" across all Swift files:
+All "Nigerian Remittance Platform" / "Nigerian Remittance" references replaced with "InsurePortal Insurance" across all Swift files:
 
 - `LoginView.swift` — header text updated
 - `RegisterView.swift` — welcome message updated
@@ -77,7 +77,7 @@ New files added:
 - `infra/dapr/config.yaml` — Dapr configuration
 - `infra/minio/init-minio.sh` — bucket provisioning script
 - `infra/kafka/create-topics.sh` — topic provisioning with retention
-- `infra/vault/policies/platform-shell.hcl` — InsurePortal Platform Vault policy
+- `infra/vault/policies/insurance-portal.hcl` — POS Shell Vault policy
 - `infra/vault/policies/temporal-worker.hcl` — Temporal worker policy
 - `infra/vault/init-vault-complete.sh` — full Vault init with AppRole
 
@@ -125,8 +125,8 @@ All services use default values that work out-of-the-box in Docker Compose. Over
 | `JWT_SECRET`             | `insureportal-jwt-secret-2026-production-key`                                                   | 256-bit random            |
 | `KEYCLOAK_URL`           | `http://keycloak:8080`                                                                    | `https://auth.insureportal.ng`  |
 | `KEYCLOAK_REALM`         | `insureportal`                                                                                  | `insureportal`                  |
-| `KEYCLOAK_CLIENT_ID`     | `platform-shell`                                                                               | `platform-shell`               |
-| `KEYCLOAK_CLIENT_SECRET` | `platform-shell-secret-2026`                                                                   | Vault-injected            |
+| `KEYCLOAK_CLIENT_ID`     | `insurance-portal`                                                                               | `insurance-portal`               |
+| `KEYCLOAK_CLIENT_SECRET` | `insurance-portal-secret-2026`                                                                   | Vault-injected            |
 | `VAULT_ADDR`             | `http://vault:8200`                                                                       | `https://vault.insureportal.ng` |
 | `VAULT_TOKEN`            | `insureportal-vault-root-token`                                                                 | AppRole token             |
 | `TEMPORAL_ADDRESS`       | `temporal:7233`                                                                           | `temporal.insureportal.ng:7233` |

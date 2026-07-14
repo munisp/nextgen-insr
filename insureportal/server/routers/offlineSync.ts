@@ -1,5 +1,5 @@
 /**
- * Offline Sync Engine — accepts queued offline transactions from service nodes,
+ * Offline Sync Engine — accepts queued offline transactions from insurance services,
  * validates, deduplicates, and reconciles them against the ledger.
  *
  * Middleware: Kafka (sync events), Redis (dedup cache), Temporal (reconciliation workflow),
@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
+import { transactions, agents } from "@schema";
 import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -106,7 +106,7 @@ export const offlineSyncRouter = router({
               await db
                 .update(agents)
                 .set({
-                  floatBalance: sql`CAST(${agents.floatBalance} AS numeric) - ${String(tx.amount)}`,
+                  premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) - ${String(tx.amount)}`,
                 })
                 .where(eq(agents.id, session.id));
             }
@@ -114,7 +114,7 @@ export const offlineSyncRouter = router({
               await db
                 .update(agents)
                 .set({
-                  floatBalance: sql`CAST(${agents.floatBalance} AS numeric) + ${String(tx.amount)}`,
+                  premiumReserve: sql`CAST(${agents.premiumReserve} AS numeric) + ${String(tx.amount)}`,
                 })
                 .where(eq(agents.id, session.id));
             }
@@ -144,7 +144,6 @@ export const offlineSyncRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "OFFLINE_SYNC_BATCH",
           resource: "offline_sync",
           resourceId: input.sessionId,
@@ -297,7 +296,6 @@ export const offlineSyncRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentCode: session.agentCode,
           action: "OFFLINE_SYNC_RETRY",
           resource: "offline_sync",
           resourceId: input.sessionId,

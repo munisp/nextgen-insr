@@ -292,7 +292,7 @@ export class GoServiceAdapter {
       try {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
-          "X-Request-Source": "platform-shell-node",
+          "X-Request-Source": "insurance-portal-node",
           "X-Service-Name": this.config.name,
         };
 

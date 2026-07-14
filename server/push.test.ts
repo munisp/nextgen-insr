@@ -15,7 +15,7 @@ vi.mock("web-push", () => ({
 const mockSubs = [
   {
     id: 1,
-    agentCode: "AGT001",
+    agentId: "AGT001",
     endpoint: "https://fcm.googleapis.com/fcm/send/test-endpoint-1",
     p256dhKey: "BNcR8mNit7RiiI3Sg5YvxLnspoMh5pBW8T4dRs3x5PY=",
     authKey: "tBHItJI5svbpez7KI4CCXg==",
@@ -26,7 +26,7 @@ const mockSubs = [
 vi.mock("../drizzle/schema", () => ({
   agentPushSubscriptions: {
     id: "id",
-    agentCode: "agentCode",
+    agentId: "agentId",
     endpoint: "endpoint",
     p256dhKey: "p256dhKey",
     authKey: "authKey",

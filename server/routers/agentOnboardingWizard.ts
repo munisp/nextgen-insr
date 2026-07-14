@@ -5,8 +5,8 @@ import { eq, desc, and, sql, count, gte } from "drizzle-orm";
 import {
   agents,
   kycSessions,
-  floatTopUpRequests,
-  serviceNodes,
+  premiumTopUpRequests,
+  posTerminals,
   trainingEnrollments,
   auditLog,
 } from "../../drizzle/schema";
@@ -37,8 +37,8 @@ export const agentOnboardingWizardRouter = router({
           .limit(100);
         const [floatReq] = await db
           .select({ cnt: count() })
-          .from(floatTopUpRequests)
-          .where(eq(floatTopUpRequests.agentId, input.agentId))
+          .from(premiumTopUpRequests)
+          .where(eq(premiumTopUpRequests.agentId, input.agentId))
           .limit(100);
         const [terminal] = await db
           .select({ cnt: count() })

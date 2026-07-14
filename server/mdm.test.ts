@@ -100,7 +100,7 @@ vi.mock("jose", () => ({
   jwtVerify: vi.fn().mockResolvedValue({
     payload: {
       sub: "1",
-      agentCode: "AGT001",
+      agentId: "AGT001",
       name: "Emeka Obi",
       tier: "Gold",
       role: "agent",
@@ -206,7 +206,7 @@ describe("mdm.stats", () => {
 describe("mdm.heartbeat", () => {
   const baseHeartbeat = {
     serialNumber: "SN-TEST-001",
-    agentCode: "AGT001",
+    agentId: "AGT001",
     model: "PAX A920 MAX",
     osVersion: "Android 12",
     appVersion: "4.2.1",
@@ -250,7 +250,7 @@ describe("mdm.heartbeat", () => {
     try {
       await caller.mdm.heartbeat({
         serialNumber: "SN-MINIMAL",
-        agentCode: "AGT002",
+        agentId: "AGT002",
       });
     } catch (e: any) {
       expect(e.code).not.toBe("UNAUTHORIZED");
@@ -305,14 +305,14 @@ describe("mdm.generateEnrollmentToken", () => {
   it("requires admin role", async () => {
     const caller = appRouter.createCaller(makeUserCtx());
     await expect(
-      caller.mdm.generateEnrollmentToken({ agentCode: "AGT001" })
+      caller.mdm.generateEnrollmentToken({ agentId: "AGT001" })
     ).rejects.toThrow(/admin|forbidden/i);
   });
 
-  it("validates agentCode is non-empty", async () => {
+  it("validates agentId is non-empty", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(
-      caller.mdm.generateEnrollmentToken({ agentCode: "" })
+      caller.mdm.generateEnrollmentToken({ agentId: "" })
     ).rejects.toThrow();
   });
 });
@@ -348,7 +348,7 @@ describe("mdm.disableTerminal", () => {
     const caller = appRouter.createCaller(makeUserCtx());
     await expect(
       caller.mdm.disableTerminal({
-        agentCode: "AGT001",
+        agentId: "AGT001",
         reason: "Suspected fraud",
       })
     ).rejects.toThrow(/admin|forbidden/i);
@@ -357,15 +357,15 @@ describe("mdm.disableTerminal", () => {
   it("requires reason of at least 5 characters", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(
-      caller.mdm.disableTerminal({ agentCode: "AGT001", reason: "abc" })
+      caller.mdm.disableTerminal({ agentId: "AGT001", reason: "abc" })
     ).rejects.toThrow();
   });
 
-  it("validates agentCode is non-empty", async () => {
+  it("validates agentId is non-empty", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(
       caller.mdm.disableTerminal({
-        agentCode: "",
+        agentId: "",
         reason: "Suspected fraud — under investigation",
       })
     ).rejects.toThrow();
@@ -376,7 +376,7 @@ describe("mdm.enableTerminal", () => {
   it("requires admin role", async () => {
     const caller = appRouter.createCaller(makeUserCtx());
     await expect(
-      caller.mdm.enableTerminal({ agentCode: "AGT001" })
+      caller.mdm.enableTerminal({ agentId: "AGT001" })
     ).rejects.toThrow(/admin|forbidden/i);
   });
 });
@@ -608,21 +608,21 @@ describe("mdm input validation", () => {
   it("rejects heartbeat with empty serialNumber", async () => {
     const caller = appRouter.createCaller(makePublicCtx());
     await expect(
-      caller.mdm.heartbeat({ serialNumber: "", agentCode: "AGT001" } as any)
+      caller.mdm.heartbeat({ serialNumber: "", agentId: "AGT001" } as any)
     ).rejects.toThrow();
   });
 
-  it("rejects heartbeat with empty agentCode", async () => {
+  it("rejects heartbeat with empty agentId", async () => {
     const caller = appRouter.createCaller(makePublicCtx());
     await expect(
-      caller.mdm.heartbeat({ serialNumber: "SN001", agentCode: "" } as any)
+      caller.mdm.heartbeat({ serialNumber: "SN001", agentId: "" } as any)
     ).rejects.toThrow();
   });
 
   it("rejects disableTerminal with short reason", async () => {
     const caller = appRouter.createCaller(makeAdminCtx());
     await expect(
-      caller.mdm.disableTerminal({ agentCode: "AGT001", reason: "ab" })
+      caller.mdm.disableTerminal({ agentId: "AGT001", reason: "ab" })
     ).rejects.toThrow();
   });
 

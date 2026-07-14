@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * erp.ts — ERP Webhook Configuration & Sync Router
  *

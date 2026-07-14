@@ -1,6 +1,6 @@
 /**
  * NotificationBell — Header button that shows unread count and manages
- * Web Push notification permission for the InsurePortal InsurePortal Platform.
+ * Web Push notification permission for the InsurePortal POS Shell.
  */
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { toast } from "sonner";

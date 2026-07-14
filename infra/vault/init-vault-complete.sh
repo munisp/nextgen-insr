@@ -35,9 +35,9 @@ vault auth enable approle 2>/dev/null || echo "[Vault] AppRole already enabled"
 
 # ── Write application secrets ─────────────────────────────────────────────────
 echo "[Vault] Writing application secrets..."
-vault kv put secret/platform-shell-demo \
+vault kv put secret/pos-shell-demo \
   JWT_SECRET="posinsureportal-jwt-secret-change-in-production" \
-  KEYCLOAK_CLIENT_SECRET="platform-shell-secret-change-in-production" \
+  KEYCLOAK_CLIENT_SECRET="pos-shell-secret-change-in-production" \
   TERMII_API_KEY="" \
   VAPID_PUBLIC_KEY="BNI_gF4TDVxJopDSnt73YaHP8jpCSXxKXJeSZ8Gm-CoSDYkTeEAYNYsXK5tvYpbxeBTfpSfLE77lC8kLnmI3ca8" \
   VAPID_PRIVATE_KEY="XBsV3B10_jSd8yVkMIB7xD1YulT3FJgBV9WOSPwxUs0" \
@@ -111,7 +111,7 @@ vault write pki/config/urls \
   issuing_certificates="${VAULT_ADDR}/v1/pki/ca" \
   crl_distribution_points="${VAULT_ADDR}/v1/pki/crl"
 
-vault write pki/roles/platform-shell \
+vault write pki/roles/pos-shell \
   allowed_domains="insureportal.io,insureportal.ng,localhost" \
   allow_subdomains=true \
   allow_localhost=true \

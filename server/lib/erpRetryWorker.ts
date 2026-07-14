@@ -12,6 +12,7 @@ import { notifyOwner } from "../_core/notification";
 import { erpSyncLog, erpConfig } from "../../drizzle/schema";
 import { eq, and, lte, lt } from "drizzle-orm";
 import { recordMetric } from "./analyticsMetrics";
+import { logger } from '../_core/logger';
 
 const BASE_DELAY_MS = 30_000; // 30 seconds
 const BACKOFF_MULTIPLIER = 2;
@@ -123,7 +124,7 @@ async function runRetryBatch(): Promise<void> {
         await recordMetric("erp.sync.success", 1, {
           entityType: record.entityType,
         });
-        console.log(
+        logger.info(
           `[ERP Retry] ✓ Synced record ${record.id} (attempt ${record.retryCount + 1})`
         );
       } else {
@@ -143,7 +144,7 @@ async function runRetryBatch(): Promise<void> {
           entityType: record.entityType,
         });
         if (isExhausted) {
-          console.warn(
+          logger.warn(
             `[ERP Retry] ✗ Record ${record.id} exhausted ${record.maxRetries} retries`
           );
           // P1-A: Dead letter notification — alert owner when retries are exhausted
@@ -151,7 +152,7 @@ async function runRetryBatch(): Promise<void> {
             title: `ERP Sync Dead Letter: ${record.entityType} #${record.entityId}`,
             content: `ERP sync record ${record.id} (${record.entityType} #${record.entityId}) has exhausted all ${record.maxRetries} retry attempts.\n\nLast error: HTTP ${res.status}: ${errText.slice(0, 200)}\n\nAction required: Check ERP connectivity and manually re-queue this record from the ERP Config tab.`,
           }).catch((e: unknown) =>
-            console.error("[ERP Retry] Dead letter notification failed:", e)
+            logger.error("[ERP Retry] Dead letter notification failed:: " + e)
           );
         }
       }
@@ -176,7 +177,7 @@ async function runRetryBatch(): Promise<void> {
           title: `ERP Sync Dead Letter: ${record.entityType} #${record.entityId}`,
           content: `ERP sync record ${record.id} (${record.entityType} #${record.entityId}) has exhausted all ${record.maxRetries} retry attempts.\n\nLast error: ${msg.slice(0, 200)}\n\nAction required: Check ERP connectivity and manually re-queue this record from the ERP Config tab.`,
         }).catch((e: unknown) =>
-          console.error("[ERP Retry] Dead letter notification failed:", e)
+          logger.error("[ERP Retry] Dead letter notification failed:: " + e)
         );
       }
     }
@@ -187,15 +188,15 @@ let workerInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startErpRetryWorker(): void {
   if (workerInterval) return;
-  console.log("[ERP Retry Worker] Started — polling every 60s");
+  logger.info("[ERP Retry Worker] Started — polling every 60s");
   workerInterval = setInterval(() => {
     runRetryBatch().catch(err =>
-      console.error("[ERP Retry Worker] Error:", err)
+      logger.error("[ERP Retry Worker] Error:: " + String(err))
     );
   }, 60_000);
   // Run once immediately on startup
   runRetryBatch().catch(err =>
-    console.error("[ERP Retry Worker] Startup error:", err)
+    logger.error("[ERP Retry Worker] Startup error:: " + String(err))
   );
 }
 
@@ -203,6 +204,6 @@ export function stopErpRetryWorker(): void {
   if (workerInterval) {
     clearInterval(workerInterval);
     workerInterval = null;
-    console.log("[ERP Retry Worker] Stopped");
+    logger.info("[ERP Retry Worker] Stopped");
   }
 }

@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * UserGuide — Comprehensive multi-section user guide for the InsurePortal InsurePortal Platform
+ * UserGuide — Comprehensive multi-section user guide for the InsurePortal POS Shell
  *
  * Sections:
  * 1. Getting Started
@@ -88,19 +88,19 @@ const guideSections: GuideSection[] = [
         id: "overview",
         title: "Platform Overview",
         content:
-          "The InsurePortal Agent Banking Platform is a comprehensive POS (Point of Sale) system designed for agent banking operations in Nigeria. It enables agents to process financial transactions including cash-in, cash-out, transfers, bill payments, and airtime purchases on behalf of customers.\n\nThe platform includes multiple portals for different user roles: Agent Portal for field agents, Customer Portal for end-users, Merchant Portal for business partners, Developer Portal for API integrations, and Admin/Supervisor dashboards for management oversight.",
+          "The InsurePortal Agent Banking Platform is a comprehensive POS (Point of Sale) system designed for agent banking operations in Nigeria. It enables agents to process financial transactions including premium collection, claim payout, transfers, bill payments, and airtime purchases on behalf of customers.\n\nThe platform includes multiple portals for different user roles: Agent Portal for field agents, Customer Portal for end-users, Merchant Portal for business partners, Developer Portal for API integrations, and Admin/Supervisor dashboards for management oversight.",
         tags: ["introduction", "overview", "platform"],
       },
       {
         id: "first-login",
         title: "First Login & Setup",
         content:
-          "To access the platform, navigate to the login page and enter your agent code and PIN provided by your supervisor. On first login, you'll be prompted to change your PIN for security.",
+          "To access the platform, navigate to the login page and enter your agent ID and PIN provided by your supervisor. On first login, you'll be prompted to change your PIN for security.",
         steps: [
           {
             title: "Enter Agent Code",
             description:
-              "Type your assigned agent code (e.g., AGT001) in the Agent Code field",
+              "Type your assigned agent ID (e.g., AGT001) in the Agent Code field",
           },
           {
             title: "Enter PIN",
@@ -148,7 +148,7 @@ const guideSections: GuideSection[] = [
     description: "Process transactions on the service node",
     subsections: [
       {
-        id: "cash-in",
+        id: "premium collection",
         title: "Cash-In (Deposits)",
         content:
           "Cash-in allows customers to deposit money into their accounts through your service node.",
@@ -176,13 +176,13 @@ const guideSections: GuideSection[] = [
           },
         ],
         relatedPage: "/",
-        tags: ["cash-in", "deposit", "transaction"],
+        tags: ["premium collection", "deposit", "transaction"],
       },
       {
-        id: "cash-out",
+        id: "claim payout",
         title: "Cash-Out (Withdrawals)",
         content:
-          "Cash-out enables customers to withdraw money from their accounts. Ensure you have sufficient float balance before processing.",
+          "Cash-out enables customers to withdraw money from their accounts. Ensure you have sufficient premium reserve before processing.",
         steps: [
           {
             title: "Select Cash-Out",
@@ -195,7 +195,7 @@ const guideSections: GuideSection[] = [
           {
             title: "Enter Amount",
             description:
-              "Type the withdrawal amount. Check your float balance first.",
+              "Type the withdrawal amount. Check your premium reserve first.",
           },
           {
             title: "Customer Authorization",
@@ -209,7 +209,7 @@ const guideSections: GuideSection[] = [
           },
         ],
         relatedPage: "/",
-        tags: ["cash-out", "withdrawal", "transaction"],
+        tags: ["claim payout", "withdrawal", "transaction"],
       },
       {
         id: "transfers",
@@ -302,7 +302,7 @@ const guideSections: GuideSection[] = [
         id: "float-management",
         title: "Float Management",
         content:
-          "Float is the working capital agents use to process transactions. Monitor your float balance on the Service Node dashboard. Request top-ups from the Agent Portal when running low.\n\nBest practices:\n- Maintain at least 20% of your daily average as buffer\n- Request top-ups before your balance drops below ₦50,000\n- Reconcile your float daily against transaction records\n- Report any discrepancies immediately to your supervisor",
+          "Float is the working capital agents use to process transactions. Monitor your premium reserve on the POS Terminal dashboard. Request top-ups from the Agent Portal when running low.\n\nBest practices:\n- Maintain at least 20% of your daily average as buffer\n- Request top-ups before your balance drops below ₦50,000\n- Reconcile your float daily against transaction records\n- Report any discrepancies immediately to your supervisor",
         relatedPage: "/agent",
         tags: ["float", "balance", "top-up"],
       },
@@ -453,7 +453,7 @@ const guideSections: GuideSection[] = [
         id: "common-issues",
         title: "Common Issues",
         content:
-          "Frequently encountered problems and solutions:\n\n**Transaction Timeout**: Check your internet connection. If the issue persists, check System Health for service outages. The transaction may have been processed — verify in Transaction History before retrying.\n\n**Insufficient Float**: Request a float top-up from the Agent Portal. Emergency top-ups can be requested from your supervisor.\n\n**Login Failed**: Verify your agent code and PIN. After 5 failed attempts, your account is locked for 30 minutes. Contact your supervisor for PIN reset.\n\n**Receipt Not Printing**: Check printer connection and paper. You can reprint receipts from Transaction History.\n\n**Slow Performance**: Clear your browser cache, close unnecessary tabs, and ensure a stable internet connection.",
+          "Frequently encountered problems and solutions:\n\n**Transaction Timeout**: Check your internet connection. If the issue persists, check System Health for service outages. The transaction may have been processed — verify in Transaction History before retrying.\n\n**Insufficient Float**: Request a float top-up from the Agent Portal. Emergency top-ups can be requested from your supervisor.\n\n**Login Failed**: Verify your agent ID and PIN. After 5 failed attempts, your account is locked for 30 minutes. Contact your supervisor for PIN reset.\n\n**Receipt Not Printing**: Check printer connection and paper. You can reprint receipts from Transaction History.\n\n**Slow Performance**: Clear your browser cache, close unnecessary tabs, and ensure a stable internet connection.",
         tags: ["troubleshooting", "issues", "problems"],
       },
       {

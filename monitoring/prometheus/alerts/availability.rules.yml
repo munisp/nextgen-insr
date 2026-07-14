@@ -4,14 +4,14 @@ groups:
     rules:
       # ── InsurePortal Platform app down ──────────────────────────────────────────────────
       - alert: PosShellAppDown
-        expr: up{job="platform-shell-app"} == 0
+        expr: up{job="insurance-portal-app"} == 0
         for: 1m
         labels:
           severity: critical
           team: backend
         annotations:
-          summary: "InsurePortal Platform application is down"
-          description: "The main InsurePortal Platform application has been unreachable for > 1 minute. All agent transactions will fail."
+          summary: "POS Shell application is down"
+          description: "The main POS Shell application has been unreachable for > 1 minute. All agent transactions will fail."
           runbook: "https://wiki.insureportal.ng/runbooks/app-down"
 
       # ── Fraud engine down ───────────────────────────────────────────────────

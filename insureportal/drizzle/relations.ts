@@ -8,7 +8,7 @@ import {
   chatSessions,
   chatMessages,
   auditLog,
-  floatTopUpRequests,
+  premiumTopUpRequests,
   otpTokens,
   devices,
   deviceCommands,
@@ -18,7 +18,7 @@ import {
   refunds,
   velocityLimits,
   kycSessions,
-  serviceNodes,
+  fieldAgentDevices,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -57,7 +57,8 @@ import {
   emailDeliveryLog,
   inviteCodes,
   tenantBranding,
-  tenantFeeOverrides,
+  premiumFeeSchedules,
+  customerFeedbackNps,
   tenantUsers,
   commissionCascadeHistory,
   agentBankAccounts,
@@ -130,10 +131,10 @@ export const agentsRelations = relations(agents, ({ one, many }) => ({
   transactions: many(transactions),
   fraudAlerts: many(fraudAlerts),
   loyaltyHistory: many(loyaltyHistory),
-  floatTopUpRequests: many(floatTopUpRequests),
+  premiumTopUpRequests: many(premiumTopUpRequests),
   devices: many(devices),
   disputes: many(disputes),
-  serviceNodes: many(serviceNodes),
+  fieldAgentDevices: many(fieldAgentDevices),
   commissionPayouts: many(commissionPayouts),
   agentPushSubscriptions: many(agentPushSubscriptions),
   agentOnboardingProgress: many(agentOnboardingProgress),
@@ -168,7 +169,7 @@ export const tenantsRelations = relations(tenants, ({ many }) => ({
   agents: many(agents),
   tenantUsers: many(tenantUsers),
   tenantBranding: many(tenantBranding),
-  tenantFeeOverrides: many(tenantFeeOverrides),
+  premiumFeeSchedules: many(premiumFeeSchedules),
   tenantFeatureToggles: many(tenantFeatureToggles),
   tenantBillingConfig: many(tenantBillingConfig),
   billingProvisioningHistory: many(billingProvisioningHistory),
@@ -238,14 +239,14 @@ export const deviceCommandsRelations = relations(deviceCommands, ({ one }) => ({
   }),
 }));
 
-// ─── Service Node Relations ────────────────────────────────────────
-export const serviceNodesRelations = relations(serviceNodes, ({ one }) => ({
+// ─── POS Terminal Relations ────────────────────────────────────────
+export const fieldAgentDevicesRelations = relations(fieldAgentDevices, ({ one }) => ({
   agent: one(agents, {
-    fields: [serviceNodes.agentId],
+    fields: [fieldAgentDevices.agentId],
     references: [agents.id],
   }),
   terminalGroup: one(terminalGroups, {
-    fields: [serviceNodes.groupId],
+    fields: [fieldAgentDevices.groupId],
     references: [terminalGroups.id],
   }),
 }));
@@ -500,11 +501,11 @@ export const fraudMlScoresRelations = relations(fraudMlScores, ({ one }) => ({
 }));
 
 // ─── Float & Loan Relations ────────────────────────────────────────
-export const floatTopUpRequestsRelations = relations(
-  floatTopUpRequests,
+export const premiumTopUpRequestsRelations = relations(
+  premiumTopUpRequests,
   ({ one }) => ({
     agent: one(agents, {
-      fields: [floatTopUpRequests.agentId],
+      fields: [premiumTopUpRequests.agentId],
       references: [agents.id],
     }),
   })
@@ -722,8 +723,8 @@ export const chatMessagesRelations = relations(chatMessages, () => ({}));
 
 export const auditLogRelations = relations(auditLog, () => ({}));
 
-export const floatTopUpRequestsRelations = relations(
-  floatTopUpRequests,
+export const premiumTopUpRequestsRelations = relations(
+  premiumTopUpRequests,
   () => ({})
 );
 
@@ -767,14 +768,14 @@ export const deviceLocationsRelations = relations(deviceLocations, () => ({}));
 
 export const kycSessionsRelations = relations(kycSessions, () => ({}));
 
-export const serviceNodesRelations = relations(serviceNodes, () => ({}));
+export const fieldAgentDevicesRelations = relations(fieldAgentDevices, () => ({}));
 
 export const terminalGroupsRelations = relations(terminalGroups, () => ({}));
 
 export const serviceRecordsRelations = relations(serviceRecords, ({ one }) => ({
-  serviceNode: one(serviceNodes, {
+  fieldAgentDevice: one(fieldAgentDevices, {
     fields: [serviceRecords.terminalId],
-    references: [serviceNodes.id],
+    references: [fieldAgentDevices.id],
   }),
 }));
 
@@ -789,9 +790,9 @@ export const inventoryItemsRelations = relations(inventoryItems, () => ({}));
 export const multiSimProfilesRelations = relations(
   multiSimProfiles,
   ({ one }) => ({
-    serviceNode: one(serviceNodes, {
+    fieldAgentDevice: one(fieldAgentDevices, {
       fields: [multiSimProfiles.terminalId],
-      references: [serviceNodes.id],
+      references: [fieldAgentDevices.id],
     }),
   })
 );
@@ -994,8 +995,13 @@ export const inviteCodesRelations = relations(inviteCodes, () => ({}));
 export const tenantBrandingRelations = relations(tenantBranding, () => ({}));
 
 
-export const tenantFeeOverridesRelations = relations(
-  tenantFeeOverrides,
+export const premiumFeeSchedulesRelations = relations(
+  premiumFeeSchedules,
+  () => ({})
+);
+
+export const customerFeedbackNpsRelations = relations(
+  customerFeedbackNps,
   () => ({})
 );
 

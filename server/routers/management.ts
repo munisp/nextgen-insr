@@ -31,6 +31,37 @@ import {
 import { eq, desc, asc, sql, and, gte, lte, like, count } from "drizzle-orm";
 import crypto from "crypto";
 
+// =============================================================================
+// NAVIGATION GUIDE — Management Router (1,878 lines, 24 API groups)
+// =============================================================================
+// This router serves the Management PWA (29 pages). All procedures require
+// supervisor or admin role.
+//
+// ── Section Reference ────────────────────────────────────────────────────────
+//  58.  dashboard      — Stats, agent/terminal/tx counts, volume
+// 119.  agents         — CRUD, activate/deactivate, search, import CSV, bulk actions
+// 332.  transactions   — List, export, refund, dispute, search, filters
+// 425.  kyc            — KYC session list, approval, rejection, documents
+// 501.  commissions    — Rule CRUD, validation, list, delete, payout history
+// 622.  pos            — Terminal CRUD, group CRUD, assign/unassign, health
+//1021.  qr             — QR code CRUD, list, generate, delete
+//1112. analytics      — Transaction stats, agent performance, revenue
+//1176. inventory      — Item CRUD, stock adjustments, history, export
+//1253. health         — System health, uptime, database status
+//1266. multiSim       — Profiles CRUD, list, delete, activate
+//1320. reversal       — Reversal requests CRUD, list, approve, reject
+//1416. shareableLinks — Link CRUD, list, expire, delete
+//1491. storefrontAds  — Ad CRUD, list, approve, reject, delete
+//1590. vat            — VAT records CRUD, list, delete
+//1654. erp            — ERP sync log CRUD, list, delete
+//1715. emailQueue     — Email queue CRUD, list, delete
+//1851. settings       — App settings CRUD, list, update
+//
+// ── Procedures per Section ───────────────────────────────────────────────────
+// Each section has standard CRUD (list, create, update, delete) plus domain-
+// specific operations (refund, dispute, approve/reject, import CSV, etc.).
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Guard: supervisor or admin only ──────────────────────────────────────────
 const mgmtProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== "admin" && ctx.user.role !== "supervisor") {
@@ -187,7 +218,7 @@ export const managementRouter = router({
     create: adminProcedure
       .input(
         z.object({
-          agentCode: z.string(),
+          agentId: z.string(),
           name: z.string(),
           phone: z.string(),
           email: z.string().email().optional(),
@@ -308,7 +339,7 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [agent] = await db
             .select({
-              floatBalance: agents.floatBalance,
+              premiumReserve: agents.premiumReserve,
               commissionBalance: agents.commissionBalance,
               loyaltyPoints: agents.loyaltyPoints,
             })
@@ -1850,7 +1881,7 @@ export const managementRouter = router({
   // ── Settings ─────────────────────────────────────────────────────
   settings: router({
     get: adminProcedure.query(() => ({
-      platformName: "InsurePortal Agency Banking",
+      platformName: "InsurePortal Insurance",
       defaultCurrency: "NGN",
       defaultCountry: "NGA",
       maxTransactionAmount: 500000,

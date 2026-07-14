@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Dispute Notifications — DB-backed notification management for dispute status changes
  * Sprint 54: Full PostgreSQL + middleware integration
@@ -173,7 +173,7 @@ export const disputeNotificationsRouter = router({
         });
       } catch (e) {
         // @ts-expect-error auto-fix
-        logger.warn("[DisputeNotifications]", e);
+        logger.warn("[DisputeNotifications]: " + e);
       }
       return {
         success: true,

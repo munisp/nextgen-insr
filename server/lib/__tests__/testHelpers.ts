@@ -7,7 +7,7 @@ export const MOCK_USER = {
   id: 1,
   username: "test-agent",
   role: "admin" as const,
-  agentCode: "AGT001",
+  agentId: "AGT001",
   name: "Test Agent",
   email: "test@insureportal.io",
 };
