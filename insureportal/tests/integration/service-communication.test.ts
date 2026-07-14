@@ -161,7 +161,7 @@ describe("Service Communication Integration", () => {
           amount: 150000,
           type: "motor_comprehensive",
           submittedAt: "2026-01-15T10:00:00Z",
-          agentCode: "AG-LAG-001",
+          agentId: "AG-LAG-001",
         },
         headers: {
           "correlation-id": "corr-abc123",

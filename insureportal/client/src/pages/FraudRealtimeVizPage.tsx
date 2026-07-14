@@ -83,7 +83,7 @@ export default function FraudRealtimeVizPage() {
                 >
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-red-500" />
-                    <span className="font-medium">{h.agentCode}</span>
+                    <span className="font-medium">{h.agentId}</span>
                     <span className="text-xs text-muted-foreground">
                       {h.txRef}
                     </span>

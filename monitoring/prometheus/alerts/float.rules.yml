@@ -4,32 +4,32 @@ groups:
     rules:
       # ── Agent float critically low ──────────────────────────────────────────
       - alert: AgentFloatCriticallyLow
-        expr: pos54link_agent_float_balance_ngn < 1000
+        expr: posinsureportal_agent_float_balance_ngn < 1000
         for: 2m
         labels:
           severity: critical
           team: operations
         annotations:
           summary: "Agent {{ $labels.agent_code }} float critically low"
-          description: "Agent {{ $labels.agent_code }} has a float balance of ₦{{ $value | humanize }} which is below the ₦1,000 minimum threshold. Transactions will fail."
-          runbook: "https://wiki.54link.ng/runbooks/float-low"
-          webhook: "https://api.54link.ng/api/trpc/system.notifyOwner"
+          description: "Agent {{ $labels.agent_code }} has a premium reserve of ₦{{ $value | humanize }} which is below the ₦1,000 minimum threshold. Transactions will fail."
+          runbook: "https://wiki.insureportal.ng/runbooks/float-low"
+          webhook: "https://api.insureportal.ng/api/trpc/system.notifyOwner"
 
       # ── Agent float warning ─────────────────────────────────────────────────
       - alert: AgentFloatLow
-        expr: pos54link_agent_float_balance_ngn < 10000
+        expr: posinsureportal_agent_float_balance_ngn < 10000
         for: 5m
         labels:
           severity: warning
           team: operations
         annotations:
           summary: "Agent {{ $labels.agent_code }} float low"
-          description: "Agent {{ $labels.agent_code }} has a float balance of ₦{{ $value | humanize }}. Consider topping up soon."
-          runbook: "https://wiki.54link.ng/runbooks/float-low"
+          description: "Agent {{ $labels.agent_code }} has a premium reserve of ₦{{ $value | humanize }}. Consider topping up soon."
+          runbook: "https://wiki.insureportal.ng/runbooks/float-low"
 
       # ── Float top-up request pending too long ───────────────────────────────
       - alert: FloatTopUpPendingTooLong
-        expr: pos54link_float_topup_pending_age_seconds > 3600
+        expr: posinsureportal_float_topup_pending_age_seconds > 3600
         for: 5m
         labels:
           severity: warning
@@ -40,11 +40,11 @@ groups:
 
       # ── Total float pool critically low ────────────────────────────────────
       - alert: TotalFloatPoolLow
-        expr: sum(pos54link_agent_float_balance_ngn) < 1000000
+        expr: sum(posinsureportal_agent_float_balance_ngn) < 1000000
         for: 5m
         labels:
           severity: critical
           team: finance
         annotations:
           summary: "Total float pool below ₦1,000,000"
-          description: "The aggregate float balance across all agents is ₦{{ $value | humanize }}. Immediate replenishment required."
+          description: "The aggregate premium reserve across all agents is ₦{{ $value | humanize }}. Immediate replenishment required."

@@ -3,7 +3,7 @@
  *
  * Drains two queues on reconnect:
  *   1. Zustand in-memory offlineQueue (current session)
- *   2. Rust offline-queue service (durable SQLite WAL queue — survives page reloads)
+ *   2. Rust offline-queue service (durable PostgreSQL queue — survives page reloads)
  *
  * Dead-letter guarantee: if createTx fails for a dequeued Rust item, the item is
  * re-enqueued via trpc.resilience.enqueueOffline before the drain loop stops.

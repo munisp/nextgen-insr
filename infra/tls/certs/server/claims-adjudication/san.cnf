@@ -1,0 +1,20 @@
+[req]
+distinguished_name = req_dn
+req_extensions = v3_req
+prompt = no
+
+[req_dn]
+C = NG
+ST = Lagos
+O = InsurePortal Nigeria Ltd
+CN = claims-adjudication.insureportal.ng
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = claims-adjudication.insureportal.ng
+DNS.2 = claims-adjudication.insureportal-prod.svc.cluster.local
+DNS.3 = claims-adjudication.insureportal-staging.svc.cluster.local
+DNS.4 = localhost
+IP.1 = 127.0.0.1

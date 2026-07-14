@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { faceEnrollments, biometricAuditEvents } from "../../drizzle/schema";
+import { faceEnrollments, biometricAuditEvents } from "@schema";
 import { eq, and, desc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 

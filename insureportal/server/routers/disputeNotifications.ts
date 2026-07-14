@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { disputes, disputeMessages } from "../../drizzle/schema";
+import { disputes, disputeMessages } from "@schema";
 import { eq, desc, count } from "drizzle-orm";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
 import logger from "../_core/logger";

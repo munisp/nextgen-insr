@@ -1,7 +1,7 @@
 // @ts-nocheck
 /**
  * AgentManagementTab — Admin Panel tab for viewing and managing all agents.
- * Supports: role promotion, suspend/activate, float balance view.
+ * Supports: role promotion, suspend/activate, premium reserve view.
  */
 import { useState } from "react";
 import { trpc } from "../../lib/trpc";
@@ -38,7 +38,7 @@ export default function AgentManagementTab() {
   const [search, setSearch] = useState("");
   const [assignModal, setAssignModal] = useState<{
     agentId: number;
-    agentCode: string;
+    agentId: string;
   } | null>(null);
   const [supervisorCode, setSupervisorCode] = useState("");
 
@@ -54,7 +54,7 @@ export default function AgentManagementTab() {
   const [confirmModal, setConfirmModal] = useState<{
     type: "role" | "suspend" | "activate";
     agentId: number;
-    agentCode: string;
+    agentId: string;
     newRole?: string;
   } | null>(null);
 
@@ -110,7 +110,7 @@ export default function AgentManagementTab() {
 
   const filtered = (agents ?? []).filter(
     a =>
-      a.agentCode.toLowerCase().includes(search.toLowerCase()) ||
+      a.agentId.toLowerCase().includes(search.toLowerCase()) ||
       a.name.toLowerCase().includes(search.toLowerCase()) ||
       (a.location ?? "").toLowerCase().includes(search.toLowerCase())
   );
@@ -235,7 +235,7 @@ export default function AgentManagementTab() {
                     className="px-3 py-3 font-bold"
                     style={{ color: BLUE, fontFamily: MONO }}
                   >
-                    {agent.agentCode}
+                    {agent.agentId}
                   </td>
                   <td
                     className="px-3 py-3 text-white font-semibold"
@@ -271,7 +271,7 @@ export default function AgentManagementTab() {
                     className="px-3 py-3 font-bold"
                     style={{ color: GREEN, fontFamily: MONO }}
                   >
-                    {fmt(agent.floatBalance)}
+                    {fmt(agent.premiumReserve)}
                   </td>
                   <td
                     className="px-3 py-3 font-bold"
@@ -294,7 +294,7 @@ export default function AgentManagementTab() {
                   {/* 7-day success rate from Python analytics */}
                   <td className="px-3 py-3">
                     {(() => {
-                      const r = ratesMap.get(agent.agentCode);
+                      const r = ratesMap.get(agent.agentId);
                       if (!r || r.rate === null) {
                         return (
                           <span
@@ -353,7 +353,7 @@ export default function AgentManagementTab() {
                           setConfirmModal({
                             type: "role",
                             agentId: agent.id,
-                            agentCode: agent.agentCode,
+                            agentId: agent.agentId,
                             newRole: e.target.value,
                           })
                         }
@@ -375,7 +375,7 @@ export default function AgentManagementTab() {
                         onClick={() =>
                           setAssignModal({
                             agentId: agent.id,
-                            agentCode: agent.agentCode,
+                            agentId: agent.agentId,
                           })
                         }
                         className="text-xs px-2 py-1 rounded-lg font-semibold transition-all"
@@ -394,7 +394,7 @@ export default function AgentManagementTab() {
                           setConfirmModal({
                             type: agent.isActive ? "suspend" : "activate",
                             agentId: agent.id,
-                            agentCode: agent.agentCode,
+                            agentId: agent.agentId,
                           })
                         }
                         className="text-xs px-2 py-1 rounded-lg font-semibold transition-all"
@@ -431,15 +431,15 @@ export default function AgentManagementTab() {
               className="text-base font-black text-white"
               style={{ fontFamily: DISP }}
             >
-              Assign {assignModal.agentCode} to Supervisor
+              Assign {assignModal.agentId} to Supervisor
             </div>
             <div className="text-sm text-gray-400" style={{ fontFamily: DISP }}>
-              Enter the agent code of the supervisor to assign this agent to.
+              Enter the agent ID of the supervisor to assign this agent to.
             </div>
             <input
               value={supervisorCode}
               onChange={e => setSupervisorCode(e.target.value.toUpperCase())}
-              placeholder="Supervisor agent code (e.g. AGT-001)"
+              placeholder="Supervisor agent ID (e.g. AGT-001)"
               className="px-3 py-2 rounded-xl text-sm text-white bg-transparent border outline-none"
               style={{
                 borderColor: BORDER,
@@ -503,11 +503,11 @@ export default function AgentManagementTab() {
               style={{ fontFamily: DISP }}
             >
               {confirmModal.type === "role" &&
-                `Change role for ${confirmModal.agentCode}?`}
+                `Change role for ${confirmModal.agentId}?`}
               {confirmModal.type === "suspend" &&
-                `Suspend ${confirmModal.agentCode}?`}
+                `Suspend ${confirmModal.agentId}?`}
               {confirmModal.type === "activate" &&
-                `Activate ${confirmModal.agentCode}?`}
+                `Activate ${confirmModal.agentId}?`}
             </div>
             <div className="text-sm text-gray-400" style={{ fontFamily: DISP }}>
               {confirmModal.type === "role" &&
@@ -515,7 +515,7 @@ export default function AgentManagementTab() {
               {confirmModal.type === "suspend" &&
                 "The agent will not be able to log in until reactivated."}
               {confirmModal.type === "activate" &&
-                "The agent will regain full access to the POS terminal."}
+                "The agent will regain full access to the insurance service."}
             </div>
             <div className="flex gap-3">
               <button

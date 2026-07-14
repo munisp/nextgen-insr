@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // Data export: transactionsCsv, agentsCsv, disputesCsv, ledgerCsv formats
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";

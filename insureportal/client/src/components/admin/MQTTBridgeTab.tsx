@@ -53,7 +53,7 @@ const FLUVIO_TOPICS = [
   "pos.fraud-alerts",
   "pos.float-events",
   "pos.kyc-events",
-  "pos.terminal-heartbeat",
+  "insurance.service-heartbeat",
 ];
 
 export function MQTTBridgeTab() {
@@ -114,7 +114,7 @@ export function MQTTBridgeTab() {
       {
         type: "MQTT_BRIDGE_TEST",
         ref: "TEST-001",
-        agentCode: "AGT-INSURE",
+        agentId: "AGT-INSURE",
         amount: 5000,
         currency: "NGN",
         channel: "POS",

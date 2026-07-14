@@ -1,6 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 /**
- * Business Rules Engine — 54Link Agency Banking Platform
+ * Business Rules Engine — InsurePortal Insurance Platform
  *
  * Production-grade business logic for:
  * 1. Transaction limits per agent tier (daily/monthly caps)
@@ -246,7 +246,7 @@ export function calculateFraudScore(input: FraudScoreInput): FraudScoreResult {
     flags.push("prior_flags");
   }
 
-  // Cash-out is higher risk than cash-in
+  // Cash-out is higher risk than premium collection
   if (input.transactionType === "cash_out") {
     score += 5;
   }

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 /**
  * Supervisor Router — read-only view of assigned agents for supervisors
  *
@@ -76,7 +76,7 @@ export const supervisorRouter = router({
     }
   }),
 
-  // Get assigned agents with float balance and 7-day transaction summary
+  // Get assigned agents with premium reserve and 7-day transaction summary
   myAgents: supervisorProcedure.input(z.object({})).query(async ({ ctx }) => {
     try {
       const db = await requireDb();
@@ -253,7 +253,7 @@ export const supervisorRouter = router({
           const [supAgent] = await db
             .select({ id: agents.id, role: agents.role })
             .from(agents)
-            .where(eq(agents.agentCode, input.supervisorCode))
+            .where(eq(agents.agentId, input.supervisorCode))
             .limit(1);
           if (!supAgent)
             throw new TRPCError({

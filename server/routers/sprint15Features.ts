@@ -12,6 +12,39 @@ import {
 import { eq, desc, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
+// =============================================================================
+// NAVIGATION GUIDE — Sprint 15 Features Router (985 lines, 4 sub-routers)
+// =============================================================================
+// Sprint 15 feature set: bulk notifications, agent management, webhook
+// endpoints, and audit log queries.
+//
+// ── Sub-router: bulkNotifRouter ──────────────────────────────────────────────
+//  17. sendBulk       — Send bulk SMS/email/push to agents
+//  42. getHistory     — Bulk notification history
+//  72. list           — List notifications
+//  81. retry          — Retry failed notifications
+//103. getDailyDigest — Daily notification digest stats
+//
+// ── Sub-router: agentRouter ──────────────────────────────────────────────────
+//133. updateLimit    — Update agent transaction limits
+//155. getAll         — Get all agents
+//163. update         — Update agent details
+//185. listActive     — List active agents
+//188. revoke         — Revoke agent access
+//
+// ── Sub-router: webhookRouter ────────────────────────────────────────────────
+//210. requestExport  — Request webhook log export
+//231. getStatus      — Export job status
+//249. list           — Webhook endpoint list
+//284. listFailed     — Failed webhook deliveries
+//289. retryWebhook   — Retry failed delivery
+//
+// ── Sub-router: auditRouter ──────────────────────────────────────────────────
+//311. getTopics      — Available audit topics
+//323. publish        — Publish audit event
+//347. getAll         — All audit logs
+//363. getStats       — Audit log stats
+// ─────────────────────────────────────────────────────────────────────────────
 // Bulk Notification Router
 export const bulkNotifRouter = router({
   sendBulk: protectedProcedure

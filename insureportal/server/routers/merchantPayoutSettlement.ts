@@ -6,7 +6,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { merchantPayouts } from "../../drizzle/schema";
+import { merchantPayouts } from "@schema";
 import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
 
 export const merchantPayoutSettlementRouter = router({

@@ -136,7 +136,7 @@ export const agentOnboardingWorkflowRouter = router({
     .input(
       z.object({
         agentId: z.number(),
-        agentCode: z.string().min(3),
+        agentId: z.string().min(3),
       })
     )
     .mutation(async ({ input }) => {
@@ -150,13 +150,13 @@ export const agentOnboardingWorkflowRouter = router({
         .where(eq(agentOnboardingProgress.agentId, input.agentId))
         .limit(1);
 
-      if (existing) throw new Error(`Onboarding already initiated for agent ${input.agentCode}`);
+      if (existing) throw new Error(`Onboarding already initiated for agent ${input.agentId}`);
 
       const [record] = await database
         .insert(agentOnboardingProgress)
         .values({
           agentId: input.agentId,
-          agentCode: input.agentCode,
+          agentId: input.agentId,
           currentStep: "profile",
           profileComplete: false,
           kycComplete: false,
@@ -165,7 +165,7 @@ export const agentOnboardingWorkflowRouter = router({
         })
         .returning();
 
-      return { id: record.id, agentCode: input.agentCode, currentStep: "profile" };
+      return { id: record.id, agentId: input.agentId, currentStep: "profile" };
     }),
 
   // Pipeline analytics

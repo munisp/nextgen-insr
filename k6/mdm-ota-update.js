@@ -66,7 +66,7 @@ const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
 const OTA_SERVICE_URL = __ENV.OTA_SERVICE_URL || "http://localhost:8081";
 const DEVICE_COUNT = parseInt(__ENV.DEVICE_COUNT || "500");
 
-// ── Device model distribution (matches real 54Link fleet) ────────────────────
+// ── Device model distribution (matches real InsurePortal fleet) ────────────────────
 const DEVICE_MODELS = [
   { model: "PAX-A920", weight: 40 },
   { model: "PAX-A35", weight: 25 },

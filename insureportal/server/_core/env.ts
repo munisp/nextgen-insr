@@ -163,4 +163,28 @@ export const ENV = {
   // Both are validated at startup by envValidation.ts — no hardcoded fallbacks.
   cronSecret: process.env.CRON_SECRET ?? "",
   internalApiKey: process.env.INTERNAL_API_KEY ?? "",
+
+  // ── Dapr sidecar ─────────────────────────────────────────────────────────────
+  daprHttpPort: process.env.DAPR_HTTP_PORT ?? "3500",
+  daprGrpcPort: process.env.DAPR_GRPC_PORT ?? "50001",
+  daprAppId: process.env.DAPR_APP_ID ?? "insureportal-server",
+
+  // ── OpenAppSec WAF ───────────────────────────────────────────────────────────
+  openappsecAgentUrl: process.env.OPENAPPSEC_AGENT_URL ?? "http://openappsec-agent:8090",
+  openappsecEnabled: (process.env.OPENAPPSEC_ENABLED ?? "true") === "true",
+
+  // ── Rust middleware sidecar ───────────────────────────────────────────────────
+  rustMiddlewareUrl: process.env.RUST_MIDDLEWARE_URL ?? "http://rust-middleware:8091",
+  rustMiddlewareEnabled: (process.env.RUST_MIDDLEWARE_ENABLED ?? "true") === "true",
+
+  // ── Python analytics service ──────────────────────────────────────────────────
+  pythonAnalyticsUrl: process.env.PYTHON_ANALYTICS_URL ?? "http://python-analytics:8092",
+  pythonAnalyticsEnabled: (process.env.PYTHON_ANALYTICS_ENABLED ?? "true") === "true",
+
+  // ── Go infra service (TigerBeetle sidecar + Fluvio bridge) ───────────────────
+  goInfraUrl: process.env.GO_INFRA_URL ?? "http://go-infra:8093",
+  goInfraEnabled: (process.env.GO_INFRA_ENABLED ?? "true") === "true",
+
+  // ── Permify API key ───────────────────────────────────────────────────────────────
+  permifyApiKey: process.env.PERMIFY_API_KEY ?? "insureportal-permify-dev-key",
 };

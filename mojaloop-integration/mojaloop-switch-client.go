@@ -302,6 +302,156 @@ func (c *MojaloopClient) handleErrorResponse(resp *http.Response) error {
 	return fmt.Errorf("mojaloop error %s: %s", errorInfo.ErrorCode, errorInfo.ErrorDescription)
 }
 
+// Settlement tracking types and methods
+type SettlementWindow struct {
+	ID        int64     `json:"id"`
+	State     string    `json:"state"`
+	CreatedAt time.Time `json:"createdDate"`
+	ChangedAt time.Time `json:"changedDate,omitempty"`
+}
+
+type Settlement struct {
+	ID                  int64              `json:"id"`
+	State               string             `json:"state"`
+	SettlementWindows   []SettlementWindow `json:"settlementWindows"`
+	Participants        []SettlementParticipant `json:"participants"`
+	CreatedAt           time.Time          `json:"createdDate"`
+	ChangedAt           time.Time          `json:"changedDate,omitempty"`
+}
+
+type SettlementParticipant struct {
+	ID        int64             `json:"id"`
+	Accounts  []SettlementAccount `json:"accounts"`
+}
+
+type SettlementAccount struct {
+	ID             int64  `json:"id"`
+	Reason         string `json:"reason,omitempty"`
+	State          string `json:"state"`
+	NetSettlement  Money  `json:"netSettlementAmount"`
+}
+
+func (c *MojaloopClient) GetSettlementWindows(ctx context.Context, state string) ([]SettlementWindow, error) {
+	url := fmt.Sprintf("%s/settlementWindows", c.baseURL)
+	if state != "" {
+		url = fmt.Sprintf("%s?state=%s", url, state)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("settlement windows request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleErrorResponse(resp)
+	}
+
+	var windows []SettlementWindow
+	if err := json.NewDecoder(resp.Body).Decode(&windows); err != nil {
+		return nil, fmt.Errorf("failed to decode settlement windows: %w", err)
+	}
+	return windows, nil
+}
+
+func (c *MojaloopClient) CloseSettlementWindow(ctx context.Context, windowID int64, reason string) (*SettlementWindow, error) {
+	payload := map[string]interface{}{
+		"state":  "CLOSED",
+		"reason": reason,
+	}
+	body, _ := json.Marshal(payload)
+	url := fmt.Sprintf("%s/settlementWindows/%d", c.baseURL, windowID)
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("close settlement window failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, c.handleErrorResponse(resp)
+	}
+
+	var window SettlementWindow
+	if err := json.NewDecoder(resp.Body).Decode(&window); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return &window, nil
+}
+
+func (c *MojaloopClient) CreateSettlement(ctx context.Context, windowIDs []int64, reason string) (*Settlement, error) {
+	windows := make([]map[string]interface{}, len(windowIDs))
+	for i, wid := range windowIDs {
+		windows[i] = map[string]interface{}{"id": wid}
+	}
+	payload := map[string]interface{}{
+		"reason":            reason,
+		"settlementWindows": windows,
+	}
+	body, _ := json.Marshal(payload)
+	url := fmt.Sprintf("%s/settlements", c.baseURL)
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("create settlement failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, c.handleErrorResponse(resp)
+	}
+
+	var settlement Settlement
+	if err := json.NewDecoder(resp.Body).Decode(&settlement); err != nil {
+		return nil, fmt.Errorf("failed to decode settlement: %w", err)
+	}
+	return &settlement, nil
+}
+
+func (c *MojaloopClient) GetSettlement(ctx context.Context, settlementID int64) (*Settlement, error) {
+	url := fmt.Sprintf("%s/settlements/%d", c.baseURL, settlementID)
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("get settlement failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleErrorResponse(resp)
+	}
+
+	var settlement Settlement
+	if err := json.NewDecoder(resp.Body).Decode(&settlement); err != nil {
+		return nil, fmt.Errorf("failed to decode settlement: %w", err)
+	}
+	return &settlement, nil
+}
+
 func GenerateILPPacket(amount Money, payee Party, transactionID string) string {
 	return fmt.Sprintf("ilp_packet_%s_%s_%s", amount.Amount, payee.PartyIdentifier, transactionID)
 }

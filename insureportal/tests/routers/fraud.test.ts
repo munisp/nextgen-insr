@@ -27,7 +27,7 @@ describe("Fraud Router", () => {
   describe("Fraud Detection Rules", () => {
     it("should flag high-value transactions above threshold", () => {
       const THRESHOLD = 500000; // ₦500K
-      const transaction = { amount: 750000, agentCode: "AG001" };
+      const transaction = { amount: 750000, agentId: "AG001" };
       expect(transaction.amount).toBeGreaterThan(THRESHOLD);
     });
 
@@ -122,14 +122,14 @@ describe("Fraud Router", () => {
 
     it("should filter alerts by search term", () => {
       const alerts = [
-        { agentCode: "AG001", customerName: "John Doe", reason: "High amount" },
-        { agentCode: "AG002", customerName: "Jane Smith", reason: "Velocity" },
-        { agentCode: "AG003", customerName: "John Wick", reason: "Device change" },
+        { agentId: "AG001", customerName: "John Doe", reason: "High amount" },
+        { agentId: "AG002", customerName: "Jane Smith", reason: "Velocity" },
+        { agentId: "AG003", customerName: "John Wick", reason: "Device change" },
       ];
       const search = "john";
       const filtered = alerts.filter(
         (a) =>
-          a.agentCode.toLowerCase().includes(search) ||
+          a.agentId.toLowerCase().includes(search) ||
           a.customerName.toLowerCase().includes(search) ||
           a.reason.toLowerCase().includes(search)
       );

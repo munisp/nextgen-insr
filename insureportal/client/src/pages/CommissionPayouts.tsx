@@ -39,7 +39,7 @@ export default function CommissionPayouts() {
     page,
     limit: 20,
     status: statusFilter === "all" ? undefined : (statusFilter as any),
-    agentCode: search || undefined,
+    agentId: search || undefined,
   });
   const { data: stats } = trpc.commissionPayouts.stats.useQuery();
 
@@ -164,7 +164,7 @@ export default function CommissionPayouts() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Search agent code or name..."
+              placeholder="Search agent ID or name..."
               value={search}
               onChange={e => {
                 setSearch(e.target.value);
@@ -227,7 +227,7 @@ export default function CommissionPayouts() {
                     data?.items.map((p: any) => (
                       <tr key={p.id} className="border-b hover:bg-muted/30">
                         <td className="py-2 px-3">
-                          <p className="font-medium">{p.agentCode}</p>
+                          <p className="font-medium">{p.agentId}</p>
                           {p.accountNumber && (
                             <p className="text-xs text-muted-foreground">
                               {p.bankCode} · {p.accountNumber}
