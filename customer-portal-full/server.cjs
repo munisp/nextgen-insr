@@ -9,9 +9,24 @@ const nodemailer = require('nodemailer');
 function uuidv4() { return crypto.randomUUID(); }
 
 const compression = require('compression');
+const multer = require('multer');
+const { renderEmail } = require('./email-templates.cjs');
 const app = express();
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
+
+// ═══════════════════════════════════════════════════════════════════════
+// API VERSIONING (v1 prefix with backward compatibility)
+// ═══════════════════════════════════════════════════════════════════════
+const API_VERSION = 'v1';
+const API_PREFIX = `/api/${API_VERSION}`;
+// Rewrite /api/v1/trpc/* → /api/trpc/* for backward compat
+app.use((req, res, next) => {
+  if (req.path.startsWith(`${API_PREFIX}/trpc/`)) {
+    req.url = req.url.replace(`/${API_VERSION}/`, '/');
+  }
+  next();
+});
 
 // ═══════════════════════════════════════════════════════════════════════
 // STRUCTURED LOGGING (Pino-compatible JSON logger)
@@ -282,31 +297,90 @@ const rateLimitStore = {
 };
 
 // Redis-backed cache with in-memory fallback
+const memoryCache = new Map();
 const cacheStore = {
   async get(key) {
     if (redis) {
       const val = await redis.get(`cache:${key}`);
       return val ? JSON.parse(val) : null;
     }
+    const entry = memoryCache.get(key);
+    if (entry && entry.expires > Date.now()) return entry.data;
+    if (entry) memoryCache.delete(key);
     return null;
   },
   async set(key, data, ttlSeconds = 60) {
     if (redis) {
       await redis.setex(`cache:${key}`, ttlSeconds, JSON.stringify(data));
+    } else {
+      memoryCache.set(key, { data, expires: Date.now() + ttlSeconds * 1000 });
     }
   },
+  async invalidate(pattern) {
+    if (redis) {
+      const keys = await redis.keys(`cache:${pattern}`);
+      if (keys.length) await redis.del(...keys);
+    } else {
+      for (const [k] of memoryCache) { if (k.startsWith(pattern.replace('*', ''))) memoryCache.delete(k); }
+    }
+  },
+};
+// Cache TTL config per route prefix (seconds)
+const CACHE_TTLS = {
+  'dashboard.stats': 30,
+  'products.list': 120,
+  'marketplace.featured': 120,
+  'marketplace.categories': 300,
+  'coverage.types': 300,
+  'insuranceScore.get': 60,
+  'premiumRates.list': 120,
+  'admin.settings.list': 60,
+  'naicom.reportingSchedule': 120,
+  'reinsurance.treaties': 120,
+  'ifrs17.contracts': 60,
+  'financial.trialBalance': 60,
+  'ai.mlStatus': 30,
+  'ai.modelMetrics': 60,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
 // PRODUCTION HARDENING: Observability, Health, Security
 // ═══════════════════════════════════════════════════════════════════════
 
-// Request metrics
-const metrics = { requests: 0, errors: 0, latencySum: 0, startTime: Date.now() };
+// Request metrics (Prometheus-compatible)
+const metrics = {
+  requests: 0, errors: 0, latencySum: 0, startTime: Date.now(),
+  byRoute: new Map(),
+  byStatus: new Map(),
+  latencyHistogram: { buckets: [10, 25, 50, 100, 250, 500, 1000, 5000], counts: new Array(9).fill(0) },
+};
 app.use((req, res, next) => {
   const start = Date.now();
   metrics.requests++;
-  res.on('finish', () => { metrics.latencySum += Date.now() - start; if (res.statusCode >= 500) metrics.errors++; });
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    metrics.latencySum += duration;
+    if (res.statusCode >= 500) metrics.errors++;
+    // Track by status code
+    const statusKey = `${Math.floor(res.statusCode / 100)}xx`;
+    metrics.byStatus.set(statusKey, (metrics.byStatus.get(statusKey) || 0) + 1);
+    // Track by route prefix
+    if (req.path.startsWith('/api/trpc/')) {
+      const route = req.path.replace('/api/trpc/', '').split(',')[0].split('.')[0];
+      const entry = metrics.byRoute.get(route) || { count: 0, errors: 0, latencySum: 0 };
+      entry.count++;
+      entry.latencySum += duration;
+      if (res.statusCode >= 500) entry.errors++;
+      metrics.byRoute.set(route, entry);
+    }
+    // Histogram
+    for (let i = 0; i < metrics.latencyHistogram.buckets.length; i++) {
+      if (duration <= metrics.latencyHistogram.buckets[i]) { metrics.latencyHistogram.counts[i]++; break; }
+    }
+    if (duration > metrics.latencyHistogram.buckets[metrics.latencyHistogram.buckets.length - 1]) {
+      metrics.latencyHistogram.counts[metrics.latencyHistogram.buckets.length]++;
+    }
+  });
   next();
 });
 
@@ -325,6 +399,19 @@ app.use((req, res, next) => {
 const rateLimits = new Map();
 const RATE_LIMIT_WINDOW = parseInt(process.env.RATE_LIMIT_WINDOW || '60000');
 const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || '100');
+// Per-route rate limits for expensive operations
+const ROUTE_RATE_LIMITS = {
+  'claims.create': { window: 60000, max: 10 },
+  'payments.initiate': { window: 60000, max: 5 },
+  'auth.login': { window: 900000, max: 10 },
+  'auth.signup': { window: 300000, max: 5 },
+  'auth.resetPassword': { window: 300000, max: 3 },
+  'ifrs17.calculate': { window: 60000, max: 5 },
+  'naicom.sendData': { window: 300000, max: 3 },
+  'reinsurance.calculateCession': { window: 60000, max: 10 },
+  'ai.predict': { window: 60000, max: 20 },
+  'underwriting.evaluate': { window: 60000, max: 10 },
+};
 
 function checkRateLimitMemory(key) {
   const now = Date.now();
@@ -355,6 +442,26 @@ const pool = new Pool({
   allowExitOnIdle: false,
 });
 
+// Read replica pool (for analytics/reporting queries)
+const replicaPool = process.env.PG_REPLICA_HOST ? new Pool({
+  host: process.env.PG_REPLICA_HOST,
+  port: parseInt(process.env.PG_REPLICA_PORT || process.env.PGPORT || '5432'),
+  database: process.env.PGDATABASE || 'ngapp',
+  user: process.env.PG_REPLICA_USER || process.env.PGUSER || 'ngapp',
+  password: process.env.PG_REPLICA_PASSWORD || process.env.PGPASSWORD || 'ngapp',
+  max: parseInt(process.env.PG_REPLICA_MAX || '10'),
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+  statement_timeout: 60000,
+}) : null;
+if (replicaPool) {
+  replicaPool.query('SELECT 1').then(() => logger.info('Read replica connected')).catch(err => {
+    logger.warn('Read replica unavailable, using primary for reads', { error: err.message });
+  });
+}
+// Route reads to replica when available
+function getReadPool() { return replicaPool || pool; }
+
 // Pool monitoring
 pool.on('error', (err) => logger.error('PostgreSQL pool error', { error: err.message }));
 pool.on('connect', () => logger.debug('New DB connection established'));
@@ -363,6 +470,7 @@ setInterval(() => {
     total: pool.totalCount,
     idle: pool.idleCount,
     waiting: pool.waitingCount,
+    ...(replicaPool ? { replica_total: replicaPool.totalCount, replica_idle: replicaPool.idleCount } : {}),
   });
 }, 60000);
 
@@ -496,9 +604,149 @@ async function osSearch(index, query, fields = [], size = 20) {
   }
 }
 
-// Verify DB connection on startup + ensure auth tables exist
+// ═══════════════════════════════════════════════════════════════════════
+// FILE UPLOAD (S3-compatible with local filesystem fallback)
+// ═══════════════════════════════════════════════════════════════════════
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const S3_BUCKET = process.env.S3_BUCKET || '';
+const S3_REGION = process.env.S3_REGION || 'eu-west-1';
+const S3_ENDPOINT = process.env.S3_ENDPOINT || '';
+const fs = require('fs');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`),
+  }),
+  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760') }, // 10MB default
+  fileFilter: (req, file, cb) => {
+    const allowed = /jpeg|jpg|png|gif|pdf|doc|docx|xls|xlsx|csv|txt|zip/;
+    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+    const mime = allowed.test(file.mimetype?.split('/')[1] || '');
+    cb(null, ext || mime);
+  },
+});
+
+async function uploadToS3(filePath, key) {
+  if (!S3_BUCKET) return null;
+  try {
+    const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+    const s3 = new S3Client({
+      region: S3_REGION,
+      ...(S3_ENDPOINT ? { endpoint: S3_ENDPOINT, forcePathStyle: true } : {}),
+    });
+    const fileContent = fs.readFileSync(filePath);
+    await s3.send(new PutObjectCommand({ Bucket: S3_BUCKET, Key: key, Body: fileContent }));
+    const url = S3_ENDPOINT ? `${S3_ENDPOINT}/${S3_BUCKET}/${key}` : `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+    logger.info('File uploaded to S3', { key, bucket: S3_BUCKET });
+    return url;
+  } catch (err) {
+    logger.warn('S3 upload failed, using local storage', { error: err.message });
+    return null;
+  }
+}
+
+// File upload endpoint
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const user = extractUser(req);
+  const storageKey = `uploads/${req.file.filename}`;
+  let url = `/uploads/${req.file.filename}`;
+  const s3Url = await uploadToS3(req.file.path, storageKey);
+  if (s3Url) url = s3Url;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO file_uploads ("userId", filename, "originalName", "mimeType", size, "storageKey", "storageProvider", "entityType", "entityId", url, "createdAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()) RETURNING *`,
+      [user?.sub || null, req.file.filename, req.file.originalname, req.file.mimetype, req.file.size,
+       storageKey, S3_BUCKET ? 's3' : 'local', req.body?.entityType || null, req.body?.entityId || null, url]
+    );
+    res.json({ success: true, file: rows[0] });
+  } catch (err) {
+    res.json({ success: true, file: { filename: req.file.filename, url, size: req.file.size } });
+  }
+});
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// ═══════════════════════════════════════════════════════════════════════
+// MULTI-TENANCY (tenant isolation via tenantId header or JWT claim)
+// ═══════════════════════════════════════════════════════════════════════
+const MULTI_TENANT_ENABLED = process.env.MULTI_TENANT === 'true';
+function getTenantId(req) {
+  if (!MULTI_TENANT_ENABLED) return 'default';
+  const fromHeader = req.headers['x-tenant-id'];
+  if (fromHeader) return fromHeader;
+  const user = req.user || extractUser(req);
+  if (user?.tenantId) return user.tenantId;
+  return 'default';
+}
+// Tenant isolation middleware (adds tenantId to request)
+app.use((req, res, next) => {
+  req.tenantId = getTenantId(req);
+  next();
+});
+// Tenant management endpoints
+app.get('/api/tenants', async (req, res) => {
+  const tenants = await q('SELECT id, name, domain, status, "createdAt" FROM tenants ORDER BY name');
+  res.json(tenants);
+});
+app.post('/api/tenants', async (req, res) => {
+  const { id, name, domain, settings } = req.body || {};
+  if (!id || !name) return res.status(400).json({ error: 'id and name required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO tenants (id, name, domain, settings) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name=$2, domain=$3, settings=$4 RETURNING *`,
+      [id, name, domain || null, JSON.stringify(settings || {})]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// DATABASE MIGRATIONS (run on startup)
+// ═══════════════════════════════════════════════════════════════════════
+async function runMigrations() {
+  const migrationsDir = path.join(__dirname, 'migrations');
+  if (!fs.existsSync(migrationsDir)) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL UNIQUE,
+      applied_at TIMESTAMP DEFAULT NOW(),
+      checksum VARCHAR(64)
+    )
+  `);
+  const { rows: applied } = await pool.query('SELECT name FROM _migrations');
+  const appliedSet = new Set(applied.map(r => r.name));
+  const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+  for (const file of files) {
+    const name = file.replace('.sql', '');
+    if (appliedSet.has(name)) continue;
+    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('INSERT INTO _migrations (name) VALUES ($1) ON CONFLICT DO NOTHING', [name]);
+      await client.query('COMMIT');
+      logger.info('Migration applied', { name });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      logger.error('Migration failed', { name, error: err.message });
+    } finally {
+      client.release();
+    }
+  }
+}
+
+// Verify DB connection on startup + run migrations + ensure tables
 pool.query('SELECT NOW()').then(async () => {
   logger.info('PostgreSQL connected');
+  // Run pending migrations
+  await runMigrations();
   // Create auth-related tables if not exist
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_resets (
@@ -509,6 +757,29 @@ pool.query('SELECT NOW()').then(async () => {
     );
     ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpSecret" VARCHAR(64);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS "totpEnabled" BOOLEAN DEFAULT false;
+  `).catch(() => {});
+  // Ensure file_uploads table exists
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS file_uploads (
+      id SERIAL PRIMARY KEY,
+      "userId" INTEGER,
+      "tenantId" VARCHAR(50) DEFAULT 'default',
+      filename VARCHAR(500) NOT NULL,
+      "originalName" VARCHAR(500) NOT NULL,
+      "mimeType" VARCHAR(100),
+      size INTEGER,
+      "storageKey" VARCHAR(1000) NOT NULL,
+      "storageProvider" VARCHAR(20) DEFAULT 'local',
+      "entityType" VARCHAR(50),
+      "entityId" INTEGER,
+      url TEXT,
+      "createdAt" TIMESTAMP DEFAULT NOW()
+    )
+  `).catch(() => {});
+  // Ensure tenants table has insurance columns
+  await pool.query(`
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
+    ALTER TABLE tenants ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}';
   `).catch(() => {});
   // Add referential integrity constraints (idempotent — ignores if already exist)
   const fkConstraints = [
@@ -531,7 +802,7 @@ pool.query('SELECT NOW()').then(async () => {
 });
 
 // Health check endpoints
-app.get('/health', (req, res) => res.json({ status: 'healthy', uptime: Math.floor(process.uptime()), version: '2.2.0' }));
+app.get('/health', (req, res) => res.json({ status: 'healthy', uptime: Math.floor(process.uptime()), version: '3.0.0', apiVersion: API_VERSION }));
 app.get('/health/ready', async (req, res) => {
   const checks = { database: 'disconnected', redis: 'disconnected' };
   let ready = true;
@@ -542,6 +813,45 @@ app.get('/health/ready', async (req, res) => {
 });
 app.get('/metrics', (req, res) => {
   const uptime = (Date.now() - metrics.startTime) / 1000;
+  const accept = req.headers.accept || '';
+  // Prometheus text format
+  if (accept.includes('text/plain') || req.query.format === 'prometheus') {
+    const lines = [
+      '# HELP insureportal_requests_total Total HTTP requests',
+      '# TYPE insureportal_requests_total counter',
+      `insureportal_requests_total ${metrics.requests}`,
+      '# HELP insureportal_errors_total Total HTTP 5xx errors',
+      '# TYPE insureportal_errors_total counter',
+      `insureportal_errors_total ${metrics.errors}`,
+      '# HELP insureportal_uptime_seconds Server uptime in seconds',
+      '# TYPE insureportal_uptime_seconds gauge',
+      `insureportal_uptime_seconds ${Math.floor(uptime)}`,
+      '# HELP insureportal_memory_bytes Heap memory used',
+      '# TYPE insureportal_memory_bytes gauge',
+      `insureportal_memory_bytes ${process.memoryUsage().heapUsed}`,
+      '# HELP insureportal_db_connections Active database connections',
+      '# TYPE insureportal_db_connections gauge',
+      `insureportal_db_connections{pool="primary"} ${pool.totalCount || 0}`,
+      ...(replicaPool ? [`insureportal_db_connections{pool="replica"} ${replicaPool.totalCount || 0}`] : []),
+      '# HELP insureportal_request_duration_seconds Request latency histogram',
+      '# TYPE insureportal_request_duration_seconds histogram',
+    ];
+    metrics.latencyHistogram.buckets.forEach((b, i) => {
+      lines.push(`insureportal_request_duration_seconds_bucket{le="${b/1000}"} ${metrics.latencyHistogram.counts.slice(0, i + 1).reduce((a, c) => a + c, 0)}`);
+    });
+    lines.push(`insureportal_request_duration_seconds_bucket{le="+Inf"} ${metrics.requests}`);
+    lines.push(`insureportal_request_duration_seconds_count ${metrics.requests}`);
+    lines.push(`insureportal_request_duration_seconds_sum ${(metrics.latencySum / 1000).toFixed(3)}`);
+    // Per-route metrics
+    lines.push('# HELP insureportal_route_requests Route-level request counts');
+    lines.push('# TYPE insureportal_route_requests counter');
+    for (const [route, data] of metrics.byRoute) {
+      lines.push(`insureportal_route_requests{route="${route}"} ${data.count}`);
+    }
+    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    return res.send(lines.join('\n') + '\n');
+  }
+  // JSON format (default)
   res.json({
     uptime: Math.floor(uptime),
     requests: metrics.requests,
@@ -550,6 +860,12 @@ app.get('/metrics', (req, res) => {
     avgLatency: metrics.requests ? Math.round(metrics.latencySum / metrics.requests) + 'ms' : '0ms',
     memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
     connections: pool.totalCount || 0,
+    replicaConnections: replicaPool ? replicaPool.totalCount : null,
+    byStatus: Object.fromEntries(metrics.byStatus),
+    topRoutes: [...metrics.byRoute.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 20).map(([route, d]) => ({
+      route, requests: d.count, errors: d.errors, avgLatency: d.count ? Math.round(d.latencySum / d.count) : 0,
+    })),
+    histogram: Object.fromEntries(metrics.latencyHistogram.buckets.map((b, i) => [`<=${b}ms`, metrics.latencyHistogram.counts[i]])),
   });
 });
 
@@ -3725,13 +4041,14 @@ app.all('/api/trpc/*', async (req, res) => {
   const routeName = req.params[0];
   const routes = routeName ? routeName.split(',') : [];
 
-  // Rate limit auth endpoints
+  // Per-route rate limiting (covers auth + expensive operations)
   const route = routes[0] || '';
-  if (route.startsWith('auth.')) {
+  const routeLimit = ROUTE_RATE_LIMITS[route];
+  if (routeLimit) {
     const ip = req.ip || req.connection.remoteAddress;
-    const allowed = await checkRateLimit(`${ip}:${route}`);
+    const allowed = await rateLimitStore.check(`${ip}:${route}`, routeLimit.window, routeLimit.max);
     if (!allowed) {
-      return res.status(429).json({ error: { message: 'Too many attempts. Please try again in 15 minutes.' } });
+      return res.status(429).json({ error: { message: `Rate limit exceeded for ${route}. Please try again later.` } });
     }
   }
 
@@ -3774,11 +4091,30 @@ app.all('/api/trpc/*', async (req, res) => {
     const handler = ROUTE_MAP.get(route);
     if (handler) {
       try {
-        const data = await handler(input, { userId, user });
-        // Log mutations to audit trail + publish Kafka event
+        // Redis/memory cache for read-heavy GET routes
+        const cacheTtl = req.method === 'GET' ? CACHE_TTLS[route] : null;
+        if (cacheTtl) {
+          const cacheKey = `${route}:${JSON.stringify(input)}`;
+          const cached = await cacheStore.get(cacheKey);
+          if (cached) {
+            res.setHeader('X-Cache', 'HIT');
+            return res.json({ result: { data: cached } });
+          }
+        }
+        const data = await handler(input, { userId, user, tenantId: req.tenantId });
+        // Cache read results
+        if (cacheTtl && data) {
+          const cacheKey = `${route}:${JSON.stringify(input)}`;
+          cacheStore.set(cacheKey, data, cacheTtl).catch(() => {});
+          res.setHeader('X-Cache', 'MISS');
+        }
+        // Log mutations to audit trail + publish Kafka event + invalidate cache
         if (req.method === 'POST') {
           logAudit(route, route.split('.')[0], null, userId, { input: Object.keys(input) });
           publishEvent('insureportal.mutations', { type: route, entityId: data?.id || data?.claimId || data?.policyId || null, userId, inputKeys: Object.keys(input) });
+          // Invalidate related caches on mutation
+          const domain = route.split('.')[0];
+          cacheStore.invalidate(`${domain}.*`).catch(() => {});
         }
         return res.json({ result: { data: data } });
       } catch (err) {
@@ -3850,8 +4186,8 @@ app.get('/api/docs', (req, res) => {
   }
   const spec = {
     openapi: '3.1.0',
-    info: { title: 'InsurePortal API', version: '3.0.0', description: 'Unified insurance platform API — tRPC over HTTP' },
-    servers: [{ url: `http://localhost:${PORT}`, description: 'Development' }],
+    info: { title: 'InsurePortal API', version: '3.0.0', description: `Unified insurance platform API — tRPC over HTTP. Supports API versioning via ${API_PREFIX}/trpc/* prefix. Multi-tenancy via X-Tenant-ID header.` },
+    servers: [{ url: `http://localhost:${PORT}`, description: 'Development' }, { url: `http://localhost:${PORT}${API_PREFIX}`, description: 'Versioned (v1)' }],
     paths: {},
     tags: Object.keys(domains).sort().map((d) => ({ name: d, description: `${domains[d].length} routes` })),
   };
@@ -3904,9 +4240,9 @@ app.get('*', (req, res) => {
 });
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  logger.info('InsurePortal started', { port: PORT, version: '3.0.0' });
-  logger.info('Database config', { host: process.env.PGHOST || 'localhost', port: process.env.PGPORT || '5432', db: process.env.PGDATABASE || 'ngapp' });
-  logger.info('Middleware status', { kafka: KAFKA_ENABLED, tigerbeetle: TB_ENABLED, opensearch: OS_ENABLED, redis: !!redis });
+  logger.info('InsurePortal started', { port: PORT, version: '3.0.0', apiVersion: API_VERSION });
+  logger.info('Database config', { host: process.env.PGHOST || 'localhost', port: process.env.PGPORT || '5432', db: process.env.PGDATABASE || 'ngapp', replica: !!replicaPool });
+  logger.info('Middleware status', { kafka: KAFKA_ENABLED, tigerbeetle: TB_ENABLED, opensearch: OS_ENABLED, redis: !!redis, multiTenant: MULTI_TENANT_ENABLED, s3: !!S3_BUCKET });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -3990,6 +4326,7 @@ function gracefulShutdown(signal) {
     logger.info('HTTP server closed');
     try { if (kafkaProducer) { await kafkaProducer.disconnect(); logger.info('Kafka producer disconnected'); } } catch (e) { /* ignore */ }
     try { if (redis) { await redis.quit(); logger.info('Redis connection closed'); } } catch (e) { /* ignore */ }
+    try { if (replicaPool) { await replicaPool.end(); logger.info('Replica pool closed'); } } catch (e) { /* ignore */ }
     try { await pool.end(); logger.info('Database pool closed'); } catch (e) { /* ignore */ }
     process.exit(0);
   });
