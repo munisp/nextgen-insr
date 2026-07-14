@@ -806,6 +806,8 @@ func main() {
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
+	r.Use(tracingMiddleware)
+	r.Use(rateLimitMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -834,6 +836,72 @@ func main() {
 			"uptime_seconds": int(time.Since(startTime).Seconds()), "ready": true,
 		})
 	})
+	return r
+}
+
+func tracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+		}
+		w.Header().Set("X-Request-ID", requestID)
+		start := time.Now()
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
+	})
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+var (
+	rateLimitMu    sync.Mutex
+	rateLimitStore = make(map[string][]time.Time)
+)
+
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = fwd
+		}
+		rateLimitMu.Lock()
+		now := time.Now()
+		window := now.Add(-1 * time.Minute)
+		var recent []time.Time
+		for _, t := range rateLimitStore[ip] {
+			if t.After(window) {
+				recent = append(recent, t)
+			}
+		}
+		if len(recent) >= 100 {
+			rateLimitMu.Unlock()
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
+			return
+		}
+		recent = append(recent, now)
+		rateLimitStore[ip] = recent
+		rateLimitMu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
+	r := newRouter()
 	port := os.Getenv("PORT")
 	if port == "" { port = "8115" }
 	log.Printf("etherisc-gif-enhanced starting on :%s", port)

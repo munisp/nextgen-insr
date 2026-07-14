@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"

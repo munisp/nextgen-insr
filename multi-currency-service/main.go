@@ -809,6 +809,8 @@ func main() {
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
+	r.Use(tracingMiddleware)
+	r.Use(rateLimitMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

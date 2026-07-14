@@ -92,6 +92,96 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func tracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+		}
+		w.Header().Set("X-Request-ID", requestID)
+		start := time.Now()
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
+	})
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+var kafkaRestURL string
+
+func initKafka() {
+	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
+	if kafkaRestURL == "" {
+		kafkaRestURL = "http://localhost:8082"
+	}
+	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
+}
+
+func publishEvent(topic string, key string, payload interface{}) {
+	if kafkaRestURL == "" {
+		return
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("WARN: kafka marshal error: %v", err)
+		return
+	}
+	msg := map[string]interface{}{
+		"records": []map[string]interface{}{
+			{"key": key, "value": string(data)},
+		},
+	}
+	body, _ := json.Marshal(msg)
+	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("WARN: kafka publish error: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+}
+
+var (
+	rateLimitMu    sync.Mutex
+	rateLimitStore = make(map[string][]time.Time)
+)
+
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := r.RemoteAddr
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			ip = fwd
+		}
+		rateLimitMu.Lock()
+		now := time.Now()
+		window := now.Add(-1 * time.Minute)
+		var recent []time.Time
+		for _, t := range rateLimitStore[ip] {
+			if t.After(window) {
+				recent = append(recent, t)
+			}
+		}
+		if len(recent) >= 100 {
+			rateLimitMu.Unlock()
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
+			return
+		}
+		recent = append(recent, now)
+		rateLimitStore[ip] = recent
+		rateLimitMu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	cfg := config.NewConfig()
 
