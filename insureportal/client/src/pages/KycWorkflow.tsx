@@ -65,7 +65,7 @@ export default function KycWorkflow() {
       result = result.filter(
         (a: any) =>
           a.agentName?.toLowerCase().includes(q) ||
-          a.agentCode?.toLowerCase().includes(q) ||
+          a.agentId?.toLowerCase().includes(q) ||
           a.bvn?.includes(q)
       );
     }
@@ -182,7 +182,7 @@ export default function KycWorkflow() {
                       {a.agentName ?? `Agent #${a.agentId}`}
                     </div>
                     <div className="text-[10px] text-slate-500">
-                      {a.agentCode}
+                      {a.agentId}
                     </div>
                   </td>
                   <td className="px-3 py-2.5 font-mono text-slate-400">

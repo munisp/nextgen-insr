@@ -36,7 +36,7 @@ import { cn } from "@/lib/utils";
 // Section display names
 const sectionNames: Record<string, string> = {
   "getting-started": "Getting Started",
-  "pos-terminal": "POS Terminal Operations",
+  "insurance-service": "Insurance Service Operations",
   "agent-management": "Agent Management",
   transactions: "Transaction Processing",
   "fraud-detection": "Fraud Detection & Alerts",

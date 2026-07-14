@@ -50,7 +50,7 @@ const ENDPOINTS = [
   {
     method: "GET",
     path: "/api/v1/agents/me",
-    desc: "Get the current agent's profile and float balance",
+    desc: "Get the current agent's profile and premium reserve",
     scope: "agents:read",
   },
   {
@@ -62,7 +62,7 @@ const ENDPOINTS = [
   {
     method: "GET",
     path: "/api/v1/float/balance",
-    desc: "Get current float balance",
+    desc: "Get current premium reserve",
     scope: "float:read",
   },
   {

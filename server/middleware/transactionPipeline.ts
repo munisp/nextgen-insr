@@ -8,7 +8,7 @@
  * Pipeline stages:
  * 1. Input validation & sanitization
  * 2. Rate limit check
- * 3. Business rule evaluation (limits, KYC tier, corridor)
+ * 3. Business rule evaluation (limits, KYC tier, insurance_region)
  * 4. Fraud scoring & risk assessment
  * 5. Commission calculation
  * 6. Compliance screening (AML/CFT)
@@ -17,6 +17,7 @@
  */
 
 import { z } from "zod";
+import { logger } from '../_core/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ export interface TransactionRequest {
   senderAccountId?: string;
   recipientPhone?: string;
   recipientAccountId?: string;
-  corridor?: string;
+  insurance_region?: string;
   metadata?: Record<string, string>;
 }
 
@@ -67,7 +68,7 @@ export const transactionRequestSchema = z.object({
   senderAccountId: z.string().optional(),
   recipientPhone: z.string().optional(),
   recipientAccountId: z.string().optional(),
-  corridor: z.string().optional(),
+  insurance_region: z.string().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
 });
 
@@ -105,7 +106,7 @@ const FEE_TIERS = [
 
 // ─── AML Screening Keywords ─────────────────────────────────────────────────
 
-const HIGH_RISK_CORRIDORS = ["NG-KP", "NG-SO", "NG-YE", "NG-SY", "NG-IR"];
+const HIGH_RISK_REGIONS = ["NG-KP", "NG-SO", "NG-YE", "NG-SY", "NG-IR"];
 const STRUCTURING_THRESHOLD = 1_000_000; // NGN
 const RAPID_TXN_WINDOW_MS = 300_000; // 5 minutes
 
@@ -238,13 +239,13 @@ function calculateRiskScore(ctx: PipelineContext): void {
   else if (ctx.request.amount > 500_000) score += 10;
   else if (ctx.request.amount > 100_000) score += 5;
 
-  // Corridor risk
+  // InsuranceRegion risk
   if (
-    ctx.request.corridor &&
-    HIGH_RISK_CORRIDORS.includes(ctx.request.corridor)
+    ctx.request.insurance_region &&
+    HIGH_RISK_REGIONS.includes(ctx.request.insurance_region)
   ) {
     score += 40;
-    ctx.complianceFlags.push("HIGH_RISK_CORRIDOR");
+    ctx.complianceFlags.push("HIGH_RISK_REGION");
   }
 
   // Structuring detection (just below reporting threshold)
@@ -279,12 +280,12 @@ async function screenCompliance(ctx: PipelineContext): Promise<void> {
     const result = await screenTransaction(
       {
         fullName: ctx.request.senderAgentCode || "",
-        nationality: ctx.request.corridor?.split("-")[0],
+        nationality: ctx.request.insurance_region?.split("-")[0],
       },
       {
         fullName:
           ctx.request.recipientPhone || ctx.request.recipientAccountId || "",
-        nationality: ctx.request.corridor?.split("-")[1],
+        nationality: ctx.request.insurance_region?.split("-")[1],
       },
       ctx.request.amount,
       ctx.request.currency
@@ -301,7 +302,7 @@ async function screenCompliance(ctx: PipelineContext): Promise<void> {
     if (err.message?.startsWith("SANCTIONS_BLOCKED")) throw err;
     // Log screening failure but don't block — regulatory requirement is to screen,
     // temporary unavailability should not halt all transactions
-    console.warn("[Compliance] Screening service unavailable:", err.message);
+    logger.warn("[Compliance] Screening service unavailable:: " + err.message);
     ctx.complianceFlags.push("SCREENING_UNAVAILABLE");
   }
 

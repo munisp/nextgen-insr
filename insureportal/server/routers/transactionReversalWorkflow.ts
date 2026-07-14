@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { reversalRequests, transactions } from "../../drizzle/schema";
+import { reversalRequests, transactions } from "@schema";
 import { desc, eq, sql, and, count } from "drizzle-orm";
 
 /**
@@ -29,7 +29,7 @@ export const transactionReversalWorkflowRouter = router({
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        status: z.enum(["pending", "approved", "rejected", "processing", "completed", "failed"]).optional(),
+        status: z.enum(["pending", "approved", "rejected", "processed", "completed", "failed"]).optional(),
         agentId: z.number().optional(),
       })
     )
@@ -164,7 +164,7 @@ export const transactionReversalWorkflowRouter = router({
       // Mark as processing
       await database
         .update(reversalRequests)
-        .set({ status: "processing" })
+        .set({ status: "processed" })
         .where(eq(reversalRequests.id, input.id));
 
       // In production, this would call TigerBeetle to create the counter-entry

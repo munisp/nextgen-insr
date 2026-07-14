@@ -69,7 +69,7 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 {{- end }}
 
 {{/*
-Create the image reference for a service
+Create image name
 */}}
 {{- define "ngapp.serviceImage" -}}
 {{- $registry := .root.Values.global.imageRegistry | default "" -}}
@@ -80,4 +80,32 @@ Create the image reference for a service
 {{- else -}}
 {{- printf "%s:%s" $repo $tag -}}
 {{- end -}}
+{{- end }}
+
+{{/*
+Namespace
+*/}}
+{{- define "ngapp.namespace" -}}
+{{- default .Release.Namespace .Values.namespace | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create the namespace-scoped service name
+*/}}
+{{- define "ngapp.serviceName" -}}
+{{- printf "%s-%s" (include "ngapp.fullname" .) .name -}}
+{{- end }}
+
+{{/*
+Get environment name
+*/}}
+{{- define "ngapp.environment" -}}
+{{- .Values.global.environment | default "production" -}}
+{{- end }}
+
+{{/*
+Service port name (kebab-case of service name)
+*/}}
+{{- define "ngapp.servicePortName" -}}
+{{- .port | default 8080 -}}
 {{- end }}

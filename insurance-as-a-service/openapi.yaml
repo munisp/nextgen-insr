@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: Insurance-as-a-Service API
+  version: 1.0.0
+  description: "Embed insurance in 3 API calls (Quote \u2192 Bind \u2192 Claim)"
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service healthy
+  /api/v1/quote:
+    post:
+      summary: Get an insurance quote
+      responses:
+        '200':
+          description: Quote details
+  /api/v1/bind:
+    post:
+      summary: Bind a quote into an active policy
+      responses:
+        '200':
+          description: Policy details
+  /ready:
+    get:
+      summary: Readiness probe
+      operationId: getReady
+      responses:
+        '200':
+          description: Service is ready
+        '503':
+          description: Service not ready
+  /live:
+    get:
+      summary: Liveness probe
+      operationId: getLive
+      responses:
+        '200':
+          description: Service is alive

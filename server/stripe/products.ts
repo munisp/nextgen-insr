@@ -2,7 +2,7 @@
 /**
  * Stripe Products & Pricing Configuration
  *
- * Defines the subscription tiers and one-time products for the 54Link POS platform.
+ * Defines the subscription tiers and one-time products for the InsurePortal POS platform.
  */
 
 export interface PlanConfig {

@@ -7,7 +7,7 @@ import {
   transactions,
   refunds,
   auditLog,
-} from "../../drizzle/schema";
+} from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const chargebackManagementRouter = router({

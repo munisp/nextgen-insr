@@ -1,0 +1,70 @@
+{{- /*
+  configmap.yaml - Common configuration for all NGApp services
+  Contains shared environment variables for middleware connectivity.
+*/ -}}
+
+{{- $fullName := include "ngapp.fullname" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullName }}-config
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.labels" . | nindent 4 }}
+data:
+  # ── Environment ──
+  ENVIRONMENT: {{ .Values.global.environment | quote }}
+  LOG_LEVEL: {{ .Values.commonConfig.LOG_LEVEL | default "info" | quote }}
+  OTEL_ENABLED: {{ .Values.commonConfig.OTEL_ENABLED | default "true" | quote }}
+
+  # ── PostgreSQL ──
+  {{- if .Values.postgresql.enabled }}
+  DATABASE_HOST: "{{ $fullName }}-postgresql"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: {{ .Values.postgresql.auth.database | quote }}
+  DATABASE_URL: "postgresql://$(DB_USER):$(DB_PASSWORD)@{{ $fullName }}-postgresql:5432/{{ .Values.postgresql.auth.database }}"
+  {{- end }}
+
+  # ── Redis ──
+  {{- if .Values.redis.enabled }}
+  REDIS_HOST: "{{ $fullName }}-redis-master"
+  REDIS_PORT: "6379"
+  REDIS_URL: "redis://$(REDIS_PASSWORD)@{{ $fullName }}-redis-master:6379"
+  {{- end }}
+
+  # ── Kafka ──
+  {{- if .Values.kafka.enabled }}
+  KAFKA_BROKERS: "{{ $fullName }}-kafka:9092"
+  KAFKA_SECURITY_PROTOCOL: "PLAINTEXT"
+  {{- end }}
+
+  # ── Keycloak ──
+  {{- if .Values.keycloak.enabled }}
+  KEYCLOAK_URL: "http://{{ $fullName }}-keycloak:8080"
+  KEYCLOAK_REALM: "ngapp"
+  KEYCLOAK_ADMIN_CLIENT: "ngapp-admin"
+  {{- end }}
+
+  # ── OpenSearch ──
+  {{- if .Values.opensearch.enabled }}
+  OPENSEARCH_URL: "http://{{ $fullName }}-opensearch:9200"
+  {{- end }}
+
+  # ── Temporal ──
+  {{- if .Values.temporal.enabled }}
+  TEMPORAL_HOST: "{{ $fullName }}-temporal:7233"
+  TEMPORAL_NAMESPACE: "ngapp"
+  {{- end }}
+
+  # ── TigerBeetle ──
+  {{- if .Values.tigerbeetle.enabled }}
+  TIGERBEETLE_ADDRESS: "{{ $fullName }}-tigerbeetle:3000"
+  {{- end }}
+
+  # ── Permify ──
+  {{- if .Values.permify.enabled }}
+  PERMIFY_ADDRESS: "{{ $fullName }}-permify:3476"
+  {{- end }}
+
+  # ── Tracing ──
+  OTEL_EXPORTER_OTLP_ENDPOINT: "{{ $fullName }}-otel-collector:4317"

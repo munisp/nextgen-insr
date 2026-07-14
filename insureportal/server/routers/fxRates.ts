@@ -3,7 +3,7 @@ import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, sql, count } from "drizzle-orm";
-import { auditLog, systemConfig } from "../../drizzle/schema";
+import { auditLog, systemConfig } from "@schema";
 import { TRPCError } from "@trpc/server";
 
 export const fxRatesRouter = router({

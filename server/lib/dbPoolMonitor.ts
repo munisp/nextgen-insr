@@ -1,5 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
 import { getDb } from "../db";
+import { logger } from '../_core/logger';
 
 interface PoolStats {
   totalConnections: number;
@@ -61,12 +62,10 @@ export function startPoolMonitor(intervalMs = 60000) {
   monitorInterval = setInterval(async () => {
     const stats = await getPoolStats();
     if (stats.utilizationPercent > 80) {
-      console.warn("[DBPool] High utilization:", JSON.stringify(stats));
+      logger.warn("[DBPool] High utilization:: " + JSON.stringify(stats));
     }
     if (stats.waitingClients > 5) {
-      console.error(
-        "[DBPool] Connection queue building up:",
-        JSON.stringify(stats)
+      logger.error("[DBPool] Connection queue building up:: " + JSON.stringify(stats)
       );
     }
   }, intervalMs);

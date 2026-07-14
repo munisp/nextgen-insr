@@ -214,11 +214,11 @@ export interface KBArticle {
 const kbArticles: KBArticle[] = [
   {
     id: "kb-001",
-    title: "How to process a cash-in transaction",
+    title: "How to process a premium collection transaction",
     content:
-      "Navigate to Cash In on the POS terminal. Enter the customer phone number, amount, and confirm. The transaction will be processed and a receipt generated automatically. Float will be deducted from your agent balance.",
+      "Navigate to Cash In on the insurance service. Enter the customer phone number, amount, and confirm. The transaction will be processed and a receipt generated automatically. Float will be deducted from your agent balance.",
     category: "Transactions",
-    tags: ["cash-in", "deposit", "float"],
+    tags: ["premium collection", "deposit", "float"],
     helpfulness: 92,
     viewCount: 1540,
     createdAt: new Date("2024-01-15"),
@@ -300,7 +300,7 @@ const kbArticles: KBArticle[] = [
     id: "kb-008",
     title: "PIN reset procedure",
     content:
-      "If you forget your PIN: 1) Tap 'Forgot PIN?' on the login screen. 2) Enter your agent code and registered phone number. 3) Enter the OTP sent via SMS. 4) Set a new 4-digit PIN. Contact support if you don't receive the OTP.",
+      "If you forget your PIN: 1) Tap 'Forgot PIN?' on the login screen. 2) Enter your agent ID and registered phone number. 3) Enter the OTP sent via SMS. 4) Set a new 4-digit PIN. Contact support if you don't receive the OTP.",
     category: "Account",
     tags: ["pin", "reset", "login", "otp"],
     helpfulness: 91,
@@ -363,7 +363,7 @@ const cannedResponses: CannedResponse[] = [
     id: "cr-001",
     title: "Greeting",
     content:
-      "Hello {{customer_name}}! Thank you for contacting 54Link support. My name is {{agent_name}} and I'll be happy to assist you today. How can I help?",
+      "Hello {{customer_name}}! Thank you for contacting InsurePortal support. My name is {{agent_name}} and I'll be happy to assist you today. How can I help?",
     category: "General",
     variables: ["{{customer_name}}", "{{agent_name}}"],
     usageCount: 450,
@@ -423,7 +423,7 @@ const cannedResponses: CannedResponse[] = [
     id: "cr-006",
     title: "Closing",
     content:
-      "Thank you for contacting 54Link support, {{customer_name}}. If you need further assistance, don't hesitate to reach out. Have a great day!",
+      "Thank you for contacting InsurePortal support, {{customer_name}}. If you need further assistance, don't hesitate to reach out. Have a great day!",
     category: "General",
     variables: ["{{customer_name}}"],
     usageCount: 400,

@@ -33,3 +33,43 @@ node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Environment variables — NEVER commit secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Secrets and keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# IDE and editor
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# Build and dist
+dist/
+build/
+.next/
+.cache/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*.temp

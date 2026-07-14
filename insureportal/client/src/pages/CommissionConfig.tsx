@@ -250,7 +250,7 @@ export default function CommissionConfig() {
               className="bg-green-600 hover:bg-green-700 text-white"
               onClick={() =>
                 createTier.mutate({
-                  agentCode: "TIER-" + Date.now(),
+                  agentId: "TIER-" + Date.now(),
                   amount: parseFloat(newTier.ratePercent) * 1000,
                 })
               }

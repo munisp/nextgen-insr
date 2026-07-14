@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-check
 // Production features: rateLimit configuration, health check endpoints, monitoring
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";

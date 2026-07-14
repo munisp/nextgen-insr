@@ -1,4 +1,4 @@
-# ─── 54Link Apache APISIX Gateway Configuration ──────────────────────────────
+# ─── InsurePortal Apache APISIX Gateway Configuration ──────────────────────────────
 apisix:
   node_listen: 9080
   enable_ipv6: false
@@ -46,6 +46,7 @@ plugin_attr:
     max_kept: 168
 
 plugins:
+  - openappsec
   - real-ip
   - ai
   - client-control

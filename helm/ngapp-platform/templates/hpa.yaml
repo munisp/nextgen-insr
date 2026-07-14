@@ -1,0 +1,102 @@
+{{- /*
+  hpa.yaml - HorizontalPodAutoscalers for all NGApp services
+  Auto-scales based on CPU and memory utilization.
+*/ -}}
+
+{{- $fullName := include "ngapp.fullname" . -}}
+
+{{- range $name, $config := .Values.services }}
+{{- $defaults := $.Values.serviceDefaults }}
+{{- if ($config.autoscaling).enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $fullName }}-{{ $name }}
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.serviceLabels" (dict "root" $ "serviceName" $name "component" "backend") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $fullName }}-{{ $name }}
+  minReplicas: {{ ($config.autoscaling).minReplicas | default ($defaults.autoscaling).minReplicas }}
+  maxReplicas: {{ ($config.autoscaling).maxReplicas | default ($defaults.autoscaling).maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ ($config.autoscaling).targetCPUUtilizationPercentage | default ($defaults.autoscaling).targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  {{- if ($config.autoscaling).behavior }}
+  behavior:
+    {{- toYaml $config.autoscaling.behavior | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- /* Frontend HPA */ -}}
+{{- if and .Values.frontend.enabled .Values.frontend.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $fullName }}-frontend
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $fullName }}-frontend
+  minReplicas: {{ .Values.frontend.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.frontend.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.frontend.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+
+{{- /* APISIX HPA */ -}}
+{{- if and .Values.apiGateway.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $fullName }}-apisix
+  namespace: {{ include "ngapp.namespace" . }}
+  labels:
+    {{- include "ngapp.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $fullName }}-apisix
+  minReplicas: {{ .Values.apiGateway.replicaCount }}
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+{{- end }}
