@@ -6,6 +6,7 @@ import (
 	"io"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -886,6 +887,7 @@ func main() {
 	initMiddleware()
 	initDapr()
 	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", metricsHandler)
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]map[string]string{}) })
 	mux.HandleFunc("/ready", handleReady)

@@ -237,6 +237,7 @@ func main() {
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/api/v1/calculate", handleCalculate)
 	mux.HandleFunc("/api/v1/payout-summary", handlePayoutSummary)
+	mux.HandleFunc("/metrics", prodMetricsHandler)
 	port := ":8099"
 	log.Printf("Agent Commission Management starting on %s", port)
 	srv := &http.Server{

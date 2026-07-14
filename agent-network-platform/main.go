@@ -212,6 +212,7 @@ func main() {
 			"operational": true, "last_heartbeat": time.Now().Format(time.RFC3339),
 		})
 	})
+	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
 	if port == "" { port = "8120" }
 	log.Printf("agent-network-platform starting on :%s", port)

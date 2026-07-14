@@ -188,6 +188,7 @@ func main() {
 	r.Post("/api/v1/disburse", disburseToClaim)
 	r.Get("/api/v1/operators", listOperators)
 	r.Get("/api/v1/balance/{walletId}", walletBalance)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8127" }

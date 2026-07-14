@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -180,12 +181,15 @@ func main() {
 	r.Use(tracingMiddleware)
 	r.Use(rateLimitMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
+	r.Use(metricsMiddleware)
+	r.Get("/metrics", metricsHandler)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "agent-mobile-app"})
 	})
 	r.Get("/api/v1/agent/{id}/dashboard", agentDashboard)
 	r.Post("/api/v1/agent/{id}/checkin", agentCheckin)
 	r.Get("/api/v1/agent/{id}/commission", agentCommission)
+	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" { port = "8134" }

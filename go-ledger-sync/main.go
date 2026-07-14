@@ -17,6 +17,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -678,6 +679,7 @@ func main() {
 	// Health & stats
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/stats", statsHandler)
+	mux.HandleFunc("/metrics", prodMetricsHandler)
 
 	log.Printf("[pos-ledger-sync] Starting Go sidecar on port %s", port)
 	srv := &http.Server{Addr: ":"+port, Handler: rateLimitMiddleware(tracingMiddleware(corsMiddleware(mux))), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
