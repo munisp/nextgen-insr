@@ -639,7 +639,7 @@ func main() {
 	})
 	r.Use(keycloakAuthMiddleware)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "openimis-insurance-ops-integrated", "version": "1.0.0"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "openimis-insurance-ops-integrated", "version": "1.0.0"})
 	})
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
 	r.Get("/stats", handleStats)

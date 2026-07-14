@@ -137,7 +137,7 @@ func isPQClientError(err error) bool {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "underwriting-engine"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "underwriting-engine"})
 }
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	status := map[string]string{"status": "ready"}

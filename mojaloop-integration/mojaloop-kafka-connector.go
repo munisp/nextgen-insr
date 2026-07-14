@@ -13,6 +13,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 type MojaloopKafkaConnector struct {
@@ -286,7 +289,48 @@ func (c *MojaloopKafkaConnector) Stop() error {
 	return nil
 }
 
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		return
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		db = nil
+		return
+	}
+	log.Printf("Connected to PostgreSQL for mojaloop_integration")
+
+	// Create table if not exists
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS mojaloop_integration (
+		id SERIAL PRIMARY KEY,
+		data JSONB NOT NULL DEFAULT '{}',
+		status VARCHAR(50) DEFAULT 'active',
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW(),
+		tenant_id INTEGER DEFAULT 1
+	)`)
+	if err != nil {
+		log.Printf("WARN: table creation failed: %v", err)
+	}
+}
+
+
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
 	if kafkaBrokers == "" {
 		kafkaBrokers = "kafka-0.kafka-headless:9092,kafka-1.kafka-headless:9092,kafka-2.kafka-headless:9092"

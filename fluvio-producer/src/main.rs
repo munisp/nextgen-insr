@@ -1,3 +1,9 @@
+use std::env;
+
+fn database_url() -> String {
+    env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://ngapp:ngapp@localhost:5432/ngapp".to_string())
+}
+
 /// Fluvio Producer Sidecar — High-throughput event streaming for
 /// commission, settlement, dispute, biometric, and KYC events.
 ///

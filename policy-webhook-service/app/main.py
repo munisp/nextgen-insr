@@ -422,6 +422,8 @@ def create_app(config: dict = None) -> FastAPI:
 app = create_app()
 
 
+init_db()
+
 if __name__ == "__main__":
     import uvicorn
     import os

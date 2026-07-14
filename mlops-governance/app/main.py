@@ -1,13 +1,5 @@
 """MLOps Governance — model registry, drift monitoring, and explainability.
 
-Business Rules:
-- Model registry: Version control for all ML models (fraud, risk, pricing)
-- Drift detection: Statistical tests (KS, PSI) on input features and predictions
-- Alert: PSI > 0.2 = significant drift, requires retraining
-- Explainability: SHAP values for all model decisions (regulatory requirement)
-- A/B testing: Shadow mode for new models, champion-challenger pattern
-- Approval: Data science lead approval before production deployment
-- Audit: Full model lineage — training data, hyperparameters, performance metrics
 """
 import json
 import os
@@ -337,3 +329,8 @@ if app:
                 {"feature": "device_fingerprint", "importance": 0.10},
             ],
         }
+
+
+@app.on_event("startup")
+async def startup():
+    init_db()

@@ -14,6 +14,9 @@ import (
 	"time"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
@@ -86,10 +89,14 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 }
 
 func main() {
+	initDB()
+	if db != nil {
+		defer db.Close()
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "scripts-runner"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "scripts-runner"})
 	})
 	r.Get("/api/v1/scripts", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{

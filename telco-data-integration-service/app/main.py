@@ -47,6 +47,50 @@ from prometheus_client import make_asgi_app
 from app.api import telco_router, credit_score_router
 from app.services.telco_service import TelcoService
 
+
+import os
+import psycopg2
+import psycopg2.extras
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ── Database Connection ──────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
+_db_conn = None
+
+def get_db():
+    global _db_conn
+    if _db_conn is None or _db_conn.closed:
+        try:
+            _db_conn = psycopg2.connect(DATABASE_URL)
+            _db_conn.autocommit = True
+            logger.info(f"Connected to PostgreSQL for telco_data_integration_service")
+        except Exception as e:
+            logger.warning(f"Database connection failed: {e} (running in degraded mode)")
+            return None
+    return _db_conn
+
+def init_db():
+    conn = get_db()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS telco_data_integration_service (
+                        id SERIAL PRIMARY KEY,
+                        data JSONB NOT NULL DEFAULT '{}',
+                        status VARCHAR(50) DEFAULT 'active',
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW(),
+                        tenant_id INTEGER DEFAULT 1
+                    )
+                """)
+            logger.info(f"Table telco_data_integration_service initialized")
+        except Exception as e:
+            logger.warning(f"Table creation failed: {e}")
+
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -110,6 +154,8 @@ async def root():
             "credit_score": "/api/v1/credit-score"
         }
     }
+
+init_db()
 
 if __name__ == "__main__":
     import uvicorn

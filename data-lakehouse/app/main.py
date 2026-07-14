@@ -377,3 +377,8 @@ async def lakehouse_metrics():
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "data-lakehouse"}
+
+
+@app.on_event("startup")
+async def startup():
+    init_db()
