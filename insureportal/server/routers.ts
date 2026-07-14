@@ -490,6 +490,9 @@ import { marketplaceRouter } from "./routers/marketplace";
 import { promotionsRouter } from "./routers/promotions";
 // ── KYC/KYB Enforcement & Compliance Services ──
 import { kycEnforcementRouter } from "./routers/kycEnforcement";
+// ── NAICOM Compliance & Nigeria Payment Rails (confirmed gaps — first real implementations) ──
+import { naicomComplianceRouter } from "./routers/naicomCompliance";
+import { nigeriaPaymentRailsRouter } from "./routers/nigeriaPaymentRails";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -1087,6 +1090,9 @@ export const appRouter = router({
   promotions: promotionsRouter,
   // KYC/KYB Enforcement & Compliance
   kycEnforcement: kycEnforcementRouter,
+  // NAICOM Compliance & Nigeria Payment Rails
+  naicomCompliance: naicomComplianceRouter,
+  nigeriaPaymentRails: nigeriaPaymentRailsRouter,
 });
 
 export type AppRouter = typeof appRouter;
