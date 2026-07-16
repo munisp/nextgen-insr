@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	github.com/go-chi/chi/v5 v5.0.12
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.12.3
 	github.com/redis/go-redis/v9 v9.7.0
 	go.uber.org/zap v1.27.0
 )
