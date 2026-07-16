@@ -67,7 +67,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.3.2",
     "framer-motion": "^12.23.22",
-    "helmet": "^8.1.0",
+    "helmet": "^8.3.0",
     "idb-keyval": "^6.2.2",
     "input-otp": "^1.4.2",
     "ioredis": "^5.10.1",
