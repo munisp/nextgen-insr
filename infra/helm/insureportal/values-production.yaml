@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# InsurePortal Helm Chart — Production Overrides
+# Apply with: helm upgrade insureportal ./infra/helm/insureportal \
+#   -f values.yaml -f values-production.yaml \
+#   --namespace production --create-namespace
+# ─────────────────────────────────────────────────────────────────────────────
+
+replicaCount: 5
+
+image:
+  pullPolicy: Always
+
+autoscaling:
+  minReplicas: 5
+  maxReplicas: 50
+
+resources:
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+  requests:
+    cpu: 1000m
+    memory: 1Gi
+
+podDisruptionBudget:
+  minAvailable: 3
+
+env:
+  NODE_ENV: production
+  LOG_LEVEL: warn
+  OTEL_ENABLED: "true"
+  KAFKA_ENABLED: "true"
+  GO_INFRA_ENABLED: "true"
+  RUST_MIDDLEWARE_ENABLED: "true"
+  PYTHON_ANALYTICS_ENABLED: "true"
+  CHAOS_ENGINEERING_ENABLED: "false"
+  DEV_AUTH_BYPASS: "false"
+  SECURITY_FAIL_OPEN: "false"
+  MTLS_ENABLED: "true"
+  OPENAPPSEC_ENABLED: "true"
+
+ingress:
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/rate-limit: "200"
+    nginx.ingress.kubernetes.io/rate-limit-burst-multiplier: "5"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";

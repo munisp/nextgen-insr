@@ -1,0 +1,225 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# InsurePortal Helm Chart — Default Values
+# Override with values-staging.yaml or values-production.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+replicaCount: 3
+
+image:
+  repository: registry.insureportal.ng/insureportal
+  pullPolicy: IfNotPresent
+  tag: ""  # Overridden by CI/CD with the git SHA
+
+imagePullSecrets:
+  - name: registry-credentials
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "insureportal"
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9464"
+  prometheus.io/path: "/api/metrics"
+  sidecar.istio.io/inject: "true"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1001
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 3000
+  metricsPort: 9464
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: app.insureportal.ng
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: insureportal-tls
+      hosts:
+        - app.insureportal.ng
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget — ensure at least 2 replicas always available
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Topology spread constraints for multi-AZ HA
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: insureportal
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - insureportal
+          topologyKey: kubernetes.io/hostname
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: 3000
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /api/health
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 30
+
+# Environment configuration
+env:
+  NODE_ENV: production
+  PORT: "3000"
+  LOG_LEVEL: info
+  OTEL_ENABLED: "true"
+  KAFKA_ENABLED: "true"
+  GO_INFRA_ENABLED: "true"
+  RUST_MIDDLEWARE_ENABLED: "true"
+  PYTHON_ANALYTICS_ENABLED: "true"
+  CHAOS_ENGINEERING_ENABLED: "false"
+  DEV_AUTH_BYPASS: "false"
+  SECURITY_FAIL_OPEN: "false"
+
+# Secret references (values come from Kubernetes Secrets)
+secretRefs:
+  - name: insureportal-core-secrets
+    keys:
+      - DATABASE_URL
+      - POSTGRES_URL
+      - JWT_SECRET
+      - CRON_SECRET
+      - INTERNAL_API_KEY
+      - TX_SIGNING_SECRET
+      - REDIS_URL
+  - name: insureportal-auth-secrets
+    keys:
+      - KEYCLOAK_CLIENT_SECRET
+      - PERMIFY_API_KEY
+      - VAULT_ROLE_ID
+      - VAULT_SECRET_ID
+  - name: insureportal-payment-secrets
+    keys:
+      - PAYSTACK_SECRET_KEY
+      - FLUTTERWAVE_SECRET_KEY
+      - INTERSWITCH_CLIENT_SECRET
+      - STRIPE_SECRET_KEY
+      - STRIPE_WEBHOOK_SECRET
+  - name: insureportal-messaging-secrets
+    keys:
+      - WHATSAPP_TOKEN
+      - TERMII_API_KEY
+      - SMTP_PASS
+  - name: insureportal-infra-secrets
+    keys:
+      - MINIO_SECRET_KEY
+      - KAFKA_SASL_PASSWORD
+      - APISIX_ADMIN_KEY
+      - PLATFORM_API_KEY
+      - PLATFORM_SERVICE_TOKEN
+      - LAKEHOUSE_SERVICE_TOKEN
+
+# Volumes for read-only filesystem
+volumes:
+  - name: tmp
+    emptyDir: {}
+  - name: cache
+    emptyDir: {}
+
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
+  - name: cache
+    mountPath: /app/.cache
+
+# ConfigMap for non-secret service URLs
+configMap:
+  enabled: true
+  data:
+    KEYCLOAK_URL: "http://keycloak.auth.svc.cluster.local:8080"
+    KEYCLOAK_REALM: "insureportal"
+    KEYCLOAK_CLIENT_ID: "insureportal-backend"
+    REDIS_URL: "redis://redis-master.cache.svc.cluster.local:6379"
+    KAFKA_BROKERS: "kafka-broker.messaging.svc.cluster.local:9092"
+    TEMPORAL_ADDRESS: "temporal-frontend.workflows.svc.cluster.local:7233"
+    TEMPORAL_NAMESPACE: "insureportal-prod"
+    GO_INFRA_URL: "http://go-infra.services.svc.cluster.local:8081"
+    PYTHON_ANALYTICS_URL: "http://python-analytics.services.svc.cluster.local:8001"
+    TB_SIDECAR_URL: "http://tigerbeetle-sidecar.services.svc.cluster.local:8085"
+    APISIX_ADMIN_URL: "http://apisix-admin.gateway.svc.cluster.local:9180"
+    PERMIFY_URL: "http://permify.auth.svc.cluster.local:3476"
+    VAULT_ADDR: "http://vault.security.svc.cluster.local:8200"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4318"
+    OPENSEARCH_ENDPOINT: "http://opensearch.logging.svc.cluster.local:9200"

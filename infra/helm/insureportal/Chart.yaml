@@ -1,0 +1,15 @@
+apiVersion: v2
+name: insureportal
+description: InsurePortal — Africa's Premier Digital Insurance Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - insurance
+  - fintech
+  - nigeria
+  - africa
+home: https://insureportal.ng
+maintainers:
+  - name: InsurePortal Engineering
+    email: engineering@insureportal.ng

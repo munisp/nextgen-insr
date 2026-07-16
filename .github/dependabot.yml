@@ -1,0 +1,150 @@
+version: 2
+updates:
+  # ── InsurePortal Node.js (pnpm) ────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/insureportal"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Africa/Lagos"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    groups:
+      opentelemetry:
+        patterns:
+          - "@opentelemetry/*"
+      drizzle:
+        patterns:
+          - "drizzle-*"
+      trpc:
+        patterns:
+          - "@trpc/*"
+      security:
+        patterns:
+          - "helmet"
+          - "express-rate-limit"
+          - "cors"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ── Root Node.js ──────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Africa/Lagos"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  # ── Go modules ────────────────────────────────────────────────────────────
+  - package-ecosystem: "gomod"
+    directory: "/ussd-gateway"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+
+  - package-ecosystem: "gomod"
+    directory: "/whatsapp-bot"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+
+  - package-ecosystem: "gomod"
+    directory: "/takaful-engine"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+
+  - package-ecosystem: "gomod"
+    directory: "/parametric-insurance"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+
+  - package-ecosystem: "gomod"
+    directory: "/reinsurance-service"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+
+  # ── Python (pip) ──────────────────────────────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/insureportal/services/python-analytics"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+
+  # ── Rust (cargo) ──────────────────────────────────────────────────────────
+  - package-ecosystem: "cargo"
+    directory: "/services/rust/ledger-sidecar"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "rust"
+
+  # ── Docker images ─────────────────────────────────────────────────────────
+  - package-ecosystem: "docker"
+    directory: "/insureportal"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # ── GitHub Actions ────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
