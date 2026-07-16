@@ -38,4 +38,4 @@ structlog==24.2.0
 # Utilities
 python-dateutil==2.9.0
 pytz==2024.1
-python-dotenv==1.0.1
+python-dotenv==1.2.2
