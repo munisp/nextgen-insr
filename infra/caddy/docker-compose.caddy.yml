@@ -1,0 +1,162 @@
+# ─── InsurePortal Caddy Edge Proxy - Docker Compose Extension ────────────────
+# Include this file alongside the main docker-compose.yml:
+#   docker-compose -f docker-compose.yml -f caddy/docker-compose.caddy.yml up
+#
+# This adds Caddy as the TLS-terminating edge in front of APISIX.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+
+  # ── Caddy Edge Proxy ────────────────────────────────────────────────────────
+  caddy:
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    container_name: insureportal-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"       # HTTP (redirects to HTTPS)
+      - "443:443"     # HTTPS
+      - "443:443/udp" # HTTP/3 (QUIC)
+      - "2019:2019"   # Caddy admin API (internal only)
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/config:/etc/caddy/config:ro
+      - ./caddy/certs:/etc/caddy/certs:ro
+      - caddy_logs:/var/log/caddy
+    environment:
+      # Domain configuration
+      INSUREPORTAL_DOMAIN: ${INSUREPORTAL_DOMAIN:-insureportal.ng}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:-ops@insureportal.ng}
+
+      # Upstream services
+      APISIX_UPSTREAM: apisix:9080
+      KEYCLOAK_UPSTREAM: keycloak:8080
+      KEYCLOAK_FORWARD_AUTH_URL: http://keycloak-auth-proxy:4181
+      GRAFANA_UPSTREAM: grafana:3000
+      JAEGER_UPSTREAM: jaeger:16686
+      ANALYTICS_UPSTREAM: python-analytics:8001
+      USSD_GATEWAY_UPSTREAM: ussd-gateway:8090
+      OPENAPPSEC_AGENT_URL: http://openappsec-standalone:8090
+
+      # Keycloak OIDC (caddy-security)
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CADDY_CLIENT_ID:-caddy-edge}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CADDY_CLIENT_SECRET}
+      KEYCLOAK_ISSUER_URL: https://auth.${INSUREPORTAL_DOMAIN:-insureportal.ng}/realms/insureportal
+      CADDY_JWT_SECRET: ${CADDY_JWT_SECRET}
+
+      # Telco IP ranges for USSD callbacks
+      TELCO_IP_RANGES: ${TELCO_IP_RANGES:-197.255.0.0/16 41.0.0.0/8 105.112.0.0/13}
+
+      # OpenAppSec
+      OPENAPPSEC_MGMT_SERVER: ${OPENAPPSEC_MGMT_SERVER:-https://my.openappsec.io}
+      OPENAPPSEC_AGENT_TOKEN: ${OPENAPPSEC_AGENT_TOKEN}
+    networks:
+      - insureportal-net
+    depends_on:
+      - apisix
+      - keycloak
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      com.insureportal.service: "caddy-edge-proxy"
+      com.insureportal.tier: "edge"
+
+  # ── OpenAppSec Standalone HTTP Check Agent ──────────────────────────────────
+  # Runs alongside Caddy to provide ML-based WAF protection.
+  # Caddy's forward_auth sends pre-check requests here before proxying.
+  openappsec-standalone:
+    image: openappsec/agent:latest
+    container_name: insureportal-openappsec-standalone
+    restart: unless-stopped
+    environment:
+      OPENAPPSEC_MODE: standalone-http-check
+      OPENAPPSEC_LISTEN_PORT: "8090"
+      OPENAPPSEC_MGMT_SERVER: ${OPENAPPSEC_MGMT_SERVER:-https://my.openappsec.io}
+      OPENAPPSEC_AGENT_TOKEN: ${OPENAPPSEC_AGENT_TOKEN}
+    volumes:
+      - ./caddy/config/openappsec-agent.yaml:/etc/openappsec/agent-config.yaml:ro
+      - openappsec_data:/var/log/openappsec
+    networks:
+      - insureportal-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      com.insureportal.service: "openappsec-standalone-waf"
+      com.insureportal.tier: "security"
+
+  # ── Keycloak Forward Auth Proxy ─────────────────────────────────────────────
+  # oauth2-proxy configured as a Keycloak OIDC forward-auth endpoint.
+  # Caddy's forward_auth directive calls this to validate tokens.
+  # Returns 200 with X-Auth-* headers on success, 302 to Keycloak login on failure.
+  keycloak-auth-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+    container_name: insureportal-keycloak-auth-proxy
+    restart: unless-stopped
+    command:
+      - --provider=keycloak-oidc
+      - --client-id=${KEYCLOAK_CADDY_CLIENT_ID:-caddy-edge}
+      - --client-secret=${KEYCLOAK_CADDY_CLIENT_SECRET}
+      - --oidc-issuer-url=${KEYCLOAK_ISSUER_URL:-https://auth.insureportal.ng/realms/insureportal}
+      - --redirect-url=https://${INSUREPORTAL_DOMAIN:-insureportal.ng}/oauth2/callback
+      - --upstream=static://200
+      - --http-address=0.0.0.0:4181
+      - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET}
+      - --cookie-secure=true
+      - --cookie-domain=.${INSUREPORTAL_DOMAIN:-insureportal.ng}
+      - --cookie-samesite=lax
+      - --email-domain=*
+      - --scope=openid profile email roles
+      - --pass-access-token=true
+      - --pass-authorization-header=true
+      - --set-xauthrequest=true
+      - --set-authorization-header=true
+      - --skip-provider-button=false
+      - --skip-auth-regex=^/api/health$
+      - --skip-auth-regex=^/api/oauth/.*
+      - --skip-auth-regex=^/.well-known/.*
+      - --session-store-type=redis
+      - --redis-connection-url=redis://redis:6379/3
+      - --request-logging=true
+      - --auth-logging=true
+    environment:
+      OAUTH2_PROXY_CLIENT_SECRET: ${KEYCLOAK_CADDY_CLIENT_SECRET}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
+    networks:
+      - insureportal-net
+    depends_on:
+      - keycloak
+      - redis
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4181/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      com.insureportal.service: "keycloak-forward-auth"
+      com.insureportal.tier: "security"
+
+volumes:
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  caddy_logs:
+    driver: local
+  openappsec_data:
+    driver: local
+
+networks:
+  insureportal-net:
+    external: true

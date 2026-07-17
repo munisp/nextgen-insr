@@ -1,0 +1,75 @@
+# ─── OpenAppSec Standalone Agent Configuration ───────────────────────────────
+# When Caddy is the edge proxy (not NGINX/APISIX), OpenAppSec cannot attach
+# as a module. Instead, it runs as a standalone HTTP check agent.
+# Caddy's forward_auth directive sends a pre-check request to this agent
+# before proxying to APISIX. The agent responds with:
+#   - 200 OK: request is clean, proceed
+#   - 403 Forbidden: request blocked, return to client
+#   - 200 OK + X-Appsec-Incident-Id: request is suspicious but allowed (learn mode)
+#
+# This gives Caddy the full ML-based WAF protection of OpenAppSec.
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openappsec-standalone-agent-config
+  namespace: insureportal
+data:
+  agent-config.yaml: |
+    # OpenAppSec standalone HTTP check agent
+    # Listens on :8090 for Caddy's forward_auth pre-check requests
+    agent:
+      mode: standalone-http-check
+      listen_port: 8090
+      log_level: info
+
+    # Policy: mirror the existing APISIX-attached policy
+    policy:
+      default:
+        mode: prevent-learn
+        web_attacks:
+          minimum_confidence: medium
+          max_body_size_kb: 10240
+          max_header_size_kb: 64
+          max_object_depth: 40
+          max_url_size_kb: 32
+        anti_bot:
+          validated_uris:
+            - "/api/oauth/*"
+            - "/api/trpc/auth.*"
+        rate_limiting:
+          enabled: true
+          requests_per_minute: 1000
+
+      # Insurance-specific exceptions
+      exceptions:
+        - name: "Health probe bypass"
+          match:
+            source_ip: "10.0.0.0/8"
+            url: "*/health"
+          action: allow
+
+        - name: "USSD telco callback bypass"
+          match:
+            source_ip: "197.255.0.0/16"
+            url: "/ussd/*"
+          action: allow
+
+        - name: "Paystack webhook bypass"
+          match:
+            source_ip: "52.31.139.75/32"
+            url: "/api/trpc/nigeriaPaymentRails.paystackWebhook"
+          action: allow
+
+        - name: "Flutterwave webhook bypass"
+          match:
+            source_ip: "52.215.192.0/24"
+            url: "/api/trpc/nigeriaPaymentRails.flutterwaveWebhook"
+          action: allow
+
+    # Telemetry: report incidents to the existing OpenAppSec management
+    telemetry:
+      management_server: "{$OPENAPPSEC_MGMT_SERVER:https://my.openappsec.io}"
+      agent_token: "{$OPENAPPSEC_AGENT_TOKEN}"
+      report_interval_seconds: 60

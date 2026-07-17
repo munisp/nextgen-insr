@@ -1,0 +1,153 @@
+# ─── InsurePortal Caddy Helm Values ──────────────────────────────────────────
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/munisp/nextgen-insr/caddy
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+# Domain configuration
+domain:
+  primary: insureportal.ng
+  acmeEmail: ops@insureportal.ng
+
+# Upstream service addresses
+upstreams:
+  apisix: apisix.insureportal.svc.cluster.local:9080
+  keycloak: keycloak.insureportal.svc.cluster.local:8080
+  keycloakAuthProxy: keycloak-auth-proxy.insureportal.svc.cluster.local:4181
+  grafana: grafana.insureportal.svc.cluster.local:3000
+  jaeger: jaeger.insureportal.svc.cluster.local:16686
+  analytics: python-analytics.insureportal.svc.cluster.local:8001
+  ussdGateway: ussd-gateway.insureportal.svc.cluster.local:8090
+  openappsecAgent: openappsec-standalone.insureportal.svc.cluster.local:8090
+
+service:
+  type: LoadBalancer
+  ports:
+    http: 80
+    https: 443
+    admin: 2019
+  annotations:
+    # AWS NLB for low-latency TLS termination
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    # Azure equivalent
+    # service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget: always keep at least 1 replica
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Topology spread: spread across zones
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+
+persistence:
+  # Caddy stores TLS certificates in /data
+  data:
+    enabled: true
+    storageClass: "gp3"
+    size: 1Gi
+  # Caddy logs
+  logs:
+    enabled: true
+    storageClass: "gp3"
+    size: 10Gi
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  readOnlyRootFilesystem: false  # Caddy needs to write certs to /data
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 2019
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 2019
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# Secrets (referenced from Kubernetes secrets, not stored here)
+secrets:
+  keycloakClientSecret:
+    secretName: caddy-keycloak-secret
+    key: client-secret
+  cookieSecret:
+    secretName: caddy-cookie-secret
+    key: cookie-secret
+  jwtSecret:
+    secretName: caddy-jwt-secret
+    key: jwt-secret
+  openappsecToken:
+    secretName: openappsec-secret
+    key: agent-token
+
+# Network policy
+networkPolicy:
+  enabled: true
+  # Allow inbound from internet (LoadBalancer)
+  ingress:
+    - from: []
+      ports:
+        - port: 80
+        - port: 443
+  # Allow outbound to internal services only
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: insureportal
+      ports:
+        - port: 9080  # APISIX
+        - port: 8080  # Keycloak
+        - port: 4181  # oauth2-proxy
+        - port: 3000  # Grafana
+        - port: 8001  # Analytics
+        - port: 8090  # USSD / OpenAppSec
+        - port: 16686 # Jaeger
+        - port: 6379  # Redis (for oauth2-proxy sessions)
+    - to: []
+      ports:
+        - port: 80   # ACME HTTP challenge
+        - port: 443  # ACME TLS challenge / ZeroSSL
+
+# Monitoring
+metrics:
+  enabled: true
+  port: 2019
+  path: /metrics
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    namespace: monitoring

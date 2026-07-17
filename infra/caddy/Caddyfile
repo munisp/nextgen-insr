@@ -1,0 +1,308 @@
+# ─── InsurePortal Caddy Edge Proxy ──────────────────────────────────────────────
+# Caddy sits in front of APISIX as the TLS-terminating edge layer.
+# Architecture:
+#   Internet → Caddy (TLS, OIDC forward-auth, rate-limit, compression)
+#            → OpenAppSec WAF attachment point
+#            → APISIX API Gateway (routing, JWT validation, plugins)
+#            → Microservices (mTLS via Caddy sidecar)
+#
+# Caddy adds value APISIX cannot provide natively:
+#   1. Zero-config automatic HTTPS (Let's Encrypt / ZeroSSL / internal CA)
+#   2. Keycloak OIDC forward-auth at the edge (before APISIX)
+#   3. HTTP/3 (QUIC) support out of the box
+#   4. Internal mTLS PKI for service-to-service communication
+#   5. On-demand TLS for multi-tenant sub-domains (broker portals)
+#   6. Brotli/Zstd compression (not available in APISIX OSS)
+# ─────────────────────────────────────────────────────────────────────────────────
+
+{
+    # Global options
+    email {$CADDY_ACME_EMAIL:ops@insureportal.ng}
+
+    # Use ZeroSSL as primary CA with Let's Encrypt as fallback
+    # Both are free; ZeroSSL provides 90-day certs with ACME
+    acme_ca https://acme.zerossl.com/v2/DV90
+    acme_ca_root /etc/caddy/certs/zerossl-root.pem
+
+    # Internal PKI for service-mesh mTLS (Caddy acts as its own CA)
+    pki {
+        ca insureportal-internal {
+            name "InsurePortal Internal CA"
+            root_cn "InsurePortal Root CA"
+            intermediate_cn "InsurePortal Intermediate CA"
+        }
+    }
+
+    # Admin API (restricted to internal network only)
+    admin 0.0.0.0:2019 {
+        origins localhost 127.0.0.1 10.0.0.0/8 172.16.0.0/12
+    }
+
+    # Enable HTTP/3 (QUIC) globally
+    servers {
+        protocols h1 h2 h3
+        trusted_proxies static 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+    }
+
+    # Global rate limiting (caddy-ratelimit plugin)
+    # Per-IP: 1000 req/min globally; tighter limits per route below
+    order rate_limit before reverse_proxy
+    order forward_auth before reverse_proxy
+}
+
+# ─── HTTP → HTTPS redirect (all hosts) ───────────────────────────────────────
+http:// {
+    redir https://{host}{uri} 308
+}
+
+# ─── Main InsurePortal Portal ─────────────────────────────────────────────────
+{$INSUREPORTAL_DOMAIN:insureportal.ng} www.{$INSUREPORTAL_DOMAIN:insureportal.ng} {
+
+    # Automatic TLS from ZeroSSL/Let's Encrypt
+    tls {$CADDY_ACME_EMAIL:ops@insureportal.ng}
+
+    # Enable HTTP/3
+    header {
+        Alt-Svc `h3=":443"; ma=2592000`
+        # HSTS - 1 year, include subdomains, preload
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        # Security headers
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), microphone=(), camera=()"
+        # Remove server fingerprinting
+        -Server
+        -X-Powered-By
+    }
+
+    # Brotli compression (not available in APISIX OSS)
+    encode zstd br gzip
+
+    # ── Keycloak OIDC Forward Auth (edge-level, before APISIX) ──────────────
+    # All /api/trpc/* and /api/v1/* routes require a valid Keycloak token.
+    # Caddy validates the token with Keycloak's introspection endpoint,
+    # then passes X-Auth-User, X-Auth-Roles, X-Auth-Email downstream.
+    # APISIX's jwt-auth plugin provides a second validation layer.
+    @protected {
+        path /api/trpc/* /api/v1/* /analytics/* /lakehouse/* /workflow/*
+        not path /api/oauth/* /api/health /api/trpc/auth.* /api/trpc/public.*
+    }
+    forward_auth @protected {$KEYCLOAK_FORWARD_AUTH_URL:http://keycloak-auth-proxy:4181} {
+        uri /api/verify?rd={scheme}://{host}{uri}
+        copy_headers {
+            X-Auth-User>X-Auth-User
+            X-Auth-Email>X-Auth-Email
+            X-Auth-Roles>X-Auth-Roles
+            X-Auth-Groups>X-Auth-Groups
+            X-Auth-Token>X-Forwarded-Access-Token
+        }
+    }
+
+    # ── Rate limiting (caddy-ratelimit plugin) ────────────────────────────────
+    # Auth endpoints: 10 req/min per IP (brute-force protection)
+    @auth_routes path /api/oauth/* /api/trpc/auth.*
+    rate_limit @auth_routes {
+        zone auth_zone {
+            key {remote_host}
+            events 10
+            window 1m
+        }
+    }
+
+    # Payment/transaction endpoints: 30 req/min per IP
+    @payment_routes path /api/trpc/payment.* /api/trpc/nigeriaPaymentRails.*
+    rate_limit @payment_routes {
+        zone payment_zone {
+            key {remote_host}
+            events 30
+            window 1m
+        }
+    }
+
+    # General API: 200 req/min per IP
+    @api_routes path /api/*
+    rate_limit @api_routes {
+        zone api_zone {
+            key {remote_host}
+            events 200
+            window 1m
+        }
+    }
+
+    # ── OpenAppSec WAF attachment point ───────────────────────────────────────
+    # OpenAppSec runs as an attachment on the upstream (APISIX).
+    # Caddy adds a pre-check request to OpenAppSec's standalone agent
+    # for additional ML-based threat detection at the edge.
+    @waf_check {
+        not path /health /metrics /favicon.ico /.well-known/*
+    }
+    forward_auth @waf_check {$OPENAPPSEC_AGENT_URL:http://openappsec-agent:8090} {
+        uri /check-request
+        copy_headers {
+            X-Appsec-Decision>X-Appsec-Decision
+            X-Appsec-Incident-Id>X-Appsec-Incident-Id
+        }
+    }
+
+    # ── Proxy to APISIX API Gateway ───────────────────────────────────────────
+    reverse_proxy {$APISIX_UPSTREAM:apisix:9080} {
+        # Health checking
+        health_uri /apisix/status
+        health_interval 10s
+        health_timeout 5s
+        health_status 200
+
+        # Pass real client IP to APISIX
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+
+        # Pass Caddy-validated auth headers downstream
+        header_up X-Caddy-Authenticated "true"
+
+        # Connection pooling
+        transport http {
+            keepalive 30s
+            keepalive_idle_conns 100
+            dial_timeout 5s
+            response_header_timeout 60s
+        }
+    }
+}
+
+# ─── Broker Sub-domain Portals (On-Demand TLS) ───────────────────────────────
+# Each insurance broker gets their own sub-domain: broker1.insureportal.ng
+# On-demand TLS provisions certificates automatically when first requested.
+# This eliminates the need to pre-provision certs for 1000s of broker portals.
+*.brokers.{$INSUREPORTAL_DOMAIN:insureportal.ng} {
+    tls {
+        on_demand
+        issuer acme {
+            ca https://acme.zerossl.com/v2/DV90
+        }
+    }
+
+    # Broker-specific rate limiting
+    rate_limit {
+        zone broker_zone {
+            key {remote_host}
+            events 500
+            window 1m
+        }
+    }
+
+    # Extract broker slug from subdomain
+    @broker_request {
+        host *.brokers.{$INSUREPORTAL_DOMAIN:insureportal.ng}
+    }
+    handle @broker_request {
+        header X-Broker-Slug {labels.3}
+        reverse_proxy {$APISIX_UPSTREAM:apisix:9080} {
+            header_up X-Broker-Slug {labels.3}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+}
+
+# ─── Keycloak Auth Server (TLS termination) ──────────────────────────────────
+auth.{$INSUREPORTAL_DOMAIN:insureportal.ng} {
+    tls {$CADDY_ACME_EMAIL:ops@insureportal.ng}
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        -Server
+    }
+
+    # Rate limit Keycloak login attempts
+    @keycloak_login path /realms/*/protocol/openid-connect/token
+    rate_limit @keycloak_login {
+        zone keycloak_login_zone {
+            key {remote_host}
+            events 5
+            window 1m
+        }
+    }
+
+    reverse_proxy {$KEYCLOAK_UPSTREAM:keycloak:8080} {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {host}
+        transport http {
+            keepalive 30s
+        }
+    }
+}
+
+# ─── Grafana Observability Dashboard ─────────────────────────────────────────
+grafana.{$INSUREPORTAL_DOMAIN:insureportal.ng} {
+    tls {$CADDY_ACME_EMAIL:ops@insureportal.ng}
+
+    # Require Keycloak auth for Grafana access
+    forward_auth {$KEYCLOAK_FORWARD_AUTH_URL:http://keycloak-auth-proxy:4181} {
+        uri /api/verify?rd={scheme}://{host}{uri}
+        copy_headers X-Auth-User X-Auth-Email X-Auth-Roles
+    }
+
+    reverse_proxy {$GRAFANA_UPSTREAM:grafana:3000} {
+        header_up X-Forwarded-Proto https
+    }
+}
+
+# ─── Jaeger Tracing UI (internal only) ───────────────────────────────────────
+jaeger.{$INSUREPORTAL_DOMAIN:insureportal.ng} {
+    tls {
+        issuer internal {
+            ca insureportal-internal
+        }
+    }
+
+    # Only allow internal network access
+    @internal_only remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+    handle @internal_only {
+        reverse_proxy {$JAEGER_UPSTREAM:jaeger:16686}
+    }
+    handle {
+        respond "Access denied" 403
+    }
+}
+
+# ─── USSD Gateway (HTTP callback from telcos) ────────────────────────────────
+ussd.{$INSUREPORTAL_DOMAIN:insureportal.ng} {
+    tls {$CADDY_ACME_EMAIL:ops@insureportal.ng}
+
+    # USSD callbacks come from telco IP ranges - whitelist them
+    @telco_ips remote_ip {$TELCO_IP_RANGES:197.255.0.0/16 41.0.0.0/8}
+    handle @telco_ips {
+        reverse_proxy {$USSD_GATEWAY_UPSTREAM:ussd-gateway:8090} {
+            header_up X-Real-IP {remote_host}
+        }
+    }
+    handle {
+        respond "Unauthorized" 403
+    }
+}
+
+# ─── Python Analytics / Lakehouse API ────────────────────────────────────────
+analytics.{$INSUREPORTAL_DOMAIN:insureportal.ng} {
+    tls {$CADDY_ACME_EMAIL:ops@insureportal.ng}
+
+    # Require service account token for analytics API
+    @analytics_api path /api/*
+    forward_auth @analytics_api {$KEYCLOAK_FORWARD_AUTH_URL:http://keycloak-auth-proxy:4181} {
+        uri /api/verify?rd={scheme}://{host}{uri}
+        copy_headers X-Auth-User X-Auth-Roles
+    }
+
+    encode zstd br gzip
+
+    reverse_proxy {$ANALYTICS_UPSTREAM:python-analytics:8001} {
+        header_up X-Forwarded-Proto https
+        transport http {
+            response_header_timeout 300s  # Long timeout for ML inference jobs
+        }
+    }
+}

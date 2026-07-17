@@ -1,0 +1,110 @@
+{
+  "_comment": "Keycloak client configuration for Caddy edge proxy OIDC integration.",
+  "_instructions": "Import this into the insureportal realm via: kcadm.sh create clients -r insureportal -f keycloak-caddy-client.json",
+
+  "clientId": "caddy-edge",
+  "name": "Caddy Edge Proxy",
+  "description": "OIDC client for Caddy's forward-auth layer. Validates tokens at the edge before requests reach APISIX.",
+  "enabled": true,
+  "clientAuthenticatorType": "client-secret",
+  "secret": "${KEYCLOAK_CADDY_CLIENT_SECRET}",
+  "redirectUris": [
+    "https://insureportal.ng/oauth2/callback",
+    "https://*.insureportal.ng/oauth2/callback"
+  ],
+  "webOrigins": [
+    "https://insureportal.ng",
+    "https://*.insureportal.ng"
+  ],
+  "protocol": "openid-connect",
+  "publicClient": false,
+  "bearerOnly": false,
+  "standardFlowEnabled": true,
+  "implicitFlowEnabled": false,
+  "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": true,
+  "authorizationServicesEnabled": false,
+  "fullScopeAllowed": false,
+  "defaultClientScopes": [
+    "openid",
+    "profile",
+    "email",
+    "roles",
+    "web-origins"
+  ],
+  "optionalClientScopes": [
+    "address",
+    "phone",
+    "offline_access"
+  ],
+  "attributes": {
+    "access.token.lifespan": "3600",
+    "client.session.idle.timeout": "1800",
+    "client.session.max.lifespan": "36000",
+    "tls.client.certificate.bound.access.tokens": "false",
+    "display.on.consent.screen": "false",
+    "token.endpoint.auth.signing.alg": "RS256",
+    "id.token.signed.response.alg": "RS256",
+    "request.object.signature.alg": "RS256",
+    "use.refresh.tokens": "true",
+    "refresh.token.max.reuse": "0",
+    "revoke.refresh.token": "true"
+  },
+  "protocolMappers": [
+    {
+      "name": "realm-roles",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-realm-role-mapper",
+      "consentRequired": false,
+      "config": {
+        "multivalued": "true",
+        "userinfo.token.claim": "true",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "realm_access.roles",
+        "jsonType.label": "String"
+      }
+    },
+    {
+      "name": "client-roles",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-client-role-mapper",
+      "consentRequired": false,
+      "config": {
+        "multivalued": "true",
+        "userinfo.token.claim": "true",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "resource_access.${client_id}.roles",
+        "jsonType.label": "String"
+      }
+    },
+    {
+      "name": "groups",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-group-membership-mapper",
+      "consentRequired": false,
+      "config": {
+        "full.path": "false",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "groups",
+        "userinfo.token.claim": "true"
+      }
+    },
+    {
+      "name": "X-Auth-User header",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "userinfo.token.claim": "true",
+        "user.attribute": "username",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "preferred_username",
+        "jsonType.label": "String"
+      }
+    }
+  ]
+}

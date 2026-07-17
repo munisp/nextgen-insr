@@ -1,0 +1,17 @@
+apiVersion: v2
+name: insureportal-caddy
+description: InsurePortal Caddy Edge Proxy - TLS termination, OIDC forward-auth, WAF integration
+type: application
+version: 1.0.0
+appVersion: "2.9"
+keywords:
+  - caddy
+  - reverse-proxy
+  - tls
+  - oidc
+  - waf
+  - insureportal
+maintainers:
+  - name: InsurePortal Platform Team
+    email: platform@insureportal.ng
+dependencies: []

@@ -1,0 +1,87 @@
+{
+  "_comment": "InsurePortal Caddy Security (caddy-security / authcrunch) Configuration",
+  "_description": "Configures native OIDC authentication against Keycloak for Caddy's forward-auth layer. This replaces the need for a separate oauth2-proxy sidecar.",
+
+  "security": {
+    "authentication": {
+      "portals": [
+        {
+          "name": "insureportal-auth-portal",
+          "backends": [
+            {
+              "name": "keycloak-backend",
+              "method": "oauth2",
+              "realm": "insureportal",
+              "provider": "generic",
+              "client_id": "{env.KEYCLOAK_CLIENT_ID}",
+              "client_secret": "{env.KEYCLOAK_CLIENT_SECRET}",
+              "scopes": ["openid", "profile", "email", "roles"],
+              "metadata_url": "{env.KEYCLOAK_ISSUER_URL}/.well-known/openid-configuration",
+              "icon_url": "https://insureportal.ng/assets/logo.png",
+              "icon_description": "InsurePortal SSO",
+              "user_roles_field_name": "realm_access.roles",
+              "token_name": "access_token"
+            }
+          ],
+          "cookie_config": {
+            "domain": "{env.INSUREPORTAL_DOMAIN}",
+            "path": "/",
+            "lifetime": 3600,
+            "insecure": false,
+            "same_site": "lax"
+          },
+          "ui": {
+            "theme": "basic",
+            "logo_url": "https://insureportal.ng/assets/logo.png",
+            "logo_description": "InsurePortal",
+            "links": [
+              {
+                "title": "InsurePortal",
+                "link": "https://insureportal.ng",
+                "target": "_blank"
+              }
+            ]
+          },
+          "token_provider": {
+            "token_name": "access_token",
+            "token_secret": "{env.CADDY_JWT_SECRET}",
+            "token_lifetime": 3600,
+            "token_sign_method": "HS512"
+          }
+        }
+      ]
+    },
+    "authorization": {
+      "policies": [
+        {
+          "name": "insureportal-api-policy",
+          "allow_roles": ["insureportal-admin", "insureportal-agent", "insureportal-customer", "insureportal-underwriter", "insureportal-claims-adjuster"],
+          "deny_roles": ["insureportal-suspended"],
+          "set_header": [
+            "X-Auth-User {user.name}",
+            "X-Auth-Email {user.email}",
+            "X-Auth-Roles {user.roles}",
+            "X-Auth-Groups {user.groups}"
+          ]
+        },
+        {
+          "name": "insureportal-admin-policy",
+          "allow_roles": ["insureportal-admin"],
+          "set_header": [
+            "X-Auth-User {user.name}",
+            "X-Auth-Email {user.email}",
+            "X-Auth-Roles {user.roles}"
+          ]
+        },
+        {
+          "name": "insureportal-analytics-policy",
+          "allow_roles": ["insureportal-admin", "insureportal-underwriter", "insureportal-actuary"],
+          "set_header": [
+            "X-Auth-User {user.name}",
+            "X-Auth-Roles {user.roles}"
+          ]
+        }
+      ]
+    }
+  }
+}

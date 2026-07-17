@@ -1,0 +1,81 @@
+# ─── InsurePortal Internal mTLS Service Mesh ─────────────────────────────────
+# Caddy acts as a sidecar proxy for each microservice, providing:
+#   1. Automatic mTLS between all services using Caddy's internal CA
+#   2. Service identity via client certificates (SPIFFE-compatible)
+#   3. Zero-trust: every service must present a valid cert to communicate
+#   4. Automatic cert rotation (Caddy renews before expiry)
+#
+# This replaces the need for Istio/Linkerd for basic mTLS requirements.
+# Each service runs a Caddy sidecar on port 8443 (inbound) and 8444 (outbound).
+#
+# Usage: Include this file in each service's Caddyfile:
+#   import /etc/caddy/config/internal-mtls.Caddyfile
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Inbound mTLS listener (other services connect here) ──────────────────────
+# Each service exposes :8443 with mTLS required
+:{$SERVICE_MTLS_PORT:8443} {
+    tls {
+        # Use Caddy's internal CA for service certificates
+        issuer internal {
+            ca insureportal-internal
+        }
+        # Require client certificates from other services
+        client_auth {
+            mode require_and_verify
+            trusted_ca_cert_file /etc/caddy/certs/insureportal-internal-ca.pem
+        }
+        # Cipher suites: TLS 1.3 only for internal traffic
+        protocols tls1.3
+    }
+
+    # Log service-to-service calls for audit trail
+    log {
+        output file /var/log/caddy/mtls-access.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+        format json
+        level INFO
+    }
+
+    # Forward to the local service on its plain HTTP port
+    reverse_proxy localhost:{$SERVICE_HTTP_PORT:3000} {
+        header_up X-Service-Identity {tls_client_subject}
+        header_up X-Service-Cert-Fingerprint {tls_client_fingerprint}
+    }
+}
+
+# ── Outbound mTLS proxy (this service connects to others) ────────────────────
+# When this service needs to call another service, it connects to :8444
+# which presents this service's certificate to the target
+:{$SERVICE_OUTBOUND_PORT:8444} {
+    tls {
+        issuer internal {
+            ca insureportal-internal
+        }
+        # Present this service's client certificate
+        client_auth {
+            mode require_and_verify
+            trusted_ca_cert_file /etc/caddy/certs/insureportal-internal-ca.pem
+        }
+    }
+
+    # Dynamic upstream based on X-Target-Service header
+    reverse_proxy {
+        dynamic srv {
+            name _{$SERVICE_NAME}.insureportal.svc.cluster.local
+            port 8443
+        }
+        transport http {
+            tls {
+                # Present our client certificate
+                client_certificate_file /etc/caddy/certs/{$SERVICE_NAME}-cert.pem
+                client_certificate_key_file /etc/caddy/certs/{$SERVICE_NAME}-key.pem
+                # Verify the target service's certificate
+                root_ca_pem_file /etc/caddy/certs/insureportal-internal-ca.pem
+                protocols tls1.3
+            }
+        }
+    }
+}
