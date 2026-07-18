@@ -1,1 +1,1 @@
-prompt.txt
+You are in a git repository. Push the current commits to origin/devin/1780632088-platform-production-hardening using git push.
