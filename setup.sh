@@ -15,7 +15,7 @@ set -e
 
 echo "[setup] Fetching SDK version from automation service"
 PYTHON_JSON=python3
-if ! command -v python3 >/dev/null 2>&1;
+if ! command -v python3 >/dev/null 2>&1; then
     if command -v python >/dev/null 2>&1; then
         PYTHON_JSON=python
     elif command -v py >/dev/null 2>&1; then
