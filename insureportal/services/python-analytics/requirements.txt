@@ -8,7 +8,7 @@ pydantic-settings==2.3.1
 pandas==2.3.3
 numpy==2.2.6
 scipy==1.13.1
-scikit-learn==1.5.0
+scikit-learn==1.7.2
 
 # Database
 psycopg2-binary==2.9.9
