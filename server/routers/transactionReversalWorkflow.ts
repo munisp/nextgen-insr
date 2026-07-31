@@ -71,6 +71,20 @@ export const transactionReversalWorkflowRouter = router({
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
 
+      // Idempotency: check if reversal already exists for this transaction
+      const existingReversal = await database.select().from(reversalRequests)
+        .where(eq(reversalRequests.transactionId, input.transactionId)).limit(1);
+      if (existingReversal.length > 0) {
+        return { idempotent: true, id: existingReversal[0].id, status: existingReversal[0].status, authorizationLevel: "existing", autoApproved: false, message: "Reversal already exists" };
+      }
+
+      // Distributed lock to prevent concurrent reversals on same transaction
+      const { acquireLock, releaseLock } = await import("../lib/redisClient");
+      const lockKey = `reversal:${input.transactionId}`;
+      const locked = await acquireLock(lockKey, 15_000);
+      if (!locked) throw new Error("Reversal already in progress for this transaction");
+
+      try {
       // Determine authorization level
       let authLevel: string;
       let autoApproved = false;
@@ -106,6 +120,9 @@ export const transactionReversalWorkflowRouter = router({
           ? "Reversal auto-approved (≤₦5,000)"
           : `Requires ${authLevel} approval for ₦${input.amount.toLocaleString()}`,
       };
+      } finally {
+        await releaseLock(lockKey);
+      }
     }),
 
   // Approve or reject a reversal
@@ -158,10 +175,19 @@ export const transactionReversalWorkflowRouter = router({
         .limit(1);
 
       if (!reversal) throw new Error("Reversal request not found");
+      // Idempotency: already executed
+      if (reversal.status === "completed") return { idempotent: true, tbReversalId: reversal.tbReversalId, syncStatus: "synced", status: "completed" };
       if (reversal.status !== "approved") {
         throw new Error(`Cannot execute: must be approved (current: ${reversal.status})`);
       }
 
+      // Distributed lock to prevent double-execution
+      const { acquireLock: acqLock, releaseLock: relLock } = await import("../lib/redisClient");
+      const execLock = `reversal-exec:${input.id}`;
+      const execLocked = await acqLock(execLock, 30_000);
+      if (!execLocked) throw new Error("Reversal execution already in progress");
+
+      try {
       // Mark as processing
       await database
         .update(reversalRequests)
@@ -195,7 +221,10 @@ export const transactionReversalWorkflowRouter = router({
         })
         .where(eq(reversalRequests.id, input.id));
 
-      return { success: true, tbReversalId, syncStatus, status: "completed" };
+      return { idempotent: false, tbReversalId, syncStatus, status: "completed" };
+      } finally {
+        await relLock(execLock);
+      }
     }),
 
   // Dashboard analytics

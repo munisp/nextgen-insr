@@ -257,6 +257,8 @@ export const commissionPayoutsRouter = router({
           .where(eq(commissionPayouts.id, input.id))
           .limit(1);
         if (!payout) throw new TRPCError({ code: "NOT_FOUND" });
+        // Idempotency: already completed
+        if (payout.status === "completed") return payout;
         if (payout.status !== "approved") {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -264,25 +266,51 @@ export const commissionPayoutsRouter = router({
           });
         }
 
-        // Deduct from agent commission balance
-        await db
-          .update(agents)
-          .set({
-            commissionBalance: sql`${agents.commissionBalance} - ${payout.amount}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(agents.id, payout.agentId));
+        // Distributed lock to prevent double-processing
+        const { acquireLock, releaseLock } = await import("../lib/redisClient");
+        const { tbCreateTransfer } = await import("../tbClient");
+        const lockKey = `commission-payout:${input.id}`;
+        const locked = await acquireLock(lockKey, 30_000);
+        if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Payout already being processed" });
 
-        const [updated] = await db
-          .update(commissionPayouts)
-          .set({
-            status: "completed",
-            nubanRef: input.nubanRef,
-            processedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(commissionPayouts.id, input.id))
-          .returning();
+        let updated: typeof payout;
+        try {
+          // TigerBeetle: commissions-pool → agent-commission (COMMISSIONS ledger)
+          const payRef = input.nubanRef ?? `COMM-PAYOUT-${input.id}-${Date.now()}`;
+          const tbResult = await tbCreateTransfer({
+            debitAccountId: "commissions-pool",
+            creditAccountId: `agent-commission-${payout.agentId}`,
+            amount: Math.round(Number(payout.amount) * 100),
+            ledger: 5000,
+            code: 500,
+            ref: payRef,
+            txType: "commission_payout",
+            agentId: String(payout.agentId),
+          });
+
+          // Deduct from agent commission balance
+          await db
+            .update(agents)
+            .set({
+              commissionBalance: sql`${agents.commissionBalance} - ${payout.amount}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, payout.agentId));
+
+          [updated] = await db
+            .update(commissionPayouts)
+            .set({
+              status: "completed",
+              nubanRef: input.nubanRef ?? payRef,
+              processedAt: new Date(),
+              updatedAt: new Date(),
+              metadata: { tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult?.syncStatus ?? "pending" },
+            })
+            .where(eq(commissionPayouts.id, input.id))
+            .returning();
+        } finally {
+          await releaseLock(lockKey);
+        }
 
         await dispatchWebhookEvent("commission.payout.completed", {
           payoutId: updated.id,

@@ -601,41 +601,89 @@ export const insuranceWorkflowsRouter = router({
       claimId: z.number(),
       amount: z.number(),
       paymentMethod: z.string(),
+      paymentRef: z.string().optional(),
+      beneficiaryName: z.string().optional(),
+      beneficiaryAccount: z.string().optional(),
+      beneficiaryBank: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
+      const payRef = input.paymentRef ?? `CLM-SETTLE-${input.claimId}-${Date.now()}`;
+
+      // Idempotency: check if payment already exists
+      const { claimsPayments } = await import("../../drizzle/schema.additions");
+      const existingPayment = await db.select().from(claimsPayments)
+        .where(eq(claimsPayments.paymentRef, payRef)).limit(1);
+      if (existingPayment.length > 0) return { idempotent: true, payment: existingPayment[0] };
+
       const [claim] = await db.select().from(claims).where(eq(claims.id, input.claimId)).limit(1);
       if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
-      if (!["approved", "partially_approved"].includes(claim.status)) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Claim not approved for settlement" });
+      if (!["approved", "partially_approved"].includes(claim.status ?? "")) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Claim status '${claim.status}' not approved for settlement` });
       }
 
-      const tbResult = await tbCreateTransfer({
-        debitAccountId: "insurer-claims-pool",
-        creditAccountId: `claimant-${claim.claimantId}`,
-        amount: Math.round(input.amount * 100),
-        ref: `CLM-SETTLE-${input.claimId}`,
-        txType: "claim_settlement",
-      });
+      // Distributed lock to prevent double-payment
+      const { acquireLock, releaseLock } = await import("../lib/redisClient");
+      const lockKey = `claim-settle:${input.claimId}`;
+      const locked = await acquireLock(lockKey, 30_000);
+      if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Settlement already in progress" });
 
-      await db.update(claims).set({
-        status: "paid",
-        paidAmount: String(input.amount),
-        settlementDate: new Date(),
-        updatedAt: new Date(),
-      }).where(eq(claims.id, input.claimId));
+      try {
+        // TigerBeetle: insurer-claims-pool → claimant (CLAIMS_PAYOUTS ledger, code 800)
+        const tbResult = await tbCreateTransfer({
+          debitAccountId: "insurer-claims-pool",
+          creditAccountId: `claimant-${claim.claimantId}`,
+          amount: Math.round(input.amount * 100),
+          ledger: 4000,
+          code: 800,
+          ref: payRef,
+          txType: "claim_settlement",
+        });
 
-      await emitFluvioEvent(db, "payment-events", {
-        eventType: "payment.claim_settled",
-        claimId: input.claimId,
-        amount: input.amount,
-        tigerBeetleRef: tbResult?.id,
-      });
+        // Record in claims_payments table
+        const [payment] = await db.insert(claimsPayments).values({
+          claimId: input.claimId,
+          paymentRef: payRef,
+          amount: String(input.amount),
+          currency: "NGN",
+          paymentMethod: input.paymentMethod,
+          beneficiaryName: input.beneficiaryName ?? null,
+          beneficiaryAccount: input.beneficiaryAccount ?? null,
+          beneficiaryBank: input.beneficiaryBank ?? null,
+          status: "processed",
+          tbTransferId: tbResult?.id ?? null,
+          processedAt: new Date(),
+          approvedBy: ctx.session?.userId ?? null,
+        }).returning();
 
-      return { success: true, tigerBeetleRef: tbResult?.id };
+        // Update claim to paid
+        await db.update(claims).set({
+          status: "paid",
+          paidAmount: String(input.amount),
+          settlementDate: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(claims.id, input.claimId));
+
+        await emitFluvioEvent(db, "payment-events", {
+          eventType: "payment.claim_settled",
+          claimId: input.claimId,
+          amount: input.amount,
+          paymentRef: payRef,
+          tigerBeetleRef: tbResult?.id,
+        });
+
+        await emitAuditLog(db, "CLAIM_SETTLED", "claim", input.claimId, ctx.session?.userId, {
+          amount: input.amount, paymentRef: payRef, tbTransferId: tbResult?.id ?? null,
+        });
+
+        return { idempotent: false, payment, tigerBeetleRef: tbResult?.id ?? null, tbSyncStatus: tbResult?.syncStatus ?? "pending" };
+      } finally {
+        await releaseLock(lockKey);
+      }
     }),
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ACTUARY WORKFLOWS
