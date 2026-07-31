@@ -1,1035 +1,580 @@
+# =============================================================================
+# NextGen InsurePortal — Insurance Platform Docker Compose
+# Polyglot: TypeScript (API/Temporal) | Go (Ledger/Gateway) | Rust (Fraud/Streaming) | Python (AI/ML/Actuarial)
+# Insurance Platform — Clean docker-compose
+# =============================================================================
+
 version: "3.9"
 
-# ─── OG RMM Platform — Docker Compose ────────────────────────────────────────
-# Oil & Gas Remote Monitoring & Management Platform
-# Database: PostgreSQL (primary), Redis (cache/pub-sub), InfluxDB (time-series)
-# Message Bus: Redpanda (Kafka-compatible)
-# Services: Go (API Gateway, Well Mgmt, Telemetry, Financial, Alarm Manager)
-#            Rust (Edge Agent, Stream Processor, DataFusion Query)
-#            Python (Analytics, ML Pipeline)
-#            TypeScript/React (UI)
-
-x-common-env: &common-env
-  LOG_LEVEL: info
-  ENVIRONMENT: development
-
-x-postgres-env: &postgres-env
-  POSTGRES_HOST: postgres
-  POSTGRES_PORT: "5432"
-  POSTGRES_USER: ogrmm
-  POSTGRES_PASSWORD: ogrmm_secret
-  POSTGRES_DB: ogrmm
-
-x-kafka-env: &kafka-env
-  KAFKA_BROKERS: redpanda:9092
-
 networks:
-  og-rmm-net:
+  insureportal:
     driver: bridge
 
 volumes:
   postgres_data:
   redis_data:
-  influxdb_data:
-  redpanda_data:
-  tigerbeetle_data:
   minio_data:
+  temporal_data:
+  tigerbeetle_data:
+  opensearch_data:
+  fluvio_data:
 
 services:
-  # ─── Infrastructure ─────────────────────────────────────────────────────────
 
+  # ── PostgreSQL (Primary DB) ─────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: og-rmm-postgres
+    container_name: insureportal-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ogrmm
-      POSTGRES_PASSWORD: ogrmm_secret
-      POSTGRES_DB: ogrmm
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.utf8"
+      POSTGRES_DB: insureportal
+      POSTGRES_USER: insureportal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insureportal_dev}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     ports:
       - "5432:5432"
     networks:
-      - og-rmm-net
+      - insureportal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ogrmm -d ogrmm"]
+      test: ["CMD-SHELL", "pg_isready -U insureportal -d insureportal"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # ── Redis ──────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: og-rmm-redis
+    container_name: insureportal-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_dev} --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     networks:
-      - og-rmm-net
+      - insureportal
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_dev}", "ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 3s
       retries: 5
 
-  influxdb:
-    image: influxdb:2.7-alpine
-    container_name: og-rmm-influxdb
+  # ── TigerBeetle ────────────────────────────────────────────────────────────
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.16.11
+    container_name: insureportal-tigerbeetle
+    restart: unless-stopped
+    volumes:
+      - tigerbeetle_data:/data
+    command: start --addresses=0.0.0.0:3000 /data/insureportal.tigerbeetle
+    ports:
+      - "3001:3000"
+    networks:
+      - insureportal
+
+  # ── Temporal ───────────────────────────────────────────────────────────────
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    container_name: insureportal-temporal
     restart: unless-stopped
     environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: ogrmm
-      DOCKER_INFLUXDB_INIT_PASSWORD: ogrmm_influx_secret
-      DOCKER_INFLUXDB_INIT_ORG: apex-energy
-      DOCKER_INFLUXDB_INIT_BUCKET: telemetry
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ogrmm-influx-token-dev
-      DOCKER_INFLUXDB_INIT_RETENTION: 90d
-    volumes:
-      - influxdb_data:/var/lib/influxdb2
-    ports:
-      - "8086:8086"
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD", "influx", "ping"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
-  redpanda:
-    image: redpandadata/redpanda:v23.3.18
-    container_name: og-rmm-redpanda
-    restart: unless-stopped
-    command:
-      - redpanda
-      - start
-      - --smp 1
-      - --reserve-memory 0M
-      - --overprovisioned
-      - --node-id 0
-      - --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
-      - --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
-      - --pandaproxy-addr 0.0.0.0:8082
-      - --advertise-pandaproxy-addr localhost:8082
-    volumes:
-      - redpanda_data:/var/lib/redpanda/data
-    ports:
-      - "9092:9092"
-      - "8082:8082"
-      - "9644:9644"
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-
-  redpanda-console:
-    image: redpandadata/console:v2.4.6
-    container_name: og-rmm-redpanda-console
-    restart: unless-stopped
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: insureportal
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-insureportal_dev}
+      POSTGRES_SEEDS: postgres
+      TEMPORAL_NAMESPACE: insureportal
     depends_on:
-      - redpanda
-    environment:
-      CONFIG_FILEPATH: /tmp/config.yml
-    volumes:
-      - ./infra/redpanda/console-config.yml:/tmp/config.yml:ro
+      postgres:
+        condition: service_healthy
     ports:
-      - "8080:8080"
+      - "7233:7233"
     networks:
-      - og-rmm-net
+      - insureportal
 
-  # Idempotent Kafka topic provisioning — runs once on stack startup
-  redpanda-init:
-    image: redpandadata/redpanda:v23.3.18
-    container_name: og-rmm-redpanda-init
+  temporal-ui:
+    image: temporalio/ui:2.26.2
+    container_name: insureportal-temporal-ui
+    restart: unless-stopped
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    depends_on:
+      - temporal
+    ports:
+      - "8088:8080"
+    networks:
+      - insureportal
+
+  # ── Fluvio ─────────────────────────────────────────────────────────────────
+  fluvio-sc:
+    image: infinyon/fluvio:latest
+    container_name: insureportal-fluvio-sc
+    restart: unless-stopped
+    command: fluvio-run sc --local /fluvio/metadata
+    volumes:
+      - fluvio_data:/fluvio
+    ports:
+      - "9003:9003"
+    networks:
+      - insureportal
+
+  fluvio-spu:
+    image: infinyon/fluvio:latest
+    container_name: insureportal-fluvio-spu
+    restart: unless-stopped
+    command: fluvio-run spu -i 5001 -p 0.0.0.0:9010 -v 0.0.0.0:9011 --sc-addr fluvio-sc:9004
+    depends_on:
+      - fluvio-sc
+    ports:
+      - "9010:9010"
+    networks:
+      - insureportal
+
+  fluvio-init:
+    image: infinyon/fluvio:latest
+    container_name: insureportal-fluvio-init
     restart: "no"
     depends_on:
-      redpanda:
-        condition: service_healthy
-    entrypoint: ["/bin/bash", "-c"]
+      - fluvio-sc
+    entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        echo "Provisioning Kafka topics..."
-        for entry in \
-          "og.field.telemetry:12:604800000" \
-          "og.field.alarms:6:2592000000" \
-          "og.field.commands:3:604800000" \
-          "og.field.audit:3:7776000000" \
-          "og.analytics.forecasts:3:1209600000" \
-          "og.analytics.anomalies:3:1209600000" \
-          "og.financial.ledger:3:31536000000" \
-          "og.financial.settlements:3:31536000000" \
-          "og.ota.updates:3:2592000000" \
-          "og.osdu.metadata:3:2592000000" \
-          "og.dr.events:3:2592000000" \
-          "og.security.events:3:7776000000"; do
-          name=$$(echo $$entry | cut -d: -f1)
-          parts=$$(echo $$entry | cut -d: -f2)
-          ret=$$(echo $$entry | cut -d: -f3)
-          rpk topic create $$name \
-            --brokers redpanda:29092 \
-            --partitions $$parts \
-            --replicas 1 \
-            --topic-config retention.ms=$$ret \
-            --topic-config compression.type=lz4 2>&1 | grep -v 'TOPIC_ALREADY_EXISTS' || true
-        done
-        echo "All topics provisioned."
-        rpk topic list --brokers redpanda:29092
+        sleep 15 &&
+        fluvio profile add docker fluvio-sc:9003 docker 2>/dev/null || true &&
+        for topic in policy-events claims-events fraud-events payment-events agent-events kyc-events compliance-events renewal-events commission-events remittance-events underwriting-events reinsurance-events platform-events audit-events; do
+          fluvio topic create $$topic --partitions 6 --replication 1 2>/dev/null || true
+        done &&
+        echo "Insurance platform Fluvio topics initialized"
     networks:
-      - og-rmm-net
+      - insureportal
 
+  # ── MinIO (Lakehouse) ──────────────────────────────────────────────────────
   minio:
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
-    container_name: og-rmm-minio
+    container_name: insureportal-minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ogrmm
-      MINIO_ROOT_PASSWORD: ogrmm_minio_secret
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-insureportal}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-insureportal_dev}
+    command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
     ports:
       - "9000:9000"
       - "9001:9001"
     networks:
-      - og-rmm-net
+      - insureportal
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
-      timeout: 20s
-      retries: 3
-
-  temporal:
-    image: temporalio/auto-setup:1.24.2
-    container_name: og-rmm-temporal
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB: postgresql
-      DB_PORT: "5432"
-      POSTGRES_USER: ogrmm
-      POSTGRES_PWD: ogrmm_secret
-      POSTGRES_SEEDS: postgres
-      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/development.yaml
-    volumes:
-      - ./infra/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
-    ports:
-      - "7233:7233"
-    networks:
-      - og-rmm-net
-
-  temporal-ui:
-    image: temporalio/ui:2.26.2
-    container_name: og-rmm-temporal-ui
-    restart: unless-stopped
-    depends_on:
-      - temporal
-    environment:
-      TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:3000
-    ports:
-      - "8088:8080"
-    networks:
-      - og-rmm-net
-
-  # ─── Go Microservices ────────────────────────────────────────────────────────
-
-  api-gateway:
-    build:
-      context: ./services/go/api-gateway
-      dockerfile: Dockerfile
-    container_name: og-rmm-api-gateway
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      <<: [*common-env, *postgres-env]
-      PORT: "8000"
-      REDIS_URL: redis://redis:6379
-      WELL_MANAGEMENT_URL: http://well-management:8001
-      TELEMETRY_URL: http://telemetry-ingestion:8002
-      FINANCIAL_LEDGER_URL: http://financial-ledger:8003
-      ALARM_MANAGER_URL: http://alarm-manager:8004
-      ANALYTICS_URL: http://analytics-service:8005
-      ML_PIPELINE_URL: http://ml-pipeline:8006
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-prod}
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
-    ports:
-      - "8000:8000"
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  well-management:
-    build:
-      context: ./services/go/well-management
-      dockerfile: Dockerfile
-    container_name: og-rmm-well-management
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      <<: [*common-env, *postgres-env, *kafka-env]
-      PORT: "8001"
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8001/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  telemetry-ingestion:
-    build:
-      context: ./services/go/telemetry-ingestion
-      dockerfile: Dockerfile
-    container_name: og-rmm-telemetry
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redpanda:
-        condition: service_healthy
-      influxdb:
-        condition: service_healthy
-    environment:
-      <<: [*common-env, *postgres-env, *kafka-env]
-      PORT: "8002"
-      INFLUXDB_URL: http://influxdb:8086
-      INFLUXDB_TOKEN: ogrmm-influx-token-dev
-      INFLUXDB_ORG: apex-energy
-      INFLUXDB_BUCKET: telemetry
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8002/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  financial-ledger:
-    build:
-      context: ./services/go/financial-ledger
-      dockerfile: Dockerfile
-    container_name: og-rmm-financial-ledger
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      <<: [*common-env, *postgres-env]
-      PORT: "8003"
-      TIGERBEETLE_ADDRESS: tigerbeetle:3000
-      MOJALOOP_URL: ${MOJALOOP_URL:-http://mojaloop-ml-api-adapter:3000}
-    networks:
-      - og-rmm-net
-
-  alarm-manager:
-    build:
-      context: ./services/go/alarm-manager
-      dockerfile: Dockerfile
-    container_name: og-rmm-alarm-manager
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redpanda:
-        condition: service_healthy
-      temporal:
-        condition: service_started
-    environment:
-      <<: [*common-env, *postgres-env, *kafka-env]
-      PORT: "8004"
-      TEMPORAL_HOST: temporal:7233
-      REDIS_URL: redis://redis:6379
-    networks:
-      - og-rmm-net
-
-  # ─── Fluvio Streaming Platform ──────────────────────────────────────────────────
-  # Fluvio is used for high-throughput edge telemetry ingestion from EMQX MQTT
-  # and as a secondary streaming lane alongside Redpanda/Kafka for:
-  #   - EMQX MQTT bridge: og.emqx.telemetry topic (raw MQTT payloads)
-  #   - FledgePOWER IEC 104 bridge: og.fledge.raw topic
-  #   - Edge agent dual-publish: Kafka for processing, Fluvio for archival
-  fluvio:
-    image: infinyon/fluvio:latest
-    container_name: og-rmm-fluvio
-    restart: unless-stopped
-    ports:
-      - "9003:9003"   # Fluvio SC (streaming controller) public port
-      - "9004:9004"   # Fluvio SPU (streaming processing unit) port
-    volumes:
-      - fluvio_data:/var/lib/fluvio
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9003/healthz || exit 1"]
-      interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 30s
+      retries: 3
 
-  fluvio-init:
-    image: infinyon/fluvio:latest
-    container_name: og-rmm-fluvio-init
-    restart: "no"
-    depends_on:
-      - fluvio
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        sleep 10 &&
-        fluvio profile add docker fluvio:9003 docker 2>/dev/null || true &&
-        fluvio topic create og.field.telemetry.raw --partitions 12 --replication 1 2>/dev/null || true &&
-        fluvio topic create og.field.alarms --partitions 6 --replication 1 2>/dev/null || true &&
-        fluvio topic create og.fledge.raw --partitions 6 --replication 1 2>/dev/null || true &&
-        fluvio topic create og.emqx.telemetry --partitions 12 --replication 1 2>/dev/null || true &&
-        fluvio topic create og.security.events --partitions 4 --replication 1 2>/dev/null || true &&
-        fluvio topic create og.dr.dispatch --partitions 4 --replication 1 2>/dev/null || true &&
-        echo "[Fluvio] Topics initialized successfully"
-    networks:
-      - og-rmm-net
-
-  # ─── Rust Services ───────────────────────────────────────────────────────────
-
-  edge-agent:
-    build:
-      context: ./services/rust/edge-agent
-      dockerfile: Dockerfile
-    container_name: og-rmm-edge-agent
-    restart: unless-stopped
-    depends_on:
-      - redpanda
-      - fluvio
-    environment:
-      <<: *common-env
-      KAFKA_BROKERS: redpanda:9092
-      MQTT_BROKER: mqtt://mosquitto:1883
-      FLUVIO_ENDPOINT: fluvio:9003
-      FLUVIO_TOPIC_TELEMETRY: og.field.telemetry.raw
-      FLUVIO_TOPIC_ALARMS: og.field.alarms
-      FLUVIO_DUAL_PUBLISH: "true"
-      TELEMETRY_TOPIC: og.telemetry.raw
-      ALARM_TOPIC: og.alarms.raw
-    networks:
-      - og-rmm-net
-
-  stream-processor:
-    build:
-      context: ./services/rust/stream-processor
-      dockerfile: Dockerfile
-    container_name: og-rmm-stream-processor
-    restart: unless-stopped
-    depends_on:
-      - redpanda
-      - redis
-    environment:
-      <<: *common-env
-      KAFKA_BROKERS: redpanda:9092
-      REDIS_URL: redis://redis:6379
-      INPUT_TOPIC: og.telemetry.raw
-      OUTPUT_TOPIC: og.telemetry.processed
-      ALARM_TOPIC: og.alarms.raw
-    networks:
-      - og-rmm-net
-
-  # ─── Python Services ─────────────────────────────────────────────────────────
-
-  analytics-service:
-    build:
-      context: ./services/python/analytics-service
-      dockerfile: Dockerfile
-    container_name: og-rmm-analytics
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      <<: [*common-env, *postgres-env]
-      PORT: "8005"
-      INFLUXDB_URL: http://influxdb:8086
-      INFLUXDB_TOKEN: ogrmm-influx-token-dev
-      INFLUXDB_ORG: apex-energy
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ogrmm
-      MINIO_SECRET_KEY: ogrmm_minio_secret
-      DUCKDB_PATH: /data/lakehouse.duckdb
-    volumes:
-      - ./data/lakehouse:/data
-    ports:
-      - "8005:8005"
-    networks:
-      - og-rmm-net
-
-  ml-pipeline:
-    build:
-      context: ./services/python/ml-pipeline
-      dockerfile: Dockerfile
-    container_name: og-rmm-ml-pipeline
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      <<: [*common-env, *postgres-env]
-      PORT: "8006"
-      REDIS_URL: redis://redis:6379
-      KAFKA_BROKERS: redpanda:9092
-      MODEL_REGISTRY_PATH: /models
-      FEATURE_STORE_URL: redis://redis:6379/1
-    volumes:
-      - ./data/models:/models
-    ports:
-      - "8006:8006"
-    networks:
-      - og-rmm-net
-
-  # ─── Frontend ────────────────────────────────────────────────────────────────
-
-  ui:
-    build:
-      context: .
-      dockerfile: Dockerfile.ui
-    container_name: og-rmm-ui
-    restart: unless-stopped
-    depends_on:
-      - api-gateway
-    environment:
-      VITE_API_BASE_URL: http://api-gateway:8000
-      VITE_WS_URL: ws://api-gateway:8000/ws
-    ports:
-      - "3000:3000"
-    networks:
-      - og-rmm-net
-
-  # ─── MQTT Broker (for edge devices) ─────────────────────────────────────────
-
-  mosquitto:
-    image: eclipse-mosquitto:2.0
-    container_name: og-rmm-mosquitto
-    restart: unless-stopped
-    volumes:
-      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    ports:
-      - "1883:1883"
-      - "9883:9883"
-    networks:
-      - og-rmm-net
-
-  # ─── EMQX MQTT Broker (IoT device connectivity — replaces Mosquitto for prod) ─
-  emqx:
-    image: emqx/emqx:5.7.0
-    container_name: og-rmm-emqx
-    restart: unless-stopped
-    environment:
-      EMQX_NODE__NAME: "emqx@og-emqx"
-      EMQX_CLUSTER__DISCOVERY_STRATEGY: manual
-      EMQX_DASHBOARD__DEFAULT_USERNAME: admin
-      EMQX_DASHBOARD__DEFAULT_PASSWORD: og_emqx_admin_2025
-    volumes:
-      - ./infra/emqx/emqx.conf:/opt/emqx/etc/emqx.conf:ro
-      - ./infra/emqx/acl.conf:/opt/emqx/etc/acl.conf:ro
-      - emqx_data:/var/lib/emqx
-    ports:
-      - "1884:1883"   # MQTT TCP (1883 used by Mosquitto)
-      - "8883:8883"   # MQTT TLS
-      - "8083:8083"   # MQTT WebSocket
-      - "8084:8084"   # MQTT WebSocket TLS
-      - "18083:18083" # EMQX Dashboard
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  # ─── TDengine — Secondary Time-Series Database (FRQ-009) ────────────────────
-  tdengine:
-    image: tdengine/tdengine:3.3.2.0
-    container_name: og-rmm-tdengine
-    restart: unless-stopped
-    environment:
-      TAOS_FQDN: og-tdengine
-      TAOS_FIRST_EP: og-tdengine:6030
-    volumes:
-      - tdengine_data:/var/lib/taos
-      - ./infra/tdengine/taos.cfg:/etc/taos/taos.cfg:ro
-      - ./infra/tdengine/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "6030:6030"   # TDengine native protocol
-      - "6041:6041"   # TDengine HTTP/REST API
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  # ─── OpenSearch — Log Aggregation & Observability (NFR-001) ─────────────────
-  opensearch:
-    image: opensearchproject/opensearch:2.17.0
-    container_name: og-rmm-opensearch
-    restart: unless-stopped
-    environment:
-      - cluster.name=og-rmm-opensearch
-      - node.name=og-opensearch-node-1
-      - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-      - DISABLE_SECURITY_PLUGIN=true  # Enable for production
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    ports:
-      - "9200:9200"   # OpenSearch REST API
-      - "9600:9600"   # Performance Analyzer
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:2.17.0
-    container_name: og-rmm-opensearch-dashboards
-    restart: unless-stopped
-    environment:
-      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
-      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
-    ports:
-      - "5601:5601"
-    depends_on:
-      - opensearch
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  # ─── OpenTelemetry Collector — Distributed Tracing (NFR-003) ────────────────
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.99.0
-    container_name: og-rmm-otel-collector
-    restart: unless-stopped
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./infra/opentelemetry/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
-    ports:
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
-      - "8888:8888"   # Prometheus metrics
-      - "8889:8889"   # Prometheus exporter
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  # ─── Apache Flink — Streaming ETL (FRQ-012) ─────────────────────────────────
-  flink-jobmanager:
-    image: flink:1.19-python3
-    container_name: og-rmm-flink-jobmanager
-    restart: unless-stopped
-    command: jobmanager
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 4
-        parallelism.default: 4
-        state.backend: rocksdb
-        state.checkpoints.dir: s3://og-lakehouse/flink/checkpoints
-        s3.endpoint: http://minio:9000
-        s3.access-key: minioadmin
-        s3.secret-key: minioadmin
-        s3.path.style.access: true
-    ports:
-      - "8081:8081"   # Flink Web UI
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  flink-taskmanager:
-    image: flink:1.19-python3
-    container_name: og-rmm-flink-taskmanager
-    restart: unless-stopped
-    command: taskmanager
-    depends_on:
-      - flink-jobmanager
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 4
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  # ─── EdgeX Foundry — Field Device Integration (FRQ-001) ─────────────────────
-  edgex-core-data:
-    image: edgexfoundry/core-data:3.1.0
-    container_name: og-rmm-edgex-core-data
-    restart: unless-stopped
-    environment:
-      SERVICE_HOST: edgex-core-data
-      EDGEX_SECURITY_SECRET_STORE: "false"
-      MESSAGEQUEUE_HOST: redpanda
-      MESSAGEQUEUE_PORT: "9092"
-      MESSAGEQUEUE_TYPE: kafka
-      DATABASE_HOST: redis
-      DATABASE_PORT: "6379"
-    depends_on:
-      - redis
-      - redpanda
-    ports:
-      - "59880:59880"
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  edgex-core-metadata:
-    image: edgexfoundry/core-metadata:3.1.0
-    container_name: og-rmm-edgex-core-metadata
-    restart: unless-stopped
-    environment:
-      SERVICE_HOST: edgex-core-metadata
-      EDGEX_SECURITY_SECRET_STORE: "false"
-      DATABASE_HOST: redis
-      DATABASE_PORT: "6379"
-    depends_on:
-      - redis
-    ports:
-      - "59881:59881"
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  edgex-device-og-sensors:
-    build:
-      context: ./services/go/edgex-device-service
-      dockerfile: Dockerfile
-    container_name: og-rmm-edgex-device-sensors
-    restart: unless-stopped
-    environment:
-      SERVICE_HOST: edgex-device-og-sensors
-      EDGEX_SECURITY_SECRET_STORE: "false"
-      CLIENTS_CORE_METADATA_HOST: edgex-core-metadata
-      CLIENTS_CORE_DATA_HOST: edgex-core-data
-    depends_on:
-      - edgex-core-metadata
-      - edgex-core-data
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  # ─── ERP Connector — SAP S/4HANA + Oracle ERP (§13) ─────────────────────────
-  erp-connector:
-    build:
-      context: ./services/go/erp-connector
-      dockerfile: Dockerfile
-    container_name: og-rmm-erp-connector
-    restart: unless-stopped
-    environment:
-      PORT: "8095"
-      SAP_BASE_URL: ${SAP_BASE_URL:-}
-      SAP_USERNAME: ${SAP_USERNAME:-}
-      SAP_PASSWORD: ${SAP_PASSWORD:-}
-      SAP_CLIENT: ${SAP_CLIENT:-100}
-      ORACLE_BASE_URL: ${ORACLE_BASE_URL:-}
-      ORACLE_CLIENT_ID: ${ORACLE_CLIENT_ID:-}
-      ORACLE_CLIENT_SECRET: ${ORACLE_CLIENT_SECRET:-}
-    ports:
-      - "8095:8095"
-    networks:
-      - og-rmm-net
-    profiles:
-      - production
-
-  # ─── Workflow Engine — Security Incident Triage (§21.2) ─────────────────────
-  workflow-engine:
-    build:
-      context: ./services/go/workflow-engine
-      dockerfile: Dockerfile
-    container_name: og-rmm-workflow-engine
-    restart: unless-stopped
-    environment:
-      TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_NAMESPACE: og-rmm
-      OPENCTI_URL: ${OPENCTI_URL:-}
-      OPENCTI_TOKEN: ${OPENCTI_TOKEN:-}
-      GRAFANA_ONCALL_URL: ${GRAFANA_ONCALL_URL:-}
-      GRAFANA_ONCALL_TOKEN: ${GRAFANA_ONCALL_TOKEN:-}
-      DATABASE_URL: postgres://ogrmm:ogrmm_secret@postgres:5432/ogrmm
-    depends_on:
-      - temporal
-      - postgres
-    networks:
-      - og-rmm-net
-
-volumes:
-  fluvio_data:
-  emqx_data:
-  tdengine_data:
-  opensearch_data:
-  # ─── Ollama — Local LLM Server (llama3.2) ────────────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: og-rmm-ollama
-    restart: unless-stopped
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    networks:
-      - og-rmm-net
-    environment:
-      OLLAMA_KEEP_ALIVE: "24h"
-      OLLAMA_NUM_PARALLEL: "2"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    profiles:
-      - ai
-      - production
-
-  # ─── ML Service — Python FastAPI (Ollama + OpenSTEF + Anomaly Detection) ─────
-  ml-service:
-    build:
-      context: ./services/ml-service
-      dockerfile: Dockerfile
-    container_name: og-rmm-ml-service
-    restart: unless-stopped
-    environment:
-      ML_PORT: "4003"
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    ports:
-      - "4003:4003"
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:4003/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    profiles:
-      - ai
-      - production
-
-  # ─── Physics Engine — Rust gRPC Service (IPR/VLP/Nodal Analysis) ─────────────
-  physics-engine:
-    build:
-      context: ./services/physics-engine
-      dockerfile: Dockerfile
-    container_name: og-rmm-physics-engine
-    restart: unless-stopped
-    environment:
-      PHYSICS_PORT: "4001"
-      RUST_LOG: ${RUST_LOG:-info}
-    ports:
-      - "4001:4001"
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:4001/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    profiles:
-      - production
-
-  # ─── Data Plane — Go gRPC Service (Kafka Consumer + Telemetry Ingest) ────────
-  dataplane:
-    build:
-      context: ./services/dataplane-go
-      dockerfile: Dockerfile
-    container_name: og-rmm-dataplane
-    restart: unless-stopped
-    environment:
-      DATAPLANE_GRPC_PORT: "50052"
-      KAFKA_BROKERS: ${KAFKA_BROKERS:-redpanda:9092}
-      KAFKA_TOPIC_TELEMETRY: ${KAFKA_TOPIC_TELEMETRY:-og-telemetry}
-      DATABASE_URL: postgres://ogrmm:ogrmm_secret@postgres:5432/ogrmm
-    ports:
-      - "50052:50052"
-    depends_on:
-      - postgres
-    networks:
-      - og-rmm-net
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 50052 || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-    profiles:
-      - production
-
-  # ─── Jaeger — Distributed Tracing ──────────────────────────────────────────
-  jaeger:
-    image: jaegertracing/all-in-one:1.56
-    container_name: og-rmm-jaeger
-    restart: unless-stopped
-    ports:
-      - "16686:16686"   # Jaeger UI
-      - "14250:14250"   # gRPC collector
-      - "14268:14268"   # HTTP collector
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
-      SPAN_STORAGE_TYPE: badger
-      BADGER_EPHEMERAL: "false"
-      BADGER_DIRECTORY_VALUE: /badger/data
-      BADGER_DIRECTORY_KEY: /badger/key
-    volumes:
-      - jaeger_data:/badger
-    networks:
-      - og-rmm-net
-    profiles:
-      - observability
-      - production
-
-  # ─── OpenTelemetry Collector ─────────────────────────────────────────────────
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.96.0
-    container_name: og-rmm-otel-collector
-    restart: unless-stopped
-    command: ["--config=/etc/otelcol-contrib/config.yaml"]
-    ports:
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
-      - "8889:8889"   # Prometheus metrics exporter
-    volumes:
-      - ./config/otel/config.yaml:/etc/otelcol-contrib/config.yaml:ro
-    depends_on:
-      - jaeger
-    networks:
-      - og-rmm-net
-    profiles:
-      - observability
-      - production
-
-  # ─── Keycloak — Identity & Access Management ─────────────────────────────────
+  # ── Keycloak ───────────────────────────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.3
-    container_name: og-rmm-keycloak
+    image: quay.io/keycloak/keycloak:24.0.4
+    container_name: insureportal-keycloak
     restart: unless-stopped
-    command: start-dev
-    ports:
-      - "8081:8080"
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: og_rmm_keycloak_admin
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/ogrmm
-      KC_DB_USERNAME: ogrmm
-      KC_DB_PASSWORD: ogrmm_secret
-      KC_HOSTNAME_STRICT: "false"
+      KC_DB_URL: jdbc:postgresql://postgres:5432/insureportal
+      KC_DB_USERNAME: insureportal
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-insureportal_dev}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
       KC_HTTP_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev}
+    command: start-dev --import-realm
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     depends_on:
       postgres:
         condition: service_healthy
+    ports:
+      - "8080:8080"
     networks:
-      - og-rmm-net
-    profiles:
-      - auth
-      - production
+      - insureportal
 
-  # ─── APISIX API Gateway ───────────────────────────────────────────────────────
+  # ── Permify ────────────────────────────────────────────────────────────────
+  permify:
+    image: ghcr.io/permify/permify:latest
+    container_name: insureportal-permify
+    restart: unless-stopped
+    environment:
+      PERMIFY_DATABASE_ENGINE: postgres
+      PERMIFY_DATABASE_URI: postgres://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3476:3476"
+    networks:
+      - insureportal
+
+  # ── APISIX ─────────────────────────────────────────────────────────────────
   apisix-etcd:
     image: bitnami/etcd:3.5.12
-    container_name: og-rmm-apisix-etcd
+    container_name: insureportal-apisix-etcd
     restart: unless-stopped
     environment:
       ALLOW_NONE_AUTHENTICATION: "yes"
       ETCD_ADVERTISE_CLIENT_URLS: http://apisix-etcd:2379
+    ports:
+      - "2379:2379"
     networks:
-      - og-rmm-net
-    profiles:
-      - gateway
-      - production
+      - insureportal
 
   apisix:
     image: apache/apisix:3.9.0-debian
-    container_name: og-rmm-apisix
+    container_name: insureportal-apisix
     restart: unless-stopped
-    ports:
-      - "9080:9080"   # HTTP proxy
-      - "9443:9443"   # HTTPS proxy
-      - "9180:9180"   # Admin API
     volumes:
-      - ./config/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./infra/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
     depends_on:
       - apisix-etcd
+    ports:
+      - "9080:9080"
+      - "9180:9180"
     networks:
-      - og-rmm-net
-    profiles:
-      - gateway
-      - production
+      - insureportal
 
-  # ─── Dapr Placement Service ───────────────────────────────────────────────────
+  # ── Dapr ───────────────────────────────────────────────────────────────────
   dapr-placement:
-    image: daprio/dapr:1.13.3
-    container_name: og-rmm-dapr-placement
+    image: daprio/dapr:1.13.0
+    container_name: insureportal-dapr-placement
     restart: unless-stopped
-    command: ["./placement", "-port", "50006", "-log-level", "info"]
+    command: ./placement -port 50006
     ports:
       - "50006:50006"
     networks:
-      - og-rmm-net
-    profiles:
-      - dapr
-      - production
+      - insureportal
 
-  # ─── Grafana — Metrics Dashboards ────────────────────────────────────────────
-  grafana:
-    image: grafana/grafana:10.4.2
-    container_name: og-rmm-grafana
+  # ── OpenAppSec ─────────────────────────────────────────────────────────────
+  openappsec-agent:
+    image: ghcr.io/openappsec/agent:latest
+    container_name: insureportal-openappsec
     restart: unless-stopped
-    ports:
-      - "3002:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: og_rmm_grafana
-      GF_USERS_ALLOW_SIGN_UP: "false"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      OPENAPPSEC_TOKEN: ${OPENAPPSEC_TOKEN:-dev_token}
     networks:
-      - og-rmm-net
-    profiles:
-      - observability
-      - production
+      - insureportal
+    ports:
+      - "80:80"
 
-volumes:
-  jaeger_data:
-  grafana_data:
-  ollama_data:
+  # ── OpenSearch ─────────────────────────────────────────────────────────────
+  opensearch:
+    image: opensearchproject/opensearch:2.17.0
+    container_name: insureportal-opensearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      DISABLE_SECURITY_PLUGIN: "true"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - insureportal
+
+  # ── Ollama (AI/LLM CPU Inference) ──────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: insureportal-ollama
+    restart: unless-stopped
+    volumes:
+      - ./infra/ollama/models:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - insureportal
+
+  # ── TigerBeetle Sidecar (Go) ───────────────────────────────────────────────
+  insureportal-tb-sidecar:
+    build:
+      context: ./tb-sidecar
+      dockerfile: Dockerfile
+    container_name: insureportal-tb-sidecar
+    restart: unless-stopped
+    environment:
+      TB_ADDRESS: tigerbeetle:3000
+      POSTGRES_DSN: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
+      PORT: "7070"
+    depends_on:
+      - tigerbeetle
+      - postgres
+    ports:
+      - "7070:7070"
+    networks:
+      - insureportal
+
+  # ── Payment Gateway (Go) ───────────────────────────────────────────────────
+  insureportal-payment-gateway:
+    build:
+      context: ./services/go/payment-gateway
+      dockerfile: Dockerfile
+    container_name: insureportal-payment-gateway
+    restart: unless-stopped
+    environment:
+      PORT: "8100"
+      POSTGRES_DSN: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
+      TIGERBEETLE_URL: http://insureportal-tb-sidecar:7070
+      TEMPORAL_ADDRESS: temporal:7233
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-}
+      FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY:-}
+    depends_on:
+      - postgres
+      - redis
+      - insureportal-tb-sidecar
+    ports:
+      - "8100:8100"
+    networks:
+      - insureportal
+
+  # ── Float Reconciliation Engine (Go) ──────────────────────────────────────
+  insureportal-float-reconciler:
+    build:
+      context: ./services/go/float-reconciler
+      dockerfile: Dockerfile
+    container_name: insureportal-float-reconciler
+    restart: unless-stopped
+    environment:
+      PORT: "8101"
+      POSTGRES_DSN: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      TIGERBEETLE_URL: http://insureportal-tb-sidecar:7070
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
+      RECONCILE_INTERVAL: "300s"
+    depends_on:
+      - postgres
+      - insureportal-tb-sidecar
+    ports:
+      - "8101:8101"
+    networks:
+      - insureportal
+
+  # ── Fraud Gate (Rust) ─────────────────────────────────────────────────────
+  insureportal-fraud-gate:
+    build:
+      context: ./fraud-gate
+      dockerfile: Dockerfile
+    container_name: insureportal-fraud-gate
+    restart: unless-stopped
+    environment:
+      PORT: "8090"
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
+      FLUVIO_URL: fluvio-sc:9003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+    networks:
+      - insureportal
+
+  # ── Ledger Sidecar (Rust) ─────────────────────────────────────────────────
+  insureportal-ledger-sidecar:
+    build:
+      context: ./services/rust/ledger-sidecar
+      dockerfile: Dockerfile
+    container_name: insureportal-ledger-sidecar
+    restart: unless-stopped
+    environment:
+      PORT: "8091"
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
+      TIGERBEETLE_ADDRESS: tigerbeetle:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8091:8091"
+    networks:
+      - insureportal
+
+  # ── ML Fraud Scoring (Python) ─────────────────────────────────────────────
+  insureportal-ml-fraud:
+    build:
+      context: ./services/python/ml-fraud-scoring
+      dockerfile: Dockerfile
+    container_name: insureportal-ml-fraud
+    restart: unless-stopped
+    environment:
+      PORT: "8000"
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      - insureportal
+
+  # ── KYC Verification (Python) ─────────────────────────────────────────────
+  insureportal-kyc:
+    build:
+      context: ./services/python/kyc-verification
+      dockerfile: Dockerfile
+    container_name: insureportal-kyc
+    restart: unless-stopped
+    environment:
+      PORT: "8001"
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      NIBSS_API_URL: ${NIBSS_API_URL:-https://nibss-api.ng/v1}
+      NIBSS_API_KEY: ${NIBSS_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    networks:
+      - insureportal
+
+  # ── Actuarial Engine (Python) ─────────────────────────────────────────────
+  insureportal-actuarial:
+    build:
+      context: ./actuarial-platform
+      dockerfile: Dockerfile
+    container_name: insureportal-actuarial
+    restart: unless-stopped
+    environment:
+      PORT: "8002"
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-insureportal}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-insureportal_dev}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    networks:
+      - insureportal
+
+  # ── Claims Adjudication AI (Python) ──────────────────────────────────────
+  insureportal-claims-ai:
+    build:
+      context: ./services/python/claims-adjudication
+      dockerfile: Dockerfile
+    container_name: insureportal-claims-ai
+    restart: unless-stopped
+    environment:
+      PORT: "8003"
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      OLLAMA_URL: http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8003:8003"
+    networks:
+      - insureportal
+
+  # ── AI Advisor (Python) ───────────────────────────────────────────────────
+  insureportal-ai-advisor:
+    build:
+      context: ./services/python/ai-advisor
+      dockerfile: Dockerfile
+    container_name: insureportal-ai-advisor
+    restart: unless-stopped
+    environment:
+      PORT: "8004"
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      OLLAMA_URL: http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8004:8004"
+    networks:
+      - insureportal
+
+  # ── Main InsurePortal API (TypeScript/tRPC) ────────────────────────────────
+  insureportal-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: insureportal-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: insureportal
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: insureportal
+      PERMIFY_URL: http://permify:3476
+      TIGERBEETLE_URL: http://insureportal-tb-sidecar:7070
+      FLUVIO_URL: fluvio-sc:9003
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-insureportal}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-insureportal_dev}
+      OLLAMA_URL: http://ollama:11434
+      DAPR_URL: http://dapr-placement:3500
+      APISIX_ADMIN_URL: http://apisix:9180
+      FRAUD_GATE_URL: http://insureportal-fraud-gate:8090
+      ML_FRAUD_URL: http://insureportal-ml-fraud:8000
+      KYC_SERVICE_URL: http://insureportal-kyc:8001
+      ACTUARIAL_URL: http://insureportal-actuarial:8002
+      PAYMENT_GATEWAY_URL: http://insureportal-payment-gateway:8100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    networks:
+      - insureportal
+
+  # ── Temporal Worker (TypeScript) ──────────────────────────────────────────
+  insureportal-temporal-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.temporal-worker
+    container_name: insureportal-temporal-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: insureportal
+      TEMPORAL_TASK_QUEUE: insureportal-journeys
+      TIGERBEETLE_URL: http://insureportal-tb-sidecar:7070
+      FLUVIO_URL: fluvio-sc:9003
+      OLLAMA_URL: http://ollama:11434
+      FRAUD_GATE_URL: http://insureportal-fraud-gate:8090
+      ML_FRAUD_URL: http://insureportal-ml-fraud:8000
+      KYC_SERVICE_URL: http://insureportal-kyc:8001
+      ACTUARIAL_URL: http://insureportal-actuarial:8002
+    depends_on:
+      - temporal
+      - postgres
+      - redis
+    networks:
+      - insureportal
+
+  # ── Frontend (React/TypeScript) ───────────────────────────────────────────
+  insureportal-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: insureportal-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://insureportal-api:5000
+      VITE_KEYCLOAK_URL: http://keycloak:8080
+      VITE_KEYCLOAK_REALM: insureportal
+    depends_on:
+      - insureportal-api
+    ports:
+      - "3000:3000"
+    networks:
+      - insureportal

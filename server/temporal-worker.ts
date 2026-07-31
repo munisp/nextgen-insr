@@ -16,10 +16,13 @@ import {
 } from "@temporalio/worker";
 import * as activities from "./temporal-activities";
 import { logger } from './_core/logger';
+import * as journeyActivities from "./journey-activities";
+import { J01_CustomerOnboardingWorkflow, J02_PolicyPurchaseWorkflow, J03_ClaimsSettlementWorkflow, J04_AgentOnboardingWorkflow, J05_AgentDailyOpsWorkflow, J06_PolicyRenewalWorkflow, J07_FraudResponseWorkflow, J08_CommissionPayoutWorkflow, J09_RemittanceWorkflow, J10_ClaimDisputeWorkflow } from "./insurance-journeys";
+import { J11_BrokerPolicyManagementWorkflow, J12_ActuaryIfrs17Workflow, J13_ComplianceMonitoringWorkflow, J14_PosTerminalLifecycleWorkflow, J15_ReinsuranceCessionWorkflow, J16_CustomerSelfServiceWorkflow, J17_BulkPremiumPaymentWorkflow, J18_AgentFloatReconciliationWorkflow, J19_UnderwritingDecisionWorkflow, J20_PlatformHealthMonitoringWorkflow } from "./insurance-journeys-ext";
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";
 const TEMPORAL_NAMESPACE = process.env.TEMPORAL_NAMESPACE ?? "insureportal";
-const TASK_QUEUE = process.env.TEMPORAL_TASK_QUEUE ?? "settlement-queue";
+const TASK_QUEUE = process.env.TEMPORAL_TASK_QUEUE ?? "insureportal-journeys";
 
 /**
  * Start the Temporal worker in-process.
@@ -54,13 +57,26 @@ async function run() {
     __dirname ?? process.cwd(),
     "temporal-workflows"
   );
+  // Journey workflows are registered directly as workflow functions
+  const journeyWorkflows = {
+    J01_CustomerOnboardingWorkflow, J02_PolicyPurchaseWorkflow,
+    J03_ClaimsSettlementWorkflow, J04_AgentOnboardingWorkflow,
+    J05_AgentDailyOpsWorkflow, J06_PolicyRenewalWorkflow,
+    J07_FraudResponseWorkflow, J08_CommissionPayoutWorkflow,
+    J09_RemittanceWorkflow, J10_ClaimDisputeWorkflow,
+    J11_BrokerPolicyManagementWorkflow, J12_ActuaryIfrs17Workflow,
+    J13_ComplianceMonitoringWorkflow, J14_PosTerminalLifecycleWorkflow,
+    J15_ReinsuranceCessionWorkflow, J16_CustomerSelfServiceWorkflow,
+    J17_BulkPremiumPaymentWorkflow, J18_AgentFloatReconciliationWorkflow,
+    J19_UnderwritingDecisionWorkflow, J20_PlatformHealthMonitoringWorkflow,
+  };
 
   const worker = await Worker.create({
     connection,
     namespace: TEMPORAL_NAMESPACE,
     taskQueue: TASK_QUEUE,
     workflowsPath,
-    activities,
+    activities: { ...activities, ...journeyActivities },
     maxConcurrentActivityTaskExecutions: 20,
     maxConcurrentWorkflowTaskExecutions: 10,
   });

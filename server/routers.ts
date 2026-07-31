@@ -1,8 +1,10 @@
 import { KC_SESSION_COOKIE } from "./_core/keycloakAuth";
+import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
+import { insurancePolicyQuoteManagerRouter } from "./routers/insurancePolicyQuoteManager";
+import { insuranceProductCatalogRouter } from "./routers/insuranceProductCatalog";
 // Sprint 98: Missing router imports
-import { insuranceCartRouter } from "./routers/ecommerceCart";
-import { insuranceCatalogRouter } from "./routers/ecommerceCatalog";
-import { policyOrdersRouter } from "./routers/ecommerceOrders";
+import { insuranceProductCatalogRouter } from "./routers/insuranceProductCatalog";
+ // Insurance policy purchase orders
 import { insuranceServiceFleetRouter } from "./routers/posTerminalFleet";
 import { remittanceRouter } from "./routers/remittance";
 import { terminalLeasingRouter } from "./routers/terminalLeasing";
@@ -1086,14 +1088,13 @@ export const appRouter = router({
   kycEnforcement: kycEnforcementRouter,
   // Insurance KPI Dashboards — all 16 roles
   insuranceKpiDashboard: insuranceKpiDashboardRouter,
-  // E-Commerce, Remittance & Terminal Fleet (Sprint 98 gap closure)
-  insuranceCart: insuranceCartRouter,
-  insuranceCatalog: insuranceCatalogRouter,
-  policyOrders: policyOrdersRouter,
-  insuranceServiceFleet: insuranceServiceFleetRouter,
+  // E-Commerce, Remittance & Terminal Fleet (Sprint 98 gap closure)  insuranceProductCatalog: insuranceProductCatalogRouter,  insuranceServiceFleet: insuranceServiceFleetRouter,
   remittance: remittanceRouter,
   terminalLeasing: terminalLeasingRouter,
   crossBorderRemittanceHub: crossBorderRemittanceHubRouter,
+  insurancePolicyQuoteManager: insurancePolicyQuoteManagerRouter,
+  insuranceProductCatalog: insuranceProductCatalogRouter,
+  insuranceJourneyOrchestrator: insuranceJourneyOrchestratorRouter,
 });
 
 export type AppRouter = typeof appRouter;

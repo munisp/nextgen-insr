@@ -294,182 +294,198 @@ export async function FloatReplenishmentWorkflow(
 // 7-step workflow with rollback on failure
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const billingActivities = proxyActivities<typeof activities>({
-  startToCloseTimeout: "60s",
-  retry: { maximumAttempts: 3, initialInterval: "2s", backoffCoefficient: 2 },
-});
 
-export interface BillingProvisioningInput {
-  tenantId: number;
-  tenantName: string;
-  billingModel: "revenue_share" | "subscription" | "hybrid";
-  customConfig?: any;
-  provisionedBy: number;
-  region: string;
-  currency: string;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INSURANCE POLICY BINDING WORKFLOW
+// Insurance Policy Binding Workflow
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface InsurancePolicyBindingInput {
+  quoteId: number;
+  customerId: number;
+  agentId?: number;
+  productId: number;
+  sumInsured: number;
+  premiumAmount: number;
+  durationMonths: number;
+  paymentRef: string;
+  coverageStartDate: string;
+  beneficiaryName?: string;
 }
 
-export interface BillingProvisioningResult {
+export interface InsurancePolicyBindingResult {
   success: boolean;
-  tenantId: number;
+  policyId?: number;
+  policyNumber?: string;
   steps: Array<{ step: string; status: string; details?: any; error?: string }>;
-  configId: number;
   rollbackPerformed: boolean;
   duration: string;
 }
 
-const cancelBillingProvisioningSignal = defineSignal(
-  "cancelBillingProvisioning"
-);
-const billingProvisioningStepQuery = defineQuery<string>(
-  "billingProvisioningStep"
-);
+const cancelPolicyBindingSignal = defineSignal("cancelPolicyBinding");
+const policyBindingStepQuery = defineQuery<string>("policyBindingStep");
 
 /**
- * BillingProvisioningWorkflow — provisions billing infrastructure for a new tenant.
- * 7 sequential steps with full rollback on failure.
+ * InsurancePolicyBindingWorkflow — binds an insurance policy after quote acceptance.
+ *
+ * Steps:
+ *   1. validateQuote — confirm quote is still valid and not expired
+ *   2. runUnderwriting — AI risk scoring + actuarial review
+ *   3. collectPremium — TigerBeetle premium transfer (customer → insurer pool)
+ *   4. createPolicy — write policy record to PostgreSQL
+ *   5. issueCertificate — generate policy certificate PDF
+ *   6. notifyStakeholders — SMS/email to customer, agent, insurer
+ *   7. emitPolicyEvent — Fluvio event for downstream systems
+ *
+ * Compensation (rollback):
+ *   - If collectPremium succeeds but createPolicy fails → refund premium
+ *   - If createPolicy succeeds but issueCertificate fails → mark policy pending
  */
-export async function BillingProvisioningWorkflow(
-  input: BillingProvisioningInput
-): Promise<BillingProvisioningResult> {
+export async function InsurancePolicyBindingWorkflow(
+  input: InsurancePolicyBindingInput
+): Promise<InsurancePolicyBindingResult> {
   const startTime = Date.now();
   let cancelled = false;
   let currentStep = "initializing";
   const completedSteps: string[] = [];
-  const stepResults: Array<{
-    step: string;
-    status: string;
-    details?: any;
-    error?: string;
-  }> = [];
+  const stepResults: Array<{ step: string; status: string; details?: any; error?: string }> = [];
+  let policyId: number | undefined;
+  let policyNumber: string | undefined;
 
-  setHandler(cancelBillingProvisioningSignal, () => {
+  setHandler(cancelPolicyBindingSignal, () => {
     cancelled = true;
-    log.info("Billing provisioning cancellation requested", {
-      tenantId: input.tenantId,
-    });
+    log.info("Policy binding cancellation requested", { quoteId: input.quoteId });
   });
-  setHandler(billingProvisioningStepQuery, () => currentStep);
+  setHandler(policyBindingStepQuery, () => currentStep);
 
   const steps = [
     {
-      name: "validate_tenant",
-      fn: () =>
-        billingActivities.validateTenantForBilling({
-          tenantId: input.tenantId,
-          tenantName: input.tenantName,
-        }),
+      name: "validate_quote",
+      fn: () => journeyActivities.validateInsuranceQuote({
+        quoteId: input.quoteId,
+        customerId: input.customerId,
+        productId: input.productId,
+        premiumAmount: input.premiumAmount,
+      }),
     },
     {
-      name: "create_billing_config",
-      fn: () =>
-        billingActivities.createBillingConfig({
-          tenantId: input.tenantId,
-          billingModel: input.billingModel,
-          customConfig: input.customConfig,
-          provisionedBy: input.provisionedBy,
-          currency: input.currency,
-        }),
+      name: "run_underwriting",
+      fn: () => journeyActivities.runUnderwritingCheck({
+        customerId: input.customerId,
+        productId: input.productId,
+        sumInsured: input.sumInsured,
+        agentId: input.agentId,
+      }),
     },
     {
-      name: "create_tigerbeetle_accounts",
-      fn: () =>
-        billingActivities.createTigerBeetleAccounts({
-          tenantId: input.tenantId,
-        }),
+      name: "collect_premium",
+      fn: () => journeyActivities.collectInsurancePremium({
+        customerId: input.customerId,
+        agentId: input.agentId,
+        productId: input.productId,
+        premiumAmount: input.premiumAmount,
+        paymentRef: input.paymentRef,
+      }),
     },
     {
-      name: "provision_kafka_topics",
-      fn: () =>
-        billingActivities.provisionKafkaTopics({ tenantId: input.tenantId }),
+      name: "create_policy",
+      fn: () => journeyActivities.createInsurancePolicy({
+        quoteId: input.quoteId,
+        customerId: input.customerId,
+        agentId: input.agentId,
+        productId: input.productId,
+        sumInsured: input.sumInsured,
+        premiumAmount: input.premiumAmount,
+        durationMonths: input.durationMonths,
+        coverageStartDate: input.coverageStartDate,
+        paymentRef: input.paymentRef,
+        beneficiaryName: input.beneficiaryName,
+      }),
     },
     {
-      name: "assign_billing_roles",
-      fn: () =>
-        billingActivities.assignBillingRoles({
-          tenantId: input.tenantId,
-          provisionedBy: input.provisionedBy,
-        }),
+      name: "issue_certificate",
+      fn: () => journeyActivities.issuePolicyCertificate({
+        policyId: policyId!,
+        customerId: input.customerId,
+      }),
     },
     {
-      name: "configure_reconciliation",
-      fn: () =>
-        billingActivities.configureReconciliation({
-          tenantId: input.tenantId,
-          region: input.region,
-        }),
+      name: "notify_stakeholders",
+      fn: () => journeyActivities.notifyPolicyStakeholders({
+        policyId: policyId!,
+        policyNumber: policyNumber!,
+        customerId: input.customerId,
+        agentId: input.agentId,
+        premiumAmount: input.premiumAmount,
+        eventType: "policy.bound",
+      }),
     },
     {
-      name: "activate_billing",
-      fn: () =>
-        billingActivities.activateBilling({
-          tenantId: input.tenantId,
-          provisionedBy: input.provisionedBy,
-        }),
+      name: "emit_policy_event",
+      fn: () => journeyActivities.emitInsuranceEvent({
+        topic: "policy-events",
+        eventType: "policy.bound",
+        entityId: String(policyId),
+        payload: {
+          policyId,
+          policyNumber,
+          customerId: input.customerId,
+          productId: input.productId,
+          premiumAmount: input.premiumAmount,
+        },
+      }),
     },
   ];
 
-  let configId = 0;
-
   for (const step of steps) {
     if (cancelled) {
-      log.warn("Billing provisioning cancelled", {
-        step: step.name,
-        tenantId: input.tenantId,
-      });
+      log.warn("Policy binding cancelled", { step: step.name, quoteId: input.quoteId });
       break;
     }
     currentStep = step.name;
-    log.info("Executing billing provisioning step", {
-      step: step.name,
-      tenantId: input.tenantId,
-    });
+    log.info("Executing policy binding step", { step: step.name, quoteId: input.quoteId });
 
     try {
       const result = await step.fn();
       completedSteps.push(step.name);
-      stepResults.push({
-        step: step.name,
-        status: "completed",
-        details: result,
-      });
-      if (step.name === "create_billing_config" && result?.configId) {
-        configId = result.configId;
+      stepResults.push({ step: step.name, status: "completed", details: result });
+
+      // Capture policy ID and number from create_policy step
+      if (step.name === "create_policy" && result?.policyId) {
+        policyId = result.policyId;
+        policyNumber = result.policyNumber;
       }
     } catch (error) {
       const errMsg = (error as Error).message || "Unknown error";
       stepResults.push({ step: step.name, status: "failed", error: errMsg });
-      log.error("Billing step failed — initiating rollback", {
-        step: step.name,
-        error: errMsg,
-        tenantId: input.tenantId,
+      log.error("Policy binding step failed — initiating compensation", {
+        step: step.name, error: errMsg, quoteId: input.quoteId,
       });
 
-      // Rollback in reverse order
+      // Compensation: rollback in reverse order
       for (let i = completedSteps.length - 1; i >= 0; i--) {
         currentStep = `rollback_${completedSteps[i]}`;
-        log.info("Rolling back billing step", {
-          step: completedSteps[i],
-          tenantId: input.tenantId,
-        });
         try {
-          await billingActivities.rollbackBillingStep({
-            tenantId: input.tenantId,
+          await journeyActivities.compensatePolicyBindingStep({
             step: completedSteps[i],
+            quoteId: input.quoteId,
+            policyId,
+            paymentRef: input.paymentRef,
+            customerId: input.customerId,
+            premiumAmount: input.premiumAmount,
           });
+          log.info("Compensation completed", { step: completedSteps[i] });
         } catch (rbErr) {
-          log.error("Rollback failed (manual intervention required)", {
-            step: completedSteps[i],
-            error: (rbErr as Error).message,
+          log.error("Compensation failed — manual intervention required", {
+            step: completedSteps[i], error: (rbErr as Error).message,
           });
         }
       }
 
       return {
         success: false,
-        tenantId: input.tenantId,
         steps: stepResults,
-        configId,
         rollbackPerformed: true,
         duration: `${Date.now() - startTime}ms`,
       };
@@ -478,9 +494,9 @@ export async function BillingProvisioningWorkflow(
 
   return {
     success: !cancelled,
-    tenantId: input.tenantId,
+    policyId,
+    policyNumber,
     steps: stepResults,
-    configId,
     rollbackPerformed: false,
     duration: `${Date.now() - startTime}ms`,
   };

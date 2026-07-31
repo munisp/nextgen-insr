@@ -24,6 +24,7 @@ import { OfflineIndicator } from "./components/OfflineIndicator";
 import { RoleOnboarding } from "./components/RoleOnboarding";
 import { KpiLiveRegion } from "./components/KpiLiveRegion";
 import { SkeletonDashboard } from "./components/SkeletonDashboard";
+import InsurancePolicyQuoteManager from "./pages/InsurancePolicyQuoteManager";
 // Sprint 28: Nigerian Insurance Features
 // Sprint 29: AI/ML/DL/GNN Integrations
 // Sprint 30: AI/ML Follow-ups
@@ -71,7 +72,7 @@ const CustomerPortal = lazy(() => import("./pages/CustomerPortal"));
 const SuperAdminPortal = lazy(() => import("./pages/SuperAdminPortal"));
 const PlatformHub = lazy(() => import("./pages/PlatformHub"));
 const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
-const MerchantPortal = lazy(() => import("./pages/MerchantPortal"));
+const InsuranceAgentMerchantPortal = lazy(() => import("./pages/InsuranceAgentMerchantPortal"));
 const DeveloperPortal = lazy(() => import("./pages/DeveloperPortal"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const SystemHealth = lazy(() => import("./pages/SystemHealth"));
@@ -297,7 +298,7 @@ const GeoFencingPage = lazy(() => import("./pages/GeoFencingPage"));
 const BiometricAuthPage = lazy(() => import("./pages/BiometricAuthPage"));
 const OfflineSyncPage = lazy(() => import("./pages/OfflineSyncPage"));
 const WhatsAppChannelPage = lazy(() => import("./pages/WhatsAppChannelPage"));
-const MerchantPaymentsPage = lazy(() => import("./pages/MerchantPaymentsPage"));
+const InsuranceMerchantPayments = lazy(() => import("./pages/InsuranceMerchantPayments"));
 const BillPaymentsPage = lazy(() => import("./pages/BillPaymentsPage"));
 const AirtimeVendingPage = lazy(() => import("./pages/AirtimeVendingPage"));
 const LoanDisbursementPage = lazy(() => import("./pages/LoanDisbursementPage"));
@@ -509,7 +510,7 @@ const CardBinLookup = lazy(() => import("./pages/CardBinLookup"));
 const TransactionVelocityMonitor = lazy(
   () => import("./pages/TransactionVelocityMonitor")
 );
-const MerchantRiskScoring = lazy(() => import("./pages/MerchantRiskScoring"));
+const InsuranceMerchantRiskScoring = lazy(() => import("./pages/InsuranceMerchantRiskScoring"));
 const PaymentGatewayRouter = lazy(() => import("./pages/PaymentGatewayRouter"));
 const AgentFloatForecasting = lazy(
   () => import("./pages/AgentFloatForecasting")
@@ -535,8 +536,8 @@ const PlatformMetricsExporter = lazy(
 const RealtimeWebSocketFeeds = lazy(
   () => import("./pages/RealtimeWebSocketFeeds")
 );
-const MerchantOnboardingPortal = lazy(
-  () => import("./pages/MerchantOnboardingPortal")
+const InsuranceMerchantOnboarding = lazy(
+  () => import("./pages/InsuranceMerchantOnboarding")
 );
 const PaymentLinkGenerator = lazy(() => import("./pages/PaymentLinkGenerator"));
 const DisputeMediationAI = lazy(() => import("./pages/DisputeMediationAI"));
@@ -547,8 +548,8 @@ const AutomatedSettlementScheduler = lazy(
   () => import("./pages/AutomatedSettlementScheduler")
 );
 const CustomerWalletSystem = lazy(() => import("./pages/CustomerWalletSystem"));
-const MerchantAnalyticsDash = lazy(
-  () => import("./pages/MerchantAnalyticsDash")
+const InsuranceMerchantAnalytics = lazy(
+  () => import("./pages/InsuranceMerchantAnalytics")
 );
 const POSServiceUpdate = lazy(() => import("./pages/POSServiceUpdate"));
 const TransactionReceiptGenerator = lazy(
@@ -649,8 +650,8 @@ const SettlementNettingEngine = lazy(
 const PlatformCapacityPlanner = lazy(
   () => import("./pages/PlatformCapacityPlanner")
 );
-const MerchantAcquirerGateway = lazy(
-  () => import("./pages/MerchantAcquirerGateway")
+const InsurancePremiumAcquirerGateway = lazy(
+  () => import("./pages/InsurancePremiumAcquirerGateway")
 );
 const AgentMicroInsurance = lazy(() => import("./pages/AgentMicroInsurance"));
 const TransactionGraphAnalyzer = lazy(
@@ -678,8 +679,8 @@ const DynamicFeeCalculator = lazy(() => import("./pages/DynamicFeeCalculator"));
 const CustomerOnboardingPipeline = lazy(
   () => import("./pages/CustomerOnboardingPipeline")
 );
-const MerchantSettlementDashboard = lazy(
-  () => import("./pages/MerchantSettlementDashboard")
+const InsuranceMerchantSettlementDash = lazy(
+  () => import("./pages/InsuranceMerchantSettlementDash")
 );
 const AgentFloatInsuranceClaims = lazy(
   () => import("./pages/AgentFloatInsuranceClaims")
@@ -748,11 +749,11 @@ const AgentLoanFacilityPage = lazy(
   () => import("./pages/AgentLoanFacilityPage")
 );
 const DynamicFeeEnginePage = lazy(() => import("./pages/DynamicFeeEnginePage"));
-const MerchantKycOnboardingPage = lazy(
-  () => import("./pages/MerchantKycOnboardingPage")
+const InsuranceMerchantKycOnboarding = lazy(
+  () => import("./pages/InsuranceMerchantKycOnboarding")
 );
-const MerchantPayoutSettlementPage = lazy(
-  () => import("./pages/MerchantPayoutSettlementPage")
+const InsuranceMerchantPayoutSettlement = lazy(
+  () => import("./pages/InsuranceMerchantPayoutSettlement")
 );
 const ComplianceFilingPage = lazy(() => import("./pages/ComplianceFilingPage"));
 const TenantFeatureTogglePage = lazy(
@@ -852,11 +853,10 @@ const BiometricAuthGateway = lazy(() => import("./pages/BiometricAuthGateway"));
 const ComplianceTrainingTracker = lazy(() => import("./pages/ComplianceTrainingTracker"));
 const ComponentShowcase = lazy(() => import("./pages/ComponentShowcase"));
 const CrossBorderRemittanceHub = lazy(() => import("./pages/CrossBorderRemittanceHub"));
-const EcommerceCheckout = lazy(() => import("./pages/EcommerceCheckout"));
-const EcommerceMerchantStorefront = lazy(() => import("./pages/EcommerceMerchantStorefront"));
-const EcommerceOrderManagement = lazy(() => import("./pages/EcommerceOrderManagement"));
-const EcommerceProductCatalog = lazy(() => import("./pages/EcommerceProductCatalog"));
-const EcommerceShoppingCart = lazy(() => import("./pages/EcommerceShoppingCart"));
+const InsurancePolicyCheckout = lazy(() => import("./pages/InsurancePolicyCheckout"));
+const InsuranceInsuranceAgentMerchantPortal = lazy(() => import("./pages/InsuranceInsuranceAgentMerchantPortal"));
+const InsurancePolicyOrderManagement = lazy(() => import("./pages/InsurancePolicyOrderManagement"));
+const InsuranceProductCatalog = lazy(() => import("./pages/InsuranceProductCatalog"));
 const Home = lazy(() => import("./pages/Home"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const POSFirmwareOTA = lazy(() => import("./pages/POSFirmwareOTA"));
@@ -1313,8 +1313,8 @@ function AuthenticatedApp() {
         <Route path="/super-admin" component={SuperAdminPortal} />
         <Route path="/super-admin/:section" component={SuperAdminPortal} />
         {/* Merchant & Developer portals */}
-        <Route path="/merchant" component={MerchantPortal} />
-        <Route path="/merchant/:section" component={MerchantPortal} />
+        <Route path="/merchant" component={InsuranceAgentMerchantPortal} />
+        <Route path="/merchant/:section" component={InsuranceAgentMerchantPortal} />
         <Route path="/developer" component={DeveloperPortal} />
         <Route path="/developer/:section" component={DeveloperPortal} />
         {/* Legal */}
@@ -1465,7 +1465,7 @@ function AuthenticatedApp() {
         <Route path="/biometric-auth" component={BiometricAuthPage} />
         <Route path="/offline-sync" component={OfflineSyncPage} />
         <Route path="/whatsapp-channel" component={WhatsAppChannelPage} />
-        <Route path="/merchant-payments" component={MerchantPaymentsPage} />
+        <Route path="/merchant-payments" component={InsuranceMerchantPayments} />
         <Route path="/bill-payments" component={BillPaymentsPage} />
         <Route path="/airtime-vending" component={AirtimeVendingPage} />
         <Route path="/loan-disbursement" component={LoanDisbursementPage} />
@@ -1680,7 +1680,7 @@ function AuthenticatedApp() {
           path="/transaction-velocity-monitor"
           component={TransactionVelocityMonitor}
         />
-        <Route path="/merchant-risk-scoring" component={MerchantRiskScoring} />
+        <Route path="/merchant-risk-scoring" component={InsuranceMerchantRiskScoring} />
         <Route
           path="/payment-gateway-router"
           component={PaymentGatewayRouter}
@@ -1724,7 +1724,7 @@ function AuthenticatedApp() {
         />
         <Route
           path="/merchant-onboarding-portal"
-          component={MerchantOnboardingPortal}
+          component={InsuranceMerchantOnboarding}
         />
         <Route
           path="/payment-link-generator"
@@ -1745,7 +1745,7 @@ function AuthenticatedApp() {
         />
         <Route
           path="/merchant-analytics-dash"
-          component={MerchantAnalyticsDash}
+          component={InsuranceMerchantAnalytics}
         />
         <Route path="/pos-service-update" component={POSServiceUpdate} />
         <Route
@@ -1854,7 +1854,7 @@ function AuthenticatedApp() {
         />
         <Route path="/settlement-netting" component={SettlementNettingEngine} />
         <Route path="/capacity-planner" component={PlatformCapacityPlanner} />
-        <Route path="/merchant-acquirer" component={MerchantAcquirerGateway} />
+        <Route path="/merchant-acquirer" component={InsurancePremiumAcquirerGateway} />
         <Route path="/agent-micro-insurance" component={AgentMicroInsurance} />
         <Route path="/transaction-graph" component={TransactionGraphAnalyzer} />
         <Route path="/revenue-optimizer" component={PlatformRevenueOptimizer} />
@@ -1885,7 +1885,7 @@ function AuthenticatedApp() {
         />
         <Route
           path="/merchant-settlement"
-          component={MerchantSettlementDashboard}
+          component={InsuranceMerchantSettlementDash}
         />
         <Route path="/insurance-claims" component={AgentFloatInsuranceClaims} />
         <Route path="/sla-monitor" component={PlatformSlaMonitor} />
@@ -2028,11 +2028,11 @@ function AuthenticatedApp() {
         <Route path="/dynamic-fee-engine" component={DynamicFeeEnginePage} />
         <Route
           path="/merchant-kyc-onboarding"
-          component={MerchantKycOnboardingPage}
+          component={InsuranceMerchantKycOnboarding}
         />
         <Route
           path="/merchant-payout-settlement"
-          component={MerchantPayoutSettlementPage}
+          component={InsuranceMerchantPayoutSettlement}
         />
         <Route path="/compliance-filing" component={ComplianceFilingPage} />
         <Route
@@ -2199,20 +2199,20 @@ function AuthenticatedApp() {
         <Route path="/cross-border-remittance">
           <Suspense fallback={<SkeletonDashboard />}><CrossBorderRemittanceHub /></Suspense>
         </Route>
-        <Route path="/ecommerce/checkout">
-          <Suspense fallback={<SkeletonDashboard />}><EcommerceCheckout /></Suspense>
+        <Route path="/insurance/policy-checkout">
+          <Suspense fallback={<SkeletonDashboard />}><InsurancePolicyCheckout /></Suspense>
         </Route>
-        <Route path="/ecommerce/merchant">
-          <Suspense fallback={<SkeletonDashboard />}><EcommerceMerchantStorefront /></Suspense>
+        <Route path="/insurance/merchant-portal">
+          <Suspense fallback={<SkeletonDashboard />}><InsuranceAgentMerchantPortal /></Suspense>
         </Route>
-        <Route path="/ecommerce/orders">
-          <Suspense fallback={<SkeletonDashboard />}><EcommerceOrderManagement /></Suspense>
+        <Route path="/insurance/policy-orders">
+          <Suspense fallback={<SkeletonDashboard />}><InsurancePolicyOrderManagement /></Suspense>
         </Route>
-        <Route path="/ecommerce/catalog">
-          <Suspense fallback={<SkeletonDashboard />}><EcommerceProductCatalog /></Suspense>
+        <Route path="/insurance/product-catalog">
+          <Suspense fallback={<SkeletonDashboard />}><InsuranceProductCatalog /></Suspense>
         </Route>
-        <Route path="/ecommerce/cart">
-          <Suspense fallback={<SkeletonDashboard />}><EcommerceShoppingCart /></Suspense>
+        <Route path="/insurance/policy-quotes">
+          <Suspense fallback={<SkeletonDashboard />}><InsurancePolicyQuoteManager /></Suspense>
         </Route>
         <Route path="/pos-firmware-ota">
           <Suspense fallback={<SkeletonDashboard />}><POSFirmwareOTA /></Suspense>
@@ -2242,6 +2242,7 @@ function AuthenticatedApp() {
 // ─── App root ─────────────────────────────────────────────────────────────────
 export default function App() {
   const { shortcuts, helpOpen, setHelpOpen } = useKeyboardShortcuts();
+const InsuranceJourneyDashboard = lazy(() => import("./pages/InsuranceJourneyDashboard"));
 
   return (
     <ErrorBoundary>
@@ -2270,5 +2271,8 @@ export default function App() {
         </ThemeProvider>
       </AccessibilityProvider>
     </ErrorBoundary>
-  );
+  );        <Route path="/insurance/journeys">
+          <Suspense fallback={<SkeletonDashboard />}><InsuranceJourneyDashboard /></Suspense>
+        </Route>
+
 }
