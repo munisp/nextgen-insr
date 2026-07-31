@@ -40,16 +40,27 @@ export const apiRateLimiterDashRouter = router({
       return { data: results, total: (totalRows as any)[0]?.total ?? 0, limit: input.limit, offset: input.offset };
     }),
 
-  getCurrentStatus: protectedProcedure.query(() => ({
-    activeRules: Object.entries(DEFAULT_LIMITS).map(([tier, limits]) => ({ tier, ...limits, activeUsers: Math.floor(Math.random() * 100) })),
-    throttledClients: 3,
-    blockedIPs: 1,
-    ddosDetections24h: 0,
-    penaltiesActive: 2,
-    totalRequests1h: 45000,
-    rejectedRequests1h: 120,
-    rejectionRate: 0.27,
-  })),
+  getCurrentStatus: protectedProcedure.query(async () => {
+    const database = await getDb();
+    let activeUserCount = 0;
+    if (database) {
+      const { users } = await import("../../drizzle/schema");
+      const [{ total }] = await database.select({ total: count() }).from(users);
+      activeUserCount = Number(total ?? 0);
+    }
+    const tierCount = Object.keys(DEFAULT_LIMITS).length;
+    const perTier = Math.max(1, Math.floor(activeUserCount / tierCount));
+    return {
+      activeRules: Object.entries(DEFAULT_LIMITS).map(([tier, limits]) => ({ tier, ...limits, activeUsers: perTier })),
+      throttledClients: 0,
+      blockedIPs: 0,
+      ddosDetections24h: 0,
+      penaltiesActive: 0,
+      totalRequests1h: 0,
+      rejectedRequests1h: 0,
+      rejectionRate: 0,
+    };
+  }),
 
   checkLimit: protectedProcedure
     .input(z.object({ clientId: z.string(), tier: z.enum(["anonymous", "authenticated", "premium", "enterprise"]), currentCount: z.number() }))

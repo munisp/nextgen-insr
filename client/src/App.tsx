@@ -845,6 +845,26 @@ const BillingAnalyticsDashboardPage = lazy(
   () => import("./pages/BillingAnalyticsDashboardPage")
 );
 
+// Sprint 98: Missing page lazy imports
+const AgentPerformanceScorecardPage = lazy(() => import("./pages/AgentPerformanceScorecardPage"));
+const AgentTrainingPortal = lazy(() => import("./pages/AgentTrainingPortal"));
+const BiometricAuthGateway = lazy(() => import("./pages/BiometricAuthGateway"));
+const ComplianceTrainingTracker = lazy(() => import("./pages/ComplianceTrainingTracker"));
+const ComponentShowcase = lazy(() => import("./pages/ComponentShowcase"));
+const CrossBorderRemittanceHub = lazy(() => import("./pages/CrossBorderRemittanceHub"));
+const EcommerceCheckout = lazy(() => import("./pages/EcommerceCheckout"));
+const EcommerceMerchantStorefront = lazy(() => import("./pages/EcommerceMerchantStorefront"));
+const EcommerceOrderManagement = lazy(() => import("./pages/EcommerceOrderManagement"));
+const EcommerceProductCatalog = lazy(() => import("./pages/EcommerceProductCatalog"));
+const EcommerceShoppingCart = lazy(() => import("./pages/EcommerceShoppingCart"));
+const Home = lazy(() => import("./pages/Home"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const POSFirmwareOTA = lazy(() => import("./pages/POSFirmwareOTA"));
+const PaymentDisputeArbitration = lazy(() => import("./pages/PaymentDisputeArbitration"));
+const PlatformHealthMonitor = lazy(() => import("./pages/PlatformHealthMonitor"));
+const RemittancePage = lazy(() => import("./pages/RemittancePage"));
+const TerminalFleetPage = lazy(() => import("./pages/TerminalFleetPage"));
+
 // ─── Auth guard wrapper ───────────────────────────────────────────────────────
 // Admin dashboard paths bypass POS agent login — they use DashboardLayout's own
 // Keycloak/OAuth auth instead. Any route that wraps its page in <DashboardLayout>
@@ -2156,6 +2176,61 @@ function AuthenticatedApp() {
         </Route>
         <Route path="/ifrs17-dashboard">
           <Suspense fallback={<SkeletonDashboard />}><Ifrs17Dashboard /></Suspense>
+        </Route>
+        {/* Sprint 98: Missing page routes */}
+        <Route path="/">
+          <Suspense fallback={<SkeletonDashboard />}><Home /></Suspense>
+        </Route>
+        <Route path="/agent-performance-scorecard">
+          <Suspense fallback={<SkeletonDashboard />}><AgentPerformanceScorecardPage /></Suspense>
+        </Route>
+        <Route path="/agent-training-portal">
+          <Suspense fallback={<SkeletonDashboard />}><AgentTrainingPortal /></Suspense>
+        </Route>
+        <Route path="/biometric-auth">
+          <Suspense fallback={<SkeletonDashboard />}><BiometricAuthGateway /></Suspense>
+        </Route>
+        <Route path="/compliance-training">
+          <Suspense fallback={<SkeletonDashboard />}><ComplianceTrainingTracker /></Suspense>
+        </Route>
+        <Route path="/component-showcase">
+          <Suspense fallback={<SkeletonDashboard />}><ComponentShowcase /></Suspense>
+        </Route>
+        <Route path="/cross-border-remittance">
+          <Suspense fallback={<SkeletonDashboard />}><CrossBorderRemittanceHub /></Suspense>
+        </Route>
+        <Route path="/ecommerce/checkout">
+          <Suspense fallback={<SkeletonDashboard />}><EcommerceCheckout /></Suspense>
+        </Route>
+        <Route path="/ecommerce/merchant">
+          <Suspense fallback={<SkeletonDashboard />}><EcommerceMerchantStorefront /></Suspense>
+        </Route>
+        <Route path="/ecommerce/orders">
+          <Suspense fallback={<SkeletonDashboard />}><EcommerceOrderManagement /></Suspense>
+        </Route>
+        <Route path="/ecommerce/catalog">
+          <Suspense fallback={<SkeletonDashboard />}><EcommerceProductCatalog /></Suspense>
+        </Route>
+        <Route path="/ecommerce/cart">
+          <Suspense fallback={<SkeletonDashboard />}><EcommerceShoppingCart /></Suspense>
+        </Route>
+        <Route path="/pos-firmware-ota">
+          <Suspense fallback={<SkeletonDashboard />}><POSFirmwareOTA /></Suspense>
+        </Route>
+        <Route path="/payment-dispute-arbitration">
+          <Suspense fallback={<SkeletonDashboard />}><PaymentDisputeArbitration /></Suspense>
+        </Route>
+        <Route path="/platform-health">
+          <Suspense fallback={<SkeletonDashboard />}><PlatformHealthMonitor /></Suspense>
+        </Route>
+        <Route path="/remittance">
+          <Suspense fallback={<SkeletonDashboard />}><RemittancePage /></Suspense>
+        </Route>
+        <Route path="/terminal-fleet">
+          <Suspense fallback={<SkeletonDashboard />}><TerminalFleetPage /></Suspense>
+        </Route>
+        <Route>
+          <Suspense fallback={<SkeletonDashboard />}><NotFound /></Suspense>
         </Route>
         {/* Fallback — InsurancePortal handles named screens */}
         <Route path="/:screen" component={InsurancePortal} />

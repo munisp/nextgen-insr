@@ -51,16 +51,25 @@ export const e2eTestFrameworkRouter = router({
 
   getQualityGateResult: protectedProcedure
     .input(z.object({ runId: z.string() }))
-    .query(({ input }) => {
-      const p95 = Math.round(150 + Math.random() * 200);
-      const errorRate = Math.round(Math.random() * 100) / 100;
-      const throughput = Math.round(120 + Math.random() * 100);
-      const passed = p95 < QUALITY_GATES.p95LatencyMs && errorRate < QUALITY_GATES.errorRatePct && throughput > QUALITY_GATES.throughputRps;
-      return {
-        runId: input.runId, passed, results: { p95LatencyMs: p95, errorRatePct: errorRate, throughputRps: throughput },
-        gates: QUALITY_GATES, violations: !passed ? [`P95 latency: ${p95}ms (limit: ${QUALITY_GATES.p95LatencyMs}ms)`] : [],
-        recommendation: passed ? "safe_to_deploy" : "auto_rollback",
-      };
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (database) {
+        const runs = await database.select().from(loadTestRuns)
+          .where(eq(loadTestRuns.runId, input.runId)).limit(1);
+        if (runs.length) {
+          const run = runs[0];
+          const p95 = Number(run.p95LatencyMs ?? 180);
+          const errorRate = Number(run.errorRatePct ?? 0.1);
+          const throughput = Number(run.throughputRps ?? 150);
+          const passed = p95 < QUALITY_GATES.p95LatencyMs && errorRate < QUALITY_GATES.errorRatePct && throughput > QUALITY_GATES.throughputRps;
+          const violations: string[] = [];
+          if (p95 >= QUALITY_GATES.p95LatencyMs) violations.push(`P95 latency: ${p95}ms (limit: ${QUALITY_GATES.p95LatencyMs}ms)`);
+          if (errorRate >= QUALITY_GATES.errorRatePct) violations.push(`Error rate: ${errorRate}% (limit: ${QUALITY_GATES.errorRatePct}%)`);
+          if (throughput <= QUALITY_GATES.throughputRps) violations.push(`Throughput: ${throughput} rps (min: ${QUALITY_GATES.throughputRps} rps)`);
+          return { runId: input.runId, passed, results: { p95LatencyMs: p95, errorRatePct: errorRate, throughputRps: throughput }, gates: QUALITY_GATES, violations, recommendation: passed ? "safe_to_deploy" : "auto_rollback" };
+        }
+      }
+      return { runId: input.runId, passed: null, results: null, gates: QUALITY_GATES, violations: [], recommendation: "pending" };
     }),
 
   getSummary: protectedProcedure.query(async () => {

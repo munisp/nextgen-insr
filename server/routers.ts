@@ -1,4 +1,12 @@
 import { KC_SESSION_COOKIE } from "./_core/keycloakAuth";
+// Sprint 98: Missing router imports
+import { insuranceCartRouter } from "./routers/ecommerceCart";
+import { insuranceCatalogRouter } from "./routers/ecommerceCatalog";
+import { policyOrdersRouter } from "./routers/ecommerceOrders";
+import { insuranceServiceFleetRouter } from "./routers/posTerminalFleet";
+import { remittanceRouter } from "./routers/remittance";
+import { terminalLeasingRouter } from "./routers/terminalLeasing";
+import { crossBorderRemittanceHubRouter } from "./routers/crossBorderRemittanceHub";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { agentRouter } from "./routers/agent";
@@ -1078,6 +1086,14 @@ export const appRouter = router({
   kycEnforcement: kycEnforcementRouter,
   // Insurance KPI Dashboards — all 16 roles
   insuranceKpiDashboard: insuranceKpiDashboardRouter,
+  // E-Commerce, Remittance & Terminal Fleet (Sprint 98 gap closure)
+  insuranceCart: insuranceCartRouter,
+  insuranceCatalog: insuranceCatalogRouter,
+  policyOrders: policyOrdersRouter,
+  insuranceServiceFleet: insuranceServiceFleetRouter,
+  remittance: remittanceRouter,
+  terminalLeasing: terminalLeasingRouter,
+  crossBorderRemittanceHub: crossBorderRemittanceHubRouter,
 });
 
 export type AppRouter = typeof appRouter;

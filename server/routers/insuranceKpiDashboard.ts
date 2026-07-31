@@ -22,8 +22,6 @@ import { getDb } from "../db";
 import {
   policies,
   claims,
-  premiums,
-  underwritingApplications,
   actuarialReserves,
   reinsuranceTreaties,
   reinsuranceCessions,
@@ -37,11 +35,15 @@ import {
   auditLog,
   users,
   tenants,
-  slaBreaches,
   policyRenewals,
+} from "../../drizzle/schema";
+import {
+  premiums,
+  underwritingApplications,
+  slaBreaches,
   claimsPayments,
   commissions,
-} from "../../drizzle/schema";
+} from "../../drizzle/schema.additions";
 import {
   sql,
   eq,

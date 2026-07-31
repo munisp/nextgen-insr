@@ -7,7 +7,9 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { insuranceServices } from "../../drizzle/schema";
+import {
+  insuranceServices,
+} from "../../drizzle/schema.additions";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";

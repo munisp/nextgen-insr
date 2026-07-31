@@ -75,7 +75,7 @@ export const transactionDisputeResolutionRouter = router({
       else if (amount > 10000) { priority = "medium"; slaHours = 240; }
       else { priority = "low"; slaHours = 480; }
 
-      const ref = `DSP-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      const ref = `DSP-${Date.now().toString(36).toUpperCase()}-${require("crypto").randomBytes(2).toString("hex").toUpperCase()}`;
       const slaDeadline = new Date(Date.now() + slaHours * 3600000);
 
       const [dispute] = await database

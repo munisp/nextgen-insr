@@ -6,10 +6,12 @@ import {
   agents,
   kycSessions,
   premiumTopUpRequests,
-  posTerminals,
   trainingEnrollments,
   auditLog,
 } from "../../drizzle/schema";
+import {
+  posTerminals,
+} from "../../drizzle/schema.additions";
 import { TRPCError } from "@trpc/server";
 
 export const agentOnboardingWizardRouter = router({

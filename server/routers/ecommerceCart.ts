@@ -2,11 +2,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
-  insuranceCarts,
-  insuranceCartItems,
-  insuranceInventory,
-  type InsuranceCartItem,
-} from "../../drizzle/schema";
+  insuranceCarts,\n  insuranceCartItems,\n  insuranceInventory,\n  type InsuranceCartItem,
+} from "../../drizzle/schema.additions";;
 import { eq, and, sql, count } from "drizzle-orm";
 
 const CART_SERVICE_URL =

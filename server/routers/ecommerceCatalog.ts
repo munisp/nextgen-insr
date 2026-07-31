@@ -3,9 +3,10 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   insuranceProducts,
-  insuranceCategories,
-  insuranceInventory,
 } from "../../drizzle/schema";
+import {
+  insuranceCategories,\n  insuranceInventory,
+} from "../../drizzle/schema.additions";;
 import { desc, eq, and, ilike, count, sql } from "drizzle-orm";
 
 const CATALOG_SERVICE_URL =

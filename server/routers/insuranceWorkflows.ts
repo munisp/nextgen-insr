@@ -120,7 +120,14 @@ export const insuranceWorkflowsRouter = router({
 
       const p = product[0];
       const basePremium = Number(p.minPremium ?? 0);
-      const riskFactor = 1.0 + (Math.random() * 0.2); // simplified risk calc
+      // Actuarial risk factor: coverage loading + age loading
+      const maxCoverage = Number(p.maxCoverage ?? input.coverageAmount);
+      const coverageRatio = maxCoverage > 0 ? Math.min(input.coverageAmount / maxCoverage, 1.0) : 1.0;
+      const coverageLoading = coverageRatio * 0.15; // up to 15% for max coverage
+      const ageLoading = (input.additionalData?.age && typeof input.additionalData.age === 'number')
+        ? Math.max(0, (Number(input.additionalData.age) - 30) * 0.005)
+        : 0.05; // 5% default when age not provided
+      const riskFactor = 1.0 + coverageLoading + ageLoading;
       const annualPremium = Math.round(basePremium * riskFactor * 100) / 100;
 
       const quoteRef = `QT-${Date.now()}-${input.customerId}`;

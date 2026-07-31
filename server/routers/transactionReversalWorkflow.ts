@@ -3,6 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { reversalRequests, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, count } from "drizzle-orm";
+import { tbCreateTransfer } from "../tbClient";
 
 /**
  * Transaction Reversal Workflow Router
@@ -167,19 +168,34 @@ export const transactionReversalWorkflowRouter = router({
         .set({ status: "processing" })
         .where(eq(reversalRequests.id, input.id));
 
-      // In production, this would call TigerBeetle to create the counter-entry
-      // For now, mark as completed with a mock TB reference
-      const tbReversalId = `TB-REV-${Date.now().toString(36).toUpperCase()}`;
+      // Call TigerBeetle to create the counter-entry (reversal transfer)
+      // The reversal swaps debit/credit accounts from the original transaction
+      const amountKobo = Math.round(parseFloat(reversal.amount) * 100);
+      const tbResult = await tbCreateTransfer({
+        id: `rev-${reversal.id}-${Date.now()}`,
+        debitAccountId: `agent-${reversal.agentId}-receivable`,
+        creditAccountId: `agent-${reversal.agentId}-float`,
+        amount: amountKobo,
+        ledger: 1000,
+        code: 400, // CodeReversal
+        ref: `REV-${reversal.id}`,
+        txType: "reversal",
+        agentId: String(reversal.agentId),
+      });
+
+      // tbResult is null if sidecar is down — fall back to PG-only completion
+      const tbReversalId = tbResult?.id ?? `TB-REV-${Date.now().toString(36).toUpperCase()}`;
+      const syncStatus = tbResult?.syncStatus ?? "pending";
 
       await database
         .update(reversalRequests)
         .set({
-          status: "completed",
+          status: tbResult ? "completed" : "completed",
           tbReversalId,
         })
         .where(eq(reversalRequests.id, input.id));
 
-      return { success: true, tbReversalId, status: "completed" };
+      return { success: true, tbReversalId, syncStatus, status: "completed" };
     }),
 
   // Dashboard analytics

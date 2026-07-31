@@ -9,11 +9,11 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import {
-  insuranceServices,
-  terminalGroups,
-  serviceRecords,
-  agents,
+  terminalGroups,\n  serviceRecords,\n  agents,
 } from "../../drizzle/schema";
+import {
+  insuranceServices,
+} from "../../drizzle/schema.additions";;
 import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";

@@ -1,21 +1,13 @@
+/**
+ * platformMetricsExporter.ts — Platform Metrics Exporter Router
+ * Real Prometheus metrics from OpenTelemetry registry. No Math.random().
+ */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { analyticsMetrics } from "../../drizzle/schema";
-import { desc, count } from "drizzle-orm";
-
-/**
- * Platform Metrics Exporter Router
- * Exports platform metrics in Prometheus-compatible format.
- *
- * Business Rules:
- * - Metrics categories: business, technical, compliance, financial
- * - Retention: 15 days at 1-min resolution, 90 days at 1-hour, 2 years daily
- * - Alerting thresholds defined per metric (warning/critical)
- * - Custom labels: service, environment, region, tenant
- * - Rate metrics computed as per-second averages over 5-min windows
- * - Histogram buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000] ms
- */
+import { analyticsMetrics, transactions, agents, fraudAlerts, claims } from "../../drizzle/schema";
+import { desc, count, sum, sql, gte } from "drizzle-orm";
+import { registry } from "../metrics";
 
 const METRIC_DEFINITIONS = [
   { name: "insureportal_transactions_total", type: "counter", help: "Total transactions processed", labels: ["type", "status"] },
@@ -40,27 +32,70 @@ export const platformMetricsExporterRouter = router({
     .query(async ({ input }) => {
       const database = await getDb();
       if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
-
-      const results = await database.select().from(analyticsMetrics).orderBy(desc(analyticsMetrics.id)).limit(input.limit).offset(input.offset);
-      const totalRows = await database.select({ total: count() }).from(analyticsMetrics);
-
-      return { data: results, total: (totalRows as any)[0]?.total ?? 0, limit: input.limit, offset: input.offset };
+      const results = await database.select().from(analyticsMetrics)
+        .orderBy(desc(analyticsMetrics.id)).limit(input.limit).offset(input.offset);
+      const [{ total }] = await database.select({ total: count() }).from(analyticsMetrics);
+      return { data: results, total: Number(total), limit: input.limit, offset: input.offset };
     }),
 
-  getPrometheusMetrics: protectedProcedure.query(() => {
-    const lines: string[] = [];
-    METRIC_DEFINITIONS.forEach((m) => {
-      lines.push(`# HELP ${m.name} ${m.help}`);
-      lines.push(`# TYPE ${m.name} ${m.type}`);
-      if (m.type === "counter") {
-        lines.push(`${m.name}{status="success"} ${Math.floor(Math.random() * 100000)}`);
-        lines.push(`${m.name}{status="failure"} ${Math.floor(Math.random() * 1000)}`);
-      } else if (m.type === "gauge") {
-        lines.push(`${m.name} ${Math.round(Math.random() * 1000) / 10}`);
-      }
-    });
+  getPrometheusMetrics: protectedProcedure.query(async () => {
+    // Get real metrics from OpenTelemetry Prometheus registry
+    let prometheusText = "";
+    try {
+      prometheusText = await registry.metrics();
+    } catch {
+      // Fall back to DB-derived metrics
+    }
 
-    return { format: "prometheus", contentType: "text/plain; version=0.0.4", body: lines.join("\n"), metricCount: METRIC_DEFINITIONS.length, timestamp: new Date().toISOString() };
+    // Augment with real DB metrics
+    const database = await getDb();
+    if (database) {
+      try {
+        const since24h = new Date(Date.now() - 86400000);
+        const [txStats] = await database.select({
+          total: count(),
+          totalAmount: sum(sql<number>`CAST(amount AS NUMERIC)`),
+          successCount: sql<number>`COUNT(*) FILTER (WHERE status = 'success')`,
+          failedCount: sql<number>`COUNT(*) FILTER (WHERE status = 'failed')`,
+        }).from(transactions).where(gte(transactions.createdAt, since24h));
+
+        const [agentStats] = await database.select({
+          total: count(),
+          active: sql<number>`COUNT(*) FILTER (WHERE "isActive" = true)`,
+          totalFloat: sum(sql<number>`CAST("premiumReserve" AS NUMERIC)`),
+        }).from(agents);
+
+        const [fraudStats] = await database.select({
+          total: count(),
+        }).from(fraudAlerts).where(gte(fraudAlerts.createdAt, since24h));
+
+        const dbLines = [
+          `# HELP insureportal_transactions_total Total transactions processed`,
+          `# TYPE insureportal_transactions_total counter`,
+          `insureportal_transactions_total{status="success"} ${Number(txStats?.successCount ?? 0)}`,
+          `insureportal_transactions_total{status="failed"} ${Number(txStats?.failedCount ?? 0)}`,
+          `# HELP insureportal_active_agents Currently active agents`,
+          `# TYPE insureportal_active_agents gauge`,
+          `insureportal_active_agents ${Number(agentStats?.active ?? 0)}`,
+          `# HELP insureportal_float_balance_naira Total premium reserve`,
+          `# TYPE insureportal_float_balance_naira gauge`,
+          `insureportal_float_balance_naira ${Number(agentStats?.totalFloat ?? 0)}`,
+          `# HELP insureportal_fraud_alerts_total Fraud alerts in last 24h`,
+          `# TYPE insureportal_fraud_alerts_total counter`,
+          `insureportal_fraud_alerts_total ${Number(fraudStats?.total ?? 0)}`,
+        ].join("\n");
+
+        prometheusText = prometheusText ? `${prometheusText}\n${dbLines}` : dbLines;
+      } catch { /* non-fatal */ }
+    }
+
+    return {
+      format: "prometheus",
+      contentType: "text/plain; version=0.0.4",
+      body: prometheusText,
+      metricCount: METRIC_DEFINITIONS.length,
+      timestamp: new Date().toISOString(),
+    };
   }),
 
   getMetricDefinitions: protectedProcedure.query(() => ({
@@ -73,16 +108,13 @@ export const platformMetricsExporterRouter = router({
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalMetrics: 0, activeAlerts: 0 };
-
-    const totalRows = await database.select({ total: count() }).from(analyticsMetrics);
+    if (!database) return { totalMetrics: METRIC_DEFINITIONS.length, activeAlerts: 0 };
+    const [{ total }] = await database.select({ total: count() }).from(analyticsMetrics);
     return {
       totalMetrics: METRIC_DEFINITIONS.length,
-      dataPoints: (totalRows as any)[0]?.total ?? 0,
-      activeAlerts: 2,
-      scrapeTargets: 10,
-      lastScrape: new Date().toISOString(),
-      exportStatus: "healthy",
+      storedMetrics: Number(total),
+      retentionDays: 90,
+      lastExport: new Date().toISOString(),
     };
   }),
 });

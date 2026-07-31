@@ -2,13 +2,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
-  policyOrders,
-  insuranceOrderItems,
-  insuranceInventory,
-  insuranceCartItems,
-  insuranceCarts,
-  type InsuranceCartItem,
-} from "../../drizzle/schema";
+  policyOrders,\n  insuranceOrderItems,\n  insuranceInventory,\n  insuranceCartItems,\n  insuranceCarts,\n  type InsuranceCartItem,
+} from "../../drizzle/schema.additions";;
 import { desc, eq, and, sql, count } from "drizzle-orm";
 import crypto from "crypto";
 

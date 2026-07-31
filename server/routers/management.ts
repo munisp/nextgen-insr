@@ -9,7 +9,6 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   agents,
-  serviceNodes,
   terminalGroups,
   serviceRecords,
   softwareUpdates,
@@ -19,7 +18,6 @@ import {
   multiSimProfiles,
   reversalRequests,
   shareableLinks,
-  marketplaceAds,
   vatRecords,
   erpSyncLog,
   transactions,
@@ -28,6 +26,10 @@ import {
   auditLog,
   emailQueue,
 } from "../../drizzle/schema";
+import {
+  serviceNodes,
+  marketplaceAds,
+} from "../../drizzle/schema.additions";
 import { eq, desc, asc, sql, and, gte, lte, like, count } from "drizzle-orm";
 import crypto from "crypto";
 
