@@ -13,12 +13,13 @@ pub struct LedgerEntry {
     pub id: String,
     pub debit_account: String,
     pub credit_account: String,
-    pub amount: u64,
+    pub amount: f64,    // NGN (not kobo) — TB client converts to kobo internally
     pub currency: String,
     pub ledger_type: LedgerType,
     pub kyc_session_id: String,
     pub kyc_level: u8,
     pub user_id: String,
+    pub reference: String,  // Business reference (policy number, claim ID, etc.)
     pub description: String,
     pub status: EntryStatus,
     pub metadata: serde_json::Value,
@@ -55,12 +56,13 @@ pub enum EntryStatus {
 pub struct CreateEntryRequest {
     pub debit_account: String,
     pub credit_account: String,
-    pub amount: u64,
+    pub amount: f64,
     pub currency: String,
     pub ledger_type: LedgerType,
     pub kyc_session_id: Option<String>,
     pub kyc_level: Option<u8>,
     pub user_id: String,
+    pub reference: Option<String>,
     pub description: String,
     pub metadata: Option<serde_json::Value>,
 }
@@ -104,7 +106,7 @@ async fn health(data: web::Data<AppState>) -> HttpResponse {
         "version": "1.0.0",
         "entries_count": entries.len(),
         "middleware": {
-            "tigerbeetle": data.tigerbeetle.is_connected(),
+            "tigerbeetle": "check /health/tb for status",
             "dapr": data.dapr.is_connected(),
             "openappsec": data.security.is_enabled(),
         }
@@ -169,22 +171,53 @@ async fn create_entry(
         kyc_session_id: body.kyc_session_id.clone().unwrap_or_default(),
         kyc_level,
         user_id: body.user_id.clone(),
+        reference: body.reference.clone().unwrap_or_else(|| format!("REF-{}", Uuid::new_v4().to_string().replace('-', "")[..8].to_string())),
         description: body.description.clone(),
         status: EntryStatus::Pending,
         metadata: body.metadata.clone().unwrap_or(serde_json::json!({})),
         created_at: Utc::now(),
     };
 
-    // Submit to TigerBeetle
+    // Submit to TigerBeetle — fail-closed on rejection, fail-open (Pending) on unavailability
     let tb_result = data.tigerbeetle.create_transfer(&entry).await;
 
-    let final_status = match tb_result {
-        Ok(_) => EntryStatus::Completed,
-        Err(_) => EntryStatus::Pending,
+    let (final_status, tb_transfer_id) = match tb_result {
+        Ok(tigerbeetle::TbTransferResult::Posted { transfer_id }) => {
+            tracing::info!(entry_id = %entry.id, tb_id = %transfer_id, "ledger_entry_posted_to_tb");
+            (EntryStatus::Completed, Some(transfer_id))
+        }
+        Ok(tigerbeetle::TbTransferResult::Pending { transfer_id, reason }) => {
+            // TB unavailable — entry is queued for retry by background reconciler
+            tracing::warn!(entry_id = %entry.id, reason = %reason, "tb_unavailable_entry_pending");
+            (EntryStatus::Pending, Some(transfer_id))
+        }
+        Ok(tigerbeetle::TbTransferResult::Rejected { transfer_id, reason }) => {
+            // TB rejected the transfer — this is a hard failure (duplicate, insufficient balance, etc.)
+            tracing::error!(entry_id = %entry.id, reason = %reason, "tb_rejected_transfer");
+            return HttpResponse::UnprocessableEntity().json(serde_json::json!({
+                "error": "Transfer rejected by ledger",
+                "reason": reason,
+                "entry_id": entry.id,
+                "tb_transfer_id": transfer_id,
+            }));
+        }
+        Err(e) => {
+            tracing::error!(entry_id = %entry.id, error = %e, "tb_create_transfer_error");
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "Ledger transfer failed",
+                "detail": e.to_string(),
+            }));
+        }
     };
 
     let mut completed_entry = entry.clone();
     completed_entry.status = final_status;
+    // Store TB transfer ID in metadata for reconciliation
+    if let Some(tb_id) = tb_transfer_id {
+        if let serde_json::Value::Object(ref mut map) = completed_entry.metadata {
+            map.insert("tb_transfer_id".to_string(), serde_json::Value::String(tb_id));
+        }
+    }
 
     // Save via Dapr state store
     let _ = data.dapr.save_state("ledger-store", &completed_entry.id, &completed_entry).await;

@@ -221,7 +221,33 @@ async fn audit_log_handler(state: web::Data<Arc<AppState>>, body: web::Json<Audi
     let mut log = state.audit_log.write().await;
     log.push(entry);
     state.audit_count.fetch_add(1, Ordering::Relaxed);
-    if log.len() > 10000 { log.drain(0..5000); }
+    // Persist to PostgreSQL asynchronously (fail-open — audit must not block business logic)
+    let pg_url = std::env::var("DATABASE_URL").ok();
+    if let Some(db_url) = pg_url {
+        let entry_clone = entry.clone();
+        tokio::spawn(async move {
+            if let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await {
+                tokio::spawn(async move { let _ = conn.await; });
+                let _ = client.execute(
+                    "INSERT INTO audit_log (id, action, resource_type, resource_id, user_id, ip_address, details, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, to_timestamp($8::bigint / 1000.0))
+                     ON CONFLICT (id) DO NOTHING",
+                    &[
+                        &entry_clone.id,
+                        &entry_clone.action,
+                        &entry_clone.resource_type,
+                        &entry_clone.resource_id,
+                        &entry_clone.user_id,
+                        &entry_clone.ip_address,
+                        &serde_json::to_string(&entry_clone.details).unwrap_or_default(),
+                        &entry_clone.timestamp,
+                    ],
+                ).await;
+            }
+        });
+    }
+    // Keep in-memory buffer for fast query (last 1000 entries)
+    if log.len() > 1000 { log.drain(0..500); }
     HttpResponse::Ok().json(serde_json::json!({"status":"logged","id":id}))
 }
 
@@ -235,7 +261,7 @@ async fn audit_batch_handler(state: web::Data<Arc<AppState>>, body: web::Json<Ve
         log.push(e);
     }
     state.audit_count.fetch_add(count as u64, Ordering::Relaxed);
-    if log.len() > 10000 { log.drain(0..5000); }
+    if log.len() > 1000 { log.drain(0..500); }
     HttpResponse::Ok().json(serde_json::json!({"status":"batch_logged","count":count}))
 }
 

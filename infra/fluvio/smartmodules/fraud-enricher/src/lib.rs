@@ -109,8 +109,9 @@ fn recommend_action(severity: &str) -> &'static str {
 pub fn enrich_fraud_alert(record: Record) -> Result<Record> {
     let raw: RawFraudAlert = match serde_json::from_slice(record.value.as_ref()) {
         Ok(r) => r,
-        Err(e) => {
+        Err(_parse_err) => {
             // Return the original record unchanged if parsing fails
+            // (malformed events are passed through for dead-letter queue handling)
             return Ok(record);
         }
     };

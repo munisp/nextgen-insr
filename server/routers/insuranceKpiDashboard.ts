@@ -106,7 +106,7 @@ async function fetchPythonAnalytics(
 
 async function fetchTigerBeetleLedger(accountIds: string[]) {
   const url =
-    (process.env.TB_SIDECAR_URL ?? "http://localhost:8090") +
+    (process.env.TB_SIDECAR_URL ?? "http://localhost:7070") +
     "/accounts/balances";
   try {
     const res = await fetch(url, {

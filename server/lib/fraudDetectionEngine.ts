@@ -104,6 +104,45 @@ export async function detectFraud(
     reason += `Large transaction amount: ₦${tx.amount.toLocaleString()}. `;
   }
 
+  // ── Rust fraud-gate: enhanced velocity + pattern scoring ─────────────────
+  // Calls the Rust fraud-gate service (port 8090) for rules that require
+  // in-memory velocity tracking across the last 60 minutes.
+  // Fail-open: if fraud-gate is unavailable, use TypeScript-only score.
+  const FRAUD_GATE_URL = process.env.FRAUD_GATE_URL || "http://localhost:8090";
+  try {
+    const rustResult = await fetch(`${FRAUD_GATE_URL}/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: tx.agentId,
+        amount: tx.amount,
+        transaction_type: tx.type,
+        recipient: String(tx.id),
+        trace_id: `FRD-${tx.id}`,
+      }),
+      signal: AbortSignal.timeout(2000), // 2s timeout — fraud check must be fast
+    });
+    if (rustResult.ok) {
+      const rustData = await rustResult.json() as {
+        allowed: boolean;
+        risk_score: number;
+        flags: string[];
+        risk_level: string;
+      };
+      // Merge Rust flags into TypeScript result
+      for (const flag of rustData.flags) {
+        if (!rulesFired.includes(flag)) rulesFired.push(flag);
+      }
+      // Boost fraud score with Rust's velocity/pattern score
+      fraudScore = Math.min(100, fraudScore + (rustData.risk_score * 0.4));
+      if (!rustData.allowed && fraudScore < 60) fraudScore = 60;
+      if (rustData.risk_level === "critical") maxSeverity = "critical";
+      else if (rustData.risk_level === "high" && maxSeverity !== "critical") maxSeverity = "high";
+    }
+  } catch {
+    // Fraud-gate unavailable — proceed with TypeScript-only detection
+  }
+
   const isFraud = rulesFired.length > 0;
   return {
     isFraud,
