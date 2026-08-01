@@ -369,6 +369,45 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000, // 1MB warning threshold
+    rollupOptions: {
+      output: {
+        manualChunks: (id: string) => {
+          // Vendor: React core
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
+            return "vendor-react";
+          }
+          // Vendor: Recharts (large charting library)
+          if (id.includes("node_modules/recharts") || id.includes("node_modules/d3-")) {
+            return "vendor-charts";
+          }
+          // Vendor: tRPC + React Query
+          if (id.includes("node_modules/@trpc") || id.includes("node_modules/@tanstack")) {
+            return "vendor-trpc";
+          }
+          // Vendor: Radix UI components
+          if (id.includes("node_modules/@radix-ui")) {
+            return "vendor-radix";
+          }
+          // Vendor: Temporal SDK
+          if (id.includes("node_modules/@temporalio")) {
+            return "vendor-temporal";
+          }
+          // Vendor: Everything else from node_modules
+          if (id.includes("node_modules/")) {
+            return "vendor-misc";
+          }
+          // App: Dashboard pages (large, lazy-loaded)
+          if (id.includes("/pages/") && id.includes("Dashboard")) {
+            return "pages-dashboards";
+          }
+          // App: Journey pages
+          if (id.includes("/pages/") && (id.includes("Journey") || id.includes("Workflow"))) {
+            return "pages-journeys";
+          }
+        },
+      },
+    },
   },
   server: {
     host: true,

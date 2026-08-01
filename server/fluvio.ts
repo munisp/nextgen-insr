@@ -95,3 +95,56 @@ export async function publishWorkflowEvent(event: {
 }
 
 export default { publishTxToFluvio, publishFraudAlert, publishWorkflowEvent };
+
+// ── Required Fluvio topics ────────────────────────────────────────────────────
+const REQUIRED_TOPICS = [
+  "tx.created",
+  "fraud.alert",
+  "policy.bound",
+  "claim.filed",
+  "claim.settled",
+  "agent.float.updated",
+  "premium.collected",
+  "commission.paid",
+  "kyc.completed",
+  "journey.event",
+  "platform.health",
+  "reinsurance.cession",
+  "remittance.initiated",
+  "aml.alert",
+] as const;
+
+/**
+ * Ensure all required Fluvio topics exist.
+ * Creates missing topics via the Fluvio HTTP gateway.
+ * Safe to call multiple times — idempotent (409 Conflict is ignored).
+ * Called at server startup.
+ */
+export async function ensureFluvioTopics(): Promise<void> {
+  const results = await Promise.allSettled(
+    REQUIRED_TOPICS.map(async (topic) => {
+      try {
+        const res = await fetch(`${FLUVIO_HTTP_URL}/topics/${topic}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ partitions: 3, replicationFactor: 1 }),
+          signal: AbortSignal.timeout(5_000),
+        });
+        // 200 = created, 409 = already exists — both are success
+        if (res.ok || res.status === 409) return topic;
+        throw new Error(`HTTP ${res.status}`);
+      } catch (err) {
+        throw new Error(`${topic}: ${String(err)}`);
+      }
+    })
+  );
+  const created = results.filter(r => r.status === "fulfilled").length;
+  const failed = results.filter(r => r.status === "rejected").map(r => (r as PromiseRejectedResult).reason);
+  if (created > 0) {
+    logger.info(`[Fluvio] ${created}/${REQUIRED_TOPICS.length} topics ensured`);
+  }
+  if (failed.length > 0) {
+    // Non-fatal — Fluvio may not be running in dev
+    logger.warn("[Fluvio] Some topics could not be created (Fluvio unavailable):", failed.slice(0, 3));
+  }
+}

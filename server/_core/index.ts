@@ -18,6 +18,8 @@ import crypto from "crypto";
 import express from "express";
 import { loadVaultSecrets } from "../_core/vault";
 import { startTemporalWorker } from "../temporal-worker";
+import { tbSeedSystemAccounts } from "../tbClient";
+import { ensureFluvioTopics } from "../fluvio";
 import { createServer } from "http";
 import net from "net";
 import helmet from "helmet";
@@ -44,6 +46,7 @@ import { registry, httpRequestDurationMs } from "../metrics";
 import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
 import { enforceEnvironment } from "../lib/envValidation";
 import { logger } from "./logger";
+import { sql } from "drizzle-orm";
 
 // ── Environment validation (must run before any service initialization) ────────
 enforceEnvironment();
@@ -475,6 +478,23 @@ async function startServer() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      onError: ({ error, type, path, input, ctx }) => {
+        // Log all internal server errors (5xx) — client errors (4xx) are expected
+        if (error.code === "INTERNAL_SERVER_ERROR") {
+          logger.error({
+            err: error.message,
+            type,
+            path,
+            userId: (ctx as any)?.user?.id,
+          }, "[tRPC] Internal server error");
+        } else if (error.code !== "UNAUTHORIZED" && error.code !== "NOT_FOUND") {
+          logger.warn({
+            code: error.code,
+            type,
+            path,
+          }, "[tRPC] Procedure error");
+        }
+      },
     })
   );
 
@@ -643,6 +663,48 @@ async function startServer() {
   });
 
   // ── Circuit Breaker Status ────────────────────────────────────────────────
+
+  // ── Kubernetes readiness probe (/api/ready) ───────────────────────────────
+  // Returns 200 only when all critical dependencies are reachable.
+  // Used by Kubernetes readinessProbe to gate traffic routing.
+  app.get("/api/ready", async (_req, res) => {
+    const checks: Record<string, boolean> = {};
+    // Check PostgreSQL
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (db) {
+        await db.execute(sql`SELECT 1`);
+        checks.postgres = true;
+      } else {
+        checks.postgres = false;
+      }
+    } catch { checks.postgres = false; }
+    // Check Redis
+    try {
+      const { getRedisClient } = await import("../lib/redisClient");
+      const redis = getRedisClient();
+      if (redis) {
+        await redis.ping();
+        checks.redis = true;
+      } else {
+        checks.redis = false;
+      }
+    } catch { checks.redis = false; }
+    // Check TigerBeetle sidecar
+    try {
+      const { tbIsHealthy } = await import("../tbClient");
+      checks.tigerbeetle = await tbIsHealthy();
+    } catch { checks.tigerbeetle = false; }
+
+    const allReady = Object.values(checks).every(Boolean);
+    res.status(allReady ? 200 : 503).json({
+      ready: allReady,
+      checks,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   app.get("/api/health/circuits", async (_req, res) => {
     const { getCircuitBreakerStatus } = await import("../lib/resilientFetch");
     const { getDistributedStateStatus } = await import(
@@ -738,6 +800,14 @@ async function startServer() {
     startErpRetryWorker();
     // Start archival cron worker (S60-3)
     startArchivalCronWorker();
+    // Ensure Fluvio topics exist (idempotent)
+    ensureFluvioTopics().catch(err =>
+      logger.warn("[Fluvio] Topic creation failed:: " + (err as Error).message)
+    );
+    // Seed TigerBeetle system accounts (idempotent — safe to call on every startup)
+    tbSeedSystemAccounts().catch(err =>
+      logger.warn("[TigerBeetle] System account seeding failed:: " + (err as Error).message)
+    );
     // Start Temporal worker for SettlementWorkflow, FloatReplenishmentWorkflow, etc.
     // Runs in-process; in production it can also be a separate Docker container.
     startTemporalWorker().catch(err =>
@@ -822,5 +892,22 @@ async function startServer() {
       .catch(err => logger.error("[mTLS] SIGHUP reload failed:: " + String(err)));
   });
 }
+
+
+// ── Process-level error handlers (must be registered before startServer) ──────
+// These catch any unhandled promise rejections or synchronous throws that escape
+// the Express/tRPC error handlers. Without these, Node.js will crash silently.
+process.on("uncaughtException", (err: Error) => {
+  // Use console.error as logger may not be initialized yet
+  console.error("[FATAL] Uncaught exception — process will exit:", err);
+  // Give logger a chance to flush, then exit with non-zero code
+  setTimeout(() => process.exit(1), 500);
+});
+
+process.on("unhandledRejection", (reason: unknown, promise: Promise<unknown>) => {
+  console.error("[FATAL] Unhandled promise rejection:", reason, "at:", promise);
+  // Do NOT exit — unhandled rejections in non-critical paths should not crash the server.
+  // Log and continue; critical paths use explicit try/catch.
+});
 
 startServer().catch(console.error);

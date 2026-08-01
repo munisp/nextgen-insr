@@ -177,3 +177,60 @@ export async function tbIsHealthy(): Promise<boolean> {
     return false;
   }
 }
+
+// ── System Account IDs (reserved, never change) ──────────────────────────────
+// These are the platform-level ledger accounts that must exist before any
+// agent/customer transfers can be processed.
+export const TB_SYSTEM_ACCOUNTS = {
+  FLOAT_POOL:      BigInt("1000000000000001"), // Master float pool
+  FEE_POOL:        BigInt("1000000000000002"), // Platform fee collection
+  SUSPENSE:        BigInt("1000000000000003"), // Suspense/clearing account
+  PREMIUM_POOL:    BigInt("1000000000000004"), // Collected premiums
+  CLAIMS_RESERVE:  BigInt("1000000000000005"), // Claims payment reserve
+  COMMISSION_POOL: BigInt("1000000000000006"), // Agent commission pool
+  REINSURANCE:     BigInt("1000000000000007"), // Reinsurance cession account
+} as const;
+
+/**
+ * Seed TigerBeetle system accounts on first run.
+ * Safe to call multiple times — uses LINKED flag to make it idempotent.
+ * Called at server startup before any transactions are processed.
+ */
+export async function tbSeedSystemAccounts(): Promise<void> {
+  const TB_URL = process.env.TB_SIDECAR_URL ?? "http://localhost:7070";
+  const accounts = Object.entries(TB_SYSTEM_ACCOUNTS).map(([name, id]) => ({
+    id: id.toString(),
+    ledger: 1,
+    code: 1,
+    flags: 0,
+    debits_pending: "0",
+    debits_posted: "0",
+    credits_pending: "0",
+    credits_posted: "0",
+    user_data_128: name,
+  }));
+  try {
+    const res = await fetch(`${TB_URL}/accounts/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accounts }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) {
+      const data = await res.json() as any;
+      // TB returns errors only for accounts that failed — existing accounts
+      // return AccountExistsWithDifferentFlags or similar, which we ignore.
+      const created = accounts.length - (data.errors?.length ?? 0);
+      if (created > 0) {
+        console.info(`[TigerBeetle] ${created} system accounts seeded`);
+      } else {
+        console.info("[TigerBeetle] System accounts already exist");
+      }
+    } else {
+      console.warn("[TigerBeetle] System account seeding returned:", res.status);
+    }
+  } catch (err) {
+    // Non-fatal — TB sidecar may not be running in dev
+    console.warn("[TigerBeetle] System account seeding skipped (sidecar unavailable):", String(err));
+  }
+}

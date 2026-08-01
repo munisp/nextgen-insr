@@ -26,10 +26,19 @@ export function getRedisClient(): Redis {
       enableReadyCheck: false,
       lazyConnect: true,
       retryStrategy: (times: number) => {
-        if (times > 5) return null; // stop retrying after 5 attempts
+        if (times > 20) return null; // stop retrying after 20 attempts (~3 min total)
         return Math.min(times * 200, 2000);
       },
-      reconnectOnError: () => false, // Don't reconnect on errors in dev
+      reconnectOnError: (err: Error) => {
+        // Reconnect on READONLY errors (Redis failover) and connection errors
+        const shouldReconnect = err.message.includes("READONLY") ||
+          err.message.includes("ECONNREFUSED") ||
+          err.message.includes("ECONNRESET");
+        if (shouldReconnect) {
+          console.warn("[Redis] Reconnecting due to:", err.message);
+        }
+        return shouldReconnect;
+      }
     });
 
     _client.on("error", err => {
