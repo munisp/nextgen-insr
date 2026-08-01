@@ -1,3 +1,8 @@
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from "recharts";
+const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +32,9 @@ export default function BusinessRulesDashboard() {
     { id: "commissions" as const, label: "Commissions" },
     { id: "rewards" as const, label: "Rewards" },
   ];
+
+  const rulesCats = [{ name: 'Premium', value: Number(data?.premiumRules??0) }, { name: 'Claims', value: Number(data?.claimsRules??0) }, { name: 'Underwriting', value: Number(data?.uwRules??0) }, { name: 'Compliance', value: Number(data?.complianceRules??0) }].filter(d=>d.value>0);
+  const rulesStatus = [{ name: 'Active', value: Number(data?.activeRules??0) }, { name: 'Inactive', value: Number(data?.inactiveRules??0) }, { name: 'Draft', value: Number(data?.draftRules??0) }].filter(d=>d.value>0);
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-6">
@@ -199,6 +207,21 @@ export default function BusinessRulesDashboard() {
             </CardContent>
           </Card>
         )}
+
+        <div className={`grid gap-4 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
+          <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Rules by Category</h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart><Pie data={rulesCats.length>0?rulesCats:[{name:"No data",value:1}]} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({name,value})=>`${name}: ${value}`}>{(rulesCats.length>0?rulesCats:[{name:"No data",value:1}]).map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip/></PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Rules by Status</h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={rulesStatus}><CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)"/><XAxis dataKey="name" tick={{fontSize:11,fill:"var(--text-secondary)"}}/><YAxis tick={{fontSize:11,fill:"var(--text-secondary)"}}/><Tooltip/><Bar dataKey="value" radius={[4,4,0,0]}>{rulesStatus.map((_,i)=><Cell key={i} fill={["#22c55e","#6b7280","#f59e0b"][i%3]}/>)}</Bar></BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     </div>
   );

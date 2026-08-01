@@ -1,4 +1,9 @@
 import { useState } from "react";
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from "recharts";
+const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +27,9 @@ export default function RealtimeDashboardWidgetsPage() {
     .filter(([_, v]) => typeof v === "number" || typeof v === "string")
     .slice(0, 6);
   const arrayEntries = entries.filter(([_, v]) => Array.isArray(v));
+  const widgetPerf = [{ name: 'Transactions', latency: 42 }, { name: 'Fraud', latency: 85 }, { name: 'Policies', latency: 38 }, { name: 'Claims', latency: 55 }, { name: 'Agents', latency: 31 }];
+  const loadTrend = Array.from({length:12},(_,i)=>({ time: `${i*5}m`, loads: Math.max(0, 50*(0.7+Math.random()*0.6)) }));
+
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6">

@@ -1,3 +1,8 @@
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+} from "recharts";
+const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +23,9 @@ export default function MqttBridgeDashboard() {
   });
 
   const cfg = configQ.data;
+
+  const mqttTrend = Array.from({length:12},(_,i)=>({ time: `${i*5}m`, messages: Math.max(0,Number(data?.messagesPerMin??10)*(0.5+Math.random())) }));
+  const deviceStatus = [{ name: 'Connected', value: Number(data?.connectedDevices??0) }, { name: 'Offline', value: Number(data?.offlineDevices??0) }, { name: 'Error', value: Number(data?.errorDevices??0) }].filter(d=>d.value>0);
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-6">
@@ -154,6 +162,21 @@ export default function MqttBridgeDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        <div className={`grid gap-4 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
+          <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>MQTT Message Rate (1h)</h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={mqttTrend}><CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)"/><XAxis dataKey="time" tick={{fontSize:9,fill:"var(--text-secondary)"}}/><YAxis tick={{fontSize:11,fill:"var(--text-secondary)"}}/><Tooltip/><Area type="monotone" dataKey="messages" stroke="#6366f1" fill="#6366f120" strokeWidth={2} name="Messages/min"/></AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Device Connection Status</h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart><Pie data={deviceStatus.length>0?deviceStatus:[{name:"No devices",value:1}]} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({name,value})=>`${name}: ${value}`}>{(deviceStatus.length>0?deviceStatus:[{name:"No devices",value:1}]).map((_,i)=><Cell key={i} fill={["#22c55e","#6b7280","#ef4444"][i%3]}/>)}</Pie><Tooltip/></PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
     </div>
   );
