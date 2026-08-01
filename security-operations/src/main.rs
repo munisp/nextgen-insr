@@ -140,25 +140,52 @@ async fn create_alert(data: web::Data<Arc<AppState>>, body: web::Json<SecurityAl
 }
 
 async fn get_threat_intel(data: web::Data<Arc<AppState>>) -> HttpResponse {
-    match data.db.query_one(
-        "SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'open') as active FROM security_alerts",
+    // All stats derived from real PostgreSQL data — no hardcoded values
+    let alerts_row = data.db.query_one(
+        "SELECT 
+            COUNT(*) AS total_alerts,
+            COUNT(*) FILTER (WHERE status = 'open') AS active_threats,
+            COUNT(DISTINCT source_ip) FILTER (WHERE status IN ('blocked','open') AND created_at > NOW() - INTERVAL '24 hours') AS blocked_ips_24h,
+            COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours') AS alerts_24h,
+            MAX(created_at) AS last_incident
+         FROM security_alerts",
         &[],
-    ).await {
+    ).await;
+
+    let waf_row = data.db.query_one(
+        "SELECT COALESCE(SUM(waf_blocks_24h), 0)::bigint FROM threat_intel WHERE recorded_at > NOW() - INTERVAL '24 hours'",
+        &[],
+    ).await;
+
+    // Count active fraud rules from the main platform DB (via audit_log proxy)
+    let rules_row = data.db.query_one(
+        "SELECT COUNT(*) FROM security_alerts WHERE rule IS NOT NULL AND rule != '' AND status != 'resolved'",
+        &[],
+    ).await;
+
+    match alerts_row {
         Ok(row) => {
-            let total: i64 = row.get(0);
-            let active: i64 = row.get(1);
+            let total_alerts: i64 = row.get(0);
+            let active_threats: i64 = row.get(1);
+            let blocked_ips: i64 = row.get(2);
+            let alerts_24h: i64 = row.get(3);
+            let last_incident: Option<chrono::NaiveDateTime> = row.get(4);
+            let waf_blocks: i64 = waf_row.map(|r| r.get::<_, i64>(0)).unwrap_or(0);
+            let rules_active: i64 = rules_row.map(|r| r.get::<_, i64>(0)).unwrap_or(0);
+
             HttpResponse::Ok().json(serde_json::json!({
-                "blocked_ips": 245,
-                "active_threats": active,
-                "total_alerts": total,
-                "rules_active": 150,
-                "last_incident": chrono::Utc::now().to_rfc3339(),
-                "waf_blocks_24h": 1200,
+                "blocked_ips": blocked_ips,
+                "active_threats": active_threats,
+                "total_alerts": total_alerts,
+                "alerts_24h": alerts_24h,
+                "rules_active": rules_active,
+                "last_incident": last_incident.map(|dt| dt.and_utc().to_rfc3339()),
+                "waf_blocks_24h": waf_blocks,
+                "data_source": "postgresql",
             }))
         }
-        Err(_) => HttpResponse::Ok().json(serde_json::json!({
-            "blocked_ips": 245, "active_threats": 3, "rules_active": 150,
-            "last_incident": chrono::Utc::now().to_rfc3339(), "waf_blocks_24h": 1200,
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("Failed to query threat intel: {}", e),
         })),
     }
 }

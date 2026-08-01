@@ -27,11 +27,25 @@ async fn main() -> std::io::Result<()> {
         embeddings_store: Mutex::new(std::collections::HashMap::new()),
     });
 
+    // Build CORS policy from ALLOWED_ORIGINS env var (comma-separated list).
+    // Falls back to localhost:3000 in development.
+    // In production, set ALLOWED_ORIGINS=https://app.insureportal.ng,https://admin.insureportal.ng
+    let allowed_origins: Vec<String> = std::env::var("ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:3000,http://localhost:5173".to_string())
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
     HttpServer::new(move || {
-        let cors = Cors::default()
-            .allow_any_origin()
+        // Build CORS with explicit origin whitelist — never allow_any_origin in production
+        let mut cors = Cors::default()
             .allow_any_method()
-            .allow_any_header();
+            .allow_any_header()
+            .max_age(3600);
+        for origin in &allowed_origins {
+            cors = cors.allowed_origin(origin);
+        }
 
         App::new()
             .wrap(cors)

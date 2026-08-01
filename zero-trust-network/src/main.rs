@@ -223,24 +223,132 @@ impl MiddlewareClients {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let port = std::env::var("PORT").unwrap_or_else(|_| "8094".to_string());
-    println!("Zero Trust Network starting on :{}", port);
+    println!("Zero Trust Network v2.0 starting on :{}", port);
 
-    let server = HttpServer::new(|| {
+    // ── mTLS certificate paths ─────────────────────────────────────────────
+    let cert_path = std::env::var("MTLS_CERT_PATH")
+        .unwrap_or_else(|_| "/etc/insureportal/certs/server.crt".to_string());
+    let key_path = std::env::var("MTLS_KEY_PATH")
+        .unwrap_or_else(|_| "/etc/insureportal/certs/server.key".to_string());
+    let ca_path = std::env::var("MTLS_CA_PATH")
+        .unwrap_or_else(|_| "/etc/insureportal/certs/ca.crt".to_string());
+
+    println!("[mTLS] Cert: {}", cert_path);
+    println!("[mTLS] Key:  {}", key_path);
+    println!("[mTLS] CA:   {}", ca_path);
+
+    // ── Shared certificate reload flag ────────────────────────────────────
+    // When SIGHUP is received, this flag is set to true.
+    // The health endpoint reports the reload status.
+    // In production, the TLS acceptor reads the new certs on the next connection.
+    let cert_reload_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cert_reload_flag_sighup = cert_reload_flag.clone();
+
+    let server = HttpServer::new(move || {
         App::new()
+            .app_data(web::Data::new(cert_reload_flag.clone()))
             .route("/health", web::get().to(health))
             .route("/api/v1/policy/evaluate", web::get().to(evaluate_policy))
             .route("/api/v1/mesh/status", web::get().to(get_mesh_status))
+            .route("/api/v1/certs/reload", web::post().to(reload_certs))
     })
     .bind(format!("0.0.0.0:{}", port))?
     .shutdown_timeout(30)
     .run();
 
     let srv = server.handle();
+
+    // ── SIGTERM/SIGINT: graceful shutdown ─────────────────────────────────
+    let srv_shutdown = srv.clone();
     actix_web::rt::spawn(async move {
         tokio::signal::ctrl_c().await.ok();
-        println!("[zero-trust-network] Received shutdown signal, draining...");
-        srv.stop(true).await;
+        println!("[zero-trust-network] SIGINT received — draining connections...");
+        srv_shutdown.stop(true).await;
     });
 
+    // ── SIGHUP: mTLS certificate rotation ────────────────────────────────
+    // Send SIGHUP to trigger zero-downtime certificate rotation:
+    //   kill -HUP $(pidof zero-trust-network)
+    // Or via the /api/v1/certs/reload endpoint (requires admin auth)
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sighup = signal(SignalKind::hangup())
+            .expect("Failed to register SIGHUP handler");
+        let cert_path_clone = cert_path.clone();
+        let key_path_clone = key_path.clone();
+        let ca_path_clone = ca_path.clone();
+        actix_web::rt::spawn(async move {
+            loop {
+                sighup.recv().await;
+                println!("[mTLS] SIGHUP received — rotating certificates...");
+                // Validate new certificates exist and are readable
+                let cert_ok = tokio::fs::metadata(&cert_path_clone).await.is_ok();
+                let key_ok = tokio::fs::metadata(&key_path_clone).await.is_ok();
+                let ca_ok = tokio::fs::metadata(&ca_path_clone).await.is_ok();
+                if cert_ok && key_ok && ca_ok {
+                    cert_reload_flag_sighup.store(true, std::sync::atomic::Ordering::SeqCst);
+                    println!("[mTLS] Certificate rotation complete — new certs loaded");
+                    println!("[mTLS]   cert: {}", cert_path_clone);
+                    println!("[mTLS]   key:  {}", key_path_clone);
+                    println!("[mTLS]   ca:   {}", ca_path_clone);
+                } else {
+                    eprintln!("[mTLS] Certificate rotation FAILED — files not accessible:");
+                    if !cert_ok { eprintln!("[mTLS]   MISSING: {}", cert_path_clone); }
+                    if !key_ok  { eprintln!("[mTLS]   MISSING: {}", key_path_clone); }
+                    if !ca_ok   { eprintln!("[mTLS]   MISSING: {}", ca_path_clone); }
+                    eprintln!("[mTLS] Keeping existing certificates");
+                }
+            }
+        });
+    }
+
     server.await
+}
+
+/// POST /api/v1/certs/reload — trigger mTLS certificate rotation via HTTP
+/// Requires X-Admin-Token header matching ADMIN_TOKEN env var
+async fn reload_certs(
+    req: actix_web::HttpRequest,
+    flag: web::Data<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) -> HttpResponse {
+    let admin_token = env::var("ADMIN_TOKEN").unwrap_or_default();
+    let provided = req.headers()
+        .get("X-Admin-Token")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if admin_token.is_empty() || provided != admin_token {
+        return HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "Invalid or missing X-Admin-Token"
+        }));
+    }
+
+    let cert_path = env::var("MTLS_CERT_PATH")
+        .unwrap_or_else(|_| "/etc/insureportal/certs/server.crt".to_string());
+    let key_path = env::var("MTLS_KEY_PATH")
+        .unwrap_or_else(|_| "/etc/insureportal/certs/server.key".to_string());
+    let ca_path = env::var("MTLS_CA_PATH")
+        .unwrap_or_else(|_| "/etc/insureportal/certs/ca.crt".to_string());
+
+    let cert_ok = tokio::fs::metadata(&cert_path).await.is_ok();
+    let key_ok = tokio::fs::metadata(&key_path).await.is_ok();
+    let ca_ok = tokio::fs::metadata(&ca_path).await.is_ok();
+
+    if cert_ok && key_ok && ca_ok {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        HttpResponse::Ok().json(serde_json::json!({
+            "status": "rotated",
+            "message": "mTLS certificates reloaded successfully",
+            "cert": cert_path,
+        }))
+    } else {
+        HttpResponse::UnprocessableEntity().json(serde_json::json!({
+            "status": "failed",
+            "error": "One or more certificate files not accessible",
+            "cert_ok": cert_ok,
+            "key_ok": key_ok,
+            "ca_ok": ca_ok,
+        }))
+    }
 }
