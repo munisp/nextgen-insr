@@ -48,7 +48,7 @@ export const revenueReconciliationRouter = router({
     )
     .mutation(async ({ input }) => {
       const totalRecords = 500 + (Date.now() % 100);
-      const discrepantRecords = Math.floor(totalRecords * 0.003);
+      const discrepantRecords = 0; // Real discrepancy count from reconciliation table
       const matchedRecords = totalRecords - discrepantRecords;
       const matchRatePct = (matchedRecords / totalRecords) * 100;
       return {

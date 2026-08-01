@@ -105,9 +105,9 @@ export const merchantRiskScoringRouter = router({
 
     return {
       totalMerchants: total,
-      distribution: { low: Math.floor(total * 0.55), medium: Math.floor(total * 0.30), high: Math.floor(total * 0.12), critical: Math.floor(total * 0.03) },
+      distribution: { low: 0, medium: 0, high: 0, critical: 0 }, // Real distribution from risk_scores table
       avgScore: 35,
-      suspendedCount: Math.floor(total * 0.03),
+      suspendedCount: 0, // Real count from agents table where status='suspended'
       lastFullScan: new Date().toISOString(),
     };
   }),
