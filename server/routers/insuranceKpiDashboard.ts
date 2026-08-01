@@ -1100,4 +1100,67 @@ export const insuranceKpiDashboardRouter = router({
         netRetentionRate: Math.round(netRetention * 100) / 100,
       };
     }),
+
+  // ── Aliases for dashboard compatibility ────────────────────────────────────
+  // ClaimsDashboard calls getClaimsKpi → claimsKpi alias (maps to claimsAdjusterKpi data)
+  claimsKpi: protectedProcedure
+    .input(z.object({ periodDays: z.number().int().min(1).max(365).default(30) }))
+    .query(async ({ ctx, input }) => {
+      requireRole(ctx.user?.role, ["claims_adjuster", "claims-adjuster", "claims_manager", "admin", "super-admin"], "claimsKpi");
+      const db = await getDb();
+      if (!db) return null;
+      const since = daysAgo(input.periodDays);
+      const [openRow] = await db.select({ total: count() }).from(claims).where(eq(claims.status, "open"));
+      const [fnolRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "reported"), gte(claims.createdAt, daysAgo(1))));
+      const [settledRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "settled"), gte(claims.updatedAt, daysAgo(1))));
+      const [fraudRow] = await db.select({ total: count() }).from(fraudAlerts).where(and(eq(fraudAlerts.status, "open"), gte(fraudAlerts.createdAt, since)));
+      const [disputedRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "disputed"), gte(claims.createdAt, since)));
+      const [paidRow] = await db.select({ total: sql<string>`COALESCE(SUM(CAST(settlement_amount AS NUMERIC)), 0)` }).from(claims).where(and(eq(claims.status, "settled"), gte(claims.updatedAt, daysAgo(30))));
+      const [avgDaysRow] = await db.select({ avg: sql<number>`COALESCE(AVG(EXTRACT(DAY FROM (updated_at - created_at))), 0)` }).from(claims).where(and(eq(claims.status, "settled"), gte(claims.updatedAt, since)));
+      const [totalRow] = await db.select({ total: count() }).from(claims).where(gte(claims.createdAt, since));
+      const [slaRow] = await db.select({ total: count() }).from(claims).where(and(gte(claims.createdAt, since), sql`EXTRACT(DAY FROM (COALESCE(updated_at, NOW()) - created_at)) > 30`));
+      const totalInPeriod = Number((totalRow as any)?.total ?? 1);
+      return {
+        kpis: {
+          openClaims: Number((openRow as any)?.total ?? 0),
+          fnolToday: Number((fnolRow as any)?.total ?? 0),
+          settledToday: Number((settledRow as any)?.total ?? 0),
+          fraudFlags: Number((fraudRow as any)?.total ?? 0),
+          disputedClaims: Number((disputedRow as any)?.total ?? 0),
+          totalPaidMtd: (Number((paidRow as any)?.total ?? 0) / 1_000_000).toFixed(1),
+          avgSettlementDays: Number(Number((avgDaysRow as any)?.avg ?? 0).toFixed(1)),
+          slaBreachRate: totalInPeriod > 0 ? ((Number((slaRow as any)?.total ?? 0) / totalInPeriod) * 100).toFixed(1) + "%" : "0%",
+        },
+        period: { days: input.periodDays, since: since.toISOString() },
+      };
+    }),
+
+  // Ifrs17Dashboard calls getIfrs17Dashboard → ifrs17Dashboard alias
+  ifrs17Dashboard: protectedProcedure
+    .input(z.object({ periodDays: z.number().int().min(1).max(365).default(90) }))
+    .query(async ({ ctx, input }) => {
+      requireRole(ctx.user?.role, ["actuary", "admin", "super-admin", "finance"], "ifrs17Dashboard");
+      const db = await getDb();
+      if (!db) return null;
+      const since = daysAgo(input.periodDays);
+      const [reserveStats] = await db.select({
+        total: count(),
+        totalGross: sql<string>`COALESCE(SUM(CAST(gross_reserve AS NUMERIC)), 0)`,
+        totalNet: sql<string>`COALESCE(SUM(CAST(net_reserve AS NUMERIC)), 0)`,
+        totalRa: sql<string>`COALESCE(SUM(CAST(risk_adjustment AS NUMERIC)), 0)`,
+        avgLossRatio: sql<number>`COALESCE(AVG(CAST(loss_ratio AS NUMERIC)), 0)`,
+      }).from(actuarialReserves).where(gte(actuarialReserves.valuationDate, since));
+      const ifrs17 = await fetchPythonAnalytics("/ifrs17/full-breakdown", { period_days: input.periodDays });
+      return {
+        kpis: {
+          reserveCount: Number(reserveStats?.total ?? 0),
+          grossReserve: Number(reserveStats?.totalGross ?? 0),
+          netReserve: Number(reserveStats?.totalNet ?? 0),
+          riskAdjustment: Number(reserveStats?.totalRa ?? 0),
+          avgLossRatio: Number(Number(reserveStats?.avgLossRatio ?? 0).toFixed(2)),
+        },
+        ifrs17: ifrs17 ?? { gmm: 0, paa: 0, vfa: 0, csm: 0, ra: 0 },
+        period: { days: input.periodDays, since: since.toISOString() },
+      };
+    }),
 });
