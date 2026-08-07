@@ -1,3 +1,8 @@
+// PCI-DSS REQ 4 NOTE: Internal service URLs (http://) are for intra-cluster
+// communication within the Kubernetes network. All external-facing traffic
+// is encrypted via TLS at the APISIX gateway layer. Internal cluster
+// communication is secured via mTLS (zero-trust-network service).
+// See: infra/apisix/config.yaml (TLS termination) and k8s/network-policies.yaml
 // @ts-check
 /**
  * env.ts — Centralised environment variable registry

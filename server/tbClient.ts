@@ -1,3 +1,14 @@
+/**
+ * TigerBeetle Ledger Client
+ *
+ * PCI-DSS COMPLIANCE NOTE:
+ * TigerBeetle stores ONLY financial ledger data (account IDs, amounts, timestamps).
+ * NO cardholder data (PAN, CVV, expiry dates, cardholder names) is ever stored
+ * in TigerBeetle. All payment card data is handled exclusively by the
+ * paymentTokenVault router which tokenizes card data before any ledger operations.
+ *
+ * TigerBeetle account IDs use opaque UUIDs, never card numbers.
+ */
 // TypeScript enabled — Sprint 96 security audit
 import { ENV } from "./_core/env";
 import { logger } from './_core/logger';

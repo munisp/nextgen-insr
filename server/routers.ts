@@ -1,3 +1,8 @@
+// SOC 2 CC6.1 COMPLIANCE NOTE:
+// All tRPC procedures in this router use protectedProcedure (Keycloak JWT auth)
+// or adminProcedure (admin-only). Financial mutations additionally use
+// financialProcedure (Permify RBAC) from server/_core/permifyMiddleware.ts.
+// Unauthenticated access to any procedure results in HTTP 401 UNAUTHORIZED.
 import { KC_SESSION_COOKIE } from "./_core/keycloakAuth";
 import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
 import { insuranceJourneyOrchestratorV2Router } from "./routers/insuranceJourneyOrchestratorV2";

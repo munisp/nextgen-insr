@@ -1,3 +1,32 @@
+/**
+ * InsurePortal Database Schema
+ *
+ * SOC 2 / PCI-DSS DATA CLASSIFICATION:
+ *
+ * CONFIDENTIAL (PII/Sensitive):
+ *   - customers: name, email, phone, address, date_of_birth, bvn, nin
+ *   - kyc_verifications: document_number, face_image_url, biometric_data
+ *   - agents: bank_account_number, bvn
+ *   - policies: beneficiary details
+ *
+ * RESTRICTED (Financial):
+ *   - transactions: amount, account_id, reference
+ *   - claims_payments: payout_amount, bank_details
+ *   - commissions: amount, agent_id
+ *   - platform_billing_ledger: amount, tenant_id
+ *
+ * INTERNAL (Operational):
+ *   - audit_log: all entries
+ *   - fraud_alerts: risk scores
+ *   - workflow_instances: execution state
+ *
+ * PUBLIC:
+ *   - insurance_product_types: product names, descriptions
+ *   - service_nodes: health status
+ *
+ * PAN/CVV/Card data: NEVER stored in this database.
+ * All payment card data is tokenized via paymentTokenVault before storage.
+ */
 import { sql } from "drizzle-orm";
 import {
   bigserial,

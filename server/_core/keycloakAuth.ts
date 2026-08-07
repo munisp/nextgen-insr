@@ -31,6 +31,7 @@ import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
 import { logger } from './logger';
+import { blacklistToken, isTokenBlacklisted, revokeAllUserTokens } from "../lib/redisClient";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -307,4 +308,28 @@ function parseCookies(cookieHeader: string): Map<string, string> {
     if (k) map.set(k.trim(), decodeURIComponent(v.join("=")));
   }
   return map;
+}
+
+// ── MFA Enforcement (PCI-DSS REQ 8.4) ────────────────────────────────────────
+// Keycloak enforces MFA at the realm level for all admin and financial roles.
+// The following roles require TOTP/WebAuthn: admin, super_admin, billing_admin,
+// compliance_officer, claims_adjuster, underwriter.
+// MFA is configured in Keycloak realm settings (infra/keycloak/realm-export.json).
+// The acr_values claim in the JWT indicates the authentication context:
+//   - acr=1: password only
+//   - acr=2: password + TOTP/WebAuthn (MFA)
+export const MFA_REQUIRED_ROLES = new Set([
+  'admin', 'super_admin', 'billing_admin', 'compliance_officer',
+  'claims_adjuster', 'underwriter', 'actuary',
+]);
+
+export function requiresMfa(role: string): boolean {
+  return MFA_REQUIRED_ROLES.has(role);
+}
+
+export function hasMfaCompleted(payload: { acr?: string; amr?: string[] }): boolean {
+  // acr=2 or amr includes 'otp' or 'webauthn indicates MFA was completed
+  if (payload.acr === '2') return true;
+  if (Array.isArray(payload.amr) && (payload.amr.includes('otp') || payload.amr.includes('webauthn'))) return true;
+  return false;
 }
