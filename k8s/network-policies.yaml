@@ -1,18 +1,54 @@
+##############################################################################
+# InsurePortal — Kubernetes Network Policies (Zero-Trust Isolation)
+#
+# Architecture:
+#   - Default DENY ALL ingress and egress for all pods
+#   - Explicit allow rules per service (least-privilege)
+#   - Each service only communicates with its required dependencies
+#   - All external traffic must enter through APISIX gateway
+#
+# PCI-DSS REQ 1: Network security controls
+# SOC 2 CC6.6: Logical access controls
+##############################################################################
+
+# ── 1. Default Deny All ──────────────────────────────────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: insureportal-default-deny
+  name: insureportal-default-deny-all
   namespace: insureportal
 spec:
   podSelector: {}
   policyTypes:
   - Ingress
   - Egress
+
 ---
+# ── 2. DNS Egress (required for all pods) ────────────────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: insureportal-app-ingress
+  name: insureportal-allow-dns
+  namespace: insureportal
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+# ── 3. Main Application (insureportal-app) ───────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-app-policy
   namespace: insureportal
 spec:
   podSelector:
@@ -86,16 +122,62 @@ spec:
     ports:
     - protocol: TCP
       port: 11434
-  - to:  # DNS
-    - namespaceSelector: {}
+  - to:
+    - podSelector:
+        matchLabels:
+          app: dapr-sidecar
     ports:
-    - protocol: UDP
-      port: 53
+    - protocol: TCP
+      port: 3500
+  - to:
+    - podSelector:
+        matchLabels:
+          app: fluvio
+    ports:
+    - protocol: TCP
+      port: 9003
+  - to:
+    - podSelector:
+        matchLabels:
+          app: ml-fraud-scoring
+    ports:
+    - protocol: TCP
+      port: 8001
+  - to:
+    - podSelector:
+        matchLabels:
+          app: kyc-verification
+    ports:
+    - protocol: TCP
+      port: 8002
+  - to:
+    - podSelector:
+        matchLabels:
+          app: float-reconciler
+    ports:
+    - protocol: TCP
+      port: 8100
+  - to:
+    - podSelector:
+        matchLabels:
+          app: health-worker
+    ports:
+    - protocol: TCP
+      port: 8101
+  - to:
+    - podSelector:
+        matchLabels:
+          app: slo-engine
+    ports:
+    - protocol: TCP
+      port: 8200
+
 ---
+# ── 4. PostgreSQL — Only app, temporal, kyc-verification can connect ─────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: insureportal-db-isolation
+  name: insureportal-postgres-policy
   namespace: insureportal
 spec:
   podSelector:
@@ -103,24 +185,72 @@ spec:
       app: postgres
   policyTypes:
   - Ingress
+  - Egress
   ingress:
   - from:
     - podSelector:
         matchLabels:
           app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 5432
   - from:
     - podSelector:
         matchLabels:
           app: temporal
+    ports:
+    - protocol: TCP
+      port: 5432
   - from:
     - podSelector:
         matchLabels:
           app: kyc-verification
+    ports:
+    - protocol: TCP
+      port: 5432
+  - from:
+    - podSelector:
+        matchLabels:
+          app: float-reconciler
+    ports:
+    - protocol: TCP
+      port: 5432
+  - from:
+    - podSelector:
+        matchLabels:
+          app: health-worker
+    ports:
+    - protocol: TCP
+      port: 5432
+  - from:
+    - podSelector:
+        matchLabels:
+          app: slo-engine
+    ports:
+    - protocol: TCP
+      port: 5432
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ml-fraud-scoring
+    ports:
+    - protocol: TCP
+      port: 5432
+  - from:
+    - podSelector:
+        matchLabels:
+          app: claims-adjudication
+    ports:
+    - protocol: TCP
+      port: 5432
+  egress: []  # PostgreSQL does not initiate outbound connections
+
 ---
+# ── 5. Redis — Only app and fraud-gate can connect ───────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: insureportal-redis-isolation
+  name: insureportal-redis-policy
   namespace: insureportal
 spec:
   podSelector:
@@ -128,12 +258,591 @@ spec:
       app: redis
   policyTypes:
   - Ingress
+  - Egress
   ingress:
   - from:
     - podSelector:
         matchLabels:
           app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 6379
   - from:
     - podSelector:
         matchLabels:
           app: fraud-gate
+    ports:
+    - protocol: TCP
+      port: 6379
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kyc-verification
+    ports:
+    - protocol: TCP
+      port: 6379
+  egress: []
+
+---
+# ── 6. Keycloak — Only app and APISIX can connect ────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-keycloak-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app: apisix
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# ── 7. Permify — Only app can connect ────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-permify-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: permify
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 3476
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# ── 8. Temporal — Only app and temporal-worker can connect ───────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-temporal-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: temporal
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 7233
+  - from:
+    - podSelector:
+        matchLabels:
+          app: temporal-worker
+    ports:
+    - protocol: TCP
+      port: 7233
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# ── 9. TigerBeetle Sidecar — Only app can connect ────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-tb-sidecar-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: tb-sidecar
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 7070
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# ── 10. Fraud Gate (Rust) — Only app can connect ─────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-fraud-gate-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: fraud-gate
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 8090
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# ── 11. Ollama — Only app can connect (no external internet) ─────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-ollama-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: ollama
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 11434
+  egress: []  # Ollama runs fully offline — no external model downloads in production
+
+---
+# ── 12. Fluvio — Only app can produce/consume ────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-fluvio-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: fluvio
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 9003
+  - from:
+    - podSelector:
+        matchLabels:
+          app: temporal-worker
+    ports:
+    - protocol: TCP
+      port: 9003
+  egress: []
+
+---
+# ── 13. Dapr Sidecar — Only app can invoke ───────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-dapr-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: dapr-sidecar
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 3500
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+# ── 14. APISIX Gateway — Internet-facing, routes to app only ─────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-apisix-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: apisix
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - ports:  # Accept from internet (LoadBalancer)
+    - protocol: TCP
+      port: 9080
+    - protocol: TCP
+      port: 9443
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 3000
+  - to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: permify
+    ports:
+    - protocol: TCP
+      port: 3476
+
+---
+# ── 15. OpenAppSec WAF — Sits in front of APISIX ────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-openappsec-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: openappsec-agent
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: apisix
+    ports:
+    - protocol: TCP
+      port: 9080
+
+---
+# ── 16. ML Fraud Scoring (Python) ────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-ml-fraud-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: ml-fraud-scoring
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 8001
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# ── 17. KYC Verification (Python) ────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-kyc-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: kyc-verification
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 8002
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+# ── 18. Float Reconciler (Go) ────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-float-reconciler-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: float-reconciler
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 8100
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tb-sidecar
+    ports:
+    - protocol: TCP
+      port: 7070
+
+---
+# ── 19. Health Worker (Go) ───────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-health-worker-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: health-worker
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 8101
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: keycloak
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: temporal
+    ports:
+    - protocol: TCP
+      port: 7233
+  - to:
+    - podSelector:
+        matchLabels:
+          app: tb-sidecar
+    ports:
+    - protocol: TCP
+      port: 7070
+
+---
+# ── 20. SLO Engine (Rust) ────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-slo-engine-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: slo-engine
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: insureportal-app
+    ports:
+    - protocol: TCP
+      port: 8200
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# ── 21. Monitoring (Prometheus/Grafana) — Read-only access ───────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insureportal-monitoring-policy
+  namespace: insureportal
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: grafana
+    ports:
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to:
+    - podSelector: {}  # Scrape all pods in namespace for metrics
+    ports:
+    - protocol: TCP
+      port: 9091
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 3000

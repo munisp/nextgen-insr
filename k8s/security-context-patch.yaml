@@ -1,0 +1,281 @@
+##############################################################################
+# InsurePortal — Kubernetes Security Context Patch
+#
+# Applied to ALL deployments via Kustomize strategic merge patch.
+# Enforces:
+#   - Non-root execution (runAsNonRoot: true)
+#   - Read-only root filesystem where possible
+#   - No privilege escalation
+#   - Drop all Linux capabilities
+#   - Seccomp profile: RuntimeDefault
+#
+# PCI-DSS REQ 2: Secure configurations
+# SOC 2 CC6.1: Logical access controls
+##############################################################################
+
+# ── Pod-level Security Context ────────────────────────────────────────────────
+# Applied to all pods via PodSecurityAdmission or OPA Gatekeeper
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-context-defaults
+  namespace: insureportal
+data:
+  pod-security-context: |
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  container-security-context: |
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    runAsUser: 1001
+    capabilities:
+      drop:
+        - ALL
+
+---
+# ── PodSecurityPolicy (Kubernetes < 1.25) / PodSecurity (>= 1.25) ────────────
+# Enforces restricted pod security standard across the namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: insureportal
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+
+---
+# ── OPA Gatekeeper Constraint: Require SecurityContext ───────────────────────
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredSecurityContext
+metadata:
+  name: insureportal-require-security-context
+spec:
+  match:
+    kinds:
+    - apiGroups: ["apps"]
+      kinds: ["Deployment", "StatefulSet", "DaemonSet"]
+    namespaces: ["insureportal"]
+  parameters:
+    requireRunAsNonRoot: true
+    requireDropAllCapabilities: true
+    requireNoPrivilegeEscalation: true
+
+---
+# ── Main App Deployment Security Context ─────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insureportal-app
+  namespace: insureportal
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: insureportal-app
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+---
+# ── Fraud Gate (Rust) Security Context ───────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-gate
+  namespace: insureportal
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: fraud-gate
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+---
+# ── ML Fraud Scoring (Python) Security Context ───────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-fraud-scoring
+  namespace: insureportal
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: ml-fraud-scoring
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # Python needs write access for model cache
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+---
+# ── KYC Verification (Python) Security Context ───────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kyc-verification
+  namespace: insureportal
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: kyc-verification
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+---
+# ── Float Reconciler (Go) Security Context ───────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: float-reconciler
+  namespace: insureportal
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: float-reconciler
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+---
+# ── Health Worker (Go) Security Context ──────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-worker
+  namespace: insureportal
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: health-worker
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+---
+# ── SLO Engine (Rust) Security Context ───────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slo-engine
+  namespace: insureportal
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: slo-engine
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+
+---
+# ── TigerBeetle Sidecar Security Context ─────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tb-sidecar
+  namespace: insureportal
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: tb-sidecar
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # TigerBeetle needs write access to data directory
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
