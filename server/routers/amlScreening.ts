@@ -51,6 +51,23 @@ const HIGH_RISK_COUNTRIES = [
   "SS", "SD", "SY", "UA", "VE", "YE", "ZW",
 ];
 
+// ── Unicode normalization (prevents Cyrillic/lookalike bypass attacks) ────────
+function normalizeForScreening(name: string): string {
+  // Map common Cyrillic lookalikes to their Latin equivalents
+  const cyrillicToLatin: Record<string, string> = {
+    '\u0410':'A','\u0412':'B','\u0415':'E','\u041a':'K','\u041c':'M','\u041d':'H','\u041e':'O','\u0420':'P','\u0421':'C','\u0422':'T','\u0423':'Y','\u0425':'X',
+    '\u0430':'a','\u0435':'e','\u043e':'o','\u0440':'p','\u0441':'c','\u0445':'x','\u0443':'y','\u0456':'i','\u0430':'a',
+  };
+  return name
+    .normalize("NFD")                                          // decompose unicode
+    .replace(/[\u0300-\u036f]/g, "")                          // strip combining diacritics
+    .split("").map(c => cyrillicToLatin[c] ?? c).join("")     // Cyrillic → Latin
+    .replace(/[\u0080-\u00FF]/g, c => c.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")) // Latin extended
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 // ── Risk Scoring Engine ───────────────────────────────────────────────────────
 function computeAmlRiskScore(params: {
   amount: number;
@@ -64,29 +81,29 @@ function computeAmlRiskScore(params: {
   let score = 0;
   const flags: string[] = [];
 
-  // Amount-based risk
-  if (params.amount >= 50_000_000) { score += 40; flags.push("large_amount_50m+"); }
-  else if (params.amount >= 10_000_000) { score += 25; flags.push("large_amount_10m+"); }
+  // Amount-based risk (FIX: ₦50M alone = critical; ₦10M alone = high)
+  if (params.amount >= 50_000_000) { score += 55; flags.push("large_amount_50m+"); }
+  else if (params.amount >= 10_000_000) { score += 40; flags.push("large_amount_10m+"); }
   else if (params.amount >= CTR_THRESHOLD) { score += 15; flags.push("ctr_threshold"); }
 
-  // Velocity risk
-  if ((params.transactionCount24h ?? 0) >= 20) { score += 30; flags.push("high_velocity_20+"); }
-  else if ((params.transactionCount24h ?? 0) >= 10) { score += 15; flags.push("medium_velocity_10+"); }
+  // Velocity risk (FIX: 20+ transactions = critical on its own)
+  if ((params.transactionCount24h ?? 0) >= 20) { score += 35; flags.push("high_velocity_20+"); }
+  else if ((params.transactionCount24h ?? 0) >= 10) { score += 20; flags.push("medium_velocity_10+"); }
 
-  // Geographic risk
+  // Geographic risk (FIX: high-risk country + PEP = high)
   if (params.country && HIGH_RISK_COUNTRIES.includes(params.country.toUpperCase())) {
-    score += 25; flags.push(`high_risk_country_${params.country}`);
+    score += 30; flags.push(`high_risk_country_${params.country}`);
   }
 
-  // PEP risk
-  if (params.isPep) { score += 20; flags.push("politically_exposed_person"); }
+  // PEP risk (FIX: PEP + any other factor = high; PEP + large amount = critical)
+  if (params.isPep) { score += 25; flags.push("politically_exposed_person"); }
 
   // Sanctions hit
   if (params.isSanctioned) { score += 100; flags.push("sanctions_match"); }
 
-  // Name-based sanctions screening
-  const nameLower = params.entityName.toLowerCase();
-  const sanctionsHit = SANCTIONS_KEYWORDS.some(kw => nameLower.includes(kw));
+  // Name-based sanctions screening — uses unicode-normalized name to prevent bypass
+  const normalizedName = normalizeForScreening(params.entityName);
+  const sanctionsHit = SANCTIONS_KEYWORDS.some(kw => normalizedName.includes(kw));
   if (sanctionsHit) { score += 100; flags.push("name_sanctions_match"); }
 
   // Structuring detection (just below CTR threshold)
