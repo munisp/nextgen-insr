@@ -6,10 +6,10 @@ import { trpc } from "@/_core/trpc";
 import { KpiCard } from "@/components/insurance/KpiCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
-import {{
+import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
-}} from "recharts";
+} from "recharts";
 import { ArrowRightLeft, TrendingUp, Users, Wallet } from "lucide-react";
 
 

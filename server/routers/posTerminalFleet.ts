@@ -9,11 +9,13 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import {
-  terminalGroups,\n  serviceRecords,\n  agents,
+  terminalGroups,
+  serviceRecords,
+  agents,
 } from "../../drizzle/schema";
 import {
   insuranceServices,
-} from "../../drizzle/schema.additions";;
+} from "../../drizzle/schema.additions";
 import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -165,7 +167,6 @@ export const insuranceServiceFleetRouter = router({
           .returning();
 
         await writeAuditLog({
-          agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_PROVISIONED",
           resource: "insurance_service",
@@ -223,7 +224,6 @@ export const insuranceServiceFleetRouter = router({
           });
 
         await writeAuditLog({
-          agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_ASSIGNED",
           resource: "insurance_service",
@@ -318,7 +318,6 @@ export const insuranceServiceFleetRouter = router({
           .where(eq(insuranceServices.id, input.terminalId));
 
         await writeAuditLog({
-          agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_COMMAND_SENT",
           resource: "insurance_service",
@@ -363,7 +362,6 @@ export const insuranceServiceFleetRouter = router({
           .where(eq(insuranceServices.id, input.terminalId));
 
         await writeAuditLog({
-          agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_DECOMMISSIONED",
           resource: "insurance_service",
@@ -454,7 +452,6 @@ export const insuranceServiceFleetRouter = router({
           .returning();
 
         await writeAuditLog({
-          agentId: session.id,
           agentId: session.agentId,
           action: "TERMINAL_GROUP_CREATED",
           resource: "terminal_group",

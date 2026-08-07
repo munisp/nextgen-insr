@@ -2281,30 +2281,5 @@ const InnovationHub = lazy(() => import("./pages/InnovationHub"));
         </ThemeProvider>
       </AccessibilityProvider>
     </ErrorBoundary>
-  );        <Route path="/insurance/journeys">
-          <Suspense fallback={<SkeletonDashboard />
-              <Route path="/insurance/monitor" element={<WorkflowMonitorDashboard />} />
-              <Route path="/insurance/innovations" element={<InnovationHub />} />
-              <Route path="/insurance/parametric" element={<InnovationHub />} />
-              <Route path="/insurance/cv-claims" element={<InnovationHub />} />
-              <Route path="/insurance/fraud-network" element={<InnovationHub />} />
-              <Route path="/insurance/telematics" element={<InnovationHub />} />
-              <Route path="/insurance/embedded" element={<InnovationHub />} />
-              <Route path="/insurance/voice-claims" element={<InnovationHub />} />
-              <Route path="/insurance/p2p-pools" element={<InnovationHub />} />
-              <Route path="/insurance/wellness" element={<InnovationHub />} />
-              <Route path="/insurance/nhia" element={<InnovationHub />} />
-              <Route path="/insurance/comparison" element={<InnovationHub />} />
-              <Route path="/insurance/bancassurance" element={<InnovationHub />} />
-              <Route path="/insurance/open-insurance" element={<InnovationHub />} />
-              <Route path="/insurance/climate-risk" element={<InnovationHub />} />
-              <Route path="/insurance/sandbox" element={<InnovationHub />} />
-              <Route path="/insurance/reinsurance-marketplace" element={<InnovationHub />} />
-              <Route path="/insurance/did-identity" element={<InnovationHub />} />
-              <Route path="/insurance/ai-underwriting" element={<InnovationHub />} />
-              <Route path="/insurance/carbon-credit" element={<InnovationHub />} />
-              <Route path="/insurance/predictive-renewal" element={<InnovationHub />} />
-              <Route path="/insurance/slo-monitor" element={<InnovationHub />} />}><InsuranceJourneyDashboard /></Suspense>
-        </Route>
-
+  );
 }
