@@ -1,0 +1,189 @@
+{
+  "suite": "spatial_index_integration",
+  "passed": 36,
+  "failed": 0,
+  "skipped": 0,
+  "total": 36,
+  "tests": [
+    {
+      "test": "A1_haversine_lagos_london",
+      "status": "PASS",
+      "detail": "5012.3km (haversine great-circle)"
+    },
+    {
+      "test": "A2_haversine_zero",
+      "status": "PASS",
+      "detail": "0.000000km"
+    },
+    {
+      "test": "A3_haversine_lagos_abuja",
+      "status": "PASS",
+      "detail": "525.9km (haversine great-circle)"
+    },
+    {
+      "test": "A4_haversine_london_singapore",
+      "status": "PASS",
+      "detail": "10847.8km (expected ~10841km)"
+    },
+    {
+      "test": "A5_haversine_symmetry",
+      "status": "PASS",
+      "detail": "d1=5012.310 d2=5012.310"
+    },
+    {
+      "test": "B1_bbox_lagos_inside_nigeria",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "B2_bbox_london_outside_nigeria",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "B3_bbox_abuja_inside_nigeria",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "B4_bbox_intersection_overlapping",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "B5_bbox_no_intersection",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "B6_bbox_touching_edge",
+      "status": "PASS",
+      "detail": "intersects=True (touching edge)"
+    },
+    {
+      "test": "C1_nearest_2_agents_within_15km",
+      "status": "PASS",
+      "detail": "found 2 agents"
+    },
+    {
+      "test": "C2_nearest_is_agent1",
+      "status": "PASS",
+      "detail": "distance=0.0000km"
+    },
+    {
+      "test": "C3_agent1_distance_near_zero",
+      "status": "PASS",
+      "detail": "0.000000km"
+    },
+    {
+      "test": "C4_kind_filter_excludes_claims",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "C5_nearest_abuja_agent3",
+      "status": "PASS",
+      "detail": "found agent-3 at 0.0000km"
+    },
+    {
+      "test": "C6_limit_parameter",
+      "status": "PASS",
+      "detail": "limit=1 returned 1 result"
+    },
+    {
+      "test": "C7_results_sorted_ascending",
+      "status": "PASS",
+      "detail": "distances=['0.00', '0.63', '8.71', '525.90']"
+    },
+    {
+      "test": "D1_centre_inside_square",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "D2_outside_point",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "D3_lagos_inside_nigeria_polygon",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "D4_london_outside_nigeria_polygon",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "D5_degenerate_polygon_returns_false",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "E1_hotspot_detected",
+      "status": "PASS",
+      "detail": "1 hotspot(s)"
+    },
+    {
+      "test": "E2_hotspot_count_ge3",
+      "status": "PASS",
+      "detail": "count=5"
+    },
+    {
+      "test": "E3_hotspots_sorted_by_risk_score",
+      "status": "PASS",
+      "detail": "only 1 hotspot, trivially sorted"
+    },
+    {
+      "test": "E4_min_count_10_no_hotspot",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "test": "F1_concurrent_50_lagos_0ms",
+      "status": "PASS",
+      "detail": "all=50 ok, p99=1.2ms, wall=16ms"
+    },
+    {
+      "test": "F2_concurrent_20_london_120ms",
+      "status": "PASS",
+      "detail": "all=20 ok, p99=0.3ms, wall=125ms"
+    },
+    {
+      "test": "F3_concurrent_10_singapore_250ms",
+      "status": "PASS",
+      "detail": "all=10 ok, wall=253ms"
+    },
+    {
+      "test": "F4_high_jitter_0_500ms",
+      "status": "PASS",
+      "detail": "all 10 completed in 494ms"
+    },
+    {
+      "test": "G1_nearest_1000_queries_p99",
+      "status": "PASS",
+      "detail": "p50=0.48ms p99=0.66ms p99.9=0.77ms"
+    },
+    {
+      "test": "G2_hotspot_100_queries_p99",
+      "status": "PASS",
+      "detail": "p99=16.75ms (10k points, 10x10 grid)"
+    },
+    {
+      "test": "G3_point_in_polygon_1000_p99",
+      "status": "PASS",
+      "detail": "p99=0.0009ms"
+    },
+    {
+      "test": "G4_load_100k_points",
+      "status": "PASS",
+      "detail": "0.7ms for 100k points"
+    },
+    {
+      "test": "H1_concurrent_read_write_no_race",
+      "status": "PASS",
+      "detail": "10 readers + 3 writers, no errors"
+    }
+  ]
+}

@@ -1,0 +1,188 @@
+=== RUN   TestQuorumWeightModel
+=== RUN   TestQuorumWeightModel/regions=[ng-lagos_gb-london_sg-singapore]
+=== RUN   TestQuorumWeightModel/regions=[ng-lagos_gb-london]
+=== RUN   TestQuorumWeightModel/regions=[ng-lagos_sg-singapore]
+=== RUN   TestQuorumWeightModel/regions=[gb-london_sg-singapore]
+=== RUN   TestQuorumWeightModel/regions=[ng-lagos]
+=== RUN   TestQuorumWeightModel/regions=[gb-london]
+=== RUN   TestQuorumWeightModel/regions=[sg-singapore]
+=== RUN   TestQuorumWeightModel/regions=[]
+=== RUN   TestQuorumWeightModel/regions=[ng-lagos_gb-london_sg-singapore_ng-lagos]
+--- PASS: TestQuorumWeightModel (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[ng-lagos_gb-london_sg-singapore] (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[ng-lagos_gb-london] (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[ng-lagos_sg-singapore] (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[gb-london_sg-singapore] (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[ng-lagos] (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[gb-london] (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[sg-singapore] (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[] (0.00s)
+    --- PASS: TestQuorumWeightModel/regions=[ng-lagos_gb-london_sg-singapore_ng-lagos] (0.00s)
+=== RUN   TestLeaseAcquisitionUnderLatency
+=== RUN   TestLeaseAcquisitionUnderLatency/Lagos_baseline
+    logger.go:146: 2026-08-07T13:42:10.879Z	INFO	redis_connected	{"addr": "127.0.0.1:41747"}
+    logger.go:146: 2026-08-07T13:42:10.880Z	INFO	quorum_fence: lease acquired	{"resource": "test-resource-b", "region": "ng-lagos", "epoch": 1, "ttl": "10s", "votes": 3}
+    quorum_fence_integration_test.go:283: [Lagos_baseline] AcquireLease OK: epoch=1 key=qf:fence:test-resource-b elapsed=1.015388ms
+    logger.go:146: 2026-08-07T13:42:10.881Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:test-resource-b", "region": "ng-lagos", "epoch": 1}
+=== RUN   TestLeaseAcquisitionUnderLatency/London_120ms
+    logger.go:146: 2026-08-07T13:42:11.246Z	INFO	redis_connected	{"addr": "127.0.0.1:35991"}
+    logger.go:146: 2026-08-07T13:42:11.610Z	INFO	quorum_fence: lease acquired	{"resource": "test-resource-b", "region": "ng-lagos", "epoch": 1, "ttl": "10s", "votes": 3}
+    quorum_fence_integration_test.go:283: [London_120ms] AcquireLease OK: epoch=1 key=qf:fence:test-resource-b elapsed=363.561746ms
+    logger.go:146: 2026-08-07T13:42:11.864Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:test-resource-b", "region": "ng-lagos", "epoch": 1}
+=== RUN   TestLeaseAcquisitionUnderLatency/Singapore_250ms
+    logger.go:146: 2026-08-07T13:42:12.626Z	INFO	redis_connected	{"addr": "127.0.0.1:46345"}
+    logger.go:146: 2026-08-07T13:42:13.371Z	INFO	quorum_fence: lease acquired	{"resource": "test-resource-b", "region": "ng-lagos", "epoch": 1, "ttl": "10s", "votes": 3}
+    quorum_fence_integration_test.go:283: [Singapore_250ms] AcquireLease OK: epoch=1 key=qf:fence:test-resource-b elapsed=744.9204ms
+    logger.go:146: 2026-08-07T13:42:13.870Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:test-resource-b", "region": "ng-lagos", "epoch": 1}
+=== RUN   TestLeaseAcquisitionUnderLatency/HighJitter_0-500ms
+    logger.go:146: 2026-08-07T13:42:15.227Z	INFO	redis_connected	{"addr": "127.0.0.1:34645"}
+    logger.go:146: 2026-08-07T13:42:16.185Z	INFO	quorum_fence: lease acquired	{"resource": "test-resource-b", "region": "ng-lagos", "epoch": 1, "ttl": "10s", "votes": 3}
+    quorum_fence_integration_test.go:283: [HighJitter_0-500ms] AcquireLease OK: epoch=1 key=qf:fence:test-resource-b elapsed=957.491992ms
+    logger.go:146: 2026-08-07T13:42:17.513Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:test-resource-b", "region": "ng-lagos", "epoch": 1}
+=== RUN   TestLeaseAcquisitionUnderLatency/PacketLoss_10pct
+    quorum_fence_integration_test.go:252: packet-loss profile tested separately
+--- PASS: TestLeaseAcquisitionUnderLatency (6.64s)
+    --- PASS: TestLeaseAcquisitionUnderLatency/Lagos_baseline (0.00s)
+    --- PASS: TestLeaseAcquisitionUnderLatency/London_120ms (0.98s)
+    --- PASS: TestLeaseAcquisitionUnderLatency/Singapore_250ms (2.01s)
+    --- PASS: TestLeaseAcquisitionUnderLatency/HighJitter_0-500ms (3.64s)
+    --- SKIP: TestLeaseAcquisitionUnderLatency/PacketLoss_10pct (0.00s)
+=== RUN   TestLeaseRenewalUnderLatency
+=== RUN   TestLeaseRenewalUnderLatency/Lagos_baseline
+    logger.go:146: 2026-08-07T13:42:17.514Z	INFO	redis_connected	{"addr": "127.0.0.1:38653"}
+    logger.go:146: 2026-08-07T13:42:17.516Z	INFO	quorum_fence: lease acquired	{"resource": "test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s", "votes": 3}
+    logger.go:146: 2026-08-07T13:42:17.717Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [Lagos_baseline] RenewLease[0] OK
+    logger.go:146: 2026-08-07T13:42:17.919Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [Lagos_baseline] RenewLease[1] OK
+    logger.go:146: 2026-08-07T13:42:18.120Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [Lagos_baseline] RenewLease[2] OK
+    logger.go:146: 2026-08-07T13:42:18.622Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1}
+=== RUN   TestLeaseRenewalUnderLatency/London_120ms
+    logger.go:146: 2026-08-07T13:42:19.000Z	INFO	redis_connected	{"addr": "127.0.0.1:46123"}
+    logger.go:146: 2026-08-07T13:42:19.355Z	INFO	quorum_fence: lease acquired	{"resource": "test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s", "votes": 3}
+    logger.go:146: 2026-08-07T13:42:19.796Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [London_120ms] RenewLease[0] OK
+    logger.go:146: 2026-08-07T13:42:20.121Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [London_120ms] RenewLease[1] OK
+    logger.go:146: 2026-08-07T13:42:20.445Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [London_120ms] RenewLease[2] OK
+    logger.go:146: 2026-08-07T13:42:21.192Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1}
+=== RUN   TestLeaseRenewalUnderLatency/Singapore_250ms
+    logger.go:146: 2026-08-07T13:42:21.944Z	INFO	redis_connected	{"addr": "127.0.0.1:36231"}
+    logger.go:146: 2026-08-07T13:42:22.707Z	INFO	quorum_fence: lease acquired	{"resource": "test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s", "votes": 3}
+    logger.go:146: 2026-08-07T13:42:23.419Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [Singapore_250ms] RenewLease[0] OK
+    logger.go:146: 2026-08-07T13:42:23.871Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [Singapore_250ms] RenewLease[1] OK
+    logger.go:146: 2026-08-07T13:42:24.330Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    quorum_fence_integration_test.go:322: [Singapore_250ms] RenewLease[2] OK
+    logger.go:146: 2026-08-07T13:42:24.634Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1, "ttl": "5s"}
+    logger.go:146: 2026-08-07T13:42:25.342Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:test-resource-c", "region": "ng-lagos", "epoch": 1}
+--- PASS: TestLeaseRenewalUnderLatency (7.83s)
+    --- PASS: TestLeaseRenewalUnderLatency/Lagos_baseline (1.11s)
+    --- PASS: TestLeaseRenewalUnderLatency/London_120ms (2.57s)
+    --- PASS: TestLeaseRenewalUnderLatency/Singapore_250ms (4.15s)
+=== RUN   TestSplitBrainEpochFencing
+    logger.go:146: 2026-08-07T13:42:25.343Z	INFO	redis_connected	{"addr": "127.0.0.1:39155"}
+    logger.go:146: 2026-08-07T13:42:25.345Z	INFO	quorum_fence: lease acquired	{"resource": "split-brain-resource", "region": "ng-lagos", "epoch": 1, "ttl": "30s", "votes": 3}
+    quorum_fence_integration_test.go:351: Leader A acquired: epoch=1 key=qf:fence:split-brain-resource
+    logger.go:146: 2026-08-07T13:42:25.345Z	INFO	quorum_fence: lease acquired	{"resource": "split-brain-resource", "region": "ng-lagos", "epoch": 2, "ttl": "30s", "votes": 3}
+    quorum_fence_integration_test.go:363: Leader B acquired: epoch=2 key=qf:fence:split-brain-resource
+    quorum_fence_integration_test.go:375: Zombie Leader A renewal correctly rejected: quorum_fence: lease expired
+    logger.go:146: 2026-08-07T13:42:25.346Z	WARN	quorum_fence: release — key already expired or taken	{"fence_key": "qf:fence:split-brain-resource", "epoch": 1}
+    quorum_fence_integration_test.go:381: Zombie Leader A release result: <nil> (expected nil or warning)
+    quorum_fence_integration_test.go:396: GetFenceStatus: epoch=2 held=true votes=6
+    logger.go:146: 2026-08-07T13:42:25.346Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:split-brain-resource", "region": "ng-lagos", "epoch": 2}
+--- PASS: TestSplitBrainEpochFencing (0.00s)
+=== RUN   TestEpochMonotonicallyIncreasing
+    logger.go:146: 2026-08-07T13:42:25.346Z	INFO	redis_connected	{"addr": "127.0.0.1:36895"}
+    logger.go:146: 2026-08-07T13:42:25.347Z	INFO	quorum_fence: lease acquired	{"resource": "epoch-mono-resource", "region": "ng-lagos", "epoch": 1, "ttl": "2s", "votes": 3}
+    quorum_fence_integration_test.go:418: iteration 0: epoch=1 (delta=+1)
+    logger.go:146: 2026-08-07T13:42:25.347Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:epoch-mono-resource", "region": "ng-lagos", "epoch": 1}
+    logger.go:146: 2026-08-07T13:42:25.347Z	INFO	quorum_fence: lease acquired	{"resource": "epoch-mono-resource", "region": "ng-lagos", "epoch": 2, "ttl": "2s", "votes": 3}
+    quorum_fence_integration_test.go:418: iteration 1: epoch=2 (delta=+1)
+    logger.go:146: 2026-08-07T13:42:25.348Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:epoch-mono-resource", "region": "ng-lagos", "epoch": 2}
+    logger.go:146: 2026-08-07T13:42:25.348Z	INFO	quorum_fence: lease acquired	{"resource": "epoch-mono-resource", "region": "ng-lagos", "epoch": 3, "ttl": "2s", "votes": 3}
+    quorum_fence_integration_test.go:418: iteration 2: epoch=3 (delta=+1)
+    logger.go:146: 2026-08-07T13:42:25.349Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:epoch-mono-resource", "region": "ng-lagos", "epoch": 3}
+    logger.go:146: 2026-08-07T13:42:25.349Z	INFO	quorum_fence: lease acquired	{"resource": "epoch-mono-resource", "region": "ng-lagos", "epoch": 4, "ttl": "2s", "votes": 3}
+    quorum_fence_integration_test.go:418: iteration 3: epoch=4 (delta=+1)
+    logger.go:146: 2026-08-07T13:42:25.350Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:epoch-mono-resource", "region": "ng-lagos", "epoch": 4}
+    logger.go:146: 2026-08-07T13:42:25.350Z	INFO	quorum_fence: lease acquired	{"resource": "epoch-mono-resource", "region": "ng-lagos", "epoch": 5, "ttl": "2s", "votes": 3}
+    quorum_fence_integration_test.go:418: iteration 4: epoch=5 (delta=+1)
+    logger.go:146: 2026-08-07T13:42:25.350Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:epoch-mono-resource", "region": "ng-lagos", "epoch": 5}
+--- PASS: TestEpochMonotonicallyIncreasing (0.00s)
+=== RUN   TestCircuitBreakerOpensOnRedisFailure
+    logger.go:146: 2026-08-07T13:42:25.351Z	INFO	redis_connected	{"addr": "127.0.0.1:46697"}
+    logger.go:146: 2026-08-07T13:42:25.352Z	INFO	quorum_fence: lease acquired	{"resource": "cb-resource", "region": "ng-lagos", "epoch": 1, "ttl": "5s", "votes": 3}
+    logger.go:146: 2026-08-07T13:42:25.353Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:cb-resource", "region": "ng-lagos", "epoch": 1}
+    logger.go:146: 2026-08-07T13:42:25.745Z	WARN	redis_circuit_breaker: opened	{"failures": 5}
+    quorum_fence_integration_test.go:463: Failures after Redis kill: 10/10
+    quorum_fence_integration_test.go:471: Circuit state after failures: open
+--- PASS: TestCircuitBreakerOpensOnRedisFailure (0.39s)
+=== RUN   TestConcurrentAcquisitionThunderingHerd
+    logger.go:146: 2026-08-07T13:42:25.746Z	INFO	redis_connected	{"addr": "127.0.0.1:38127"}
+    logger.go:146: 2026-08-07T13:42:25.746Z	INFO	quorum_fence: lease acquired	{"resource": "thundering-herd-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s", "votes": 3}
+    quorum_fence_integration_test.go:512: Thundering herd: acquired=1 failed=19 total=20
+    logger.go:146: 2026-08-07T13:42:25.754Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:thundering-herd-resource", "region": "ng-lagos", "epoch": 1}
+--- PASS: TestConcurrentAcquisitionThunderingHerd (0.01s)
+=== RUN   TestConcurrentAcquisitionUnderLatency
+=== RUN   TestConcurrentAcquisitionUnderLatency/London_120ms
+    logger.go:146: 2026-08-07T13:42:26.121Z	INFO	redis_connected	{"addr": "127.0.0.1:44443"}
+    logger.go:146: 2026-08-07T13:42:26.488Z	INFO	quorum_fence: lease acquired	{"resource": "concurrent-latency-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s", "votes": 3}
+    logger.go:146: 2026-08-07T13:42:26.727Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:concurrent-latency-resource", "region": "ng-lagos", "epoch": 1}
+    quorum_fence_integration_test.go:568: [London_120ms] acquired=1/10 under latency
+=== RUN   TestConcurrentAcquisitionUnderLatency/Singapore_250ms
+    logger.go:146: 2026-08-07T13:42:27.483Z	INFO	redis_connected	{"addr": "127.0.0.1:35899"}
+    logger.go:146: 2026-08-07T13:42:28.235Z	INFO	quorum_fence: lease acquired	{"resource": "concurrent-latency-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s", "votes": 3}
+    logger.go:146: 2026-08-07T13:42:28.744Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:concurrent-latency-resource", "region": "ng-lagos", "epoch": 1}
+    quorum_fence_integration_test.go:568: [Singapore_250ms] acquired=1/10 under latency
+--- PASS: TestConcurrentAcquisitionUnderLatency (2.99s)
+    --- PASS: TestConcurrentAcquisitionUnderLatency/London_120ms (0.97s)
+    --- PASS: TestConcurrentAcquisitionUnderLatency/Singapore_250ms (2.02s)
+=== RUN   TestLeaseExpiryAndZombieDetection
+    logger.go:146: 2026-08-07T13:42:28.746Z	INFO	redis_connected	{"addr": "127.0.0.1:37003"}
+    logger.go:146: 2026-08-07T13:42:28.747Z	INFO	quorum_fence: lease acquired	{"resource": "expiry-resource", "region": "ng-lagos", "epoch": 1, "ttl": "2s", "votes": 3}
+    quorum_fence_integration_test.go:584: Acquired lease: epoch=1
+    quorum_fence_integration_test.go:594: RenewLease correctly failed after expiry: quorum_fence: lease expired
+    quorum_fence_integration_test.go:603: IsValid after expiry: true
+    logger.go:146: 2026-08-07T13:42:28.849Z	INFO	quorum_fence: lease acquired	{"resource": "expiry-resource", "region": "ng-lagos", "epoch": 2, "ttl": "5s", "votes": 3}
+    quorum_fence_integration_test.go:613: New leader acquired: epoch=2 (was 1)
+    logger.go:146: 2026-08-07T13:42:28.849Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:expiry-resource", "region": "ng-lagos", "epoch": 2}
+--- PASS: TestLeaseExpiryAndZombieDetection (0.10s)
+=== RUN   TestLeaseRenewalUnderHighJitter
+    logger.go:146: 2026-08-07T13:42:30.459Z	INFO	redis_connected	{"addr": "127.0.0.1:33475"}
+    logger.go:146: 2026-08-07T13:42:32.051Z	INFO	quorum_fence: lease acquired	{"resource": "jitter-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s", "votes": 3}
+    quorum_fence_integration_test.go:631: Acquired lease under jitter: epoch=1
+    logger.go:146: 2026-08-07T13:42:33.152Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:jitter-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s"}
+    quorum_fence_integration_test.go:645: RenewLease[0] OK
+    logger.go:146: 2026-08-07T13:42:33.946Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:jitter-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s"}
+    quorum_fence_integration_test.go:645: RenewLease[1] OK
+    logger.go:146: 2026-08-07T13:42:34.374Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:jitter-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s"}
+    quorum_fence_integration_test.go:645: RenewLease[2] OK
+    logger.go:146: 2026-08-07T13:42:34.562Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:jitter-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s"}
+    quorum_fence_integration_test.go:645: RenewLease[3] OK
+    logger.go:146: 2026-08-07T13:42:35.329Z	DEBUG	quorum_fence: lease renewed	{"fence_key": "qf:fence:jitter-resource", "region": "ng-lagos", "epoch": 1, "ttl": "10s"}
+    quorum_fence_integration_test.go:645: RenewLease[4] OK
+    quorum_fence_integration_test.go:648: Renewal results under jitter: ok=5 fail=0
+    logger.go:146: 2026-08-07T13:42:36.120Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:jitter-resource", "region": "ng-lagos", "epoch": 1}
+--- PASS: TestLeaseRenewalUnderHighJitter (7.27s)
+=== RUN   TestGetFenceStatusAccuracy
+    logger.go:146: 2026-08-07T13:42:36.123Z	INFO	redis_connected	{"addr": "127.0.0.1:46331"}
+    quorum_fence_integration_test.go:680: Before: held=false epoch=0 votes=6
+    logger.go:146: 2026-08-07T13:42:36.123Z	INFO	quorum_fence: lease acquired	{"resource": "status-resource", "region": "ng-lagos", "epoch": 1, "ttl": "30s", "votes": 3}
+    quorum_fence_integration_test.go:702: After: held=true epoch=1 ttl=30s ownerID=4b20233bd02c93692d2c6d0b65279dd1
+    quorum_fence_integration_test.go:716: Partial quorum: votes=3 hasQuorum=false
+    logger.go:146: 2026-08-07T13:42:36.124Z	INFO	quorum_fence: lease released	{"fence_key": "qf:fence:status-resource", "region": "ng-lagos", "epoch": 1}
+--- PASS: TestGetFenceStatusAccuracy (0.00s)
+=== RUN   TestRenewLockBackwardCompatibility
+    logger.go:146: 2026-08-07T13:42:36.125Z	INFO	redis_connected	{"addr": "127.0.0.1:35351"}
+    quorum_fence_integration_test.go:734: LockGuard: key=lock:legacy-lock ownerID=1786110156125775798-1786110156125775
+    quorum_fence_integration_test.go:740: RenewLock OK
+    quorum_fence_integration_test.go:748: RenewLock with wrong owner correctly rejected: quorum_fence: lease expired
+    quorum_fence_integration_test.go:759: ReleaseLock OK
+    quorum_fence_integration_test.go:766: RenewLock after release correctly rejected: quorum_fence: lease expired
+--- PASS: TestRenewLockBackwardCompatibility (0.00s)
+PASS
+ok  	github.com/munisp/NGApp/infrastructure/go-sdk	25.255s

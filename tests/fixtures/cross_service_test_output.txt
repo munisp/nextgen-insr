@@ -1,0 +1,63 @@
+
+=== Group 1: Spatial Query Gated by Quorum Fence ===
+  ✓ PASS  1.1_write_blocked_without_quorum — London+Singapore (3 votes) correctly rejected
+  ✓ PASS  1.2_write_allowed_lagos_singapore — epoch=1
+  ✓ PASS  1.3_spatial_query_after_fence — found 2 agents after fence acquired
+
+=== Group 2: Claim Hotspot → Fraud Gate Fence ===
+  ✓ PASS  2.1_hotspot_detected — 1 hotspot(s), riskScore=100.0
+  ✓ PASS  2.2_fraud_fence_acquired — epoch=1 for hotspot investigation
+  ✓ PASS  2.3_low_risk_no_fence_needed — single claim, no hotspot, no fence required
+
+=== Group 3: Concurrent Fence Contention ===
+  ✓ PASS  3.1_exactly_one_winner — winner epoch=1, losers=9
+  ✓ PASS  3.2_sequential_acquire — epoch monotonic: 1 → 2
+
+=== Group 4: Lease Expiry During Spatial Batch ===
+  ✓ PASS  4.1_lease_expiry_mid_batch — renewal correctly rejected after TTL
+  ✓ PASS  4.2_new_leader_after_expiry — new epoch=2 > old=1
+
+=== Group 5: Multi-Region Spatial Consistency ===
+  ✓ PASS  5.1_multi_region_consistent_results — Lagos:2(0ms), London:2(120ms), Singapore:2(250ms)
+  ✓ PASS  5.2_high_jitter_correct_result — jitter=213ms, result correct
+
+=== Group 6: WorldView tRPC Contract Validation ===
+  ✓ PASS  6.1_worldView.getTileConfig — keys: maplibreStyle, cesiumToken, defaultCenter
+  ✓ PASS  6.2_worldView.getRiskLayer — keys: features, type, h3Resolution
+  ✓ PASS  6.3_worldView.getClaimHeatmap — keys: features, type, totalClaims
+  ✓ PASS  6.4_worldView.getAgentCoverage — keys: features, type, totalAgents
+  ✓ PASS  6.5_worldView.get3DRiskScene — keys: terrain, layers, initialView
+  ✓ PASS  6.6_worldView.getNearestAgents — keys: agents, queryLat, queryLon
+  ✓ PASS  6.7_worldView.getFloodRiskZones — keys: zones, totalExposure
+  ✓ PASS  6.8_worldView.getPolicyDensity — keys: cells, resolution
+  ✓ PASS  6.9_worldView.getSpatialAnalytics — keys: analysisType, result, executionMs
+  ✓ PASS  6.10_worldView.getWorldViewConfig — keys: maplibre, cesium, h3, sedona
+
+=== Group 7: InsureMarket API Contract Validation ===
+  ✓ PASS  7.1_insureMarket.getMarketplaceApps — keys: apps, total, categories
+  ✓ PASS  7.2_insureMarket.subscribeToApp — keys: subscriptionId, apiKey, status
+  ✓ PASS  7.3_insureMarket.getUsageMetrics — keys: metrics, totalCalls, totalCostNGN
+  ✓ PASS  7.4_insureMarket.getRevenueReport — keys: streams, totalRevenueNGN, period
+  ✓ PASS  7.5_insureMarket.createWhiteLabelTenant — keys: tenantId, portalUrl, status
+  ✓ PASS  7.6_insureMarket.getDataIntelligence — keys: name, priceNGN, downloadUrl
+  ✓ PASS  7.7_insureMarket.getMonetizationDashboard — keys: kpis, streams, opportunities
+
+=== Group 8: End-to-End Claim → Fraud → Spatial → Release ===
+  ✓ PASS  8.1_claim_received — id=CLM-001 amount=₦500,000
+  ✓ PASS  8.2_hotspot_detected — riskScore=100.0
+  ✓ PASS  8.3_fraud_fence_acquired — epoch=1
+  ✓ PASS  8.4_nearest_agents_found — 2 agents, nearest=agent-1 at 0.000km
+  ✓ PASS  8.5_fence_valid_before_write — epoch=1 ttl=9999ms
+  ✓ PASS  8.6_fence_released — fraud investigation complete
+  ✓ PASS  8.7_fence_cleared — resource available for next operation
+
+============================================================
+CROSS-SERVICE INTEGRATION TEST RESULTS
+============================================================
+  PASSED:  36
+  FAILED:  0
+  SKIPPED: 0
+  TOTAL:   36
+============================================================
+
+Results written to /tmp/cross_service_test_results.json

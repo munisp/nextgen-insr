@@ -120,6 +120,11 @@ return 0
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+// errHolder is a concrete type used to store errors in atomic.Value.
+// atomic.Value panics if you store a nil interface, so we use this wrapper
+// to represent "no error" (zero value) vs "has error" (non-nil Err field).
+type errHolder struct{ Err error }
+
 // LeaseGuard represents an active quorum lease with automatic renewal.
 type LeaseGuard struct {
 	FenceKey  string        // Redis key for the fence
@@ -332,21 +337,21 @@ func (g *LeaseGuard) renewLoop() {
 			return
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			err := g.RenewLease(ctx)
-			cancel()
-			if err != nil {
-				g.renewErr.Store(err)
-				g.log.Error("quorum_fence: lease renewal failed",
-					zap.String("fence_key", g.FenceKey),
-					zap.String("region", g.Region),
-					zap.Int64("epoch", g.Epoch),
-					zap.Error(err),
-				)
-				// Do not stop the loop — keep retrying until TTL expires
-				// or the caller explicitly releases.
-			} else {
-				g.renewErr.Store(error(nil))
-			}
+				err := g.RenewLease(ctx)
+				cancel()
+				// atomic.Value requires all stored values to be the same concrete type.
+				// We always store errHolder{Err: err}; Err is nil on success.
+				g.renewErr.Store(errHolder{Err: err})
+				if err != nil {
+					g.log.Error("quorum_fence: lease renewal failed",
+						zap.String("fence_key", g.FenceKey),
+						zap.String("region", g.Region),
+						zap.Int64("epoch", g.Epoch),
+						zap.Error(err),
+					)
+					// Do not stop the loop — keep retrying until TTL expires
+					// or the caller explicitly releases.
+				}
 		}
 	}
 }
@@ -450,7 +455,13 @@ func (g *LeaseGuard) RenewalErr() error {
 	if v == nil {
 		return nil
 	}
-	return v.(error)
+	if h, ok := v.(errHolder); ok {
+		return h.Err
+	}
+	if err, ok := v.(error); ok {
+		return err
+	}
+	return nil
 }
 
 // IsValid returns true if the lease is active and the last renewal succeeded.

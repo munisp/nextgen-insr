@@ -1,0 +1,63 @@
+
+=== Group A: Haversine Distance ===
+  ✓ PASS  A1_haversine_lagos_london — 5012.3km (haversine great-circle)
+  ✓ PASS  A2_haversine_zero — 0.000000km
+  ✓ PASS  A3_haversine_lagos_abuja — 525.9km (haversine great-circle)
+  ✓ PASS  A4_haversine_london_singapore — 10847.8km (expected ~10841km)
+  ✓ PASS  A5_haversine_symmetry — d1=5012.310 d2=5012.310
+
+=== Group B: BBox Containment ===
+  ✓ PASS  B1_bbox_lagos_inside_nigeria
+  ✓ PASS  B2_bbox_london_outside_nigeria
+  ✓ PASS  B3_bbox_abuja_inside_nigeria
+  ✓ PASS  B4_bbox_intersection_overlapping
+  ✓ PASS  B5_bbox_no_intersection
+  ✓ PASS  B6_bbox_touching_edge — intersects=True (touching edge)
+
+=== Group C: Nearest Agent Search ===
+  ✓ PASS  C1_nearest_2_agents_within_15km — found 2 agents
+  ✓ PASS  C2_nearest_is_agent1 — distance=0.0000km
+  ✓ PASS  C3_agent1_distance_near_zero — 0.000000km
+  ✓ PASS  C4_kind_filter_excludes_claims
+  ✓ PASS  C5_nearest_abuja_agent3 — found agent-3 at 0.0000km
+  ✓ PASS  C6_limit_parameter — limit=1 returned 1 result
+  ✓ PASS  C7_results_sorted_ascending — distances=['0.00', '0.63', '8.71', '525.90']
+
+=== Group D: Point-in-Polygon ===
+  ✓ PASS  D1_centre_inside_square
+  ✓ PASS  D2_outside_point
+  ✓ PASS  D3_lagos_inside_nigeria_polygon
+  ✓ PASS  D4_london_outside_nigeria_polygon
+  ✓ PASS  D5_degenerate_polygon_returns_false
+
+=== Group E: Hotspot Detection ===
+  ✓ PASS  E1_hotspot_detected — 1 hotspot(s)
+  ✓ PASS  E2_hotspot_count_ge3 — count=5
+  ✓ PASS  E3_hotspots_sorted_by_risk_score — only 1 hotspot, trivially sorted
+  ✓ PASS  E4_min_count_10_no_hotspot
+
+=== Group F: Concurrent Load Under Simulated Latency ===
+  ✓ PASS  F1_concurrent_50_lagos_0ms — all=50 ok, p99=1.2ms, wall=16ms
+  ✓ PASS  F2_concurrent_20_london_120ms — all=20 ok, p99=0.3ms, wall=125ms
+  ✓ PASS  F3_concurrent_10_singapore_250ms — all=10 ok, wall=253ms
+  ✓ PASS  F4_high_jitter_0_500ms — all 10 completed in 494ms
+
+=== Group G: Performance Benchmarks ===
+  ✓ PASS  G1_nearest_1000_queries_p99 — p50=0.48ms p99=0.66ms p99.9=0.77ms
+  ✓ PASS  G2_hotspot_100_queries_p99 — p99=16.75ms (10k points, 10x10 grid)
+  ✓ PASS  G3_point_in_polygon_1000_p99 — p99=0.0009ms
+  ✓ PASS  G4_load_100k_points — 0.7ms for 100k points
+
+=== Group H: Thread Safety ===
+  ✓ PASS  H1_concurrent_read_write_no_race — 10 readers + 3 writers, no errors
+
+============================================================
+SPATIAL INDEX INTEGRATION TEST RESULTS
+============================================================
+  PASSED:  36
+  FAILED:  0
+  SKIPPED: 0
+  TOTAL:   36
+============================================================
+
+Results written to /tmp/spatial_index_test_results.json

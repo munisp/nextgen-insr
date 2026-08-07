@@ -1,0 +1,189 @@
+{
+  "suite": "cross_service_integration",
+  "passed": 36,
+  "failed": 0,
+  "skipped": 0,
+  "total": 36,
+  "tests": [
+    {
+      "test": "1.1_write_blocked_without_quorum",
+      "status": "PASS",
+      "detail": "London+Singapore (3 votes) correctly rejected"
+    },
+    {
+      "test": "1.2_write_allowed_lagos_singapore",
+      "status": "PASS",
+      "detail": "epoch=1"
+    },
+    {
+      "test": "1.3_spatial_query_after_fence",
+      "status": "PASS",
+      "detail": "found 2 agents after fence acquired"
+    },
+    {
+      "test": "2.1_hotspot_detected",
+      "status": "PASS",
+      "detail": "1 hotspot(s), riskScore=100.0"
+    },
+    {
+      "test": "2.2_fraud_fence_acquired",
+      "status": "PASS",
+      "detail": "epoch=1 for hotspot investigation"
+    },
+    {
+      "test": "2.3_low_risk_no_fence_needed",
+      "status": "PASS",
+      "detail": "single claim, no hotspot, no fence required"
+    },
+    {
+      "test": "3.1_exactly_one_winner",
+      "status": "PASS",
+      "detail": "winner epoch=1, losers=9"
+    },
+    {
+      "test": "3.2_sequential_acquire",
+      "status": "PASS",
+      "detail": "epoch monotonic: 1 → 2"
+    },
+    {
+      "test": "4.1_lease_expiry_mid_batch",
+      "status": "PASS",
+      "detail": "renewal correctly rejected after TTL"
+    },
+    {
+      "test": "4.2_new_leader_after_expiry",
+      "status": "PASS",
+      "detail": "new epoch=2 > old=1"
+    },
+    {
+      "test": "5.1_multi_region_consistent_results",
+      "status": "PASS",
+      "detail": "Lagos:2(0ms), London:2(120ms), Singapore:2(250ms)"
+    },
+    {
+      "test": "5.2_high_jitter_correct_result",
+      "status": "PASS",
+      "detail": "jitter=213ms, result correct"
+    },
+    {
+      "test": "6.1_worldView.getTileConfig",
+      "status": "PASS",
+      "detail": "keys: maplibreStyle, cesiumToken, defaultCenter"
+    },
+    {
+      "test": "6.2_worldView.getRiskLayer",
+      "status": "PASS",
+      "detail": "keys: features, type, h3Resolution"
+    },
+    {
+      "test": "6.3_worldView.getClaimHeatmap",
+      "status": "PASS",
+      "detail": "keys: features, type, totalClaims"
+    },
+    {
+      "test": "6.4_worldView.getAgentCoverage",
+      "status": "PASS",
+      "detail": "keys: features, type, totalAgents"
+    },
+    {
+      "test": "6.5_worldView.get3DRiskScene",
+      "status": "PASS",
+      "detail": "keys: terrain, layers, initialView"
+    },
+    {
+      "test": "6.6_worldView.getNearestAgents",
+      "status": "PASS",
+      "detail": "keys: agents, queryLat, queryLon"
+    },
+    {
+      "test": "6.7_worldView.getFloodRiskZones",
+      "status": "PASS",
+      "detail": "keys: zones, totalExposure"
+    },
+    {
+      "test": "6.8_worldView.getPolicyDensity",
+      "status": "PASS",
+      "detail": "keys: cells, resolution"
+    },
+    {
+      "test": "6.9_worldView.getSpatialAnalytics",
+      "status": "PASS",
+      "detail": "keys: analysisType, result, executionMs"
+    },
+    {
+      "test": "6.10_worldView.getWorldViewConfig",
+      "status": "PASS",
+      "detail": "keys: maplibre, cesium, h3, sedona"
+    },
+    {
+      "test": "7.1_insureMarket.getMarketplaceApps",
+      "status": "PASS",
+      "detail": "keys: apps, total, categories"
+    },
+    {
+      "test": "7.2_insureMarket.subscribeToApp",
+      "status": "PASS",
+      "detail": "keys: subscriptionId, apiKey, status"
+    },
+    {
+      "test": "7.3_insureMarket.getUsageMetrics",
+      "status": "PASS",
+      "detail": "keys: metrics, totalCalls, totalCostNGN"
+    },
+    {
+      "test": "7.4_insureMarket.getRevenueReport",
+      "status": "PASS",
+      "detail": "keys: streams, totalRevenueNGN, period"
+    },
+    {
+      "test": "7.5_insureMarket.createWhiteLabelTenant",
+      "status": "PASS",
+      "detail": "keys: tenantId, portalUrl, status"
+    },
+    {
+      "test": "7.6_insureMarket.getDataIntelligence",
+      "status": "PASS",
+      "detail": "keys: name, priceNGN, downloadUrl"
+    },
+    {
+      "test": "7.7_insureMarket.getMonetizationDashboard",
+      "status": "PASS",
+      "detail": "keys: kpis, streams, opportunities"
+    },
+    {
+      "test": "8.1_claim_received",
+      "status": "PASS",
+      "detail": "id=CLM-001 amount=₦500,000"
+    },
+    {
+      "test": "8.2_hotspot_detected",
+      "status": "PASS",
+      "detail": "riskScore=100.0"
+    },
+    {
+      "test": "8.3_fraud_fence_acquired",
+      "status": "PASS",
+      "detail": "epoch=1"
+    },
+    {
+      "test": "8.4_nearest_agents_found",
+      "status": "PASS",
+      "detail": "2 agents, nearest=agent-1 at 0.000km"
+    },
+    {
+      "test": "8.5_fence_valid_before_write",
+      "status": "PASS",
+      "detail": "epoch=1 ttl=9999ms"
+    },
+    {
+      "test": "8.6_fence_released",
+      "status": "PASS",
+      "detail": "fraud investigation complete"
+    },
+    {
+      "test": "8.7_fence_cleared",
+      "status": "PASS",
+      "detail": "resource available for next operation"
+    }
+  ]
+}
