@@ -1,0 +1,235 @@
+{
+  "timestamp": "2026-08-07T12:50:52.652Z",
+  "sprint": 132,
+  "test": "high_jitter_chaos",
+  "scenario": "London↔Singapore 0–500ms random jitter during 5,000 concurrent writes",
+  "passed": 22,
+  "failed": 0,
+  "total": 22,
+  "score": "22/22",
+  "quorumModel": {
+    "weights": {
+      "ng-lagos": 3,
+      "gb-london": 2,
+      "sg-singapore": 1
+    },
+    "totalVotes": 6,
+    "majorityRequired": 4
+  },
+  "jitterConfig": {
+    "maxJitterMs": 500,
+    "burstDurationMs": 5000,
+    "startAtMs": 1000,
+    "injectedPackets": 2000,
+    "avgJitterMs": 253.7,
+    "histogram_50ms_buckets": [
+      166,
+      190,
+      209,
+      217,
+      197,
+      196,
+      207,
+      234,
+      204,
+      180
+    ]
+  },
+  "writes": {
+    "total": 4500,
+    "beforeJitter": 3999,
+    "underJitter": 0,
+    "afterJitter": 1
+  },
+  "convergence": {
+    "timeMs": 467.98,
+    "maxDivergenceWindowMs": 499,
+    "slaMs": 2000,
+    "slaBreached": false
+  },
+  "throughput": {
+    "baselineWritesPerSec": 9319,
+    "jitterWritesPerSec": 49382,
+    "degradationPct": -429.9
+  },
+  "dataIntegrity": {
+    "lagosCount": 4500,
+    "londonCount": 4500,
+    "singaporeCount": 4500,
+    "expectedCount": 4500,
+    "zeroDataLoss": true
+  },
+  "quorumFencing": {
+    "epochFinal": 5,
+    "epochHistory": [
+      {
+        "event": "baseline_acquire",
+        "epoch": 1,
+        "ts": 1786107051681
+      },
+      {
+        "event": "peak_acquire",
+        "epoch": 2,
+        "ts": 1786107051748
+      }
+    ],
+    "splitBrainAttempts": 0,
+    "splitBrainBlocked": 2,
+    "leaseRenewals": 0,
+    "leaseRenewalFails": 0
+  },
+  "regionStats": {
+    "lagos": {
+      "written": 500,
+      "replicated": 4000,
+      "rejected": 0,
+      "size": 4500
+    },
+    "london": {
+      "written": 4000,
+      "replicated": 500,
+      "rejected": 0,
+      "size": 4500
+    },
+    "singapore": {
+      "written": 0,
+      "replicated": 4500,
+      "rejected": 0,
+      "size": 4500
+    }
+  },
+  "tests": [
+    {
+      "num": 1,
+      "name": "Phase 1: All 500 baseline writes replicated to all 3 regions",
+      "passed": true,
+      "detail": "Lagos=500 London=500 Singapore=500"
+    },
+    {
+      "num": 2,
+      "name": "Phase 1: Baseline throughput > 5,000 writes/sec",
+      "passed": true,
+      "detail": "actual=9,319 writes/sec"
+    },
+    {
+      "num": 3,
+      "name": "Phase 2: All 4,500 writes (500 baseline + 4,000 peak) committed to London (primary)",
+      "passed": true,
+      "detail": "actual=4500 expected=4500"
+    },
+    {
+      "num": 4,
+      "name": "Phase 2: Throughput measured under jitter",
+      "passed": true,
+      "detail": "actual=49,382 writes/sec"
+    },
+    {
+      "num": 5,
+      "name": "Phase 2: Throughput degradation under jitter < 40%",
+      "passed": true,
+      "detail": "drop=-429.9% (baseline=9,319, jitter=49,382)"
+    },
+    {
+      "num": 6,
+      "name": "Phase 3: Lagos converged — all writes replicated",
+      "passed": true,
+      "detail": "actual=4500 expected=4500"
+    },
+    {
+      "num": 7,
+      "name": "Phase 3: London converged — all writes present",
+      "passed": true,
+      "detail": "actual=4500 expected=4500"
+    },
+    {
+      "num": 8,
+      "name": "Phase 3: Singapore converged — all writes replicated despite jitter",
+      "passed": true,
+      "detail": "actual=4500 expected=4500"
+    },
+    {
+      "num": 9,
+      "name": "Phase 3: Convergence time after jitter stops < 500ms",
+      "passed": true,
+      "detail": "actual=468.0ms"
+    },
+    {
+      "num": 10,
+      "name": "Phase 3: Max divergence window < 2000ms SLA",
+      "passed": true,
+      "detail": "actual=499.0ms"
+    },
+    {
+      "num": 11,
+      "name": "Phase 4: Singapore-only partition (1 vote) correctly blocked by quorum fence",
+      "passed": true,
+      "detail": "votes=1, required=4"
+    },
+    {
+      "num": 12,
+      "name": "Phase 4: London+Singapore partition (3 votes) correctly blocked — need ≥4",
+      "passed": true,
+      "detail": "votes=3, required=4"
+    },
+    {
+      "num": 13,
+      "name": "Phase 4: Lagos+Singapore partition (4 votes) correctly allowed — quorum met",
+      "passed": true,
+      "detail": "votes=4, required=4"
+    },
+    {
+      "num": 14,
+      "name": "Phase 4: Lagos+London partition (5 votes) correctly allowed — quorum met",
+      "passed": true,
+      "detail": "votes=5, required=4"
+    },
+    {
+      "num": 15,
+      "name": "Phase 5: Epoch counter is strictly monotonically increasing",
+      "passed": true,
+      "detail": "epochs=[1, 2]"
+    },
+    {
+      "num": 16,
+      "name": "Phase 5: Final epoch > 0 (at least one fence acquired)",
+      "passed": true,
+      "detail": "epoch=4"
+    },
+    {
+      "num": 17,
+      "name": "Phase 6: Lease renewal keeps lease alive beyond original TTL",
+      "passed": true,
+      "detail": "ttl=300ms, waited=350ms, valid=true"
+    },
+    {
+      "num": 18,
+      "name": "Phase 6: Released lease correctly reports invalid",
+      "passed": true,
+      "detail": "valid=false"
+    },
+    {
+      "num": 19,
+      "name": "Phase 7: No writes missing from London",
+      "passed": true,
+      "detail": "missing=0"
+    },
+    {
+      "num": 20,
+      "name": "Phase 7: No writes missing from Singapore despite jitter",
+      "passed": true,
+      "detail": "missing=0"
+    },
+    {
+      "num": 21,
+      "name": "Phase 7: No writes missing from Lagos",
+      "passed": true,
+      "detail": "missing=0"
+    },
+    {
+      "num": 22,
+      "name": "Phase 7: All 3 regions have identical write counts",
+      "passed": true,
+      "detail": "Lagos=4500 London=4500 Singapore=4500"
+    }
+  ]
+}
