@@ -244,3 +244,33 @@ entity billing_ledger {
     action reconcile  = tenant.super_admin or tenant.billing_admin
     action export     = tenant.super_admin or tenant.admin or tenant.billing_admin or tenant.billing_analyst
 }
+
+
+// ── Journey-specific permissions ─────────────────────────────────────────────
+// These extend the tenant entity with journey-trigger permissions
+entity tenant {
+    relation super_admin       @user
+    relation admin             @user
+    relation compliance_officer @user
+    relation supervisor        @user
+    relation billing_admin     @user
+    relation billing_analyst   @user
+    relation regulator         @user
+
+    // Journey permissions
+    action create_customer     = super_admin or admin or supervisor
+    action create_agent        = super_admin or admin or supervisor
+    action agent_operations    = super_admin or admin or supervisor or agent
+    action manage_terminals    = super_admin or admin or supervisor
+    action view_tenant         = super_admin or admin or compliance_officer or supervisor or billing_admin or billing_analyst or regulator
+}
+
+entity agent {
+    relation tenant  @tenant
+    relation owner_user @user
+    relation supervisor @agent
+
+    action view      = tenant.super_admin or tenant.admin or tenant.supervisor or owner_user
+    action operate   = owner_user or tenant.admin or tenant.supervisor
+    action manage    = tenant.super_admin or tenant.admin or tenant.supervisor
+}

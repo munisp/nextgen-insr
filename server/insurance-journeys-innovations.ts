@@ -24,6 +24,8 @@ import {
 } from "@temporalio/workflow";
 import type * as activities from "./journey-activities";
 import type * as extActivities from "./journey-activities-extended";
+import { assertTenantAccess, buildTenantContext } from "./journey-tenant-guard";
+
 
 const act = proxyActivities<typeof activities>({
   startToCloseTimeout: "30s",
@@ -62,6 +64,12 @@ export async function J21_ParametricTriggerWorkflow(input: J21Input): Promise<{
   status: string;
 }> {
   let currentStep = "init";
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J21_ParametricTriggerWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   let cancelled = false;
   let tbTransferId = "";
   let payoutId = 0;
@@ -164,6 +172,12 @@ export async function J22_UBIMonthlyAdjustmentWorkflow(input: J22Input): Promise
   tbTransferId?: string;
 }> {
   let currentStep = "init";
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J22_UBIMonthlyAdjustmentWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
@@ -250,6 +264,12 @@ export async function J23_P2PPoolLifecycleWorkflow(input: J23Input): Promise<{
   surplusReturned?: number;
 }> {
   let currentStep = "init";
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J23_P2PPoolLifecycleWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
@@ -358,6 +378,12 @@ export async function J24_WellnessRewardsWorkflow(input: J24Input): Promise<{
   tbTransferId?: string;
 }> {
   let currentStep = "init";
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J24_WellnessRewardsWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
@@ -438,6 +464,12 @@ export async function J25_NHIAClaimsWorkflow(input: J25Input): Promise<{
   status: string;
 }> {
   let currentStep = "init";
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J25_NHIAClaimsWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
@@ -512,6 +544,12 @@ export async function J26_PredictiveRenewalWorkflow(input: J26Input): Promise<{
   discountApplied: number;
 }> {
   let currentStep = "init";
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J26_PredictiveRenewalWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   let offerAccepted = false;
   setHandler(approveStepSignal, () => { offerAccepted = true; });
   setHandler(cancelJourneySignal, () => {});
@@ -606,6 +644,12 @@ export async function J27_EmbeddedInsuranceWorkflow(input: J27Input): Promise<{
   status: string;
 }> {
   let currentStep = "init";
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J27_EmbeddedInsuranceWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
@@ -690,6 +734,12 @@ export async function J28_GroupInsuranceEnrollmentWorkflow(input: J28Input): Pro
   status: string;
 }> {
   let currentStep = "init";
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J28_GroupInsuranceEnrollmentWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 

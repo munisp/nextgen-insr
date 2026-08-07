@@ -16,6 +16,8 @@
 
 import { proxyActivities, setHandler, defineQuery, sleep, condition, ApplicationFailure } from "@temporalio/workflow";
 import type * as journeyActivities from "./journey-activities";
+import { assertTenantAccess, buildTenantContext } from "./journey-tenant-guard";
+
 
 const acts = proxyActivities<typeof journeyActivities>({
   startToCloseTimeout: "5m",
@@ -43,6 +45,11 @@ export interface J11_BrokerPolicyManagementInput {
 
 export async function J11_BrokerPolicyManagementWorkflow(input: J11_BrokerPolicyManagementInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J11_BrokerPolicyManagementWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const results: Array<{ policyType: string; policyId?: number; status: string }> = [];
@@ -158,6 +165,11 @@ export interface J12_ActuaryIfrs17Input {
 
 export async function J12_ActuaryIfrs17Workflow(input: J12_ActuaryIfrs17Input) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J12_ActuaryIfrs17Workflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const reserveResults: Array<{ policyType: string; model: string; csm?: number; lrc?: number; lic?: number; status: string }> = [];
@@ -239,6 +251,11 @@ export interface J13_ComplianceMonitoringInput {
 
 export async function J13_ComplianceMonitoringWorkflow(input: J13_ComplianceMonitoringInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J13_ComplianceMonitoringWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   // Step 1: AML Screening
@@ -332,6 +349,11 @@ export interface J14_PosTerminalLifecycleInput {
 
 export async function J14_PosTerminalLifecycleWorkflow(input: J14_PosTerminalLifecycleInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J14_PosTerminalLifecycleWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   currentStep = `pos_${input.action}`;
@@ -416,6 +438,11 @@ export interface J15_ReinsuranceCessionInput {
 
 export async function J15_ReinsuranceCessionWorkflow(input: J15_ReinsuranceCessionInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J15_ReinsuranceCessionWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   // Step 1: Calculate cession
@@ -511,6 +538,11 @@ export interface J16_CustomerSelfServiceInput {
 
 export async function J16_CustomerSelfServiceWorkflow(input: J16_CustomerSelfServiceInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J16_CustomerSelfServiceWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   currentStep = `self_service_${input.action}`;
@@ -587,6 +619,11 @@ export interface J17_BulkPremiumPaymentInput {
 
 export async function J17_BulkPremiumPaymentWorkflow(input: J17_BulkPremiumPaymentInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J17_BulkPremiumPaymentWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const results: Array<{ paymentRef: string; status: string; policyId: number }> = [];
@@ -676,6 +713,11 @@ export interface J18_AgentFloatReconciliationInput {
 
 export async function J18_AgentFloatReconciliationWorkflow(input: J18_AgentFloatReconciliationInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J18_AgentFloatReconciliationWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   // Step 1: Emit reconciliation start
@@ -770,6 +812,11 @@ export interface J19_UnderwritingDecisionInput {
 
 export async function J19_UnderwritingDecisionWorkflow(input: J19_UnderwritingDecisionInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J19_UnderwritingDecisionWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const autoBindThreshold = input.autoBindThreshold ?? 40;
@@ -909,6 +956,11 @@ export interface J20_PlatformHealthMonitoringInput {
 
 export async function J20_PlatformHealthMonitoringWorkflow(input: J20_PlatformHealthMonitoringInput) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J20_PlatformHealthMonitoringWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const criticalServices = [

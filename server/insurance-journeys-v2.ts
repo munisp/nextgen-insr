@@ -48,6 +48,8 @@ import {
 } from "@temporalio/workflow";
 import type * as acts from "./journey-activities";
 import type * as exts from "./journey-activities-extended";
+import { assertTenantAccess, buildTenantContext } from "./journey-tenant-guard";
+
 
 // ── Activity proxies ──────────────────────────────────────────────────────────
 const {
@@ -127,6 +129,16 @@ export interface J01Input {
 export async function J01_CustomerOnboardingWorkflow(input: J01Input) {
   let currentStep = "initializing";
   let cancelled = false;
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J01_CustomerOnboardingWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J01_CustomerOnboardingWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
   setHandler(cancelJourneySignal, () => { cancelled = true; });
 
@@ -266,6 +278,16 @@ export interface J02Input {
 export async function J02_PolicyPurchaseWorkflow(input: J02Input) {
   let currentStep = "initializing";
   let cancelled = false;
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J02_PolicyPurchaseWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J02_PolicyPurchaseWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
   setHandler(cancelJourneySignal, () => { cancelled = true; });
 
@@ -430,6 +452,16 @@ export interface J03Input {
 export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
   let currentStep = "initializing";
   let cancelled = false;
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J03_ClaimsSettlementWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J03_ClaimsSettlementWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   let approvalReceived = false;
   setHandler(journeyCurrentStepQuery, () => currentStep);
   setHandler(cancelJourneySignal, () => { cancelled = true; });
@@ -603,6 +635,16 @@ export interface J04Input {
 export async function J04_AgentOnboardingWorkflow(input: J04Input) {
   let currentStep = "initializing";
   let cancelled = false;
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J04_AgentOnboardingWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J04_AgentOnboardingWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
   setHandler(cancelJourneySignal, () => { cancelled = true; });
 
@@ -732,6 +774,11 @@ export interface J05Input {
 
 export async function J05_AgentDailyOpsWorkflow(input: J05Input) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J05_AgentDailyOpsWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const { executionId } = await recordJourneyStart({
@@ -803,6 +850,11 @@ export interface J06Input {
 
 export async function J06_PolicyRenewalWorkflow(input: J06Input) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J06_PolicyRenewalWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const { executionId } = await recordJourneyStart({
@@ -898,6 +950,11 @@ export interface J07Input {
 
 export async function J07_FraudResponseWorkflow(input: J07Input) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J07_FraudResponseWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   let resolved = false;
   setHandler(journeyCurrentStepQuery, () => currentStep);
   setHandler(approveStepSignal, () => { resolved = true; });
@@ -1018,6 +1075,11 @@ export interface J08Input {
 
 export async function J08_CommissionPayoutWorkflow(input: J08Input) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J08_CommissionPayoutWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const { executionId } = await recordJourneyStart({
@@ -1128,6 +1190,11 @@ export interface J09Input {
 
 export async function J09_RemittanceWorkflow(input: J09Input) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J09_RemittanceWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   setHandler(journeyCurrentStepQuery, () => currentStep);
 
   const { executionId } = await recordJourneyStart({
@@ -1247,6 +1314,11 @@ export interface J10Input {
 
 export async function J10_ClaimDisputeWorkflow(input: J10Input) {
   let currentStep = "initializing";
+  // ── Tenant Isolation Guard ────────────────────────────────────────────────
+  const tenantCtx = buildTenantContext(input);
+  await assertTenantAccess("J10_ClaimDisputeWorkflow", tenantCtx);
+  // ─────────────────────────────────────────────────────────────────────────
+
   let resolved = false;
   setHandler(journeyCurrentStepQuery, () => currentStep);
   setHandler(approveStepSignal, () => { resolved = true; });
