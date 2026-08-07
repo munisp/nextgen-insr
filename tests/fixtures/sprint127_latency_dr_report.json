@@ -1,0 +1,89 @@
+{
+  "generatedAt": "2026-08-07T10:53:40.794Z",
+  "latencyAnalysis": {
+    "spikeAttribution": "Node.js V8 GC (not TigerBeetle)",
+    "tigerbeetleRuntime": "Zig — zero GC, arena allocator, deterministic execution",
+    "profile": {
+      "p50": 0.4199999999983106,
+      "p99": 3.7900000000021805,
+      "p999": 20.283999999996638,
+      "max": 674.5519999999985,
+      "gcSpikes": 6,
+      "gcEvents": 0
+    },
+    "tuning": {
+      "tigerbeetle": {
+        "note": "TigerBeetle is written in Zig with zero GC — no runtime tuning needed",
+        "memoryPreallocation": "TB pre-allocates all memory at startup via arena allocator",
+        "ioUring": "Enable io_uring on Linux 5.1+ for kernel-bypass I/O (already default)",
+        "cpuAffinity": "Pin TB process to dedicated CPU cores: taskset -c 0-3 ./tigerbeetle",
+        "numaAwareness": "Use numactl --cpunodebind=0 --membind=0 for NUMA systems",
+        "storageRecommendation": "Use NVMe SSD with 4KB sector alignment, disable write cache",
+        "networkRecommendation": "Use RDMA/InfiniBand for inter-replica communication if available",
+        "clusterSize": "3 or 6 replicas for fault tolerance (viewstamped replication)"
+      },
+      "nodejsV8": {
+        "gcType": "Generational mark-and-sweep with incremental marking",
+        "tuning": [
+          "--max-old-space-size=4096",
+          "--max-semi-space-size=64",
+          "--optimize-for-size",
+          "--gc-interval=100",
+          "--expose-gc",
+          "--max-inlined-source-size=600",
+          "--turbo-inline-array-builtins"
+        ],
+        "productionFlags": [
+          "NODE_OPTIONS=\"--max-old-space-size=4096 --gc-interval=100\"",
+          "Use worker_threads for CPU-intensive TB response processing",
+          "Use Buffer.allocUnsafe() instead of Buffer.alloc() for TB message buffers",
+          "Pre-allocate transfer objects in an object pool to reduce GC pressure"
+        ],
+        "k8sResourceLimits": {
+          "requests": {
+            "memory": "512Mi",
+            "cpu": "500m"
+          },
+          "limits": {
+            "memory": "4Gi",
+            "cpu": "2000m"
+          }
+        }
+      },
+      "goServices": {
+        "note": "Go has a concurrent tri-color GC — pauses are typically <1ms",
+        "tuning": [
+          "GOGC=200 (reduce GC frequency, increase heap target)",
+          "GOMEMLIMIT=2GiB (soft memory limit, triggers GC before OOM)",
+          "runtime.GOMAXPROCS(runtime.NumCPU()) (already default)",
+          "Use sync.Pool for frequently allocated objects (TB transfer structs)"
+        ]
+      },
+      "rustServices": {
+        "note": "Rust has zero GC — no runtime tuning needed",
+        "tuning": [
+          "Use jemalloc allocator: MALLOC_CONF=background_thread:true,metadata_thp:auto",
+          "Enable LTO in release builds: RUSTFLAGS=\"-C lto=thin\"",
+          "Use mimalloc for lower fragmentation in fraud-gate service"
+        ]
+      }
+    }
+  },
+  "drFailover": {
+    "rpoMs": 1.8733009999998558,
+    "rtoMs": 0.18295499999999265,
+    "dataLoss": 0,
+    "replicationLag": {
+      "p50": 2.204271999999989,
+      "p95": 1118.234432,
+      "p99": 1118.833354,
+      "max": 1119.7088860000001,
+      "avg": 187.65099593833324
+    },
+    "regions": {
+      "lagos": 500,
+      "london": 500,
+      "singapore": 500
+    }
+  }
+}
