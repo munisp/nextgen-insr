@@ -1,0 +1,67 @@
+{
+  "baseline": {
+    "label": "Baseline (no optimisations)",
+    "iterations": 50000,
+    "useOptimisations": false,
+    "latency": {
+      "p50": 0.6130000000013069,
+      "p95": 3.082999999989511,
+      "p99": 15.579999999999927,
+      "p999": 37.776000000008025,
+      "max": 1192.4559999999929,
+      "avg": 1.4130972600000256
+    },
+    "memory": {
+      "heapUsedBefore": 4.0482025146484375,
+      "heapUsedAfter": 6.740791320800781,
+      "heapGrowthMB": 2.6925888061523438,
+      "rssBefore": 52.90234375,
+      "rssAfter": 68.828125
+    },
+    "gcSpikes": {
+      "count": 1052,
+      "percentage": 2.104,
+      "maxSpikeUs": 1192.4559999999929
+    },
+    "throughput": 707665.3732949697,
+    "poolStats": null
+  },
+  "optimised": {
+    "label": "Optimised (pool + Buffer.allocUnsafe)",
+    "iterations": 50000,
+    "useOptimisations": true,
+    "latency": {
+      "p50": 0.3699999999753345,
+      "p95": 1.530999999999949,
+      "p99": 3.8580000000365544,
+      "p999": 14.53300000000013,
+      "max": 1070.9600000000137,
+      "avg": 0.637562320000014
+    },
+    "memory": {
+      "heapUsedBefore": 4.3290252685546875,
+      "heapUsedAfter": 12.345794677734375,
+      "heapGrowthMB": 8.016769409179688,
+      "rssBefore": 70.84765625,
+      "rssAfter": 75.14453125
+    },
+    "gcSpikes": {
+      "count": 86,
+      "percentage": 0.172,
+      "maxSpikeUs": 1070.9600000000137
+    },
+    "throughput": 1568474.1218709222,
+    "poolStats": {
+      "hits": 50000,
+      "misses": 0,
+      "hitRate": 1
+    }
+  },
+  "comparison": {
+    "latencyImprovementP99": "75.2%",
+    "memoryReductionMB": "-5.32",
+    "gcSpikeReduction": 966,
+    "throughputImprovement": "121.6%",
+    "poolHitRate": "100.00%"
+  }
+}
