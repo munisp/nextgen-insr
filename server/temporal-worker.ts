@@ -17,8 +17,19 @@ import {
 import * as activities from "./temporal-activities";
 import { logger } from './_core/logger';
 import * as journeyActivities from "./journey-activities";
-import { J01_CustomerOnboardingWorkflow, J02_PolicyPurchaseWorkflow, J03_ClaimsSettlementWorkflow, J04_AgentOnboardingWorkflow, J05_AgentDailyOpsWorkflow, J06_PolicyRenewalWorkflow, J07_FraudResponseWorkflow, J08_CommissionPayoutWorkflow, J09_RemittanceWorkflow, J10_ClaimDisputeWorkflow } from "./insurance-journeys";
-import { J11_BrokerPolicyManagementWorkflow, J12_ActuaryIfrs17Workflow, J13_ComplianceMonitoringWorkflow, J14_PosTerminalLifecycleWorkflow, J15_ReinsuranceCessionWorkflow, J16_CustomerSelfServiceWorkflow, J17_BulkPremiumPaymentWorkflow, J18_AgentFloatReconciliationWorkflow, J19_UnderwritingDecisionWorkflow, J20_PlatformHealthMonitoringWorkflow } from "./insurance-journeys-ext";
+import * as extendedActivities from "./journey-activities-extended";
+import {
+  J01_CustomerOnboardingWorkflow, J02_PolicyPurchaseWorkflow,
+  J03_ClaimsSettlementWorkflow, J04_AgentOnboardingWorkflow,
+  J05_AgentDailyOpsWorkflow, J06_PolicyRenewalWorkflow,
+  J07_FraudResponseWorkflow, J08_CommissionPayoutWorkflow,
+  J09_RemittanceWorkflow, J10_ClaimDisputeWorkflow,
+  J11_BrokerPolicyManagementWorkflow, J12_ActuaryIfrs17Workflow,
+  J13_ComplianceMonitoringWorkflow, J14_PosTerminalLifecycleWorkflow,
+  J15_ReinsuranceCessionWorkflow, J16_CustomerSelfServiceWorkflow,
+  J17_BulkPremiumPaymentWorkflow, J18_AgentFloatReconciliationWorkflow,
+  J19_UnderwritingDecisionWorkflow, J20_PlatformHealthMonitoringWorkflow,
+} from "./insurance-journeys-v2";
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";
 const TEMPORAL_NAMESPACE = process.env.TEMPORAL_NAMESPACE ?? "insureportal";
@@ -76,16 +87,17 @@ async function run() {
     namespace: TEMPORAL_NAMESPACE,
     taskQueue: TASK_QUEUE,
     workflowsPath,
-    activities: { ...activities, ...journeyActivities },
-    maxConcurrentActivityTaskExecutions: 20,
-    maxConcurrentWorkflowTaskExecutions: 10,
+    activities: { ...activities, ...journeyActivities, ...extendedActivities },
+    maxConcurrentActivityTaskExecutions: 50,
+    maxConcurrentWorkflowTaskExecutions: 20,
+    maxCachedWorkflows: 100,
   });
 
   logger.info(
     JSON.stringify({
       ts: new Date().toISOString(),
       level: "INFO",
-      msg: "Temporal worker starting",
+      msg: "Temporal worker v2 starting — 20 journeys registered",
       address: TEMPORAL_ADDRESS,
       namespace: TEMPORAL_NAMESPACE,
       taskQueue: TASK_QUEUE,

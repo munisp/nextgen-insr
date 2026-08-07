@@ -7,7 +7,7 @@
  */
 
 import React, { useState } from "react";
-import { trpc } from "@/_core/trpc";
+import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +76,14 @@ export default function InsuranceJourneyDashboard() {
 
   // Fetch journey definitions
   const { data: definitions, isLoading: defsLoading } = trpc.insuranceJourneyOrchestrator.getDefinitions.useQuery();
+  // V2 router — real execution history, analytics, cancel, approve
+  const { data: executionsV2, refetch: refetchExecutions } = trpc.journeyOrchestratorV2.listExecutions.useQuery(
+    { limit: 20, offset: 0 },
+    { refetchInterval: 5000 }
+  );
+  const { data: analyticsV2 } = trpc.journeyOrchestratorV2.getAnalytics.useQuery({ days: 30 });
+  const cancelMutation = trpc.journeyOrchestratorV2.cancel.useMutation({ onSuccess: () => refetchExecutions() });
+  const approveMutation = trpc.journeyOrchestratorV2.approveStep.useMutation();
 
   // Fetch workflow status if we have an active workflow
   const { data: workflowStatus, refetch: refetchStatus } = trpc.insuranceJourneyOrchestrator.getStatus.useQuery(
@@ -218,6 +226,7 @@ export default function InsuranceJourneyDashboard() {
       <Tabs defaultValue="journeys">
         <TabsList className="mb-6">
           <TabsTrigger value="journeys">All Journeys</TabsTrigger>
+          <TabsTrigger value="executions">Execution History</TabsTrigger>
           <TabsTrigger value="quick-actions">Quick Actions</TabsTrigger>
           <TabsTrigger value="architecture">Architecture</TabsTrigger>
         </TabsList>
@@ -313,6 +322,77 @@ export default function InsuranceJourneyDashboard() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* Execution History Tab */}
+        <TabsContent value="executions">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-900">Recent Journey Executions</h2>
+              <button onClick={() => refetchExecutions()} className="text-sm text-gray-500 hover:text-gray-700 border border-gray-300 rounded-lg px-3 py-1.5">↻ Refresh</button>
+            </div>
+            {executionsV2?.executions.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                <p className="text-gray-400 text-sm">No executions yet. Trigger a journey to get started.</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Journey</th>
+                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Name</th>
+                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Current Step</th>
+                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Started</th>
+                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Duration</th>
+                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {executionsV2?.executions.map((exec) => (
+                      <tr key={exec.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-3 px-4 text-xs font-mono text-gray-500">{exec.journeyId}</td>
+                        <td className="py-3 px-4 text-sm font-medium text-gray-900">{exec.journeyName}</td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            exec.status === "running" ? "bg-blue-100 text-blue-800" :
+                            exec.status === "completed" ? "bg-green-100 text-green-800" :
+                            exec.status === "failed" ? "bg-red-100 text-red-800" :
+                            "bg-gray-100 text-gray-600"
+                          }`}>{exec.status}</span>
+                        </td>
+                        <td className="py-3 px-4 text-xs text-gray-500">{exec.currentStep ?? "—"}</td>
+                        <td className="py-3 px-4 text-xs text-gray-500">{exec.startedAt ? new Date(exec.startedAt).toLocaleString() : "—"}</td>
+                        <td className="py-3 px-4 text-xs text-gray-500">{exec.durationMs ? `${(exec.durationMs / 1000).toFixed(1)}s` : exec.status === "running" ? "running…" : "—"}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex gap-2">
+                            {exec.status === "running" && (
+                              <>
+                                <button onClick={() => approveMutation.mutate({ workflowId: exec.workflowId, stepId: "manual" })} className="text-xs text-green-600 hover:underline">Approve</button>
+                                <button onClick={() => cancelMutation.mutate({ workflowId: exec.workflowId })} className="text-xs text-red-600 hover:underline">Cancel</button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {/* Analytics summary */}
+            {analyticsV2 && analyticsV2.byStatus.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {analyticsV2.byStatus.map((s) => (
+                  <div key={s.status} className="bg-white rounded-xl border border-gray-200 p-4">
+                    <p className="text-xs text-gray-500 capitalize">{s.status}</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{s.count}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </TabsContent>
 
         {/* Quick Actions Tab */}

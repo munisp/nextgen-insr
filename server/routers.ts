@@ -1,5 +1,6 @@
 import { KC_SESSION_COOKIE } from "./_core/keycloakAuth";
 import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
+import { insuranceJourneyOrchestratorV2Router } from "./routers/insuranceJourneyOrchestratorV2";
 import { insurancePolicyQuoteManagerRouter } from "./routers/insurancePolicyQuoteManager";
 import { insuranceProductCatalogRouter } from "./routers/insuranceProductCatalog";
 // Sprint 98: Missing router imports
@@ -1095,6 +1096,7 @@ export const appRouter = router({
   insurancePolicyQuoteManager: insurancePolicyQuoteManagerRouter,
   insuranceProductCatalog: insuranceProductCatalogRouter,
   insuranceJourneyOrchestrator: insuranceJourneyOrchestratorRouter,
+  journeyOrchestratorV2: insuranceJourneyOrchestratorV2Router,
 });
 
 export type AppRouter = typeof appRouter;
