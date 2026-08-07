@@ -631,7 +631,8 @@ export const comparisonRouter = router({
         ];
       }
 
-      const sessionId = `CMP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const { randomBytes } = await import('crypto');
+      const sessionId = `CMP-${Date.now()}-${randomBytes(4).toString('hex')}`;
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
       await db.insert(comparisonQuotes).values({
