@@ -1,0 +1,1349 @@
+---
+# ══════════════════════════════════════════════════════════════════════════════
+# InsurePortal — Core Platform Services K8s Manifests
+# Covers: tb-sidecar, fraud-gate, ml-fraud-scoring, kyc-verification,
+#         float-reconciler, health-worker, ollama, openappsec, apisix,
+#         permify, keycloak
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Namespace ─────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: insurance-platform
+  labels:
+    app.kubernetes.io/name: insurance-platform
+    istio-injection: enabled
+
+---
+# ── TigerBeetle Go Sidecar ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tb-sidecar
+  namespace: insurance-platform
+  labels:
+    app: tb-sidecar
+    tier: ledger
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tb-sidecar
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: tb-sidecar
+        tier: ledger
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "tb-sidecar"
+        dapr.io/app-port: "7070"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: insurance-platform
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: tb-sidecar
+        image: registry.insureportal.ng/tb-sidecar:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 7070
+          name: http
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        env:
+        - name: TB_ADDRESSES
+          value: "tigerbeetle-0.tigerbeetle-headless.middleware:3000,tigerbeetle-1.tigerbeetle-headless.middleware:3000,tigerbeetle-2.tigerbeetle-headless.middleware:3000"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: redis-url
+        - name: PORT
+          value: "7070"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 7070
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 7070
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 5
+        volumeMounts:
+        - name: tb-data
+          mountPath: /var/lib/tb-sidecar
+      volumes:
+      - name: tb-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tb-sidecar
+  namespace: insurance-platform
+  labels:
+    app: tb-sidecar
+spec:
+  selector:
+    app: tb-sidecar
+  ports:
+  - name: http
+    port: 7070
+    targetPort: 7070
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tb-sidecar-pdb
+  namespace: insurance-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: tb-sidecar
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tb-sidecar-hpa
+  namespace: insurance-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tb-sidecar
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+# ── Rust Fraud Gate ───────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-gate
+  namespace: insurance-platform
+  labels:
+    app: fraud-gate
+    tier: security
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: fraud-gate
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: fraud-gate
+        tier: security
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "fraud-gate"
+        dapr.io/app-port: "8090"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+    spec:
+      serviceAccountName: insurance-platform
+      containers:
+      - name: fraud-gate
+        image: registry.insureportal.ng/fraud-gate:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8090
+          name: http
+        - containerPort: 9091
+          name: metrics
+        env:
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: redis-url
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: database-url
+        - name: ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: insureportal-config
+              key: allowed-origins
+        - name: PORT
+          value: "8090"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "200m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8090
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8090
+          initialDelaySeconds: 15
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-gate
+  namespace: insurance-platform
+spec:
+  selector:
+    app: fraud-gate
+  ports:
+  - name: http
+    port: 8090
+    targetPort: 8090
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fraud-gate-pdb
+  namespace: insurance-platform
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: fraud-gate
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fraud-gate-hpa
+  namespace: insurance-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fraud-gate
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 65
+
+---
+# ── Python ML Fraud Scoring ───────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-fraud-scoring
+  namespace: insurance-platform
+  labels:
+    app: ml-fraud-scoring
+    tier: ai
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ml-fraud-scoring
+  template:
+    metadata:
+      labels:
+        app: ml-fraud-scoring
+        tier: ai
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "ml-fraud-scoring"
+        dapr.io/app-port: "8001"
+    spec:
+      serviceAccountName: insurance-platform
+      initContainers:
+      - name: wait-for-db
+        image: postgres:16-alpine
+        command: ['sh', '-c', 'until pg_isready -h $DB_HOST -p 5432; do sleep 2; done']
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: insureportal-config
+              key: db-host
+      containers:
+      - name: ml-fraud-scoring
+        image: registry.insureportal.ng/ml-fraud-scoring:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8001
+          name: http
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: database-url
+        - name: MODEL_RETRAIN_INTERVAL_HOURS
+          value: "24"
+        - name: MIN_TRAINING_SAMPLES
+          value: "1000"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 6
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          failureThreshold: 3
+        volumeMounts:
+        - name: model-storage
+          mountPath: /app/models
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: ml-model-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-fraud-scoring
+  namespace: insurance-platform
+spec:
+  selector:
+    app: ml-fraud-scoring
+  ports:
+  - name: http
+    port: 8001
+    targetPort: 8001
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ml-model-storage
+  namespace: insurance-platform
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: fast-ssd
+
+---
+# ── Python KYC Verification ───────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kyc-verification
+  namespace: insurance-platform
+  labels:
+    app: kyc-verification
+    tier: compliance
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kyc-verification
+  template:
+    metadata:
+      labels:
+        app: kyc-verification
+        tier: compliance
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "kyc-verification"
+        dapr.io/app-port: "8002"
+    spec:
+      serviceAccountName: insurance-platform
+      containers:
+      - name: kyc-verification
+        image: registry.insureportal.ng/kyc-verification:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8002
+          name: http
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: database-url
+        - name: NIBSS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: nibss-api-key
+        - name: NIBSS_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: insureportal-config
+              key: nibss-base-url
+        - name: S3_BUCKET
+          valueFrom:
+            configMapKeyRef:
+              name: insureportal-config
+              key: kyc-documents-bucket
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kyc-verification
+  namespace: insurance-platform
+spec:
+  selector:
+    app: kyc-verification
+  ports:
+  - name: http
+    port: 8002
+    targetPort: 8002
+
+---
+# ── Go Float Reconciler ───────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: float-reconciler
+  namespace: insurance-platform
+  labels:
+    app: float-reconciler
+    tier: finance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: float-reconciler
+  template:
+    metadata:
+      labels:
+        app: float-reconciler
+        tier: finance
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9092"
+    spec:
+      serviceAccountName: insurance-platform
+      containers:
+      - name: float-reconciler
+        image: registry.insureportal.ng/float-reconciler:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8100
+          name: http
+        - containerPort: 9092
+          name: metrics
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: database-url
+        - name: TB_SIDECAR_URL
+          value: "http://tb-sidecar.insurance-platform:7070"
+        - name: RECONCILE_INTERVAL_SECONDS
+          value: "300"
+        - name: DISCREPANCY_THRESHOLD_KOBO
+          value: "10000"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8100
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: float-reconciler
+  namespace: insurance-platform
+spec:
+  selector:
+    app: float-reconciler
+  ports:
+  - name: http
+    port: 8100
+    targetPort: 8100
+
+---
+# ── Go Health Worker ──────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-worker
+  namespace: insurance-platform
+  labels:
+    app: health-worker
+    tier: operations
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-worker
+  template:
+    metadata:
+      labels:
+        app: health-worker
+        tier: operations
+    spec:
+      serviceAccountName: insurance-platform
+      containers:
+      - name: health-worker
+        image: registry.insureportal.ng/health-worker:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8101
+          name: http
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: database-url
+        - name: PROBE_INTERVAL_SECONDS
+          value: "30"
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: slack-webhook-url
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8101
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: health-worker
+  namespace: insurance-platform
+spec:
+  selector:
+    app: health-worker
+  ports:
+  - name: http
+    port: 8101
+    targetPort: 8101
+
+---
+# ── Ollama LLM Inference ──────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: insurance-platform
+  labels:
+    app: ollama
+    tier: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+        tier: ai
+    spec:
+      serviceAccountName: insurance-platform
+      initContainers:
+      - name: pull-models
+        image: ollama/ollama:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          ollama serve &
+          sleep 5
+          ollama pull llama3.2:3b
+          ollama pull mistral:7b
+          kill %1
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 11434
+          name: http
+        env:
+        - name: OLLAMA_HOST
+          value: "0.0.0.0"
+        - name: OLLAMA_NUM_PARALLEL
+          value: "4"
+        - name: OLLAMA_MAX_LOADED_MODELS
+          value: "2"
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "4"
+          limits:
+            memory: "8Gi"
+            cpu: "8"
+        readinessProbe:
+          httpGet:
+            path: /api/tags
+            port: 11434
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 6
+        livenessProbe:
+          httpGet:
+            path: /api/tags
+            port: 11434
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 3
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+      volumes:
+      - name: ollama-data
+        persistentVolumeClaim:
+          claimName: ollama-model-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: insurance-platform
+spec:
+  selector:
+    app: ollama
+  ports:
+  - name: http
+    port: 11434
+    targetPort: 11434
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-model-storage
+  namespace: insurance-platform
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: fast-ssd
+
+---
+# ── OpenAppSec WAF ────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openappsec-agent
+  namespace: insurance-platform
+  labels:
+    app: openappsec-agent
+    tier: security
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: openappsec-agent
+  template:
+    metadata:
+      labels:
+        app: openappsec-agent
+        tier: security
+    spec:
+      serviceAccountName: insurance-platform
+      containers:
+      - name: openappsec-agent
+        image: openappsec/agent:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 7777
+          name: http
+        env:
+        - name: OPENAPPSEC_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: openappsec-token
+        - name: OPENAPPSEC_PROFILE
+          value: "prevent"
+        - name: OPENAPPSEC_LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /health-check
+            port: 7777
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openappsec-agent
+  namespace: insurance-platform
+spec:
+  selector:
+    app: openappsec-agent
+  ports:
+  - name: http
+    port: 7777
+    targetPort: 7777
+
+---
+# ── APISIX API Gateway ────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apisix
+  namespace: insurance-platform
+  labels:
+    app: apisix
+    tier: gateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: apisix
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: apisix
+        tier: gateway
+    spec:
+      serviceAccountName: insurance-platform
+      containers:
+      - name: apisix
+        image: apache/apisix:3.7.0-debian
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9080
+          name: http
+        - containerPort: 9443
+          name: https
+        - containerPort: 9092
+          name: admin
+        env:
+        - name: APISIX_STAND_ALONE
+          value: "false"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "1"
+        readinessProbe:
+          httpGet:
+            path: /apisix/status
+            port: 9080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /apisix/status
+            port: 9080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: apisix-config
+          mountPath: /usr/local/apisix/conf/config.yaml
+          subPath: config.yaml
+      volumes:
+      - name: apisix-config
+        configMap:
+          name: apisix-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apisix
+  namespace: insurance-platform
+spec:
+  type: LoadBalancer
+  selector:
+    app: apisix
+  ports:
+  - name: http
+    port: 80
+    targetPort: 9080
+  - name: https
+    port: 443
+    targetPort: 9443
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: apisix-pdb
+  namespace: insurance-platform
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: apisix
+
+---
+# ── Permify Authorization ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: permify
+  namespace: insurance-platform
+  labels:
+    app: permify
+    tier: security
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: permify
+  template:
+    metadata:
+      labels:
+        app: permify
+        tier: security
+    spec:
+      serviceAccountName: insurance-platform
+      containers:
+      - name: permify
+        image: ghcr.io/permify/permify:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3476
+          name: http
+        - containerPort: 3478
+          name: grpc
+        args:
+        - serve
+        env:
+        - name: PERMIFY_DATABASE_ENGINE
+          value: "postgres"
+        - name: PERMIFY_DATABASE_URI
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: permify-database-url
+        - name: PERMIFY_DATABASE_MAX_OPEN_CONNECTIONS
+          value: "20"
+        - name: PERMIFY_SERVER_RATE_LIMIT
+          value: "1000"
+        - name: PERMIFY_LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 3476
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 3476
+          initialDelaySeconds: 20
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: permify
+  namespace: insurance-platform
+spec:
+  selector:
+    app: permify
+  ports:
+  - name: http
+    port: 3476
+    targetPort: 3476
+  - name: grpc
+    port: 3478
+    targetPort: 3478
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: permify-pdb
+  namespace: insurance-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: permify
+
+---
+# ── Keycloak Identity Provider ────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: insurance-platform
+  labels:
+    app: keycloak
+    tier: auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: keycloak
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: keycloak
+        tier: auth
+    spec:
+      serviceAccountName: insurance-platform
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:23.0
+        imagePullPolicy: Always
+        args:
+        - start
+        - --optimized
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 7800
+          name: jgroups
+        env:
+        - name: KC_DB
+          value: postgres
+        - name: KC_DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: keycloak-database-url
+        - name: KC_DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: keycloak-db-user
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: keycloak-db-password
+        - name: KC_HOSTNAME
+          valueFrom:
+            configMapKeyRef:
+              name: insureportal-config
+              key: keycloak-hostname
+        - name: KC_HOSTNAME_STRICT
+          value: "false"
+        - name: KC_HTTP_ENABLED
+          value: "true"
+        - name: KC_PROXY
+          value: edge
+        - name: KC_CACHE
+          value: ispn
+        - name: KC_CACHE_STACK
+          value: kubernetes
+        - name: KEYCLOAK_ADMIN
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: keycloak-admin-user
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: keycloak-admin-password
+        - name: JAVA_OPTS_APPEND
+          value: "-Djgroups.dns.query=keycloak-headless.insurance-platform.svc.cluster.local"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+        readinessProbe:
+          httpGet:
+            path: /realms/master
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 6
+        livenessProbe:
+          httpGet:
+            path: /realms/master
+            port: 8080
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: insurance-platform
+spec:
+  selector:
+    app: keycloak
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-headless
+  namespace: insurance-platform
+spec:
+  selector:
+    app: keycloak
+  clusterIP: None
+  ports:
+  - name: jgroups
+    port: 7800
+    targetPort: 7800
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keycloak-pdb
+  namespace: insurance-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: keycloak
+
+---
+# ── Main InsurePortal App Server ──────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insureportal-app
+  namespace: insurance-platform
+  labels:
+    app: insureportal-app
+    tier: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: insureportal-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: insureportal-app
+        tier: api
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "insureportal-app"
+        dapr.io/app-port: "3000"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: insurance-platform
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: insureportal-app
+        image: registry.insureportal.ng/insureportal-app:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: insureportal-secrets
+              key: redis-url
+        - name: TB_SIDECAR_URL
+          value: "http://tb-sidecar.insurance-platform:7070"
+        - name: TEMPORAL_ADDRESS
+          value: "temporal-frontend.middleware:7233"
+        - name: KEYCLOAK_URL
+          value: "http://keycloak.insurance-platform:8080"
+        - name: PERMIFY_URL
+          value: "http://permify.insurance-platform:3476"
+        - name: FRAUD_GATE_URL
+          value: "http://fraud-gate.insurance-platform:8090"
+        - name: ML_FRAUD_URL
+          value: "http://ml-fraud-scoring.insurance-platform:8001"
+        - name: KYC_SERVICE_URL
+          value: "http://kyc-verification.insurance-platform:8002"
+        - name: OLLAMA_URL
+          value: "http://ollama.insurance-platform:11434"
+        - name: FLUVIO_ADDR
+          value: "fluvio-sc.middleware:9003"
+        - name: NODE_ENV
+          value: "production"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "2"
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: insureportal-app
+  namespace: insurance-platform
+spec:
+  selector:
+    app: insureportal-app
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: insureportal-app-pdb
+  namespace: insurance-platform
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: insureportal-app
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: insureportal-app-hpa
+  namespace: insurance-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: insureportal-app
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# ── Secrets Template (values must be set via CI/CD) ───────────────────────────
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insureportal-secrets
+  namespace: insurance-platform
+  annotations:
+    # Use external-secrets-operator or Vault in production
+    # This is a template — never commit real values
+    kubernetes.io/description: "InsurePortal production secrets — populate via CI/CD"
+type: Opaque
+stringData:
+  database-url: "postgresql://insureportal:CHANGE_ME@postgresql.middleware:5432/insureportal"
+  redis-url: "redis://:CHANGE_ME@redis-cluster.middleware:6379"
+  keycloak-database-url: "postgresql://keycloak:CHANGE_ME@postgresql.middleware:5432/keycloak"
+  keycloak-db-user: "keycloak"
+  keycloak-db-password: "CHANGE_ME"
+  keycloak-admin-user: "admin"
+  keycloak-admin-password: "CHANGE_ME"
+  permify-database-url: "postgresql://permify:CHANGE_ME@postgresql.middleware:5432/permify"
+  nibss-api-key: "CHANGE_ME"
+  openappsec-token: "CHANGE_ME"
+  slack-webhook-url: "CHANGE_ME"
+
+---
+# ── ConfigMap ─────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insureportal-config
+  namespace: insurance-platform
+data:
+  allowed-origins: "https://app.insureportal.ng,https://admin.insureportal.ng"
+  keycloak-hostname: "auth.insureportal.ng"
+  nibss-base-url: "https://api.nibss-plc.com.ng"
+  kyc-documents-bucket: "insureportal-kyc-documents"
+  db-host: "postgresql.middleware"
+  environment: "production"
+  log-level: "info"
+
+---
+# ── APISIX ConfigMap ──────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apisix-config
+  namespace: insurance-platform
+data:
+  config.yaml: |
+    apisix:
+      node_listen: 9080
+      enable_ipv6: false
+      enable_admin: true
+      admin_listen:
+        ip: 0.0.0.0
+        port: 9092
+    nginx_config:
+      worker_processes: auto
+      worker_connections: 10240
+    deployment:
+      role: traditional
+      role_traditional:
+        config_provider: etcd
+      etcd:
+        host:
+          - "http://etcd.middleware:2379"
+        prefix: "/apisix"
+        timeout: 30
+    plugin_attr:
+      prometheus:
+        export_uri: /apisix/prometheus/metrics
+        enable_export_server: true
+        export_addr:
+          ip: "0.0.0.0"
+          port: 9091
