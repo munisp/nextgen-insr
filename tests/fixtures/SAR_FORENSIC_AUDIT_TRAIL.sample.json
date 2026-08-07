@@ -1,0 +1,52 @@
+{
+  "reportType": "SAR_FORENSIC_AUDIT_TRAIL",
+  "generatedAt": "2026-08-07T10:45:05.758Z",
+  "generatedBy": "InsurePortal Compliance Engine v2.0",
+  "regulatoryFramework": [
+    "NFIU Act 2004",
+    "CBN AML/CFT Regulations 2013",
+    "NDPR 2019"
+  ],
+  "filing": {
+    "id": 2,
+    "referenceNumber": "SAR-CONCURRENT-0001",
+    "filingType": "SAR",
+    "currentStatus": "submitted",
+    "createdAt": "2026-08-07T10:45:05.698Z",
+    "submittedAt": "2026-08-07T10:45:05.701Z",
+    "nfiuReference": "NFIU-RECOVERY-1786099505701-T-0001"
+  },
+  "auditTrail": [
+    {
+      "eventId": 202,
+      "timestamp": "2026-08-07T10:45:05.700Z",
+      "action": "SAR_REQUEUED",
+      "performedBy": "officer.1@insureportal.ng",
+      "ipAddress": "10.0.29.29",
+      "userAgent": "InsurePortal-Compliance-Portal/2.0",
+      "details": {
+        "dlqId": 3,
+        "referenceNumber": "SAR-CONCURRENT-0001",
+        "resolutionNote": "NFIU outage resolved — requeuing for retry",
+        "previousRetries": 9,
+        "severity": "critical",
+        "regulatoryDeadline": "2026-08-08T10:45:05.700Z"
+      }
+    },
+    {
+      "eventId": 252,
+      "timestamp": "2026-08-07T10:45:05.701Z",
+      "action": "SAR_SUBMITTED",
+      "performedBy": "sar-retry-cron",
+      "ipAddress": "10.0.4.41",
+      "userAgent": "InsurePortal-Compliance-Portal/2.0",
+      "details": {
+        "nfiuReference": "NFIU-RECOVERY-1786099505701-T-0001",
+        "referenceNumber": "SAR-CONCURRENT-0001"
+      }
+    }
+  ],
+  "integrityHash": "SHA256:W3siaWQiOjIwMiwiYWN0aW9uIjoiU0FS",
+  "retentionPolicy": "7 years (NAICOM Regulation 2022)",
+  "exportedForRegulator": "NFIU / CBN"
+}
