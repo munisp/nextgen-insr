@@ -1023,3 +1023,259 @@ upstreams:
     type: roundrobin
     scheme: http
     pass_host: pass
+
+  # ── TigerBeetle Sidecar (internal only — JWT required) ────────────────────
+  - id: tb-sidecar
+    uri: /tb/*
+    upstream_id: tb-sidecar
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 200
+        burst: 50
+        key: consumer_name
+        rejected_code: 429
+      proxy-rewrite:
+        regex_uri: ["/tb/(.*)", "/$1"]
+      ip-restriction:
+        allowlist:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+
+  # ── Rust Fraud Gate ────────────────────────────────────────────────────────
+  - id: fraud-gate
+    uri: /fraud-gate/*
+    upstream_id: fraud-gate
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 500
+        burst: 100
+        key: consumer_name
+        rejected_code: 429
+      proxy-rewrite:
+        regex_uri: ["/fraud-gate/(.*)", "/$1"]
+
+  # ── Python ML Fraud Scoring ────────────────────────────────────────────────
+  - id: ml-fraud-scoring
+    uri: /ml/fraud/*
+    upstream_id: ml-fraud-scoring
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 100
+        burst: 20
+        key: consumer_name
+        rejected_code: 429
+      proxy-rewrite:
+        regex_uri: ["/ml/fraud/(.*)", "/$1"]
+
+  # ── Python KYC Verification ────────────────────────────────────────────────
+  - id: kyc-verification
+    uri: /kyc/*
+    upstream_id: kyc-verification
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 50
+        burst: 10
+        key: consumer_name
+        rejected_code: 429
+      proxy-rewrite:
+        regex_uri: ["/kyc/(.*)", "/$1"]
+
+  # ── Go Float Reconciler (internal — admin only) ────────────────────────────
+  - id: float-reconciler
+    uri: /float-reconciler/*
+    upstream_id: float-reconciler
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 20
+        burst: 5
+        key: consumer_name
+        rejected_code: 429
+      ip-restriction:
+        allowlist:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+      proxy-rewrite:
+        regex_uri: ["/float-reconciler/(.*)", "/$1"]
+
+  # ── Go Health Worker ────────────────────────────────────────────────────────
+  - id: health-worker
+    uri: /health-worker/*
+    upstream_id: health-worker
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 30
+        burst: 10
+        key: consumer_name
+        rejected_code: 429
+      proxy-rewrite:
+        regex_uri: ["/health-worker/(.*)", "/$1"]
+
+  # ── Ollama AI Inference ────────────────────────────────────────────────────
+  - id: ollama
+    uri: /ollama/*
+    upstream_id: ollama
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 20
+        burst: 5
+        key: consumer_name
+        rejected_code: 429
+      ip-restriction:
+        allowlist:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+      proxy-rewrite:
+        regex_uri: ["/ollama/(.*)", "/$1"]
+
+  # ── Permify Authorization ──────────────────────────────────────────────────
+  - id: permify
+    uri: /permify/*
+    upstream_id: permify
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 1000
+        burst: 200
+        key: consumer_name
+        rejected_code: 429
+      ip-restriction:
+        allowlist:
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 192.168.0.0/16
+      proxy-rewrite:
+        regex_uri: ["/permify/(.*)", "/$1"]
+
+  # ── Rust SLO Engine ────────────────────────────────────────────────────────
+  - id: slo-engine
+    uri: /slo/*
+    upstream_id: slo-engine
+    plugins:
+      jwt-auth: {}
+      limit-req:
+        rate: 100
+        burst: 20
+        key: consumer_name
+        rejected_code: 429
+      proxy-rewrite:
+        regex_uri: ["/slo/(.*)", "/$1"]
+
+upstreams:
+  - id: tb-sidecar
+    nodes:
+      tb-sidecar:7070: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /health
+        interval: 10
+        timeout: 3
+        unhealthy:
+          http_failures: 3
+  - id: fraud-gate
+    nodes:
+      fraud-gate:8090: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /health
+        interval: 10
+        timeout: 3
+        unhealthy:
+          http_failures: 3
+  - id: ml-fraud-scoring
+    nodes:
+      ml-fraud-scoring:8001: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /health
+        interval: 15
+        timeout: 5
+        unhealthy:
+          http_failures: 3
+  - id: kyc-verification
+    nodes:
+      kyc-verification:8002: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /health
+        interval: 15
+        timeout: 5
+        unhealthy:
+          http_failures: 3
+  - id: float-reconciler
+    nodes:
+      float-reconciler:8100: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /health
+        interval: 30
+        timeout: 5
+        unhealthy:
+          http_failures: 2
+  - id: health-worker
+    nodes:
+      health-worker:8101: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /health
+        interval: 30
+        timeout: 5
+        unhealthy:
+          http_failures: 2
+  - id: ollama
+    nodes:
+      ollama:11434: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /api/tags
+        interval: 30
+        timeout: 10
+        unhealthy:
+          http_failures: 3
+  - id: permify
+    nodes:
+      permify:3476: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /healthz
+        interval: 10
+        timeout: 3
+        unhealthy:
+          http_failures: 3
+  - id: slo-engine
+    nodes:
+      slo-engine:8200: 1
+    type: roundrobin
+    scheme: http
+    checks:
+      active:
+        http_path: /health
+        interval: 15
+        timeout: 5
+        unhealthy:
+          http_failures: 3

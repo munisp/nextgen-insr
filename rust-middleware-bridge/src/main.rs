@@ -254,14 +254,41 @@ async fn audit_log_handler(state: web::Data<Arc<AppState>>, body: web::Json<Audi
 async fn audit_batch_handler(state: web::Data<Arc<AppState>>, body: web::Json<Vec<AuditEntry>>) -> HttpResponse {
     let entries = body.into_inner();
     let count = entries.len();
-    let mut log = state.audit_log.write().await;
-    for mut e in entries {
-        if e.id.is_empty() { e.id = Uuid::new_v4().to_string(); }
-        if e.timestamp == 0 { e.timestamp = Utc::now().timestamp_millis(); }
-        log.push(e);
+    let mut processed: Vec<AuditEntry> = Vec::with_capacity(count);
+    {
+        let mut log = state.audit_log.write().await;
+        for mut e in entries {
+            if e.id.is_empty() { e.id = Uuid::new_v4().to_string(); }
+            if e.timestamp == 0 { e.timestamp = Utc::now().timestamp_millis(); }
+            processed.push(e.clone());
+            log.push(e);
+        }
+        state.audit_count.fetch_add(count as u64, Ordering::Relaxed);
+        if log.len() > 1000 { log.drain(0..500); }
     }
-    state.audit_count.fetch_add(count as u64, Ordering::Relaxed);
-    if log.len() > 1000 { log.drain(0..500); }
+    // Persist ALL batch entries to PostgreSQL asynchronously (fail-open)
+    let pg_url = std::env::var("DATABASE_URL").ok();
+    if let Some(db_url) = pg_url {
+        let entries_clone = processed.clone();
+        tokio::spawn(async move {
+            if let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await {
+                tokio::spawn(async move { let _ = conn.await; });
+                for entry in entries_clone {
+                    let _ = client.execute(
+                        "INSERT INTO audit_log (id, action, resource_type, resource_id, user_id, ip_address, details, created_at)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, to_timestamp($8::bigint / 1000.0))
+                         ON CONFLICT (id) DO NOTHING",
+                        &[
+                            &entry.id, &entry.action, &entry.resource_type, &entry.resource_id,
+                            &entry.user_id, &entry.ip_address,
+                            &serde_json::to_string(&entry.details).unwrap_or_default(),
+                            &entry.timestamp,
+                        ],
+                    ).await;
+                }
+            }
+        });
+    }
     HttpResponse::Ok().json(serde_json::json!({"status":"batch_logged","count":count}))
 }
 

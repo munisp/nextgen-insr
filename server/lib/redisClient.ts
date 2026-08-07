@@ -101,3 +101,73 @@ export async function releaseLock(key: string): Promise<void> {
 }
 
 export default getRedisClient;
+
+/**
+ * Blacklist a JWT token (by its jti claim or a hash of the token).
+ * The token is stored with a TTL equal to its remaining validity period.
+ * Falls back silently if Redis is unavailable — the token will expire naturally.
+ */
+export async function blacklistToken(
+  tokenId: string,
+  expiresAt: number // Unix timestamp (seconds)
+): Promise<void> {
+  try {
+    const client = getRedisClient();
+    const ttlSeconds = Math.max(0, expiresAt - Math.floor(Date.now() / 1000));
+    if (ttlSeconds <= 0) return; // already expired
+    await client.set(`blacklist:token:${tokenId}`, '1', 'EX', ttlSeconds);
+  } catch {
+    // fail-open: if Redis is down, token expires naturally via JWT exp claim
+    logger.warn('[Redis] Token blacklist write failed — token will expire via JWT exp');
+  }
+}
+
+/**
+ * Check if a JWT token has been blacklisted.
+ * Returns false (not blacklisted) if Redis is unavailable — fail-open to avoid
+ * locking out users during Redis outages.
+ */
+export async function isTokenBlacklisted(tokenId: string): Promise<boolean> {
+  try {
+    const client = getRedisClient();
+    const result = await client.get(`blacklist:token:${tokenId}`);
+    return result !== null;
+  } catch {
+    // fail-open: allow request if Redis is down
+    logger.warn('[Redis] Token blacklist check failed — allowing request (fail-open)');
+    return false;
+  }
+}
+
+/**
+ * Blacklist all tokens for a user (force logout from all devices).
+ * Stores a user-level revocation timestamp. Any token issued before this
+ * timestamp is considered revoked.
+ */
+export async function revokeAllUserTokens(
+  userId: string,
+  revokedAt: number = Math.floor(Date.now() / 1000)
+): Promise<void> {
+  try {
+    const client = getRedisClient();
+    // Store for 90 days (max token lifetime)
+    await client.set(`blacklist:user:${userId}:revoked_at`, String(revokedAt), 'EX', 90 * 24 * 3600);
+  } catch {
+    logger.warn('[Redis] User token revocation write failed');
+  }
+}
+
+/**
+ * Check if a token was issued before the user's revocation timestamp.
+ * Returns false if Redis is unavailable (fail-open).
+ */
+export async function isUserTokenRevoked(userId: string, issuedAt: number): Promise<boolean> {
+  try {
+    const client = getRedisClient();
+    const revokedAtStr = await client.get(`blacklist:user:${userId}:revoked_at`);
+    if (!revokedAtStr) return false;
+    return issuedAt < parseInt(revokedAtStr, 10);
+  } catch {
+    return false; // fail-open
+  }
+}
