@@ -1310,3 +1310,22 @@ plugins_global:
       fail_closed: true  # deny if Permify is unavailable for financial routes
       timeout_ms: 2000
       cache_ttl_seconds: 30  # cache authorization decisions for 30s
+
+# ── JWT Structure Enforcement (fix for malformed JWT vulnerability) ───────────
+# Enforces strict 3-part JWT structure (header.payload.signature)
+# Applied globally to all routes via the jwt-auth plugin configuration
+jwt_auth_global:
+  strict_structure: true        # Reject tokens that are not exactly 3 parts
+  require_signature: true       # Reject unsigned tokens (alg:none)
+  allowed_algorithms:           # Whitelist of allowed signing algorithms
+    - RS256
+    - RS384
+    - RS512
+    - ES256
+    - ES384
+    - ES512
+  reject_algorithms:            # Explicitly reject weak/dangerous algorithms
+    - none
+    - HS256                     # Symmetric — not safe for public clients
+    - HS384
+    - HS512
