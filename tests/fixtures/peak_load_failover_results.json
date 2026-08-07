@@ -1,0 +1,111 @@
+{
+  "phases": [
+    {
+      "name": "Phase 1: all 3 regions have 1,000 records",
+      "passed": true,
+      "detail": "L=1000 LN=1000 SG=1000"
+    },
+    {
+      "name": "Phase 1: throughput > 5,000 writes/sec",
+      "passed": true,
+      "detail": "64,563/sec"
+    },
+    {
+      "name": "Phase 2: peak throughput > 5,000 writes/sec",
+      "passed": true,
+      "detail": "75,888/sec"
+    },
+    {
+      "name": "Phase 2: failover completed in < 5ms",
+      "passed": true,
+      "detail": "0.349ms"
+    },
+    {
+      "name": "Phase 2: zero writes dropped by Lagos after failure",
+      "passed": true,
+      "detail": "0"
+    },
+    {
+      "name": "Phase 2: London continued writing after promotion",
+      "passed": true,
+      "detail": "2500 writes"
+    },
+    {
+      "name": "Phase 2: Singapore received London writes during failover",
+      "passed": true,
+      "detail": "6000 records"
+    },
+    {
+      "name": "Phase 3: fenced Lagos has no quorum",
+      "passed": true,
+      "detail": "hasQuorum=false"
+    },
+    {
+      "name": "Phase 3: fenced Lagos is not primary",
+      "passed": true,
+      "detail": "isPrimary=false"
+    },
+    {
+      "name": "Phase 3: London has quorum after promotion",
+      "passed": true,
+      "detail": "isPrimary=true"
+    },
+    {
+      "name": "Phase 3: zombie write isolated (not in London store)",
+      "passed": true,
+      "detail": "zombie in London=false"
+    },
+    {
+      "name": "Phase 4: Lagos recovered in < 5ms",
+      "passed": true,
+      "detail": "4.043ms"
+    },
+    {
+      "name": "Phase 4: Lagos and London have same record count",
+      "passed": true,
+      "detail": "L=6000 LN=6000"
+    },
+    {
+      "name": "Phase 4: Singapore has same record count",
+      "passed": true,
+      "detail": "SG=6000 LN=6000"
+    },
+    {
+      "name": "Phase 5: post-failover throughput > 5,000 writes/sec",
+      "passed": true,
+      "detail": "76,160/sec"
+    },
+    {
+      "name": "Phase 5: all 10,000 records in all 3 regions",
+      "passed": true,
+      "detail": "L=10000 LN=10000 SG=10000"
+    },
+    {
+      "name": "Phase 5: zero data loss across entire test",
+      "passed": true,
+      "detail": "dropped=0"
+    },
+    {
+      "name": "Latency: p99 < 1ms (scaled)",
+      "passed": true,
+      "detail": "0.539ms"
+    }
+  ],
+  "metrics": {
+    "totalWrites": 10000,
+    "warmupThroughput": 64563,
+    "peakThroughput": 75888,
+    "postFailoverThroughput": 76160,
+    "failoverTimeMs": 0.3494230000000016,
+    "recoveryTimeMs": 4.0429809999999975,
+    "replicationP50Ms": 0.1940490000000102,
+    "replicationP99Ms": 0.5391999999999973,
+    "finalRecords": {
+      "lagos": 10000,
+      "london": 10000,
+      "singapore": 10000
+    },
+    "dataLoss": 0,
+    "splitBrainPrevented": true
+  }
+}
