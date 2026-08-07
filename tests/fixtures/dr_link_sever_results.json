@@ -1,0 +1,12 @@
+{
+  "passed": 19,
+  "failed": 0,
+  "regions": {
+    "lagos": 255,
+    "london": 255,
+    "singapore": 250
+  },
+  "conflicts": 30,
+  "droppedMessages": 0,
+  "recoveredMessages": 295
+}
