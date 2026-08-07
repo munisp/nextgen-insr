@@ -146,6 +146,7 @@ data:
 
     rule_files:
     - /etc/prometheus/rules/*.yml
+    - /etc/prometheus/rules/alert-rules.yml
 
     scrape_configs:
     - job_name: 'prometheus'
@@ -269,3 +270,78 @@ data:
       - source_labels: [__meta_kubernetes_pod_label_app]
         action: keep
         regex: redis-cluster
+    - job_name: 'insureportal-app'
+      static_configs:
+      - targets: ['insureportal-app:3000']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'fraud-gate'
+      static_configs:
+      - targets: ['fraud-gate:8090']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'ml-fraud-scoring'
+      static_configs:
+      - targets: ['ml-fraud-scoring:8001']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'kyc-verification'
+      static_configs:
+      - targets: ['kyc-verification:8002']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'float-reconciler'
+      static_configs:
+      - targets: ['float-reconciler:8100']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'health-worker'
+      static_configs:
+      - targets: ['health-worker:8101']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'slo-engine'
+      static_configs:
+      - targets: ['slo-engine:8200']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'tb-sidecar'
+      static_configs:
+      - targets: ['tb-sidecar:7070']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'temporal'
+      static_configs:
+      - targets: ['temporal:7233']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'keycloak'
+      static_configs:
+      - targets: ['keycloak:8080']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'permify'
+      static_configs:
+      - targets: ['permify:3476']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'fluvio'
+      static_configs:
+      - targets: ['fluvio:9003']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'dapr'
+      static_configs:
+      - targets: ['dapr:3500']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'apisix'
+      static_configs:
+      - targets: ['apisix:9091']
+      metrics_path: /metrics
+      scrape_interval: 30s
+    - job_name: 'openappsec'
+      static_configs:
+      - targets: ['openappsec:7777']
+      metrics_path: /metrics
+      scrape_interval: 30s

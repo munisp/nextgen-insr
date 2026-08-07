@@ -1,0 +1,232 @@
+{
+  "title": "InsurePortal — Zero-Trust Security & Journey Monitoring",
+  "uid": "insureportal-zero-trust",
+  "version": 1,
+  "schemaVersion": 38,
+  "tags": ["insureportal", "security", "zero-trust", "journeys"],
+  "timezone": "Africa/Lagos",
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Cross-Tenant Access Attempts (blocked/sec)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "rate(insureportal_cross_tenant_blocked_total[1m])",
+        "legendFormat": "Blocked/sec"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "thresholds": { "steps": [{"color": "green", "value": 0}, {"color": "red", "value": 1}] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "JWT Validation Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        { "expr": "rate(insureportal_jwt_validated_total[1m])", "legendFormat": "Valid" },
+        { "expr": "rate(insureportal_jwt_rejected_total[1m])", "legendFormat": "Rejected" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "WAF Blocks (OpenAppSec)",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "rate(openappsec_blocked_requests_total[5m]) * 60",
+        "legendFormat": "Blocks/min"
+      }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 10}, {"color": "red", "value": 100}] }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Permify Authorization Checks",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(insureportal_permify_checks_total[1m])", "legendFormat": "Checks/sec" },
+        { "expr": "rate(insureportal_permify_denied_total[1m])", "legendFormat": "Denied/sec" },
+        { "expr": "rate(insureportal_permify_allowed_total[1m])", "legendFormat": "Allowed/sec" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Rate Limit Violations",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "rate(apisix_rate_limit_exceeded_total[1m])",
+        "legendFormat": "Exceeded/sec"
+      }]
+    },
+    {
+      "id": 6,
+      "title": "Journey Execution Status (28 Workflows)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 10 },
+      "targets": [{
+        "expr": "insureportal_journey_executions_total",
+        "legendFormat": "{{journey_id}} {{status}}"
+      }],
+      "transformations": [
+        { "id": "groupBy", "options": { "fields": { "journey_id": { "aggregations": [], "operation": "groupby" }, "status": { "aggregations": [], "operation": "groupby" }, "Value": { "aggregations": ["sum"], "operation": "aggregate" } } } }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Saga Compensation Rate",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 26, "w": 6, "h": 8 },
+      "targets": [{
+        "expr": "100 * rate(insureportal_journey_compensation_total[10m]) / rate(insureportal_journey_started_total[10m])",
+        "legendFormat": "Compensation %"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": { "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 2}, {"color": "red", "value": 5}] }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "TigerBeetle Ledger Balance",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 26, "w": 6, "h": 8 },
+      "targets": [{
+        "expr": "insureportal_ledger_debit_total - insureportal_ledger_credit_total",
+        "legendFormat": "Imbalance (should be 0)"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{"color": "green", "value": 0}, {"color": "red", "value": 1}] }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "TB Transfer Success Rate",
+      "type": "gauge",
+      "gridPos": { "x": 12, "y": 26, "w": 6, "h": 8 },
+      "targets": [{
+        "expr": "100 * (1 - rate(insureportal_tb_transfer_failures_total[5m]) / rate(insureportal_tb_transfers_total[5m]))",
+        "legendFormat": "Success %"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 95, "max": 100,
+          "thresholds": { "steps": [{"color": "red", "value": 95}, {"color": "yellow", "value": 99}, {"color": "green", "value": 99.9}] }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Error Budget Burn Rate",
+      "type": "gauge",
+      "gridPos": { "x": 18, "y": 26, "w": 6, "h": 8 },
+      "targets": [{
+        "expr": "insureportal_error_budget_burn_rate",
+        "legendFormat": "Burn Rate (1x = normal)"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 2}, {"color": "red", "value": 14.4}] }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Service Health Matrix",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 34, "w": 24, "h": 10 },
+      "targets": [{
+        "expr": "up{namespace=\"insureportal\"}",
+        "legendFormat": "{{job}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }]
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "NetworkPolicy Dropped Packets",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 44, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "rate(network_policy_dropped_packets_total{namespace=\"insureportal\"}[1m])",
+        "legendFormat": "Dropped/sec ({{pod}})"
+      }]
+    },
+    {
+      "id": 13,
+      "title": "Temporal Workflow Queue Depth",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 44, "w": 12, "h": 8 },
+      "targets": [{
+        "expr": "temporal_workflow_task_queue_depth{task_queue=\"insureportal-journeys\"}",
+        "legendFormat": "Queue Depth"
+      }]
+    },
+    {
+      "id": 14,
+      "title": "Blacklisted Token Attempts",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 52, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "rate(insureportal_blacklisted_token_attempts_total[5m]) * 300",
+        "legendFormat": "Attempts/5min"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 5}, {"color": "red", "value": 25}] }
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "NAICOM Report Status",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 52, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "(time() - insureportal_last_naicom_report_timestamp) / 3600",
+        "legendFormat": "Hours since last report"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": { "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 20}, {"color": "red", "value": 24}] }
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "Pending SAR Filings",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 52, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "insureportal_pending_sar_filings_count",
+        "legendFormat": "Pending SARs"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 5}, {"color": "red", "value": 10}] }
+        }
+      }
+    }
+  ]
+}

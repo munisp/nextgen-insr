@@ -1,0 +1,598 @@
+##############################################################################
+# InsurePortal — Prometheus Alert Rules (PrometheusRule CRD)
+#
+# Covers:
+#   1. Platform availability (all 16 services)
+#   2. TigerBeetle ledger health
+#   3. Temporal workflow monitoring
+#   4. Zero-trust security events (JWT, NetworkPolicy, cross-tenant)
+#   5. Flow-of-funds integrity
+#   6. AI/ML service health
+#   7. Compliance (NAICOM, CBN, NDPR)
+#   8. SLA monitoring
+##############################################################################
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: insureportal-alert-rules
+  namespace: insureportal
+  labels:
+    app: prometheus
+    release: prometheus
+spec:
+  groups:
+
+  # ── 1. Platform Availability ───────────────────────────────────────────────
+  - name: insureportal.availability
+    interval: 30s
+    rules:
+    - alert: InsurePortalAppDown
+      expr: up{job="insureportal-app"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        team: platform
+        pager: true
+      annotations:
+        summary: "InsurePortal main app is DOWN"
+        description: "The main InsurePortal application has been unreachable for > 1 minute. All API endpoints are unavailable."
+        runbook_url: "https://wiki.insureportal.ng/runbooks/app-down"
+
+    - alert: HighErrorRate
+      expr: |
+        100 * rate(http_requests_total{job="insureportal-app",status=~"5.."}[5m])
+        / rate(http_requests_total{job="insureportal-app"}[5m]) > 5
+      for: 5m
+      labels:
+        severity: critical
+        team: platform
+      annotations:
+        summary: "High error rate: {{ $value | printf \"%.1f\" }}%"
+        description: "Error rate above 5% for 5 minutes. Possible database or downstream service failure."
+
+    - alert: HighP99Latency
+      expr: |
+        histogram_quantile(0.99,
+          rate(http_request_duration_seconds_bucket{job="insureportal-app"}[5m])
+        ) > 2.0
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "P99 latency {{ $value | printf \"%.2f\" }}s exceeds 2s SLA"
+        description: "API P99 latency has exceeded the 2-second SLA threshold."
+
+    - alert: FraudGateDown
+      expr: up{job="fraud-gate"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        team: security
+        pager: true
+      annotations:
+        summary: "Rust fraud-gate service is DOWN"
+        description: "The fraud detection service is unavailable. Transactions are proceeding without enhanced fraud scoring."
+
+    - alert: MlFraudScoringDown
+      expr: up{job="ml-fraud-scoring"} == 0
+      for: 2m
+      labels:
+        severity: high
+        team: ai
+      annotations:
+        summary: "ML fraud scoring service is DOWN"
+        description: "Python ML fraud scoring is unavailable. Falling back to rule-based scoring only."
+
+    - alert: KycVerificationDown
+      expr: up{job="kyc-verification"} == 0
+      for: 2m
+      labels:
+        severity: high
+        team: compliance
+      annotations:
+        summary: "KYC verification service is DOWN"
+        description: "New customer onboarding and agent activation will fail."
+
+    - alert: FloatReconcilerDown
+      expr: up{job="float-reconciler"} == 0
+      for: 5m
+      labels:
+        severity: high
+        team: finance
+      annotations:
+        summary: "Float reconciler (Go) is DOWN"
+        description: "End-of-day agent float reconciliation will not run. Manual reconciliation required."
+
+    - alert: HealthWorkerDown
+      expr: up{job="health-worker"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        team: ops
+      annotations:
+        summary: "Health worker (Go) is DOWN"
+        description: "Platform health probes are not running. SLA monitoring is degraded."
+
+    - alert: SloEngineDown
+      expr: up{job="slo-engine"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        team: ops
+      annotations:
+        summary: "SLO engine (Rust) is DOWN"
+        description: "Error budget tracking and SLO breach detection are unavailable."
+
+    - alert: OllamaDown
+      expr: up{job="ollama"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        team: ai
+      annotations:
+        summary: "Ollama AI inference service is DOWN"
+        description: "AI-powered underwriting, claims analysis, and fraud narratives are unavailable."
+
+    - alert: TemporalDown
+      expr: up{job="temporal"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        team: platform
+        pager: true
+      annotations:
+        summary: "Temporal workflow server is DOWN"
+        description: "All 28 insurance journey workflows are paused. No new workflows can be started."
+
+    - alert: KeycloakDown
+      expr: up{job="keycloak"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        team: security
+        pager: true
+      annotations:
+        summary: "Keycloak authentication server is DOWN"
+        description: "All user authentication is failing. The platform is inaccessible to all users."
+
+    - alert: PermifyDown
+      expr: up{job="permify"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        team: security
+      annotations:
+        summary: "Permify authorization service is DOWN"
+        description: "All financial mutations are blocked (fail-closed). Non-financial reads are degraded."
+
+    - alert: FluvioDown
+      expr: up{job="fluvio"} == 0
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Fluvio streaming service is DOWN"
+        description: "Real-time event streaming is unavailable. Journey events are not being published."
+
+    - alert: RedisDown
+      expr: up{job="redis"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        team: platform
+        pager: true
+      annotations:
+        summary: "Redis is DOWN"
+        description: "Idempotency checks are falling back to PostgreSQL. Rate limiting is degraded."
+
+    - alert: PostgresDown
+      expr: up{job="postgres"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        team: platform
+        pager: true
+      annotations:
+        summary: "PostgreSQL is DOWN"
+        description: "All database operations are failing. The entire platform is non-functional."
+
+  # ── 2. TigerBeetle Ledger Health ──────────────────────────────────────────
+  - name: insureportal.tigerbeetle
+    interval: 30s
+    rules:
+    - alert: TigerBeetleSidecarDown
+      expr: up{job="tb-sidecar"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        team: finance
+        pager: true
+      annotations:
+        summary: "TigerBeetle sidecar is DOWN"
+        description: "Financial ledger is in PostgreSQL-only fallback mode. TB sync will resume on recovery."
+        runbook_url: "https://wiki.insureportal.ng/runbooks/tb-sidecar-down"
+
+    - alert: LedgerImbalanceDetected
+      expr: insureportal_ledger_debit_total != insureportal_ledger_credit_total
+      for: 1m
+      labels:
+        severity: critical
+        team: finance
+        pager: true
+      annotations:
+        summary: "CRITICAL: Ledger imbalance detected (debits ≠ credits)"
+        description: "Debit total: {{ $value }}. This indicates a double-entry violation. Immediate investigation required."
+        runbook_url: "https://wiki.insureportal.ng/runbooks/ledger-imbalance"
+
+    - alert: TbTransferFailureRateHigh
+      expr: |
+        rate(insureportal_tb_transfer_failures_total[5m]) /
+        rate(insureportal_tb_transfers_total[5m]) > 0.01
+      for: 5m
+      labels:
+        severity: high
+        team: finance
+      annotations:
+        summary: "TB transfer failure rate > 1%"
+        description: "{{ $value | printf \"%.2f\" }}% of TigerBeetle transfers are failing."
+
+    - alert: LedgerSyncLagHigh
+      expr: insureportal_tb_sync_lag_seconds > 60
+      for: 5m
+      labels:
+        severity: warning
+        team: finance
+      annotations:
+        summary: "TigerBeetle sync lag {{ $value | printf \"%.0f\" }}s > 60s"
+        description: "The TB sidecar is lagging behind PostgreSQL. Reconciliation may show discrepancies."
+
+    - alert: FloatReconciliationDiscrepancy
+      expr: insureportal_float_reconciliation_discrepancy_count > 0
+      for: 1m
+      labels:
+        severity: high
+        team: finance
+      annotations:
+        summary: "{{ $value }} agent float discrepancies detected"
+        description: "Float reconciliation found mismatches between TB and PostgreSQL balances."
+
+  # ── 3. Temporal Workflow Monitoring ───────────────────────────────────────
+  - name: insureportal.temporal
+    interval: 30s
+    rules:
+    - alert: TemporalWorkflowFailureRateHigh
+      expr: |
+        rate(temporal_workflow_failed_total{namespace="insureportal"}[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: high
+        team: platform
+      annotations:
+        summary: "Temporal workflow failure rate > 0.1/sec"
+        description: "{{ $value | printf \"%.2f\" }} workflows/sec are failing. Check journey activities."
+
+    - alert: TemporalWorkflowQueueDepthHigh
+      expr: temporal_workflow_task_queue_depth{task_queue="insureportal-journeys"} > 1000
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Temporal queue depth {{ $value }} > 1000"
+        description: "The journey task queue is backing up. Consider scaling temporal workers."
+
+    - alert: TemporalSagaCompensationRateHigh
+      expr: |
+        rate(insureportal_journey_compensation_total[10m]) /
+        rate(insureportal_journey_started_total[10m]) > 0.05
+      for: 10m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Saga compensation rate > 5%"
+        description: "{{ $value | humanizePercentage }} of journeys are triggering saga compensation. Investigate downstream failures."
+
+    - alert: J20HealthCheckFailing
+      expr: insureportal_j20_services_healthy < 14
+      for: 5m
+      labels:
+        severity: high
+        team: ops
+      annotations:
+        summary: "J20 health check: only {{ $value }}/16 services healthy"
+        description: "Platform health check is detecting service failures. Check the J20 execution history."
+
+  # ── 4. Zero-Trust Security Events ─────────────────────────────────────────
+  - name: insureportal.zero_trust
+    interval: 30s
+    rules:
+    - alert: CrossTenantAccessAttemptSpike
+      expr: rate(insureportal_cross_tenant_blocked_total[5m]) > 10
+      for: 2m
+      labels:
+        severity: critical
+        team: security
+        pager: true
+      annotations:
+        summary: "Cross-tenant access attempt spike: {{ $value | printf \"%.1f\" }}/sec"
+        description: "Unusually high rate of cross-tenant access attempts. Possible security incident."
+        runbook_url: "https://wiki.insureportal.ng/runbooks/cross-tenant-spike"
+
+    - alert: JwtRejectionRateHigh
+      expr: |
+        rate(insureportal_jwt_rejected_total[5m]) /
+        rate(insureportal_jwt_validated_total[5m]) > 0.05
+      for: 5m
+      labels:
+        severity: high
+        team: security
+      annotations:
+        summary: "JWT rejection rate {{ $value | humanizePercentage }} > 5%"
+        description: "High JWT rejection rate may indicate token forgery attempts or clock skew issues."
+
+    - alert: PermifyCheckFailureRateHigh
+      expr: |
+        rate(insureportal_permify_denied_total[5m]) /
+        rate(insureportal_permify_checks_total[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+        team: security
+      annotations:
+        summary: "Permify denial rate {{ $value | humanizePercentage }} > 10%"
+        description: "High authorization denial rate. May indicate privilege escalation attempts."
+
+    - alert: WafBlockRateHigh
+      expr: rate(openappsec_blocked_requests_total[5m]) > 100
+      for: 2m
+      labels:
+        severity: high
+        team: security
+      annotations:
+        summary: "WAF blocking {{ $value | printf \"%.0f\" }} requests/sec"
+        description: "OpenAppSec WAF is blocking an unusually high number of requests. Possible DDoS or scanning attack."
+
+    - alert: RateLimitBurstDetected
+      expr: rate(apisix_rate_limit_exceeded_total[1m]) > 50
+      for: 1m
+      labels:
+        severity: warning
+        team: security
+      annotations:
+        summary: "Rate limit exceeded {{ $value | printf \"%.0f\" }} times/min"
+        description: "Possible credential stuffing or API abuse detected."
+
+    - alert: TokenBlacklistHit
+      expr: rate(insureportal_blacklisted_token_attempts_total[5m]) > 5
+      for: 2m
+      labels:
+        severity: high
+        team: security
+      annotations:
+        summary: "{{ $value | printf \"%.1f\" }} blacklisted token attempts/sec"
+        description: "Attempts to use revoked tokens detected. Possible session hijacking."
+
+  # ── 5. Flow-of-Funds Integrity ─────────────────────────────────────────────
+  - name: insureportal.flow_of_funds
+    interval: 30s
+    rules:
+    - alert: IdempotencyViolationDetected
+      expr: insureportal_idempotency_violations_total > 0
+      for: 0m
+      labels:
+        severity: critical
+        team: finance
+        pager: true
+      annotations:
+        summary: "CRITICAL: Idempotency violation — possible double-spend"
+        description: "{{ $value }} idempotency violations detected. Immediate ledger audit required."
+
+    - alert: PremiumCollectionFailureRateHigh
+      expr: |
+        rate(insureportal_premium_collection_failures_total[5m]) /
+        rate(insureportal_premium_collection_attempts_total[5m]) > 0.02
+      for: 5m
+      labels:
+        severity: high
+        team: finance
+      annotations:
+        summary: "Premium collection failure rate {{ $value | humanizePercentage }} > 2%"
+        description: "High premium collection failure rate. Check TigerBeetle and payment gateway status."
+
+    - alert: ClaimsPayoutDelayHigh
+      expr: |
+        histogram_quantile(0.95,
+          rate(insureportal_claims_payout_duration_seconds_bucket[10m])
+        ) > 300
+      for: 10m
+      labels:
+        severity: warning
+        team: claims
+      annotations:
+        summary: "P95 claims payout duration {{ $value | humanizeDuration }} > 5 minutes"
+        description: "Claims settlement is taking longer than expected. Check adjuster queue and TB sidecar."
+
+    - alert: CommissionPayoutBacklogHigh
+      expr: insureportal_pending_commission_payouts_count > 500
+      for: 30m
+      labels:
+        severity: warning
+        team: finance
+      annotations:
+        summary: "{{ $value }} commission payouts pending > 30 minutes"
+        description: "Commission payout backlog is growing. Check J08 workflow execution."
+
+  # ── 6. AI/ML Service Health ────────────────────────────────────────────────
+  - name: insureportal.ai_ml
+    interval: 60s
+    rules:
+    - alert: FraudModelDriftDetected
+      expr: insureportal_ml_model_drift_score > 0.15
+      for: 30m
+      labels:
+        severity: warning
+        team: ai
+      annotations:
+        summary: "ML fraud model drift score {{ $value | printf \"%.3f\" }} > 0.15"
+        description: "The fraud detection model may need retraining. Feature distribution has shifted."
+
+    - alert: OllamaInferenceLatencyHigh
+      expr: |
+        histogram_quantile(0.95,
+          rate(ollama_request_duration_seconds_bucket[5m])
+        ) > 30
+      for: 10m
+      labels:
+        severity: warning
+        team: ai
+      annotations:
+        summary: "Ollama P95 inference latency {{ $value | printf \"%.1f\" }}s > 30s"
+        description: "AI inference is slow. Consider using a smaller model or adding GPU resources."
+
+    - alert: MlFraudScoringHighLatency
+      expr: |
+        histogram_quantile(0.99,
+          rate(ml_fraud_scoring_duration_seconds_bucket[5m])
+        ) > 2
+      for: 5m
+      labels:
+        severity: warning
+        team: ai
+      annotations:
+        summary: "ML fraud scoring P99 latency {{ $value | printf \"%.2f\" }}s > 2s"
+        description: "Fraud scoring is slow. Transaction processing may be delayed."
+
+  # ── 7. Compliance Monitoring ───────────────────────────────────────────────
+  - name: insureportal.compliance
+    interval: 60s
+    rules:
+    - alert: NaicomReportingOverdue
+      expr: |
+        time() - insureportal_last_naicom_report_timestamp > 86400
+      for: 1h
+      labels:
+        severity: high
+        team: compliance
+      annotations:
+        summary: "NAICOM daily report overdue by {{ $value | humanizeDuration }}"
+        description: "The daily NAICOM regulatory report has not been submitted. Compliance violation risk."
+
+    - alert: AmlSarFilingBacklog
+      expr: insureportal_pending_sar_filings_count > 10
+      for: 1h
+      labels:
+        severity: high
+        team: compliance
+      annotations:
+        summary: "{{ $value }} SAR filings pending > 1 hour"
+        description: "AML Suspicious Activity Reports are not being filed in time. Regulatory risk."
+
+    - alert: KycVerificationBacklogHigh
+      expr: insureportal_pending_kyc_verifications_count > 100
+      for: 30m
+      labels:
+        severity: warning
+        team: compliance
+      annotations:
+        summary: "{{ $value }} KYC verifications pending"
+        description: "KYC backlog is growing. New customer onboarding is delayed."
+
+    - alert: DataBreachNotificationOverdue
+      expr: |
+        insureportal_data_breach_notification_overdue_count > 0
+      for: 0m
+      labels:
+        severity: critical
+        team: compliance
+        pager: true
+      annotations:
+        summary: "CRITICAL: Data breach 72-hour notification deadline missed"
+        description: "{{ $value }} data breach(es) have exceeded the GDPR/NDPR 72-hour notification deadline."
+
+  # ── 8. SLA Monitoring ─────────────────────────────────────────────────────
+  - name: insureportal.sla
+    interval: 30s
+    rules:
+    - alert: SlaBreachDetected
+      expr: insureportal_sla_breaches_total > 0
+      for: 0m
+      labels:
+        severity: high
+        team: ops
+      annotations:
+        summary: "SLA breach detected: {{ $value }} breach(es)"
+        description: "One or more service level agreements have been breached. Check the SLO dashboard."
+
+    - alert: ErrorBudgetBurnRateHigh
+      expr: |
+        insureportal_error_budget_burn_rate > 14.4
+      for: 5m
+      labels:
+        severity: critical
+        team: ops
+        pager: true
+      annotations:
+        summary: "Error budget burn rate {{ $value | printf \"%.1f\" }}x (1-hour window)"
+        description: "At this burn rate, the monthly error budget will be exhausted in < 1 hour."
+
+    - alert: AvailabilitySlaAtRisk
+      expr: |
+        (1 - (rate(http_requests_total{status=~"5.."}[30m]) / rate(http_requests_total[30m]))) < 0.999
+      for: 10m
+      labels:
+        severity: high
+        team: ops
+      annotations:
+        summary: "30-minute availability {{ $value | humanizePercentage }} below 99.9% SLA"
+        description: "Platform availability has dropped below the 99.9% SLA target."
+
+  # ── 9. Infrastructure ─────────────────────────────────────────────────────
+  - name: insureportal.infrastructure
+    interval: 30s
+    rules:
+    - alert: PodCrashLooping
+      expr: |
+        rate(kube_pod_container_status_restarts_total{namespace="insureportal"}[15m]) > 0
+      for: 5m
+      labels:
+        severity: high
+        team: ops
+      annotations:
+        summary: "Pod {{ $labels.pod }} is crash-looping"
+        description: "Container {{ $labels.container }} has restarted {{ $value | printf \"%.0f\" }} times in 15 minutes."
+
+    - alert: PodNotReady
+      expr: |
+        kube_pod_status_ready{namespace="insureportal",condition="true"} == 0
+      for: 5m
+      labels:
+        severity: high
+        team: ops
+      annotations:
+        summary: "Pod {{ $labels.pod }} is not ready"
+        description: "Pod has been in non-ready state for > 5 minutes."
+
+    - alert: PersistentVolumeNearFull
+      expr: |
+        kubelet_volume_stats_available_bytes{namespace="insureportal"} /
+        kubelet_volume_stats_capacity_bytes{namespace="insureportal"} < 0.1
+      for: 10m
+      labels:
+        severity: high
+        team: ops
+      annotations:
+        summary: "PV {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full"
+        description: "Persistent volume is nearly full. Database or TigerBeetle data may be at risk."
+
+    - alert: NetworkPolicyViolationDetected
+      expr: rate(network_policy_dropped_packets_total{namespace="insureportal"}[5m]) > 0
+      for: 2m
+      labels:
+        severity: warning
+        team: security
+      annotations:
+        summary: "NetworkPolicy dropping {{ $value | printf \"%.1f\" }} packets/sec"
+        description: "Unexpected traffic is being blocked by NetworkPolicies. May indicate misconfiguration or intrusion attempt."
