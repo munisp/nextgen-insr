@@ -1,0 +1,23 @@
+{
+  "passed": 21,
+  "failed": 0,
+  "latency": {
+    "p50": 0.1624970000000053,
+    "p95": 0.18316600000000022,
+    "p99": 0.1895659999999782,
+    "p999": 0.20834199999998076,
+    "max": 0.20834199999998076
+  },
+  "convergenceMs": 1.2713589999999897,
+  "cascadeConvergenceMs": 1.1823129999999935,
+  "finalRecords": {
+    "lagos": 165,
+    "london": 165,
+    "singapore": 165
+  },
+  "realWorldProjections": {
+    "lagosToLondonP50Ms": 162,
+    "lagosToSingaporeP50Ms": 366,
+    "convergenceAfterSplitBrainMs": 1271
+  }
+}
