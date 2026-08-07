@@ -329,4 +329,16 @@ export async function ensureFluvioTopics(): Promise<void> {
   if (failed.length > 0) logger.warn("[Fluvio] Some topics unavailable:", failed.slice(0, 3));
 }
 
+
+/** Publish a SAR dead-letter queue alert. */
+export async function publishSarDlqAlert(alert: {
+  dlqId: number;
+  originalFilingId: number;
+  referenceNumber: string;
+  totalRetries: number;
+  lastError?: string;
+}): Promise<void> {
+  return publishToFluvio("aml.sar.dlq", { ...alert, timestamp: new Date().toISOString() });
+}
+
 export default { publishTxToFluvio, publishFraudAlert, publishWorkflowEvent, publishToFluvio };

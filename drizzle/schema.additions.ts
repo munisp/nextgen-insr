@@ -417,3 +417,23 @@ export { sla_breaches as slaBreaches } from "./schema";
 export { loadTestRuns as loadTestRunsTable } from "./schema";
 // insuranceServices alias — terminalLeasing uses insuranceServices which maps to insuranceProducts
 export { insuranceProducts as insuranceServices } from "./schema";
+
+// ── SAR Dead-Letter Queue ─────────────────────────────────────────────────────
+export const sarDeadLetterQueue = pgTable("sar_dead_letter_queue", {
+  id: serial("id").primaryKey(),
+  filingType: text("filing_type").notNull().default("SAR"),
+  originalFilingId: integer("original_filing_id").notNull(),
+  referenceNumber: text("reference_number").notNull(),
+  status: text("status").notNull().default("dlq"), // dlq | requeued | resolved
+  errorHistory: jsonb("error_history").notNull().default([]),
+  lastError: text("last_error"),
+  totalRetries: integer("total_retries").notNull().default(0),
+  filingData: jsonb("filing_data"),
+  routedAt: timestamp("routed_at").notNull().defaultNow(),
+  requeuedAt: timestamp("requeued_at"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: text("resolved_by"),
+  resolutionNote: text("resolution_note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

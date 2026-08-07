@@ -16,6 +16,7 @@ import { publishToFluvio } from "./fluvio";
 const NFIU_API_URL = process.env.NFIU_API_URL ?? "https://nfiu.gov.ng/api/v1";
 const BATCH_SIZE = 50;
 const MAX_RETRIES = 3;
+const DLQ_THRESHOLD = 9; // After 9 total retries (3 cron runs × 3 attempts), route to DLQ
 const BACKOFF_MS = 100;
 const ADVISORY_LOCK_KEY = 7777001; // Unique key for SAR retry cron
 
