@@ -512,6 +512,37 @@ spec:
         summary: "CRITICAL: Data breach 72-hour notification deadline missed"
         description: "{{ $value }} data breach(es) have exceeded the GDPR/NDPR 72-hour notification deadline."
 
+
+    - alert: SarDlqQueueDepthHigh
+      expr: insureportal_sar_dlq_depth > 0
+      for: 0m
+      labels:
+        severity: critical
+        team: compliance
+        pager: true
+      annotations:
+        summary: "{{ $value }} SAR(s) in dead-letter queue — manual review required"
+        description: "SAR filings have exhausted all retry attempts and are in the DLQ. Compliance officer must manually review and requeue or resolve each filing. Regulatory deadline risk."
+        runbook_url: "https://wiki.insureportal.ng/runbooks/sar-dlq-manual-review"
+    - alert: ConsumerGroupErrorRateHigh
+      expr: rate(insureportal_consumer_errors_total[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+      annotations:
+        summary: "Consumer group error rate {{ $value | printf \"%.2f\" }}/sec"
+        description: "Fluvio consumer groups are experiencing errors. Check lakehouse ingest, fraud notifications, and AML dashboard consumers."
+    - alert: SarRetryBacklogGrowing
+      expr: increase(insureportal_pending_sar_filings_count[30m]) > 50
+      for: 15m
+      labels:
+        severity: warning
+        team: compliance
+      annotations:
+        summary: "SAR retry backlog growing: +{{ $value }} in 30 minutes"
+        description: "The NFIU API may be experiencing issues. SAR filings are accumulating faster than they are being submitted."
+
   # ── 8. SLA Monitoring ─────────────────────────────────────────────────────
   - name: insureportal.sla
     interval: 30s
