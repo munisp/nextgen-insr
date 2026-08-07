@@ -1279,3 +1279,34 @@ upstreams:
         timeout: 5
         unhealthy:
           http_failures: 3
+
+# ── Permify Authorization Plugin (applied to all financial tRPC routes) ───────
+# This plugin calls Permify before forwarding requests to the main app.
+# It provides a second layer of authorization at the gateway level.
+# The main app's financialProcedure middleware provides the third layer.
+
+plugins_global:
+  - name: permify-authz
+    config:
+      permify_url: "http://permify:3476"
+      tenant_id: "${PERMIFY_TENANT_ID}"
+      # Routes that require financial authorization (billing_ledger:record)
+      financial_routes:
+        - "/api/trpc/transactions.*"
+        - "/api/trpc/floatManagement.*"
+        - "/api/trpc/agentFloatTransfer.*"
+        - "/api/trpc/commissionPayouts.*"
+        - "/api/trpc/insuranceWorkflows.settle.*"
+        - "/api/trpc/billingLedger.*"
+        - "/api/trpc/airtimeVending.*"
+        - "/api/trpc/billPayments.*"
+        - "/api/trpc/remittance.*"
+        - "/api/trpc/merchantPayments.*"
+        - "/api/trpc/splitPayments.*"
+        - "/api/trpc/mobileMoney.*"
+        - "/api/trpc/transactionReversalWorkflow.*"
+        - "/api/trpc/agentLoanFacility.disburse"
+        - "/api/trpc/agentLoanFacility.repay"
+      fail_closed: true  # deny if Permify is unavailable for financial routes
+      timeout_ms: 2000
+      cache_ttl_seconds: 30  # cache authorization decisions for 30s
