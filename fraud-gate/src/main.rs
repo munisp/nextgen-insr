@@ -1,3 +1,4 @@
+pub mod spatial_index;
 use actix_web::{web, App, HttpServer, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

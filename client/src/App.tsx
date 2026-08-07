@@ -415,6 +415,8 @@ const BatchProcessingPage = lazy(() => import("./pages/BatchProcessingPage"));
 const IntegrationMarketplacePage = lazy(
   () => import("./pages/IntegrationMarketplacePage")
 );
+const WorldViewPage = lazy(() => import("./pages/WorldViewPage"));
+const InsureMarketPage = lazy(() => import("./pages/InsureMarketPage"));
 const MobileApiLayerPage = lazy(() => import("./pages/MobileApiLayerPage"));
 const AutomatedTestingFrameworkPage = lazy(
   () => import("./pages/AutomatedTestingFrameworkPage")
@@ -2143,6 +2145,12 @@ function AuthenticatedApp() {
           component={AlertNotificationPreferences}
         />
         <Route path="/network-heatmap" component={NetworkQualityHeatmap} />
+        <Route path="/worldview">
+          <Suspense fallback={<SkeletonDashboard />}><WorldViewPage /></Suspense>
+        </Route>
+        <Route path="/insure-market">
+          <Suspense fallback={<SkeletonDashboard />}><InsureMarketPage /></Suspense>
+        </Route>
         {/* ─── Insurance Role Dashboards ─────────────────────────────────── */}
         <Route path="/underwriter-dashboard">
           <Suspense fallback={<SkeletonDashboard />}><UnderwriterDashboard /></Suspense>

@@ -511,9 +511,13 @@ import { insuranceWorkflowsRouter } from "./routers/insuranceWorkflows";
 // ── Insurance KPI Dashboards (all 16 roles) ──
 import { insuranceKpiDashboardRouter } from "./routers/insuranceKpiDashboard";
 import { naicomReportingRouter } from "./routers/naicomReporting";
+import { worldViewRouter } from "./routers/worldView";
+import { insureMarketRouter } from "./routers/insureMarket";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
+  worldView: worldViewRouter,
+  insureMarket: insureMarketRouter,
   // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({

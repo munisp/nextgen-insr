@@ -1,0 +1,300 @@
+{
+  "timestamp": "2026-08-07T12:55:00.474Z",
+  "sprint": 132,
+  "test": "split_brain_circuit_breaker",
+  "passed": 21,
+  "failed": 0,
+  "total": 21,
+  "score": "21/21",
+  "luaScripts": {
+    "acquireFenceLua": {
+      "lines": 23,
+      "description": "KEYS[1] = epochKey, KEYS[2] = fenceKey"
+    },
+    "renewFenceLua": {
+      "lines": 15,
+      "description": "KEYS[1] = fenceKey"
+    },
+    "releaseFenceLua": {
+      "lines": 12,
+      "description": "KEYS[1] = fenceKey"
+    },
+    "renewLockLua": {
+      "lines": 13,
+      "description": "KEYS[1] = lockKey"
+    }
+  },
+  "scenarios": [
+    {
+      "id": 1,
+      "desc": "All 3 regions live",
+      "votes": 6,
+      "quorum": true,
+      "circuitOpen": false
+    },
+    {
+      "id": 2,
+      "desc": "Singapore partitioned",
+      "votes": 5,
+      "quorum": true,
+      "circuitOpen": false
+    },
+    {
+      "id": 3,
+      "desc": "London+Singapore partitioned — Lagos only",
+      "votes": 3,
+      "quorum": false,
+      "circuitOpen": true
+    },
+    {
+      "id": 4,
+      "desc": "All regions partitioned",
+      "votes": 0,
+      "quorum": false,
+      "circuitOpen": true
+    },
+    {
+      "id": 5,
+      "desc": "Singapore reconnects only",
+      "votes": 1,
+      "quorum": false,
+      "circuitOpen": true
+    },
+    {
+      "id": 6,
+      "desc": "London reconnects — quorum restored",
+      "votes": 5,
+      "quorum": true,
+      "circuitOpen": false
+    },
+    {
+      "id": 7,
+      "desc": "Zombie Lagos write attempt",
+      "votes": 6,
+      "quorum": true,
+      "circuitOpen": false,
+      "blocked": true
+    },
+    {
+      "id": 8,
+      "desc": "Lease renewal after TTL expiry",
+      "votes": 6,
+      "quorum": true,
+      "renewalFails": true
+    }
+  ],
+  "quorumModel": {
+    "weights": {
+      "ng-lagos": 3,
+      "gb-london": 2,
+      "sg-singapore": 1
+    },
+    "totalVotes": 6,
+    "majorityRequired": 4
+  },
+  "tests": [
+    {
+      "num": 1,
+      "name": "S1: Lagos acquires lease when all 3 regions live",
+      "passed": true,
+      "detail": "epoch=1 votes=6"
+    },
+    {
+      "num": 2,
+      "name": "S1: Circuit breaker remains CLOSED",
+      "passed": true,
+      "detail": "failures=0"
+    },
+    {
+      "num": 3,
+      "name": "S1: hasQuorum=true with 6 votes",
+      "passed": true,
+      "detail": "votes=6"
+    },
+    {
+      "num": 4,
+      "name": "S2: Lagos acquires lease — Lagos+London = 5 votes ≥ 4",
+      "passed": true,
+      "detail": "epoch=2 votes=5"
+    },
+    {
+      "num": 5,
+      "name": "S2: Circuit breaker remains CLOSED",
+      "passed": true,
+      "detail": "failures=0"
+    },
+    {
+      "num": 6,
+      "name": "S3: ErrNoQuorum thrown — Lagos alone (3 votes) < 4 required",
+      "passed": true,
+      "detail": "votes=3, required=4"
+    },
+    {
+      "num": 7,
+      "name": "S3: No lease acquired — writes blocked",
+      "passed": true,
+      "detail": "lease=null"
+    },
+    {
+      "num": 8,
+      "name": "S3: Circuit breaker failure counter incremented",
+      "passed": true,
+      "detail": "failures=1"
+    },
+    {
+      "num": 9,
+      "name": "S3: Circuit breaker OPENS after 3 consecutive quorum failures",
+      "passed": true,
+      "detail": "failures=4, threshold=3"
+    },
+    {
+      "num": 10,
+      "name": "S4: All writes blocked — zero votes, circuit open",
+      "passed": true,
+      "detail": "circuitOpen=true"
+    },
+    {
+      "num": 11,
+      "name": "S4: Circuit breaker remains OPEN — no recovery yet",
+      "passed": true,
+      "detail": "openFor=0ms"
+    },
+    {
+      "num": 12,
+      "name": "S5: Singapore-only (1 vote) still blocked — quorum not restored",
+      "passed": true,
+      "detail": "votes=1, required=4"
+    },
+    {
+      "num": 13,
+      "name": "S5: hasQuorum=false with Singapore only",
+      "passed": true,
+      "detail": "votes=1"
+    },
+    {
+      "num": 14,
+      "name": "S6: Circuit breaker transitions to HALF-OPEN then CLOSED on quorum restore",
+      "passed": true,
+      "detail": "epoch=3 votes=5"
+    },
+    {
+      "num": 15,
+      "name": "S6: Circuit breaker CLOSED after successful acquire",
+      "passed": true,
+      "detail": "failures=0"
+    },
+    {
+      "num": 16,
+      "name": "S6: London acquires lease — Lagos+London quorum met",
+      "passed": true,
+      "detail": "votes=5, required=4"
+    },
+    {
+      "num": 17,
+      "name": "S7: Zombie Lagos write blocked — fence held by London (ErrFenceConflict)",
+      "passed": true,
+      "detail": "londonEpoch=3, lagosAttemptedEpoch=2"
+    },
+    {
+      "num": 18,
+      "name": "S7: London lease remains valid — no split-brain",
+      "passed": true,
+      "detail": "epoch=3"
+    },
+    {
+      "num": 19,
+      "name": "S7: No zombie lease issued",
+      "passed": true,
+      "detail": "staleLease=null"
+    },
+    {
+      "num": 20,
+      "name": "S8: Renewal fails after TTL expiry (ErrLeaseExpired)",
+      "passed": true,
+      "detail": "renewErr=ErrLeaseExpired"
+    },
+    {
+      "num": 21,
+      "name": "S8: Expired lease reports isValid()=false",
+      "passed": true,
+      "detail": "valid=false"
+    }
+  ],
+  "fencerEvents": [
+    {
+      "ts": 1786107300221,
+      "event": "LEASE_ACQUIRED",
+      "detail": {
+        "region": "ng-lagos",
+        "epoch": 1,
+        "votes": 3
+      }
+    },
+    {
+      "ts": 1786107300221,
+      "event": "LEASE_RELEASED",
+      "detail": {
+        "region": "ng-lagos",
+        "epoch": 1
+      }
+    },
+    {
+      "ts": 1786107300221,
+      "event": "LEASE_ACQUIRED",
+      "detail": {
+        "region": "ng-lagos",
+        "epoch": 2,
+        "votes": 3
+      }
+    },
+    {
+      "ts": 1786107300221,
+      "event": "LEASE_RELEASED",
+      "detail": {
+        "region": "ng-lagos",
+        "epoch": 2
+      }
+    },
+    {
+      "ts": 1786107300222,
+      "event": "CIRCUIT_OPEN",
+      "detail": {
+        "failures": 3,
+        "reason": "ErrNoQuorum: ng-lagos votes=3"
+      }
+    },
+    {
+      "ts": 1786107300222,
+      "event": "CIRCUIT_HALF_OPEN",
+      "detail": {
+        "after_ms": 5100
+      }
+    },
+    {
+      "ts": 1786107300222,
+      "event": "LEASE_ACQUIRED",
+      "detail": {
+        "region": "gb-london",
+        "epoch": 3,
+        "votes": 2
+      }
+    },
+    {
+      "ts": 1786107300223,
+      "event": "LEASE_RELEASED",
+      "detail": {
+        "region": "gb-london",
+        "epoch": 3
+      }
+    },
+    {
+      "ts": 1786107300223,
+      "event": "LEASE_ACQUIRED",
+      "detail": {
+        "region": "ng-lagos",
+        "epoch": 4,
+        "votes": 3
+      }
+    }
+  ]
+}

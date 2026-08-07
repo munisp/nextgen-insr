@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "./styles/print.css";
 @import "./styles/insurance-tokens.css";
+@import "./styles/worldclass-design-system.css";
 
 @custom-variant dark (&:is(.dark *));
 

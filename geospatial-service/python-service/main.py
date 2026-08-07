@@ -161,6 +161,14 @@ app = FastAPI(
 )
 app.middleware("http")(keycloak_auth_middleware)
 
+# Sedona spatial analytics router
+try:
+    from sedona_analytics import sedona_router
+    app.include_router(sedona_router)
+except ImportError as _e:
+    import logging
+    logging.getLogger(__name__).warning(f"sedona_analytics not loaded: {_e}")
+
 
 app.add_middleware(
     CORSMiddleware,
