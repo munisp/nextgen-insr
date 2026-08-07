@@ -114,6 +114,10 @@ async function startServer() {
     const { runKycExpiryCheck } = require("../cron/kycExpiryCheck");
     cron.schedule("*/15 * * * *", runDisputeAutoEscalation); // Every 15 min
     cron.schedule("0 6 * * *", runKycExpiryCheck); // Daily at 6 AM
+
+    // SAR retry cron — every 15 minutes, retries pending NFIU submissions
+    const { startSarRetryCronSchedule } = require("../sar-retry-cron");
+    startSarRetryCronSchedule();
     logger.info(
       "[Cron] Dispute auto-escalation (15min) and KYC expiry check (daily) registered"
     );
