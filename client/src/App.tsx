@@ -2243,6 +2243,7 @@ function AuthenticatedApp() {
 export default function App() {
   const { shortcuts, helpOpen, setHelpOpen } = useKeyboardShortcuts();
 const InsuranceJourneyDashboard = lazy(() => import("./pages/InsuranceJourneyDashboard"));
+const WorkflowMonitorDashboard = lazy(() => import("./pages/WorkflowMonitorDashboard"));
 
   return (
     <ErrorBoundary>
@@ -2272,7 +2273,8 @@ const InsuranceJourneyDashboard = lazy(() => import("./pages/InsuranceJourneyDas
       </AccessibilityProvider>
     </ErrorBoundary>
   );        <Route path="/insurance/journeys">
-          <Suspense fallback={<SkeletonDashboard />}><InsuranceJourneyDashboard /></Suspense>
+          <Suspense fallback={<SkeletonDashboard />
+              <Route path="/insurance/monitor" element={<WorkflowMonitorDashboard />} />}><InsuranceJourneyDashboard /></Suspense>
         </Route>
 
 }
