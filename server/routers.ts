@@ -2,6 +2,12 @@ import { KC_SESSION_COOKIE } from "./_core/keycloakAuth";
 import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
 import { insuranceJourneyOrchestratorV2Router } from "./routers/insuranceJourneyOrchestratorV2";
 import { j20SchedulerRouter } from "./routers/j20SchedulerRouter";
+import {
+  telematicsRouter, cvClaimsRouter, fraudNetworkRouter, healthWearablesRouter,
+  nhiaRouter, comparisonRouter, p2pPoolsRouter, voiceClaimsRouter,
+  parametricRouter, groupInsuranceRouter, bancassuranceRouter, openInsuranceRouter,
+  climateRiskRouter, renewalPredictionRouter, sloMonitorRouter, didIdentityRouter,
+} from "./routers/innovationRouters";
 import { insurancePolicyQuoteManagerRouter } from "./routers/insurancePolicyQuoteManager";
 import { insuranceProductCatalogRouter } from "./routers/insuranceProductCatalog";
 // Sprint 98: Missing router imports
@@ -1099,6 +1105,22 @@ export const appRouter = router({
   insuranceJourneyOrchestrator: insuranceJourneyOrchestratorRouter,
   journeyOrchestratorV2: insuranceJourneyOrchestratorV2Router,
   j20Scheduler: j20SchedulerRouter,
+  telematics: telematicsRouter,
+  cvClaims: cvClaimsRouter,
+  fraudNetwork: fraudNetworkRouter,
+  healthWearables: healthWearablesRouter,
+  nhia: nhiaRouter,
+  comparison: comparisonRouter,
+  p2pPools: p2pPoolsRouter,
+  voiceClaims: voiceClaimsRouter,
+  parametric: parametricRouter,
+  groupInsurance: groupInsuranceRouter,
+  bancassurance: bancassuranceRouter,
+  openInsurance: openInsuranceRouter,
+  climateRisk: climateRiskRouter,
+  renewalPrediction: renewalPredictionRouter,
+  sloMonitor: sloMonitorRouter,
+  didIdentity: didIdentityRouter,
 });
 
 export type AppRouter = typeof appRouter;

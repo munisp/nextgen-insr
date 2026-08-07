@@ -602,3 +602,190 @@ self.addEventListener("message", event => {
     caches.delete(INSURANCE_CACHE);
   }
 });
+
+// ── Innovation Features Cache (Sprint 108) ───────────────────────────────────
+const INNOVATION_CACHE = "insureportal-innovations-v1";
+const INNOVATION_ENDPOINTS = [
+  "/api/trpc/telematics.getDrivingScore",
+  "/api/trpc/telematics.getHistory",
+  "/api/trpc/healthWearables.getWellnessSummary",
+  "/api/trpc/p2pPools.listPools",
+  "/api/trpc/comparison.getQuotes",
+  "/api/trpc/nhia.getEnrollment",
+  "/api/trpc/climateRisk.getRiskScore",
+  "/api/trpc/renewalPrediction.getPrediction",
+  "/api/trpc/sloMonitor.getSlos",
+  "/api/trpc/sloMonitor.getIncidents",
+  "/api/trpc/didIdentity.verifyCredential",
+  "/api/trpc/groupInsurance.listGroupPolicies",
+  "/api/trpc/bancassurance.getPartnerAnalytics",
+  "/api/trpc/openInsurance.getData",
+  "/api/trpc/parametric.getTriggers",
+  "/api/trpc/journeyOrchestratorV2.getDefinitions",
+  "/api/trpc/journeyOrchestratorV2.listExecutions",
+  "/api/trpc/journeyOrchestratorV2.getAnalytics",
+  "/api/trpc/journeyOrchestratorV2.listSchedules",
+  "/api/trpc/j20Scheduler.getScheduleStatus",
+  "/api/trpc/j20Scheduler.getRecentResults",
+];
+
+// Background sync tags for innovation features
+const SYNC_TELEMATICS = "sync-telematics-events";
+const SYNC_WEARABLES = "sync-wearable-readings";
+const SYNC_VOICE_CLAIM = "sync-voice-claim";
+
+// Cache innovation KPI data on fetch
+self.addEventListener("fetch", event => {
+  const url = new URL(event.request.url);
+  const isInnovationEndpoint = INNOVATION_ENDPOINTS.some(ep =>
+    url.pathname.startsWith(ep.split("?")[0])
+  );
+
+  if (isInnovationEndpoint && event.request.method === "GET") {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches
+              .open(INNOVATION_CACHE)
+              .then(cache => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(event.request).then(cached => {
+            if (cached) return cached;
+            return new Response(
+              JSON.stringify({ error: "offline", cached: false }),
+              { status: 503, headers: { "Content-Type": "application/json" } }
+            );
+          })
+        )
+    );
+  }
+});
+
+// Background sync for innovation features
+self.addEventListener("sync", event => {
+  if (event.tag === SYNC_TELEMATICS) {
+    event.waitUntil(syncTelematicsEvents());
+  }
+  if (event.tag === SYNC_WEARABLES) {
+    event.waitUntil(syncWearableReadings());
+  }
+  if (event.tag === SYNC_VOICE_CLAIM) {
+    event.waitUntil(syncVoiceClaims());
+  }
+});
+
+async function syncTelematicsEvents() {
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open("insureportal_offline_queue", 1);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    // Sync pending telematics events
+    const tx = db.transaction("telematics_queue", "readonly");
+    const store = tx.objectStore("telematics_queue");
+    const events = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    for (const evt of events) {
+      await fetch("/api/trpc/telematics.recordEvent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(evt),
+      });
+    }
+    db.close();
+  } catch (err) {
+    console.error("[SW] Telematics sync error:", err);
+  }
+}
+
+async function syncWearableReadings() {
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open("insureportal_offline_queue", 1);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const tx = db.transaction("wearables_queue", "readonly");
+    const store = tx.objectStore("wearables_queue");
+    const readings = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    for (const reading of readings) {
+      await fetch("/api/trpc/healthWearables.ingestReading", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reading),
+      });
+    }
+    db.close();
+  } catch (err) {
+    console.error("[SW] Wearables sync error:", err);
+  }
+}
+
+async function syncVoiceClaims() {
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open("insureportal_offline_queue", 1);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const tx = db.transaction("voice_claims_queue", "readonly");
+    const store = tx.objectStore("voice_claims_queue");
+    const claims = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    for (const claim of claims) {
+      await fetch("/api/trpc/voiceClaims.transcribeClaim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(claim),
+      });
+    }
+    db.close();
+  } catch (err) {
+    console.error("[SW] Voice claims sync error:", err);
+  }
+}
+
+// Handle innovation sync messages from app
+self.addEventListener("message", event => {
+  if (event.data && event.data.type === "INNOVATION_SYNC") {
+    event.waitUntil(
+      caches.open(INNOVATION_CACHE).then(cache =>
+        Promise.all(
+          INNOVATION_ENDPOINTS.map(ep =>
+            fetch(ep)
+              .then(r => (r.ok ? cache.put(new Request(ep), r) : null))
+              .catch(() => null)
+          )
+        )
+      )
+    );
+  }
+});
+
+// Push notification handlers for innovation features
+// (Extends the existing push handler above)
+// Additional notification types handled:
+// - "parametric_payout": Auto-payout notification
+// - "ubi_adjustment": UBI premium adjustment
+// - "wellness_reward": Wellness reward earned
+// - "nhia_claim_approved": NHIA claim approved
+// - "renewal_offer": Predictive renewal offer
+// - "group_enrollment": Group enrollment complete
+// - "slo_breach": SLO breach detected
+// - "embedded_policy": Embedded policy issued
