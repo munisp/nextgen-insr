@@ -510,6 +510,7 @@ import { kycEnforcementRouter } from "./routers/kycEnforcement";
 import { insuranceWorkflowsRouter } from "./routers/insuranceWorkflows";
 // ── Insurance KPI Dashboards (all 16 roles) ──
 import { insuranceKpiDashboardRouter } from "./routers/insuranceKpiDashboard";
+import { naicomReportingRouter } from "./routers/naicomReporting";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,
@@ -1092,6 +1093,7 @@ export const appRouter = router({
   ussdLocalization: ussdLocalizationRouter,
   webhookManagement: webhookManagementRouter, // re-uses import from line 139
   amlScreening: amlScreeningRouter,
+  naicomReporting: naicomReportingRouter,
   receiptTemplates: receiptTemplatesRouter,
   // E-commerce & Supply Chain
   supplyChain: supplyChainRouter,
