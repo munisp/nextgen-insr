@@ -272,8 +272,8 @@ async fn get_account_balance(data: web::Data<AppState>, path: web::Path<String>)
         Ok(e) => e,
         Err(_) => return HttpResponse::InternalServerError().json(serde_json::json!({"error": "Internal state error"})),
     };
-    let mut debits: u64 = 0;
-    let mut credits: u64 = 0;
+    let mut debits: f64 = 0.0;
+    let mut credits: f64 = 0.0;
 
     for entry in entries.iter() {
         if entry.status == EntryStatus::Completed {
@@ -289,9 +289,9 @@ async fn get_account_balance(data: web::Data<AppState>, path: web::Path<String>)
     HttpResponse::Ok().json(AccountBalance {
         account_id,
         debits_pending: 0,
-        debits_posted: debits,
+        debits_posted: debits as u64,
         credits_pending: 0,
-        credits_posted: credits,
+        credits_posted: credits as u64,
         balance: credits as i64 - debits as i64,
         currency: "NGN".to_string(),
         kyc_level: 0,
@@ -338,7 +338,7 @@ async fn get_ledger_stats(data: web::Data<AppState>) -> HttpResponse {
     let rejected = entries.iter().filter(|e| e.status == EntryStatus::Rejected).count();
     let kyc_blocked = entries.iter().filter(|e| e.status == EntryStatus::KYCRequired).count();
 
-    let total_amount: u64 = entries.iter()
+    let total_amount: f64 = entries.iter()
         .filter(|e| e.status == EntryStatus::Completed)
         .map(|e| e.amount)
         .sum();

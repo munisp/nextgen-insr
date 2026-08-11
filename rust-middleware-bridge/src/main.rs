@@ -219,7 +219,7 @@ async fn audit_log_handler(state: web::Data<Arc<AppState>>, body: web::Json<Audi
     if entry.timestamp == 0 { entry.timestamp = Utc::now().timestamp_millis(); }
     let id = entry.id.clone();
     let mut log = state.audit_log.write().await;
-    log.push(entry);
+    log.push(entry.clone());
     state.audit_count.fetch_add(1, Ordering::Relaxed);
     // Persist to PostgreSQL asynchronously (fail-open — audit must not block business logic)
     let pg_url = std::env::var("DATABASE_URL").ok();
@@ -239,7 +239,7 @@ async fn audit_log_handler(state: web::Data<Arc<AppState>>, body: web::Json<Audi
                         &entry_clone.resource_id,
                         &entry_clone.user_id,
                         &entry_clone.ip_address,
-                        &serde_json::to_string(&entry_clone.details).unwrap_or_default(),
+                        &serde_json::to_string(&entry_clone.metadata).unwrap_or_default(),
                         &entry_clone.timestamp,
                     ],
                 ).await;
@@ -281,7 +281,7 @@ async fn audit_batch_handler(state: web::Data<Arc<AppState>>, body: web::Json<Ve
                         &[
                             &entry.id, &entry.action, &entry.resource_type, &entry.resource_id,
                             &entry.user_id, &entry.ip_address,
-                            &serde_json::to_string(&entry.details).unwrap_or_default(),
+                            &serde_json::to_string(&entry.metadata).unwrap_or_default(),
                             &entry.timestamp,
                         ],
                     ).await;

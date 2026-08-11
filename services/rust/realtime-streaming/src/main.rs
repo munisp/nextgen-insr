@@ -4,8 +4,6 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::broadcast;
 
-mod streams;
-mod websocket;
 
 /// Event types flowing through the real-time streaming pipeline
 #[derive(Debug, Clone, Serialize, Deserialize)]
