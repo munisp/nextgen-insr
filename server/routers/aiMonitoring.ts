@@ -3,6 +3,7 @@ import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { fraudAlerts, auditLog, transactions } from "../../drizzle/schema";
 import { sql, desc, gte, eq, and, count } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import logger from "../_core/logger";
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL ?? "http://localhost:8001";
@@ -76,10 +77,8 @@ export const aiMonitoringRouter = router({
     }
     const mlData = await mlFetch("/models") as any;
     if (mlData) {
-      modelCount = mlData.total ?? 5;
+      modelCount = mlData.total ?? 0;
       activeModels = (mlData.models ?? []).filter((m: any) => m.status === "production").length;
-    } else {
-      modelCount = 5; activeModels = 4;
     }
     return { modelCount, activeModels, totalPredictions, avgLatencyMs, driftAlerts, fraudDetected };
   }),
@@ -110,15 +109,10 @@ export const aiMonitoringRouter = router({
   driftAnalysis: protectedProcedure.query(async () => {
     const data = await mlFetch("/models/drift") as any;
     if (data?.models) return { models: data.models };
-    return {
-      models: [
-        { name: "Fraud Detection (RF+GB)", driftScore: 0.03, status: "stable", lastChecked: new Date().toISOString() },
-        { name: "Claims Adjudication", driftScore: 0.07, status: "stable", lastChecked: new Date().toISOString() },
-        { name: "Churn Prediction", driftScore: 0.12, status: "warning", lastChecked: new Date().toISOString() },
-        { name: "Credit Scoring", driftScore: 0.05, status: "stable", lastChecked: new Date().toISOString() },
-        { name: "Anomaly Detection", driftScore: 0.02, status: "stable", lastChecked: new Date().toISOString() },
-      ],
-    };
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "ML service is unavailable; drift analysis cannot be produced",
+    });
   }),
 
   // Real alerts from DB
