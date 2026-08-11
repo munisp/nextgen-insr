@@ -154,44 +154,26 @@ export const dataExportRouter = router({
     }),
   availableTables: protectedProcedure
     .input(z.object({}).optional())
-    .query(async ({ ctx }) => {
-      try {
-        return {};
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Export table discovery is not implemented yet",
+      });
     }),
   createJob: protectedProcedure
     .input(z.object({}))
-    .mutation(async ({ ctx, input }) => {
-      try {
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Export jobs are not implemented yet",
+      });
     }),
   listJobs: protectedProcedure
     .input(z.object({}).optional())
-    .query(async ({ ctx }) => {
-      try {
-        return {};
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Export jobs are not implemented yet",
+      });
     }),
 });

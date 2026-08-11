@@ -9,6 +9,12 @@ import {
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
+const notImplemented = (feature: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
+
 export const temporalWorkflowsRouter = router({
   listWorkflows: protectedProcedure
     .input(
@@ -169,15 +175,15 @@ export const temporalWorkflowsRouter = router({
   }),
 
   health: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Temporal workflow health");
   }),
 
   list: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Temporal workflow listing");
   }),
 
   summary: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Temporal workflow summary");
   }),
 
   terminate: protectedProcedure
@@ -185,10 +191,10 @@ export const temporalWorkflowsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Workflow termination");
     }),
 
   workflowTypes: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Workflow types");
   }),
 });
