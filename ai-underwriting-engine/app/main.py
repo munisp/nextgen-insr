@@ -1,10 +1,20 @@
-"""AI Underwriting Engine — ML-powered underwriting with alternative data scoring."""
+"""AI Underwriting Engine — rules-based underwriting with alternative data scoring.
 
+HONESTY NOTE: this engine is a deterministic rules engine ("rules_engine_v1").
+It does NOT run XGBoost/LightGBM models. Responses identify the engine by
+name, confidence is a disclosed heuristic (not a model metric), and the
+/models endpoint reports the real model registry state — empty until a
+trained model registry is provided via UNDERWRITING_MODEL_REGISTRY.
+"""
+
+import json
 import logging
+import os
 import re
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -120,6 +130,8 @@ class UnderwritingDecision(BaseModel):
     risk_class: str  # preferred, standard, substandard, decline
     premium_loading: float = Field(..., ge=0.0)
     confidence: float = Field(..., ge=0.0, le=1.0)
+    confidence_method: str = "heuristic_rules_coverage"
+    model: str = "rules_engine_v1"
     factors: List[dict]
     alternative_data_used: bool
     processing_time_ms: int
@@ -143,6 +155,11 @@ class ModelListResponse(BaseModel):
     """Response containing a list of underwriting models."""
 
     models: List[UnderwritingModelInfo]
+    note: str = (
+        "Decisions are currently produced by rules_engine_v1 (deterministic "
+        "rules, no trained ML model). Models listed here come from the real "
+        "model registry; it is empty until trained models are registered."
+    )
 
 
 class ErrorResponse(BaseModel):
@@ -156,7 +173,11 @@ class ErrorResponse(BaseModel):
 
 app = FastAPI(
     title="AI Underwriting Engine",
-    description="ML-powered underwriting with alternative data scoring for thin-file customers",
+    description=(
+        "Rules-based underwriting (rules_engine_v1) with alternative data "
+        "scoring for thin-file customers. No trained ML model is currently "
+        "deployed; /api/v1/underwrite/models reflects the real registry."
+    ),
     version="1.0.0",
 )
 
@@ -186,7 +207,34 @@ async def generic_error_handler(request: Request, exc: Exception):
     )
 
 
-# ── Underwriting Logic ────────────────────────────────────────────────────────
+# ── Model Registry (real state — no fabricated entries) ──────────────────────
+
+MODEL_REGISTRY_FILE = os.environ.get("UNDERWRITING_MODEL_REGISTRY", "").strip()
+
+
+def _load_model_registry() -> List[UnderwritingModelInfo]:
+    """Load the real underwriting model registry.
+
+    Reads a JSON file ({"models": [...]} or a bare list) from the path in
+    UNDERWRITING_MODEL_REGISTRY. Returns an empty list when no registry is
+    configured — fabricated model metadata has been removed.
+    """
+    if not MODEL_REGISTRY_FILE:
+        return []
+    path = Path(MODEL_REGISTRY_FILE)
+    if not path.exists():
+        logger.warning("Model registry file not found: %s", MODEL_REGISTRY_FILE)
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entries = data.get("models", []) if isinstance(data, dict) else data
+        return [UnderwritingModelInfo(**entry) for entry in entries]
+    except Exception as exc:
+        logger.error("Failed to parse model registry %s: %s", MODEL_REGISTRY_FILE, exc)
+        return []
+
+
+# ── Underwriting Logic (rules_engine_v1) ──────────────────────────────────────
 
 HIGH_RISK_STATES = ["Borno", "Yobe", "Adamawa", "Zamfara"]
 
@@ -195,6 +243,8 @@ HIGH_RISK_OCCUPATIONS = ["okada_rider", "truck_driver", "miner"]
 
 def _score_risk(request: UnderwritingRequest) -> tuple[float, List[dict], bool]:
     """Compute a risk score from 0.0 (lowest risk) to 1.0 (highest risk).
+
+    Deterministic additive rules (rules_engine_v1) — disclosed, not an ML model.
 
     Returns:
         Tuple of (risk_score, factors_list, alternative_data_used).
@@ -322,38 +372,31 @@ def _decision_from_score(risk_score: float) -> tuple[str, str, float]:
         return "refer", "substandard", 25.0
 
 
+def _heuristic_confidence(factors: List[dict], alt_data_used: bool) -> float:
+    """Disclosed heuristic confidence for rules_engine_v1.
+
+    NOT a model-calibrated probability. It reflects how much information the
+    rules engine had to work with: a 0.55 base, +0.05 per contributing rule
+    factor, +0.10 when alternative data was available, capped at 0.90.
+    """
+    confidence = 0.55 + 0.05 * len(factors) + (0.10 if alt_data_used else 0.0)
+    return round(min(confidence, 0.90), 3)
+
+
+def _coverage_guidance(request: UnderwritingRequest) -> tuple[float, float]:
+    """Disclosed heuristic coverage guidance.
+
+    When income is declared: recommended = 5x annual income, max = 10x.
+    Otherwise product-line defaults of N1,000,000 / N5,000,000 are used.
+    """
+    if request.income_declared and request.income_declared > 0:
+        recommended = request.income_declared * 5
+        max_coverage = request.income_declared * 10
+        return float(recommended), float(max_coverage)
+    return 1000000.0, 5000000.0
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
-
-
-UNDERWRITING_MODELS = [
-    UnderwritingModelInfo(
-        id="uw-motor-v3",
-        product_type="motor",
-        algorithm="XGBoost",
-        accuracy=0.91,
-        features=24,
-        last_trained="2026-04-15",
-        alternative_data_features=6,
-    ),
-    UnderwritingModelInfo(
-        id="uw-life-v2",
-        product_type="life",
-        algorithm="LightGBM",
-        accuracy=0.88,
-        features=18,
-        last_trained="2026-03-01",
-        alternative_data_features=4,
-    ),
-    UnderwritingModelInfo(
-        id="uw-micro-v1",
-        product_type="microinsurance",
-        algorithm="Logistic Regression (thin-file optimized)",
-        accuracy=0.82,
-        features=8,
-        last_trained="2026-05-01",
-        alternative_data_features=8,
-    ),
-]
 
 
 @app.post(
@@ -366,20 +409,23 @@ UNDERWRITING_MODELS = [
     },
 )
 async def underwrite(request: UnderwritingRequest):
-    """ML-powered underwriting decision with alternative data for thin-file customers.
+    """Rules-based underwriting decision (rules_engine_v1).
 
-    Evaluates the applicant using a combination of traditional credit signals
-    and alternative data (mobile money, airtime spend, etc.) to produce a
-    risk-based underwriting decision.
+    Evaluates the applicant using a deterministic, disclosed set of rules
+    over traditional credit signals and alternative data (mobile money,
+    airtime spend, etc.). This is NOT an ML model; the confidence value is a
+    disclosed heuristic (see confidence_method).
     """
     start_time = time.monotonic()
 
     try:
         risk_score, factors, alt_data_used = _score_risk(request)
         decision, risk_class, loading = _decision_from_score(risk_score)
+        confidence = _heuristic_confidence(factors, alt_data_used)
+        recommended_coverage, max_coverage = _coverage_guidance(request)
     except Exception as exc:
         logger.exception("Underwriting scoring failed for applicant %s", request.applicant_name)
-        raise ModelUnavailableError("default") from exc
+        raise ModelUnavailableError("rules_engine_v1") from exc
 
     processing_ms = int((time.monotonic() - start_time) * 1000)
 
@@ -389,29 +435,41 @@ async def underwrite(request: UnderwritingRequest):
         risk_score=risk_score,
         risk_class=risk_class,
         premium_loading=round(loading, 1),
-        confidence=0.85 if alt_data_used else 0.92,
+        confidence=confidence,
+        confidence_method="heuristic_rules_coverage",
+        model="rules_engine_v1",
         factors=factors,
         alternative_data_used=alt_data_used,
         processing_time_ms=processing_ms,
-        recommended_coverage=1000000,
-        max_coverage=5000000,
+        recommended_coverage=recommended_coverage,
+        max_coverage=max_coverage,
     )
 
 
 @app.get(
     "/api/v1/underwrite/models",
     response_model=ModelListResponse,
-    summary="List available underwriting models",
+    summary="List registered underwriting models",
 )
 async def list_models():
-    """Retrieve metadata about available underwriting models."""
-    return ModelListResponse(models=UNDERWRITING_MODELS)
+    """Retrieve the real underwriting model registry.
+
+    Empty until trained models are registered via the registry file pointed
+    to by UNDERWRITING_MODEL_REGISTRY. Fabricated model entries have been
+    removed.
+    """
+    return ModelListResponse(models=_load_model_registry())
 
 
 @app.get("/health", summary="Health check")
 async def health():
     """Liveness / readiness probe."""
-    return {"status": "healthy", "service": "ai-underwriting-engine", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {
+        "status": "healthy",
+        "service": "ai-underwriting-engine",
+        "engine": "rules_engine_v1",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # ── Entry Point ───────────────────────────────────────────────────────────────
