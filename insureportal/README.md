@@ -1,3 +1,10 @@
+> **⚠️ DEPRECATED — REFERENCE ONLY. DO NOT DEPLOY.**
+> This `insureportal/` directory is a stale, nested duplicate of the application.
+> The canonical app lives at the **repository root** (`client/`, `server/`, `drizzle/`).
+> This copy pins older faker endpoint variants (see `README-DEPRECATED.md`), including
+> `disputeRefund` (hardcoded velocity), `tigerBeetle.rotateSecret` (no-op), and
+> `ollamaLLM.classifyTransactionMutation`. Build and deploy from the repo root only.
+
 # InsurePortal — Nigerian Insurance Platform
 
 A comprehensive, production-grade insurance technology platform built for the Nigerian market. Covers the full insurance value chain: policy administration, claims adjudication, agent network management, KYC/AML compliance, regulatory reporting (NAICOM), and financial accounting (IFRS 17).
