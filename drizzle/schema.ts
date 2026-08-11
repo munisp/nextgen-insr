@@ -5390,3 +5390,15 @@ export const permifyRelationshipCache = pgTable(
   })
 );
 export type PermifyRelationshipCache = typeof permifyRelationshipCache.$inferSelect;
+
+// ─── Additional tables (definitions in schema.additions.ts) ──────────────────
+export {
+  posTerminals,
+  underwritingApplications,
+  insuranceServices,
+  policyQuotes,
+  kycVerifications,
+  notifications,
+  insuranceProductTypes,
+  insurance_portalAds,
+} from "./schema.additions";

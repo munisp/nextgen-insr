@@ -5,7 +5,7 @@
  */
 import React, { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { useNavigate } from "react-router-dom";
+import { useLocation } from "wouter";
 
 interface Innovation {
   id: string;
@@ -251,7 +251,7 @@ const statusColors = {
 };
 
 export default function InnovationHub() {
-  const navigate = useNavigate();
+  const [, navigate] = useLocation();
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
 
