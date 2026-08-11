@@ -278,10 +278,10 @@ async fn get_account_balance(data: web::Data<AppState>, path: web::Path<String>)
     for entry in entries.iter() {
         if entry.status == EntryStatus::Completed {
             if entry.debit_account == account_id {
-                debits += entry.amount;
+                debits += entry.amount as u64;
             }
             if entry.credit_account == account_id {
-                credits += entry.amount;
+                credits += entry.amount as u64;
             }
         }
     }
@@ -340,7 +340,7 @@ async fn get_ledger_stats(data: web::Data<AppState>) -> HttpResponse {
 
     let total_amount: u64 = entries.iter()
         .filter(|e| e.status == EntryStatus::Completed)
-        .map(|e| e.amount)
+        .map(|e| e.amount as u64)
         .sum();
 
     HttpResponse::Ok().json(serde_json::json!({

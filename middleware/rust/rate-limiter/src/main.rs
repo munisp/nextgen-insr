@@ -3,6 +3,7 @@
 //! Supports per-IP, per-API-key, and per-tenant rate limiting.
 
 use std::collections::HashMap;
+use std::env;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
