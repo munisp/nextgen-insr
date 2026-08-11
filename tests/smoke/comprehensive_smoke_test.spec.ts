@@ -1,8 +1,26 @@
 /**
- * Comprehensive Smoke Test Suite — InsurePortal NextGen
- * Sprint 98 — Production Readiness Validation
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⚠️  CONNECTIVITY SMOKE — NON-FUNCTIONAL VALIDATION  ⚠️
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * Tests ALL stakeholder scenarios:
+ * This suite is an OPTIONS-LEVEL CONNECTIVITY SMOKE only. It verifies that
+ * endpoints exist and return structured responses. It is NOT functional
+ * validation: it holds no authenticated session and asserts no business
+ * outcomes. It must NEVER be cited as proof of functional correctness —
+ * a green run here does NOT mean "N/N tests passed" for the platform.
+ *
+ * Behavior contract (hardened 2026-08-12):
+ *  - Server DOWN (connection refused): every check soft-skips and the run
+ *    prints an explicit "SKIPPED — no infra" summary. A green run against a
+ *    down server means NOTHING.
+ *  - Server UP: this suite FAILS on:
+ *      • any 5xx / INTERNAL_SERVER_ERROR from a tRPC call
+ *      • "No procedure found" (procedure missing from the router)
+ *      • unexpected 4xx on the explicitly guarded checks below
+ *    enforced via the shared `infraFailures` gate asserted in afterAll.
+ *
+ * Original scope note (Sprint 98) — stakeholder scenarios exercised at
+ * connectivity level only:
  *   1.  Policyholder:    quote → bind → pay → claim → renew → cancel
  *   2.  Broker:          register → submit application → track portfolio
  *   3.  Underwriter:     queue → assess risk → approve/decline/refer
@@ -14,18 +32,10 @@
  *   9.  Supervisor:      approve override → monitor SLA → escalate
  *  10.  Admin:           create product → configure system → user mgmt
  *
- * Infrastructure health checks:
- *   - Keycloak OIDC
- *   - TigerBeetle sidecar
- *   - PostgreSQL (Drizzle ORM)
- *   - APISIX gateway
- *   - Permify RBAC
- *   - Dapr sidecar
- *   - Temporal workflows
- *   - Redis state store
- *   - Lakehouse / MinIO
- *   - OpenAppSec WAF
- *   - Fluvio streaming
+ * Infrastructure touch-points probed for reachability:
+ *   Keycloak OIDC, TigerBeetle sidecar, PostgreSQL (via tRPC), APISIX gateway,
+ *   Permify RBAC, Dapr sidecar, Temporal workflows, Redis state store,
+ *   Lakehouse / MinIO, OpenAppSec WAF, Fluvio streaming
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -34,6 +44,81 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 const BASE_URL = process.env.TEST_BASE_URL ?? "http://localhost:3000";
 const API_BASE = `${BASE_URL}/api/trpc`;
 const TIMEOUT_MS = 15000;
+
+// ── Infra reachability tracking ─────────────────────────────────────────────
+// serverUp is probed once in beforeAll. When false, all guarded assertions
+// degrade to explicit skips and afterAll prints a "SKIPPED — no infra"
+// summary instead of letting the run pass vacuously.
+let serverUp = false;
+
+// Real failures observed while the server IS reachable (5xx, missing
+// procedures, unexpected network errors). Asserted empty in afterAll — this
+// is what stops the suite from passing vacuously against a live but broken
+// server.
+const infraFailures: string[] = [];
+
+function recordTrpcResult(
+  procedure: string,
+  httpStatus: number | null,
+  error: unknown
+): void {
+  if (!serverUp) return;
+  if (httpStatus !== null && httpStatus >= 500) {
+    infraFailures.push(
+      `${procedure}: HTTP ${httpStatus} (5xx while infra reachable)`
+    );
+    return;
+  }
+  if (error === undefined || error === null) return;
+  const errStr = typeof error === "string" ? error : JSON.stringify(error);
+  if (/No procedure found/i.test(errStr)) {
+    infraFailures.push(
+      `${procedure}: procedure missing from router (${errStr.slice(0, 160)})`
+    );
+  } else if (/INTERNAL_SERVER_ERROR|Internal server error/i.test(errStr)) {
+    infraFailures.push(
+      `${procedure}: internal server error (${errStr.slice(0, 160)})`
+    );
+  } else if (/fetch failed|ECONNREFUSED|ECONNRESET/i.test(errStr)) {
+    infraFailures.push(
+      `${procedure}: network failure while infra was reachable (${errStr.slice(0, 160)})`
+    );
+  }
+}
+
+beforeAll(async () => {
+  try {
+    const res = await fetch(`${BASE_URL}/api/health`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    serverUp = res.status > 0;
+  } catch {
+    serverUp = false;
+  }
+  if (!serverUp) {
+    console.warn(
+      `⚠️  [connectivity smoke] Server at ${BASE_URL} is DOWN — all checks will soft-skip. ` +
+        "A green run against a down server means NOTHING."
+    );
+  }
+});
+
+afterAll(() => {
+  if (!serverUp) {
+    console.warn(
+      "════════════════════════════════════════════════════════════════\n" +
+        "CONNECTIVITY SMOKE RESULT: SKIPPED — no infra\n" +
+        "The server was not reachable; every check in this file soft-skipped.\n" +
+        "Do NOT cite this run as test evidence (it is not 'N/N passed').\n" +
+        "════════════════════════════════════════════════════════════════"
+    );
+    return;
+  }
+  expect(
+    infraFailures,
+    `Connectivity smoke observed ${infraFailures.length} real failure(s) while infra was reachable:\n${infraFailures.join("\n")}`
+  ).toEqual([]);
+});
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 async function trpcQuery(
@@ -51,9 +136,16 @@ async function trpcQuery(
       { method: "GET", headers, signal: AbortSignal.timeout(TIMEOUT_MS) }
     );
     const json = await res.json();
-    return json.result?.data !== undefined ? { data: json.result.data } : { error: json.error };
+    const result =
+      json.result?.data !== undefined
+        ? { data: json.result.data }
+        : { error: json.error };
+    recordTrpcResult(procedure, res.status, (result as { error?: unknown }).error);
+    return result;
   } catch (err) {
-    return { error: err instanceof Error ? err.message : String(err) };
+    const error = err instanceof Error ? err.message : String(err);
+    recordTrpcResult(procedure, null, error);
+    return { error };
   }
 }
 
@@ -74,9 +166,16 @@ async function trpcMutation(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const json = await res.json();
-    return json.result?.data !== undefined ? { data: json.result.data } : { error: json.error };
+    const result =
+      json.result?.data !== undefined
+        ? { data: json.result.data }
+        : { error: json.error };
+    recordTrpcResult(procedure, res.status, (result as { error?: unknown }).error);
+    return result;
   } catch (err) {
-    return { error: err instanceof Error ? err.message : String(err) };
+    const error = err instanceof Error ? err.message : String(err);
+    recordTrpcResult(procedure, null, error);
+    return { error };
   }
 }
 
@@ -104,13 +203,13 @@ let testTreatyId: number | undefined;
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 0: Infrastructure Health Checks
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 0: Infrastructure Health Checks", () => {
+describe("connectivity smoke (non-functional) — Suite 0: Infrastructure Health Checks", () => {
   it("0.1 — Server is reachable", async () => {
     const { ok, status } = await httpGet("/api/health");
     // In CI without a running server, status will be 0 (connection refused) — that's acceptable
     // In production, status should be 200 or 404
     if (status === 0) {
-      console.warn("[SKIP] Server not running in this environment — skipping connectivity check");
+      console.warn("[SKIP — no infra] Server not running in this environment — skipping connectivity check");
       return;
     }
     expect([200, 404]).toContain(status);
@@ -233,18 +332,21 @@ describe("Suite 0: Infrastructure Health Checks", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 1: Admin Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 1: Admin Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 1: Admin Workflows", () => {
   it("1.1 — Admin: Get insurance dashboard stats", async () => {
     const { data, error } = await trpcQuery("insuranceWorkflows.getInsuranceDashboard");
     // Should return stats object (even if empty)
     if (!error) {
       expect(data).toHaveProperty("stats");
     } else {
-      // In CI without server: fetch failed is acceptable
-      // In production: should return UNAUTHORIZED
       const errStr = String(error);
-      const isExpected = /UNAUTHORIZED|No procedure found|fetch failed|ECONNREFUSED/i.test(errStr);
-      expect(isExpected).toBe(true);
+      if (!serverUp) {
+        console.warn("[SKIP — no infra] dashboard check skipped:", errStr);
+        return;
+      }
+      // Server reachable: only an auth rejection is acceptable for this
+      // unauthenticated call. 5xx / missing procedure / network errors FAIL.
+      expect(errStr).toMatch(/UNAUTHORIZED|unauthorized|401/i);
     }
   });
 
@@ -334,7 +436,7 @@ describe("Suite 1: Admin Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 2: Policyholder Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 2: Policyholder Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 2: Policyholder Workflows", () => {
   it("2.1 — Policyholder: Get premium quote", async () => {
     const productId = testProductId ?? 1;
     const { data, error } = await trpcMutation("insuranceWorkflows.getQuote", {
@@ -464,7 +566,7 @@ describe("Suite 2: Policyholder Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 3: Broker Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 3: Broker Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 3: Broker Workflows", () => {
   it("3.1 — Broker: Register as broker", async () => {
     const { data, error } = await trpcMutation("insuranceWorkflows.registerBroker", {
       companyName: `Smoke Test Brokers Ltd ${Date.now()}`,
@@ -517,7 +619,7 @@ describe("Suite 3: Broker Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 4: Underwriter Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 4: Underwriter Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 4: Underwriter Workflows", () => {
   it("4.1 — Underwriter: Get underwriting queue", async () => {
     const { data, error } = await trpcQuery("insuranceWorkflows.getUnderwritingQueue", { limit: 10 });
     if (!error) {
@@ -588,7 +690,7 @@ describe("Suite 4: Underwriter Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 5: Claims Adjuster Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 5: Claims Adjuster Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 5: Claims Adjuster Workflows", () => {
   it("5.1 — Claims Adjuster: List pending claims", async () => {
     const { data, error } = await trpcQuery("insuranceWorkflows.listClaims", {
       status: "submitted",
@@ -677,7 +779,7 @@ describe("Suite 5: Claims Adjuster Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 6: Actuary Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 6: Actuary Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 6: Actuary Workflows", () => {
   it("6.1 — Actuary: Compute IBNR reserves", async () => {
     const { data, error } = await trpcMutation("insuranceWorkflows.computeReserves", {
       reserveType: "IBNR",
@@ -751,7 +853,7 @@ describe("Suite 6: Actuary Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 7: Compliance Officer Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 7: Compliance Officer Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 7: Compliance Officer Workflows", () => {
   it("7.1 — Compliance: Submit NAICOM quarterly return", async () => {
     const { data, error } = await trpcMutation("insuranceWorkflows.submitNaicomReport", {
       reportType: "quarterly_return",
@@ -819,7 +921,7 @@ describe("Suite 7: Compliance Officer Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 8: Reinsurer Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 8: Reinsurer Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 8: Reinsurer Workflows", () => {
   it("8.1 — Reinsurer: Create quota share treaty", async () => {
     const { data, error } = await trpcMutation("insuranceWorkflows.createTreaty", {
       reinsurerName: "Swiss Re Smoke Test",
@@ -878,7 +980,7 @@ describe("Suite 8: Reinsurer Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 9: Agent Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 9: Agent Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 9: Agent Workflows", () => {
   it("9.1 — Agent: List available insurance products", async () => {
     const { data, error } = await trpcQuery("insuranceWorkflows.listProducts", { isActive: true });
     if (!error) {
@@ -931,7 +1033,7 @@ describe("Suite 9: Agent Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 10: Supervisor Workflows
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 10: Supervisor Workflows", () => {
+describe("connectivity smoke (non-functional) — Suite 10: Supervisor Workflows", () => {
   it("10.1 — Supervisor: Monitor SLA compliance", async () => {
     const { data, error } = await trpcQuery("slaMonitoring.getMetrics");
     if (!error) {
@@ -972,7 +1074,7 @@ describe("Suite 10: Supervisor Workflows", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 11: Cross-Service Integration Tests
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 11: Cross-Service Integration", () => {
+describe("connectivity smoke (non-functional) — Suite 11: Cross-Service Integration", () => {
   it("11.1 — TigerBeetle: Settlement workflow", async () => {
     const { data, error } = await trpcQuery("tigerBeetle.getSyncStatus");
     if (!error) {
@@ -1049,17 +1151,21 @@ describe("Suite 11: Cross-Service Integration", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 12: Security & WAF Tests
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 12: Security & WAF Validation", () => {
+describe("connectivity smoke (non-functional) — Suite 12: Security & WAF Validation", () => {
   it("12.1 — SQL injection attempt is blocked", async () => {
     const { error } = await trpcQuery("insuranceWorkflows.listPolicies", {
       customerId: "1; DROP TABLE policies; --" as any,
     });
     // Should return validation error, not execute SQL
-    // In CI without server, fetch failed is acceptable
     if (error) {
       const errStr = String(error);
-      const isExpected = /invalid|validation|type|fetch failed|ECONNREFUSED/i.test(errStr);
-      expect(isExpected).toBe(true);
+      if (!serverUp) {
+        console.warn("[SKIP — no infra] SQLi check skipped:", errStr);
+        return;
+      }
+      // Server reachable: must be a validation/auth rejection, never a 5xx
+      expect(errStr).toMatch(/invalid|validation|type|UNAUTHORIZED|unauthorized|401/i);
+      expect(errStr).not.toMatch(/INTERNAL_SERVER_ERROR|Internal server error/i);
     }
   });
 
@@ -1083,43 +1189,54 @@ describe("Suite 12: Security & WAF Validation", () => {
     // In production, should not crash the server
     const statuses = results.map(r => r.status);
     if (statuses.every(s => s === 0)) {
-      console.warn("[SKIP] Server not running — rate limit test skipped");
+      console.warn("[SKIP — no infra] Server not running — rate limit test skipped");
       return;
     }
+    // Server reachable: health endpoint must not 5xx under a small burst
     expect(statuses.some(s => s > 0)).toBe(true);
+    expect(statuses.every(s => s < 500)).toBe(true);
   });
 
   it("12.4 — CORS headers present", async () => {
     const { ok, status } = await httpGet("/api/health");
     // In CI without server, status will be 0 — skip
     if (status === 0) {
-      console.warn("[SKIP] Server not running — CORS test skipped");
+      console.warn("[SKIP — no infra] Server not running — CORS test skipped");
       return;
     }
     expect(status).not.toBe(0);
+    expect(status, "health endpoint returned 5xx").toBeLessThan(500);
   });
 
   it("12.5 — Unauthenticated access to protected route returns 401", async () => {
     const { error } = await trpcQuery("insuranceWorkflows.getInsuranceDashboard");
-    if (error) {
-      const errStr = String(error);
-      // In production: UNAUTHORIZED; in CI without server: fetch failed
-      const isExpected = /UNAUTHORIZED|unauthorized|401|fetch failed|ECONNREFUSED/i.test(errStr);
-      expect(isExpected).toBe(true);
+    if (!serverUp) {
+      console.warn("[SKIP — no infra] auth-gate check skipped");
+      return;
     }
+    // Server reachable: a protected route MUST reject unauthenticated calls —
+    // and only with 401/UNAUTHORIZED (not 5xx, not "No procedure found").
+    expect(error, "protected route returned data without auth").toBeDefined();
+    expect(String(error)).toMatch(/UNAUTHORIZED|unauthorized|401/i);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 13: Data Integrity Tests
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 13: Data Integrity & Schema Validation", () => {
+describe("connectivity smoke (non-functional) — Suite 13: Data Integrity & Schema Validation", () => {
   it("13.1 — Policy schema: required fields validated", async () => {
     const { error } = await trpcMutation("insuranceWorkflows.bindPolicy", {
       // Missing required fields
       productId: 1,
     });
+    if (!serverUp) {
+      console.warn("[SKIP — no infra] schema validation check skipped");
+      return;
+    }
     expect(error).toBeDefined();
+    // A 5xx on invalid input means the server crashed instead of validating
+    expect(String(error)).not.toMatch(/INTERNAL_SERVER_ERROR|Internal server error/i);
   });
 
   it("13.2 — Claim schema: invalid claim type rejected", async () => {
@@ -1131,7 +1248,13 @@ describe("Suite 13: Data Integrity & Schema Validation", () => {
       incidentDescription: "",
     });
     // Should fail validation
+    if (!serverUp) {
+      console.warn("[SKIP — no infra] schema validation check skipped");
+      return;
+    }
     expect(error).toBeDefined();
+    // A 5xx on invalid input means the server crashed instead of validating
+    expect(String(error)).not.toMatch(/INTERNAL_SERVER_ERROR|Internal server error/i);
   });
 
   it("13.3 — Underwriting: invalid decision rejected", async () => {
@@ -1141,7 +1264,13 @@ describe("Suite 13: Data Integrity & Schema Validation", () => {
       riskCategory: "low",
       decision: "invalid_decision" as any,
     });
+    if (!serverUp) {
+      console.warn("[SKIP — no infra] schema validation check skipped");
+      return;
+    }
     expect(error).toBeDefined();
+    // A 5xx on invalid input means the server crashed instead of validating
+    expect(String(error)).not.toMatch(/INTERNAL_SERVER_ERROR|Internal server error/i);
   });
 
   it("13.4 — Treaty: invalid type rejected", async () => {
@@ -1154,7 +1283,13 @@ describe("Suite 13: Data Integrity & Schema Validation", () => {
       premiumRate: 2.0,
       startDate: new Date().toISOString(),
     });
+    if (!serverUp) {
+      console.warn("[SKIP — no infra] schema validation check skipped");
+      return;
+    }
     expect(error).toBeDefined();
+    // A 5xx on invalid input means the server crashed instead of validating
+    expect(String(error)).not.toMatch(/INTERNAL_SERVER_ERROR|Internal server error/i);
   });
 
   it("13.5 — IFRS17: invalid measurement model rejected", async () => {
@@ -1163,14 +1298,20 @@ describe("Suite 13: Data Integrity & Schema Validation", () => {
       measurementModel: "INVALID" as any,
       reportingPeriod: "2025-Q1",
     });
+    if (!serverUp) {
+      console.warn("[SKIP — no infra] schema validation check skipped");
+      return;
+    }
     expect(error).toBeDefined();
+    // A 5xx on invalid input means the server crashed instead of validating
+    expect(String(error)).not.toMatch(/INTERNAL_SERVER_ERROR|Internal server error/i);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUITE 14: End-to-End Golden Path
 // ═══════════════════════════════════════════════════════════════════════════════
-describe("Suite 14: End-to-End Golden Path", () => {
+describe("connectivity smoke (non-functional) — Suite 14: End-to-End Golden Path", () => {
   it("14.1 — Full life insurance lifecycle: quote → bind → pay → claim → settle", async () => {
     // This test verifies the complete happy path
     const productId = testProductId ?? 1;
@@ -1236,8 +1377,14 @@ describe("Suite 14: End-to-End Golden Path", () => {
       }
     }
 
-    // If we reach here without throwing, the golden path is functional
-    expect(true).toBe(true);
+    if (!serverUp) {
+      console.warn("[SKIP — no infra] golden path not exercised (no server)");
+      return;
+    }
+    // Connectivity-level only: without an authenticated session the golden
+    // path cannot complete end-to-end. The infraFailures gate in afterAll has
+    // already failed this run if any call above returned 5xx or hit a
+    // missing procedure; reaching here means endpoints responded structurally.
   });
 
   it("14.2 — Full motor insurance lifecycle: quote → bind → endorsement → renewal", async () => {
@@ -1274,6 +1421,10 @@ describe("Suite 14: End-to-End Golden Path", () => {
       }
     }
 
-    expect(true).toBe(true);
+    if (!serverUp) {
+      console.warn("[SKIP — no infra] golden path not exercised (no server)");
+      return;
+    }
+    // Connectivity-level only — see 14.1 note and the afterAll infra gate.
   });
 });
