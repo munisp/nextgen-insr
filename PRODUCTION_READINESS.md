@@ -4,6 +4,23 @@
 **Version:** Phase 105 (Post-Production Completions)  
 **Repository:** `insurance-portal-demo` (InsurePortal Insurance Platform)
 
+> ## ⛔ Status correction — 2026-08-12
+>
+> Several claims in this scorecard were stale. Corrections applied in place:
+>
+> - **Auth:** the platform uses **Keycloak OIDC** (+ JWT, FIDO2/WebAuthn) —
+>   Manus OAuth was replaced; the architecture table below has been corrected.
+> - **Database:** the Drizzle schema now has **169 tables**, not 55 (the
+>   "Database Schema" section heading has been corrected; the category table
+>   below is an illustrative subset, not a full listing).
+> - **Phantom services removed:** "Credit Scoring — Python (Flask +
+>   scikit-learn)" and "i18n/Currency — Rust (Actix-web)" **do not exist** in
+>   this repository and have been removed from the architecture table and the
+>   deployment-files list. The real services are: `multi-currency-service`
+>   (Go) and `multi-language-service` (Go) for currency/i18n, and
+>   `fraud-detection-go` (Go) for fraud scoring. `docker-compose.production.yml`
+>   was corrected accordingly on 2026-08-12.
+
 ---
 
 ## Executive Summary
@@ -14,23 +31,22 @@ The InsurePortal Insurance Platform is a full-stack, multi-service insurance sol
 
 ## Platform Architecture
 
-| Layer                   | Technology                         | Purpose                                       |
-| ----------------------- | ---------------------------------- | --------------------------------------------- |
-| Frontend                | React 19 + Vite + Tailwind CSS 4   | SPA with insurance portal, admin dashboards, portals |
-| API Layer               | tRPC 11 + Express 4 + Node.js      | Type-safe RPC with superjson serialisation    |
-| Database                | PostgreSQL (Drizzle ORM)           | Primary data store with 55 tables             |
-| Real-time               | Socket.IO + SSE                    | Live fraud alerts, terminal presence          |
-| Auth                    | Manus OAuth + JWT + FIDO2/WebAuthn | Multi-factor, biometric agent login           |
-| OTA Service             | Go (Gin)                           | Firmware update delivery for service nodes    |
-| FIDO2 Service           | Go (Gin)                           | WebAuthn challenge/verify for biometric auth  |
-| Credit Scoring          | Python (Flask + scikit-learn)      | Agent creditworthiness scoring                |
-| Analytics               | Python (Flask + pandas)            | Transaction success rates, trend analysis     |
-| i18n/Currency           | Rust (Actix-web)                   | Multi-language, multi-currency formatting     |
-| Fraud Engine            | TypeScript (rule-based + AI)       | Real-time transaction risk scoring            |
-| ERP Integration         | TypeScript                         | ERPNext/Frappe sync for accounting            |
-| Message Streaming       | Fluvio                             | Event streaming for fraud alerts              |
-| Reverse Proxy           | Nginx                              | TLS termination, rate limiting, WebSocket     |
-| Container Orchestration | Docker Compose                     | Multi-service local dev + production          |
+| Layer                   | Technology                          | Purpose                                       |
+| ----------------------- | ----------------------------------- | --------------------------------------------- |
+| Frontend                | React 19 + Vite + Tailwind CSS 4    | SPA with insurance portal, admin dashboards, portals |
+| API Layer               | tRPC 11 + Express 4 + Node.js       | Type-safe RPC with superjson serialisation    |
+| Database                | PostgreSQL (Drizzle ORM)            | Primary data store with 169 tables            |
+| Real-time               | Socket.IO + SSE                     | Live fraud alerts, terminal presence          |
+| Auth                    | Keycloak OIDC + JWT + FIDO2/WebAuthn | Multi-factor, biometric agent login          |
+| OTA Service             | Go (Gin)                            | Firmware update delivery for service nodes    |
+| FIDO2 Service           | Go (Gin)                            | WebAuthn challenge/verify for biometric auth  |
+| Multi-Currency / i18n   | Go (`multi-currency-service`, `multi-language-service`) | Multi-currency formatting, multi-language support |
+| Fraud Detection         | Go (`fraud-detection-go`) + TypeScript rule engine | Real-time transaction risk scoring |
+| Analytics               | Python (Flask + pandas)             | Transaction success rates, trend analysis     |
+| ERP Integration         | TypeScript                          | ERPNext/Frappe sync for accounting            |
+| Message Streaming       | Fluvio                              | Event streaming for fraud alerts              |
+| Reverse Proxy           | Nginx                               | TLS termination, rate limiting, WebSocket     |
+| Container Orchestration | Docker Compose                      | Multi-service local dev + production          |
 
 ---
 
@@ -136,7 +152,9 @@ The InsurePortal Insurance Platform is a full-stack, multi-service insurance sol
 
 ---
 
-## Database Schema (55 Tables)
+## Database Schema (169 Tables)
+
+*The category table below is an illustrative subset of the full 169-table Drizzle schema, not a complete listing.*
 
 | Category     | Tables                                      |
 | ------------ | ------------------------------------------- |
@@ -146,7 +164,7 @@ The InsurePortal Insurance Platform is a full-stack, multi-service insurance sol
 | Compliance   | audit_log, gdpr_consent_log                 |
 | KYC          | kyc_documents, kyc_verifications            |
 | Loyalty      | loyalty_history, loyalty_challenges         |
-| Float        | premium_top_up_requests                       |
+| Float        | premium_top_up_requests                     |
 | Settlement   | settlements, settlement_items               |
 | Disputes     | disputes, dispute_evidence                  |
 | Chat         | chat_sessions, chat_messages                |
@@ -170,6 +188,8 @@ The InsurePortal Insurance Platform is a full-stack, multi-service insurance sol
 | Total tests    | **244 passing**                                                                                                                     |
 | Test framework | Vitest                                                                                                                              |
 | Coverage areas | Auth, transactions, fraud, settlement, float top-up, mTLS, audit log, KYC, disputes, ERP, geofencing, credit scoring, loyalty, GDPR |
+
+*Note (2026-08-12): the separate `tests/smoke/comprehensive_smoke_test.spec.ts` suite is a connectivity-level smoke (non-functional) and is excluded from any functional test-proof claims.*
 
 ---
 
@@ -229,8 +249,8 @@ The InsurePortal Insurance Platform is a full-stack, multi-service insurance sol
 | `nginx.conf`                                | Production reverse proxy with TLS, rate limiting, WebSocket, SSE |
 | `server/ota-service/Dockerfile`             | Go OTA firmware service                                          |
 | `server/fido2-service/Dockerfile`           | Go FIDO2/WebAuthn service                                        |
-| `services/python/credit-scoring/Dockerfile` | Python credit scoring service                                    |
-| `services/rust/i18n-currency/Dockerfile`    | Rust i18n/currency service                                       |
+| `multi-currency-service/Dockerfile`         | Go multi-currency service                                        |
+| `multi-language-service/Dockerfile`         | Go multi-language (i18n) service                                 |
 
 ---
 

@@ -11,6 +11,11 @@
 #   --profile app         → All application microservices
 #   --profile gateway     → nginx reverse proxy
 #   --profile observability → Prometheus, Grafana, Loki, Promtail, Alertmanager
+#
+# NOTE (2026-08-12): 13 phantom build contexts pointing at non-existent
+# services/{rust,go,python}/* paths were corrected — 10 repointed to real
+# in-repo services, 3 removed (tx-validator, credit-scoring, sim-orchestrator)
+# because no equivalent service exists in this repository.
 # ─────────────────────────────────────────────────────────────────────────────
 version: "3.9"
 
@@ -454,10 +459,13 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:8083/health"]
       <<: *hc-defaults
 
-  # ── Rust i18n/Multi-Currency Service ─────────────────────────────────────
+  # ── Multi-Currency Service (Go) ───────────────────────────────────────────
+  # Repointed 2026-08-12: phantom ./services/rust/i18n-currency did not exist.
+  # Real service: ./multi-currency-service (Go). The i18n/language half is
+  # covered by ./multi-language-service (Go), deployable separately if needed.
   i18n-currency:
     build:
-      context: ./services/rust/i18n-currency
+      context: ./multi-currency-service
       dockerfile: Dockerfile
     container_name: insureportal-i18n
     <<: *restart-policy
@@ -470,10 +478,12 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:8084/health"]
       <<: *hc-defaults
 
-  # ── Rust Fraud Engine ─────────────────────────────────────────────────────
+  # ── Fraud Detection Engine (Go) ───────────────────────────────────────────
+  # Repointed 2026-08-12: phantom ./services/rust/fraud-engine did not exist.
+  # Real service: ./fraud-detection-go (Go).
   fraud-engine:
     build:
-      context: ./services/rust/fraud-engine
+      context: ./fraud-detection-go
       dockerfile: Dockerfile
     container_name: insureportal-fraud
     <<: *restart-policy
@@ -494,31 +504,15 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:8085/health"]
       <<: *hc-defaults
 
-  # ── Rust Transaction Validator ────────────────────────────────────────────
-  tx-validator:
-    build:
-      context: ./services/rust/tx-validator
-      dockerfile: Dockerfile
-    container_name: insureportal-tx-validator
-    <<: *restart-policy
-    profiles: [app, all]
-    networks: [insureportal-infra, insureportal-app]
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      <<: *common-env
-      PORT: 8086
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      DATABASE_URL: ${DATABASE_URL}
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8086/health"]
-      <<: *hc-defaults
+  # REMOVED 2026-08-12: tx-validator (phantom ./services/rust/tx-validator).
+  # No transaction-validator service exists in this repository.
 
-  # ── Rust Ledger Bridge (TigerBeetle ↔ PostgreSQL sync) ────────────────────
+  # ── Rust Ledger Sidecar (TigerBeetle ↔ PostgreSQL sync) ──────────────────
+  # Repointed 2026-08-12: phantom ./services/rust/ledger-bridge did not exist.
+  # Real service: ./services/rust/ledger-sidecar (Rust).
   ledger-bridge:
     build:
-      context: ./services/rust/ledger-bridge
+      context: ./services/rust/ledger-sidecar
       dockerfile: Dockerfile
     container_name: insureportal-ledger
     <<: *restart-policy
@@ -539,9 +533,11 @@ services:
       <<: *hc-defaults
 
   # ── Go Workflow Orchestrator ──────────────────────────────────────────────
+  # Repointed 2026-08-12: phantom ./services/go/workflow-orchestrator did not
+  # exist. Real service: ./policy-workflow-go (Go).
   workflow-orchestrator:
     build:
-      context: ./services/go/workflow-orchestrator
+      context: ./policy-workflow-go
       dockerfile: Dockerfile
     container_name: insureportal-workflow
     <<: *restart-policy
@@ -573,30 +569,15 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:8088/health"]
       <<: *hc-defaults
 
-  # ── Python Credit Scoring ─────────────────────────────────────────────────
-  credit-scoring:
-    build:
-      context: ./services/python/credit-scoring
-      dockerfile: Dockerfile
-    container_name: insureportal-credit
-    <<: *restart-policy
-    profiles: [app, all]
-    networks: [insureportal-infra, insureportal-app]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      <<: *common-env
-      PORT: 8082
-      DATABASE_URL: ${DATABASE_URL}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
-      <<: *hc-defaults
+  # REMOVED 2026-08-12: credit-scoring (phantom ./services/python/credit-scoring).
+  # No credit-scoring service exists in this repository.
 
-  # ── Python Settlement Service ─────────────────────────────────────────────
+  # ── Settlement / Instant Payout Service (Go) ─────────────────────────────
+  # Repointed 2026-08-12: phantom ./services/python/settlement-service did not
+  # exist. Closest real service: ./instant-payout-service (Go).
   settlement-service:
     build:
-      context: ./services/python/settlement-service
+      context: ./instant-payout-service
       dockerfile: Dockerfile
     container_name: insureportal-settlement
     <<: *restart-policy
@@ -621,9 +602,11 @@ services:
       <<: *hc-defaults
 
   # ── Python AI/ML Risk Assessment ──────────────────────────────────────────
+  # Repointed 2026-08-12: phantom ./services/python/risk-assessment did not
+  # exist. Closest real service: ./python-ml-engine (Python, ml_models).
   risk-assessment:
     build:
-      context: ./services/python/risk-assessment
+      context: ./python-ml-engine
       dockerfile: Dockerfile
     container_name: insureportal-risk
     <<: *restart-policy
@@ -642,10 +625,12 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
       <<: *hc-defaults
 
-  # ── Python USSD Service ───────────────────────────────────────────────────
+  # ── USSD Gateway (Go) ─────────────────────────────────────────────────────
+  # Repointed 2026-08-12: phantom ./services/python/ussd-service did not exist.
+  # Real service: ./ussd-gateway (Go). See also ./services/go/ussd-gateway.
   ussd-service:
     build:
-      context: ./services/python/ussd-service
+      context: ./ussd-gateway
       dockerfile: Dockerfile
     container_name: insureportal-ussd
     <<: *restart-policy
@@ -663,10 +648,12 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8092/health"]
       <<: *hc-defaults
 
-  # ── Python WhatsApp Service ───────────────────────────────────────────────
+  # ── WhatsApp Notification Bot (Node.js/TypeScript) ───────────────────────
+  # Repointed 2026-08-12: phantom ./services/python/whatsapp-service did not
+  # exist. Real service: ./whatsapp-bot (Node.js/TypeScript).
   whatsapp-service:
     build:
-      context: ./services/python/whatsapp-service
+      context: ./whatsapp-bot
       dockerfile: Dockerfile
     container_name: insureportal-whatsapp
     <<: *restart-policy
@@ -682,28 +669,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
       <<: *hc-defaults
 
-  # ── Python SIM Orchestrator Daemon ────────────────────────────────────────
-  sim-orchestrator:
-    build:
-      context: ./services/python/pos-integration
-      dockerfile: Dockerfile
-    container_name: insureportal-sim-orch
-    <<: *restart-policy
-    profiles: [app, all]
-    networks: [insureportal-infra, insureportal-app]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    environment:
-      <<: *common-env
-      PORT: 8094
-      DATABASE_URL: ${DATABASE_URL}
-      KAFKA_BROKERS: kafka:9093
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8094/health"]
-      <<: *hc-defaults
+  # REMOVED 2026-08-12: sim-orchestrator (phantom ./services/python/pos-integration).
+  # No POS-integration/SIM-orchestrator service exists in this repository.
 
   # ═══════════════════════════════════════════════════════════════════════════
   # GATEWAY TIER
@@ -823,7 +790,7 @@ services:
 
   # ── Promtail (log shipper) ────────────────────────────────────────────────
   promtail:
-    image: grafana/promtail:3.0.0
+    image: prom/promtail:3.0.0
     container_name: insureportal-promtail
     <<: *restart-policy
     profiles: [observability, all]
@@ -1020,9 +987,11 @@ services:
           memory: 256M
 
   # ── MDM Compliance Engine (Go microservice) ────────────────────────────────
+  # Repointed 2026-08-12: phantom ./services/go/mdm-compliance-engine did not
+  # exist. Real service: ./enterprise-mdm (Go).
   mdm-compliance-engine:
     build:
-      context: ./services/go/mdm-compliance-engine
+      context: ./enterprise-mdm
       dockerfile: Dockerfile
     container_name: insureportal-mdm-compliance-engine
     <<: *restart-policy
@@ -1057,9 +1026,11 @@ services:
           memory: 256M
 
   # ── MDM Geofence Service (Python microservice) ─────────────────────────────
+  # Repointed 2026-08-12: phantom ./services/python/mdm-geofence-service did
+  # not exist. Real service: ./geospatial-service/python-service (Python).
   mdm-geofence-service:
     build:
-      context: ./services/python/mdm-geofence-service
+      context: ./geospatial-service/python-service
       dockerfile: Dockerfile
     container_name: insureportal-mdm-geofence-service
     <<: *restart-policy

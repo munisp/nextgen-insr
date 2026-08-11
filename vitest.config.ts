@@ -24,6 +24,13 @@ export default defineConfig({
       KEYCLOAK_CLIENT_ID: "insurance-portal",
     },
     testTimeout: 30000,
+    // NOTE (2026-08-12): tests/smoke/comprehensive_smoke_test.spec.ts stays in
+    // the default run, but it is an OPTIONS-LEVEL CONNECTIVITY SMOKE —
+    // NON-FUNCTIONAL. Its suites are labelled "connectivity smoke
+    // (non-functional)", it fails on 5xx/missing procedures when infra is
+    // reachable, and it prints "SKIPPED — no infra" otherwise. It must never
+    // be cited in reporters, dashboards, or readiness docs as functional
+    // test proof (e.g. "89/89 passed").
     include: [
       "server/**/*.test.ts",
       "server/**/*.spec.ts",
