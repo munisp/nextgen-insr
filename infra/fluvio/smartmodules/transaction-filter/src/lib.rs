@@ -14,7 +14,7 @@
 ///   --params min_amount_ngn=10000 \
 ///   --params include_statuses=completed,pending,failed
 /// ```
-use fluvio_smartmodule::{smartmodule, Record, Result, SmartModuleRecord};
+use fluvio_smartmodule::{smartmodule, Record, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
