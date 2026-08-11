@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
@@ -6,7 +7,7 @@ import { desc, eq, and, count, gte, lte } from "drizzle-orm";
 
 /**
  * Audit Trail Export Router
- * 
+ *
  * Exports audit data for compliance reporting and external auditors.
  * Supports CSV, JSON, and PDF formats with date range filtering.
  * Enforces data access controls and logs all export activities.
@@ -29,21 +30,18 @@ export const auditTrailExportRouter = router({
       actions: z.array(z.string()).optional(),
       maxRecords: z.number().max(100000).default(10000),
     }))
-    .mutation(async ({ input }) => {
-      const database = await getDb();
-      if (!database) throw new Error("Database unavailable");
-      const conditions = [gte(auditLog.id, 0)];
-      const results = await database.select().from(auditLog).where(and(...conditions)).orderBy(desc(auditLog.id)).limit(input.maxRecords);
-      const exportId = `EXP-${Date.now().toString(36).toUpperCase()}`;
-      return {
-        exportId, format: input.format, recordCount: results.length,
-        status: "completed", downloadUrl: `/api/exports/${exportId}.${input.format}`,
-        expiresAt: new Date(Date.now() + 24 * 3600000).toISOString(),
-      };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Audit trail export is not implemented yet",
+      });
     }),
   getExportHistory: protectedProcedure
     .input(z.object({ limit: z.number().default(10) }))
     .query(async () => {
-      return { exports: [], total: 0 };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Export history is not implemented yet",
+      });
     }),
 });
