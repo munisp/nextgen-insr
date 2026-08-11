@@ -73,7 +73,7 @@ func (s *NotificationService) SendNotification(ctx context.Context, n *models.No
 	}
 
 	// Determine delivery channels based on priority
-	channels := s.resolveChannels(n)
+	_ = s.resolveChannels(n) // channels resolved; primary channel used first
 
 	// For simplicity, send via the primary channel first
 	if err := s.pg.CreateNotification(ctx, n); err != nil {
@@ -156,13 +156,18 @@ func (s *NotificationService) CreateDeliveryAttempt(ctx context.Context, da *mod
 		status = "failed"
 	}
 
-	if err := s.pg.UpdateNotificationStatus(ctx, da.NotificationID.String(), status,
+	if err := s.pg.UpdateNotificationStatus(ctx, da.NotificationID, status,
 		func() *time.Time {
-			if da.DeliveredAt != nil { return da.DeliveredAt }
+			if da.DeliveredAt != nil {
+				return da.DeliveredAt
+			}
 			return nil
 		}(),
 		func() *time.Time {
-			if da.Status == "failed" { t := time.Now(); return &t }
+			if da.Status == "failed" {
+				t := time.Now()
+				return &t
+			}
 			return nil
 		}(),
 		da.Error); err != nil {
@@ -238,11 +243,11 @@ func (s *NotificationService) GetDashboard(ctx context.Context) (*models.Notific
 	}
 
 	dash := &models.NotificationDashboard{
-		TotalSent:     statusCounts["sent"],
+		TotalSent:      statusCounts["sent"],
 		TotalDelivered: statusCounts["delivered"],
-		TotalFailed:   statusCounts["failed"],
-		TotalQueued:   statusCounts["queued"],
-		TotalRetrying: statusCounts["retrying"],
+		TotalFailed:    statusCounts["failed"],
+		TotalQueued:    statusCounts["queued"],
+		TotalRetrying:  statusCounts["retrying"],
 	}
 
 	total := dash.TotalSent + dash.TotalFailed

@@ -1,35 +1,34 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
-	"context"
-	"syscall"
-	"strconv"
 	"os/exec"
+	"os/signal"
+	"strconv"
 	"sync"
+	"syscall"
 	"time"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"database/sql"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
 )
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -37,9 +36,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -53,7 +56,9 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // Platform Scripts Runner — orchestrates maintenance, migration, and health check scripts
@@ -112,7 +117,9 @@ func newRouter() *chi.Mux {
 		})
 	})
 	r.Post("/api/v1/scripts/run", func(w http.ResponseWriter, r *http.Request) {
-		var body struct{ Script string `json:"script"` }
+		var body struct {
+			Script string `json:"script"`
+		}
 		json.NewDecoder(r.Body).Decode(&body)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"script": body.Script, "status": "completed", "duration": "2.3s",
@@ -186,7 +193,9 @@ func main() {
 	}
 	r := newRouter()
 	port := os.Getenv("PORT")
-	if port == "" { port = "8114" }
+	if port == "" {
+		port = "8114"
+	}
 	log.Printf("Scripts Runner starting on :%s", port)
 	srv := &http.Server{Addr: ":" + port, Handler: r}
 	go func() {
@@ -204,3 +213,30 @@ func main() {
 }
 
 func init() { _ = exec.Command("echo") }
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		return
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		db = nil
+	}
+}

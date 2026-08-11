@@ -16,8 +16,8 @@ package main
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -27,10 +27,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"database/sql"
 
+	"context"
 	_ "github.com/lib/pq"
-		"context"
 	"os/signal"
 	"syscall"
 )
@@ -51,24 +50,24 @@ type LedgerEntry struct {
 }
 
 type AccountBalance struct {
-	AccountID       string `json:"account_id"`
-	DebitsPosted    int64  `json:"debits_posted"`
-	CreditsPosted   int64  `json:"credits_posted"`
-	DebitsPending   int64  `json:"debits_pending"`
-	CreditsPending  int64  `json:"credits_pending"`
-	Balance         int64  `json:"balance"`
-	Currency        string `json:"currency"`
-	LastUpdated     int64  `json:"last_updated"`
+	AccountID      string `json:"account_id"`
+	DebitsPosted   int64  `json:"debits_posted"`
+	CreditsPosted  int64  `json:"credits_posted"`
+	DebitsPending  int64  `json:"debits_pending"`
+	CreditsPending int64  `json:"credits_pending"`
+	Balance        int64  `json:"balance"`
+	Currency       string `json:"currency"`
+	LastUpdated    int64  `json:"last_updated"`
 }
 
 type SettlementBatch struct {
-	ID            string         `json:"id"`
-	Status        string         `json:"status"`
-	TotalAmount   int64          `json:"total_amount"`
-	TransferCount int            `json:"transfer_count"`
-	Transfers     []LedgerEntry  `json:"transfers"`
-	CreatedAt     int64          `json:"created_at"`
-	SettledAt     int64          `json:"settled_at,omitempty"`
+	ID            string        `json:"id"`
+	Status        string        `json:"status"`
+	TotalAmount   int64         `json:"total_amount"`
+	TransferCount int           `json:"transfer_count"`
+	Transfers     []LedgerEntry `json:"transfers"`
+	CreatedAt     int64         `json:"created_at"`
+	SettledAt     int64         `json:"settled_at,omitempty"`
 }
 
 type HealthCheck struct {
@@ -79,25 +78,25 @@ type HealthCheck struct {
 }
 
 type AggregatedHealth struct {
-	Overall    string        `json:"overall"`
-	Services   []HealthCheck `json:"services"`
-	Timestamp  int64         `json:"timestamp"`
-	UptimeSec  int64         `json:"uptime_seconds"`
+	Overall   string        `json:"overall"`
+	Services  []HealthCheck `json:"services"`
+	Timestamp int64         `json:"timestamp"`
+	UptimeSec int64         `json:"uptime_seconds"`
 }
 
 type ReconciliationResult struct {
-	ID              string `json:"id"`
-	Status          string `json:"status"`
-	MatchedCount    int    `json:"matched_count"`
-	UnmatchedCount  int    `json:"unmatched_count"`
-	DiscrepancyAmt  int64  `json:"discrepancy_amount"`
-	Timestamp       int64  `json:"timestamp"`
+	ID             string `json:"id"`
+	Status         string `json:"status"`
+	MatchedCount   int    `json:"matched_count"`
+	UnmatchedCount int    `json:"unmatched_count"`
+	DiscrepancyAmt int64  `json:"discrepancy_amount"`
+	Timestamp      int64  `json:"timestamp"`
 }
 
 type TransactionLifecycle struct {
-	TransactionID string `json:"transaction_id"`
-	CurrentState  string `json:"current_state"`
-	PreviousState string `json:"previous_state"`
+	TransactionID string            `json:"transaction_id"`
+	CurrentState  string            `json:"current_state"`
+	PreviousState string            `json:"previous_state"`
 	Transitions   []StateTransition `json:"transitions"`
 }
 
@@ -109,40 +108,40 @@ type StateTransition struct {
 }
 
 type StatsResponse struct {
-	TransfersProcessed   int64 `json:"transfers_processed"`
-	AccountsTracked      int   `json:"accounts_tracked"`
-	SettlementBatches    int   `json:"settlement_batches"`
-	ReconciliationsRun   int64 `json:"reconciliations_run"`
-	HealthChecksRun      int64 `json:"health_checks_run"`
-	TotalLedgerVolume    int64 `json:"total_ledger_volume"`
-	PendingTransfers     int   `json:"pending_transfers"`
-	UptimeSeconds        int64 `json:"uptime_seconds"`
+	TransfersProcessed int64 `json:"transfers_processed"`
+	AccountsTracked    int   `json:"accounts_tracked"`
+	SettlementBatches  int   `json:"settlement_batches"`
+	ReconciliationsRun int64 `json:"reconciliations_run"`
+	HealthChecksRun    int64 `json:"health_checks_run"`
+	TotalLedgerVolume  int64 `json:"total_ledger_volume"`
+	PendingTransfers   int   `json:"pending_transfers"`
+	UptimeSeconds      int64 `json:"uptime_seconds"`
 }
 
 // ── Application State ────────────────────────────────────────────────────────
 
 type AppState struct {
-	mu                sync.RWMutex
-	ledger            []LedgerEntry
-	accounts          map[string]*AccountBalance
-	settlements       []SettlementBatch
-	reconciliations   []ReconciliationResult
-	lifecycles        map[string]*TransactionLifecycle
-	transferCount     atomic.Int64
-	reconcileCount    atomic.Int64
-	healthCheckCount  atomic.Int64
-	totalVolume       atomic.Int64
-	startTime         time.Time
+	mu               sync.RWMutex
+	ledger           []LedgerEntry
+	accounts         map[string]*AccountBalance
+	settlements      []SettlementBatch
+	reconciliations  []ReconciliationResult
+	lifecycles       map[string]*TransactionLifecycle
+	transferCount    atomic.Int64
+	reconcileCount   atomic.Int64
+	healthCheckCount atomic.Int64
+	totalVolume      atomic.Int64
+	startTime        time.Time
 }
 
 func NewAppState() *AppState {
 	return &AppState{
-		ledger:        make([]LedgerEntry, 0, 10000),
-		accounts:      make(map[string]*AccountBalance),
-		settlements:   make([]SettlementBatch, 0),
+		ledger:          make([]LedgerEntry, 0, 10000),
+		accounts:        make(map[string]*AccountBalance),
+		settlements:     make([]SettlementBatch, 0),
 		reconciliations: make([]ReconciliationResult, 0),
-		lifecycles:    make(map[string]*TransactionLifecycle),
-		startTime:     time.Now(),
+		lifecycles:      make(map[string]*TransactionLifecycle),
+		startTime:       time.Now(),
 	}
 }
 
@@ -310,12 +309,12 @@ func reconcileHandler(w http.ResponseWriter, r *http.Request) {
 
 	state.reconcileCount.Add(1)
 	result := ReconciliationResult{
-		ID:              fmt.Sprintf("rec_%d", time.Now().UnixMilli()),
-		Status:          "balanced",
-		MatchedCount:    matched,
-		UnmatchedCount:  0,
-		DiscrepancyAmt:  0,
-		Timestamp:       time.Now().UnixMilli(),
+		ID:             fmt.Sprintf("rec_%d", time.Now().UnixMilli()),
+		Status:         "balanced",
+		MatchedCount:   matched,
+		UnmatchedCount: 0,
+		DiscrepancyAmt: 0,
+		Timestamp:      time.Now().UnixMilli(),
 	}
 
 	state.mu.Lock()
@@ -568,7 +567,6 @@ func initDB() {
 	}
 }
 
-
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -682,14 +680,27 @@ func main() {
 	mux.HandleFunc("/metrics", prodMetricsHandler)
 
 	log.Printf("[pos-ledger-sync] Starting Go sidecar on port %s", port)
-	srv := &http.Server{Addr: ":"+port, Handler: rateLimitMiddleware(tracingMiddleware(corsMiddleware(mux))), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
-	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
+	srv := &http.Server{Addr: ":" + port, Handler: rateLimitMiddleware(tracingMiddleware(corsMiddleware(mux))), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutting down gracefully...")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Forced shutdown: %v", err)
+	}
 	log.Println("Server stopped")
+}
+
+var prodMetricsStart = time.Now()
+
+func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n# TYPE process_uptime_seconds gauge\nprocess_uptime_seconds %.2f\n", time.Since(prodMetricsStart).Seconds())
 }
