@@ -1,22 +1,20 @@
 package main
 
 import (
-	"database/sql"
 	"bytes"
-	"fmt"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
-	"sync"
-	"time"
-	"database/sql"
 	"os"
-
-	_ "github.com/lib/pq"
-		"context"
 	"os/signal"
+	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -81,11 +79,45 @@ func handleCalculate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handlePayoutSummary aggregates real payout figures from the
+// agent_commissions table for the current period. It never returns
+// hardcoded figures: no database → 503; query failure → 503 with the error.
 func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "payout summary unavailable: database not connected"})
+		return
+	}
+	period := time.Now().Format("2006-01")
+
+	var totalPayable float64
+	var agentsDue, pendingApproval int
+	err := db.QueryRow(`SELECT COALESCE(SUM(amount),0), COUNT(DISTINCT agent_id),
+		COUNT(*) FILTER (WHERE status = 'pending')
+		FROM agent_commissions WHERE period = $1`, period).Scan(&totalPayable, &agentsDue, &pendingApproval)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("payout summary query failed: %s", err.Error())})
+		return
+	}
+
+	var avgPayout, topEarner float64
+	if err := db.QueryRow(`SELECT COALESCE(AVG(t),0), COALESCE(MAX(t),0) FROM (
+		SELECT SUM(amount) AS t FROM agent_commissions WHERE period = $1 GROUP BY agent_id
+	) per_agent`, period).Scan(&avgPayout, &topEarner); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("payout summary query failed: %s", err.Error())})
+		return
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"period": time.Now().Format("2006-01"),
-		"total_payable": 12500000, "agents_due": 342, "avg_payout": 36549,
-		"top_earner": 285000, "pending_approval": 15,
+		"period":           period,
+		"total_payable":    totalPayable,
+		"agents_due":       agentsDue,
+		"avg_payout":       math.Round(avgPayout),
+		"top_earner":       topEarner,
+		"pending_approval": pendingApproval,
 	})
 }
 
@@ -110,6 +142,19 @@ func initDB() {
 		return
 	}
 	log.Printf("Connected to PostgreSQL for agent_commission_management")
+
+	// Commission records table — payout summary aggregates from here.
+	if _, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_commissions (
+		id SERIAL PRIMARY KEY,
+		agent_id TEXT NOT NULL,
+		policy_id TEXT,
+		amount NUMERIC(15,2) DEFAULT 0,
+		status VARCHAR(32) DEFAULT 'pending',
+		period VARCHAR(7),
+		created_at TIMESTAMPTZ DEFAULT NOW()
+	)`); err != nil {
+		log.Printf("WARN: agent_commissions table creation failed: %v", err)
+	}
 
 	// Create table if not exists
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_commission_management (
@@ -142,6 +187,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func tracingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&metricsReqCount, 1)
 		requestID := r.Header.Get("X-Request-ID")
 		if requestID == "" {
 			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
@@ -228,6 +274,42 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		rateLimitMu.Unlock()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ─── Metrics & Probes ────────────────────────────────────────────────────────
+
+var (
+	metricsReqCount  int64
+	metricsStartTime = time.Now()
+)
+
+func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
+	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
+}
+
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {
