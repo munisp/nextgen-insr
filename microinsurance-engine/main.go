@@ -44,6 +44,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// The engine persists policies, claims and premium records to PostgreSQL;
+	// refuse to start without a database rather than running in-memory.
+	if cfg.Postgres.URL == "" && os.Getenv("DB_HOST") == "" && os.Getenv("DB_PASSWORD") == "" {
+		logger.Fatal("DATABASE_URL is required: microinsurance-engine stores policies, claims and premium records in PostgreSQL and does not support in-memory operation")
+	}
+
 	pg, err := db.NewPostgres(ctx, &cfg.Postgres)
 	if err != nil {
 		logger.Fatal("Failed to connect to postgres", zap.Error(err))
@@ -365,16 +371,16 @@ func updateProductHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		var req struct {
-			Name            string         `json:"name"`
-			Description     string         `json:"description"`
-			Premium         float64        `json:"premium"`
-			CoverageAmount  float64        `json:"coverage_amount"`
-			Status          string         `json:"status"`
-			ClaimSLA        string         `json:"claim_sla"`
-			MaxAge          int            `json:"max_age"`
-			MinAge          int            `json:"min_age"`
-			Exclusions      []string       `json:"exclusions,omitempty"`
-			Metadata        map[string]any `json:"metadata,omitempty"`
+			Name           string         `json:"name"`
+			Description    string         `json:"description"`
+			Premium        float64        `json:"premium"`
+			CoverageAmount float64        `json:"coverage_amount"`
+			Status         string         `json:"status"`
+			ClaimSLA       string         `json:"claim_sla"`
+			MaxAge         int            `json:"max_age"`
+			MinAge         int            `json:"min_age"`
+			Exclusions     []string       `json:"exclusions,omitempty"`
+			Metadata       map[string]any `json:"metadata,omitempty"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -484,17 +490,17 @@ func enrollHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) ht
 		w.Header().Set("Content-Type", "application/json")
 
 		var req struct {
-			CustomerID    string                  `json:"customer_id"`
-			PhoneNumber   string                  `json:"phone_number"`
-			FirstName     string                  `json:"first_name"`
-			LastName      string                  `json:"last_name"`
-			DateOfBirth   string                  `json:"date_of_birth"`
-			ProductID     string                  `json:"product_id"`
-			Channel       string                  `json:"channel"`
-			PaymentMethod string                  `json:"payment_method"`
-			GroupID       string                  `json:"group_id,omitempty"`
-			KYCDocuments  map[string]string       `json:"kyc_documents,omitempty"`
-			Metadata      map[string]any          `json:"metadata,omitempty"`
+			CustomerID    string            `json:"customer_id"`
+			PhoneNumber   string            `json:"phone_number"`
+			FirstName     string            `json:"first_name"`
+			LastName      string            `json:"last_name"`
+			DateOfBirth   string            `json:"date_of_birth"`
+			ProductID     string            `json:"product_id"`
+			Channel       string            `json:"channel"`
+			PaymentMethod string            `json:"payment_method"`
+			GroupID       string            `json:"group_id,omitempty"`
+			KYCDocuments  map[string]string `json:"kyc_documents,omitempty"`
+			Metadata      map[string]any    `json:"metadata,omitempty"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -502,7 +508,7 @@ func enrollHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) ht
 			return
 		}
 
-		if err := validateEnrollment(req.CustomerID, req.ProductID, req.Channel); err != nil {
+		if err := validateEnrollment(req); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error(), logger)
 			return
 		}
@@ -537,22 +543,22 @@ func enrollHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) ht
 		endDate := startDate.Add(duration)
 
 		enrollment := &models.Enrollment{
-			ID:            generateID(),
-			EnrollmentID:  enrollmentID,
-			ProductID:     product.ID,
-			CustomerID:    req.CustomerID,
-			PhoneNumber:   req.PhoneNumber,
-			FirstName:     req.FirstName,
-			LastName:      req.LastName,
-			Channel:       models.EnrollmentChannel(req.Channel),
-			Status:        models.EnrollmentActive,
-			StartDate:     startDate,
-			EndDate:       endDate,
-			Premium:       product.Premium,
-			PaymentMethod: req.PaymentMethod,
-			GroupID:       req.GroupID,
+			ID:             generateID(),
+			EnrollmentID:   enrollmentID,
+			ProductID:      product.ID,
+			CustomerID:     req.CustomerID,
+			PhoneNumber:    req.PhoneNumber,
+			FirstName:      req.FirstName,
+			LastName:       req.LastName,
+			Channel:        models.EnrollmentChannel(req.Channel),
+			Status:         models.EnrollmentActive,
+			StartDate:      startDate,
+			EndDate:        endDate,
+			Premium:        product.Premium,
+			PaymentMethod:  req.PaymentMethod,
+			GroupID:        req.GroupID,
 			NextPaymentDue: startDate.AddDate(0, 1, 0),
-			AutoRenew:     true,
+			AutoRenew:      true,
 			Metadata: map[string]any{
 				"kyc_documents": req.KYCDocuments,
 			},
@@ -656,10 +662,10 @@ func listClaimsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
-			"claims":  claims,
-			"total":   total,
-			"limit":   limit,
-			"offset":  offset,
+			"claims": claims,
+			"total":  total,
+			"limit":  limit,
+			"offset": offset,
 		})
 	}
 }
@@ -888,15 +894,15 @@ func createGroupHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		w.Header().Set("Content-Type", "application/json")
 
 		var req struct {
-			GroupID          string    `json:"group_id"`
-			GroupName        string    `json:"group_name"`
-			ProductID        string    `json:"product_id"`
-			GroupLeader      string    `json:"group_leader"`
-			MemberCount      int       `json:"member_count"`
-			Members          []string  `json:"members,omitempty"`
-			PremiumPerMember float64   `json:"premium_per_member"`
-			StartDate        string    `json:"start_date"`
-			EndDate          string    `json:"end_date"`
+			GroupID          string         `json:"group_id"`
+			GroupName        string         `json:"group_name"`
+			ProductID        string         `json:"product_id"`
+			GroupLeader      string         `json:"group_leader"`
+			MemberCount      int            `json:"member_count"`
+			Members          []string       `json:"members,omitempty"`
+			PremiumPerMember float64        `json:"premium_per_member"`
+			StartDate        string         `json:"start_date"`
+			EndDate          string         `json:"end_date"`
 			Metadata         map[string]any `json:"metadata,omitempty"`
 		}
 
@@ -1001,8 +1007,8 @@ func premiumScheduleHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.L
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
-			"schedule": schedule,
-			"days":     days,
+			"schedule":     schedule,
+			"days":         days,
 			"generated_at": time.Now().UTC().Format(time.RFC3339),
 		})
 	}
@@ -1087,9 +1093,9 @@ func recordPaymentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{
-			"payment":     payment,
-			"receipt_no":  paymentID,
-			"status":      "payment_recorded",
+			"payment":    payment,
+			"receipt_no": paymentID,
+			"status":     "payment_recorded",
 		})
 	}
 }
@@ -1229,14 +1235,26 @@ func validateProduct(product models.MicroProduct) error {
 	return nil
 }
 
-func validateEnrollment(customerID, productID, channel string) error {
-	if customerID == "" {
+func validateEnrollment(req struct {
+	CustomerID    string            `json:"customer_id"`
+	PhoneNumber   string            `json:"phone_number"`
+	FirstName     string            `json:"first_name"`
+	LastName      string            `json:"last_name"`
+	DateOfBirth   string            `json:"date_of_birth"`
+	ProductID     string            `json:"product_id"`
+	Channel       string            `json:"channel"`
+	PaymentMethod string            `json:"payment_method"`
+	GroupID       string            `json:"group_id,omitempty"`
+	KYCDocuments  map[string]string `json:"kyc_documents,omitempty"`
+	Metadata      map[string]any    `json:"metadata,omitempty"`
+}) error {
+	if req.CustomerID == "" {
 		return errors.New("customer_id is required")
 	}
-	if productID == "" {
+	if req.ProductID == "" {
 		return errors.New("product_id is required")
 	}
-	if channel == "" {
+	if req.Channel == "" {
 		return errors.New("channel is required")
 	}
 	validChannels := map[string]bool{
@@ -1244,7 +1262,7 @@ func validateEnrollment(customerID, productID, channel string) error {
 		string(models.ChannelMobile): true, string(models.ChannelWeb): true,
 		string(models.ChannelMNO): true, string(models.ChannelGroup): true,
 	}
-	if !validChannels[channel] {
+	if !validChannels[req.Channel] {
 		return errors.New("invalid enrollment channel")
 	}
 	return nil
@@ -1305,7 +1323,7 @@ func seedProducts(pg *db.Postgres, ctx context.Context, logger *zap.Logger) {
 			Duration: "per_season", ClaimSLA: "48h", MaxAge: 65, MinAge: 18, MaxSumInsured: 50000,
 			WaitingPeriod: "0", ParametricTrigger: "rainfall_index",
 			Exclusions: []string{"negligence", "unregistered_farmland"},
-			Status: models.ProductActive, CreatedAt: now, UpdatedAt: now,
+			Status:     models.ProductActive, CreatedAt: now, UpdatedAt: now,
 			Metadata: map[string]any{"region": "all", "per_season": true},
 		},
 		{
@@ -1314,8 +1332,8 @@ func seedProducts(pg *db.Postgres, ctx context.Context, logger *zap.Logger) {
 			Premium: 200, Currency: "NGN", CoverageAmount: 100000, CoverageType: models.CoverageBenefit,
 			Duration: "monthly", ClaimSLA: "24h", MaxAge: 65, MinAge: 18, MaxSumInsured: 100000,
 			WaitingPeriod: "30",
-			Exclusions: []string{"pre_existing", "cosmetic"},
-			Status: models.ProductActive, CreatedAt: now, UpdatedAt: now,
+			Exclusions:    []string{"pre_existing", "cosmetic"},
+			Status:        models.ProductActive, CreatedAt: now, UpdatedAt: now,
 		},
 		{
 			ID: generateID(), ProductID: "MIC-LIFE", Name: "Term Life",
@@ -1323,7 +1341,7 @@ func seedProducts(pg *db.Postgres, ctx context.Context, logger *zap.Logger) {
 			Premium: 100, Currency: "NGN", CoverageAmount: 200000, CoverageType: models.CoverageBenefit,
 			Duration: "monthly", ClaimSLA: "72h", MaxAge: 65, MinAge: 18, MaxSumInsured: 200000,
 			WaitingPeriod: "0",
-			Status: models.ProductActive, CreatedAt: now, UpdatedAt: now,
+			Status:        models.ProductActive, CreatedAt: now, UpdatedAt: now,
 		},
 		{
 			ID: generateID(), ProductID: "MIC-DEVICE", Name: "Device Protection",
@@ -1331,8 +1349,8 @@ func seedProducts(pg *db.Postgres, ctx context.Context, logger *zap.Logger) {
 			Premium: 300, Currency: "NGN", CoverageAmount: 75000, CoverageType: models.CoverageIndemnity,
 			Duration: "monthly", ClaimSLA: "48h", MaxAge: 65, MinAge: 18, MaxSumInsured: 75000,
 			WaitingPeriod: "14",
-			Exclusions: []string{"intentional_damage", "water_damage"},
-			Status: models.ProductActive, CreatedAt: now, UpdatedAt: now,
+			Exclusions:    []string{"intentional_damage", "water_damage"},
+			Status:        models.ProductActive, CreatedAt: now, UpdatedAt: now,
 		},
 	}
 

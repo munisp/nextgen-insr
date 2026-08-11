@@ -834,10 +834,10 @@ func (p *Postgres) ListParametricTriggers(ctx context.Context, productID, trigge
 // PolicyMetrics holds dashboard statistics for the microinsurance engine.
 type PolicyMetrics struct {
 	EnrollmentStats struct {
-		TotalEnrolled    int64   `json:"total_enrolled"`
-		ActivePolicies   int64   `json:"active_policies"`
-		ExpiringSoon     int64   `json:"expiring_soon"`
-		TotalPremium     float64 `json:"total_premium"`
+		TotalEnrolled  int64   `json:"total_enrolled"`
+		ActivePolicies int64   `json:"active_policies"`
+		ExpiringSoon   int64   `json:"expiring_soon"`
+		TotalPremium   float64 `json:"total_premium"`
 	} `json:"enrollment_stats"`
 	ClaimStats struct {
 		ClaimsThisPeriod int64   `json:"claims_this_period"`
@@ -847,11 +847,11 @@ type PolicyMetrics struct {
 		AvgSettlement    float64 `json:"avg_settlement"`
 	} `json:"claim_stats"`
 	RevenueStats struct {
-		TotalCollected    float64 `json:"total_collected"`
-		AvgPremium        float64 `json:"avg_premium"`
-		PendingPayments   int64   `json:"pending_payments"`
-		LossRatio         float64 `json:"loss_ratio"`
-		PenetrationRate   float64 `json:"penetration_rate"`
+		TotalCollected  float64 `json:"total_collected"`
+		AvgPremium      float64 `json:"avg_premium"`
+		PendingPayments int64   `json:"pending_payments"`
+		LossRatio       float64 `json:"loss_ratio"`
+		PenetrationRate float64 `json:"penetration_rate"`
 	} `json:"revenue_stats"`
 }
 
