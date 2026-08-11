@@ -20,11 +20,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
@@ -512,14 +507,44 @@ func handleAPIProducts(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"products": apiProducts})
 }
 
+// handleAPIUsage aggregates real usage/revenue from the api_usage table.
+// It never returns fabricated numbers: without a database it answers 503.
 func handleAPIUsage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	// Mock usage stats per partner
+	if db == nil {
+		atomic.AddInt64(&errCount, 1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "usage statistics unavailable: database not connected"})
+		return
+	}
+	period := time.Now().Format("2006-01")
+	rows, err := db.Query("SELECT api_id, COUNT(*), COALESCE(SUM(cost),0) FROM api_usage WHERE to_char(created_at,'YYYY-MM') = $1 GROUP BY api_id", period)
+	if err != nil {
+		atomic.AddInt64(&errCount, 1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("usage statistics unavailable: %s", err.Error())})
+		return
+	}
+	defer rows.Close()
+	byAPI := map[string]int64{}
+	var totalCalls int64
+	var revenue float64
+	for rows.Next() {
+		var apiID string
+		var calls int64
+		var cost float64
+		if err := rows.Scan(&apiID, &calls, &cost); err != nil {
+			continue
+		}
+		byAPI[apiID] = calls
+		totalCalls += calls
+		revenue += cost
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"period": time.Now().Format("2006-01"),
-		"total_calls": 15423,
-		"by_api": map[string]int{"api-quote": 8000, "api-kyc": 3500, "api-claims": 2000, "api-policy": 923, "api-payment": 1000},
-		"revenue": 234500.00,
+		"period":      period,
+		"total_calls": totalCalls,
+		"by_api":      byAPI,
+		"revenue":     revenue,
 	})
 }
 
@@ -869,6 +894,11 @@ func main() {
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS api_products (id SERIAL PRIMARY KEY, name VARCHAR(128) NOT NULL, version VARCHAR(16) DEFAULT 'v1', description TEXT, category VARCHAR(64) DEFAULT 'insurance', rate_limit INTEGER DEFAULT 1000, price_per_call NUMERIC(10,4) DEFAULT 0.001, status VARCHAR(32) DEFAULT 'active', created_at TIMESTAMP DEFAULT NOW())`)
 	if err != nil {
 		jsonLog("warn", "migration error", "error", err.Error())
+	}
+	// Usage tracking table — the marketplace usage endpoint aggregates from here.
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS api_usage (id SERIAL PRIMARY KEY, api_id TEXT NOT NULL, partner_id TEXT, cost NUMERIC(12,2) DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW())`)
+	if err != nil {
+		jsonLog("warn", "migration error", "table", "api_usage", "error", err.Error())
 	}
 
 	initMiddleware()
