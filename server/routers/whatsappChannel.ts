@@ -1,8 +1,13 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, notificationDispatchLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+// MOCKWARE FIX: templates/messages/analytics were hardcoded. There is no
+// WhatsApp template table in the schema, so templates returns an honest
+// empty list; messages and analytics are read from the real
+// notification_dispatch_log table (channel = 'whatsapp').
 
 export const whatsappChannelRouter = router({
   list: protectedProcedure
@@ -94,42 +99,68 @@ export const whatsappChannelRouter = router({
     }),
 
   templates: protectedProcedure.query(async () => {
+    // No WhatsApp template store exists in the schema — honest empty.
     return {
-      templates: [
-        {
-          id: "WT-001",
-          name: "Welcome Message",
-          category: "transactional",
-          status: "approved",
-          language: "en",
-        },
-      ],
-      total: 1,
+      templates: [] as any[],
+      total: 0,
     };
   }),
   messages: protectedProcedure.query(async () => {
-    return {
-      messages: [
-        {
-          id: "WM-001",
-          templateId: "WT-001",
-          recipient: "+2348012345678",
-          status: "delivered",
-          sentAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    const database = await getDb();
+    if (!database) return { messages: [], total: 0 };
+    const rows = await database
+      .select()
+      .from(notificationDispatchLog)
+      .where(eq(notificationDispatchLog.channel, "whatsapp"))
+      .orderBy(desc(notificationDispatchLog.createdAt))
+      .limit(50);
+    return { messages: rows, total: rows.length };
   }),
   analytics: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) {
+      return {
+        totalSent: 0,
+        delivered: 0,
+        read: 0,
+        failed: 0,
+        deliveryRate: 0,
+        templateCount: 0,
+        responseRate: 0,
+      };
+    }
+    const [sent] = await database
+      .select({ value: count() })
+      .from(notificationDispatchLog)
+      .where(eq(notificationDispatchLog.channel, "whatsapp"));
+    const [delivered] = await database
+      .select({ value: count() })
+      .from(notificationDispatchLog)
+      .where(
+        and(
+          eq(notificationDispatchLog.channel, "whatsapp"),
+          eq(notificationDispatchLog.status, "delivered")
+        )
+      );
+    const [failed] = await database
+      .select({ value: count() })
+      .from(notificationDispatchLog)
+      .where(
+        and(
+          eq(notificationDispatchLog.channel, "whatsapp"),
+          eq(notificationDispatchLog.status, "failed")
+        )
+      );
+    const totalSent = Number(sent.value);
+    const deliveredCount = Number(delivered.value);
     return {
-      totalSent: 5000,
-      delivered: 4800,
-      read: 3500,
-      failed: 200,
-      deliveryRate: 96,
-      templateCount: 15,
-      responseRate: 45,
+      totalSent,
+      delivered: deliveredCount,
+      read: 0, // read receipts are not tracked
+      failed: Number(failed.value),
+      deliveryRate: totalSent > 0 ? Math.round((deliveredCount / totalSent) * 100) : 0,
+      templateCount: 0, // no template store exists
+      responseRate: 0, // responses are not tracked
     };
   }),
 });

@@ -1,8 +1,22 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
+import { auditLog, transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import {
+  createSession,
+  handleCallback,
+  listSessions,
+  getStats,
+} from "../adapters/ussdGatewayAdapter";
+
+// MOCKWARE FIX: processInput previously returned a canned menu and the
+// session/transaction/analytics endpoints returned hardcoded data. Session
+// handling is now wired to the real Go ussd-gateway via ussdGatewayAdapter
+// and fails loudly when the gateway is unreachable; transactions are read
+// from the real transactions table; analytics come from the gateway or are
+// honest zeros.
 
 export const ussdGatewayRouter = router({
   list: protectedProcedure
@@ -94,6 +108,7 @@ export const ussdGatewayRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
+  // Telco-facing USSD callback: forwarded to the real Go ussd-gateway.
   processInput: publicProcedure
     .input(
       z.object({
@@ -104,41 +119,62 @@ export const ussdGatewayRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      let sessionId = input.sessionId;
+      if (!sessionId) {
+        const created = await createSession(input.phoneNumber, "*384#");
+        if (!created.success || !created.data) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `USSD gateway unavailable: ${created.error ?? "no response"}`,
+          });
+        }
+        sessionId = created.data.sessionId;
+      }
+      const result = await handleCallback(sessionId, input.input);
+      if (!result.success || !result.data) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `USSD gateway unavailable: ${result.error ?? "no response"}`,
+        });
+      }
       return {
-        text: "Welcome to AgentPOS\n1. Cash In\n2. Cash Out\n3. Balance",
-        sessionId: input.sessionId || "USSD-" + Date.now(),
+        text: result.data.response,
+        sessionId,
         agentId: input.agentId,
-        end: false,
+        end: result.data.endSession,
       };
     }),
   activeSessions: protectedProcedure.query(async () => {
+    const result = await listSessions("active");
+    if (!result.success || !result.data) {
+      // Honest empty — gateway unreachable, no fabricated sessions.
+      return {
+        sessions: [] as any[],
+        total: 0,
+        degraded: true,
+        error: result.error ?? "USSD gateway unavailable",
+      };
+    }
     return {
-      sessions: [
-        {
-          sessionId: "USSD-001",
-          phoneNumber: "08012345678",
-          screen: "main_menu",
-          startedAt: new Date().toISOString(),
-        },
-      ],
-      total: 1,
+      sessions: result.data,
+      total: result.data.length,
+      degraded: false,
     };
   }),
   transactions: protectedProcedure.query(async () => {
-    return {
-      transactions: [
-        {
-          id: "TX-001",
-          type: "cash_in",
-          amount: 50000,
-          status: "completed",
-          agentId: "AGT001",
-        },
-      ],
-      total: 1,
-    };
+    const database = await getDb();
+    if (!database) return { transactions: [], total: 0 };
+    const rows = await database
+      .select()
+      .from(transactions)
+      .where(eq(transactions.channel, "USSD"))
+      .orderBy(desc(transactions.createdAt))
+      .limit(50);
+    return { transactions: rows, total: rows.length };
   }),
   menuTree: protectedProcedure.query(async () => {
+    // Static menu definition served by the gateway configuration (not
+    // runtime state).
     return {
       menuTree: {
         id: "root",
@@ -152,12 +188,26 @@ export const ussdGatewayRouter = router({
     };
   }),
   analytics: protectedProcedure.query(async () => {
+    const result = await getStats();
+    if (!result.success || !result.data) {
+      // Honest zeros — gateway unreachable, no fabricated counts.
+      return {
+        totalTransactions: 0,
+        totalAmount: 0,
+        activeSessions: 0,
+        avgSessionDuration: 0,
+        completionRate: 0,
+        degraded: true,
+        error: result.error ?? "USSD gateway unavailable",
+      };
+    }
     return {
-      totalTransactions: 1250,
-      totalAmount: 25000000,
-      activeSessions: 15,
-      avgSessionDuration: 45,
-      completionRate: 85,
+      totalTransactions: result.data.completedToday ?? 0,
+      totalAmount: 0, // gateway does not report amounts
+      activeSessions: result.data.activeSessions ?? 0,
+      avgSessionDuration: Math.round((result.data.avgDurationMs ?? 0) / 1000),
+      completionRate: 0, // not reported by the gateway
+      degraded: false,
     };
   }),
 });
