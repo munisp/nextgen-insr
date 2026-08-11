@@ -55,8 +55,11 @@ func (c *circuitBreaker) recordFailure() {
 }
 
 // AI Claims Auto-Adjudication Service
-// Auto-approves claims below threshold using ML-based risk scoring.
-// Business rule: claims <= ₦500,000 with ML confidence >= 0.85 → instant approval.
+// Scores claims below threshold using a hand-tuned heuristic rule engine.
+// NOTE: no trained ML model is loaded by this service; a real model artifact
+// (MODEL_ARTIFACT_PATH) is required before auto-approval is enabled.
+// Business rule: claims <= ₦500,000 with confidence >= 0.85 → instant approval
+// (only when a trained model artifact is configured).
 
 var db *sql.DB
 
@@ -82,7 +85,10 @@ type AutoDecision struct {
 }
 
 func predictRisk(claim ClaimInput) (float64, float64) {
-	// ML-based risk scoring with logistic regression features
+	// Heuristic risk scoring. These weights were hand-picked — they are NOT
+	// the coefficients of a trained logistic-regression model, and must not be
+	// presented as such. A real fitted model artifact must be supplied via
+	// MODEL_ARTIFACT_PATH before auto-approval decisions are permitted.
 	features := []float64{
 		claim.Amount / 1000000,
 		float64(claim.EvidenceCount) / 10,
@@ -103,24 +109,39 @@ func predictRisk(claim ClaimInput) (float64, float64) {
 	return riskScore, confidence
 }
 
+// modelLabel honestly identifies the scorer as a heuristic rule engine,
+// not a trained ML model. Stored/returned with every decision.
+const modelLabel = "heuristic-rules-v1"
+
 func autoAdjudicate(claim ClaimInput) AutoDecision {
 	start := time.Now()
 	riskScore, confidence := predictRisk(claim)
 
+	// Auto-approval is disabled unless a real trained model artifact is
+	// configured. Without it, low-risk claims that would otherwise be
+	// auto-approved are escalated to manual_review instead.
+	autoApprovalEnabled := os.Getenv("MODEL_ARTIFACT_PATH") != ""
+
 	decision := AutoDecision{
 		ClaimID:      claim.ID,
 		ProcessingMs: time.Since(start).Milliseconds(),
-		Model:        "logistic-regression-v2",
+		Model:        modelLabel,
 		Confidence:   confidence,
 	}
 
 	if claim.Amount <= 500000 && riskScore < 0.3 && confidence >= 0.85 {
-		decision.Decision = "auto_approved"
-		decision.Reason = fmt.Sprintf("ML auto-approved: amount ₦%.0f, risk %.2f%%, confidence %.2f%%",
-			claim.Amount, riskScore*100, confidence*100)
+		if autoApprovalEnabled {
+			decision.Decision = "auto_approved"
+			decision.Reason = fmt.Sprintf("Auto-approved: amount ₦%.0f, risk %.2f%%, confidence %.2f%%",
+				claim.Amount, riskScore*100, confidence*100)
+		} else {
+			decision.Decision = "manual_review"
+			decision.Reason = fmt.Sprintf("Manual review: auto-approval disabled (no trained model artifact configured via MODEL_ARTIFACT_PATH); risk %.2f%%, confidence %.2f%%",
+				riskScore*100, confidence*100)
+		}
 	} else if riskScore >= 0.7 {
 		decision.Decision = "auto_rejected"
-		decision.Reason = fmt.Sprintf("ML auto-rejected: high risk %.2f%%", riskScore*100)
+		decision.Reason = fmt.Sprintf("Auto-rejected by heuristic rules: high risk %.2f%%", riskScore*100)
 	} else {
 		decision.Decision = "manual_review"
 		decision.Reason = fmt.Sprintf("Escalated: risk %.2f%%, confidence %.2f%%", riskScore*100, confidence*100)
@@ -276,7 +297,7 @@ type ClaimDecision struct {
 	SLACategory   string  `json:"sla_category"`
 }
 
-// Multi-factor AI claim scoring (weighted rule engine)
+// Multi-factor claim scoring (weighted rule engine)
 func adjudicateClaim(claimID string, amount float64, policyAge int, claimHistory int, hasDocuments bool, matchesPolicy bool) ClaimDecision {
 	score := 0.0
 	factors := []string{}
@@ -301,9 +322,16 @@ func adjudicateClaim(claimID string, amount float64, policyAge int, claimHistory
 
 	// Decision thresholds
 	decision := "auto_approve"
-	confidence := 0.95
-	if score >= 60 { decision = "reject"; confidence = 0.80 }
-	if score >= 30 && score < 60 { decision = "manual_review"; confidence = 0.70 }
+	if score >= 60 { decision = "reject" }
+	if score >= 30 && score < 60 { decision = "manual_review" }
+
+	// Confidence is computed from the score's distance to the nearest
+	// decision boundary (30 = review threshold, 60 = reject threshold).
+	// Scores near a boundary are less certain; no fixed confidence values
+	// are fabricated.
+	d30 := math.Abs(score - 30)
+	d60 := math.Abs(score - 60)
+	confidence := math.Min(0.5+math.Min(d30, d60)/100, 0.99)
 
 	// SLA based on complexity
 	sla := "fast_track" // 5 days
