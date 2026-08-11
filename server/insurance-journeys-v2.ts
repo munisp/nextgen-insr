@@ -134,11 +134,6 @@ export async function J01_CustomerOnboardingWorkflow(input: J01Input) {
   await assertTenantAccess("J01_CustomerOnboardingWorkflow", tenantCtx);
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ── Tenant Isolation Guard ────────────────────────────────────────────────
-  const tenantCtx = buildTenantContext(input);
-  await assertTenantAccess("J01_CustomerOnboardingWorkflow", tenantCtx);
-  // ─────────────────────────────────────────────────────────────────────────
-
   setHandler(journeyCurrentStepQuery, () => currentStep);
   setHandler(cancelJourneySignal, () => { cancelled = true; });
 
@@ -278,11 +273,6 @@ export interface J02Input {
 export async function J02_PolicyPurchaseWorkflow(input: J02Input) {
   let currentStep = "initializing";
   let cancelled = false;
-  // ── Tenant Isolation Guard ────────────────────────────────────────────────
-  const tenantCtx = buildTenantContext(input);
-  await assertTenantAccess("J02_PolicyPurchaseWorkflow", tenantCtx);
-  // ─────────────────────────────────────────────────────────────────────────
-
   // ── Tenant Isolation Guard ────────────────────────────────────────────────
   const tenantCtx = buildTenantContext(input);
   await assertTenantAccess("J02_PolicyPurchaseWorkflow", tenantCtx);
@@ -452,11 +442,6 @@ export interface J03Input {
 export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
   let currentStep = "initializing";
   let cancelled = false;
-  // ── Tenant Isolation Guard ────────────────────────────────────────────────
-  const tenantCtx = buildTenantContext(input);
-  await assertTenantAccess("J03_ClaimsSettlementWorkflow", tenantCtx);
-  // ─────────────────────────────────────────────────────────────────────────
-
   // ── Tenant Isolation Guard ────────────────────────────────────────────────
   const tenantCtx = buildTenantContext(input);
   await assertTenantAccess("J03_ClaimsSettlementWorkflow", tenantCtx);
@@ -635,11 +620,6 @@ export interface J04Input {
 export async function J04_AgentOnboardingWorkflow(input: J04Input) {
   let currentStep = "initializing";
   let cancelled = false;
-  // ── Tenant Isolation Guard ────────────────────────────────────────────────
-  const tenantCtx = buildTenantContext(input);
-  await assertTenantAccess("J04_AgentOnboardingWorkflow", tenantCtx);
-  // ─────────────────────────────────────────────────────────────────────────
-
   // ── Tenant Isolation Guard ────────────────────────────────────────────────
   const tenantCtx = buildTenantContext(input);
   await assertTenantAccess("J04_AgentOnboardingWorkflow", tenantCtx);

@@ -166,6 +166,8 @@ const plugins = [
       "screenshot-narrow.png",
     ],
     workbox: {
+      // vendor-misc chunk is ~13.5 MB; raise the 2 MiB default so precache succeeds
+      maximumFileSizeToCacheInBytes: 16 * 1024 * 1024,
       globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
       runtimeCaching: [
         {

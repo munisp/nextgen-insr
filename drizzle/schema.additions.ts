@@ -437,3 +437,117 @@ export const sarDeadLetterQueue = pgTable("sar_dead_letter_queue", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// ─── Policy Quotes ───────────────────────────────────────────────────────────
+export const policyQuotes = pgTable(
+  "policy_quotes",
+  {
+    id: serial("id").primaryKey(),
+    customerId: integer("customerId"),
+    agentId: integer("agentId"),
+    productId: integer("productId"),
+    productName: text("productName"),
+    productType: varchar("productType", { length: 64 }),
+    sumInsured: numeric("sumInsured", { precision: 18, scale: 2 }),
+    premiumAmount: numeric("premiumAmount", { precision: 18, scale: 2 }),
+    stampDuty: numeric("stampDuty", { precision: 18, scale: 2 }),
+    totalPayable: numeric("totalPayable", { precision: 18, scale: 2 }),
+    durationMonths: integer("durationMonths"),
+    coverageType: varchar("coverageType", { length: 64 }),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    validUntil: timestamp("validUntil"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    customerIdx: index("policy_quotes_customerId_idx").on(t.customerId),
+    statusIdx: index("policy_quotes_status_idx").on(t.status),
+  })
+);
+
+export type PolicyQuote = typeof policyQuotes.$inferSelect;
+export type InsertPolicyQuote = typeof policyQuotes.$inferInsert;
+
+// ─── KYC Verifications ───────────────────────────────────────────────────────
+export const kycVerifications = pgTable(
+  "kyc_verifications",
+  {
+    id: serial("id").primaryKey(),
+    customerId: integer("customerId").notNull(),
+    verificationType: varchar("verificationType", { length: 64 }),
+    documentNumber: varchar("documentNumber", { length: 128 }),
+    nin: varchar("nin", { length: 32 }),
+    bvn: varchar("bvn", { length: 32 }),
+    selfieUrl: text("selfieUrl"),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    verificationScore: numeric("verificationScore", { precision: 5, scale: 2 }),
+    rejectionReason: text("rejectionReason"),
+    verifiedAt: timestamp("verifiedAt"),
+    reviewedBy: integer("reviewedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    customerIdx: index("kyc_verifications_customerId_idx").on(t.customerId),
+    statusIdx: index("kyc_verifications_status_idx").on(t.status),
+  })
+);
+
+export type KycVerification = typeof kycVerifications.$inferSelect;
+export type InsertKycVerification = typeof kycVerifications.$inferInsert;
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("userId"),
+    type: varchar("type", { length: 64 }),
+    title: text("title"),
+    message: text("message"),
+    channel: varchar("channel", { length: 16 }), // sms | push | email | in_app
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    metadata: jsonb("metadata"),
+    sentAt: timestamp("sentAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    userIdx: index("notifications_userId_idx").on(t.userId),
+    statusIdx: index("notifications_status_idx").on(t.status),
+  })
+);
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
+
+// ─── Insurance Product Types ─────────────────────────────────────────────────
+export const insuranceProductTypes = pgTable("insurance_product_types", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 64 }),
+  name: text("name").notNull(),
+  description: text("description"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type InsuranceProductType = typeof insuranceProductTypes.$inferSelect;
+export type InsertInsuranceProductType = typeof insuranceProductTypes.$inferInsert;
+
+// ─── InsurePortal Ads ────────────────────────────────────────────────────────
+export const insurance_portalAds = pgTable("insurance_portal_ads", {
+  id: serial("id").primaryKey(),
+  title: text("title"),
+  imageUrl: text("imageUrl"),
+  targetUrl: text("targetUrl"),
+  placement: varchar("placement", { length: 64 }),
+  isActive: boolean("isActive").default(true).notNull(),
+  startDate: timestamp("startDate"),
+  endDate: timestamp("endDate"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type InsurancePortalAd = typeof insurance_portalAds.$inferSelect;
+export type InsertInsurancePortalAd = typeof insurance_portalAds.$inferInsert;

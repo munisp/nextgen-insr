@@ -1,1 +1,250 @@
-/**\n * InsurePortal Permify Client\n * HTTP client for Permify authorization service.\n * FAIL-CLOSED (default): denies access when Permify is unavailable and emits\n * alert-level (error) logs. Circuit breaker prevents cascading timeouts when\n * Permify is down.\n *\n * INSECURE OPT-IN: setting PERMIFY_FAIL_OPEN=true reverts to fail-open\n * (requests are ALLOWED while Permify is unreachable). This disables\n * authorization enforcement during outages and logs a loud startup warning.\n * Never enable it in production outside a declared incident.\n *\n * Schema (defined in infra/permify/schema.perm):\n *   entity agent { ... }\n *   entity admin { ... }\n *   entity supervisor { ... }\n *\n * Policies:\n *   - agents can only read own transactions\n *   - admins can read all transactions\n *   - float top-up approval requires supervisor or admin\n *   - fraud alert status update requires admin\n */\nimport logger from \"./logger\";\n\n// ── Circuit Breaker ─────────────────────────────────────────────────────────\n// Prevents cascading timeouts when Permify is down by short-circuiting\n// requests after repeated failures.\nconst CIRCUIT_FAILURE_THRESHOLD = 5;\nconst CIRCUIT_RECOVERY_MS = 30_000; // 30s before retrying after open\n\nlet circuitFailures = 0;\nlet circuitOpenedAt = 0;\n\nfunction isCircuitOpen(): boolean {\n  if (circuitFailures < CIRCUIT_FAILURE_THRESHOLD) return false;\n  if (Date.now() - circuitOpenedAt > CIRCUIT_RECOVERY_MS) {\n    // Half-open: allow one probe request\n    circuitFailures = CIRCUIT_FAILURE_THRESHOLD - 1;\n    return false;\n  }\n  return true;\n}\n\nfunction recordSuccess(): void {\n  circuitFailures = 0;\n  circuitOpenedAt = 0;\n}\n\nfunction recordFailure(): void {\n  circuitFailures++;\n  if (circuitFailures >= CIRCUIT_FAILURE_THRESHOLD && circuitOpenedAt === 0) {\n    circuitOpenedAt = Date.now();\n    logger.error(\n      \"[Permify] ALERT: Circuit breaker OPEN — denying all requests for 30s\"\n    );\n  }\n}\n\nconst PERMIFY_URL = process.env.PERMIFY_URL ?? \"http://localhost:3476\";\nconst PERMIFY_TENANT_ID = process.env.PERMIFY_TENANT_ID ?? \"t1\";\n\n// ── Fail-open override (INSECURE — explicit opt-in only) ────────────────────\n// Default posture is FAIL-CLOSED: when Permify is unreachable, every\n// authorization check is denied and an alert-level (error) log is emitted.\n// PERMIFY_FAIL_OPEN=true allows requests during a Permify outage and is\n// intended ONLY for short-lived disaster-recovery scenarios.\nconst PERMIFY_FAIL_OPEN = process.env.PERMIFY_FAIL_OPEN === \"true\";\n\nif (PERMIFY_FAIL_OPEN) {\n  logger.error(\n    \"═══════════════════════════════════════════════════════════════════\\n\" +\n      \"[Permify] ⚠️  PERMIFY_FAIL_OPEN=true — AUTHORIZATION FAIL-OPEN ENABLED\\n\" +\n      \"[Permify] Requests will be ALLOWED while Permify is unreachable.\\n\" +\n      \"[Permify] This DISABLES authorization enforcement during outages.\\n\" +\n      \"[Permify] NEVER enable this in production outside a declared incident.\\n\" +\n      \"═══════════════════════════════════════════════════════════════════\"\n  );\n}\n\ninterface PermifyCheckRequest {\n  tenantId: string;\n  metadata: { schemaVersion: string; snapToken: string; depth: number };\n  entity: { type: string; id: string };\n  permission: string;\n  subject: { type: string; id: string; relation?: string };\n}\n\ninterface PermifyCheckResponse {\n  can:\n    | \"CHECK_RESULT_ALLOWED\"\n    | \"CHECK_RESULT_DENIED\"\n    | \"CHECK_RESULT_UNSPECIFIED\";\n}\n\n/**\n * Check if a subject has permission on an entity.\n * Returns true if allowed, false if denied or Permify is unavailable\n * (fail-closed). When PERMIFY_FAIL_OPEN=true (insecure opt-in), returns true\n * while Permify is unreachable.\n */\nexport async function permifyCheck(params: {\n  subjectType: string;\n  subjectId: string;\n  entityType: string;\n  entityId: string;\n  permission: string;\n}): Promise<boolean> {\n  const body: PermifyCheckRequest = {\n    tenantId: PERMIFY_TENANT_ID,\n    metadata: {\n      schemaVersion: \"\",\n      snapToken: \"\",\n      depth: 20,\n    },\n    entity: { type: params.entityType, id: params.entityId },\n    permission: params.permission,\n    subject: { type: params.subjectType, id: params.subjectId },\n  };\n\n  // Circuit breaker: if open, deny immediately without waiting for timeout\n  if (isCircuitOpen()) {\n    if (PERMIFY_FAIL_OPEN) {\n      logger.error(\n        \"[Permify] ALERT: circuit breaker open but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)\"\n      );\n      return true;\n    }\n    logger.error(\n      \"[Permify] ALERT: circuit breaker open — denying access (fail-closed)\"\n    );\n    return false;\n  }\n\n  try {\n    const res = await fetch(\n      `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/permissions/check`,\n      {\n        method: \"POST\",\n        headers: { \"Content-Type\": \"application/json\" },\n        body: JSON.stringify(body),\n        signal: AbortSignal.timeout(2_000),\n      }\n    );\n\n    if (!res.ok) {\n      recordFailure();\n      if (PERMIFY_FAIL_OPEN) {\n        logger.error(\n          `[Permify] ALERT: check returned HTTP ${res.status} but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)`\n        );\n        return true;\n      }\n      logger.error(\n        `[Permify] ALERT: check failed with HTTP ${res.status} — denying access (fail-closed)`\n      );\n      return false;\n    }\n\n    const json = (await res.json()) as PermifyCheckResponse;\n    recordSuccess();\n    return json.can === \"CHECK_RESULT_ALLOWED\";\n  } catch (err) {\n    // Fail-closed (default): when Permify is unreachable, deny access.\n    // This is the safe default — if authorization is down, access is denied.\n    // Fail-open only via the explicit, insecure PERMIFY_FAIL_OPEN=true opt-in.\n    const message = err instanceof Error ? err.message : String(err);\n    if (PERMIFY_FAIL_OPEN) {\n      logger.error(\n        { err: message },\n        \"[Permify] ALERT: service unreachable but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)\"\n      );\n      return true;\n    }\n    logger.error(\n      { err: message },\n      \"[Permify] ALERT: service unreachable — denying access (fail-closed)\"\n    );\n    return false;\n  }\n}\n\n/**\n * Check if an agent can access a specific transaction.\n * Agents can only access their own transactions; admins can access all.\n */\nexport async function canAccessTransaction(\n  agentId: string,\n  agentRole: string,\n  txRef: string\n): Promise<boolean> {\n  if (agentRole === \"admin\") return true;\n\n  // Try Permify first\n  const allowed = await permifyCheck({\n    subjectType: \"agent\",\n    subjectId: agentId,\n    entityType: \"transaction\",\n    entityId: txRef,\n    permission: \"read\",\n  });\n\n  // If Permify is unavailable (returns false for unknown entities), fall back to ownership check\n  return allowed;\n}\n\n/**\n * Check if an agent can approve float top-up requests.\n * Requires supervisor or admin role.\n */\nexport async function canApproveTopUp(\n  agentId: string,\n  agentRole: string\n): Promise<boolean> {\n  if (agentRole === \"admin\") return true;\n\n  return permifyCheck({\n    subjectType: \"agent\",\n    subjectId: agentId,\n    entityType: \"float_topup\",\n    entityId: \"*\",\n    permission: \"approve\",\n  });\n}\n\n/**\n * Check if an agent can update fraud alert status.\n * Requires admin role.\n */\nexport async function canUpdateFraudAlert(\n  agentId: string,\n  agentRole: string\n): Promise<boolean> {\n  if (agentRole === \"admin\") return true;\n\n  return permifyCheck({\n    subjectType: \"agent\",\n    subjectId: agentId,\n    entityType: \"fraud_alert\",\n    entityId: \"*\",\n    permission: \"update\",\n  });\n}\n\nexport default {\n  permifyCheck,\n  canAccessTransaction,\n  canApproveTopUp,\n  canUpdateFraudAlert,\n};\n
+/**
+ * InsurePortal Permify Client
+ * HTTP client for Permify authorization service.
+ * FAIL-CLOSED (default): denies access when Permify is unavailable and emits
+ * alert-level (error) logs. Circuit breaker prevents cascading timeouts when
+ * Permify is down.
+ *
+ * INSECURE OPT-IN: setting PERMIFY_FAIL_OPEN=true reverts to fail-open
+ * (requests are ALLOWED while Permify is unreachable). This disables
+ * authorization enforcement during outages and logs a loud startup warning.
+ * Never enable it in production outside a declared incident.
+ *
+ * Schema (defined in infra/permify/schema.perm):
+ *   entity agent { ... }
+ *   entity admin { ... }
+ *   entity supervisor { ... }
+ *
+ * Policies:
+ *   - agents can only read own transactions
+ *   - admins can read all transactions
+ *   - float top-up approval requires supervisor or admin
+ *   - fraud alert status update requires admin
+ */
+import logger from "./logger";
+
+// ── Circuit Breaker ─────────────────────────────────────────────────────────
+// Prevents cascading timeouts when Permify is down by short-circuiting
+// requests after repeated failures.
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_RECOVERY_MS = 30_000; // 30s before retrying after open
+
+let circuitFailures = 0;
+let circuitOpenedAt = 0;
+
+function isCircuitOpen(): boolean {
+  if (circuitFailures < CIRCUIT_FAILURE_THRESHOLD) return false;
+  if (Date.now() - circuitOpenedAt > CIRCUIT_RECOVERY_MS) {
+    // Half-open: allow one probe request
+    circuitFailures = CIRCUIT_FAILURE_THRESHOLD - 1;
+    return false;
+  }
+  return true;
+}
+
+function recordSuccess(): void {
+  circuitFailures = 0;
+  circuitOpenedAt = 0;
+}
+
+function recordFailure(): void {
+  circuitFailures++;
+  if (circuitFailures >= CIRCUIT_FAILURE_THRESHOLD && circuitOpenedAt === 0) {
+    circuitOpenedAt = Date.now();
+    logger.error(
+      "[Permify] ALERT: Circuit breaker OPEN — denying all requests for 30s"
+    );
+  }
+}
+
+const PERMIFY_URL = process.env.PERMIFY_URL ?? "http://localhost:3476";
+const PERMIFY_TENANT_ID = process.env.PERMIFY_TENANT_ID ?? "t1";
+
+// ── Fail-open override (INSECURE — explicit opt-in only) ────────────────────
+// Default posture is FAIL-CLOSED: when Permify is unreachable, every
+// authorization check is denied and an alert-level (error) log is emitted.
+// PERMIFY_FAIL_OPEN=true allows requests during a Permify outage and is
+// intended ONLY for short-lived disaster-recovery scenarios.
+const PERMIFY_FAIL_OPEN = process.env.PERMIFY_FAIL_OPEN === "true";
+
+if (PERMIFY_FAIL_OPEN) {
+  logger.error(
+    "═══════════════════════════════════════════════════════════════════\n" +
+      "[Permify] ⚠️  PERMIFY_FAIL_OPEN=true — AUTHORIZATION FAIL-OPEN ENABLED\n" +
+      "[Permify] Requests will be ALLOWED while Permify is unreachable.\n" +
+      "[Permify] This DISABLES authorization enforcement during outages.\n" +
+      "[Permify] NEVER enable this in production outside a declared incident.\n" +
+      "═══════════════════════════════════════════════════════════════════"
+  );
+}
+
+interface PermifyCheckRequest {
+  tenantId: string;
+  metadata: { schemaVersion: string; snapToken: string; depth: number };
+  entity: { type: string; id: string };
+  permission: string;
+  subject: { type: string; id: string; relation?: string };
+}
+
+interface PermifyCheckResponse {
+  can:
+    | "CHECK_RESULT_ALLOWED"
+    | "CHECK_RESULT_DENIED"
+    | "CHECK_RESULT_UNSPECIFIED";
+}
+
+/**
+ * Check if a subject has permission on an entity.
+ * Returns true if allowed, false if denied or Permify is unavailable
+ * (fail-closed). When PERMIFY_FAIL_OPEN=true (insecure opt-in), returns true
+ * while Permify is unreachable.
+ */
+export async function permifyCheck(params: {
+  subjectType: string;
+  subjectId: string;
+  entityType: string;
+  entityId: string;
+  permission: string;
+}): Promise<boolean> {
+  const body: PermifyCheckRequest = {
+    tenantId: PERMIFY_TENANT_ID,
+    metadata: {
+      schemaVersion: "",
+      snapToken: "",
+      depth: 20,
+    },
+    entity: { type: params.entityType, id: params.entityId },
+    permission: params.permission,
+    subject: { type: params.subjectType, id: params.subjectId },
+  };
+
+  // Circuit breaker: if open, deny immediately without waiting for timeout
+  if (isCircuitOpen()) {
+    if (PERMIFY_FAIL_OPEN) {
+      logger.error(
+        "[Permify] ALERT: circuit breaker open but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)"
+      );
+      return true;
+    }
+    logger.error(
+      "[Permify] ALERT: circuit breaker open — denying access (fail-closed)"
+    );
+    return false;
+  }
+
+  try {
+    const res = await fetch(
+      `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/permissions/check`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(2_000),
+      }
+    );
+
+    if (!res.ok) {
+      recordFailure();
+      if (PERMIFY_FAIL_OPEN) {
+        logger.error(
+          `[Permify] ALERT: check returned HTTP ${res.status} but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)`
+        );
+        return true;
+      }
+      logger.error(
+        `[Permify] ALERT: check failed with HTTP ${res.status} — denying access (fail-closed)`
+      );
+      return false;
+    }
+
+    const json = (await res.json()) as PermifyCheckResponse;
+    recordSuccess();
+    return json.can === "CHECK_RESULT_ALLOWED";
+  } catch (err) {
+    // Fail-closed (default): when Permify is unreachable, deny access.
+    // This is the safe default — if authorization is down, access is denied.
+    // Fail-open only via the explicit, insecure PERMIFY_FAIL_OPEN=true opt-in.
+    const message = err instanceof Error ? err.message : String(err);
+    if (PERMIFY_FAIL_OPEN) {
+      logger.error(
+        { err: message },
+        "[Permify] ALERT: service unreachable but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)"
+      );
+      return true;
+    }
+    logger.error(
+      { err: message },
+      "[Permify] ALERT: service unreachable — denying access (fail-closed)"
+    );
+    return false;
+  }
+}
+
+/**
+ * Check if an agent can access a specific transaction.
+ * Agents can only access their own transactions; admins can access all.
+ */
+export async function canAccessTransaction(
+  agentId: string,
+  agentRole: string,
+  txRef: string
+): Promise<boolean> {
+  if (agentRole === "admin") return true;
+
+  // Try Permify first
+  const allowed = await permifyCheck({
+    subjectType: "agent",
+    subjectId: agentId,
+    entityType: "transaction",
+    entityId: txRef,
+    permission: "read",
+  });
+
+  // If Permify is unavailable (returns false for unknown entities), fall back to ownership check
+  return allowed;
+}
+
+/**
+ * Check if an agent can approve float top-up requests.
+ * Requires supervisor or admin role.
+ */
+export async function canApproveTopUp(
+  agentId: string,
+  agentRole: string
+): Promise<boolean> {
+  if (agentRole === "admin") return true;
+
+  return permifyCheck({
+    subjectType: "agent",
+    subjectId: agentId,
+    entityType: "float_topup",
+    entityId: "*",
+    permission: "approve",
+  });
+}
+
+/**
+ * Check if an agent can update fraud alert status.
+ * Requires admin role.
+ */
+export async function canUpdateFraudAlert(
+  agentId: string,
+  agentRole: string
+): Promise<boolean> {
+  if (agentRole === "admin") return true;
+
+  return permifyCheck({
+    subjectType: "agent",
+    subjectId: agentId,
+    entityType: "fraud_alert",
+    entityId: "*",
+    permission: "update",
+  });
+}
+
+export default {
+  permifyCheck,
+  canAccessTransaction,
+  canApproveTopUp,
+  canUpdateFraudAlert,
+};
