@@ -17,6 +17,12 @@ import {
 import { notification_logs, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
+const notImplemented = (feature: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
+
 export const advancedNotificationsRouter = router({
   getStats: protectedProcedure.query(async () => {
     const db = await getDb();
@@ -130,30 +136,25 @@ export const advancedNotificationsRouter = router({
     }),
 
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalItems: 0,
-      activeItems: 0,
-      recentActivity: [],
-      lastUpdated: new Date().toISOString(),
-    };
+    throw notImplemented("Notifications dashboard");
   }),
 
   listTemplates: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Notification templates");
   }),
   sendNotification: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .mutation(async () => {
-      return { success: true, status: "ok" };
+      throw notImplemented("Templated notification send");
     }),
   listHistory: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw notImplemented("Notification history");
     }),
   getPreferences: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw notImplemented("Notification preferences");
     }),
 });

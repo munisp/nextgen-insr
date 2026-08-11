@@ -1,9 +1,16 @@
 // @ts-check
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { rateAlerts } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+const notImplemented = (feature: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
 
 export const rateAlertsRouter = router({
   list: protectedProcedure
@@ -98,49 +105,22 @@ export const rateAlertsRouter = router({
 
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
-    .mutation(async ({ input }) => {
-      return {
-        success: true,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-      };
+    .mutation(async () => {
+      throw notImplemented("Rate alert creation");
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
-    .mutation(async ({ input }) => {
-      return { success: true, deletedId: input.id };
+    .mutation(async () => {
+      throw notImplemented("Rate alert deletion");
     }),
 
   getCheckerStatus: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Rate alert checker status");
   }),
 
   getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    try {
-      await database.execute(sql`SELECT 1 as ok`);
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
+    throw notImplemented("Rate alert stats");
   }),
 
   rearm: protectedProcedure
@@ -148,7 +128,7 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Rate alert rearm");
     }),
 
   runCheck: protectedProcedure
@@ -156,7 +136,7 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Rate alert check");
     }),
 
   toggle: protectedProcedure
@@ -164,7 +144,7 @@ export const rateAlertsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Rate alert toggle");
     }),
   // Rate alert subscriptions with threshold logic
   subscribe: protectedProcedure
@@ -176,16 +156,8 @@ export const rateAlertsRouter = router({
         channel: z.enum(["email", "sms", "push"]).default("email"),
       })
     )
-    .mutation(async ({ input }) => {
-      return {
-        id: `alert-${Date.now()}`,
-        currencyPair: input.currencyPair,
-        threshold: input.threshold,
-        direction: input.direction,
-        channel: input.channel,
-        active: true,
-        createdAt: new Date().toISOString(),
-      };
+    .mutation(async () => {
+      throw notImplemented("Rate alert subscription");
     }),
   update: protectedProcedure
     .input(
@@ -195,12 +167,9 @@ export const rateAlertsRouter = router({
         active: z.boolean().optional(),
       })
     )
-    .mutation(async ({ input }) => ({ id: input.id, updated: true })),
-  getStats: protectedProcedure.query(async () => ({
-    totalAlerts: 0,
-    activeAlerts: 0,
-    triggeredToday: 0,
-  })),
+    .mutation(async () => {
+      throw notImplemented("Rate alert update");
+    }),
   quickCreate: protectedProcedure
     .input(
       z.object({
@@ -209,9 +178,7 @@ export const rateAlertsRouter = router({
         direction: z.enum(["above", "below"]),
       })
     )
-    .mutation(async ({ input }) => ({
-      id: Date.now(),
-      ...input,
-      active: true,
-    })),
+    .mutation(async () => {
+      throw notImplemented("Rate alert quick create");
+    }),
 });

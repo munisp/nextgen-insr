@@ -175,22 +175,16 @@ export const platformHealthRouter = router({
   }),
 
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Platform health dashboard is not implemented yet",
+    });
   }),
 
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Platform health stats are not implemented yet",
+    });
   }),
 });

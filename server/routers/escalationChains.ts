@@ -1,9 +1,13 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { logger } from '../_core/logger';
+
+const notImplemented = () =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: "Escalation chains are not implemented yet",
+  });
 
 export const escalationChainsRouter = router({
   list: protectedProcedure
@@ -14,62 +18,18 @@ export const escalationChainsRouter = router({
         search: z.string().optional(),
       })
     )
-    .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const _totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(_totalRows)
-          ? _totalRows[0]
-          : _totalRows;
-
-        return {
-          data: results,
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return { data: [], total: 0, limit: 0, offset: 0 };
-      }
+    .query(async () => {
+      throw notImplemented();
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
+    .query(async () => {
+      throw notImplemented();
     }),
 
   getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
+    throw notImplemented();
   }),
 
   getRecent: protectedProcedure
@@ -79,60 +39,32 @@ export const escalationChainsRouter = router({
         limit: z.number().min(1).max(50).default(10),
       })
     )
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database) return { data: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
+    .query(async () => {
+      throw notImplemented();
     }),
   acknowledgeEvent: protectedProcedure
     .input(z.object({ eventId: z.string() }))
-    .mutation(async ({ input }) => {
-      return { success: true, eventId: input.eventId };
+    .mutation(async () => {
+      throw notImplemented();
     }),
   listChains: protectedProcedure.query(async () => {
-    return {
-      chains: [] as Array<{
-        id: string;
-        name: string;
-        enabled: boolean;
-        steps: number;
-      }>,
-      total: 0,
-    };
+    throw notImplemented();
   }),
   listEvents: protectedProcedure.query(async () => {
-    return {
-      events: [] as Array<{
-        id: string;
-        chainId: string;
-        severity: string;
-        status: string;
-        timestamp: string;
-      }>,
-      total: 0,
-    };
+    throw notImplemented();
   }),
   resolveEvent: protectedProcedure
     .input(z.object({ eventId: z.string(), resolution: z.string().optional() }))
-    .mutation(async ({ input }) => {
-      return { success: true, eventId: input.eventId };
+    .mutation(async () => {
+      throw notImplemented();
     }),
   runEscalationCheck: protectedProcedure.mutation(async () => {
-    return { triggered: 0, checked: 0 };
+    throw notImplemented();
   }),
   toggleChain: protectedProcedure
     .input(z.object({ chainId: z.string(), enabled: z.boolean() }))
-    .mutation(async ({ input }) => {
-      return { success: true, chainId: input.chainId, enabled: input.enabled };
+    .mutation(async () => {
+      throw notImplemented();
     }),
 });
 

@@ -1,8 +1,15 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+const notImplemented = (feature: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
 
 export const weeklyReportsRouter = router({
   list: protectedProcedure
@@ -100,7 +107,7 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Weekly report recipients");
     }),
 
   generate: protectedProcedure
@@ -108,27 +115,27 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Weekly report generation");
     }),
 
   getEmailConfig: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Weekly report email config");
   }),
 
   getPdfHtml: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Weekly report PDF rendering");
   }),
 
   getSchedule: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Weekly report schedule");
   }),
 
   latest: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Latest weekly report");
   }),
 
   listRecipients: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Weekly report recipient list");
   }),
 
   removeRecipient: protectedProcedure
@@ -136,7 +143,7 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Weekly report recipients");
     }),
 
   sendEmail: protectedProcedure
@@ -144,7 +151,7 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Weekly report email delivery");
     }),
 
   updateEmailConfig: protectedProcedure
@@ -152,7 +159,7 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Weekly report email config");
     }),
 
   updateSchedule: protectedProcedure
@@ -160,6 +167,6 @@ export const weeklyReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Weekly report schedule");
     }),
 });

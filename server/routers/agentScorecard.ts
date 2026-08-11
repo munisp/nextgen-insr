@@ -116,13 +116,10 @@ export const agentScorecardRouter = router({
       }
     }),
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Agent scorecard dashboard is not implemented yet",
+    });
   }),
 
   getStats: protectedProcedure.query(async () => {

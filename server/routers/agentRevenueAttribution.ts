@@ -1,8 +1,15 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { agents } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+const notImplemented = (feature: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
 
 export const agentRevenueAttributionRouter = router({
   list: protectedProcedure
@@ -94,34 +101,11 @@ export const agentRevenueAttributionRouter = router({
     }),
 
   getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    try {
-      await database.execute(sql`SELECT 1 as ok`);
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
+    throw notImplemented("Revenue attribution stats");
   }),
 
   listAttributions: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Revenue attributions");
   }),
 
   recalculate: protectedProcedure
@@ -129,6 +113,6 @@ export const agentRevenueAttributionRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Revenue attribution recalculation");
     }),
 });

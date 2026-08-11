@@ -1,8 +1,15 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+const notImplemented = (feature: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
 
 export const transactionGraphAnalyzerRouter = router({
   list: protectedProcedure
@@ -100,37 +107,14 @@ export const transactionGraphAnalyzerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented("Transaction graph analysis");
     }),
 
   getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    try {
-      await database.execute(sql`SELECT 1 as ok`);
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
+    throw notImplemented("Transaction graph stats");
   }),
 
   listClusters: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Transaction clusters");
   }),
 });

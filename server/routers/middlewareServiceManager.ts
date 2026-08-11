@@ -1,10 +1,17 @@
 // @ts-check
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import {
   publicProcedure as openProcedure,
   protectedProcedure,
   router,
 } from "../_core/trpc";
+
+const notImplemented = () =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: "Middleware service manager is not implemented yet",
+  });
 
 export const middlewareServiceManagerRouter = router({
   list: protectedProcedure
@@ -16,40 +23,29 @@ export const middlewareServiceManagerRouter = router({
         })
         .default({})
     )
-    .query(async () => ({ data: [], total: 0 })),
+    .query(async () => {
+      throw notImplemented();
+    }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => ({
-      id: input.id,
-      name: "",
-      url: "",
-      status: "connected",
-    })),
+    .query(async () => {
+      throw notImplemented();
+    }),
 
-  getStats: openProcedure.query(async () => ({
-    total: 13,
-    connected: 12,
-    disconnected: 1,
-    avgLatency: 45,
-    services: [],
-  })),
+  getStats: openProcedure.query(async () => {
+    throw notImplemented();
+  }),
 
   testConnection: protectedProcedure
     .input(z.object({ serviceId: z.string() }))
-    .mutation(async ({ input }) => ({
-      serviceId: input.serviceId,
-      connected: true,
-      latency: 12,
-      testedAt: new Date().toISOString(),
-    })),
+    .mutation(async () => {
+      throw notImplemented();
+    }),
 
   updateUrl: protectedProcedure
     .input(z.object({ serviceId: z.string(), url: z.string().url() }))
-    .mutation(async ({ input }) => ({
-      serviceId: input.serviceId,
-      url: input.url,
-      updated: true,
-      updatedAt: new Date().toISOString(),
-    })),
+    .mutation(async () => {
+      throw notImplemented();
+    }),
 });

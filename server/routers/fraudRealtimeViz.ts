@@ -1,8 +1,15 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { fraudAlerts } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+const notImplemented = () =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: "Real-time fraud visualisation is not implemented yet",
+  });
 
 export const fraudRealtimeVizRouter = router({
   list: protectedProcedure
@@ -96,47 +103,22 @@ export const fraudRealtimeVizRouter = router({
     }),
 
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw notImplemented();
   }),
 
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw notImplemented();
   }),
 
   liveMap: protectedProcedure.query(async () => {
-    return {
-      agents: [],
-      alerts: [],
-      center: { lat: 9.0, lng: 7.5 },
-      summary: {
-        totalAlerts: 0,
-        highRisk: 0,
-        mediumRisk: 0,
-        lowRisk: 0,
-        critical: 0,
-        avgResponseTimeMs: 150,
-      },
-      markers: [],
-    };
+    throw notImplemented();
   }),
 
   suspiciousStream: protectedProcedure.query(async () => {
-    return { events: [], total: 0, items: [] };
+    throw notImplemented();
   }),
 
   agentHeatmap: protectedProcedure.query(async () => {
-    return { regions: [], maxDensity: 0, zones: [] };
+    throw notImplemented();
   }),
 });

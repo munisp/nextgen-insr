@@ -140,13 +140,10 @@ export const helpDeskRouter = router({
       }
     }),
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Help desk dashboard is not implemented yet",
+    });
   }),
 
   getStats: protectedProcedure.query(async () => {
@@ -173,7 +170,10 @@ export const helpDeskRouter = router({
   }),
 
   searchTickets: protectedProcedure.query(async () => {
-    return { tickets: [], total: 0, page: 1 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Ticket search is not implemented yet",
+    });
   }),
   knowledgeBase: protectedProcedure
     .input(
@@ -184,16 +184,10 @@ export const helpDeskRouter = router({
         })
         .optional()
     )
-    .query(async ({ input }) => {
-      return {
-        articles: [] as Array<{
-          id: string;
-          title: string;
-          category: string;
-          summary: string;
-          views: number;
-        }>,
-        total: 0,
-      };
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Knowledge base is not implemented yet",
+      });
     }),
 });

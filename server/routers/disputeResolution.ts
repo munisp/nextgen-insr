@@ -244,12 +244,9 @@ export const disputeResolutionRouter = router({
     }),
 
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Dispute resolution stats are not implemented yet",
+    });
   }),
 });

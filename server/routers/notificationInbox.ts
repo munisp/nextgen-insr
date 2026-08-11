@@ -187,7 +187,10 @@ export const notificationInboxRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Notification archiving is not implemented yet",
+      });
     }),
 
   bulkDelete: protectedProcedure
@@ -195,14 +198,23 @@ export const notificationInboxRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Bulk notification delete is not implemented yet",
+      });
     }),
 
   getUnreadCounts: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Unread notification counts are not implemented yet",
+    });
   }),
 
   toggleStar: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Notification starring is not implemented yet",
+    });
   }),
 });

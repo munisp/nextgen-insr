@@ -100,30 +100,10 @@ export const realtimeNotificationsRouter = router({
       }
     }),
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-      totalNotifications: 45892,
-      unreadCount: 234,
-      sentLast24h: 1250,
-      byChannel: [
-        { channel: "email", count: 400 },
-        { channel: "sms", count: 350 },
-        { channel: "push", count: 300 },
-        { channel: "inApp", count: 200 },
-      ],
-      recentNotifications: [
-        {
-          id: "N-001",
-          title: "Payment Received",
-          type: "transaction",
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Notifications dashboard is not implemented yet",
+    });
   }),
 
   getStats: protectedProcedure.query(async () => {
@@ -153,7 +133,10 @@ export const realtimeNotificationsRouter = router({
         priority: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      return { sent: 0, failed: 0, messageId: "MSG-001", title: input.title };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Notification broadcast is not implemented yet",
+      });
     }),
 });
