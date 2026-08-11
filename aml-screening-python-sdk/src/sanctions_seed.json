@@ -1,0 +1,10 @@
+{
+  "description": "DEMO SEED DATA ONLY. Loaded solely when ALLOW_SIMULATED_DATA=true. This is NOT a real OFAC/UN/EFCC/CBN sanctions list and must never be used for production screening.",
+  "simulated": true,
+  "entries": [
+    {"name": "ABUBAKAR SHEKAU", "list": "EFCC", "type": "individual"},
+    {"name": "AHMED KHALIFA", "list": "UN_SANCTIONS", "type": "individual"},
+    {"name": "PETROLEUM TRADING CO", "list": "OFAC_SDN", "type": "entity"},
+    {"name": "LAGOS MONEY EXCHANGE", "list": "CBN_BLACKLIST", "type": "entity"}
+  ]
+}
