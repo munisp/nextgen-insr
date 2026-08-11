@@ -2,9 +2,37 @@
 import { z } from "zod";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, sql, count } from "drizzle-orm";
+import { eq, sql, count } from "drizzle-orm";
 import { auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+
+// MOCKWARE FIX: getHistorical previously fabricated a sine wave and labelled
+// it "frankfurter/ecb"; refresh was a no-op success. Both now call the real
+// Frankfurter (ECB data) API with a timeout and fail loudly on any error.
+
+const FRANKFURTER_BASE = "https://api.frankfurter.app";
+const FX_TIMEOUT_MS = 8000;
+
+async function fetchFrankfurter(path: string): Promise<any> {
+  let response: Response;
+  try {
+    response = await fetch(`${FRANKFURTER_BASE}${path}`, {
+      signal: AbortSignal.timeout(FX_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `FX rate provider unavailable: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+  if (!response.ok) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `FX rate provider rejected the request (HTTP ${response.status}). The requested currency pair may not be published by the ECB.`,
+    });
+  }
+  return response.json();
+}
 
 export const fxRatesRouter = router({
   getRates: protectedProcedure
@@ -113,7 +141,8 @@ export const fxRatesRouter = router({
       lastUpdated: new Date().toISOString(),
     };
   }),
-  // Historical rates — references Frankfurter / ECB exchange rate API for timeseries
+  // Historical rates — real Frankfurter (ECB) time-series. Fails loudly when
+  // the provider is unreachable or the pair is not published by the ECB.
   getHistorical: protectedProcedure
     .input(
       z
@@ -125,20 +154,20 @@ export const fxRatesRouter = router({
         .default({})
     )
     .query(async ({ input }) => {
-      // Frankfurter API (https://api.frankfurter.app) / ECB exchangerate data
-      const rates: { date: string; rate: number }[] = [];
-      const now = Date.now();
-      for (let i = input.days; i >= 0; i--) {
-        const d = new Date(now - i * 86400000);
-        rates.push({
-          date: d.toISOString().slice(0, 10),
-          rate: 1580 + Math.sin(i / 3) * 20,
-        });
-      }
+      const end = new Date();
+      const start = new Date(end.getTime() - input.days * 86400000);
+      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+      const data = await fetchFrankfurter(
+        `/${fmt(start)}..${fmt(end)}?from=${encodeURIComponent(input.base)}&to=${encodeURIComponent(input.target)}`
+      );
+      const rawRates: Record<string, Record<string, number>> = data?.rates ?? {};
+      const timeseries = Object.keys(rawRates)
+        .sort()
+        .map(date => ({ date, rate: Number(rawRates[date]?.[input.target] ?? 0) }));
       return {
         base: input.base,
         target: input.target,
-        timeseries: rates,
+        timeseries,
         source: "frankfurter/ecb",
       };
     }),
@@ -153,11 +182,40 @@ export const fxRatesRouter = router({
       baseCurrency: "NGN",
     };
   }),
+  // Refresh pulls the latest published rates from Frankfurter (ECB) and
+  // persists them; it throws if the provider call fails.
   refresh: protectedProcedure.mutation(async () => {
+    const data = await fetchFrankfurter(`/latest?from=EUR`);
+    const rates: Record<string, number> = {
+      EUR: 1,
+      ...(data?.rates ?? {}),
+    };
+    const rateCount = Object.keys(rates).length;
+    if (rateCount <= 1) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "FX rate provider returned no rates",
+      });
+    }
+    const db = (await getDb())!;
+    await db
+      .insert(systemConfig)
+      .values({ key: "fx_rates_ecb", value: JSON.stringify(rates) })
+      .onConflictDoUpdate({
+        target: systemConfig.key,
+        set: { value: JSON.stringify(rates), updatedAt: new Date() },
+      });
+    await db.insert(auditLog).values({
+      action: "fx_rates_updated",
+      resource: "fx_rates",
+      resourceId: "ecb_rates",
+      status: "success",
+      metadata: { source: "frankfurter/ecb", rateCount },
+    });
     return {
       success: true,
       refreshedAt: new Date().toISOString(),
-      ratesUpdated: 0,
+      ratesUpdated: rateCount,
     };
   }),
 });
