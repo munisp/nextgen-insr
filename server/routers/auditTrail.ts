@@ -111,13 +111,10 @@ export const auditTrailRouter = router({
     };
   }),
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Audit trail dashboard is not implemented yet",
+    });
   }),
 
   getStats: protectedProcedure.query(async () => {
@@ -144,6 +141,9 @@ export const auditTrailRouter = router({
   }),
 
   search: protectedProcedure.query(async () => {
-    return { entries: [], total: 0, page: 1 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Audit trail search is not implemented yet",
+    });
   }),
 });
