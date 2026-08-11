@@ -20,11 +20,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
@@ -777,7 +772,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 		auth := r.Header.Get("Authorization")
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
 			w.Header().Set("Content-Type", "application/json")
-			jsonLog("warn", "auth_failure", "service", "audit-trail-system", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
+			jsonLog("warn", "auth_failure", "service", "audit-trail-system", "remote_addr", r.RemoteAddr, "path": r.URL.Path, "method": r.Method)
 			w.WriteHeader(401)
 			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return

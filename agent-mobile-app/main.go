@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,11 +16,9 @@ import (
 	"database/sql"
 
 	_ "github.com/lib/pq"
-		"context"
+	"context"
 	"os/signal"
 	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 // Agent Mobile App Backend — API for insurance agent field operations
@@ -170,6 +168,94 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		rateLimitMu.Unlock()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// Prometheus-compatible metrics
+var (
+	metricsRequestCount int64
+	metricsErrorCount   int64
+	metricsStartTime    = time.Now()
+)
+
+func metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&metricsRequestCount, 1)
+		wrapped := &metricsResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		if wrapped.statusCode >= 400 {
+			atomic.AddInt64(&metricsErrorCount, 1)
+		}
+	})
+}
+
+type metricsResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (mrw *metricsResponseWriter) WriteHeader(code int) {
+	mrw.statusCode = code
+	mrw.ResponseWriter.WriteHeader(code)
+}
+
+func metricsHandler(w http.ResponseWriter, r *http.Request) {
+	uptime := time.Since(metricsStartTime).Seconds()
+	reqCount := atomic.LoadInt64(&metricsRequestCount)
+	errCount := atomic.LoadInt64(&metricsErrorCount)
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
+	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
+	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
+	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
+	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime\n")
+	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
+}
+
+// Production Prometheus metrics
+var (
+	prodMetricsReqCount  int64
+	prodMetricsErrCount  int64
+	prodMetricsStartTime = time.Now()
+)
+
+func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	uptime := time.Since(prodMetricsStartTime).Seconds()
+	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
+	errCount := atomic.LoadInt64(&prodMetricsErrCount)
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
+	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
+	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
+	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
+	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
+}
+
+// Health probes
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {
