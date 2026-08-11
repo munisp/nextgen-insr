@@ -1,8 +1,15 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+const notImplemented = () =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: "Revenue analytics are not implemented yet",
+  });
 
 export const revenueAnalyticsRouter = router({
   list: protectedProcedure
@@ -96,21 +103,10 @@ export const revenueAnalyticsRouter = router({
     }),
 
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalItems: 0,
-      activeItems: 0,
-      recentActivity: [],
-      lastUpdated: new Date().toISOString(),
-    };
+    throw notImplemented();
   }),
 
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw notImplemented();
   }),
 });
