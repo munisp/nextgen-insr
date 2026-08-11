@@ -2,6 +2,7 @@
 //! Built in Rust for maximum throughput with minimal latency overhead.
 //! Supports per-IP, per-API-key, and per-tenant rate limiting.
 
+use std::env;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
