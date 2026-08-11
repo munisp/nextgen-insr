@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,90 +13,6 @@ import {
   Award,
   Medal,
 } from "lucide-react";
-
-// Mock agent performance data (in production, fetched from trpc.sprint23.agentPerformance.calculate)
-const mockAgents = [
-  {
-    agentId: "a1",
-    agentId: "AG-001",
-    name: "Adebayo Ogundimu",
-    overallScore: 92.5,
-    tier: "platinum" as const,
-    trend: "improving" as const,
-    breakdown: {
-      transactionVolume: { score: 95, weight: 0.25, raw: 1250 },
-      successRate: { score: 98.2, weight: 0.2, raw: 98.2 },
-      customerSatisfaction: { score: 90, weight: 0.15, raw: 4.5 },
-      complianceAdherence: { score: 88, weight: 0.2, raw: 88 },
-      uptimeReliability: { score: 96, weight: 0.1, raw: 168 },
-      responseTime: { score: 100, weight: 0.1, raw: 450 },
-    },
-  },
-  {
-    agentId: "a2",
-    agentId: "AG-002",
-    name: "Chioma Nwosu",
-    overallScore: 87.3,
-    tier: "gold" as const,
-    trend: "stable" as const,
-    breakdown: {
-      transactionVolume: { score: 82, weight: 0.25, raw: 980 },
-      successRate: { score: 96.5, weight: 0.2, raw: 96.5 },
-      customerSatisfaction: { score: 86, weight: 0.15, raw: 4.3 },
-      complianceAdherence: { score: 90, weight: 0.2, raw: 90 },
-      uptimeReliability: { score: 88, weight: 0.1, raw: 155 },
-      responseTime: { score: 75, weight: 0.1, raw: 2100 },
-    },
-  },
-  {
-    agentId: "a3",
-    agentId: "AG-003",
-    name: "Emeka Okafor",
-    overallScore: 78.1,
-    tier: "gold" as const,
-    trend: "improving" as const,
-    breakdown: {
-      transactionVolume: { score: 75, weight: 0.25, raw: 820 },
-      successRate: { score: 94.0, weight: 0.2, raw: 94.0 },
-      customerSatisfaction: { score: 80, weight: 0.15, raw: 4.0 },
-      complianceAdherence: { score: 72, weight: 0.2, raw: 72 },
-      uptimeReliability: { score: 82, weight: 0.1, raw: 142 },
-      responseTime: { score: 75, weight: 0.1, raw: 2500 },
-    },
-  },
-  {
-    agentId: "a4",
-    agentId: "AG-004",
-    name: "Fatima Ibrahim",
-    overallScore: 65.8,
-    tier: "silver" as const,
-    trend: "declining" as const,
-    breakdown: {
-      transactionVolume: { score: 60, weight: 0.25, raw: 620 },
-      successRate: { score: 88.0, weight: 0.2, raw: 88.0 },
-      customerSatisfaction: { score: 70, weight: 0.15, raw: 3.5 },
-      complianceAdherence: { score: 65, weight: 0.2, raw: 65 },
-      uptimeReliability: { score: 55, weight: 0.1, raw: 96 },
-      responseTime: { score: 50, weight: 0.1, raw: 4200 },
-    },
-  },
-  {
-    agentId: "a5",
-    agentId: "AG-005",
-    name: "Oluwaseun Bakare",
-    overallScore: 55.2,
-    tier: "bronze" as const,
-    trend: "stable" as const,
-    breakdown: {
-      transactionVolume: { score: 45, weight: 0.25, raw: 380 },
-      successRate: { score: 82.0, weight: 0.2, raw: 82.0 },
-      customerSatisfaction: { score: 60, weight: 0.15, raw: 3.0 },
-      complianceAdherence: { score: 58, weight: 0.2, raw: 58 },
-      uptimeReliability: { score: 50, weight: 0.1, raw: 88 },
-      responseTime: { score: 25, weight: 0.1, raw: 6000 },
-    },
-  },
-];
 
 const tierColors: Record<string, string> = {
   platinum: "text-purple-400",
@@ -114,9 +31,27 @@ const tierBg: Record<string, string> = {
 export default function AgentPerformanceScoring() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
+  // Real data from the agent performance scorecard API
+  const { data, isLoading, isError, error } =
+    // @ts-ignore Sprint 85
+    trpc.agentPerformanceScorecard.list.useQuery({ page: 1, limit: 50 });
+
+  const agents: any[] = useMemo(() => {
+    const items = Array.isArray(data?.items) ? data.items : [];
+    return items.map((a: any) => ({
+      agentId: String(a.agentId ?? a.id),
+      name: a.agentName ?? a.name ?? String(a.agentId ?? a.id),
+      overallScore: Number(a.overallScore ?? a.score ?? 0),
+      tier: (a.tier ?? "bronze") as string,
+      trend: (a.trend ?? "stable") as string,
+      breakdown:
+        a.breakdown && typeof a.breakdown === "object" ? a.breakdown : null,
+    }));
+  }, [data]);
+
   const selected = useMemo(
-    () => mockAgents.find((a: any) => a.agentId === selectedAgent),
-    [selectedAgent]
+    () => agents.find((a: any) => a.agentId === selectedAgent),
+    [agents, selectedAgent]
   );
 
   return (
@@ -142,7 +77,7 @@ export default function AgentPerformanceScoring() {
                     className={`w-6 h-6 mx-auto mb-1 ${tierColors[tier]}`}
                   />
                   <p className="text-xl font-bold">
-                    {mockAgents.filter((a: any) => a.tier === tier).length}
+                    {agents.filter((a: any) => a.tier === tier).length}
                   </p>
                   <p className="text-xs text-muted-foreground capitalize">
                     {tier} Agents
@@ -161,8 +96,25 @@ export default function AgentPerformanceScoring() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {isError && (
+              <div className="mb-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                Failed to load performance scores
+                {error?.message ? `: ${error.message}` : "."}
+              </div>
+            )}
+            {isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />
+                ))}
+              </div>
+            ) : agents.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No performance scores available yet
+              </div>
+            ) : (
             <div className="space-y-3">
-              {mockAgents.map((agent, idx) => (
+              {agents.map((agent, idx) => (
                 <div
                   key={agent.agentId}
                   className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-colors ${
@@ -223,6 +175,7 @@ export default function AgentPerformanceScoring() {
                 </div>
               ))}
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -233,8 +186,13 @@ export default function AgentPerformanceScoring() {
               <CardTitle>KPI Breakdown — {selected.name}</CardTitle>
             </CardHeader>
             <CardContent>
+              {!selected.breakdown ? (
+                <div className="py-4 text-center text-sm text-muted-foreground">
+                  No KPI breakdown available for this agent
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {Object.entries(selected.breakdown).map(([key, kpi]) => (
+                {Object.entries(selected.breakdown).map(([key, kpi]: [string, any]) => (
                   <div key={key} className="p-3 rounded-lg bg-muted/30">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium capitalize">
@@ -257,6 +215,7 @@ export default function AgentPerformanceScoring() {
                   </div>
                 ))}
               </div>
+              )}
             </CardContent>
           </Card>
         )}

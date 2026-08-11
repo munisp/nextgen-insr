@@ -58,46 +58,7 @@ interface SupportTicket {
   rating?: number;
 }
 
-interface SupportAgent {
-  name: string;
-  avatar: string;
-  status: "online" | "busy" | "away";
-  speciality: string;
-  responseTime: string;
-}
-
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-const SUPPORT_AGENTS: SupportAgent[] = [
-  {
-    name: "Kemi Adeyemi",
-    avatar: "KA",
-    status: "online",
-    speciality: "Transactions & Float",
-    responseTime: "< 2 min",
-  },
-  {
-    name: "Chukwu Obi",
-    avatar: "CO",
-    status: "online",
-    speciality: "Technical Support",
-    responseTime: "< 3 min",
-  },
-  {
-    name: "Fatima Musa",
-    avatar: "FM",
-    status: "busy",
-    speciality: "Compliance & KYC",
-    responseTime: "< 5 min",
-  },
-  {
-    name: "Tunde Afolabi",
-    avatar: "TA",
-    status: "online",
-    speciality: "Account Management",
-    responseTime: "< 2 min",
-  },
-];
-
+// ─── Quick templates (user-composed message starters — not fabricated data) ───
 const CANNED_RESPONSES = [
   {
     label: "Transaction failed",
@@ -125,110 +86,9 @@ const CANNED_RESPONSES = [
   },
 ];
 
-const BOT_RESPONSES: Record<string, string[]> = {
-  transaction: [
-    "I can see your concern about the transaction. Let me pull up the details from our system.",
-    "I've located the transaction in our records. Can you confirm the customer's phone number for verification?",
-    "I'm escalating this to our transaction team. You'll receive a resolution within 15 minutes.",
-  ],
-  technical: [
-    "I understand you're having a technical issue. Let me run a remote diagnostic on your terminal.",
-    "The diagnostic shows your terminal firmware is up to date. Please try restarting the terminal.",
-    "I'm connecting you with our Level 2 technical team for further assistance.",
-  ],
-  float: [
-    "I can see your current premium reserve. Let me check your eligibility for an emergency top-up.",
-    "You're eligible for an emergency float of up to ₦200,000 based on your transaction history.",
-    "The float top-up has been approved and will reflect in your balance within 2 minutes.",
-  ],
-  compliance: [
-    "I understand your compliance concern. Let me review the flagged transaction details.",
-    "I've reviewed the case and I'm connecting you with our compliance officer.",
-    "The compliance team has been notified. Please do not process further transactions with this customer until cleared.",
-  ],
-  default: [
-    "Thank you for reaching out to InsurePortal support. I'm reviewing your request now.",
-    "I understand your concern. Let me check our system for more details.",
-    "I'm looking into this for you. This should only take a moment.",
-    "I've found the relevant information. Here's what I can tell you...",
-  ],
-};
-
-const HISTORY_TICKETS: SupportTicket[] = [
-  {
-    id: "TKT-2024-0891",
-    category: "transaction",
-    subject: "Failed Cash-Out — Customer Debited",
-    status: "resolved",
-    priority: "urgent",
-    createdAt: "Yesterday 14:32",
-    rating: 5,
-    supportAgent: "Kemi Adeyemi",
-    messages: [
-      {
-        id: "1",
-        role: "agent",
-        text: "My customer's account was debited ₦50,000 but cash was not dispensed.",
-        time: "14:32",
-        timestamp: 0,
-        read: true,
-      },
-      {
-        id: "2",
-        role: "support",
-        text: "I can see the transaction. Processing reversal now — will complete in 3 minutes.",
-        time: "14:34",
-        timestamp: 0,
-        read: true,
-      },
-      {
-        id: "3",
-        role: "system",
-        text: "Reversal processed. ₦50,000 returned to customer account.",
-        time: "14:37",
-        timestamp: 0,
-        read: true,
-      },
-    ],
-  },
-  {
-    id: "TKT-2024-0876",
-    category: "technical",
-    subject: "Printer Paper Jam — Cannot Print Receipts",
-    status: "resolved",
-    priority: "normal",
-    createdAt: "3 days ago",
-    rating: 4,
-    supportAgent: "Chukwu Obi",
-    messages: [
-      {
-        id: "1",
-        role: "agent",
-        text: "My printer is jammed and I cannot print receipts for customers.",
-        time: "10:15",
-        timestamp: 0,
-        read: true,
-      },
-      {
-        id: "2",
-        role: "support",
-        text: "Please follow these steps: 1. Open the printer cover 2. Remove paper 3. Clean roller 4. Reload paper.",
-        time: "10:17",
-        timestamp: 0,
-        read: true,
-      },
-    ],
-  },
-];
-
 const fmt = (n: number) => `₦${n.toLocaleString()}`;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const STATUS_COLOR: Record<SupportAgent["status"], string> = {
-  online: GREEN,
-  busy: GOLD,
-  away: "#6b7280",
-};
 const TICKET_STATUS_COLOR: Record<TicketStatus, string> = {
   open: BLUE,
   active: GREEN,
@@ -263,13 +123,10 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
   const [showCanned, setShowCanned] = useState(false);
   const [rating, setRating] = useState(0);
   const [rated, setRated] = useState(false);
-  const [unread, setUnread] = useState(2);
-  const [queuePos] = useState(Math.floor(Math.random() * 3) + 1);
+  const [unread, setUnread] = useState(0);
   const [sessionRef, setSessionRef] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const assignedAgent = SUPPORT_AGENTS[0];
 
   // ── tRPC mutations ────────────────────────────────────────────────────────────
   // @ts-ignore Sprint 85
@@ -320,29 +177,6 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Simulate support agent typing + response
-  const simulateResponse = useCallback((category: SupportCategory) => {
-    setIsTyping(true);
-    const delay = 1500 + Math.random() * 2000;
-    setTimeout(() => {
-      setIsTyping(false);
-      const pool = BOT_RESPONSES[category] || BOT_RESPONSES.default;
-      const text = pool[Math.floor(Math.random() * pool.length)];
-      const msg: Message = {
-        id: Date.now().toString(),
-        role: "support",
-        text,
-        time: new Date().toLocaleTimeString("en-NG", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        timestamp: Date.now(),
-        read: false,
-      };
-      setMessages(prev => [...prev, msg]);
-    }, delay);
-  }, []);
-
   const sendMessage = useCallback(() => {
     const text = input.trim();
     if (!text) return;
@@ -368,8 +202,22 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
         { sessionRef, content: text },
         {
           onError: () => {
-            // Fallback to local simulation if API unavailable
-            simulateResponse(category);
+            // Honest failure — never impersonate a support agent reply
+            setIsTyping(false);
+            setMessages(prev => [
+              ...prev,
+              {
+                id: `err-${Date.now()}`,
+                role: "system",
+                text: "Support is currently unavailable — your message could not be delivered. Please try again later.",
+                time: new Date().toLocaleTimeString("en-NG", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                timestamp: Date.now(),
+                read: true,
+              },
+            ]);
           },
         }
       );
@@ -377,12 +225,24 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
       socketSend(text);
       setIsTyping(true);
     } else {
-      simulateResponse(category);
+      // No active support session — do not impersonate an agent reply
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `err-${Date.now()}`,
+          role: "system",
+          text: "No active support session. Please start a new chat so your message can reach support.",
+          time: new Date().toLocaleTimeString("en-NG", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          timestamp: Date.now(),
+          read: true,
+        },
+      ]);
     }
   }, [
     input,
-    category,
-    simulateResponse,
     sessionRef,
     sendMessageMutation,
     socketSend,
@@ -394,7 +254,6 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
       toast.error("Please enter a subject");
       return;
     }
-    // Try tRPC first, fall back to local simulation
     startSessionMutation.mutate(
       { category, subject },
       {
@@ -428,36 +287,14 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
           setUnread(0);
         },
         onError: () => {
-          // Fallback: local simulation
-          const systemMsg: Message = {
-            id: "sys-1",
-            role: "system",
-            text: `Chat started · Ticket ID: TKT-${Date.now().toString().slice(-6)} · Category: ${category} · Assigned to: ${assignedAgent.name}`,
-            time: new Date().toLocaleTimeString("en-NG", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            timestamp: Date.now(),
-            read: true,
-          };
-          const welcomeMsg: Message = {
-            id: "sup-1",
-            role: "support",
-            text: `Hello! I'm ${assignedAgent.name} from InsurePortal Support. I can see your ticket about "${subject}". How can I assist you today?`,
-            time: new Date().toLocaleTimeString("en-NG", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            timestamp: Date.now() + 100,
-            read: false,
-          };
-          setMessages([systemMsg, welcomeMsg]);
-          setView("chat");
-          setUnread(0);
+          // Support backend unavailable — be honest instead of simulating an agent
+          toast.error(
+            "Live support is currently unavailable. Please try again later."
+          );
         },
       }
     );
-  }, [subject, category, assignedAgent, startSessionMutation]);
+  }, [subject, category, startSessionMutation]);
 
   const handleEscalate = () => {
     const msg: Message = {
@@ -520,45 +357,9 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
             </div>
             <div className="text-xs text-gray-500">InsurePortal Agent Support</div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <div
-              className="w-2 h-2 rounded-full"
-              style={{ background: GREEN }}
-            />
-            <span className="text-xs text-gray-400">
-              {SUPPORT_AGENTS.filter(a => a.status === "online").length} agents
-              online
-            </span>
-          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-          {/* Queue status */}
-          <div
-            className="rounded-2xl p-4"
-            style={{ background: `${BLUE}10`, border: `1px solid ${BLUE}30` }}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span
-                className="text-sm font-bold text-white"
-                style={{ fontFamily: DISP }}
-              >
-                Current Wait Time
-              </span>
-              <span
-                className="text-xs font-bold"
-                style={{ color: GREEN, fontFamily: MONO }}
-              >
-                ~{queuePos * 2} min
-              </span>
-            </div>
-            <div className="text-xs text-gray-400">
-              Queue position: #{queuePos} ·{" "}
-              {SUPPORT_AGENTS.filter(a => a.status === "online").length} agents
-              available
-            </div>
-          </div>
-
           {/* Quick actions */}
           <div className="grid grid-cols-2 gap-3">
             <button
@@ -598,59 +399,26 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
                 My Tickets
               </span>
               <span className="text-xs text-gray-400 text-center">
-                {HISTORY_TICKETS.length} previous tickets
+                View previous tickets
               </span>
             </button>
           </div>
 
-          {/* Available agents */}
+          {/* Support availability — honest automated-assistant notice */}
           <div>
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              Available Support Agents
+              How Support Works
             </div>
-            <div className="flex flex-col gap-2">
-              {SUPPORT_AGENTS.map((agent, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 p-3 rounded-xl"
-                  style={{ background: CARD, border: `1px solid ${BORDER}` }}
-                >
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                    style={{ background: `${BLUE}30` }}
-                  >
-                    {agent.avatar}
-                  </div>
-                  <div className="flex-1">
-                    <div
-                      className="text-sm font-bold text-white"
-                      style={{ fontFamily: DISP }}
-                    >
-                      {agent.name}
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      {agent.speciality}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="flex items-center gap-1 justify-end mb-0.5">
-                      <div
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ background: STATUS_COLOR[agent.status] }}
-                      />
-                      <span
-                        className="text-xs capitalize"
-                        style={{ color: STATUS_COLOR[agent.status] }}
-                      >
-                        {agent.status}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {agent.responseTime}
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div
+              className="rounded-xl p-4 text-xs text-gray-400 leading-relaxed"
+              style={{ background: CARD, border: `1px solid ${BORDER}` }}
+            >
+              Chats are handled by the{" "}
+              <span className="text-white font-semibold">
+                InsurePortal automated assistant (bot)
+              </span>
+              . Complex issues can be escalated to a human support agent from
+              within a chat.
             </div>
           </div>
 
@@ -812,40 +580,29 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
             </div>
           </div>
 
-          {/* Assigned agent preview */}
+          {/* Assistant notice — automated bot, not a named human agent */}
           <div
             className="rounded-2xl p-4"
             style={{ background: CARD, border: `1px solid ${BORDER}` }}
           >
-            <div className="text-xs text-gray-500 mb-2">
-              Will be assigned to
-            </div>
+            <div className="text-xs text-gray-500 mb-2">You will chat with</div>
             <div className="flex items-center gap-3">
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white"
                 style={{ background: `${BLUE}30` }}
               >
-                {assignedAgent.avatar}
+                AI
               </div>
               <div>
                 <div
                   className="text-sm font-bold text-white"
                   style={{ fontFamily: DISP }}
                 >
-                  {assignedAgent.name}
+                  InsurePortal Assistant
                 </div>
                 <div className="text-xs text-gray-400">
-                  {assignedAgent.speciality} · {assignedAgent.responseTime}
+                  Automated support bot · escalation to a human agent available
                 </div>
-              </div>
-              <div className="ml-auto flex items-center gap-1">
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: GREEN }}
-                />
-                <span className="text-xs" style={{ color: GREEN }}>
-                  Online
-                </span>
               </div>
             </div>
           </div>
@@ -889,14 +646,14 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
             className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white flex-shrink-0"
             style={{ background: `${BLUE}40` }}
           >
-            {assignedAgent.avatar}
+            AI
           </div>
           <div className="flex-1">
             <div
               className="text-sm font-bold text-white"
               style={{ fontFamily: DISP }}
             >
-              {assignedAgent.name}
+              InsurePortal Assistant
             </div>
             <div className="flex items-center gap-1.5">
               <div
@@ -907,7 +664,7 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
                 className="text-xs"
                 style={{ color: isTyping ? GOLD : GREEN, fontFamily: DISP }}
               >
-                {isTyping ? "typing…" : "Online · Support Agent"}
+                {isTyping ? "typing…" : "Automated assistant · Online"}
               </span>
             </div>
           </div>
@@ -965,13 +722,13 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
                         className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white"
                         style={{ background: `${BLUE}40` }}
                       >
-                        {assignedAgent.avatar}
+                        AI
                       </div>
                       <span
                         className="text-xs text-gray-500"
                         style={{ fontFamily: DISP }}
                       >
-                        {assignedAgent.name}
+                        InsurePortal Assistant (bot)
                       </span>
                     </div>
                   )}
@@ -1165,68 +922,9 @@ export default function LiveChatSupport({ onBack }: { onBack?: () => void }) {
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-        {HISTORY_TICKETS.map(ticket => (
-          <button
-            key={ticket.id}
-            onClick={() => {
-              setActiveTicket(ticket);
-              setMessages(ticket.messages);
-              setView("chat");
-            }}
-            className="w-full text-left p-4 rounded-2xl transition-all hover:opacity-80"
-            style={{ background: CARD, border: `1px solid ${BORDER}` }}
-          >
-            <div className="flex items-start justify-between mb-2">
-              <div>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-base">{CAT_ICON[ticket.category]}</span>
-                  <span
-                    className="text-sm font-bold text-white"
-                    style={{ fontFamily: DISP }}
-                  >
-                    {ticket.subject}
-                  </span>
-                </div>
-                <div
-                  className="text-xs text-gray-500"
-                  style={{ fontFamily: MONO }}
-                >
-                  {ticket.id}
-                </div>
-              </div>
-              <span
-                className="text-xs px-2 py-0.5 rounded-full font-semibold capitalize flex-shrink-0"
-                style={{
-                  background: `${TICKET_STATUS_COLOR[ticket.status]}20`,
-                  color: TICKET_STATUS_COLOR[ticket.status],
-                }}
-              >
-                {ticket.status}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">
-                  {ticket.createdAt}
-                </span>
-                {ticket.supportAgent && (
-                  <span className="text-xs text-gray-600">
-                    · {ticket.supportAgent}
-                  </span>
-                )}
-              </div>
-              {ticket.rating && (
-                <div className="flex gap-0.5">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <span key={i} className="text-xs">
-                      {i < ticket.rating! ? "⭐" : "☆"}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </button>
-        ))}
+        <div className="flex-1 flex items-center justify-center text-sm text-gray-500 py-12">
+          No previous support tickets available yet
+        </div>
       </div>
     </div>
   );

@@ -7,61 +7,23 @@ import { Clock } from "lucide-react";
 
 export default function ReportScheduler() {
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: liveData, isLoading } = trpc.reportScheduler.list.useQuery(
+  const { data: liveData, isLoading, isError, error } = trpc.reportScheduler.list.useQuery(
     undefined,
     { retry: 1 }
   );
-  const mockData =
-    liveData ??
-    Array.from({ length: 10 }, (_, i) => ({
-      id: i + 1,
-      col1: `REF-${String(i + 1).padStart(3, "0")}`,
-      col2: [
-        "Chioma Eze",
-        "Emeka Obi",
-        "Fatima Bello",
-        "Adamu Yusuf",
-        "Grace Okonkwo",
-        "Ibrahim Musa",
-        "Joy Nwosu",
-        "Kemi Ade",
-        "Ladi Bako",
-        "Musa Dan",
-      ][i],
-      col3: [
-        "active",
-        "pending",
-        "completed",
-        "active",
-        "warning",
-        "active",
-        "completed",
-        "pending",
-        "active",
-        "completed",
-      ][i],
-      col4: `${(Math.random() * 100).toFixed(1)}`,
-      col5: new Date(Date.now() - i * 3600000).toLocaleString(),
-    }));
+  const rows: any[] = Array.isArray(liveData) ? liveData : [];
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<
     "overview" | "details" | "history" | "settings"
   >("overview");
 
-  const kpis = [
-    { label: "Active Schedules", value: "24" },
-    { label: "Reports Today", value: "18" },
-    { label: "Failed", value: "0" },
-    { label: "Recipients", value: "156" },
-  ];
-
   const columns = ["Report Name", "Schedule", "Last Run", "Status", "Actions"];
 
-  const filtered = mockData.filter(
+  const filtered = rows.filter(
     // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
-      r.col1.toLowerCase().includes(search.toLowerCase()) ||
-      r.col2.toLowerCase().includes(search.toLowerCase())
+      String(r.col1 ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      String(r.col2 ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -81,21 +43,6 @@ export default function ReportScheduler() {
           <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
             New Entry
           </button>
-        </div>
-
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {kpis.map((kpi, i) => (
-            <div
-              key={i}
-              className="bg-[#141a2a] border border-gray-800 rounded-lg p-4"
-            >
-              <p className="text-gray-400 text-xs uppercase tracking-wider">
-                {kpi.label}
-              </p>
-              <p className="text-2xl font-bold mt-1 text-white">{kpi.value}</p>
-            </div>
-          ))}
         </div>
 
         {/* Tabs */}
@@ -128,11 +75,32 @@ export default function ReportScheduler() {
           />
         </div>
 
+        {/* Error state */}
+        {isError && (
+          <div className="mb-4 p-4 bg-red-500/10 border border-red-500/40 rounded-lg text-sm text-red-400">
+            Failed to load data{error?.message ? `: ${error.message}` : "."}
+          </div>
+        )}
+
         {/* Records Table */}
         <div className="bg-[#141a2a] border border-gray-800 rounded-lg overflow-hidden">
           <div className="p-4 border-b border-gray-800">
             <h3 className="font-semibold">Records ({filtered.length})</h3>
           </div>
+          {isLoading ? (
+            <div className="p-4 space-y-3">
+              {Array.from({ length: 5 }, (_, i) => (
+                <div
+                  key={i}
+                  className="h-8 bg-[#1a2035] rounded animate-pulse"
+                />
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              {isError ? "Unable to load records." : "No data available yet"}
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -177,6 +145,7 @@ export default function ReportScheduler() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       </div>
     </div>

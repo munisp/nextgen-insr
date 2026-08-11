@@ -231,23 +231,38 @@ class RateCalculatorViewModel(
             return
         }
 
-        // In a real app, this would trigger the BiometricPrompt
-        // For this single-file example, we assume the UI layer handles the prompt and calls
-        // a subsequent function like processPayment() on success.
+        // The UI layer shows the real BiometricPrompt and invokes the callbacks.
+        // Authentication must NEVER auto-succeed here — that would bypass the check.
+        // onAuthSuccess is only called by the UI after BiometricPrompt confirms the user.
         _state.update { it.copy(isBiometricAuthRequired = true) }
-        onAuthSuccess() // Simulate immediate success for simplicity in ViewModel
     }
 
-    fun processPayment(gateway: PaymentGateway) {
+    /**
+     * No real payment gateway is integrated yet. The simulation below only runs
+     * when [allowSimulation] is true (debug builds); release builds get an
+     * honest "not integrated" result and no fake success.
+     *
+     * TODO(payments): Integrate the real gateway SDKs (Paystack/Flutterwave/Interswitch).
+     */
+    fun processPayment(gateway: PaymentGateway, allowSimulation: Boolean = false) {
         viewModelScope.launch {
             _state.update { it.copy(isPaymentProcessing = true, error = null) }
-            // Simulate payment processing delay
-            kotlinx.coroutines.delay(2000)
-            _state.update {
-                it.copy(
-                    isPaymentProcessing = false,
-                    error = "Payment via ${gateway.name} simulated successfully."
-                )
+            if (allowSimulation) {
+                // DEBUG-ONLY simulation — never reported as a real payment.
+                kotlinx.coroutines.delay(2000)
+                _state.update {
+                    it.copy(
+                        isPaymentProcessing = false,
+                        error = "Debug build: payment via ${gateway.name} simulated — no real transaction was made."
+                    )
+                }
+            } else {
+                _state.update {
+                    it.copy(
+                        isPaymentProcessing = false,
+                        error = "Payments are not integrated yet — no transaction was made."
+                    )
+                }
             }
         }
     }
@@ -316,6 +331,10 @@ fun RateCalculatorScreen(
     val validationError by viewModel.validationError.collectAsState()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    // Payment simulation is only permitted in debuggable (debug) builds.
+    val isDebugBuild = remember {
+        (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
 
     Scaffold(
         topBar = {
@@ -424,8 +443,8 @@ fun RateCalculatorScreen(
                                 context = context,
                                 lifecycleOwner = lifecycleOwner,
                                 onSuccess = {
-                                    // 2. On success, process payment
-                                    viewModel.processPayment(gateway)
+                                    // 2. On success, process payment (simulated only in debug builds)
+                                    viewModel.processPayment(gateway, allowSimulation = isDebugBuild)
                                 },
                                 onFailure = {
                                     viewModel.onAmountChange(state.amountToConvert) // Trigger error state update

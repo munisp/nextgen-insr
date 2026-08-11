@@ -23,6 +23,7 @@ export default function MLScoringDashboard() {
   const [tab, setTab] = useState("score");
   const [amount, setAmount] = useState("25000");
   const [agentId, setAgentId] = useState("AGT-001");
+  const [batchInput, setBatchInput] = useState("");
   const analytics = trpc.mlScoring.analytics.useQuery(undefined, {
     refetchInterval: 10000,
   });
@@ -38,19 +39,37 @@ export default function MLScoringDashboard() {
   const stats = analytics.data;
 
   const handleScore = () => {
+    const parsed = parseFloat(amount);
+    if (!Number.isFinite(parsed)) return; // amount is required — no fabricated default
     scoreMut.mutate({
-      amount: parseFloat(amount) || 25000,
+      amount: parsed,
       agentId,
       transactionId: "TXN-" + Date.now(),
     });
   };
 
+  // Test utility: scores only user-provided transactions — never auto-generated ones.
   const handleBatchScore = () => {
-    const txns = Array.from({ length: 50 }, (_, i) => ({
-      transactionId: `BATCH-${Date.now()}-${i}`,
-      amount: Math.floor(Math.random() * 500000) + 1000,
-      agentId: `AGT-${String(Math.floor(Math.random() * 100) + 1).padStart(3, "0")}`,
-    }));
+    const lines = batchInput
+      .split("\n")
+      .map((l: string) => l.trim())
+      .filter(Boolean);
+    const txns = lines.map((line: string, i: number) => {
+      const [transactionId, amount, agentId] = line
+        .split(",")
+        .map((p: string) => p.trim());
+      return {
+        transactionId: transactionId || `BATCH-${Date.now()}-${i}`,
+        amount: Number(amount),
+        agentId: agentId || "UNKNOWN",
+      };
+    });
+    if (
+      txns.length === 0 ||
+      txns.some((t: any) => !Number.isFinite(t.amount))
+    ) {
+      return;
+    }
     batchMut.mutate({ transactions: txns });
   };
 
@@ -271,15 +290,25 @@ export default function MLScoringDashboard() {
                 <CardTitle>Batch Scoring</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Score 50 random transactions using the ensemble model.
+                <p className="text-sm text-muted-foreground mb-2">
+                  Test utility — paste real transactions to score, one per
+                  line, as{" "}
+                  <code className="font-mono">transactionId,amount,agentId</code>.
+                  No transactions are auto-generated.
                 </p>
+                <textarea
+                  value={batchInput}
+                  onChange={(e: any) => setBatchInput(e.target.value)}
+                  placeholder="TXN-001,25000,AGT-001&#10;TXN-002,130000,AGT-002"
+                  rows={6}
+                  className="w-full mb-4 rounded-md border bg-background p-2 font-mono text-sm"
+                />
                 <Button
                   onClick={handleBatchScore}
-                  disabled={batchMut.isPending}
+                  disabled={batchMut.isPending || batchInput.trim().length === 0}
                 >
                   <Zap className="h-4 w-4 mr-2" />{" "}
-                  {batchMut.isPending ? "Scoring..." : "Run Batch (50 txns)"}
+                  {batchMut.isPending ? "Scoring..." : "Score Provided Transactions"}
                 </Button>
               </CardContent>
             </Card>

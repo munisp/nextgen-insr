@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.regex.Pattern
 
-// --- 1. Data Layer: API Service Interface and Mock Implementation ---
+// --- 1. Data Layer: API Service Interface ---
 
 /**
  * Represents the successful response after final registration/verification.
@@ -48,34 +48,9 @@ interface CdpApiService {
     suspend fun verifyOtp(email: String, otp: String): Result<RegistrationSuccess>
 }
 
-/**
- * Mock implementation of the CDP API service for demonstration and testing.
- * In a production app, this would be replaced by a real network implementation.
- */
-class MockCdpApiService : CdpApiService {
-    override suspend fun register(email: String): Result<Unit> {
-        // Simulate network delay
-        delay(1500)
-        return if (email.endsWith("@fail.com")) {
-            Result.failure(Exception("Registration failed for this email."))
-        } else {
-            // Simulate successful OTP send
-            println("Mock: OTP sent to $email")
-            Result.success(Unit)
-        }
-    }
-
-    override suspend fun verifyOtp(email: String, otp: String): Result<RegistrationSuccess> {
-        // Simulate network delay
-        delay(2000)
-        return if (otp == "123456") {
-            // Simulate successful verification
-            Result.success(RegistrationSuccess(userId = "user_${System.currentTimeMillis()}"))
-        } else {
-            Result.failure(Exception("Invalid OTP. Please try again."))
-        }
-    }
-}
+// NOTE: The previous MockCdpApiService default (which accepted the hardcoded OTP
+// "123456" and faked network delays) has been removed. Registration must always
+// run against the real CDP backend.
 
 // --- 2. Domain/Presentation Layer: State and ViewModel ---
 
@@ -122,9 +97,14 @@ data class RegisterUiState(
 /**
  * ViewModel to handle the business logic and state management for the registration flow.
  * @property apiService The dependency for making CDP API calls.
+ *
+ * TODO(DI): Wire the real [CdpApiService] implementation (e.g. Retrofit-backed)
+ * via the app's dependency-injection graph / ViewModel factory. There is
+ * intentionally NO mock default — registration must never run against a fake
+ * service in production.
  */
 class RegisterViewModel(
-    private val apiService: CdpApiService = MockCdpApiService()
+    private val apiService: CdpApiService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RegisterUiState())
@@ -238,7 +218,9 @@ class RegisterViewModel(
  */
 @Composable
 fun RegisterScreen(
-    viewModel: RegisterViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    // TODO(DI): Supply via a ViewModel factory that injects the real CdpApiService,
+    // e.g. viewModel(factory = RegisterViewModelFactory(cdpApiService)).
+    viewModel: RegisterViewModel,
     onRegistrationComplete: (RegistrationSuccess) -> Unit = {}
 ) {
     // Collect the UI state as a Compose State
@@ -394,13 +376,24 @@ private fun SuccessMessage(result: RegistrationSuccess) {
 
 // --- 4. Previews for Development ---
 
+/**
+ * Preview-only stub. Used exclusively by @Preview composables; never referenced
+ * by app code paths. It performs no network I/O and accepts no OTP — it only
+ * returns canned results so the UI can be rendered in the design tool.
+ */
+private class PreviewCdpApiService : CdpApiService {
+    override suspend fun register(email: String): Result<Unit> = Result.success(Unit)
+    override suspend fun verifyOtp(email: String, otp: String): Result<RegistrationSuccess> =
+        Result.failure(Exception("Preview stub — OTP verification is not available."))
+}
+
 @Preview(showBackground = true)
 @Composable
 fun PreviewRegisterScreenEmailInput() {
     // Use a mock theme for preview purposes
     MaterialTheme {
         RegisterScreen(
-            viewModel = RegisterViewModel(MockCdpApiService())
+            viewModel = RegisterViewModel(PreviewCdpApiService())
         )
     }
 }
@@ -409,7 +402,7 @@ fun PreviewRegisterScreenEmailInput() {
 @Composable
 fun PreviewRegisterScreenOtpInput() {
     // Create a mock ViewModel state for OTP input
-    val mockViewModel = RegisterViewModel(MockCdpApiService())
+    val mockViewModel = RegisterViewModel(PreviewCdpApiService())
     mockViewModel.onEmailChange("test@example.com")
     // Manually set the step for preview purposes (in a real app, this is done by onRegisterClick)
     mockViewModel.viewModelScope.launch {
@@ -420,12 +413,3 @@ fun PreviewRegisterScreenOtpInput() {
         RegisterScreen(viewModel = mockViewModel)
     }
 }
-
-// Helper function to count lines for the output schema
-fun countLines(code: String): Int {
-    return code.lines().size
-}
-
-// Note: The actual line count will be determined after writing the file.
-// The file is now written to /home/ubuntu/RegisterScreen.kt
-// Next step is to review and refine.
