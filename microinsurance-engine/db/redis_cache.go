@@ -26,8 +26,7 @@ func NewRedisCache(ctx context.Context, cfg *config.RedisConfig) (*RedisCache, e
 		ReadTimeout:     cfg.ReadTimeout,
 		WriteTimeout:    cfg.WriteTimeout,
 		DialTimeout:     5 * time.Second,
-		IdleTimeout:     5 * time.Minute,
-		IdleCheckFrequency: 1 * time.Minute,
+		ConnMaxIdleTime: 5 * time.Minute,
 	})
 	if err := client.Ping(ctx).Err(); err != nil {
 		return nil, fmt.Errorf("ping redis: %w", err)
