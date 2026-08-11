@@ -1,18 +1,18 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math"
 	"log"
+	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,21 +21,19 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
+
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -43,9 +41,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -59,15 +61,16 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
-
 
 // ─── Production Middleware ───────────────────────────────────────────────────
 
 var (
-	reqCount    int64
-	errCount    int64
+	reqCount     int64
+	errCount     int64
 	avgLatencyMs float64
 )
 
@@ -160,9 +163,6 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
 func execInTransaction(fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -235,7 +235,6 @@ func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 // ─── Domain Handlers ─────────────────────────────────────────────────────────
 
 func handleList(w http.ResponseWriter, r *http.Request) {
@@ -254,9 +253,13 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -280,7 +283,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
 		if err := rows.Scan(ptrs...); err != nil {
 			continue
 		}
@@ -295,7 +300,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
@@ -338,7 +345,9 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -379,7 +388,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		switch mv := v.(type) {
 		case map[string]interface{}:
@@ -416,7 +427,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -449,7 +462,9 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
 }
 
@@ -487,10 +502,10 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	db.QueryRow("SELECT COUNT(*) FROM naicom_filings").Scan(&count)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service": "naicom-compliance-module",
-		"table":   "naicom_filings",
+		"service":       "naicom-compliance-module",
+		"table":         "naicom_filings",
 		"total_records": count,
-		"uptime":  time.Since(startTime).String(),
+		"uptime":        time.Since(startTime).String(),
 	})
 }
 
@@ -502,26 +517,26 @@ var startTime = time.Now()
 
 // SCR (Solvency Capital Requirement) under NAICOM Risk-Based Supervision
 type SCRInput struct {
-	Assets          float64 `json:"assets"`
-	Liabilities     float64 `json:"liabilities"`
-	PremiumVolume   float64 `json:"premium_volume"`
-	InvestmentAssets float64 `json:"investment_assets"`
+	Assets                 float64 `json:"assets"`
+	Liabilities            float64 `json:"liabilities"`
+	PremiumVolume          float64 `json:"premium_volume"`
+	InvestmentAssets       float64 `json:"investment_assets"`
 	ReinsuranceRecoverable float64 `json:"reinsurance_recoverable"`
 }
 
 type SCRResult struct {
-	MarketRisk        float64 `json:"market_risk"`
-	InsuranceRisk     float64 `json:"insurance_risk"`
-	CreditRisk        float64 `json:"credit_risk"`
-	OperationalRisk   float64 `json:"operational_risk"`
-	GrossSCR          float64 `json:"gross_scr"`
+	MarketRisk             float64 `json:"market_risk"`
+	InsuranceRisk          float64 `json:"insurance_risk"`
+	CreditRisk             float64 `json:"credit_risk"`
+	OperationalRisk        float64 `json:"operational_risk"`
+	GrossSCR               float64 `json:"gross_scr"`
 	DiversificationBenefit float64 `json:"diversification_benefit"`
-	NetSCR            float64 `json:"net_scr"`
-	AvailableCapital  float64 `json:"available_capital"`
-	SolvencyRatio     float64 `json:"solvency_ratio"`
-	MeetsMinimum      bool    `json:"meets_minimum"`
-	MinimumCapital    float64 `json:"minimum_capital"`
-	Status            string  `json:"status"`
+	NetSCR                 float64 `json:"net_scr"`
+	AvailableCapital       float64 `json:"available_capital"`
+	SolvencyRatio          float64 `json:"solvency_ratio"`
+	MeetsMinimum           bool    `json:"meets_minimum"`
+	MinimumCapital         float64 `json:"minimum_capital"`
+	Status                 string  `json:"status"`
 }
 
 func calculateSCR(input SCRInput) SCRResult {
@@ -572,27 +587,27 @@ func calculateSCR(input SCRInput) SCRResult {
 	}
 
 	return SCRResult{
-		MarketRisk: math.Round(marketRisk*100) / 100,
-		InsuranceRisk: math.Round(insuranceRisk*100) / 100,
-		CreditRisk: math.Round(creditRisk*100) / 100,
-		OperationalRisk: math.Round(operationalRisk*100) / 100,
-		GrossSCR: math.Round(grossSCR*100) / 100,
+		MarketRisk:             math.Round(marketRisk*100) / 100,
+		InsuranceRisk:          math.Round(insuranceRisk*100) / 100,
+		CreditRisk:             math.Round(creditRisk*100) / 100,
+		OperationalRisk:        math.Round(operationalRisk*100) / 100,
+		GrossSCR:               math.Round(grossSCR*100) / 100,
 		DiversificationBenefit: math.Round(diversification*100) / 100,
-		NetSCR: math.Round(netSCR*100) / 100,
-		AvailableCapital: math.Round(availableCapital*100) / 100,
-		SolvencyRatio: math.Round(solvencyRatio*10000) / 10000,
-		MeetsMinimum: availableCapital >= minimumCapital,
-		MinimumCapital: minimumCapital,
-		Status: status,
+		NetSCR:                 math.Round(netSCR*100) / 100,
+		AvailableCapital:       math.Round(availableCapital*100) / 100,
+		SolvencyRatio:          math.Round(solvencyRatio*10000) / 10000,
+		MeetsMinimum:           availableCapital >= minimumCapital,
+		MinimumCapital:         minimumCapital,
+		Status:                 status,
 	}
 }
 
 // Statutory Return types per NAICOM Operational Guidelines
 type StatutoryReturn struct {
-	ReturnType    string `json:"return_type"` // annual_return, quarterly_return, monthly_premium
-	Period        string `json:"period"`
-	DueDate       string `json:"due_date"`
-	Status        string `json:"status"`
+	ReturnType string `json:"return_type"` // annual_return, quarterly_return, monthly_premium
+	Period     string `json:"period"`
+	DueDate    string `json:"due_date"`
+	Status     string `json:"status"`
 }
 
 func getStatutoryReturnsDue(currentDate time.Time) []StatutoryReturn {
@@ -634,25 +649,25 @@ func getStatutoryReturnsDue(currentDate time.Time) []StatutoryReturn {
 
 // Commission cap enforcement (NAICOM Guidelines on Insurance Distribution)
 type CommissionValidation struct {
-	ProductClass    string  `json:"product_class"`
-	CommissionRate  float64 `json:"commission_rate"`
-	MaxAllowed      float64 `json:"max_allowed"`
-	IsCompliant     bool    `json:"is_compliant"`
-	Violation       string  `json:"violation,omitempty"`
+	ProductClass   string  `json:"product_class"`
+	CommissionRate float64 `json:"commission_rate"`
+	MaxAllowed     float64 `json:"max_allowed"`
+	IsCompliant    bool    `json:"is_compliant"`
+	Violation      string  `json:"violation,omitempty"`
 }
 
 func validateCommissionCap(productClass string, commissionRate float64) CommissionValidation {
 	// NAICOM maximum commission rates
 	caps := map[string]float64{
-		"motor":           0.15, // 15% max
-		"fire":            0.20, // 20% max
-		"marine":          0.175, // 17.5% max
+		"motor":            0.15,  // 15% max
+		"fire":             0.20,  // 20% max
+		"marine":           0.175, // 17.5% max
 		"general_accident": 0.20,
-		"engineering":     0.20,
-		"life_individual": 0.40, // 40% first year, 7.5% renewal
-		"life_group":      0.125, // 12.5% max
-		"oil_gas":         0.125,
-		"aviation":        0.10,
+		"engineering":      0.20,
+		"life_individual":  0.40,  // 40% first year, 7.5% renewal
+		"life_group":       0.125, // 12.5% max
+		"oil_gas":          0.125,
+		"aviation":         0.10,
 	}
 
 	maxAllowed := caps[productClass]
@@ -697,7 +712,7 @@ func handleStatutoryReturns(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	returns := getStatutoryReturnsDue(time.Now())
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"returns_due": returns,
+		"returns_due":  returns,
 		"generated_at": time.Now().Format(time.RFC3339),
 	})
 }
@@ -779,22 +794,22 @@ func handleNAICOMDashboard(w http.ResponseWriter, r *http.Request) {
 		ReinsuranceRecoverable: 50000000,
 	})
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"compliance_score":    scrResult.SolvencyRatio * 100,
-		"solvency_ratio":     scrResult.SolvencyRatio,
-		"scr_amount":         scrResult.NetSCR,
-		"filings_submitted":  filingCount,
-		"returns_submitted":  returnCount,
+		"compliance_score":         scrResult.SolvencyRatio * 100,
+		"solvency_ratio":           scrResult.SolvencyRatio,
+		"scr_amount":               scrResult.NetSCR,
+		"filings_submitted":        filingCount,
+		"returns_submitted":        returnCount,
 		"commission_cap_compliant": true,
-		"statutory_returns_due": getStatutoryReturnsDue(time.Now()),
-		"last_updated":       time.Now().Format(time.RFC3339),
+		"statutory_returns_due":    getStatutoryReturnsDue(time.Now()),
+		"last_updated":             time.Now().Format(time.RFC3339),
 	})
 }
 
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -805,6 +820,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -813,7 +829,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -834,35 +852,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -873,7 +907,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -884,6 +920,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -892,9 +929,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -951,6 +992,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -977,9 +1019,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -1096,7 +1142,6 @@ func initMiddleware() {
 	osClient = newOpenSearchClient(osURL, os.Getenv("OPENSEARCH_USER"))
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
-
 
 func bodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
