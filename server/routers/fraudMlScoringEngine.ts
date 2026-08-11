@@ -10,6 +10,12 @@ import {
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
+// MOCKWARE FIX: No ML model is attached to this engine. The scorer is a
+// simple amount-threshold RULES heuristic and is now honestly labelled
+// "rules_amount_v1" (previously mislabeled as ML model "ensemble_v2").
+// Alerts it raises say "rules engine", not "ML model".
+const SCORER_ID = "rules_amount_v1";
+
 export const fraudMlScoringEngineRouter = router({
   listScores: protectedProcedure
     .input(
@@ -73,6 +79,7 @@ export const fraudMlScoringEngineRouter = router({
           .from(transactions)
           .where(eq(transactions.id, input.transactionId))
           .limit(1);
+        // Rules-based amount heuristic (NOT an ML model).
         const riskScore = tx
           ? Math.min(
               100,
@@ -91,7 +98,7 @@ export const fraudMlScoringEngineRouter = router({
           .values({
             transactionId: input.transactionId,
             score: riskScore,
-            model: "ensemble_v2",
+            model: SCORER_ID,
             features: input.features ?? {},
           } as any)
           .returning();
@@ -100,16 +107,16 @@ export const fraudMlScoringEngineRouter = router({
             transactionId: input.transactionId,
             severity: riskScore > 90 ? "critical" : "high",
             status: "open",
-            description: "ML model flagged high risk",
+            description: "Rules engine (amount threshold) flagged high risk",
             riskScore,
           } as any);
         }
         await db.insert(auditLog).values({
-          action: "fraud_ml_scored",
+          action: "fraud_rules_scored",
           resource: "fraud_ml_scores",
           resourceId: String(score.id),
           status: "success",
-          metadata: { transactionId: input.transactionId, riskScore },
+          metadata: { transactionId: input.transactionId, riskScore, scorer: SCORER_ID },
         } as any);
         return score;
       } catch (error) {

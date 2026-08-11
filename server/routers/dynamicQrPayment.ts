@@ -1,8 +1,13 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+// MOCKWARE FIX: generateQr previously returned success without generating
+// anything. No QR payload/emvco generation library is wired in this service,
+// so the endpoint now fails loudly.
 
 export const dynamicQrPaymentRouter = router({
   list: protectedProcedure
@@ -105,7 +110,10 @@ export const dynamicQrPaymentRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Dynamic QR generation is not configured: no QR payload generator is wired in this service",
+      });
     }),
 
   getStats: protectedProcedure.query(async () => {

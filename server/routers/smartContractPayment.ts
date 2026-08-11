@@ -12,6 +12,10 @@ import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
 
+// MOCKWARE FIX: deployContract previously returned success without deploying
+// anything. No smart-contract deployer exists in this codebase, so the
+// endpoint now fails loudly.
+
 export const smartContractPaymentRouter = router({
   list: protectedProcedure
     .input(
@@ -138,15 +142,10 @@ export const smartContractPaymentRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      try {
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Smart contract deployment is not configured: no contract deployer is wired in this service",
+      });
     }),
 
   getStats: protectedProcedure.query(async () => {
