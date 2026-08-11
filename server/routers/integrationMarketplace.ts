@@ -16,7 +16,7 @@ const dashboard = protectedProcedure
       dateTo: z.string().optional(),
     })
   )
-  .query(async ({ input }) => {
+  .query(async () => {
     try {
       const db = (await getDb())!;
       const [{ total }] = await db
@@ -181,12 +181,9 @@ export const integrationMarketplaceRouter = router({
   getApiCatalog,
 
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Integration marketplace stats are not implemented yet",
+    });
   }),
 });

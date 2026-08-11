@@ -134,12 +134,9 @@ export const settlementBatchProcessorRouter = router({
     }),
 
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Settlement batch stats are not implemented yet",
+    });
   }),
 });
