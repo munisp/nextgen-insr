@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { usePosStore, FraudEvent, ChatMessage } from "../store/posStore";
 import { toast } from "sonner";
@@ -29,10 +29,17 @@ function normaliseSseFraudAlert(raw: Record<string, unknown>): FraudEvent {
   };
 }
 
+/**
+ * Connects to the live fraud feed.
+ * Returns `true` while either channel (Socket.IO or SSE) is connected, so the
+ * UI can show an honest Connected/Disconnected status.
+ */
 export function useFraudSocket() {
   const socketRef = useRef<Socket | null>(null);
   const sseRef = useRef<EventSource | null>(null);
   const addFraudEvent = usePosStore(s => s.addFraudEvent);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [sseConnected, setSseConnected] = useState(false);
 
   /** Shared handler: add to store + show toast/push notification */
   const handleFraudEvent = (event: FraudEvent) => {
@@ -71,17 +78,22 @@ export function useFraudSocket() {
       transports: ["websocket", "polling"],
     });
     socketRef.current = socket;
-    socket.on("connect", () =>
-      console.log("[Fraud Socket] Connected:", socket.id)
-    );
+    socket.on("connect", () => {
+      console.log("[Fraud Socket] Connected:", socket.id);
+      setSocketConnected(true);
+    });
     socket.on("fraud:event", handleFraudEvent);
-    socket.on("disconnect", () => console.log("[Fraud Socket] Disconnected"));
+    socket.on("disconnect", () => {
+      console.log("[Fraud Socket] Disconnected");
+      setSocketConnected(false);
+    });
 
     // ── Channel 2: SSE (server-side fraud detection engine) ───────────────────
     const sse = new EventSource("/api/fraud/alerts/stream", {
       withCredentials: true,
     });
     sseRef.current = sse;
+    sse.onopen = () => setSseConnected(true);
     sse.onmessage = e => {
       try {
         const raw = JSON.parse(e.data) as Record<string, unknown>;
@@ -92,6 +104,7 @@ export function useFraudSocket() {
     };
     sse.onerror = () => {
       // Browser auto-reconnects on error after a short delay
+      setSseConnected(false);
       console.warn(
         "[Fraud SSE] Connection error — browser will auto-reconnect"
       );
@@ -104,7 +117,7 @@ export function useFraudSocket() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addFraudEvent]);
 
-  return socketRef;
+  return socketConnected || sseConnected;
 }
 
 // ─── Chat socket ──────────────────────────────────────────────────────────────
