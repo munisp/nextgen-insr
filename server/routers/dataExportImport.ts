@@ -6,6 +6,12 @@ import { transactions } from "../../drizzle/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
+const notImplemented = (feature: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
+
 const dashboard = protectedProcedure
   .input(
     z.object({
@@ -16,7 +22,7 @@ const dashboard = protectedProcedure
       dateTo: z.string().optional(),
     })
   )
-  .query(async ({ input }) => {
+  .query(async () => {
     try {
       const db = (await getDb())!;
       const [{ total }] = await db
@@ -49,40 +55,8 @@ const createExport = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "createExport: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "createExport completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "createExport completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw notImplemented("Data export");
   });
 const createImport = protectedProcedure
   .input(
@@ -91,40 +65,8 @@ const createImport = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "createImport: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "createImport completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "createImport completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw notImplemented("Data import");
   });
 const getExportStatus = protectedProcedure
   .input(
@@ -133,40 +75,8 @@ const getExportStatus = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "getExportStatus: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "getExportStatus completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "getExportStatus completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw notImplemented("Export status tracking");
   });
 
 export const dataExportImportRouter = router({
@@ -176,12 +86,6 @@ export const dataExportImportRouter = router({
   getExportStatus,
 
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw notImplemented("Data export/import statistics");
   }),
 });
