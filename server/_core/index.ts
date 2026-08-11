@@ -47,6 +47,12 @@ import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
 import { enforceEnvironment } from "../lib/envValidation";
 import { logger } from "./logger";
 import { sql } from "drizzle-orm";
+import cron from "node-cron";
+import { setupGracefulShutdown } from "../lib/gracefulShutdown";
+import { startPoolMonitor } from "../lib/dbPoolMonitor";
+import { runDisputeAutoEscalation } from "../cron/disputeAutoEscalation";
+import { runKycExpiryCheck } from "../cron/kycExpiryCheck";
+import { startSarRetryCronSchedule } from "../sar-retry-cron";
 
 // ── Environment validation (must run before any service initialization) ────────
 enforceEnvironment();
@@ -76,6 +82,19 @@ async function findAvailablePort(startPort = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+// ── Security middleware loader ────────────────────────────────────────────────
+// A failed security-middleware load is FATAL in production: starting without
+// CSP/CSRF/XSS/SQLi/attack-prevention layers is worse than not starting at all.
+// In development it is warn-only so missing optional deps don't block HMR.
+function handleSecurityMiddlewareError(label: string, err: unknown): never | void {
+  const message = err instanceof Error ? err.message : String(err);
+  if (process.env.NODE_ENV === "production") {
+    logger.error(`[Security] FATAL: ${label} failed to load in production:: ${message}`);
+    throw err;
+  }
+  logger.warn(`[Security] ${label} load failed (non-fatal, development only):: ${message}`);
+}
+
 // ── Server bootstrap ──────────────────────────────────────────────────────────
 
 async function startServer() {
@@ -89,41 +108,26 @@ async function startServer() {
   const server = createServer(app);
 
   // ── Sprint 70: Graceful Shutdown ──────────────────────────────────────
-  try {
-    const { setupGracefulShutdown } = require("../lib/gracefulShutdown");
-    const shutdownMiddleware = setupGracefulShutdown(server);
-    app.use(shutdownMiddleware);
-    logger.info("[Shutdown] Graceful shutdown handler registered");
-  } catch (e) {
-    logger.warn("[Shutdown] Setup failed:: " + (e as any).message);
-  }
-  // ── Sprint 70: DB Pool Monitor ──────────────────────────────────────
-  try {
-    const { startPoolMonitor } = require("../lib/dbPoolMonitor");
-    startPoolMonitor(60000);
-    logger.info("[DBPool] Connection pool monitoring started");
-  } catch (e) {
-    logger.warn("[DBPool] Monitor failed:: " + (e as any).message);
-  }
-  // ── Sprint 70: Cron Jobs ──────────────────────────────────────────
-  try {
-    const cron = require("node-cron");
-    const {
-      runDisputeAutoEscalation,
-    } = require("../cron/disputeAutoEscalation");
-    const { runKycExpiryCheck } = require("../cron/kycExpiryCheck");
-    cron.schedule("*/15 * * * *", runDisputeAutoEscalation); // Every 15 min
-    cron.schedule("0 6 * * *", runKycExpiryCheck); // Daily at 6 AM
+  // Static ESM imports (previously require() inside try/catch, which silently
+  // disabled these in the ESM bundle). Import/registration failures now
+  // surface loudly at startup instead of being swallowed.
+  const shutdownMiddleware = setupGracefulShutdown(server);
+  app.use(shutdownMiddleware);
+  logger.info("[Shutdown] Graceful shutdown handler registered");
 
-    // SAR retry cron — every 15 minutes, retries pending NFIU submissions
-    const { startSarRetryCronSchedule } = require("../sar-retry-cron");
-    startSarRetryCronSchedule();
-    logger.info(
-      "[Cron] Dispute auto-escalation (15min) and KYC expiry check (daily) registered"
-    );
-  } catch (e) {
-    logger.warn("[Cron] Registration failed:: " + (e as any).message);
-  }
+  // ── Sprint 70: DB Pool Monitor ──────────────────────────────────────
+  startPoolMonitor(60000);
+  logger.info("[DBPool] Connection pool monitoring started");
+
+  // ── Sprint 70: Cron Jobs ──────────────────────────────────────────
+  cron.schedule("*/15 * * * *", runDisputeAutoEscalation); // Every 15 min
+  cron.schedule("0 6 * * *", runKycExpiryCheck); // Daily at 6 AM
+
+  // SAR retry cron — every 15 minutes, retries pending NFIU submissions
+  startSarRetryCronSchedule();
+  logger.info(
+    "[Cron] Dispute auto-escalation (15min), KYC expiry check (daily 06:00) and SAR retry (15min) registered"
+  );
 
   // Trust reverse proxy (nginx, Cloudflare, etc.) for accurate IP detection
   app.set("trust proxy", 1);
@@ -334,6 +338,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
   // ── Sprint 70: Production Middleware Stack ──────────────────────────────
+  // SECURITY middleware — fatal in production, warn-only in development.
   try {
     const secMod = await import("../middleware/securityHardening.js");
     secMod.applySecurityMiddleware(app);
@@ -341,8 +346,7 @@ async function startServer() {
       "[Security] Hardening middleware applied (CSP, HSTS, CSRF, XSS, SQLi, rate limiting, CORS)"
     );
   } catch (secErr) {
-    logger.warn("[Security] Middleware load failed (non-fatal):: " + (secErr as any).message
-    );
+    handleSecurityMiddlewareError("Hardening middleware", secErr);
   }
 
   try {
@@ -372,6 +376,7 @@ async function startServer() {
   }
 
   // ── Sprint 71: Multi-Language Security Orchestrator (Rust DDoS + Go PBAC + Python Fraud ML) ──
+  // SECURITY middleware — fatal in production, warn-only in development.
   try {
     const orchMod = await import("../middleware/securityOrchestrator.js");
     orchMod.applySecurityOrchestrator(app);
@@ -379,11 +384,11 @@ async function startServer() {
       "[Security] Multi-language security orchestrator registered (Rust DDoS, Go PBAC, Python Fraud ML)"
     );
   } catch (e) {
-    logger.warn("[Security] Orchestrator load failed (non-fatal):: " + (e as any).message
-    );
+    handleSecurityMiddlewareError("Security orchestrator", e);
   }
 
   // ── Sprint 71: Financial Attack Prevention Middleware ──
+  // SECURITY middleware — fatal in production, warn-only in development.
   try {
     const finMod = await import("../middleware/financialAttackPrevention.js");
     finMod.applyFinancialAttackPrevention(app);
@@ -391,8 +396,7 @@ async function startServer() {
       "[Security] Financial attack prevention registered (replay, card-testing, ATO, collusion, exfiltration)"
     );
   } catch (e) {
-    logger.warn("[Security] Financial attack prevention failed (non-fatal):: " + (e as any).message
-    );
+    handleSecurityMiddlewareError("Financial attack prevention", e);
   }
 
   // ── HTTP request duration instrumentation ─────────────────────────────────
@@ -914,4 +918,10 @@ process.on("unhandledRejection", (reason: unknown, promise: Promise<unknown>) =>
   // Log and continue; critical paths use explicit try/catch.
 });
 
-startServer().catch(console.error);
+// A startup failure is FATAL: log and exit non-zero so the process supervisor
+// (Docker/Kubernetes/systemd) restarts or alerts instead of leaving a
+// half-initialised server running (e.g. missing security middleware).
+startServer().catch(err => {
+  console.error("[FATAL] Server startup failed:", err);
+  process.exit(1);
+});
