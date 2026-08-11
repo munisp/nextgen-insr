@@ -25,6 +25,7 @@ import {
   kycSessions,
   auditLog,
   emailQueue,
+  platformSettings,
 } from "../../drizzle/schema";
 import {
   serviceNodes,
@@ -1881,22 +1882,69 @@ export const managementRouter = router({
   }),
 
   // ── Settings ─────────────────────────────────────────────────────
+  // MOCKWARE FIX: settings.get returned hardcoded values and settings.update
+  // was a no-op success. Both are now backed by the real platform_settings
+  // table: update upserts a row, get merges stored values over defaults.
   settings: router({
-    get: adminProcedure.query(() => ({
-      platformName: "InsurePortal Insurance",
-      defaultCurrency: "NGN",
-      defaultCountry: "NGA",
-      maxTransactionAmount: 500000,
-      dailyAgentLimit: 5000000,
-      kycRequiredForAmount: 50000,
-      fraudScoreThreshold: 0.75,
-      maintenanceMode: false,
-    })),
+    get: adminProcedure.query(async () => {
+      const defaults: Record<string, unknown> = {
+        platformName: "InsurePortal Insurance",
+        defaultCurrency: "NGN",
+        defaultCountry: "NGA",
+        maxTransactionAmount: 500000,
+        dailyAgentLimit: 5000000,
+        kycRequiredForAmount: 50000,
+        fraudScoreThreshold: 0.75,
+        maintenanceMode: false,
+      };
+      const db = (await getDb())!;
+      if (!db) return defaults;
+      const rows = await db.select().from(platformSettings).limit(500);
+      const merged: Record<string, unknown> = { ...defaults };
+      for (const row of rows) {
+        const key = row.key.startsWith("settings.")
+          ? row.key.slice("settings.".length)
+          : row.key;
+        try {
+          merged[key] = JSON.parse(String(row.value ?? "null"));
+        } catch {
+          merged[key] = row.value;
+        }
+      }
+      return merged;
+    }),
     update: adminProcedure
       .input(z.object({ key: z.string(), value: z.unknown() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         try {
-          // In production this would update platform_settings table
+          const db = (await getDb())!;
+          if (!db)
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Database unavailable",
+            });
+          const storageKey = input.key.startsWith("settings.")
+            ? input.key
+            : `settings.${input.key}`;
+          const value = JSON.stringify(input.value ?? null);
+          const updatedBy = ctx.user?.email ?? String(ctx.user?.id ?? "unknown");
+          await db
+            .insert(platformSettings)
+            .values({ key: storageKey, value, updatedBy, updatedAt: new Date() })
+            .onConflictDoUpdate({
+              target: platformSettings.key,
+              set: { value, updatedBy, updatedAt: new Date() },
+            });
+          await db
+            .insert(auditLog)
+            .values({
+              action: "platform_setting_updated",
+              resource: "platform_settings",
+              resourceId: storageKey,
+              status: "success",
+              metadata: { key: storageKey },
+            })
+            .catch(() => {});
           return { success: true, key: input.key, value: input.value };
         } catch (error) {
           if (error instanceof TRPCError) throw error;
