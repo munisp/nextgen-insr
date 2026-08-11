@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,11 +16,9 @@ import (
 	"database/sql"
 
 	_ "github.com/lib/pq"
-		"context"
+	"context"
 	"os/signal"
 	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 // Mobile Money Service — integration with Nigerian mobile money operators
@@ -170,6 +169,51 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		rateLimitMu.Unlock()
 		next.ServeHTTP(w, r)
 	})
+}
+
+
+// Production Prometheus metrics
+var (
+	prodMetricsReqCount  int64
+	prodMetricsErrCount  int64
+	prodMetricsStartTime = time.Now()
+)
+
+func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	uptime := time.Since(prodMetricsStartTime).Seconds()
+	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
+	errCount := atomic.LoadInt64(&prodMetricsErrCount)
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
+	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
+	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
+	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
+	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
+}
+
+// Health probes
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {
