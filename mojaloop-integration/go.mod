@@ -6,6 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/segmentio/kafka-go v0.4.51
+	github.com/tigerbeetle/tigerbeetle-go v0.17.9
 	gorm.io/gorm v1.25.10
 )
 

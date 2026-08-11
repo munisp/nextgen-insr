@@ -11,10 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
 	tigerbeetle_go "github.com/tigerbeetle/tigerbeetle-go"
-	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"gorm.io/gorm"
 
-	"nextgen-insr/tigerbeetle-implementation/ledger"
+	"github.com/munisp/NGApp/mojaloop-integration/ledger"
 )
 
 type MojaloopPaymentService struct {
@@ -271,7 +270,7 @@ func (s *MojaloopPaymentService) completePayment(payment *Payment) {
 			customerAccountID := ledger.GenerateAccountID("customer", payment.CustomerID.ID())
 			companyAccountID := ledger.GenerateAccountID("company", 1)
 
-			transfer := types.Transfer{
+			transfer := tigerbeetle_go.Transfer{
 				ID:              transferID,
 				DebitAccountID:  customerAccountID,
 				CreditAccountID: companyAccountID,
