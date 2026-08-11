@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -21,6 +24,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"go.uber.org/zap"
+	_ "github.com/lib/pq"
 )
 
 // Engine is the central claims adjudication engine that orchestrates all components
@@ -296,21 +300,6 @@ func (e *Engine) calculateRiskScore(claim *models.Claim) float64 {
 
 	return math.Min(score, 100)
 }
-
-// detectFraud identifies fraud indicators in a claim
-func (e *Engine) detectFraud(claim *models.Claim) []string {
-	flags := make([]string, 0)
-
-	// High amount without sufficient evidence
-	if claim.Amount > 5000000 && len(claim.Evidence) < 3 {
-		flags = append(flags, "high_amount_insufficient_evidence")
-	}
-
-	// Very recent claim with high amount
-	daysSinceSubmission := time.Since(claim.SubmittedAt).Hours() / 24
-	if daysSinceSubmission < 1 && claim.Amount > 1000000 {
-		flags = append(flags, "same_day_high_amount_claim")
-	}
 
 // detectFraud identifies fraud indicators in a claim
 func (e *Engine) detectFraud(claim *models.Claim) []string {
@@ -655,39 +644,6 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
 // --- Production Middleware ---
 
 type statusResponseWriter struct {
@@ -820,7 +776,9 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 }
 
 
-var db *sql.DB
+// legacyDB backs the standalone initDB helper below. It is named legacyDB to
+// avoid colliding with the imported "db" package (claims repository).
+var legacyDB *sql.DB
 
 func initDB() {
 	dbURL := os.Getenv("DATABASE_URL")
@@ -828,39 +786,25 @@ func initDB() {
 		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
 	}
 	var err error
-	db, err = sql.Open("postgres", dbURL)
+	legacyDB, err = sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("WARN: database connection failed: %v", err)
 		return
 	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
+	legacyDB.SetMaxOpenConns(25)
+	legacyDB.SetMaxIdleConns(5)
+	legacyDB.SetConnMaxLifetime(5 * time.Minute)
+	if err = legacyDB.Ping(); err != nil {
 		log.Printf("WARN: database ping failed: %v", err)
 		return
 	}
 	log.Printf(`{"level":"info","msg":"database connected","service":"claims-adjudication-engine","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS claims (id TEXT PRIMARY KEY, policy_id TEXT NOT NULL, claimant_id TEXT, amount NUMERIC(15,2), claim_type TEXT, status TEXT DEFAULT 'submitted', risk_score NUMERIC(5,2), decision TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`)
+	_, err = legacyDB.Exec(`CREATE TABLE IF NOT EXISTS claims (id TEXT PRIMARY KEY, policy_id TEXT NOT NULL, claimant_id TEXT, amount NUMERIC(15,2), claim_type TEXT, status TEXT DEFAULT 'submitted', risk_score NUMERIC(5,2), decision TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`)
 	if err != nil {
 		log.Printf("WARN: table creation failed: %v", err)
 	}
 }
 
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
