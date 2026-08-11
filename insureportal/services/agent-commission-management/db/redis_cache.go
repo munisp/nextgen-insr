@@ -36,44 +36,60 @@ func NewRedisCache(cfg *config.Config) (*RedisCache, error) {
 func (r *RedisCache) Close() error { return r.client.Close() }
 
 const (
-	keyPrefix     = "comm:"
-	agentTTL      = 1 * time.Hour
-	dashboardTTL  = 30 * time.Second
-	periodTTL     = 24 * time.Hour
+	keyPrefix    = "comm:"
+	agentTTL     = 1 * time.Hour
+	dashboardTTL = 30 * time.Second
+	periodTTL    = 24 * time.Hour
 )
 
-func agentKey(code string) string       { return fmt.Sprintf("%sagent:%s", keyPrefix, code) }
-func dashboardKey() string              { return fmt.Sprintf("%sdashboard", keyPrefix) }
-func periodKey(agentID string) string   { return fmt.Sprintf("%speriod:%s", keyPrefix, agentID) }
+func agentKey(code string) string          { return fmt.Sprintf("%sagent:%s", keyPrefix, code) }
+func dashboardKey() string                 { return fmt.Sprintf("%sdashboard", keyPrefix) }
+func periodKey(agentID string) string      { return fmt.Sprintf("%speriod:%s", keyPrefix, agentID) }
 func totalEarnedKey(agentID string) string { return fmt.Sprintf("%searned:%s", keyPrefix, agentID) }
 
 func (r *RedisCache) CacheAgentProfile(ctx context.Context, ap *models.AgentProfile) error {
 	val, err := json.Marshal(ap)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return r.client.Set(ctx, agentKey(ap.AgentCode), val, agentTTL).Err()
 }
 
 func (r *RedisCache) GetAgentProfile(ctx context.Context, code string) (*models.AgentProfile, error) {
 	val, err := r.client.Get(ctx, agentKey(code)).Result()
-	if err == redis.Nil { return nil, nil }
-	if err != nil { return nil, err }
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var ap models.AgentProfile
-	if err := json.Unmarshal([]byte(val), &ap); err != nil { return nil, err }
+	if err := json.Unmarshal([]byte(val), &ap); err != nil {
+		return nil, err
+	}
 	return &ap, nil
 }
 
 func (r *RedisCache) CacheDashboard(ctx context.Context, dash *models.CommissionDashboard) error {
 	val, err := json.Marshal(dash)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return r.client.Set(ctx, dashboardKey(), val, dashboardTTL).Err()
 }
 
 func (r *RedisCache) GetCachedDashboard(ctx context.Context) (*models.CommissionDashboard, error) {
 	val, err := r.client.Get(ctx, dashboardKey()).Result()
-	if err == redis.Nil { return nil, nil }
-	if err != nil { return nil, err }
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var dash models.CommissionDashboard
-	if err := json.Unmarshal([]byte(val), &dash); err != nil { return nil, err }
+	if err := json.Unmarshal([]byte(val), &dash); err != nil {
+		return nil, err
+	}
 	return &dash, nil
 }
 
@@ -83,17 +99,17 @@ func (r *RedisCache) IncrementEarned(ctx context.Context, agentID string, amount
 }
 
 func (r *RedisCache) GetEarned(ctx context.Context, agentID string) (float64, error) {
-	return r.client.HGetFloat(ctx, totalEarnedKey(agentID), "total")
+	return hGetFloat(r.client, ctx, totalEarnedKey(agentID), "total")
 }
 
 func (r *RedisCache) PublishCommissionEvent(ctx context.Context, agentID, commissionID string, amount float64) error {
 	channel := "comm:new_commission"
 	data := map[string]interface{}{
-		"event":        "commission_calculated",
-		"agent_id":     agentID,
+		"event":         "commission_calculated",
+		"agent_id":      agentID,
 		"commission_id": commissionID,
-		"amount":       amount,
-		"timestamp":    time.Now().Format(time.RFC3339),
+		"amount":        amount,
+		"timestamp":     time.Now().Format(time.RFC3339),
 	}
 	val, _ := json.Marshal(data)
 	return r.client.Publish(ctx, channel, val).Err()
@@ -102,11 +118,11 @@ func (r *RedisCache) PublishCommissionEvent(ctx context.Context, agentID, commis
 func (r *RedisCache) PublishPaymentEvent(ctx context.Context, paymentID, agentID string, amount float64) error {
 	channel := "comm:new_payment"
 	data := map[string]interface{}{
-		"event":     "payment_processed",
+		"event":      "payment_processed",
 		"payment_id": paymentID,
-		"agent_id":  agentID,
-		"amount":    amount,
-		"timestamp": time.Now().Format(time.RFC3339),
+		"agent_id":   agentID,
+		"amount":     amount,
+		"timestamp":  time.Now().Format(time.RFC3339),
 	}
 	val, _ := json.Marshal(data)
 	return r.client.Publish(ctx, channel, val).Err()
@@ -115,11 +131,11 @@ func (r *RedisCache) PublishPaymentEvent(ctx context.Context, paymentID, agentID
 func (r *RedisCache) PublishClawbackEvent(ctx context.Context, commissionID, agentID string, amount float64) error {
 	channel := "comm:clawback"
 	data := map[string]interface{}{
-		"event":       "commission_clawed_back",
+		"event":         "commission_clawed_back",
 		"commission_id": commissionID,
-		"agent_id":    agentID,
-		"amount":      amount,
-		"timestamp":   time.Now().Format(time.RFC3339),
+		"agent_id":      agentID,
+		"amount":        amount,
+		"timestamp":     time.Now().Format(time.RFC3339),
 	}
 	val, _ := json.Marshal(data)
 	return r.client.Publish(ctx, channel, val).Err()
@@ -145,6 +161,12 @@ func (r *RedisCache) GetTopAgent(ctx context.Context, n int) (string, float64, e
 
 func (r *RedisCache) SetPeriodCache(ctx context.Context, agentID string, period *models.CommissionPeriod) error {
 	val, err := json.Marshal(period)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return r.client.Set(ctx, periodKey(agentID), val, periodTTL).Err()
+}
+
+func hGetFloat(c *redis.Client, ctx context.Context, key, field string) (float64, error) {
+	return c.HGet(ctx, key, field).Float64()
 }

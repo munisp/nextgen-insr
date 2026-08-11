@@ -14,7 +14,7 @@ import (
 	"github.com/insureportal/disaster_recovery_module/config"
 	"github.com/insureportal/disaster_recovery_module/db"
 	"github.com/insureportal/disaster_recovery_module/internal/handlers"
-	"github.com/insureportal/disaster_recovery_module/internal/middleware"
+	appmw "github.com/insureportal/disaster_recovery_module/internal/middleware"
 	"github.com/insureportal/disaster_recovery_module/internal/service"
 	"go.uber.org/zap"
 )
@@ -72,9 +72,9 @@ func main() {
 
 	// Core middleware
 	r.Use(middleware.RequestID)
-	r.Use(middleware.CORSMiddleware())
-	r.Use(middleware.RecovererWithLogger(log))
-	r.Use(middleware.LoggerWithConfig(log))
+	r.Use(appmw.CORSMiddleware())
+	r.Use(RecovererWithLogger(log))
+	r.Use(LoggerWithConfig(log))
 	r.Use(middleware.RealIP)
 	r.Use(middleware.RequestID)
 
@@ -84,7 +84,7 @@ func main() {
 
 	// API v1 routes
 	r.Group(func(api chi.Router) {
-		api.Use(middleware.APIKeyAuth)
+		api.Use(appmw.APIKeyAuth)
 
 		// Dashboard
 		api.Get("/api/v1/dashboard", h.GetDashboard)
@@ -194,9 +194,10 @@ type DefaultLogEntry struct {
 	request *http.Request
 }
 
-func (e *DefaultLogEntry) Write(keys, values []interface{}) {
+func (e *DefaultLogEntry) Write(status, bytes int, header http.Header, elapsed time.Duration, extra interface{}) {
 	// Simple key-value logging
-	l := e.log.With(zap.String("request_id", e.request.Context().Value("request_id")))
+	requestID, _ := e.request.Context().Value("request_id").(string)
+	l := e.log.With(zap.String("request_id", requestID))
 	// Log format: method path status remote_ip
 	l.Info("request",
 		zap.String("method", e.request.Method),

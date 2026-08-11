@@ -2,10 +2,8 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"reinsurance-service/config"
 )
@@ -14,16 +12,26 @@ type Postgres struct{ Pool *pgxpool.Pool }
 
 func NewPostgres(ctx context.Context, cfg *config.PostgresConfig) (*Postgres, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.DSN())
-	if err != nil { return nil, fmt.Errorf("parse postgres config: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("parse postgres config: %w", err)
+	}
 	poolCfg.MaxConns = int32(cfg.MaxOpenConns)
 	poolCfg.MinConns = 3
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil { return nil, fmt.Errorf("connect to postgres: %w", err) }
-	if err := pool.Ping(ctx); err != nil { return nil, fmt.Errorf("ping postgres: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("connect to postgres: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("ping postgres: %w", err)
+	}
 	return &Postgres{Pool: pool}, nil
 }
 
-func (p *Postgres) Close() { if p != nil && p.Pool != nil { p.Pool.Close() } }
+func (p *Postgres) Close() {
+	if p != nil && p.Pool != nil {
+		p.Pool.Close()
+	}
+}
 
 func (p *Postgres) RunMigrations(ctx context.Context) error {
 	migrations := []string{
@@ -148,7 +156,9 @@ func (p *Postgres) GetTreaty(ctx context.Context, id string) (*TreatyDB, error) 
 		&t.CessionRate, &t.PremiumShare, &t.CommissionRate, &t.ClawbackRate,
 		&t.MinimumCeded, &t.Status, &t.Currency, &t.Metadata, &t.CreatedAt, &t.UpdatedAt,
 	)
-	if err != nil { return nil, fmt.Errorf("get treaty: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("get treaty: %w", err)
+	}
 	return t, nil
 }
 
@@ -165,7 +175,9 @@ func (p *Postgres) GetTreatyByRef(ctx context.Context, refID string) (*TreatyDB,
 		&t.CessionRate, &t.PremiumShare, &t.CommissionRate, &t.ClawbackRate,
 		&t.MinimumCeded, &t.Status, &t.Currency, &t.Metadata, &t.CreatedAt, &t.UpdatedAt,
 	)
-	if err != nil { return nil, fmt.Errorf("get treaty by ref: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("get treaty by ref: %w", err)
+	}
 	return t, nil
 }
 
@@ -176,14 +188,26 @@ func (p *Postgres) ListTreaties(ctx context.Context, status, treatyType string, 
 	args := []interface{}{}
 	argCount := 1
 	conds := []string{}
-	if status != "" { conds = append(conds, fmt.Sprintf("status = $%d", argCount)); args = append(args, status); argCount++ }
-	if treatyType != "" { conds = append(conds, fmt.Sprintf("type = $%d", argCount)); args = append(args, treatyType); argCount++ }
-	if len(conds) > 0 { query += " WHERE " + joinConds(conds) }
+	if status != "" {
+		conds = append(conds, fmt.Sprintf("status = $%d", argCount))
+		args = append(args, status)
+		argCount++
+	}
+	if treatyType != "" {
+		conds = append(conds, fmt.Sprintf("type = $%d", argCount))
+		args = append(args, treatyType)
+		argCount++
+	}
+	if len(conds) > 0 {
+		query += " WHERE " + joinConds(conds)
+	}
 	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argCount, argCount+1)
 	args = append(args, limit, offset)
 
 	rows, err := p.Pool.Query(ctx, query, args...)
-	if err != nil { return nil, fmt.Errorf("list treaties: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("list treaties: %w", err)
+	}
 	defer rows.Close()
 
 	var treaties []*TreatyDB
@@ -194,7 +218,9 @@ func (p *Postgres) ListTreaties(ctx context.Context, status, treatyType string, 
 			&t.EffectiveDate, &t.ExpiryDate, &t.Period, &t.Retention, &t.Limit,
 			&t.CessionRate, &t.PremiumShare, &t.CommissionRate, &t.ClawbackRate,
 			&t.MinimumCeded, &t.Status, &t.Currency, &t.Metadata, &t.CreatedAt, &t.UpdatedAt,
-		); err != nil { return nil, fmt.Errorf("scan treaty: %w", err) }
+		); err != nil {
+			return nil, fmt.Errorf("scan treaty: %w", err)
+		}
 		treaties = append(treaties, t)
 	}
 	return treaties, nil
@@ -228,7 +254,9 @@ func (p *Postgres) GetCession(ctx context.Context, cessionID string) (*CessionDB
 		&c.Retention, &c.CededAmount, &c.CessionRate, &c.Reinsurer, &c.Type, &c.Status,
 		&c.AcceptedAt, &c.RejectedAt, &c.RejectReason, &c.Metadata, &c.CreatedAt, &c.UpdatedAt,
 	)
-	if err != nil { return nil, fmt.Errorf("get cession: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("get cession: %w", err)
+	}
 	return c, nil
 }
 
@@ -267,7 +295,9 @@ func (p *Postgres) GetTreatySummary(ctx context.Context, treatyID string) (*Trea
 		&s.GrossWritten, &s.CededPremium, &s.OutstandingRetention,
 		&s.TotalClaims, &s.Recoveries, &s.CommissionEarned,
 	)
-	if err != nil { return nil, fmt.Errorf("get treaty summary: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("get treaty summary: %w", err)
+	}
 	s.NetExposed = s.GrossWritten - s.CededPremium
 	return s, nil
 }
@@ -275,7 +305,9 @@ func (p *Postgres) GetTreatySummary(ctx context.Context, treatyID string) (*Trea
 func joinConds(conds []string) string {
 	result := ""
 	for i, c := range conds {
-		if i > 0 { result += " AND " }
+		if i > 0 {
+			result += " AND "
+		}
 		result += c
 	}
 	return result
@@ -283,82 +315,82 @@ func joinConds(conds []string) string {
 
 // TreatyDB is the database model
 type TreatyDB struct {
-	ID             string         `db:"id"`
-	TreatyID       string         `db:"treaty_id"`
-	Name           string         `db:"name"`
-	Type           string         `db:"type"`
-	Reinsurer      string         `db:"reinsurer"`
-	ReinsurerCode  string         `db:"reinsurer_code"`
-	EffectiveDate  string         `db:"effective_date"`
-	ExpiryDate     string         `db:"expiry_date"`
-	Period         string         `db:"period"`
-	Retention      float64        `db:"retention"`
-	Limit          float64        `db:"limit"`
-	CessionRate    float64        `db:"cession_rate"`
-	PremiumShare   float64        `db:"premium_share"`
-	CommissionRate float64        `db:"commission_rate"`
-	ClawbackRate   float64        `db:"clawback_rate"`
-	MinimumCeded   float64        `db:"minimum_ceded"`
-	Status         string         `db:"status"`
-	Currency       string         `db:"currency"`
-	Metadata       string         `db:"metadata"`
-	CreatedAt      string         `db:"created_at"`
-	UpdatedAt      string         `db:"updated_at"`
+	ID             string  `db:"id"`
+	TreatyID       string  `db:"treaty_id"`
+	Name           string  `db:"name"`
+	Type           string  `db:"type"`
+	Reinsurer      string  `db:"reinsurer"`
+	ReinsurerCode  string  `db:"reinsurer_code"`
+	EffectiveDate  string  `db:"effective_date"`
+	ExpiryDate     string  `db:"expiry_date"`
+	Period         string  `db:"period"`
+	Retention      float64 `db:"retention"`
+	Limit          float64 `db:"limit"`
+	CessionRate    float64 `db:"cession_rate"`
+	PremiumShare   float64 `db:"premium_share"`
+	CommissionRate float64 `db:"commission_rate"`
+	ClawbackRate   float64 `db:"clawback_rate"`
+	MinimumCeded   float64 `db:"minimum_ceded"`
+	Status         string  `db:"status"`
+	Currency       string  `db:"currency"`
+	Metadata       string  `db:"metadata"`
+	CreatedAt      string  `db:"created_at"`
+	UpdatedAt      string  `db:"updated_at"`
 }
 
 // CessionDB is the database model
 type CessionDB struct {
-	ID           string         `db:"id"`
-	CessionID    string         `db:"cession_id"`
-	TreatyID     string         `db:"treaty_id"`
-	PolicyID     string         `db:"policy_id"`
-	RiskType     string         `db:"risk_type"`
-	GrossAmount  float64        `db:"gross_amount"`
-	Retention    float64        `db:"retention"`
-	CededAmount  float64        `db:"ceded_amount"`
-	CessionRate  float64        `db:"cession_rate"`
-	Reinsurer    string         `db:"reinsurer"`
-	Type         string         `db:"type"`
-	Status       string         `db:"status"`
-	AcceptedAt   *string        `db:"accepted_at"`
-	RejectedAt   *string        `db:"rejected_at"`
-	RejectReason string         `db:"reject_reason"`
-	Metadata     string         `db:"metadata"`
-	CreatedAt    string         `db:"created_at"`
-	UpdatedAt    string         `db:"updated_at"`
+	ID           string  `db:"id"`
+	CessionID    string  `db:"cession_id"`
+	TreatyID     string  `db:"treaty_id"`
+	PolicyID     string  `db:"policy_id"`
+	RiskType     string  `db:"risk_type"`
+	GrossAmount  float64 `db:"gross_amount"`
+	Retention    float64 `db:"retention"`
+	CededAmount  float64 `db:"ceded_amount"`
+	CessionRate  float64 `db:"cession_rate"`
+	Reinsurer    string  `db:"reinsurer"`
+	Type         string  `db:"type"`
+	Status       string  `db:"status"`
+	AcceptedAt   *string `db:"accepted_at"`
+	RejectedAt   *string `db:"rejected_at"`
+	RejectReason string  `db:"reject_reason"`
+	Metadata     string  `db:"metadata"`
+	CreatedAt    string  `db:"created_at"`
+	UpdatedAt    string  `db:"updated_at"`
 }
 
 // RecoveryDB is the database model
 type RecoveryDB struct {
-	ID            string    `db:"id"`
-	CessionID     string    `db:"cession_id"`
-	TreatyID      string    `db:"treaty_id"`
-	PolicyID      string    `db:"policy_id"`
-	ClaimAmount   float64   `db:"claim_amount"`
-	GrossRecovery float64   `db:"gross_recovery"`
-	NetRecovery   float64   `db:"net_recovery"`
-	Commission    float64   `db:"commission"`
-	Clawback      float64   `db:"clawback"`
-	Status        string    `db:"status"`
-	ProcessedAt   *string   `db:"processed_at"`
-	CreatedAt     string    `db:"created_at"`
+	ID            string  `db:"id"`
+	CessionID     string  `db:"cession_id"`
+	TreatyID      string  `db:"treaty_id"`
+	PolicyID      string  `db:"policy_id"`
+	ClaimAmount   float64 `db:"claim_amount"`
+	GrossRecovery float64 `db:"gross_recovery"`
+	NetRecovery   float64 `db:"net_recovery"`
+	Commission    float64 `db:"commission"`
+	Clawback      float64 `db:"clawback"`
+	Status        string  `db:"status"`
+	ProcessedAt   *string `db:"processed_at"`
+	CreatedAt     string  `db:"created_at"`
 }
 
 // CommissionDB is the database model
 type CommissionDB struct {
-	ID              string    `db:"id"`
-	TreatyID        string    `db:"treaty_id"`
-	Period          string    `db:"period"`
-	CededPremium    float64   `db:"ceded_premium"`
-	GrossCommission float64   `db:"gross_commission"`
-	CommissionRate  float64   `db:"commission_rate"`
-	ClawbackAmount  float64   `db:"clawback_amount"`
-	NetCommission   float64   `db:"net_commission"`
-	PaidAmount      float64   `db:"paid_amount"`
-	Outstanding     float64   `db:"outstanding"`
-	Status          string    `db:"status"`
-	PaidAt          *string   `db:"paid_at"`
-	CreatedAt       string    `db:"created_at"`
+	ID              string  `db:"id"`
+	TreatyID        string  `db:"treaty_id"`
+	Period          string  `db:"period"`
+	CededPremium    float64 `db:"ceded_premium"`
+	GrossCommission float64 `db:"gross_commission"`
+	CommissionRate  float64 `db:"commission_rate"`
+	ClawbackAmount  float64 `db:"clawback_amount"`
+	NetCommission   float64 `db:"net_commission"`
+	PaidAmount      float64 `db:"paid_amount"`
+	Outstanding     float64 `db:"outstanding"`
+	Status          string  `db:"status"`
+	PaidAt          *string `db:"paid_at"`
+	CreatedAt       string  `db:"created_at"`
 }
 
 // TreatySummaryDB is the database model for treaty summaries

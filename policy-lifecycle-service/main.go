@@ -1,39 +1,36 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
-	"io"
 	"bytes"
-	"encoding/json"
-	"log"
-	"net/http"
-	"strconv"
-	"strings"
-	"syscall"
-	"sync"
-	"time"
 	"context"
 	"database/sql"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
-	"fmt"
-
-	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
+	"strconv"
+	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -41,9 +38,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -57,7 +58,9 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // Policy Lifecycle Service
@@ -67,6 +70,7 @@ func (c *circuitBreaker) recordFailure() {
 // State Machine: draft → quoted → bound → active → endorsed → renewed | cancelled | lapsed | expired
 
 type PolicyState string
+
 const (
 	StateDraft     PolicyState = "draft"
 	StateQuoted    PolicyState = "quoted"
@@ -80,18 +84,22 @@ const (
 )
 
 var validTransitions = map[PolicyState][]PolicyState{
-	StateDraft:     {StateQuoted},
-	StateQuoted:    {StateBound, StateDraft},
-	StateBound:     {StateActive},
-	StateActive:    {StateEndorsed, StateRenewed, StateCancelled, StateLapsed, StateExpired},
-	StateEndorsed:  {StateActive, StateCancelled},
+	StateDraft:    {StateQuoted},
+	StateQuoted:   {StateBound, StateDraft},
+	StateBound:    {StateActive},
+	StateActive:   {StateEndorsed, StateRenewed, StateCancelled, StateLapsed, StateExpired},
+	StateEndorsed: {StateActive, StateCancelled},
 }
 
 func isValidTransition(from, to PolicyState) bool {
 	allowed, ok := validTransitions[from]
-	if !ok { return false }
+	if !ok {
+		return false
+	}
 	for _, s := range allowed {
-		if s == to { return true }
+		if s == to {
+			return true
+		}
 	}
 	return false
 }
@@ -121,15 +129,13 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
-
-
 func handleTransition(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
-		PolicyID string `json:"policy_id"`
+		PolicyID  string `json:"policy_id"`
 		FromState string `json:"from_state"`
 		ToState   string `json:"to_state"`
 		Reason    string `json:"reason"`
@@ -141,7 +147,7 @@ func handleTransition(w http.ResponseWriter, r *http.Request) {
 	if !isValidTransition(PolicyState(req.FromState), PolicyState(req.ToState)) {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Invalid state transition",
+			"error":   "Invalid state transition",
 			"allowed": "See /api/v1/transitions for valid transitions",
 		})
 		return
@@ -155,7 +161,6 @@ func handleTransition(w http.ResponseWriter, r *http.Request) {
 func handleTransitions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(validTransitions)
 }
-
 
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
@@ -190,7 +195,6 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 	}
 	return n, nil
 }
-
 
 var db *sql.DB
 
@@ -248,8 +252,6 @@ func execInTransaction(fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-
-
 // otelMiddleware adds trace context propagation to requests.
 func otelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -269,16 +271,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -289,9 +288,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -299,7 +303,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -341,9 +347,13 @@ func jsonLog(level, msg string, kvs ...string) {
 func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -372,20 +382,26 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
-		if err := rows.Scan(ptrs...); err != nil { continue }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-		switch v := vals[i].(type) {
-		case []byte:
-			row[col] = string(v)
-		default:
-			row[col] = v
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
-	}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
@@ -409,7 +425,9 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -429,7 +447,8 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value("user_id").(string)
 	if !permifyCheck(r.Context(), "policy-lifecycle-service", "", "create", userID) {
-		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden); return
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	var body map[string]interface{}
@@ -442,7 +461,9 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -460,13 +481,17 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 	// Index to OpenSearch for full-text search
 	if osClient != nil {
 		go osClient.IndexLog("info", "entity_created", "policy-lifecycle-service", map[string]interface{}{"action": "created", "timestamp": time.Now().Format(time.RFC3339)})
 	}
-	if redisClient != nil { redisClient.CacheInvalidate("policy-lifecycle-service:list") }
+	if redisClient != nil {
+		redisClient.CacheInvalidate("policy-lifecycle-service:list")
+	}
 	go daprPublish("policy-lifecycle-service.entity.created", map[string]interface{}{"service": "policy-lifecycle-service", "action": "created"})
 }
 
@@ -491,7 +516,9 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
@@ -504,12 +531,11 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"service": "policy_transitions", "table": "policy_transitions", "total_records": count})
 }
 
-
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -520,6 +546,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -528,7 +555,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -549,35 +578,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -588,7 +633,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -599,6 +646,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -607,9 +655,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -666,6 +718,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -692,9 +745,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -813,8 +870,6 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
-
 // ── Temporal Workflow Integration ──────────────────────────────────────────
 type temporalClient struct {
 	hostPort string
@@ -873,22 +928,24 @@ func (tc *temporalClient) SignalWorkflow(ctx context.Context, workflowID, signal
 
 var temporalCli *temporalClient
 
-
-
 // Dapr sidecar integration
 var daprClient *http.Client
 var daprBaseURL string
 
 func initDapr() {
 	daprPort := os.Getenv("DAPR_HTTP_PORT")
-	if daprPort == "" { daprPort = "3500" }
+	if daprPort == "" {
+		daprPort = "3500"
+	}
 	daprBaseURL = "http://localhost:" + daprPort
 	daprClient = &http.Client{Timeout: 5 * time.Second}
 	jsonLog("info", "dapr_sidecar_configured", "port", daprPort)
 }
 
 func daprPublish(topic string, data interface{}) {
-	if daprClient == nil { return }
+	if daprClient == nil {
+		return
+	}
 	body, _ := json.Marshal(data)
 	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
 	if req != nil {
@@ -898,14 +955,20 @@ func daprPublish(topic string, data interface{}) {
 }
 
 func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
-	if daprClient == nil { return nil, fmt.Errorf("dapr not initialized") }
+	if daprClient == nil {
+		return nil, fmt.Errorf("dapr not initialized")
+	}
 	body, _ := json.Marshal(data)
 	url := fmt.Sprintf("%s/v1.0/invoke/%s/method/%s", daprBaseURL, appID, method)
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
-	if req == nil { return nil, fmt.Errorf("failed to create request") }
+	if req == nil {
+		return nil, fmt.Errorf("failed to create request")
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := daprClient.Do(req)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
 }
@@ -914,20 +977,6 @@ func bodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
 			r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB limit
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -961,34 +1010,6 @@ var (
 	rateLimitMu    sync.Mutex
 	rateLimitStore = make(map[string][]time.Time)
 )
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		rateLimitMu.Lock()
-		now := time.Now()
-		window := now.Add(-1 * time.Minute)
-		var recent []time.Time
-		for _, t := range rateLimitStore[ip] {
-			if t.After(window) {
-				recent = append(recent, t)
-			}
-		}
-		if len(recent) >= 100 {
-			rateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
-			return
-		}
-		recent = append(recent, now)
-		rateLimitStore[ip] = recent
-		rateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
 
 func main() {
 	initDB()

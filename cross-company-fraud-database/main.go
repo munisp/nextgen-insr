@@ -1,17 +1,17 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,19 +20,19 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
 )
 
 var db *sql.DB
+
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -40,9 +40,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -56,15 +60,16 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
-
 
 // ─── Production Middleware ───────────────────────────────────────────────────
 
 var (
-	reqCount    int64
-	errCount    int64
+	reqCount     int64
+	errCount     int64
 	avgLatencyMs float64
 )
 
@@ -157,9 +162,6 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
 func execInTransaction(fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -232,7 +234,6 @@ func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 // ─── Domain Handlers ─────────────────────────────────────────────────────────
 
 func handleList(w http.ResponseWriter, r *http.Request) {
@@ -251,9 +252,13 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -277,7 +282,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
 		if err := rows.Scan(ptrs...); err != nil {
 			continue
 		}
@@ -292,7 +299,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
@@ -335,7 +344,9 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -376,7 +387,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -404,7 +417,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -437,7 +452,9 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
 }
 
@@ -475,10 +492,10 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	db.QueryRow("SELECT COUNT(*) FROM fraud_reports").Scan(&count)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service": "cross-company-fraud-database",
-		"table":   "fraud_reports",
+		"service":       "cross-company-fraud-database",
+		"table":         "fraud_reports",
 		"total_records": count,
-		"uptime":  time.Since(startTime).String(),
+		"uptime":        time.Since(startTime).String(),
 	})
 }
 
@@ -522,26 +539,26 @@ func checkAMLThresholds(amount float64, txType string, customerRisk string) (boo
 
 // Generate CTR (Currency Transaction Report) per CBN format
 type CTRReport struct {
-	ReportID       string  `json:"report_id"`
-	TransactionID  string  `json:"transaction_id"`
-	CustomerName   string  `json:"customer_name"`
-	CustomerBVN    string  `json:"customer_bvn"`
-	Amount         float64 `json:"amount"`
-	TransactionType string `json:"transaction_type"`
-	FilingDeadline string  `json:"filing_deadline"` // Within 7 days per CBN
-	Status         string  `json:"status"`
+	ReportID        string  `json:"report_id"`
+	TransactionID   string  `json:"transaction_id"`
+	CustomerName    string  `json:"customer_name"`
+	CustomerBVN     string  `json:"customer_bvn"`
+	Amount          float64 `json:"amount"`
+	TransactionType string  `json:"transaction_type"`
+	FilingDeadline  string  `json:"filing_deadline"` // Within 7 days per CBN
+	Status          string  `json:"status"`
 }
 
 func generateCTR(txID, customerName, bvn string, amount float64, txType string) CTRReport {
 	return CTRReport{
-		ReportID:       fmt.Sprintf("CTR-%d", time.Now().UnixNano()%100000000),
-		TransactionID:  txID,
-		CustomerName:   customerName,
-		CustomerBVN:    bvn,
-		Amount:         amount,
+		ReportID:        fmt.Sprintf("CTR-%d", time.Now().UnixNano()%100000000),
+		TransactionID:   txID,
+		CustomerName:    customerName,
+		CustomerBVN:     bvn,
+		Amount:          amount,
 		TransactionType: txType,
-		FilingDeadline: time.Now().Add(7 * 24 * time.Hour).Format(time.RFC3339),
-		Status:         "pending_filing",
+		FilingDeadline:  time.Now().Add(7 * 24 * time.Hour).Format(time.RFC3339),
+		Status:          "pending_filing",
 	}
 }
 
@@ -551,12 +568,12 @@ func handleCheckAML(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Amount       float64 `json:"amount"`
-		TxType       string  `json:"transaction_type"`
-		CustomerRisk string  `json:"customer_risk"`
-		CustomerName string  `json:"customer_name"`
-		CustomerBVN  string  `json:"customer_bvn"`
-		TransactionID string `json:"transaction_id"`
+		Amount        float64 `json:"amount"`
+		TxType        string  `json:"transaction_type"`
+		CustomerRisk  string  `json:"customer_risk"`
+		CustomerName  string  `json:"customer_name"`
+		CustomerBVN   string  `json:"customer_bvn"`
+		TransactionID string  `json:"transaction_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
@@ -595,34 +612,50 @@ func handleFraudRingAnalysis(w http.ResponseWriter, r *http.Request) {
 	visited := map[string]bool{}
 	clusters := [][]string{}
 	for _, e := range req.Entities {
-		if visited[e.ID] { continue }
+		if visited[e.ID] {
+			continue
+		}
 		cluster := []string{}
 		queue := []string{e.ID}
 		for len(queue) > 0 {
-			node := queue[0]; queue = queue[1:]
-			if visited[node] { continue }
+			node := queue[0]
+			queue = queue[1:]
+			if visited[node] {
+				continue
+			}
 			visited[node] = true
 			cluster = append(cluster, node)
 			for _, link := range adjacency[node] {
-				if !visited[link] { queue = append(queue, link) }
+				if !visited[link] {
+					queue = append(queue, link)
+				}
 			}
 		}
-		if len(cluster) > 1 { clusters = append(clusters, cluster) }
+		if len(cluster) > 1 {
+			clusters = append(clusters, cluster)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"fraud_rings": clusters,
 		"ring_count":  len(clusters),
-		"risk_level":  func() string { if len(clusters) > 3 { return "critical" }; if len(clusters) > 0 { return "high" }; return "low" }(),
+		"risk_level": func() string {
+			if len(clusters) > 3 {
+				return "critical"
+			}
+			if len(clusters) > 0 {
+				return "high"
+			}
+			return "low"
+		}(),
 	})
 }
 
-
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -633,6 +666,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -641,7 +675,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -662,35 +698,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -701,7 +753,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -712,6 +766,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -720,9 +775,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -779,6 +838,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -805,9 +865,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -925,20 +989,20 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
-
 func handleCrossReference(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	var req struct {
-		BVNHash    string `json:"bvn_hash"`
-		Name       string `json:"name"`
-		PhoneHash  string `json:"phone_hash"`
+		BVNHash   string `json:"bvn_hash"`
+		Name      string `json:"name"`
+		PhoneHash string `json:"phone_hash"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	if req.BVNHash == "" && req.Name == "" {
-		http.Error(w, `{"error":"bvn_hash or name required"}`, http.StatusBadRequest); return
+		http.Error(w, `{"error":"bvn_hash or name required"}`, http.StatusBadRequest)
+		return
 	}
 	var matches int
 	var maxSeverity string
@@ -946,14 +1010,19 @@ func handleCrossReference(w http.ResponseWriter, r *http.Request) {
 		db.QueryRow("SELECT COUNT(*), COALESCE(MAX(severity),'none') FROM fraud_records WHERE bvn_hash=$1 OR name=$2", req.BVNHash, req.Name).Scan(&matches, &maxSeverity)
 	}
 	riskLevel := "clear"
-	if matches > 3 { riskLevel = "high" } else if matches > 0 { riskLevel = "flagged" }
+	if matches > 3 {
+		riskLevel = "high"
+	} else if matches > 0 {
+		riskLevel = "flagged"
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"matches": matches, "risk_level": riskLevel, "max_severity": maxSeverity})
 }
 
 func handleReportFraud(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	var req struct {
 		BVNHash  string `json:"bvn_hash"`
@@ -964,7 +1033,8 @@ func handleReportFraud(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	if req.BVNHash == "" || req.Severity == "" {
-		http.Error(w, `{"error":"bvn_hash and severity required"}`, http.StatusBadRequest); return
+		http.Error(w, `{"error":"bvn_hash and severity required"}`, http.StatusBadRequest)
+		return
 	}
 	if db != nil {
 		db.Exec("INSERT INTO fraud_records (bvn_hash, name, severity, reason, reporter, created_at) VALUES ($1,$2,$3,$4,$5,NOW())", req.BVNHash, req.Name, req.Severity, req.Reason, req.Reporter)

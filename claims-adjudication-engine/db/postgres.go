@@ -357,13 +357,6 @@ func (r *ClaimsRepository) GetClaim(ctx context.Context, id string) (*models.Cla
 		return nil, fmt.Errorf("failed to get claim: %w", err)
 	}
 
-	if err := json.Unmarshal(claim.FraudFlags, &claim.FraudFlags); err != nil {
-		claim.FraudFlags = nil
-	}
-	if err := json.Unmarshal(claim.ComplianceTags, &claim.ComplianceTags); err != nil {
-		claim.ComplianceTags = nil
-	}
-
 	return claim, nil
 }
 

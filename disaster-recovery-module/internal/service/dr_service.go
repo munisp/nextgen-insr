@@ -170,8 +170,8 @@ func (s *DRService) CreateDRDrill(ctx context.Context, drill *models.DRDrill) er
 	}
 
 	// Cache the next drill schedule
-	s.nextDrillDate := drill.ScheduledAt.Format("2006-01-02")
-	s.rdb.SetDrillSchedule(ctx, s.nextDrillDate)
+	nextDrillDate := drill.ScheduledAt.Format("2006-01-02")
+	s.rdb.SetDrillSchedule(ctx, nextDrillDate)
 
 	s.log.Info("DR drill scheduled",
 		zap.String("drill", drill.DrillNumber),

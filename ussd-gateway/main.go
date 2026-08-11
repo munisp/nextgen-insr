@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -27,12 +26,12 @@ import (
 
 // Config holds all runtime configuration, loaded from environment variables.
 type Config struct {
-	Port       int
+	Port        int
 	DatabaseDSN string
-	RedisAddr  string
-	RedisPass  string
-	RedisDB    int
-	LogLevel   string
+	RedisAddr   string
+	RedisPass   string
+	RedisDB     int
+	LogLevel    string
 }
 
 func loadConfig() Config {
@@ -196,9 +195,9 @@ func (app *Application) processInput(ctx context.Context, sess *models.SessionDa
 	// Session timeout check
 	if time.Now().After(sess.ExpiresAt) {
 		return models.USSDResponse{
-			Text:       "Session expired. Dial *384*100# to start again.",
+			Text:         "Session expired. Dial *384*100# to start again.",
 			CloseSession: true,
-			Action:     "end",
+			Action:       "end",
 		}, nil
 	}
 
@@ -291,16 +290,16 @@ func (app *Application) stateMainMenu(sess *models.SessionData, input string) (m
 	case "5":
 		sess.State = "agent_menu"
 		return models.USSDResponse{
-			Text:       "AGENT SERVICES\n1. Register as Agent\n2. Float Insurance Claim\n3. My Agent Details\n0. Back to Main Menu\n\nEnter your choice:",
+			Text:         "AGENT SERVICES\n1. Register as Agent\n2. Float Insurance Claim\n3. My Agent Details\n0. Back to Main Menu\n\nEnter your choice:",
 			CloseSession: false,
-			Action:     "menu",
+			Action:       "menu",
 		}, nil
 	case "6":
 		sess.State = "claim_status_input"
 		return models.USSDResponse{
-			Text:       "Enter your transaction reference ID (e.g. TXN-xxxxxxxx):",
+			Text:         "Enter your transaction reference ID (e.g. TXN-xxxxxxxx):",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	case "0":
 		sess.State = "end"
@@ -311,7 +310,7 @@ func (app *Application) stateMainMenu(sess *models.SessionData, input string) (m
 		}, nil
 	default:
 		return models.USSDResponse{
-			Text: "Welcome to NGApp Insurance\n1. Life Insurance\n2. Health Insurance\n3. Motor Insurance\n4. Micro-insurance\n5. Agent Services\n6. Claim Status\n\nEnter your choice:",
+			Text:   "Welcome to NGApp Insurance\n1. Life Insurance\n2. Health Insurance\n3. Motor Insurance\n4. Micro-insurance\n5. Agent Services\n6. Claim Status\n\nEnter your choice:",
 			Action: "menu",
 		}, nil
 	}
@@ -342,9 +341,9 @@ func (app *Application) renderProductField(sess *models.SessionData) models.USSD
 	fieldLabel := formatFieldName(field)
 
 	return models.USSDResponse{
-		Text:       fmt.Sprintf("%s\n\n%s", product.Name+"\n"+product.Description, fieldLabel),
+		Text:         fmt.Sprintf("%s\n\n%s", product.Name+"\n"+product.Description, fieldLabel),
 		CloseSession: false,
-		Action:     "continue",
+		Action:       "continue",
 	}
 }
 
@@ -421,9 +420,9 @@ func (app *Application) stateProductEnroll(sess *models.SessionData, input strin
 	// Check for cancellation.
 	if strings.ToUpper(input) == "0" || input == "BACK" {
 		return models.USSDResponse{
-			Text:       "Enrollment cancelled. Returning to main menu.",
+			Text:         "Enrollment cancelled. Returning to main menu.",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 
@@ -465,9 +464,9 @@ func (app *Application) renderProductConfirm(sess *models.SessionData) models.US
 	sess.Data["summary"] = sb.String()
 
 	return models.USSDResponse{
-		Text:       sb.String(),
+		Text:         sb.String(),
 		CloseSession: false,
-		Action:     "confirm",
+		Action:       "confirm",
 	}
 }
 
@@ -489,9 +488,9 @@ func (app *Application) renderAgentRegisterConfirm(sess *models.SessionData) mod
 	sb.WriteString("\n1. Confirm\n0. Cancel")
 
 	return models.USSDResponse{
-		Text:       sb.String(),
+		Text:         sb.String(),
 		CloseSession: false,
-		Action:     "confirm",
+		Action:       "confirm",
 	}
 }
 
@@ -508,9 +507,9 @@ func (app *Application) renderAgentFloatConfirm(sess *models.SessionData) models
 	sb.WriteString("1. Confirm\n0. Cancel")
 
 	return models.USSDResponse{
-		Text:       sb.String(),
+		Text:         sb.String(),
 		CloseSession: false,
-		Action:     "confirm",
+		Action:       "confirm",
 	}
 }
 
@@ -592,34 +591,34 @@ func (app *Application) stateAgentMenu(sess *models.SessionData, input string) (
 	case "1":
 		sess.State = "agent_register_name"
 		return models.USSDResponse{
-			Text:       "AGENT REGISTRATION\nStep 1/5\nEnter your full name:",
+			Text:         "AGENT REGISTRATION\nStep 1/5\nEnter your full name:",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	case "2":
 		// Check if user is a registered agent.
 		agent, _ := app.pg.GetAgentByPhone(context.Background(), sess.PhoneNumber)
 		if agent == nil {
 			return models.USSDResponse{
-				Text:       "You are not registered as an agent. Please register first (option 1).",
+				Text:         "You are not registered as an agent. Please register first (option 1).",
 				CloseSession: false,
-				Action:     "continue",
+				Action:       "continue",
 			}, nil
 		}
 		sess.Data["agent_id"] = agent.ID
 		sess.State = "agent_float_input"
 		return models.USSDResponse{
-			Text:       fmt.Sprintf("AGENT FLOAT CLAIM\nCurrent balance: ₦%s\n\nEnter claim amount:", formatCurrency(agent.FloatBalance)),
+			Text:         fmt.Sprintf("AGENT FLOAT CLAIM\nCurrent balance: ₦%s\n\nEnter claim amount:", formatCurrency(agent.FloatBalance)),
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	case "3":
 		agent, _ := app.pg.GetAgentByPhone(context.Background(), sess.PhoneNumber)
 		if agent == nil {
 			return models.USSDResponse{
-				Text:       "You are not registered as an agent.",
+				Text:         "You are not registered as an agent.",
 				CloseSession: false,
-				Action:     "continue",
+				Action:       "continue",
 			}, nil
 		}
 		sess.State = "agent_details"
@@ -629,7 +628,7 @@ func (app *Application) stateAgentMenu(sess *models.SessionData, input string) (
 				agent.Name, agent.State, agent.LGA, agent.Status,
 				formatCurrency(agent.FloatBalance), agent.TotalPolicies),
 			CloseSession: false,
-			Action:     "menu",
+			Action:       "menu",
 		}, nil
 	case "0":
 		sess.State = "main_menu"
@@ -637,9 +636,9 @@ func (app *Application) stateAgentMenu(sess *models.SessionData, input string) (
 		return resp, nil
 	default:
 		return models.USSDResponse{
-			Text:       "AGENT SERVICES\n1. Register as Agent\n2. Float Insurance Claim\n3. My Agent Details\n0. Back to Main Menu\n\nEnter your choice:",
+			Text:         "AGENT SERVICES\n1. Register as Agent\n2. Float Insurance Claim\n3. My Agent Details\n0. Back to Main Menu\n\nEnter your choice:",
 			CloseSession: false,
-			Action:     "menu",
+			Action:       "menu",
 		}, nil
 	}
 }
@@ -649,51 +648,51 @@ func (app *Application) stateAgentMenu(sess *models.SessionData, input string) (
 func (app *Application) stateAgentRegisterName(sess *models.SessionData, input string) (models.USSDResponse, error) {
 	if strings.TrimSpace(input) == "" {
 		return models.USSDResponse{
-			Text:       "Name cannot be empty.\nEnter your full name:",
+			Text:         "Name cannot be empty.\nEnter your full name:",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 	sess.Data["agent_name"] = strings.TrimSpace(input)
 	sess.State = "agent_register_state"
 	return models.USSDResponse{
-		Text:       "Step 2/5\nEnter your state:",
+		Text:         "Step 2/5\nEnter your state:",
 		CloseSession: false,
-		Action:     "continue",
+		Action:       "continue",
 	}, nil
 }
 
 func (app *Application) stateAgentRegisterState(sess *models.SessionData, input string) (models.USSDResponse, error) {
 	if strings.TrimSpace(input) == "" {
 		return models.USSDResponse{
-			Text:       "State cannot be empty.\nEnter your state:",
+			Text:         "State cannot be empty.\nEnter your state:",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 	sess.Data["agent_state"] = strings.TrimSpace(strings.Title(strings.ToLower(input)))
 	sess.State = "agent_register_lga"
 	return models.USSDResponse{
-		Text:       "Step 3/5\nEnter your LGA:",
+		Text:         "Step 3/5\nEnter your LGA:",
 		CloseSession: false,
-		Action:     "continue",
+		Action:       "continue",
 	}, nil
 }
 
 func (app *Application) stateAgentRegisterLGA(sess *models.SessionData, input string) (models.USSDResponse, error) {
 	if strings.TrimSpace(input) == "" {
 		return models.USSDResponse{
-			Text:       "LGA cannot be empty.\nEnter your LGA:",
+			Text:         "LGA cannot be empty.\nEnter your LGA:",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 	sess.Data["agent_lga"] = strings.TrimSpace(input)
 	sess.State = "agent_register_bank"
 	return models.USSDResponse{
-		Text:       "Step 4/5\nEnter your bank account number:",
+		Text:         "Step 4/5\nEnter your bank account number:",
 		CloseSession: false,
-		Action:     "continue",
+		Action:       "continue",
 	}, nil
 }
 
@@ -701,9 +700,9 @@ func (app *Application) stateAgentRegisterBank(sess *models.SessionData, input s
 	input = strings.TrimSpace(input)
 	if len(input) < 10 {
 		return models.USSDResponse{
-			Text:       "Please enter a valid bank account number (min 10 digits):",
+			Text:         "Please enter a valid bank account number (min 10 digits):",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 	// Try to look up bank name by account number (in production this would
@@ -724,22 +723,22 @@ func (app *Application) stateAgentRegisterConfirm(sess *models.SessionData, inpu
 	if strings.ToUpper(input) == "0" || input == "BACK" || input == "CANCEL" {
 		sess.State = "agent_menu"
 		return models.USSDResponse{
-			Text:       "Registration cancelled. Returning to Agent Services.",
+			Text:         "Registration cancelled. Returning to Agent Services.",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 
 	// Persist the agent.
 	agent := &models.AgentAccount{
-		PhoneNumber:  sess.PhoneNumber,
-		Name:         sess.Data["agent_name"].(string),
-		State:        sess.Data["agent_state"].(string),
-		LGA:          sess.Data["agent_lga"].(string),
-		BankAccount:  sess.Data["agent_bank_account"].(string),
-		BankName:     sess.Data["agent_bank_name"].(string),
-		Status:       models.AgentStatusPending,
-		FloatBalance: 0,
+		PhoneNumber:   sess.PhoneNumber,
+		Name:          sess.Data["agent_name"].(string),
+		State:         sess.Data["agent_state"].(string),
+		LGA:           sess.Data["agent_lga"].(string),
+		BankAccount:   sess.Data["agent_bank_account"].(string),
+		BankName:      sess.Data["agent_bank_name"].(string),
+		Status:        models.AgentStatusPending,
+		FloatBalance:  0,
 		TotalPolicies: 0,
 	}
 
@@ -792,17 +791,17 @@ func (app *Application) stateAgentFloatInput(sess *models.SessionData, input str
 	amount, err := strconv.ParseFloat(strings.ReplaceAll(input, ",", ""), 64)
 	if err != nil || amount <= 0 {
 		return models.USSDResponse{
-			Text:       "Please enter a valid amount in Naira:",
+			Text:         "Please enter a valid amount in Naira:",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 
 	if amount > balance {
 		return models.USSDResponse{
-			Text:       fmt.Sprintf("Insufficient float balance. Available: ₦%s\n\nEnter claim amount:", formatCurrency(balance)),
+			Text:         fmt.Sprintf("Insufficient float balance. Available: ₦%s\n\nEnter claim amount:", formatCurrency(balance)),
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 
@@ -817,9 +816,9 @@ func (app *Application) stateAgentFloatConfirm(sess *models.SessionData, input s
 	if strings.ToUpper(input) == "0" || input == "BACK" || input == "CANCEL" {
 		sess.State = "agent_menu"
 		return models.USSDResponse{
-			Text:       "Claim cancelled.",
+			Text:         "Claim cancelled.",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 
@@ -886,7 +885,7 @@ func (app *Application) stateAgentDetails(sess *models.SessionData, input string
 			agent.Name, agent.State, agent.LGA, agent.Status,
 			formatCurrency(agent.FloatBalance), agent.TotalPolicies),
 		CloseSession: false,
-		Action:     "menu",
+		Action:       "menu",
 	}, nil
 }
 
@@ -896,9 +895,9 @@ func (app *Application) stateClaimStatusInput(sess *models.SessionData, input st
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return models.USSDResponse{
-			Text:       "Please enter a reference ID (e.g. TXN-xxxxxxxx):",
+			Text:         "Please enter a reference ID (e.g. TXN-xxxxxxxx):",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 	// Accept both "TXN-..." and plain hex IDs.
@@ -909,9 +908,9 @@ func (app *Application) stateClaimStatusInput(sess *models.SessionData, input st
 	}
 	if txn == nil {
 		return models.USSDResponse{
-			Text:       "No transaction found with reference: " + input + "\n\nPlease try again or dial 0 to go back.",
+			Text:         "No transaction found with reference: " + input + "\n\nPlease try again or dial 0 to go back.",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 
@@ -930,7 +929,7 @@ func (app *Application) stateClaimStatusInput(sess *models.SessionData, input st
 			txn.Reference, productName, formatCurrency(txn.Amount), txn.Status,
 			txn.CreatedAt.Format("02-Jan-2006 15:04")),
 		CloseSession: false,
-		Action:     "menu",
+		Action:       "menu",
 	}, nil
 }
 
@@ -939,9 +938,9 @@ func (app *Application) stateClaimStatusResult(sess *models.SessionData, input s
 	case "0":
 		sess.State = "claim_status_input"
 		return models.USSDResponse{
-			Text:       "Enter another reference ID:",
+			Text:         "Enter another reference ID:",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	case "00":
 		sess.State = "main_menu"
@@ -950,9 +949,9 @@ func (app *Application) stateClaimStatusResult(sess *models.SessionData, input s
 	default:
 		sess.State = "claim_status_input"
 		return models.USSDResponse{
-			Text:       "Enter another reference ID:",
+			Text:         "Enter another reference ID:",
 			CloseSession: false,
-			Action:     "continue",
+			Action:       "continue",
 		}, nil
 	}
 }
@@ -1132,14 +1131,14 @@ func (app *Application) handleAgentRegister(w http.ResponseWriter, r *http.Reque
 	}
 
 	agent := &models.AgentAccount{
-		PhoneNumber: reg.PhoneNumber,
-		Name:        reg.Name,
-		State:       reg.State,
-		LGA:         reg.LGA,
-		BankAccount: reg.BankAccount,
-		BankName:    reg.BankName,
-		Status:      models.AgentStatusPending,
-		FloatBalance: 0,
+		PhoneNumber:   reg.PhoneNumber,
+		Name:          reg.Name,
+		State:         reg.State,
+		LGA:           reg.LGA,
+		BankAccount:   reg.BankAccount,
+		BankName:      reg.BankName,
+		Status:        models.AgentStatusPending,
+		FloatBalance:  0,
 		TotalPolicies: 0,
 	}
 

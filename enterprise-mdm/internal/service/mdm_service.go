@@ -19,6 +19,9 @@ type MDMService struct {
 	log *zap.Logger
 }
 
+// Config returns the service configuration.
+func (s *MDMService) Config() *config.Config { return s.cfg }
+
 func NewMDMService(pg *db.PostgreSQL, rdb *db.RedisCache, cfg *config.Config) *MDMService {
 	return &MDMService{pg: pg, rdb: rdb, cfg: cfg, log: zap.L()}
 }
@@ -82,13 +85,13 @@ func (s *MDMService) FindDuplicates(ctx context.Context, entityType models.Entit
 		score := s.calculateMatchScore(gr, name, email, phone)
 		if score >= s.cfg.DedupThreshold {
 			candidate := models.MergeCandidate{
-				GoldenRecordID:  gr.ID,
+				GoldenRecordID:    gr.ID,
 				CandidateRecordID: gr.EntityID,
-				SourceSystem:    gr.PrimarySource,
-				SourceRecordID:  gr.SourceRecordID,
-				MatchScore:      score,
-				MatchReasons:    s.getMatchReasons(gr, name, email, phone),
-				Status:          "pending",
+				SourceSystem:      gr.PrimarySource,
+				SourceRecordID:    gr.SourceRecordID,
+				MatchScore:        score,
+				MatchReasons:      s.getMatchReasons(gr, name, email, phone),
+				Status:            "pending",
 			}
 			candidates = append(candidates, candidate)
 
@@ -230,7 +233,7 @@ func (s *MDMService) ApproveMerge(ctx context.Context, candidateID, approvedBy s
 
 func (s *MDMService) AssessQuality(ctx context.Context, entityType models.EntityType, entityID string) (*models.DataQualityMetric, error) {
 	qm := &models.DataQualityMetric{
-		EntityID: entityID,
+		EntityID:   entityID,
 		EntityType: entityType,
 	}
 
@@ -259,7 +262,10 @@ func (s *MDMService) AssessQuality(ctx context.Context, entityType models.Entity
 	// Timeliness: check last updated
 	if gr != nil && gr.LastSyncedAt != nil {
 		daysSinceSync := time.Since(*gr.LastSyncedAt).Hours() / 24
-		qm.Timeliness = max(0, 100-daysSinceSync*5)
+		qm.Timeliness = 100 - daysSinceSync*5
+		if qm.Timeliness < 0 {
+			qm.Timeliness = 0
+		}
 	} else {
 		qm.Timeliness = 0
 	}
@@ -297,12 +303,24 @@ func (s *MDMService) calculateCompleteness(gr *models.GoldenRecord) float64 {
 	}
 	total := 6 // name, email, phone, address, city, state
 	complete := 0
-	if gr.Name != "" { complete++ }
-	if gr.Email != "" { complete++ }
-	if gr.Phone != "" { complete++ }
-	if gr.Address != "" { complete++ }
-	if gr.City != "" { complete++ }
-	if gr.State != "" { complete++ }
+	if gr.Name != "" {
+		complete++
+	}
+	if gr.Email != "" {
+		complete++
+	}
+	if gr.Phone != "" {
+		complete++
+	}
+	if gr.Address != "" {
+		complete++
+	}
+	if gr.City != "" {
+		complete++
+	}
+	if gr.State != "" {
+		complete++
+	}
 	return float64(complete) / float64(total) * 100
 }
 
@@ -451,5 +469,15 @@ func (s *MDMService) ListProductRecords(ctx context.Context, isActive bool) ([]m
 	return s.pg.ListProductRecords(ctx, isActive)
 }
 
-func min(a, b int) int { if a < b { return a }; return b }
-func max(a, b int) int { if a > b { return a }; return b }
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

@@ -36,14 +36,14 @@ func NewRedisCache(cfg *config.Config) (*RedisCache, error) {
 func (r *RedisCache) Close() error { return r.client.Close() }
 
 const (
-	keyPrefix = "notif:"
+	keyPrefix       = "notif:"
 	notificationTTL = 1 * time.Hour
 	rateLimitTTL    = 24 * time.Hour
 	queuedCountTTL  = 1 * time.Hour
 	dashboardTTL    = 30 * time.Second
 )
 
-func notificationKey(id string) string   { return fmt.Sprintf("%snotification:%s", keyPrefix, id) }
+func notificationKey(id string) string { return fmt.Sprintf("%snotification:%s", keyPrefix, id) }
 func rateLimitKey(customerID, channel string) string {
 	return fmt.Sprintf("%srate_limit:%s:%s", keyPrefix, customerID, channel)
 }
@@ -54,16 +54,24 @@ func failedKey() string    { return fmt.Sprintf("%scounter:failed", keyPrefix) }
 
 func (r *RedisCache) CacheNotification(ctx context.Context, n *models.Notification) error {
 	val, err := json.Marshal(n)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return r.client.Set(ctx, notificationKey(n.ID), val, notificationTTL).Err()
 }
 
 func (r *RedisCache) GetNotification(ctx context.Context, id string) (*models.Notification, error) {
 	val, err := r.client.Get(ctx, notificationKey(id)).Result()
-	if err == redis.Nil { return nil, nil }
-	if err != nil { return nil, err }
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var n models.Notification
-	if err := json.Unmarshal([]byte(val), &n); err != nil { return nil, err }
+	if err := json.Unmarshal([]byte(val), &n); err != nil {
+		return nil, err
+	}
 	return &n, nil
 }
 
@@ -90,7 +98,9 @@ func (r *RedisCache) CheckRateLimit(ctx context.Context, customerID, channel str
 func (r *RedisCache) IncrementCounter(ctx context.Context, name string) error {
 	key := fmt.Sprintf("%scounter:%s", keyPrefix, name)
 	_, err := r.client.Incr(ctx, key).Result()
-	if err == nil { r.client.Expire(ctx, key, 24*time.Hour) }
+	if err == nil {
+		r.client.Expire(ctx, key, 24*time.Hour)
+	}
 	return err
 }
 
@@ -101,16 +111,24 @@ func (r *RedisCache) GetCounter(ctx context.Context, name string) (int64, error)
 
 func (r *RedisCache) CacheDashboard(ctx context.Context, dash *models.NotificationDashboard) error {
 	val, err := json.Marshal(dash)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return r.client.Set(ctx, dashboardKey(), val, dashboardTTL).Err()
 }
 
 func (r *RedisCache) GetCachedDashboard(ctx context.Context) (*models.NotificationDashboard, error) {
 	val, err := r.client.Get(ctx, dashboardKey()).Result()
-	if err == redis.Nil { return nil, nil }
-	if err != nil { return nil, err }
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var dash models.NotificationDashboard
-	if err := json.Unmarshal([]byte(val), &dash); err != nil { return nil, err }
+	if err := json.Unmarshal([]byte(val), &dash); err != nil {
+		return nil, err
+	}
 	return &dash, nil
 }
 
@@ -166,7 +184,7 @@ func (r *RedisCache) IsInQuietHours(startTime, endTime string) bool {
 
 func splitTime(t string) []int {
 	var parts []int
-	for i, c := range t {
+	for _, c := range t {
 		if c == ':' {
 			parts = append(parts, -1)
 			continue

@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"time"
 
+	"database/sql"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -177,12 +177,12 @@ func (cb *CircuitBreaker) Status() map[string]interface{} {
 	cb.mu.RLock()
 	defer cb.mu.RUnlock()
 	return map[string]interface{}{
-		"name":           cb.name,
-		"state":          cb.state.String(),
-		"failure_count":  cb.failureCount,
-		"success_count":  cb.successCount,
-		"last_failure":   cb.lastFailure,
-		"timeout_sec":    cb.timeout.Seconds(),
+		"name":          cb.name,
+		"state":         cb.state.String(),
+		"failure_count": cb.failureCount,
+		"success_count": cb.successCount,
+		"last_failure":  cb.lastFailure,
+		"timeout_sec":   cb.timeout.Seconds(),
 	}
 }
 
@@ -200,10 +200,10 @@ func NewProxyManager() *ProxyManager {
 	}
 	services := map[string]string{
 		"transaction-service": envOr("TRANSACTION_SVC_URL", "http://localhost:3001"),
-		"kyc-service":        envOr("KYC_SVC_URL", "http://localhost:3002"),
-		"settlement-service": envOr("SETTLEMENT_SVC_URL", "http://localhost:3003"),
-		"fraud-service":      envOr("FRAUD_SVC_URL", "http://localhost:3004"),
-		"notification-svc":   envOr("NOTIFICATION_SVC_URL", "http://localhost:3005"),
+		"kyc-service":         envOr("KYC_SVC_URL", "http://localhost:3002"),
+		"settlement-service":  envOr("SETTLEMENT_SVC_URL", "http://localhost:3003"),
+		"fraud-service":       envOr("FRAUD_SVC_URL", "http://localhost:3004"),
+		"notification-svc":    envOr("NOTIFICATION_SVC_URL", "http://localhost:3005"),
 	}
 	for name, upstream := range services {
 		u, _ := url.Parse(upstream)
@@ -274,7 +274,6 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
 	val := r.URL.Query().Get(key)
@@ -344,5 +343,19 @@ func main() {
 	log.Printf("[CircuitBreaker] Starting proxy on :%s", port)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
+	}
+}
+
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		return
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		db = nil
 	}
 }

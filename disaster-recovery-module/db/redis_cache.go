@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/insureportal/disaster_recovery_module/config"
@@ -46,12 +47,12 @@ func (r *RedisCache) Close() error {
 // Cache keys
 const (
 	// Cache TTLs
-	KeyHeartbeatTTL   = 5 * time.Minute  // Heartbeat TTL - 5 minutes
-	KeyDashboardTTL   = 30 * time.Second // Dashboard cached for 30 seconds
-	KeyServiceStatus  = 2 * time.Minute  // Per-service status cache
-	KeyFailoverLock   = 10 * time.Minute // Failover operation lock
-	KeyBackupStatus   = 1 * time.Hour    // Backup status cache
-	KeyDrillSchedule  = 24 * time.Hour   // Drill schedule cache
+	KeyHeartbeatTTL  = 5 * time.Minute  // Heartbeat TTL - 5 minutes
+	KeyDashboardTTL  = 30 * time.Second // Dashboard cached for 30 seconds
+	KeyServiceStatus = 2 * time.Minute  // Per-service status cache
+	KeyFailoverLock  = 10 * time.Minute // Failover operation lock
+	KeyBackupStatus  = 1 * time.Hour    // Backup status cache
+	KeyDrillSchedule = 24 * time.Hour   // Drill schedule cache
 )
 
 const (
@@ -81,11 +82,11 @@ func replicationLagKey() string {
 // RecordHeartbeat records a service heartbeat in Redis with TTL
 func (r *RedisCache) RecordHeartbeat(ctx context.Context, serviceName, instanceID string, isHealthy bool, responseMs int) error {
 	data := map[string]interface{}{
-		"service_name":  serviceName,
-		"instance_id":   instanceID,
-		"is_healthy":    isHealthy,
-		"response_ms":   responseMs,
-		"timestamp":     time.Now().Format(time.RFC3339),
+		"service_name": serviceName,
+		"instance_id":  instanceID,
+		"is_healthy":   isHealthy,
+		"response_ms":  responseMs,
+		"timestamp":    time.Now().Format(time.RFC3339),
 	}
 	key := heartbeatKey(serviceName, instanceID)
 	val, err := json.Marshal(data)
@@ -217,7 +218,10 @@ func (r *RedisCache) GetReplicationLag(ctx context.Context) (float64, error) {
 	if err == redis.Nil {
 		return 0, nil
 	}
-	return r.client.GetFloat64(ctx, key)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseFloat(val, 64)
 }
 
 // CacheLatestBackup caches the latest backup status

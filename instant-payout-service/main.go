@@ -1,18 +1,18 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
-	"io"
 	"bytes"
+	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,21 +21,19 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
+
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -43,9 +41,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -59,15 +61,16 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
-
 
 // ─── Production Middleware ───────────────────────────────────────────────────
 
 var (
-	reqCount    int64
-	errCount    int64
+	reqCount     int64
+	errCount     int64
 	avgLatencyMs float64
 )
 
@@ -160,9 +163,6 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
 func execInTransaction(fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -235,7 +235,6 @@ func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 // ─── Domain Handlers ─────────────────────────────────────────────────────────
 
 func handleList(w http.ResponseWriter, r *http.Request) {
@@ -254,9 +253,13 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -280,7 +283,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
 		if err := rows.Scan(ptrs...); err != nil {
 			continue
 		}
@@ -295,7 +300,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
@@ -338,7 +345,9 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -379,7 +388,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -407,7 +418,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 	go daprPublish("instant-payout-service.entity.created", map[string]interface{}{"service": "instant-payout-service", "action": "created"})
 }
@@ -441,7 +454,9 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
 }
 
@@ -479,10 +494,10 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	db.QueryRow("SELECT COUNT(*) FROM instant_payouts").Scan(&count)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service": "instant-payout-service",
-		"table":   "instant_payouts",
+		"service":       "instant-payout-service",
+		"table":         "instant_payouts",
 		"total_records": count,
-		"uptime":  time.Since(startTime).String(),
+		"uptime":        time.Since(startTime).String(),
 	})
 }
 
@@ -503,15 +518,15 @@ type PayoutRequest struct {
 }
 
 type PayoutResult struct {
-	PayoutID     string  `json:"payout_id"`
-	ClaimID      string  `json:"claim_id"`
-	Amount       float64 `json:"amount"`
-	Fee          float64 `json:"fee"`
-	NetAmount    float64 `json:"net_amount"`
-	Status       string  `json:"status"`
-	Channel      string  `json:"channel"`
-	SettlementTime string `json:"estimated_settlement"`
-	Reference    string  `json:"reference"`
+	PayoutID       string  `json:"payout_id"`
+	ClaimID        string  `json:"claim_id"`
+	Amount         float64 `json:"amount"`
+	Fee            float64 `json:"fee"`
+	NetAmount      float64 `json:"net_amount"`
+	Status         string  `json:"status"`
+	Channel        string  `json:"channel"`
+	SettlementTime string  `json:"estimated_settlement"`
+	Reference      string  `json:"reference"`
 }
 
 func processPayout(req PayoutRequest) PayoutResult {
@@ -520,22 +535,30 @@ func processPayout(req PayoutRequest) PayoutResult {
 	settlements := map[string]string{"nibss": "instant", "interswitch": "T+1", "mobile_money": "instant"}
 
 	fee := fees[req.Channel]
-	if fee == 0 { fee = 100 }
+	if fee == 0 {
+		fee = 100
+	}
 	settlement := settlements[req.Channel]
-	if settlement == "" { settlement = "T+1" }
+	if settlement == "" {
+		settlement = "T+1"
+	}
 
 	// Validation
 	status := "approved"
-	if req.Amount > 10000000 { status = "pending_approval" } // >₦10M needs manual approval
-	if len(req.AccountNumber) != 10 { status = "failed" }
+	if req.Amount > 10000000 {
+		status = "pending_approval"
+	} // >₦10M needs manual approval
+	if len(req.AccountNumber) != 10 {
+		status = "failed"
+	}
 
 	return PayoutResult{
 		PayoutID: fmt.Sprintf("PO-%d", time.Now().UnixNano()%100000000),
-		ClaimID: req.ClaimID, Amount: req.Amount,
+		ClaimID:  req.ClaimID, Amount: req.Amount,
 		Fee: fee, NetAmount: req.Amount - fee,
 		Status: status, Channel: req.Channel,
 		SettlementTime: settlement,
-		Reference: fmt.Sprintf("REF-%d", time.Now().UnixNano()%10000000),
+		Reference:      fmt.Sprintf("REF-%d", time.Now().UnixNano()%10000000),
 	}
 }
 
@@ -554,12 +577,11 @@ func handleProcessPayout(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -570,6 +592,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -578,7 +601,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -599,35 +624,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -638,7 +679,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -649,6 +692,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -657,9 +701,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -716,6 +764,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -742,9 +791,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -865,8 +918,6 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
-
 // ── Temporal Workflow Integration ──────────────────────────────────────────
 type temporalClient struct {
 	hostPort string
@@ -925,7 +976,6 @@ func (tc *temporalClient) SignalWorkflow(ctx context.Context, workflowID, signal
 
 var temporalCli *temporalClient
 
-
 // ── TigerBeetle Double-Entry Ledger ───────────────────────────────────────
 type tigerBeetleClient struct {
 	addr string
@@ -971,7 +1021,6 @@ func (tb *tigerBeetleClient) QueryAccountBalance(ctx context.Context, accountID 
 }
 
 var tbClient *tigerBeetleClient
-
 
 // ── Mojaloop Payment Switch Integration ───────────────────────────────────
 type mojaloopClient struct {
@@ -1037,22 +1086,24 @@ func (mc *mojaloopClient) InitiateTransfer(ctx context.Context, amount, currency
 
 var mojaloopCli *mojaloopClient
 
-
-
 // Dapr sidecar integration
 var daprClient *http.Client
 var daprBaseURL string
 
 func initDapr() {
 	daprPort := os.Getenv("DAPR_HTTP_PORT")
-	if daprPort == "" { daprPort = "3500" }
+	if daprPort == "" {
+		daprPort = "3500"
+	}
 	daprBaseURL = "http://localhost:" + daprPort
 	daprClient = &http.Client{Timeout: 5 * time.Second}
 	jsonLog("info", "dapr_sidecar_configured", "port", daprPort)
 }
 
 func daprPublish(topic string, data interface{}) {
-	if daprClient == nil { return }
+	if daprClient == nil {
+		return
+	}
 	body, _ := json.Marshal(data)
 	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
 	if req != nil {
@@ -1062,14 +1113,20 @@ func daprPublish(topic string, data interface{}) {
 }
 
 func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
-	if daprClient == nil { return nil, fmt.Errorf("dapr not initialized") }
+	if daprClient == nil {
+		return nil, fmt.Errorf("dapr not initialized")
+	}
 	body, _ := json.Marshal(data)
 	url := fmt.Sprintf("%s/v1.0/invoke/%s/method/%s", daprBaseURL, appID, method)
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
-	if req == nil { return nil, fmt.Errorf("failed to create request") }
+	if req == nil {
+		return nil, fmt.Errorf("failed to create request")
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := daprClient.Do(req)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
 }

@@ -285,8 +285,15 @@ func (p *PostgreSQL) ListGoldenRecords(ctx context.Context, entityType models.En
 		pos++
 	}
 	query += " ORDER BY quality_score DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit); pos++ }
-	if offset > 0 { query += fmt.Sprintf(" OFFSET $%d", pos); args = append(args, offset) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+		pos++
+	}
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", pos)
+		args = append(args, offset)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -306,17 +313,19 @@ func (p *PostgreSQL) CountByEntityType(ctx context.Context) (map[string]models.E
 	defer rows.Close()
 	result := make(map[string]models.EntityQuality)
 	for rows.Next() {
-		var et EntityType
+		var et models.EntityType
 		var total, golden int
 		var avgScore float64
-		if err := rows.Scan(&et, &total, &golden, &avgScore, &result[string(et)].Duplicates); err != nil {
+		var duplicates int
+		if err := rows.Scan(&et, &total, &golden, &avgScore, &duplicates); err != nil {
 			return nil, err
 		}
 		result[string(et)] = models.EntityQuality{
-			EntityType:      et,
-			TotalRecords:    total,
-			GoldenRecords:   golden,
-			QualityScore:    avgScore,
+			EntityType:    et,
+			TotalRecords:  total,
+			GoldenRecords: golden,
+			QualityScore:  avgScore,
+			Duplicates:    duplicates,
 		}
 	}
 	return result, nil
@@ -499,7 +508,9 @@ func (p *PostgreSQL) GetRecentSyncs(ctx context.Context, limit int) ([]models.Sy
 	query := `SELECT id,sync_id,source_system,target_system,entity_type,direction,status,
 		records_total,records_created,records_updated,records_deleted,records_failed,
 		error_message,started_at,completed_at,created_at FROM sync_logs ORDER BY started_at DESC`
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", limit+1) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", limit+1)
+	}
 	rows, err := p.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -549,8 +560,15 @@ func (p *PostgreSQL) ListAgentRecords(ctx context.Context, status string, limit,
 		pos++
 	}
 	query += " ORDER BY agent_name"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit); pos++ }
-	if offset > 0 { query += fmt.Sprintf(" OFFSET $%d", pos); args = append(args, offset) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+		pos++
+	}
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", pos)
+		args = append(args, offset)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {

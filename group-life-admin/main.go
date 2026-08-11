@@ -1,34 +1,36 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"context"
+	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"sync"
+	"syscall"
 	"time"
-	"context"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -36,9 +38,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -52,7 +58,9 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // GroupLifeService handles group life insurance administration
@@ -65,7 +73,7 @@ type GroupScheme struct {
 	EmployerName     string    `json:"employer_name"`
 	EmployerID       string    `json:"employer_id"`
 	Industry         string    `json:"industry"`
-	SchemeType       string    `json:"scheme_type"` // contributory, non-contributory
+	SchemeType       string    `json:"scheme_type"`   // contributory, non-contributory
 	CoverageType     string    `json:"coverage_type"` // death, disability, critical_illness
 	MultipleOfSalary float64   `json:"multiple_of_salary"`
 	FlatBenefit      float64   `json:"flat_benefit"`
@@ -81,21 +89,21 @@ type GroupScheme struct {
 
 // GroupMember represents a member in a group scheme
 type GroupMember struct {
-	MemberID         string    `json:"member_id"`
-	SchemeID         string    `json:"scheme_id"`
-	EmployeeID       string    `json:"employee_id"`
-	FullName         string    `json:"full_name"`
-	DateOfBirth      time.Time `json:"date_of_birth"`
-	Gender           string    `json:"gender"`
-	JobTitle         string    `json:"job_title"`
-	Department       string    `json:"department"`
-	DateOfJoining    time.Time `json:"date_of_joining"`
-	AnnualSalary     float64   `json:"annual_salary"`
-	SumAssured       float64   `json:"sum_assured"`
-	Premium          float64   `json:"premium"`
-	Beneficiaries    []Beneficiary `json:"beneficiaries"`
-	Status           string    `json:"status"` // active, suspended, terminated
-	EnrollmentDate   time.Time `json:"enrollment_date"`
+	MemberID       string        `json:"member_id"`
+	SchemeID       string        `json:"scheme_id"`
+	EmployeeID     string        `json:"employee_id"`
+	FullName       string        `json:"full_name"`
+	DateOfBirth    time.Time     `json:"date_of_birth"`
+	Gender         string        `json:"gender"`
+	JobTitle       string        `json:"job_title"`
+	Department     string        `json:"department"`
+	DateOfJoining  time.Time     `json:"date_of_joining"`
+	AnnualSalary   float64       `json:"annual_salary"`
+	SumAssured     float64       `json:"sum_assured"`
+	Premium        float64       `json:"premium"`
+	Beneficiaries  []Beneficiary `json:"beneficiaries"`
+	Status         string        `json:"status"` // active, suspended, terminated
+	EnrollmentDate time.Time     `json:"enrollment_date"`
 }
 
 // Beneficiary represents a beneficiary
@@ -109,51 +117,51 @@ type Beneficiary struct {
 
 // GroupClaim represents a group life claim
 type GroupClaim struct {
-	ClaimID          string    `json:"claim_id"`
-	SchemeID         string    `json:"scheme_id"`
-	MemberID         string    `json:"member_id"`
-	MemberName       string    `json:"member_name"`
-	ClaimType        string    `json:"claim_type"` // death, disability, critical_illness
-	ClaimAmount      float64   `json:"claim_amount"`
-	DateOfEvent      time.Time `json:"date_of_event"`
-	DateOfClaim      time.Time `json:"date_of_claim"`
-	Documents        []string  `json:"documents"`
-	Beneficiaries    []BeneficiaryPayout `json:"beneficiaries"`
-	Status           string    `json:"status"`
-	ApprovalDate     time.Time `json:"approval_date,omitempty"`
-	PaymentDate      time.Time `json:"payment_date,omitempty"`
+	ClaimID       string              `json:"claim_id"`
+	SchemeID      string              `json:"scheme_id"`
+	MemberID      string              `json:"member_id"`
+	MemberName    string              `json:"member_name"`
+	ClaimType     string              `json:"claim_type"` // death, disability, critical_illness
+	ClaimAmount   float64             `json:"claim_amount"`
+	DateOfEvent   time.Time           `json:"date_of_event"`
+	DateOfClaim   time.Time           `json:"date_of_claim"`
+	Documents     []string            `json:"documents"`
+	Beneficiaries []BeneficiaryPayout `json:"beneficiaries"`
+	Status        string              `json:"status"`
+	ApprovalDate  time.Time           `json:"approval_date,omitempty"`
+	PaymentDate   time.Time           `json:"payment_date,omitempty"`
 }
 
 // BeneficiaryPayout represents payout to a beneficiary
 type BeneficiaryPayout struct {
-	Name       string  `json:"name"`
-	Amount     float64 `json:"amount"`
-	BankName   string  `json:"bank_name"`
-	AccountNo  string  `json:"account_no"`
-	Status     string  `json:"status"`
+	Name      string  `json:"name"`
+	Amount    float64 `json:"amount"`
+	BankName  string  `json:"bank_name"`
+	AccountNo string  `json:"account_no"`
+	Status    string  `json:"status"`
 }
 
 // MemberMovement represents member additions/deletions
 type MemberMovement struct {
-	MovementID   string    `json:"movement_id"`
-	SchemeID     string    `json:"scheme_id"`
-	MovementType string    `json:"movement_type"` // addition, deletion, salary_revision
-	EffectiveDate time.Time `json:"effective_date"`
-	Members      []MemberChange `json:"members"`
-	PremiumImpact float64  `json:"premium_impact"`
-	Status       string    `json:"status"`
+	MovementID    string         `json:"movement_id"`
+	SchemeID      string         `json:"scheme_id"`
+	MovementType  string         `json:"movement_type"` // addition, deletion, salary_revision
+	EffectiveDate time.Time      `json:"effective_date"`
+	Members       []MemberChange `json:"members"`
+	PremiumImpact float64        `json:"premium_impact"`
+	Status        string         `json:"status"`
 }
 
 // MemberChange represents a change to a member
 type MemberChange struct {
-	MemberID     string  `json:"member_id"`
-	EmployeeID   string  `json:"employee_id"`
-	FullName     string  `json:"full_name"`
-	OldSalary    float64 `json:"old_salary,omitempty"`
-	NewSalary    float64 `json:"new_salary,omitempty"`
+	MemberID      string  `json:"member_id"`
+	EmployeeID    string  `json:"employee_id"`
+	FullName      string  `json:"full_name"`
+	OldSalary     float64 `json:"old_salary,omitempty"`
+	NewSalary     float64 `json:"new_salary,omitempty"`
 	OldSumAssured float64 `json:"old_sum_assured,omitempty"`
 	NewSumAssured float64 `json:"new_sum_assured,omitempty"`
-	ChangeType   string  `json:"change_type"`
+	ChangeType    string  `json:"change_type"`
 }
 
 // PremiumCalculation represents premium calculation for a group
@@ -191,24 +199,24 @@ func NewGroupLifeService() *GroupLifeService {
 func (s *GroupLifeService) CalculatePremium(scheme *GroupScheme, members []GroupMember) *PremiumCalculation {
 	totalSumAssured := 0.0
 	totalAge := 0.0
-	
+
 	for _, member := range members {
 		totalSumAssured += member.SumAssured
 		age := time.Now().Year() - member.DateOfBirth.Year()
 		totalAge += float64(age)
 	}
-	
+
 	averageAge := totalAge / float64(len(members))
-	
+
 	// Base rate (per 1000 sum assured)
 	baseRate := 1.5 // 1.5 per mille
-	
+
 	// Age loading factor
 	ageLoadingFactor := 1.0
 	if averageAge > 40 {
 		ageLoadingFactor = 1 + (averageAge-40)*0.02
 	}
-	
+
 	// Industry factor
 	industryFactors := map[string]float64{
 		"banking":       1.0,
@@ -223,7 +231,7 @@ func (s *GroupLifeService) CalculatePremium(scheme *GroupScheme, members []Group
 	if industryFactor == 0 {
 		industryFactor = 1.0
 	}
-	
+
 	// Group discount based on size
 	groupDiscount := 0.0
 	if len(members) >= 100 {
@@ -233,11 +241,11 @@ func (s *GroupLifeService) CalculatePremium(scheme *GroupScheme, members []Group
 	} else if len(members) >= 20 {
 		groupDiscount = 0.05
 	}
-	
+
 	// Calculate premium
 	grossPremium := totalSumAssured * baseRate / 1000 * ageLoadingFactor * industryFactor
 	netPremium := grossPremium * (1 - groupDiscount)
-	
+
 	return &PremiumCalculation{
 		SchemeID:         scheme.SchemeID,
 		TotalMembers:     len(members),
@@ -255,13 +263,13 @@ func (s *GroupLifeService) CalculatePremium(scheme *GroupScheme, members []Group
 // CalculateMemberBenefit calculates individual member benefit
 func (s *GroupLifeService) CalculateMemberBenefit(scheme *GroupScheme, member *GroupMember) float64 {
 	var benefit float64
-	
+
 	if scheme.MultipleOfSalary > 0 {
 		benefit = member.AnnualSalary * scheme.MultipleOfSalary
 	} else {
 		benefit = scheme.FlatBenefit
 	}
-	
+
 	// Apply min/max limits
 	if benefit < scheme.MinBenefit {
 		benefit = scheme.MinBenefit
@@ -269,26 +277,26 @@ func (s *GroupLifeService) CalculateMemberBenefit(scheme *GroupScheme, member *G
 	if benefit > scheme.MaxBenefit {
 		benefit = scheme.MaxBenefit
 	}
-	
+
 	return benefit
 }
 
 // ProcessMemberMovement processes member additions/deletions
 func (s *GroupLifeService) ProcessMemberMovement(movement *MemberMovement, scheme *GroupScheme) float64 {
 	premiumImpact := 0.0
-	
+
 	for _, change := range movement.Members {
 		switch change.ChangeType {
 		case "addition":
 			// Calculate premium for new member
 			memberPremium := change.NewSumAssured * 1.5 / 1000 // Base rate
 			premiumImpact += memberPremium
-			
+
 		case "deletion":
 			// Refund premium for deleted member
 			memberPremium := change.OldSumAssured * 1.5 / 1000
 			premiumImpact -= memberPremium
-			
+
 		case "salary_revision":
 			// Calculate premium difference
 			oldPremium := change.OldSumAssured * 1.5 / 1000
@@ -296,11 +304,11 @@ func (s *GroupLifeService) ProcessMemberMovement(movement *MemberMovement, schem
 			premiumImpact += newPremium - oldPremium
 		}
 	}
-	
+
 	// Pro-rate based on remaining policy period
 	daysRemaining := scheme.RenewalDate.Sub(time.Now()).Hours() / 24
 	proRataFactor := daysRemaining / 365
-	
+
 	return math.Round(premiumImpact*proRataFactor*100) / 100
 }
 
@@ -308,10 +316,10 @@ func (s *GroupLifeService) ProcessMemberMovement(movement *MemberMovement, schem
 func (s *GroupLifeService) GenerateRenewalQuote(scheme *GroupScheme, claimsAmount float64) *RenewalQuote {
 	// Claims experience ratio
 	claimsExperience := claimsAmount / scheme.AnnualPremium * 100
-	
+
 	// Calculate proposed premium
 	proposedPremium := scheme.AnnualPremium
-	
+
 	if claimsExperience > 80 {
 		// High claims - increase premium
 		proposedPremium *= 1.15
@@ -321,9 +329,9 @@ func (s *GroupLifeService) GenerateRenewalQuote(scheme *GroupScheme, claimsAmoun
 		// Low claims - discount
 		proposedPremium *= 0.95
 	}
-	
+
 	premiumChange := (proposedPremium - scheme.AnnualPremium) / scheme.AnnualPremium * 100
-	
+
 	return &RenewalQuote{
 		QuoteID:          fmt.Sprintf("RQ-%d", time.Now().Unix()),
 		SchemeID:         scheme.SchemeID,
@@ -342,15 +350,15 @@ func (s *GroupLifeService) HandleCalculatePremium(w http.ResponseWriter, r *http
 		Scheme  GroupScheme   `json:"scheme"`
 		Members []GroupMember `json:"members"`
 	}
-	
+
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	result := s.CalculatePremium(&req.Scheme, req.Members)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -360,15 +368,15 @@ func (s *GroupLifeService) HandleRenewalQuote(w http.ResponseWriter, r *http.Req
 		Scheme       GroupScheme `json:"scheme"`
 		ClaimsAmount float64     `json:"claims_amount"`
 	}
-	
+
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	result := s.GenerateRenewalQuote(&req.Scheme, req.ClaimsAmount)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -399,7 +407,6 @@ func (s *GroupLifeService) HandleHealth(w http.ResponseWriter, r *http.Request) 
 		},
 	})
 }
-
 
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
@@ -435,7 +442,6 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 	return n, nil
 }
 
-
 var db *sql.DB
 
 func initDB() {
@@ -467,9 +473,9 @@ func initDB() {
             status TEXT DEFAULT 'active',
             created_at TIMESTAMP DEFAULT NOW()
         )`); err != nil {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS group_members (id TEXT PRIMARY KEY, group_id TEXT, member_id TEXT, member_name TEXT, date_of_birth TEXT, sum_assured NUMERIC(15,2), category TEXT, annual_premium NUMERIC(15,2), claim_amount NUMERIC(15,2) DEFAULT 0, premium_paid NUMERIC(15,2) DEFAULT 0, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
+		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS group_members (id TEXT PRIMARY KEY, group_id TEXT, member_id TEXT, member_name TEXT, date_of_birth TEXT, sum_assured NUMERIC(15,2), category TEXT, annual_premium NUMERIC(15,2), claim_amount NUMERIC(15,2) DEFAULT 0, premium_paid NUMERIC(15,2) DEFAULT 0, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+			log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+		}
 		jsonLog("warn", "create table failed", "error", err.Error())
 	} else {
 		jsonLog("info", "table ready", "table", "group_life_schemes")
@@ -495,8 +501,6 @@ func execInTransaction(fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-
-
 // otelMiddleware adds trace context propagation to requests.
 func otelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -516,16 +520,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -536,9 +537,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -546,7 +552,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -611,9 +619,13 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -642,20 +654,26 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
-		if err := rows.Scan(ptrs...); err != nil { continue }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-		switch v := vals[i].(type) {
-		case []byte:
-			row[col] = string(v)
-		default:
-			row[col] = v
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
-	}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
@@ -679,7 +697,9 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -699,7 +719,8 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value("user_id").(string)
 	if !permifyCheck(r.Context(), "group-life-admin", "", "create", userID) {
-		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden); return
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	var body map[string]interface{}
@@ -712,7 +733,9 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -730,13 +753,17 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 	// Index to OpenSearch for full-text search
 	if osClient != nil {
 		go osClient.IndexLog("info", "entity_created", "group-life-admin", map[string]interface{}{"action": "created", "timestamp": time.Now().Format(time.RFC3339)})
 	}
-	if redisClient != nil { redisClient.CacheInvalidate("group-life-admin:list") }
+	if redisClient != nil {
+		redisClient.CacheInvalidate("group-life-admin:list")
+	}
 }
 
 func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
@@ -760,7 +787,9 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
@@ -773,12 +802,11 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"service": "group_life_schemes", "table": "group_life_schemes", "total_records": count})
 }
 
-
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -789,6 +817,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -797,7 +826,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -818,35 +849,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -857,7 +904,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -868,6 +917,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -876,9 +926,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -935,6 +989,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -961,9 +1016,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -1081,29 +1140,30 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
-
 func handleGroupEnroll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
 	var req struct {
-		GroupID    string `json:"group_id"`
-		MemberID   string `json:"member_id"`
-		MemberName string `json:"member_name"`
-		DateOfBirth string `json:"date_of_birth"`
-		SumAssured float64 `json:"sum_assured"`
-		Category   string `json:"category"` // employee, spouse, child
+		GroupID     string  `json:"group_id"`
+		MemberID    string  `json:"member_id"`
+		MemberName  string  `json:"member_name"`
+		DateOfBirth string  `json:"date_of_birth"`
+		SumAssured  float64 `json:"sum_assured"`
+		Category    string  `json:"category"` // employee, spouse, child
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	// Business rule: max sum assured = ₦50M for employees, ₦25M for spouse, ₦10M for child
 	maxSA := map[string]float64{"employee": 50000000, "spouse": 25000000, "child": 10000000}
 	if max, ok := maxSA[req.Category]; ok && req.SumAssured > max {
-		http.Error(w, fmt.Sprintf(`{"error":"sum_assured exceeds max %.0f for %s"}`, max, req.Category), 400); return
+		http.Error(w, fmt.Sprintf(`{"error":"sum_assured exceeds max %.0f for %s"}`, max, req.Category), 400)
+		return
 	}
 	// Premium calculation: per-mille rate based on group experience
 	rate := 2.5 // base rate per ₦1000 sum assured per annum
@@ -1112,8 +1172,12 @@ func handleGroupEnroll(w http.ResponseWriter, r *http.Request) {
 		db.QueryRow("SELECT COALESCE(SUM(claim_amount)/NULLIF(SUM(premium_paid),0), 0) FROM group_members WHERE group_id=$1", req.GroupID).Scan(&claimsRatio)
 	}
 	// Experience rating adjustment
-	if claimsRatio < 0.4 { rate *= 0.85 } // Good experience discount
-	if claimsRatio > 0.8 { rate *= 1.25 } // Bad experience loading
+	if claimsRatio < 0.4 {
+		rate *= 0.85
+	} // Good experience discount
+	if claimsRatio > 0.8 {
+		rate *= 1.25
+	} // Bad experience loading
 	annualPremium := (req.SumAssured / 1000) * rate
 	enrollID := fmt.Sprintf("GE-%d", time.Now().UnixNano())
 	if db != nil {
@@ -1123,31 +1187,41 @@ func handleGroupEnroll(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"enrollment_id": enrollID, "annual_premium": annualPremium, "rate_per_mille": rate, "experience_adjustment": claimsRatio})
 }
 
-
 func handleExperienceRating(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
 	groupID := r.URL.Query().Get("group_id")
-	if groupID == "" { http.Error(w, `{"error":"group_id required"}`, 400); return }
-	var memberCount int; var totalSA, totalPremium, totalClaims float64
+	if groupID == "" {
+		http.Error(w, `{"error":"group_id required"}`, 400)
+		return
+	}
+	var memberCount int
+	var totalSA, totalPremium, totalClaims float64
 	if db != nil {
 		db.QueryRow("SELECT COUNT(*), COALESCE(SUM(sum_assured),0), COALESCE(SUM(annual_premium),0), COALESCE(SUM(claim_amount),0) FROM group_members WHERE group_id=$1 AND status='active'", groupID).Scan(&memberCount, &totalSA, &totalPremium, &totalClaims)
 	}
 	claimsRatio := 0.0
-	if totalPremium > 0 { claimsRatio = totalClaims / totalPremium }
+	if totalPremium > 0 {
+		claimsRatio = totalClaims / totalPremium
+	}
 	rating := "standard"
-	if claimsRatio < 0.4 { rating = "preferred" }
-	if claimsRatio > 0.8 { rating = "substandard" }
+	if claimsRatio < 0.4 {
+		rating = "preferred"
+	}
+	if claimsRatio > 0.8 {
+		rating = "substandard"
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"group_id": groupID, "member_count": memberCount, "total_sum_assured": totalSA, "total_premium": totalPremium, "total_claims": totalClaims, "claims_ratio": claimsRatio, "experience_rating": rating})
 }
 
-
 func handlePremiumSchedule(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
@@ -1158,13 +1232,17 @@ func handlePremiumSchedule(w http.ResponseWriter, r *http.Request) {
 		if rows != nil {
 			defer rows.Close()
 			for rows.Next() {
-				var cat string; var cnt int; var sa, prem float64
+				var cat string
+				var cnt int
+				var sa, prem float64
 				rows.Scan(&cat, &cnt, &sa, &prem)
 				schedule = append(schedule, map[string]interface{}{"category": cat, "member_count": cnt, "total_sum_assured": sa, "annual_premium": prem, "monthly_premium": prem / 12})
 			}
 		}
 	}
-	if schedule == nil { schedule = []map[string]interface{}{} }
+	if schedule == nil {
+		schedule = []map[string]interface{}{}
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"group_id": groupID, "schedule": schedule})
 }
 
@@ -1192,58 +1270,11 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-var db *sql.DB
-
-func initDB() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v", err)
-		return
-	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v", err)
-		return
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"group-life-admin","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS group_policies (id TEXT PRIMARY KEY, group_name TEXT NOT NULL, employer_id TEXT, member_count INT DEFAULT 0, total_premium NUMERIC(15,2), coverage_type TEXT, status TEXT DEFAULT 'active', effective_date DATE, created_at TIMESTAMPTZ DEFAULT NOW())`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
-
 func main() {
 	initDB()
 	initMiddleware()
 	service := NewGroupLifeService()
-	
+
 	http.HandleFunc("/api/group-life/premium", service.HandleCalculatePremium)
 	http.HandleFunc("/api/group-life/renewal-quote", service.HandleRenewalQuote)
 
@@ -1256,14 +1287,14 @@ func main() {
 	http.HandleFunc("/health", service.HandleHealth)
 	http.HandleFunc("/ready", handleReady)
 	http.HandleFunc("/live", handleLive)
-	
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	
+
 	log.Printf("Group Life Administration Service starting on port %s", port)
-	
+
 	srv := &http.Server{Addr: ":" + port, Handler: bodyLimitMiddleware(http.DefaultServeMux)}
 	go func() {
 		sigCh := make(chan os.Signal, 1)
