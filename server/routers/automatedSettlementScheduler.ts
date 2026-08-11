@@ -5,11 +5,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import {
-  merchantSettlements,
-  reconciliationBatches,
-} from "../../drizzle/schema";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { reconciliationBatches } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 import {
   publishSettlementEvent,

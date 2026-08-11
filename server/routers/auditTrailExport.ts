@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
-import { desc, eq, and, count, gte, lte } from "drizzle-orm";
+import { desc, count } from "drizzle-orm";
 
 /**
  * Audit Trail Export Router
