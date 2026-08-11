@@ -1,18 +1,18 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math"
 	"log"
+	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,19 +21,19 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
 )
 
 var db *sql.DB
+
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -41,9 +41,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -57,15 +61,16 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
-
 
 // ─── Production Middleware ───────────────────────────────────────────────────
 
 var (
-	reqCount    int64
-	errCount    int64
+	reqCount     int64
+	errCount     int64
 	avgLatencyMs float64
 )
 
@@ -158,9 +163,6 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
 func execInTransaction(fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -233,7 +235,6 @@ func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 // ─── Domain Handlers ─────────────────────────────────────────────────────────
 
 func handleList(w http.ResponseWriter, r *http.Request) {
@@ -252,9 +253,13 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -278,7 +283,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
 		if err := rows.Scan(ptrs...); err != nil {
 			continue
 		}
@@ -293,7 +300,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
@@ -336,7 +345,9 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -377,7 +388,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -405,7 +418,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -438,7 +453,9 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
 }
 
@@ -476,10 +493,10 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	db.QueryRow("SELECT COUNT(*) FROM usage_events").Scan(&count)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service": "usage-based-insurance",
-		"table":   "usage_events",
+		"service":       "usage-based-insurance",
+		"table":         "usage_events",
 		"total_records": count,
-		"uptime":  time.Since(startTime).String(),
+		"uptime":        time.Since(startTime).String(),
 	})
 }
 
@@ -517,19 +534,43 @@ func calculateBehaviorScore(data TelematicsData) float64 {
 	score := 100.0
 
 	// Hard braking (>5 per day is concerning)
-	if data.HardBraking > 10 { score -= 25 } else if data.HardBraking > 5 { score -= 15 } else if data.HardBraking > 2 { score -= 5 }
+	if data.HardBraking > 10 {
+		score -= 25
+	} else if data.HardBraking > 5 {
+		score -= 15
+	} else if data.HardBraking > 2 {
+		score -= 5
+	}
 
 	// Speeding events
-	if data.Speeding > 5 { score -= 30 } else if data.Speeding > 2 { score -= 15 } else if data.Speeding > 0 { score -= 5 }
+	if data.Speeding > 5 {
+		score -= 30
+	} else if data.Speeding > 2 {
+		score -= 15
+	} else if data.Speeding > 0 {
+		score -= 5
+	}
 
 	// Phone usage while driving
-	if data.PhoneUsage > 3 { score -= 25 } else if data.PhoneUsage > 0 { score -= 10 }
+	if data.PhoneUsage > 3 {
+		score -= 25
+	} else if data.PhoneUsage > 0 {
+		score -= 10
+	}
 
 	// Night driving (10pm-5am increases risk by 3x statistically)
-	if data.NightDrivingPct > 0.30 { score -= 15 } else if data.NightDrivingPct > 0.15 { score -= 5 }
+	if data.NightDrivingPct > 0.30 {
+		score -= 15
+	} else if data.NightDrivingPct > 0.15 {
+		score -= 5
+	}
 
 	// Max speed (>140 km/h in Nigeria is extremely dangerous)
-	if data.MaxSpeed > 160 { score -= 20 } else if data.MaxSpeed > 140 { score -= 10 }
+	if data.MaxSpeed > 160 {
+		score -= 20
+	} else if data.MaxSpeed > 140 {
+		score -= 10
+	}
 
 	return math.Max(score, 0)
 }
@@ -539,40 +580,68 @@ func calculateUBIPremium(basePremium float64, data TelematicsData) UBIPremiumRes
 	// Mileage-based factor (pay-per-km)
 	annualMileage := data.DailyMileage * 365
 	mileageFactor := 1.0
-	if annualMileage < 5000 { mileageFactor = 0.6 }      // Very low usage
-	if annualMileage < 10000 { mileageFactor = 0.75 }     // Low usage
-	if annualMileage < 20000 { mileageFactor = 1.0 }      // Average
-	if annualMileage >= 20000 { mileageFactor = 1.2 }     // High usage
-	if annualMileage >= 40000 { mileageFactor = 1.5 }     // Very high
+	if annualMileage < 5000 {
+		mileageFactor = 0.6
+	} // Very low usage
+	if annualMileage < 10000 {
+		mileageFactor = 0.75
+	} // Low usage
+	if annualMileage < 20000 {
+		mileageFactor = 1.0
+	} // Average
+	if annualMileage >= 20000 {
+		mileageFactor = 1.2
+	} // High usage
+	if annualMileage >= 40000 {
+		mileageFactor = 1.5
+	} // Very high
 
 	// Behavior factor
 	behaviorScore := calculateBehaviorScore(data)
 	behaviorFactor := 1.0
-	if behaviorScore >= 90 { behaviorFactor = 0.70 }      // Excellent: 30% discount
-	if behaviorScore >= 75 && behaviorScore < 90 { behaviorFactor = 0.85 }  // Good: 15% discount
-	if behaviorScore >= 50 && behaviorScore < 75 { behaviorFactor = 1.0 }   // Average: no change
-	if behaviorScore < 50 { behaviorFactor = 1.25 }       // Poor: 25% surcharge
-	if behaviorScore < 25 { behaviorFactor = 1.50 }       // Dangerous: 50% surcharge
+	if behaviorScore >= 90 {
+		behaviorFactor = 0.70
+	} // Excellent: 30% discount
+	if behaviorScore >= 75 && behaviorScore < 90 {
+		behaviorFactor = 0.85
+	} // Good: 15% discount
+	if behaviorScore >= 50 && behaviorScore < 75 {
+		behaviorFactor = 1.0
+	} // Average: no change
+	if behaviorScore < 50 {
+		behaviorFactor = 1.25
+	} // Poor: 25% surcharge
+	if behaviorScore < 25 {
+		behaviorFactor = 1.50
+	} // Dangerous: 50% surcharge
 
 	finalPremium := basePremium * mileageFactor * behaviorFactor
 	finalPremium = math.Round(finalPremium*100) / 100
 	discount := (1 - (finalPremium / basePremium)) * 100
 
 	riskTier := "standard"
-	if behaviorScore >= 90 { riskTier = "preferred" }
-	if behaviorScore >= 75 { riskTier = "good" }
-	if behaviorScore < 50 { riskTier = "high_risk" }
-	if behaviorScore < 25 { riskTier = "unacceptable" }
+	if behaviorScore >= 90 {
+		riskTier = "preferred"
+	}
+	if behaviorScore >= 75 {
+		riskTier = "good"
+	}
+	if behaviorScore < 50 {
+		riskTier = "high_risk"
+	}
+	if behaviorScore < 25 {
+		riskTier = "unacceptable"
+	}
 
 	return UBIPremiumResult{
-		PolicyID:      data.PolicyID,
-		BasePremium:   basePremium,
-		MileageFactor: mileageFactor,
-		BehaviorScore: behaviorScore,
+		PolicyID:       data.PolicyID,
+		BasePremium:    basePremium,
+		MileageFactor:  mileageFactor,
+		BehaviorScore:  behaviorScore,
 		BehaviorFactor: behaviorFactor,
-		FinalPremium:  finalPremium,
-		Discount:      math.Round(discount*100) / 100,
-		RiskTier:      riskTier,
+		FinalPremium:   finalPremium,
+		Discount:       math.Round(discount*100) / 100,
+		RiskTier:       riskTier,
 	}
 }
 
@@ -607,23 +676,28 @@ func handleBehaviorScore(w http.ResponseWriter, r *http.Request) {
 	score := calculateBehaviorScore(data)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"policy_id": data.PolicyID,
+		"policy_id":      data.PolicyID,
 		"behavior_score": score,
 		"risk_tier": func() string {
-			if score >= 90 { return "preferred" }
-			if score >= 75 { return "good" }
-			if score >= 50 { return "standard" }
+			if score >= 90 {
+				return "preferred"
+			}
+			if score >= 75 {
+				return "good"
+			}
+			if score >= 50 {
+				return "standard"
+			}
 			return "high_risk"
 		}(),
 	})
 }
 
-
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -634,6 +708,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -642,7 +717,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -663,35 +740,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -702,7 +795,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -713,6 +808,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -721,9 +817,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -780,6 +880,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -806,9 +907,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -925,7 +1030,6 @@ func initMiddleware() {
 	osClient = newOpenSearchClient(osURL, os.Getenv("OPENSEARCH_USER"))
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
-
 
 func bodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

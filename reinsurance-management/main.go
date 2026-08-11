@@ -1,34 +1,36 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"context"
+	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"sync"
+	"syscall"
 	"time"
-	"context"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -36,9 +38,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -52,7 +58,9 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // ReinsuranceService manages reinsurance operations
@@ -60,78 +68,78 @@ type ReinsuranceService struct{}
 
 // Treaty represents a reinsurance treaty
 type Treaty struct {
-	TreatyID          string    `json:"treaty_id"`
-	TreatyName        string    `json:"treaty_name"`
-	TreatyType        string    `json:"treaty_type"` // quota_share, surplus, excess_of_loss, stop_loss
-	Reinsurer         string    `json:"reinsurer"`
-	ReinsurerShare    float64   `json:"reinsurer_share"`
-	RetentionLimit    float64   `json:"retention_limit"`
-	CoverLimit        float64   `json:"cover_limit"`
-	CommissionRate    float64   `json:"commission_rate"`
-	ProfitCommission  float64   `json:"profit_commission"`
-	EffectiveDate     time.Time `json:"effective_date"`
-	ExpiryDate        time.Time `json:"expiry_date"`
-	Status            string    `json:"status"`
-	LinesOfBusiness   []string  `json:"lines_of_business"`
+	TreatyID         string    `json:"treaty_id"`
+	TreatyName       string    `json:"treaty_name"`
+	TreatyType       string    `json:"treaty_type"` // quota_share, surplus, excess_of_loss, stop_loss
+	Reinsurer        string    `json:"reinsurer"`
+	ReinsurerShare   float64   `json:"reinsurer_share"`
+	RetentionLimit   float64   `json:"retention_limit"`
+	CoverLimit       float64   `json:"cover_limit"`
+	CommissionRate   float64   `json:"commission_rate"`
+	ProfitCommission float64   `json:"profit_commission"`
+	EffectiveDate    time.Time `json:"effective_date"`
+	ExpiryDate       time.Time `json:"expiry_date"`
+	Status           string    `json:"status"`
+	LinesOfBusiness  []string  `json:"lines_of_business"`
 }
 
 // FacultativePlacement represents a facultative reinsurance placement
 type FacultativePlacement struct {
-	PlacementID       string    `json:"placement_id"`
-	PolicyNumber      string    `json:"policy_number"`
-	InsuredName       string    `json:"insured_name"`
-	RiskDescription   string    `json:"risk_description"`
-	SumInsured        float64   `json:"sum_insured"`
-	GrossPremium      float64   `json:"gross_premium"`
-	RetainedAmount    float64   `json:"retained_amount"`
-	CededAmount       float64   `json:"ceded_amount"`
-	CededPremium      float64   `json:"ceded_premium"`
-	Commission        float64   `json:"commission"`
-	Reinsurers        []ReinsurerParticipation `json:"reinsurers"`
-	PlacementDate     time.Time `json:"placement_date"`
-	Status            string    `json:"status"`
+	PlacementID     string                   `json:"placement_id"`
+	PolicyNumber    string                   `json:"policy_number"`
+	InsuredName     string                   `json:"insured_name"`
+	RiskDescription string                   `json:"risk_description"`
+	SumInsured      float64                  `json:"sum_insured"`
+	GrossPremium    float64                  `json:"gross_premium"`
+	RetainedAmount  float64                  `json:"retained_amount"`
+	CededAmount     float64                  `json:"ceded_amount"`
+	CededPremium    float64                  `json:"ceded_premium"`
+	Commission      float64                  `json:"commission"`
+	Reinsurers      []ReinsurerParticipation `json:"reinsurers"`
+	PlacementDate   time.Time                `json:"placement_date"`
+	Status          string                   `json:"status"`
 }
 
 // ReinsurerParticipation represents a reinsurer's participation
 type ReinsurerParticipation struct {
-	ReinsurerName     string  `json:"reinsurer_name"`
-	ReinsurerCode     string  `json:"reinsurer_code"`
-	SharePercent      float64 `json:"share_percent"`
-	ShareAmount       float64 `json:"share_amount"`
-	Premium           float64 `json:"premium"`
-	Commission        float64 `json:"commission"`
+	ReinsurerName string  `json:"reinsurer_name"`
+	ReinsurerCode string  `json:"reinsurer_code"`
+	SharePercent  float64 `json:"share_percent"`
+	ShareAmount   float64 `json:"share_amount"`
+	Premium       float64 `json:"premium"`
+	Commission    float64 `json:"commission"`
 }
 
 // BordereauEntry represents a bordereau entry
 type BordereauEntry struct {
-	EntryID           string    `json:"entry_id"`
-	TreatyID          string    `json:"treaty_id"`
-	PolicyNumber      string    `json:"policy_number"`
-	InsuredName       string    `json:"insured_name"`
-	RiskType          string    `json:"risk_type"`
-	InceptionDate     time.Time `json:"inception_date"`
-	ExpiryDate        time.Time `json:"expiry_date"`
-	SumInsured        float64   `json:"sum_insured"`
-	GrossPremium      float64   `json:"gross_premium"`
-	CededPremium      float64   `json:"ceded_premium"`
-	Commission        float64   `json:"commission"`
-	NetPremium        float64   `json:"net_premium"`
+	EntryID       string    `json:"entry_id"`
+	TreatyID      string    `json:"treaty_id"`
+	PolicyNumber  string    `json:"policy_number"`
+	InsuredName   string    `json:"insured_name"`
+	RiskType      string    `json:"risk_type"`
+	InceptionDate time.Time `json:"inception_date"`
+	ExpiryDate    time.Time `json:"expiry_date"`
+	SumInsured    float64   `json:"sum_insured"`
+	GrossPremium  float64   `json:"gross_premium"`
+	CededPremium  float64   `json:"ceded_premium"`
+	Commission    float64   `json:"commission"`
+	NetPremium    float64   `json:"net_premium"`
 }
 
 // ClaimRecovery represents a reinsurance claim recovery
 type ClaimRecovery struct {
-	RecoveryID        string    `json:"recovery_id"`
-	ClaimNumber       string    `json:"claim_number"`
-	PolicyNumber      string    `json:"policy_number"`
-	TreatyID          string    `json:"treaty_id"`
-	GrossClaimAmount  float64   `json:"gross_claim_amount"`
-	RetainedAmount    float64   `json:"retained_amount"`
-	RecoverableAmount float64   `json:"recoverable_amount"`
-	RecoveredAmount   float64   `json:"recovered_amount"`
-	OutstandingAmount float64   `json:"outstanding_amount"`
+	RecoveryID        string              `json:"recovery_id"`
+	ClaimNumber       string              `json:"claim_number"`
+	PolicyNumber      string              `json:"policy_number"`
+	TreatyID          string              `json:"treaty_id"`
+	GrossClaimAmount  float64             `json:"gross_claim_amount"`
+	RetainedAmount    float64             `json:"retained_amount"`
+	RecoverableAmount float64             `json:"recoverable_amount"`
+	RecoveredAmount   float64             `json:"recovered_amount"`
+	OutstandingAmount float64             `json:"outstanding_amount"`
 	Reinsurers        []ReinsurerRecovery `json:"reinsurers"`
-	Status            string    `json:"status"`
-	SubmissionDate    time.Time `json:"submission_date"`
+	Status            string              `json:"status"`
+	SubmissionDate    time.Time           `json:"submission_date"`
 }
 
 // ReinsurerRecovery represents recovery from a specific reinsurer
@@ -146,26 +154,26 @@ type ReinsurerRecovery struct {
 
 // ReinsuranceAccount represents reinsurance account statement
 type ReinsuranceAccount struct {
-	AccountID         string    `json:"account_id"`
-	TreatyID          string    `json:"treaty_id"`
-	Period            string    `json:"period"`
-	GrossPremium      float64   `json:"gross_premium"`
-	Commission        float64   `json:"commission"`
-	Claims            float64   `json:"claims"`
-	ProfitCommission  float64   `json:"profit_commission"`
-	Balance           float64   `json:"balance"`
-	Status            string    `json:"status"`
+	AccountID        string  `json:"account_id"`
+	TreatyID         string  `json:"treaty_id"`
+	Period           string  `json:"period"`
+	GrossPremium     float64 `json:"gross_premium"`
+	Commission       float64 `json:"commission"`
+	Claims           float64 `json:"claims"`
+	ProfitCommission float64 `json:"profit_commission"`
+	Balance          float64 `json:"balance"`
+	Status           string  `json:"status"`
 }
 
 // ReinsuranceAnalytics represents reinsurance analytics
 type ReinsuranceAnalytics struct {
-	TotalCededPremium     float64 `json:"total_ceded_premium"`
-	TotalCommissionEarned float64 `json:"total_commission_earned"`
-	TotalClaimsRecovered  float64 `json:"total_claims_recovered"`
-	RetentionRatio        float64 `json:"retention_ratio"`
-	CessionRatio          float64 `json:"cession_ratio"`
-	RecoveryRatio         float64 `json:"recovery_ratio"`
-	NetRetention          float64 `json:"net_retention"`
+	TotalCededPremium     float64            `json:"total_ceded_premium"`
+	TotalCommissionEarned float64            `json:"total_commission_earned"`
+	TotalClaimsRecovered  float64            `json:"total_claims_recovered"`
+	RetentionRatio        float64            `json:"retention_ratio"`
+	CessionRatio          float64            `json:"cession_ratio"`
+	RecoveryRatio         float64            `json:"recovery_ratio"`
+	NetRetention          float64            `json:"net_retention"`
 	TreatyUtilization     map[string]float64 `json:"treaty_utilization"`
 }
 
@@ -176,7 +184,7 @@ func NewReinsuranceService() *ReinsuranceService {
 // CalculateCession calculates reinsurance cession for a policy
 func (s *ReinsuranceService) CalculateCession(sumInsured, grossPremium float64, treaty *Treaty) *FacultativePlacement {
 	var retainedAmount, cededAmount, cededPremium, commission float64
-	
+
 	switch treaty.TreatyType {
 	case "quota_share":
 		// Fixed percentage cession
@@ -184,7 +192,7 @@ func (s *ReinsuranceService) CalculateCession(sumInsured, grossPremium float64, 
 		retainedAmount = sumInsured - cededAmount
 		cededPremium = grossPremium * treaty.ReinsurerShare
 		commission = cededPremium * treaty.CommissionRate
-		
+
 	case "surplus":
 		// Cede amounts above retention
 		if sumInsured > treaty.RetentionLimit {
@@ -199,7 +207,7 @@ func (s *ReinsuranceService) CalculateCession(sumInsured, grossPremium float64, 
 			cededPremium = 0
 			commission = 0
 		}
-		
+
 	case "excess_of_loss":
 		// XOL - applies to claims, not premium
 		retainedAmount = treaty.RetentionLimit
@@ -208,7 +216,7 @@ func (s *ReinsuranceService) CalculateCession(sumInsured, grossPremium float64, 
 		cededPremium = grossPremium * 0.05 // 5% XOL rate
 		commission = cededPremium * treaty.CommissionRate
 	}
-	
+
 	return &FacultativePlacement{
 		PlacementID:    fmt.Sprintf("FAC-%d", time.Now().Unix()),
 		SumInsured:     sumInsured,
@@ -225,12 +233,12 @@ func (s *ReinsuranceService) CalculateCession(sumInsured, grossPremium float64, 
 // CalculateClaimRecovery calculates reinsurance claim recovery
 func (s *ReinsuranceService) CalculateClaimRecovery(claimAmount float64, treaty *Treaty) *ClaimRecovery {
 	var retainedAmount, recoverableAmount float64
-	
+
 	switch treaty.TreatyType {
 	case "quota_share":
 		retainedAmount = claimAmount * (1 - treaty.ReinsurerShare)
 		recoverableAmount = claimAmount * treaty.ReinsurerShare
-		
+
 	case "surplus":
 		if claimAmount > treaty.RetentionLimit {
 			retainedAmount = treaty.RetentionLimit
@@ -239,7 +247,7 @@ func (s *ReinsuranceService) CalculateClaimRecovery(claimAmount float64, treaty 
 			retainedAmount = claimAmount
 			recoverableAmount = 0
 		}
-		
+
 	case "excess_of_loss":
 		if claimAmount > treaty.RetentionLimit {
 			retainedAmount = treaty.RetentionLimit
@@ -249,7 +257,7 @@ func (s *ReinsuranceService) CalculateClaimRecovery(claimAmount float64, treaty 
 			recoverableAmount = 0
 		}
 	}
-	
+
 	return &ClaimRecovery{
 		RecoveryID:        fmt.Sprintf("REC-%d", time.Now().Unix()),
 		TreatyID:          treaty.TreatyID,
@@ -266,14 +274,14 @@ func (s *ReinsuranceService) CalculateClaimRecovery(claimAmount float64, treaty 
 // GenerateBordereau generates a bordereau report
 func (s *ReinsuranceService) GenerateBordereau(treatyID string, entries []BordereauEntry) map[string]interface{} {
 	var totalGrossPremium, totalCededPremium, totalCommission, totalNetPremium float64
-	
+
 	for _, entry := range entries {
 		totalGrossPremium += entry.GrossPremium
 		totalCededPremium += entry.CededPremium
 		totalCommission += entry.Commission
 		totalNetPremium += entry.NetPremium
 	}
-	
+
 	return map[string]interface{}{
 		"treaty_id":           treatyID,
 		"period":              time.Now().Format("2006-01"),
@@ -295,7 +303,7 @@ func (s *ReinsuranceService) CalculateAnalytics(grossPremium, cededPremium, comm
 	if claimsPaid > 0 {
 		recoveryRatio = claimsRecovered / claimsPaid * 100
 	}
-	
+
 	return &ReinsuranceAnalytics{
 		TotalCededPremium:     cededPremium,
 		TotalCommissionEarned: commission,
@@ -314,15 +322,15 @@ func (s *ReinsuranceService) HandleCalculateCession(w http.ResponseWriter, r *ht
 		GrossPremium float64 `json:"gross_premium"`
 		Treaty       Treaty  `json:"treaty"`
 	}
-	
+
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	result := s.CalculateCession(req.SumInsured, req.GrossPremium, &req.Treaty)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -332,15 +340,15 @@ func (s *ReinsuranceService) HandleCalculateRecovery(w http.ResponseWriter, r *h
 		ClaimAmount float64 `json:"claim_amount"`
 		Treaty      Treaty  `json:"treaty"`
 	}
-	
+
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	result := s.CalculateClaimRecovery(req.ClaimAmount, &req.Treaty)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -369,7 +377,6 @@ func (s *ReinsuranceService) HandleHealth(w http.ResponseWriter, r *http.Request
 		},
 	})
 }
-
 
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
@@ -405,7 +412,6 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 	return n, nil
 }
 
-
 var db *sql.DB
 
 func initDB() {
@@ -438,9 +444,9 @@ func initDB() {
             status TEXT DEFAULT 'active',
             created_at TIMESTAMP DEFAULT NOW()
         )`); err != nil {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS reinsurance_cessions (id TEXT PRIMARY KEY, policy_id TEXT, treaty_type TEXT, sum_insured NUMERIC(15,2), gross_premium NUMERIC(15,2), ceded_premium NUMERIC(15,2), retained_premium NUMERIC(15,2), ceded_si NUMERIC(15,2), created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
+		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS reinsurance_cessions (id TEXT PRIMARY KEY, policy_id TEXT, treaty_type TEXT, sum_insured NUMERIC(15,2), gross_premium NUMERIC(15,2), ceded_premium NUMERIC(15,2), retained_premium NUMERIC(15,2), ceded_si NUMERIC(15,2), created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+			log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+		}
 		jsonLog("warn", "create table failed", "error", err.Error())
 	} else {
 		jsonLog("info", "table ready", "table", "reinsurance_contracts")
@@ -466,8 +472,6 @@ func execInTransaction(fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-
-
 // otelMiddleware adds trace context propagation to requests.
 func otelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -487,16 +491,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -507,9 +508,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -517,7 +523,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -582,9 +590,13 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -613,20 +625,26 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
-		if err := rows.Scan(ptrs...); err != nil { continue }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-		switch v := vals[i].(type) {
-		case []byte:
-			row[col] = string(v)
-		default:
-			row[col] = v
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
-	}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
@@ -650,7 +668,9 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -670,7 +690,8 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value("user_id").(string)
 	if !permifyCheck(r.Context(), "reinsurance-management", "", "create", userID) {
-		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden); return
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	var body map[string]interface{}
@@ -683,7 +704,9 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -701,13 +724,17 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 	// Index to OpenSearch for full-text search
 	if osClient != nil {
 		go osClient.IndexLog("info", "entity_created", "reinsurance-management", map[string]interface{}{"action": "created", "timestamp": time.Now().Format(time.RFC3339)})
 	}
-	if redisClient != nil { redisClient.CacheInvalidate("reinsurance-management:list") }
+	if redisClient != nil {
+		redisClient.CacheInvalidate("reinsurance-management:list")
+	}
 }
 
 func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
@@ -731,7 +758,9 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
@@ -744,12 +773,11 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"service": "reinsurance_contracts", "table": "reinsurance_contracts", "total_records": count})
 }
 
-
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -760,6 +788,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -768,7 +797,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -789,35 +820,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -828,7 +875,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -839,6 +888,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -847,9 +897,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -906,6 +960,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -932,9 +987,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -1052,23 +1111,23 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
-
 func handleTreatyApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
 	var req struct {
-		PolicyID    string  `json:"policy_id"`
-		SumInsured  float64 `json:"sum_insured"`
-		Premium     float64 `json:"premium"`
-		TreatyType  string  `json:"treaty_type"` // quota_share, surplus, excess_of_loss
+		PolicyID     string  `json:"policy_id"`
+		SumInsured   float64 `json:"sum_insured"`
+		Premium      float64 `json:"premium"`
+		TreatyType   string  `json:"treaty_type"` // quota_share, surplus, excess_of_loss
 		RetentionPct float64 `json:"retention_pct"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	cessionID := fmt.Sprintf("CES-%d", time.Now().UnixNano())
 	var cededPremium, retainedPremium, cededSI float64
@@ -1095,21 +1154,23 @@ func handleTreatyApply(w http.ResponseWriter, r *http.Request) {
 		db.Exec("INSERT INTO reinsurance_cessions (id, policy_id, treaty_type, sum_insured, gross_premium, ceded_premium, retained_premium, ceded_si, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())",
 			cessionID, req.PolicyID, req.TreatyType, req.SumInsured, req.Premium, cededPremium, retainedPremium, cededSI)
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "cession_created", cessionID, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "cession_created", cessionID, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"cession_id": cessionID, "treaty_type": req.TreatyType, "gross_premium": req.Premium, "ceded_premium": cededPremium, "retained_premium": retainedPremium, "ceded_sum_insured": cededSI})
 }
 
-
 func handleTreatySummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
 	var quotaCeded, surplusCeded, xlCeded float64
 	var totalCessions int
 	if db != nil {
-		db.QueryRow("SELECT COUNT(*), COALESCE(SUM(CASE WHEN treaty_type='quota_share' THEN ceded_premium END),0), COALESCE(SUM(CASE WHEN treaty_type='surplus' THEN ceded_premium END),0), COALESCE(SUM(CASE WHEN treaty_type='excess_of_loss' THEN ceded_premium END),0) FROM reinsurance_cessions", ).Scan(&totalCessions, &quotaCeded, &surplusCeded, &xlCeded)
+		db.QueryRow("SELECT COUNT(*), COALESCE(SUM(CASE WHEN treaty_type='quota_share' THEN ceded_premium END),0), COALESCE(SUM(CASE WHEN treaty_type='surplus' THEN ceded_premium END),0), COALESCE(SUM(CASE WHEN treaty_type='excess_of_loss' THEN ceded_premium END),0) FROM reinsurance_cessions").Scan(&totalCessions, &quotaCeded, &surplusCeded, &xlCeded)
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"total_cessions": totalCessions, "quota_share_ceded": quotaCeded, "surplus_ceded": surplusCeded, "xl_ceded": xlCeded, "total_ceded": quotaCeded + surplusCeded + xlCeded})
 }
@@ -1138,58 +1199,11 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-var db *sql.DB
-
-func initDB() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v", err)
-		return
-	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v", err)
-		return
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"reinsurance-management","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS reinsurance_treaties (id TEXT PRIMARY KEY, treaty_name TEXT NOT NULL, reinsurer TEXT, treaty_type TEXT, retention NUMERIC(15,2), cession_rate NUMERIC(5,4), effective_date DATE, expiry_date DATE, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
-
 func main() {
 	initDB()
 	initMiddleware()
 	service := NewReinsuranceService()
-	
+
 	http.HandleFunc("/api/reinsurance/cession", service.HandleCalculateCession)
 	http.HandleFunc("/api/reinsurance/recovery", service.HandleCalculateRecovery)
 
@@ -1202,14 +1216,14 @@ func main() {
 	http.HandleFunc("/health", service.HandleHealth)
 	http.HandleFunc("/ready", handleReady)
 	http.HandleFunc("/live", handleLive)
-	
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	
+
 	log.Printf("Reinsurance Management Service starting on port %s", port)
-	
+
 	srv := &http.Server{Addr: ":" + port, Handler: bodyLimitMiddleware(http.DefaultServeMux)}
 	go func() {
 		sigCh := make(chan os.Signal, 1)

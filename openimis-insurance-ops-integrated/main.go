@@ -1,41 +1,38 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"sync"
+	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"context"
 	"database/sql"
 	"fmt"
-
-	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -43,9 +40,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -59,12 +60,13 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // openimis-insurance-ops-integrated — production microservice
 // Integrates with: Kafka, Redis, Postgres, OpenSearch
-
 
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
@@ -100,7 +102,6 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 	return n, nil
 }
 
-
 var db *sql.DB
 
 func initDB() {
@@ -118,12 +119,12 @@ func initDB() {
 	db.SetMaxIdleConns(5)
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS openimis_claims (id TEXT PRIMARY KEY, insuree_id TEXT, product_code TEXT, amount NUMERIC(15,2), status TEXT DEFAULT 'entered', review_status TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS openimis_beneficiaries (id TEXT PRIMARY KEY, national_id TEXT, full_name TEXT, date_of_birth TEXT, scheme_id TEXT, facility_id TEXT, status TEXT, enrolled_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS openimis_claims (id TEXT PRIMARY KEY, beneficiary_id TEXT, facility_id TEXT, diagnosis_code TEXT, amount NUMERIC(15,2), service_date TEXT, status TEXT, submitted_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
+		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS openimis_beneficiaries (id TEXT PRIMARY KEY, national_id TEXT, full_name TEXT, date_of_birth TEXT, scheme_id TEXT, facility_id TEXT, status TEXT, enrolled_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+			if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS openimis_claims (id TEXT PRIMARY KEY, beneficiary_id TEXT, facility_id TEXT, diagnosis_code TEXT, amount NUMERIC(15,2), service_date TEXT, status TEXT, submitted_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+				log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+			}
+			log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+		}
 		log.Printf(`{"level":"warn","msg":"create table openimis_claims failed","error":"%s"}`, err)
 	}
 	db.SetConnMaxLifetime(5 * time.Minute)
@@ -154,8 +155,6 @@ func execInTransaction(fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-
-
 // otelMiddleware adds trace context propagation to requests.
 func otelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -175,16 +174,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -195,17 +191,24 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
-func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
+func newRateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -269,12 +272,11 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"table": "openimis_claims", "count": count})
 }
 
-
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -285,6 +287,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -293,7 +296,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -314,35 +319,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -353,7 +374,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -364,6 +387,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -372,9 +396,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -431,6 +459,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -457,9 +486,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -577,23 +610,23 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
-
 func handleBeneficiaryEnroll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
 	var req struct {
-		NationalID string `json:"national_id"`
-		FullName   string `json:"full_name"`
+		NationalID  string `json:"national_id"`
+		FullName    string `json:"full_name"`
 		DateOfBirth string `json:"date_of_birth"`
-		SchemeID   string `json:"scheme_id"` // NHIS scheme
-		FacilityID string `json:"facility_id"`
+		SchemeID    string `json:"scheme_id"` // NHIS scheme
+		FacilityID  string `json:"facility_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	enrollID := fmt.Sprintf("BEN-%d", time.Now().UnixNano())
 	if db != nil {
@@ -601,13 +634,15 @@ func handleBeneficiaryEnroll(w http.ResponseWriter, r *http.Request) {
 			enrollID, req.NationalID, req.FullName, req.DateOfBirth, req.SchemeID, req.FacilityID)
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"enrollment_id": enrollID, "status": "active", "scheme_id": req.SchemeID})
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "handleBeneficiaryEnroll", "openimis-insurance-ops-integrated", nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "handleBeneficiaryEnroll", "openimis-insurance-ops-integrated", nil)
+	}
 }
-
 
 func handleSocialClaimSubmit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
@@ -619,7 +654,8 @@ func handleSocialClaimSubmit(w http.ResponseWriter, r *http.Request) {
 		ServiceDate   string  `json:"service_date"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	claimID := fmt.Sprintf("SC-%d", time.Now().UnixNano())
 	if db != nil {
@@ -644,55 +680,7 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-var db *sql.DB
-
-func initDB() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v", err)
-		return
-	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v", err)
-		return
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"openimis-insurance-ops-integrated","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS openimis_policies (id TEXT PRIMARY KEY, insured_id TEXT, product_code TEXT, effective_date DATE, expiry_date DATE, premium_paid NUMERIC(15,2), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
-
-func main() {
-	initDB()
+func newRouter() *chi.Mux {
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
@@ -787,7 +775,9 @@ func main() {
 	}
 	r := newRouter()
 	port := os.Getenv("PORT")
-	if port == "" { port = "8115" }
+	if port == "" {
+		port = "8115"
+	}
 	log.Printf("openimis-insurance-ops-integrated starting on :%s", port)
 	srv := &http.Server{Addr: ":" + port, Handler: r}
 	go func() {
