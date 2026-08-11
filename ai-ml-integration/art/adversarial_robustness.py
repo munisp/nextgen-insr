@@ -3,6 +3,11 @@ ART (Adversarial Robustness Toolbox) Integration for Insurance ML Models
 
 This module provides adversarial robustness testing and defense mechanisms
 for insurance ML models including fraud detection, risk scoring, and claims prediction.
+
+NO FABRICATED METRICS: robustness evaluations require the ART library. When
+ART is unavailable the evaluators raise RuntimeError — unless
+ALLOW_SIMULATED_DATA=true is explicitly set, in which case the report is
+clearly stamped simulated=true and labelled as demo-only.
 """
 
 import os
@@ -26,6 +31,8 @@ try:
     ART_AVAILABLE = True
 except ImportError:
     ART_AVAILABLE = False
+
+ALLOW_SIMULATED_DATA = os.environ.get("ALLOW_SIMULATED_DATA", "").strip().lower() == "true"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +70,7 @@ class RobustnessReport:
     failed_attacks: int
     average_perturbation: float
     recommendations: List[str]
+    simulated: bool = False
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
 
@@ -78,12 +86,17 @@ class DefenseReport:
     defense_effectiveness: float
     overhead_ms: float
     recommendations: List[str]
+    simulated: bool = False
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
 
 class AdversarialRobustnessService:
     """
     Service for testing and improving adversarial robustness of insurance ML models.
+
+    Requires the ART library for attack/defense evaluation. When ART is not
+    installed, evaluation methods raise RuntimeError unless
+    ALLOW_SIMULATED_DATA=true (demo mode, reports stamped simulated=true).
     """
 
     def __init__(
@@ -96,7 +109,7 @@ class AdversarialRobustnessService:
         self.epsilon = epsilon
         self.max_iter = max_iter
         self.art_available = ART_AVAILABLE
-        
+
         # Insurance-specific attack configurations
         self.attack_configs = {
             "fraud_detection": {
@@ -118,11 +131,27 @@ class AdversarialRobustnessService:
             },
         }
 
+    def _require_art(self) -> None:
+        """Raise unless ART is available or simulation is explicitly allowed."""
+        if self.art_available:
+            return
+        if not ALLOW_SIMULATED_DATA:
+            raise RuntimeError(
+                "ART (adversarial-robustness-toolbox) is required for robustness "
+                "evaluation; fabricated robustness metrics are disabled. Install "
+                "adversarial-robustness-toolbox, or set ALLOW_SIMULATED_DATA=true "
+                "for clearly-labelled demo reports."
+            )
+        logger.warning(
+            "ALLOW_SIMULATED_DATA=true: producing SIMULATED robustness report "
+            "(demo only — not a real security evaluation)."
+        )
+
     def _create_art_classifier(self, model: Any, model_type: str = "sklearn") -> Any:
         """Create ART classifier wrapper"""
         if not self.art_available:
             raise RuntimeError("ART library not available")
-        
+
         if model_type == "sklearn":
             return SklearnClassifier(model=model)
         elif model_type == "xgboost":
@@ -138,40 +167,45 @@ class AdversarialRobustnessService:
         model_type: str = "sklearn",
         epsilon: float = None,
     ) -> RobustnessReport:
-        """Evaluate model robustness against FGSM attack"""
+        """Evaluate model robustness against FGSM attack.
+
+        Raises RuntimeError when ART is unavailable and ALLOW_SIMULATED_DATA
+        is not set.
+        """
         epsilon = epsilon or self.epsilon
-        
+        self._require_art()
+
         if not self.art_available:
             return self._simulate_robustness_evaluation(
                 "FGSM", X_test, y_test, epsilon
             )
-        
+
         classifier = self._create_art_classifier(model, model_type)
-        
+
         # Original accuracy
         predictions = classifier.predict(X_test)
         original_accuracy = np.mean(np.argmax(predictions, axis=1) == y_test)
-        
+
         # Create FGSM attack
         attack = FastGradientMethod(estimator=classifier, eps=epsilon)
-        
+
         # Generate adversarial examples
         X_adv = attack.generate(x=X_test)
-        
+
         # Adversarial accuracy
         adv_predictions = classifier.predict(X_adv)
         adversarial_accuracy = np.mean(np.argmax(adv_predictions, axis=1) == y_test)
-        
+
         # Calculate metrics
         successful_attacks = np.sum(np.argmax(predictions, axis=1) != np.argmax(adv_predictions, axis=1))
         perturbation = np.mean(np.abs(X_adv - X_test))
-        
+
         robustness_score = adversarial_accuracy / original_accuracy if original_accuracy > 0 else 0
-        
+
         recommendations = self._generate_recommendations(
             robustness_score, "FGSM", epsilon
         )
-        
+
         return RobustnessReport(
             model_name=model_type,
             attack_type="FGSM",
@@ -195,21 +229,26 @@ class AdversarialRobustnessService:
         epsilon: float = None,
         max_iter: int = None,
     ) -> RobustnessReport:
-        """Evaluate model robustness against PGD attack"""
+        """Evaluate model robustness against PGD attack.
+
+        Raises RuntimeError when ART is unavailable and ALLOW_SIMULATED_DATA
+        is not set.
+        """
         epsilon = epsilon or self.epsilon
         max_iter = max_iter or self.max_iter
-        
+        self._require_art()
+
         if not self.art_available:
             return self._simulate_robustness_evaluation(
                 "PGD", X_test, y_test, epsilon
             )
-        
+
         classifier = self._create_art_classifier(model, model_type)
-        
+
         # Original accuracy
         predictions = classifier.predict(X_test)
         original_accuracy = np.mean(np.argmax(predictions, axis=1) == y_test)
-        
+
         # Create PGD attack
         attack = ProjectedGradientDescent(
             estimator=classifier,
@@ -217,24 +256,24 @@ class AdversarialRobustnessService:
             max_iter=max_iter,
             eps_step=epsilon / 10,
         )
-        
+
         # Generate adversarial examples
         X_adv = attack.generate(x=X_test)
-        
+
         # Adversarial accuracy
         adv_predictions = classifier.predict(X_adv)
         adversarial_accuracy = np.mean(np.argmax(adv_predictions, axis=1) == y_test)
-        
+
         # Calculate metrics
         successful_attacks = np.sum(np.argmax(predictions, axis=1) != np.argmax(adv_predictions, axis=1))
         perturbation = np.mean(np.abs(X_adv - X_test))
-        
+
         robustness_score = adversarial_accuracy / original_accuracy if original_accuracy > 0 else 0
-        
+
         recommendations = self._generate_recommendations(
             robustness_score, "PGD", epsilon
         )
-        
+
         return RobustnessReport(
             model_name=model_type,
             attack_type="PGD",
@@ -256,30 +295,40 @@ class AdversarialRobustnessService:
         y_test: np.ndarray,
         epsilon: float,
     ) -> RobustnessReport:
-        """Simulate robustness evaluation when ART is not available"""
-        # Simulate realistic robustness metrics
-        original_accuracy = 0.92
-        
-        # Adversarial accuracy depends on attack strength
+        """Simulated robustness evaluation — DEMO MODE ONLY.
+
+        Only reachable when ALLOW_SIMULATED_DATA=true. The report is stamped
+        simulated=True and must never be treated as a real security
+        evaluation.
+        """
+        if not ALLOW_SIMULATED_DATA:
+            raise RuntimeError(
+                "Simulated robustness reports require ALLOW_SIMULATED_DATA=true"
+            )
+
+        # Simulated robustness metrics (heuristic formulas, clearly labelled)
+        original_accuracy = 0.92  # assumed demo baseline, NOT measured
+
         if attack_type == "FGSM":
             adversarial_accuracy = original_accuracy * (1 - epsilon * 2)
         elif attack_type == "PGD":
             adversarial_accuracy = original_accuracy * (1 - epsilon * 3)
         else:
             adversarial_accuracy = original_accuracy * (1 - epsilon * 2.5)
-        
+
         adversarial_accuracy = max(0.1, adversarial_accuracy)
         robustness_score = adversarial_accuracy / original_accuracy
-        
+
         samples = len(X_test) if X_test is not None else 1000
         successful_attacks = int(samples * (1 - robustness_score))
-        
-        recommendations = self._generate_recommendations(
-            robustness_score, attack_type, epsilon
-        )
-        
+
+        recommendations = [
+            "SIMULATED REPORT (ALLOW_SIMULATED_DATA=true) — metrics are NOT "
+            "from a real ART evaluation and must not be used for security sign-off.",
+        ] + self._generate_recommendations(robustness_score, attack_type, epsilon)
+
         return RobustnessReport(
-            model_name="simulated",
+            model_name="SIMULATED_demo_only",
             attack_type=attack_type,
             original_accuracy=original_accuracy,
             adversarial_accuracy=adversarial_accuracy,
@@ -290,6 +339,7 @@ class AdversarialRobustnessService:
             failed_attacks=samples - successful_attacks,
             average_perturbation=epsilon * 0.8,
             recommendations=recommendations,
+            simulated=True,
         )
 
     def _generate_recommendations(
@@ -300,7 +350,7 @@ class AdversarialRobustnessService:
     ) -> List[str]:
         """Generate recommendations based on robustness evaluation"""
         recommendations = []
-        
+
         if robustness_score < 0.5:
             recommendations.append("CRITICAL: Model is highly vulnerable to adversarial attacks")
             recommendations.append("Implement adversarial training immediately")
@@ -319,13 +369,13 @@ class AdversarialRobustnessService:
             recommendations.append("Model demonstrates good adversarial robustness")
             recommendations.append("Continue monitoring for new attack vectors")
             recommendations.append("Regularly re-evaluate with updated attack methods")
-        
+
         # Attack-specific recommendations
         if attack_type == "FGSM":
             recommendations.append("FGSM is a fast attack - consider PGD for stronger evaluation")
         elif attack_type == "PGD":
             recommendations.append("PGD is a strong attack - good robustness here indicates solid defense")
-        
+
         return recommendations
 
     def apply_feature_squeezing_defense(
@@ -335,17 +385,17 @@ class AdversarialRobustnessService:
     ) -> Tuple[np.ndarray, float]:
         """Apply feature squeezing defense"""
         start_time = datetime.utcnow()
-        
+
         if self.art_available:
             defense = FeatureSqueezing(bit_depth=bit_depth)
             X_defended = defense(X)[0]
         else:
-            # Simulate feature squeezing
+            # Deterministic quantization (real transformation, no ART needed)
             levels = 2 ** bit_depth
             X_defended = np.round(X * levels) / levels
-        
+
         overhead_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
-        
+
         return X_defended, overhead_ms
 
     def apply_input_validation_defense(
@@ -356,7 +406,7 @@ class AdversarialRobustnessService:
         """Apply input validation defense for insurance data"""
         X_validated = X.copy()
         flagged_samples = []
-        
+
         for i, sample in enumerate(X):
             is_valid = True
             for j, (feature_name, (min_val, max_val)) in enumerate(feature_ranges.items()):
@@ -365,10 +415,10 @@ class AdversarialRobustnessService:
                         is_valid = False
                         # Clip to valid range
                         X_validated[i, j] = np.clip(sample[j], min_val, max_val)
-            
+
             if not is_valid:
                 flagged_samples.append(i)
-        
+
         return X_validated, flagged_samples
 
     def evaluate_defense_effectiveness(
@@ -379,16 +429,22 @@ class AdversarialRobustnessService:
         defense_type: DefenseType,
         model_type: str = "sklearn",
     ) -> DefenseReport:
-        """Evaluate effectiveness of a defense mechanism"""
-        
+        """Evaluate effectiveness of a defense mechanism.
+
+        Raises RuntimeError when ART is unavailable and ALLOW_SIMULATED_DATA
+        is not set — attack success rates cannot be measured without ART.
+        """
+        self._require_art()
+        simulated = not self.art_available
+
         # Original accuracy
         if self.art_available:
             classifier = self._create_art_classifier(model, model_type)
             predictions = classifier.predict(X_test)
             original_accuracy = np.mean(np.argmax(predictions, axis=1) == y_test)
         else:
-            original_accuracy = 0.92
-        
+            original_accuracy = 0.92  # assumed demo baseline, NOT measured
+
         # Apply defense
         if defense_type == DefenseType.FEATURE_SQUEEZING:
             X_defended, overhead_ms = self.apply_feature_squeezing_defense(X_test)
@@ -403,28 +459,48 @@ class AdversarialRobustnessService:
         else:
             X_defended = X_test
             overhead_ms = 0.0
-        
+
         # Evaluate defended accuracy
         if self.art_available:
             defended_predictions = classifier.predict(X_defended)
             defended_accuracy = np.mean(np.argmax(defended_predictions, axis=1) == y_test)
         else:
-            defended_accuracy = original_accuracy * 0.98  # Slight accuracy drop
-        
-        # Simulate attack success rates
-        attack_success_before = 0.35
-        attack_success_after = attack_success_before * 0.4  # Defense reduces attack success
-        
-        defense_effectiveness = 1 - (attack_success_after / attack_success_before)
-        
-        recommendations = [
-            f"{defense_type.value} reduces attack success by {defense_effectiveness*100:.1f}%",
-            f"Overhead of {overhead_ms:.2f}ms per sample is acceptable for production",
-            "Consider combining with other defenses for layered protection",
-        ]
-        
+            defended_accuracy = original_accuracy * 0.98  # heuristic demo estimate
+
+        if self.art_available:
+            # Measure attack success before/after defense with a real attack
+            attack = FastGradientMethod(estimator=classifier, eps=self.epsilon)
+            X_adv = attack.generate(x=X_test)
+            adv_preds = np.argmax(classifier.predict(X_adv), axis=1)
+            clean_preds = np.argmax(classifier.predict(X_test), axis=1)
+            attack_success_before = float(np.mean(adv_preds != clean_preds))
+
+            X_adv_defended, _ = self.apply_feature_squeezing_defense(X_adv)
+            adv_def_preds = np.argmax(classifier.predict(X_adv_defended), axis=1)
+            attack_success_after = float(np.mean(adv_def_preds != clean_preds))
+
+            defense_effectiveness = (
+                1 - (attack_success_after / attack_success_before)
+                if attack_success_before > 0 else 0.0
+            )
+            recommendations = [
+                f"{defense_type.value} reduces attack success by {defense_effectiveness*100:.1f}%",
+                f"Overhead of {overhead_ms:.2f}ms per sample is acceptable for production",
+                "Consider combining with other defenses for layered protection",
+            ]
+        else:
+            # Demo-mode heuristic estimates (clearly stamped simulated)
+            attack_success_before = 0.35
+            attack_success_after = attack_success_before * 0.4
+            defense_effectiveness = 1 - (attack_success_after / attack_success_before)
+            recommendations = [
+                "SIMULATED REPORT (ALLOW_SIMULATED_DATA=true) — attack success "
+                "rates are heuristic estimates, NOT measured with ART.",
+                f"{defense_type.value} reduces attack success by {defense_effectiveness*100:.1f}% (estimated)",
+            ]
+
         return DefenseReport(
-            model_name=model_type,
+            model_name="SIMULATED_demo_only" if simulated else model_type,
             defense_type=defense_type.value,
             original_accuracy=original_accuracy,
             defended_accuracy=defended_accuracy,
@@ -433,6 +509,7 @@ class AdversarialRobustnessService:
             defense_effectiveness=defense_effectiveness,
             overhead_ms=overhead_ms,
             recommendations=recommendations,
+            simulated=simulated,
         )
 
     def evaluate_fraud_detection_robustness(
@@ -443,21 +520,21 @@ class AdversarialRobustnessService:
     ) -> Dict[str, RobustnessReport]:
         """Comprehensive robustness evaluation for fraud detection model"""
         config = self.attack_configs["fraud_detection"]
-        
+
         reports = {}
-        
+
         # FGSM attack
         reports["fgsm"] = self.evaluate_robustness_fgsm(
             model, X_test, y_test, epsilon=config["epsilon"]
         )
-        
+
         # PGD attack
         reports["pgd"] = self.evaluate_robustness_pgd(
             model, X_test, y_test,
             epsilon=config["epsilon"],
             max_iter=config["max_iter"]
         )
-        
+
         return reports
 
     def evaluate_risk_scoring_robustness(
@@ -468,21 +545,21 @@ class AdversarialRobustnessService:
     ) -> Dict[str, RobustnessReport]:
         """Comprehensive robustness evaluation for risk scoring model"""
         config = self.attack_configs["risk_scoring"]
-        
+
         reports = {}
-        
+
         # FGSM attack
         reports["fgsm"] = self.evaluate_robustness_fgsm(
             model, X_test, y_test, epsilon=config["epsilon"]
         )
-        
+
         # PGD attack
         reports["pgd"] = self.evaluate_robustness_pgd(
             model, X_test, y_test,
             epsilon=config["epsilon"],
             max_iter=config["max_iter"]
         )
-        
+
         return reports
 
     def generate_comprehensive_report(
@@ -491,15 +568,15 @@ class AdversarialRobustnessService:
         defense_reports: List[DefenseReport],
     ) -> Dict[str, Any]:
         """Generate comprehensive security report"""
-        
+
         # Calculate overall robustness score
         robustness_scores = [r.robustness_score for r in robustness_reports.values()]
         overall_robustness = np.mean(robustness_scores) if robustness_scores else 0
-        
+
         # Calculate defense effectiveness
         defense_scores = [d.defense_effectiveness for d in defense_reports]
         overall_defense = np.mean(defense_scores) if defense_scores else 0
-        
+
         # Risk assessment
         if overall_robustness < 0.5:
             risk_level = "CRITICAL"
@@ -509,7 +586,12 @@ class AdversarialRobustnessService:
             risk_level = "MEDIUM"
         else:
             risk_level = "LOW"
-        
+
+        any_simulated = (
+            any(r.simulated for r in robustness_reports.values())
+            or any(d.simulated for d in defense_reports)
+        )
+
         report = {
             "summary": {
                 "overall_robustness_score": overall_robustness,
@@ -525,6 +607,7 @@ class AdversarialRobustnessService:
                     "adversarial_accuracy": r.adversarial_accuracy,
                     "robustness_score": r.robustness_score,
                     "successful_attacks": r.successful_attacks,
+                    "simulated": r.simulated,
                 }
                 for name, r in robustness_reports.items()
             },
@@ -533,15 +616,17 @@ class AdversarialRobustnessService:
                     "defense_type": d.defense_type,
                     "effectiveness": d.defense_effectiveness,
                     "overhead_ms": d.overhead_ms,
+                    "simulated": d.simulated,
                 }
                 for d in defense_reports
             ],
+            "simulated": any_simulated,
             "recommendations": self._aggregate_recommendations(
                 robustness_reports, defense_reports
             ),
             "timestamp": datetime.utcnow().isoformat(),
         }
-        
+
         return report
 
     def _aggregate_recommendations(
@@ -551,22 +636,22 @@ class AdversarialRobustnessService:
     ) -> List[str]:
         """Aggregate and prioritize recommendations"""
         all_recommendations = []
-        
+
         for report in robustness_reports.values():
             all_recommendations.extend(report.recommendations)
-        
+
         for report in defense_reports:
             all_recommendations.extend(report.recommendations)
-        
+
         # Deduplicate and prioritize
         unique_recommendations = list(set(all_recommendations))
-        
+
         # Sort by priority (CRITICAL first)
         priority_order = {"CRITICAL": 0, "WARNING": 1}
         unique_recommendations.sort(
             key=lambda x: priority_order.get(x.split(":")[0], 2)
         )
-        
+
         return unique_recommendations[:10]  # Top 10 recommendations
 
 
@@ -586,25 +671,30 @@ async def robustness_evaluation_activity(
     y_test: List[int],
     attack_types: List[str],
 ) -> Dict[str, Any]:
-    """Temporal activity for adversarial robustness evaluation"""
+    """Temporal activity for adversarial robustness evaluation.
+
+    Raises RuntimeError when ART is unavailable and ALLOW_SIMULATED_DATA is
+    not set.
+    """
     service = AdversarialRobustnessService()
-    
+
     X = np.array(X_test)
     y = np.array(y_test)
-    
+
     reports = {}
-    
+
     if "fgsm" in attack_types:
         reports["fgsm"] = service.evaluate_robustness_fgsm(None, X, y)
-    
+
     if "pgd" in attack_types:
         reports["pgd"] = service.evaluate_robustness_pgd(None, X, y)
-    
+
     return {
         name: {
             "robustness_score": r.robustness_score,
             "adversarial_accuracy": r.adversarial_accuracy,
             "recommendations": r.recommendations,
+            "simulated": r.simulated,
         }
         for name, r in reports.items()
     }

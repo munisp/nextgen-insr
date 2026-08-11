@@ -8,11 +8,17 @@ Monitors feature distributions for drift using:
 - Feature-level and dataset-level drift scores
 
 Triggers retraining when drift exceeds configurable thresholds.
+
+The KS test compares production data against the REAL reference sample
+persisted at training time (set_reference). It never reconstructs a
+synthetic N(mean, std) reference — if no reference sample was persisted,
+the check raises RuntimeError instead of fabricating one.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +26,11 @@ from typing import Any
 
 import numpy as np
 from scipy import stats
+
+logger = logging.getLogger(__name__)
+
+# Maximum number of reference samples persisted per feature
+MAX_REFERENCE_SAMPLES = 10000
 
 
 @dataclass
@@ -92,7 +103,12 @@ class DriftDetector:
         self._reference_stats: dict[str, dict[str, Any]] = {}
 
     def set_reference(self, X_ref: np.ndarray, feature_names: list[str]) -> None:
-        """Store reference distribution statistics from training data."""
+        """Store reference distribution statistics from training data.
+
+        Persists summary statistics AND a real reference sample per feature
+        (deterministically downsampled to MAX_REFERENCE_SAMPLES points) so
+        that the KS test compares against actual training data.
+        """
         if X_ref.shape[1] != len(feature_names):
             raise ValueError(
                 f"Feature count mismatch: {X_ref.shape[1]} vs {len(feature_names)}"
@@ -108,6 +124,14 @@ class DriftDetector:
             hist, bin_edges = np.histogram(col, bins=self.config.n_bins, density=True)
             hist = hist / (hist.sum() + 1e-10)
 
+            # Persist a real reference sample (deterministic downsampling of
+            # the sorted column — no RNG, fully reproducible).
+            if len(col) > MAX_REFERENCE_SAMPLES:
+                idx = np.linspace(0, len(col) - 1, MAX_REFERENCE_SAMPLES).astype(int)
+                ref_sample = np.sort(col)[idx]
+            else:
+                ref_sample = col
+
             self._reference_stats[name] = {
                 "mean": float(np.mean(col)),
                 "std": float(np.std(col)),
@@ -116,6 +140,7 @@ class DriftDetector:
                 "histogram": hist.tolist(),
                 "bin_edges": bin_edges.tolist(),
                 "n_samples": len(col),
+                "reference_sample": ref_sample.astype(float).tolist(),
                 "percentiles": {
                     "p5": float(np.percentile(col, 5)),
                     "p25": float(np.percentile(col, 25)),
@@ -206,10 +231,25 @@ class DriftDetector:
         new_hist = new_hist / (new_hist.sum() + 1e-10) + 1e-10
         psi = float(np.sum((new_hist - ref_hist) * np.log(new_hist / ref_hist)))
 
-        # KS test — generate reference samples from stored percentiles
-        ref_samples = np.random.default_rng(42).normal(
-            ref_mean, ref_std, size=min(len(new_data), 10000)
-        )
+        # KS test against the persisted real reference sample. A synthetic
+        # N(mean, std) reference is never fabricated: if no sample was
+        # persisted (e.g. a reference file saved by an older version), the
+        # check fails loudly.
+        ref_sample = ref_stats.get("reference_sample")
+        if not ref_sample:
+            logger.error(
+                "drift check for feature '%s' cannot run: no persisted "
+                "reference sample. Re-run set_reference() with the training "
+                "data (or retrain) to persist one — refusing to fabricate a "
+                "synthetic N(mean, std) reference distribution.",
+                feature_name,
+            )
+            raise RuntimeError(
+                f"No persisted reference sample for feature '{feature_name}'. "
+                "Re-run set_reference() with the training data so the KS test "
+                "compares against real samples, not a synthetic N(mean, std)."
+            )
+        ref_samples = np.asarray(ref_sample, dtype=np.float64)
         ks_stat, ks_pval = stats.ks_2samp(ref_samples, new_data)
 
         # Jensen-Shannon divergence

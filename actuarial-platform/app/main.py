@@ -1,9 +1,25 @@
-"""Actuarial Data Platform — actuarial analysis, pricing models, reserving, and experience studies."""
+"""Actuarial Data Platform — actuarial analysis, pricing models, reserving, and experience studies.
 
+Loss triangles, chain-ladder IBNR, and experience studies are computed from a
+real claims data source:
+  1. PostgreSQL claims table (via DATABASE_URL; table name from
+     ACTUARIAL_CLAIMS_TABLE, default "claims"), or
+  2. a JSON data file at ACTUARIAL_CLAIMS_FILE / ACTUARIAL_EXPERIENCE_FILE.
+
+When no data source is configured the reserving/experience endpoints return
+HTTP 503 instead of serving canned numbers. Mortality tables are explicitly
+labelled as illustrative/reference rates, not official published tables.
+"""
+
+import csv
+import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import List, Optional
 
+import psycopg2
+import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -21,10 +37,17 @@ class MortalityTableEntry(BaseModel):
     age_range: List[int]
     sample_rates: Optional[dict] = None
     source: str
+    status: str = "illustrative_reference"
+    official: bool = False
 
 
 class MortalityTableResponse(BaseModel):
     tables: List[MortalityTableEntry]
+    disclaimer: str = (
+        "These tables are illustrative/reference rates for demonstration and "
+        "calibration only. They are NOT official published mortality tables and "
+        "must not be used for statutory valuation or pricing filings."
+    )
 
 
 class TriangleData(BaseModel):
@@ -40,6 +63,7 @@ class LossTriangleResponse(BaseModel):
     triangle: dict
     ultimate_claims: dict
     ibnr_reserve: float
+    data_source: str
 
 
 class RatingCategory(BaseModel):
@@ -79,6 +103,7 @@ class ExperienceStudyResponse(BaseModel):
     study_period: str
     products_analyzed: int
     results: List[ExperienceResult]
+    data_source: str
 
 
 # ── Custom Exceptions ─────────────────────────────────────────────────────────
@@ -101,17 +126,20 @@ class ProductNotFoundError(ActuarialPlatformError):
         )
 
 
-# ── FastAPI App ───────────────────────────────────────────────────────────────
+class DataSourceUnavailableError(ActuarialPlatformError):
+    """Raised when no claims/experience data source is configured."""
 
+    def __init__(self, what: str):
+        super().__init__(
+            f"{what} unavailable: no data source configured. Set "
+            f"ACTUARIAL_CLAIMS_FILE/ACTUARIAL_EXPERIENCE_FILE or provide a "
+            f"reachable PostgreSQL claims table via DATABASE_URL.",
+            status_code=503,
+        )
 
-import os
-import psycopg2
-import psycopg2.extras
-import logging
-
-logger = logging.getLogger(__name__)
 
 # ── Database Connection ──────────────────────────────────────────────────────
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://ngapp:ngapp@localhost:5432/ngapp")
 _db_conn = None
 
@@ -147,6 +175,19 @@ def init_db():
             logger.warning(f"Table creation failed: {e}")
 
 
+# ── FastAPI App ───────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title="Actuarial Data Platform",
+    description=(
+        "Actuarial analysis, reserving, and experience studies computed from "
+        "real claims data. Reserving endpoints fail closed (503) when no data "
+        "source is configured."
+    ),
+    version="1.0.0",
+)
+
+
 @app.exception_handler(ActuarialPlatformError)
 async def actuarial_error_handler(request, exc: ActuarialPlatformError):
     return JSONResponse(
@@ -164,13 +205,310 @@ async def generic_error_handler(request, exc: Exception):
     )
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# ── Claims Data Loading ──────────────────────────────────────────────────────
+
+CLAIMS_FILE = os.environ.get("ACTUARIAL_CLAIMS_FILE", "").strip()
+CLAIMS_TABLE = os.environ.get("ACTUARIAL_CLAIMS_TABLE", "claims").strip()
+EXPERIENCE_FILE = os.environ.get("ACTUARIAL_EXPERIENCE_FILE", "").strip()
 
 
+def _load_triangle_rows_from_db() -> tuple[list, str]:
+    """Load cumulative paid-claim cells from PostgreSQL.
+
+    Expects a claims table with columns: accident_year, development_period,
+    paid_amount (incremental). Cells are aggregated per (year, period).
+    Returns ([{accident_year, development_period, amount}], source).
+    """
+    conn = get_db()
+    if not conn:
+        return [], ""
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT accident_year, development_period,
+                       SUM(paid_amount) AS amount
+                FROM {CLAIMS_TABLE}
+                GROUP BY accident_year, development_period
+                ORDER BY accident_year, development_period
+                """
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+        return rows, f"postgres:{CLAIMS_TABLE}"
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.info(f"claims table '{CLAIMS_TABLE}' not usable: {e}")
+        return [], ""
+
+
+def _load_triangle_rows_from_file() -> tuple[list, str]:
+    """Load claim cells from a JSON file.
+
+    Accepted shapes:
+      {"claims": [{"accident_year": 2023, "development_period": 0, "amount": 123.0}, ...]}
+      {"triangle": {"2021": [c0, c1, ...], "2022": [...]}}  (cumulative rows)
+    """
+    if not CLAIMS_FILE or not os.path.exists(CLAIMS_FILE):
+        return [], ""
+    with open(CLAIMS_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+
+    if isinstance(data, dict) and "triangle" in data:
+        rows = []
+        for year, values in data["triangle"].items():
+            prev = 0.0
+            for dev, cum in enumerate(values):
+                rows.append({
+                    "accident_year": str(year),
+                    "development_period": dev,
+                    "amount": float(cum) - prev,
+                    "cumulative": float(cum),
+                })
+                prev = float(cum)
+        return rows, f"file:{CLAIMS_FILE}"
+
+    claims = data.get("claims", data if isinstance(data, list) else [])
+    rows = [
+        {
+            "accident_year": str(c["accident_year"]),
+            "development_period": int(c["development_period"]),
+            "amount": float(c.get("amount", c.get("paid_amount", 0.0))),
+        }
+        for c in claims
+    ]
+    return rows, f"file:{CLAIMS_FILE}"
+
+
+def _build_cumulative_triangle() -> tuple[dict, str]:
+    """Build a cumulative loss triangle {year_label: [cum_paid_dev0, ...]}.
+
+    Raises DataSourceUnavailableError (503) when no source yields data.
+    """
+    rows, source = _load_triangle_rows_from_file()
+    if not rows:
+        rows, source = _load_triangle_rows_from_db()
+    if not rows:
+        raise DataSourceUnavailableError("loss triangle")
+
+    # Aggregate incremental amounts per (year, dev)
+    cells: dict = {}
+    for r in rows:
+        if "cumulative" in r:
+            cells[(r["accident_year"], r["development_period"])] = r["cumulative"]
+        else:
+            key = (r["accident_year"], r["development_period"])
+            cells[key] = cells.get(key, 0.0) + float(r["amount"])
+
+    years = sorted({k[0] for k in cells})
+    max_dev = max(k[1] for k in cells)
+
+    triangle: dict = {}
+    for year in years:
+        cumulative = []
+        running = 0.0
+        is_cumulative_input = any(
+            "cumulative" in r for r in rows if r["accident_year"] == year
+        )
+        for dev in range(max_dev + 1):
+            key = (year, dev)
+            if key not in cells:
+                break
+            if is_cumulative_input:
+                running = cells[key]
+            else:
+                running += cells[key]
+            cumulative.append(round(running, 2))
+        if cumulative:
+            triangle[year] = cumulative
+
+    if len(triangle) < 2:
+        raise DataSourceUnavailableError(
+            "loss triangle (fewer than 2 accident years of claims data)"
+        )
+    return triangle, source
+
+
+# ── Chain-Ladder Reserving (adapted from actuarial-module/main.py) ───────────
+
+
+def _chain_ladder(triangle: dict) -> dict:
+    """Volume-weighted chain-ladder on a cumulative triangle.
+
+    Returns development factors, per-year ultimate claims, per-year IBNR,
+    and total IBNR reserve. All values are computed from the input triangle.
+    """
+    rows = [triangle[y] for y in sorted(triangle)]
+    labels = sorted(triangle)
+    num_cols = max(len(r) for r in rows)
+    if num_cols < 2:
+        raise ActuarialPlatformError(
+            "chain-ladder requires at least 2 development periods", status_code=422
+        )
+
+    # Volume-weighted age-to-age factors
+    dev_factors: list[float] = []
+    for col in range(num_cols - 1):
+        sum_next = 0.0
+        sum_curr = 0.0
+        for row in rows:
+            if col + 1 < len(row):
+                sum_next += row[col + 1]
+                sum_curr += row[col]
+        if sum_curr > 0:
+            dev_factors.append(round(sum_next / sum_curr, 6))
+        else:
+            dev_factors.append(1.0)
+            logger.warning("chain-ladder: zero base for dev period %d, using 1.0", col)
+
+    # Tail factor = 1.0 (no tail extrapolation without additional data)
+    cumulative_to_ultimate = []
+    for i in range(num_cols):
+        cdf = 1.0
+        for f in dev_factors[i:]:
+            cdf *= f
+        cumulative_to_ultimate.append(cdf)
+
+    ultimate_claims: dict = {}
+    ibnr_by_year: dict = {}
+    total_ibnr = 0.0
+    for label, row in zip(labels, rows):
+        latest = row[-1]
+        cdf = cumulative_to_ultimate[len(row) - 1]
+        ultimate = latest * cdf
+        ibnr = max(ultimate - latest, 0.0)
+        ultimate_claims[label] = round(ultimate, 2)
+        ibnr_by_year[label] = round(ibnr, 2)
+        total_ibnr += ibnr
+
+    return {
+        "development_factors": dev_factors,
+        "ultimate_claims": ultimate_claims,
+        "ibnr_by_year": ibnr_by_year,
+        "total_ibnr": round(total_ibnr, 2),
+        "as_of": max(labels),
+    }
+
+
+def _ae_recommendation(product: str, ae_ratio: float, kind: str) -> str:
+    """Rule-based (disclosed) recommendation from the A/E ratio."""
+    metric = "mortality" if kind == "mortality" else "claim frequency"
+    if ae_ratio > 1.15:
+        return (
+            f"A/E {metric} ratio {ae_ratio:.3f} significantly above 1.0 for {product}: "
+            f"review pricing assumptions and consider rate increases."
+        )
+    if ae_ratio > 1.05:
+        return (
+            f"A/E {metric} ratio {ae_ratio:.3f} moderately above 1.0 for {product}: "
+            f"monitor experience and validate assumptions at next review."
+        )
+    if ae_ratio < 0.85:
+        return (
+            f"A/E {metric} ratio {ae_ratio:.3f} well below 1.0 for {product}: "
+            f"experience is favourable; consider premium relief or profit review."
+        )
+    return (
+        f"A/E {metric} ratio {ae_ratio:.3f} within tolerance for {product}: "
+        f"no pricing action indicated."
+    )
+
+
+def _compute_experience_study() -> ExperienceStudyResponse:
+    """Compute an experience study from a configured data source.
+
+    Data file shape (ACTUARIAL_EXPERIENCE_FILE):
+      {"study_period": "2023-2025",
+       "products": [{"product": "Motor TP",
+                     "expected_claims_frequency": 0.12,
+                     "actual_claims_frequency": 0.135,
+                     "avg_claim_severity": 185000}, ...]}
+    A/E ratios and recommendations are computed here, not stored.
+    """
+    if EXPERIENCE_FILE and os.path.exists(EXPERIENCE_FILE):
+        with open(EXPERIENCE_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        source = f"file:{EXPERIENCE_FILE}"
+    else:
+        conn = get_db()
+        if not conn:
+            raise DataSourceUnavailableError("experience study")
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT product,
+                           expected_claims_frequency, actual_claims_frequency,
+                           expected_mortality, actual_mortality,
+                           avg_claim_severity
+                    FROM actuarial_experience
+                    """
+                )
+                rows = [dict(r) for r in cur.fetchall()]
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            logger.info(f"actuarial_experience table not usable: {e}")
+            raise DataSourceUnavailableError("experience study")
+        if not rows:
+            raise DataSourceUnavailableError("experience study")
+        data = {"study_period": "from database", "products": rows}
+        source = "postgres:actuarial_experience"
+
+    results: List[ExperienceResult] = []
+    for p in data.get("products", []):
+        exp_freq = p.get("expected_claims_frequency")
+        act_freq = p.get("actual_claims_frequency")
+        exp_mort = p.get("expected_mortality")
+        act_mort = p.get("actual_mortality")
+
+        if exp_mort is not None and act_mort is not None and exp_mort:
+            ae_ratio = act_mort / exp_mort
+            kind = "mortality"
+        elif exp_freq is not None and act_freq is not None and exp_freq:
+            ae_ratio = act_freq / exp_freq
+            kind = "frequency"
+        else:
+            logger.warning(
+                "experience study: skipping product %r — insufficient expected/actual data",
+                p.get("product"),
+            )
+            continue
+
+        results.append(ExperienceResult(
+            product=p.get("product", "unknown"),
+            expected_claims_frequency=exp_freq,
+            actual_claims_frequency=act_freq,
+            expected_mortality=exp_mort,
+            actual_mortality=act_mort,
+            ae_ratio=round(ae_ratio, 4),
+            avg_claim_severity=float(p.get("avg_claim_severity", 0.0)),
+            recommendation=_ae_recommendation(p.get("product", "unknown"), ae_ratio, kind),
+        ))
+
+    if not results:
+        raise DataSourceUnavailableError("experience study (no usable product records)")
+
+    return ExperienceStudyResponse(
+        study_period=str(data.get("study_period", "unspecified")),
+        products_analyzed=len(results),
+        results=results,
+        data_source=source,
+    )
+
+
+# ── Reference Data ───────────────────────────────────────────────────────────
+
+# NOTE: These are ILLUSTRATIVE reference rates for demonstration/calibration,
+# not official published mortality tables.
 MORTALITY_TABLES = [
     MortalityTableEntry(
-        id="NGA-2020",
-        name="Nigeria National Mortality Table 2020",
+        id="ILLUSTRATIVE-NGA-2020",
+        name="Illustrative Nigerian Mortality Reference 2020 (not an official table)",
         type="period",
         gender="unisex",
         age_range=[0, 100],
@@ -182,15 +520,19 @@ MORTALITY_TABLES = [
             "60": 0.01650,
             "70": 0.03800,
         },
-        source="National Bureau of Statistics / NAICOM",
+        source="Illustrative reference rates — NOT published by NBS/NAICOM",
+        status="illustrative_reference",
+        official=False,
     ),
     MortalityTableEntry(
-        id="AFRI-STD-2023",
-        name="Pan-African Standard Mortality Table 2023",
+        id="ILLUSTRATIVE-AFRI-STD-2023",
+        name="Illustrative Pan-African Mortality Reference 2023 (not an official table)",
         type="select_and_ultimate",
         gender="separate",
         age_range=[15, 85],
-        source="Pan-African Actuarial Association",
+        source="Illustrative reference rates — NOT an official published table",
+        status="illustrative_reference",
+        official=False,
     ),
 ]
 
@@ -256,60 +598,8 @@ PRICING_MODELS = {
     ),
 }
 
-LOSS_TRIANGLE = {
-    "product": "motor_third_party",
-    "as_of": "2026-03-31",
-    "method": "chain_ladder",
-    "development_factors": [1.85, 1.35, 1.12, 1.05, 1.02, 1.01],
-    "triangle": {
-        "2021": [450000000, 832500000, 1123875000, 1258740000, 1321677000, 1348110540],
-        "2022": [520000000, 962000000, 1298700000, 1454544000, 1527271200],
-        "2023": [580000000, 1073000000, 1448550000, 1622376000],
-        "2024": [650000000, 1202500000, 1623375000],
-        "2025": [720000000, 1332000000],
-        "2026": [380000000],
-    },
-    "ultimate_claims": {
-        "2021": 1348110540,
-        "2022": 1557816624,
-        "2023": 1658724480,
-        "2024": 1829974875,
-        "2025": 2443308000,
-        "2026": 1299870000,
-    },
-    "ibnr_reserve": 3250000000,
-}
 
-EXPERIENCE_STUDY = ExperienceStudyResponse(
-    study_period="2023-2025",
-    products_analyzed=5,
-    results=[
-        ExperienceResult(
-            product="Motor TP",
-            expected_claims_frequency=0.12,
-            actual_claims_frequency=0.135,
-            ae_ratio=1.125,
-            avg_claim_severity=185000,
-            recommendation="Increase base rate by 8% for Lagos, Rivers",
-        ),
-        ExperienceResult(
-            product="Term Life",
-            expected_mortality=0.0025,
-            actual_mortality=0.0022,
-            ae_ratio=0.88,
-            avg_claim_severity=2500000,
-            recommendation="Mortality experience favorable; consider premium reduction for preferred lives",
-        ),
-        ExperienceResult(
-            product="Hospital Cash",
-            expected_claims_frequency=0.08,
-            actual_claims_frequency=0.095,
-            ae_ratio=1.1875,
-            avg_claim_severity=45000,
-            recommendation="Review waiting period; consider increasing from 30 to 45 days",
-        ),
-    ],
-)
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
 @app.get("/health")
@@ -321,21 +611,38 @@ async def health():
 @app.get(
     "/api/v1/actuarial/mortality-tables",
     response_model=MortalityTableResponse,
-    summary="Get available mortality tables",
+    summary="Get available mortality tables (illustrative reference rates)",
 )
 async def mortality_tables():
-    """Retrieve available actuarial mortality tables."""
+    """Retrieve actuarial mortality reference tables.
+
+    All served tables are labelled illustrative/reference; none are presented
+    as official published tables.
+    """
     return MortalityTableResponse(tables=MORTALITY_TABLES)
 
 
 @app.get(
     "/api/v1/actuarial/loss-triangles",
     response_model=LossTriangleResponse,
-    summary="Get loss triangle data",
+    summary="Get loss triangle data and chain-ladder IBNR",
 )
 async def loss_triangles():
-    """Retrieve loss triangle data for IBNR calculation."""
-    return LOSS_TRIANGLE
+    """Compute the cumulative loss triangle and chain-ladder IBNR reserve
+    from the configured claims data source. Returns 503 when none is set up.
+    """
+    triangle, source = _build_cumulative_triangle()
+    result = _chain_ladder(triangle)
+    return LossTriangleResponse(
+        product=os.environ.get("ACTUARIAL_PRODUCT", "all_products"),
+        as_of=result["as_of"],
+        method="chain_ladder",
+        development_factors=result["development_factors"],
+        triangle=triangle,
+        ultimate_claims=result["ultimate_claims"],
+        ibnr_reserve=result["total_ibnr"],
+        data_source=source,
+    )
 
 
 @app.get(
@@ -350,7 +657,6 @@ async def pricing_model(product_type: str):
     """
     model = PRICING_MODELS.get(product_type)
     if model is None:
-        available = list(PRICING_MODELS.keys())
         raise ProductNotFoundError(product_type)
     return model
 
@@ -358,14 +664,18 @@ async def pricing_model(product_type: str):
 @app.get(
     "/api/v1/actuarial/experience-study",
     response_model=ExperienceStudyResponse,
-    summary="Get experience study results",
+    summary="Get experience study results computed from actuals",
 )
 async def experience_study():
-    """Retrieve actuarial experience study results."""
-    return EXPERIENCE_STUDY
+    """Compute actuarial experience study results (A/E ratios) from the
+    configured data source. Returns 503 when none is set up.
+    """
+    return _compute_experience_study()
 
 
 # ── Entry Point ───────────────────────────────────────────────────────────────
+
+init_db()
 
 if __name__ == "__main__":
     import uvicorn

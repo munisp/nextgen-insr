@@ -3,6 +3,11 @@ GNN (Graph Neural Networks) for Insurance Fraud Detection
 
 This module implements graph neural networks for fraud detection in insurance,
 using node classification and link prediction on customer/claim networks.
+
+NO SIMULATED RESULTS: training and prediction require torch_geometric and a
+trained model. When torch_geometric is unavailable or no model has been
+trained, methods raise RuntimeError instead of returning fabricated accuracy
+metrics or random fraud probabilities.
 """
 
 import os
@@ -83,117 +88,117 @@ class GNNTrainingResult:
 
 class InsuranceFraudGCN(nn.Module if TORCH_GEOMETRIC_AVAILABLE else object):
     """Graph Convolutional Network for insurance fraud detection"""
-    
+
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int, num_layers: int = 3, dropout: float = 0.3):
         if not TORCH_GEOMETRIC_AVAILABLE:
             return
         super().__init__()
-        
+
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
-        
+
         # Input layer
         self.convs.append(GCNConv(in_channels, hidden_channels))
         self.bns.append(nn.BatchNorm1d(hidden_channels))
-        
+
         # Hidden layers
         for _ in range(num_layers - 2):
             self.convs.append(GCNConv(hidden_channels, hidden_channels))
             self.bns.append(nn.BatchNorm1d(hidden_channels))
-        
+
         # Output layer
         self.convs.append(GCNConv(hidden_channels, out_channels))
-        
+
         self.dropout = dropout
-    
+
     def forward(self, x, edge_index):
         if not TORCH_GEOMETRIC_AVAILABLE:
             return None
-        
+
         for i, (conv, bn) in enumerate(zip(self.convs[:-1], self.bns)):
             x = conv(x, edge_index)
             x = bn(x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
-        
+
         x = self.convs[-1](x, edge_index)
         return F.log_softmax(x, dim=1)
 
 
 class InsuranceFraudGAT(nn.Module if TORCH_GEOMETRIC_AVAILABLE else object):
     """Graph Attention Network for insurance fraud detection"""
-    
+
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int, num_layers: int = 3, heads: int = 4, dropout: float = 0.3):
         if not TORCH_GEOMETRIC_AVAILABLE:
             return
         super().__init__()
-        
+
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
-        
+
         # Input layer
         self.convs.append(GATConv(in_channels, hidden_channels, heads=heads, dropout=dropout))
         self.bns.append(nn.BatchNorm1d(hidden_channels * heads))
-        
+
         # Hidden layers
         for _ in range(num_layers - 2):
             self.convs.append(GATConv(hidden_channels * heads, hidden_channels, heads=heads, dropout=dropout))
             self.bns.append(nn.BatchNorm1d(hidden_channels * heads))
-        
+
         # Output layer
         self.convs.append(GATConv(hidden_channels * heads, out_channels, heads=1, concat=False, dropout=dropout))
-        
+
         self.dropout = dropout
-    
+
     def forward(self, x, edge_index):
         if not TORCH_GEOMETRIC_AVAILABLE:
             return None
-        
+
         for i, (conv, bn) in enumerate(zip(self.convs[:-1], self.bns)):
             x = conv(x, edge_index)
             x = bn(x)
             x = F.elu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
-        
+
         x = self.convs[-1](x, edge_index)
         return F.log_softmax(x, dim=1)
 
 
 class InsuranceFraudSAGE(nn.Module if TORCH_GEOMETRIC_AVAILABLE else object):
     """GraphSAGE for insurance fraud detection"""
-    
+
     def __init__(self, in_channels: int, hidden_channels: int, out_channels: int, num_layers: int = 3, dropout: float = 0.3):
         if not TORCH_GEOMETRIC_AVAILABLE:
             return
         super().__init__()
-        
+
         self.convs = nn.ModuleList()
         self.bns = nn.ModuleList()
-        
+
         # Input layer
         self.convs.append(SAGEConv(in_channels, hidden_channels))
         self.bns.append(nn.BatchNorm1d(hidden_channels))
-        
+
         # Hidden layers
         for _ in range(num_layers - 2):
             self.convs.append(SAGEConv(hidden_channels, hidden_channels))
             self.bns.append(nn.BatchNorm1d(hidden_channels))
-        
+
         # Output layer
         self.convs.append(SAGEConv(hidden_channels, out_channels))
-        
+
         self.dropout = dropout
-    
+
     def forward(self, x, edge_index):
         if not TORCH_GEOMETRIC_AVAILABLE:
             return None
-        
+
         for i, (conv, bn) in enumerate(zip(self.convs[:-1], self.bns)):
             x = conv(x, edge_index)
             x = bn(x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
-        
+
         x = self.convs[-1](x, edge_index)
         return F.log_softmax(x, dim=1)
 
@@ -201,6 +206,10 @@ class InsuranceFraudSAGE(nn.Module if TORCH_GEOMETRIC_AVAILABLE else object):
 class GNNFraudDetectionService:
     """
     Service for GNN-based fraud detection in insurance.
+
+    Requires torch_geometric. Training and prediction raise RuntimeError when
+    the dependency or a trained model is unavailable — simulated training
+    metrics and random predictions have been removed.
     """
 
     def __init__(self, config: GNNConfig = None):
@@ -208,7 +217,7 @@ class GNNFraudDetectionService:
         self.torch_geometric_available = TORCH_GEOMETRIC_AVAILABLE
         self.models: Dict[str, Any] = {}
         self.device = "cuda" if TORCH_GEOMETRIC_AVAILABLE and torch.cuda.is_available() else "cpu"
-        
+
         # Insurance-specific feature definitions
         self.node_features = {
             "customer": [
@@ -224,7 +233,7 @@ class GNNFraudDetectionService:
                 "fraud_score", "adjuster_changes", "status_encoded"
             ],
         }
-        
+
         # Edge types for insurance graph
         self.edge_types = [
             ("customer", "has_policy", "policy"),
@@ -235,11 +244,18 @@ class GNNFraudDetectionService:
             ("claim", "similar_to", "claim"),
         ]
 
+    def _require_torch_geometric(self) -> None:
+        if not self.torch_geometric_available:
+            raise RuntimeError(
+                "torch_geometric is required for GNN fraud detection; "
+                "simulated training/prediction is disabled. "
+                "Install torch and torch-geometric."
+            )
+
     def _create_model(self, model_type: GNNModelType, in_channels: int, out_channels: int) -> Any:
         """Create GNN model based on type"""
-        if not self.torch_geometric_available:
-            return None
-        
+        self._require_torch_geometric()
+
         if model_type == GNNModelType.GCN:
             return InsuranceFraudGCN(
                 in_channels=in_channels,
@@ -282,33 +298,33 @@ class GNNFraudDetectionService:
         labels: Optional[Dict[str, int]] = None,
     ) -> Any:
         """Prepare graph data for GNN training/inference"""
-        
+
         # Create node ID mapping
         node_ids = [n["id"] for n in nodes]
         id_to_idx = {nid: idx for idx, nid in enumerate(node_ids)}
-        
+
         # Extract node features
         num_features = 8  # Default feature dimension
         node_features = []
-        
+
         for node in nodes:
             features = []
             node_type = node.get("type", "customer")
-            
+
             for feature_name in self.node_features.get(node_type, self.node_features["customer"]):
                 value = node.get("properties", {}).get(feature_name, 0.0)
                 if isinstance(value, (int, float)):
                     features.append(float(value))
                 else:
                     features.append(0.0)
-            
+
             # Pad or truncate to fixed size
             while len(features) < num_features:
                 features.append(0.0)
             features = features[:num_features]
-            
+
             node_features.append(features)
-        
+
         # Create edge index
         edge_index = []
         for source_id, target_id, edge_type in edges:
@@ -316,26 +332,26 @@ class GNNFraudDetectionService:
                 edge_index.append([id_to_idx[source_id], id_to_idx[target_id]])
                 # Add reverse edge for undirected graph
                 edge_index.append([id_to_idx[target_id], id_to_idx[source_id]])
-        
+
         if not edge_index:
             # Add self-loops if no edges
             edge_index = [[i, i] for i in range(len(nodes))]
-        
+
         # Create labels
         if labels:
             y = [labels.get(nid, 0) for nid in node_ids]
         else:
             y = [0] * len(nodes)
-        
+
         if self.torch_geometric_available:
             x = torch.tensor(node_features, dtype=torch.float)
             edge_index_tensor = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
             y_tensor = torch.tensor(y, dtype=torch.long)
-            
+
             data = Data(x=x, edge_index=edge_index_tensor, y=y_tensor)
             data.node_ids = node_ids
             data.id_to_idx = id_to_idx
-            
+
             return data
         else:
             return {
@@ -352,42 +368,44 @@ class GNNFraudDetectionService:
         train_data: Any,
         val_data: Optional[Any] = None,
     ) -> GNNTrainingResult:
-        """Train GNN model for fraud detection"""
+        """Train GNN model for fraud detection.
+
+        Raises RuntimeError when torch_geometric is unavailable — no
+        simulated training metrics are produced.
+        """
+        self._require_torch_geometric()
         start_time = datetime.utcnow()
-        
-        if not self.torch_geometric_available:
-            return self._simulate_training(model_type)
-        
+
         # Get data dimensions
         in_channels = train_data.x.shape[1]
         out_channels = 3  # 0: legitimate, 1: suspicious, 2: fraudulent
-        
+
         # Create model
         model = self._create_model(model_type, in_channels, out_channels)
         model = model.to(self.device)
         train_data = train_data.to(self.device)
-        
+
         # Optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=self.config.learning_rate, weight_decay=5e-4)
-        
+
         # Training loop
         training_loss_history = []
         validation_loss_history = []
         best_val_loss = float('inf')
         best_epoch = 0
-        
+
         for epoch in range(self.config.epochs):
             model.train()
             optimizer.zero_grad()
-            
+
             out = model(train_data.x, train_data.edge_index)
             loss = F.nll_loss(out, train_data.y)
-            
+
             loss.backward()
             optimizer.step()
-            
+
             training_loss_history.append(loss.item())
-            
+
             # Validation
             if val_data is not None:
                 model.eval()
@@ -396,31 +414,31 @@ class GNNFraudDetectionService:
                     val_out = model(val_data.x, val_data.edge_index)
                     val_loss = F.nll_loss(val_out, val_data.y)
                     validation_loss_history.append(val_loss.item())
-                    
+
                     if val_loss < best_val_loss:
                         best_val_loss = val_loss
                         best_epoch = epoch
-        
+
         # Evaluate final model
         model.eval()
         with torch.no_grad():
             out = model(train_data.x, train_data.edge_index)
             pred = out.argmax(dim=1)
-            
+
             correct = (pred == train_data.y).sum().item()
             accuracy = correct / len(train_data.y)
-            
+
             # Calculate metrics
             y_true = train_data.y.cpu().numpy()
             y_pred = pred.cpu().numpy()
-            
+
             precision, recall, f1, auc = self._calculate_metrics(y_true, y_pred)
-        
+
         # Store model
         self.models[model_type.value] = model
-        
+
         training_time = (datetime.utcnow() - start_time).total_seconds()
-        
+
         return GNNTrainingResult(
             model_type=model_type.value,
             accuracy=accuracy,
@@ -434,44 +452,23 @@ class GNNFraudDetectionService:
             training_time_seconds=training_time,
         )
 
-    def _simulate_training(self, model_type: GNNModelType) -> GNNTrainingResult:
-        """Simulate training when PyTorch Geometric is not available"""
-        np.random.seed(42)
-        
-        # Simulate training progress
-        training_loss = [1.0 - 0.004 * i + np.random.normal(0, 0.02) for i in range(self.config.epochs)]
-        validation_loss = [1.1 - 0.003 * i + np.random.normal(0, 0.03) for i in range(self.config.epochs)]
-        
-        return GNNTrainingResult(
-            model_type=model_type.value,
-            accuracy=0.89,
-            precision=0.85,
-            recall=0.82,
-            f1_score=0.83,
-            auc_roc=0.91,
-            training_loss_history=training_loss,
-            validation_loss_history=validation_loss,
-            best_epoch=150,
-            training_time_seconds=45.2,
-        )
-
     def _calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float, float, float]:
         """Calculate classification metrics"""
         # Precision
         true_positives = np.sum((y_pred == 1) & (y_true == 1)) + np.sum((y_pred == 2) & (y_true == 2))
         predicted_positives = np.sum(y_pred > 0)
         precision = true_positives / predicted_positives if predicted_positives > 0 else 0.0
-        
+
         # Recall
         actual_positives = np.sum(y_true > 0)
         recall = true_positives / actual_positives if actual_positives > 0 else 0.0
-        
+
         # F1
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-        
+
         # AUC (simplified)
         auc = (precision + recall) / 2
-        
+
         return precision, recall, f1, auc
 
     def predict_fraud(
@@ -480,43 +477,49 @@ class GNNFraudDetectionService:
         graph_data: Any,
         entity_ids: Optional[List[str]] = None,
     ) -> List[FraudPrediction]:
-        """Predict fraud for entities in the graph"""
-        
-        if not self.torch_geometric_available:
-            return self._simulate_predictions(graph_data, entity_ids)
-        
+        """Predict fraud for entities in the graph.
+
+        Raises RuntimeError when torch_geometric is unavailable or the
+        requested model has not been trained — no fabricated probabilities.
+        """
+        self._require_torch_geometric()
+
         model = self.models.get(model_type.value)
         if model is None:
-            return self._simulate_predictions(graph_data, entity_ids)
-        
+            raise RuntimeError(
+                f"GNN model '{model_type.value}' is not trained. "
+                "Call train_model() or load trained weights before predicting; "
+                "simulated predictions are disabled."
+            )
+
         model.eval()
         graph_data = graph_data.to(self.device)
-        
+
         with torch.no_grad():
             out = model(graph_data.x, graph_data.edge_index)
             probs = torch.exp(out)
             pred_classes = out.argmax(dim=1)
-        
+
         predictions = []
         node_ids = graph_data.node_ids
-        
+
         for idx, node_id in enumerate(node_ids):
             if entity_ids is not None and node_id not in entity_ids:
                 continue
-            
+
             fraud_prob = probs[idx][2].item()  # Probability of class 2 (fraudulent)
             suspicious_prob = probs[idx][1].item()  # Probability of class 1 (suspicious)
-            
+
             # Determine contributing factors based on node features
             contributing_factors = self._identify_contributing_factors(
                 graph_data.x[idx].cpu().numpy()
             )
-            
+
             # Find connected suspicious entities
             connected_suspicious = self._find_connected_suspicious(
                 idx, graph_data.edge_index, pred_classes, node_ids
             )
-            
+
             predictions.append(FraudPrediction(
                 entity_id=node_id,
                 entity_type="customer",
@@ -526,47 +529,14 @@ class GNNFraudDetectionService:
                 contributing_factors=contributing_factors,
                 connected_suspicious_entities=connected_suspicious,
             ))
-        
-        return predictions
 
-    def _simulate_predictions(
-        self,
-        graph_data: Any,
-        entity_ids: Optional[List[str]] = None,
-    ) -> List[FraudPrediction]:
-        """Simulate predictions when model is not available"""
-        np.random.seed(42)
-        
-        if isinstance(graph_data, dict):
-            node_ids = graph_data.get("node_ids", [f"entity_{i}" for i in range(10)])
-        else:
-            node_ids = getattr(graph_data, "node_ids", [f"entity_{i}" for i in range(10)])
-        
-        predictions = []
-        for node_id in node_ids:
-            if entity_ids is not None and node_id not in entity_ids:
-                continue
-            
-            fraud_prob = np.random.beta(2, 10)  # Most entities are legitimate
-            fraud_class = 2 if fraud_prob > 0.7 else (1 if fraud_prob > 0.3 else 0)
-            
-            predictions.append(FraudPrediction(
-                entity_id=node_id,
-                entity_type="customer",
-                fraud_probability=float(fraud_prob),
-                fraud_class=fraud_class,
-                confidence=float(np.random.uniform(0.7, 0.95)),
-                contributing_factors=["high_claim_frequency", "unusual_claim_timing"],
-                connected_suspicious_entities=[],
-            ))
-        
         return predictions
 
     def _identify_contributing_factors(self, features: np.ndarray) -> List[str]:
         """Identify factors contributing to fraud prediction"""
         factors = []
         feature_names = self.node_features["customer"]
-        
+
         # Check for anomalous features
         for i, (name, value) in enumerate(zip(feature_names, features)):
             if name == "claim_ratio" and value > 0.5:
@@ -575,10 +545,10 @@ class GNNFraudDetectionService:
                 factors.append("high_risk_score")
             elif name == "num_claims" and value > 5:
                 factors.append("high_claim_frequency")
-        
+
         if not factors:
             factors.append("network_connections")
-        
+
         return factors
 
     def _find_connected_suspicious(
@@ -590,86 +560,95 @@ class GNNFraudDetectionService:
     ) -> List[str]:
         """Find connected entities that are suspicious or fraudulent"""
         suspicious = []
-        
+
         if self.torch_geometric_available:
             edge_index_np = edge_index.cpu().numpy()
             pred_classes_np = pred_classes.cpu().numpy()
         else:
             return []
-        
+
         # Find neighbors
         neighbors = edge_index_np[1, edge_index_np[0] == node_idx]
-        
+
         for neighbor_idx in neighbors:
             if pred_classes_np[neighbor_idx] > 0:  # Suspicious or fraudulent
                 suspicious.append(node_ids[neighbor_idx])
-        
+
         return suspicious[:5]  # Limit to top 5
 
     def detect_fraud_rings(
         self,
         graph_data: Any,
         min_ring_size: int = 3,
+        model_type: Optional[GNNModelType] = None,
     ) -> List[Dict[str, Any]]:
-        """Detect potential fraud rings in the graph"""
-        
-        if not self.torch_geometric_available:
-            return self._simulate_fraud_rings()
-        
-        # Convert to networkx for ring detection
+        """Detect potential fraud rings in the graph.
+
+        Requires torch_geometric and networkx. Risk scores are computed from
+        a trained model's fraud probabilities when available; otherwise the
+        ring is reported without a score (never fabricated).
+        """
+        self._require_torch_geometric()
+
         try:
             import networkx as nx
-            G = to_networkx(graph_data, to_undirected=True)
-            
-            # Find cycles (potential fraud rings)
-            cycles = []
-            try:
-                for cycle in nx.simple_cycles(G):
-                    if len(cycle) >= min_ring_size:
-                        cycles.append(cycle)
-            except:
-                # Fall back to connected components
-                for component in nx.connected_components(G):
-                    if len(component) >= min_ring_size:
-                        cycles.append(list(component))
-            
-            fraud_rings = []
-            node_ids = graph_data.node_ids
-            
-            for i, cycle in enumerate(cycles[:10]):  # Limit to top 10
-                ring_nodes = [node_ids[idx] for idx in cycle if idx < len(node_ids)]
-                
-                fraud_rings.append({
-                    "ring_id": f"ring_{i}",
-                    "size": len(ring_nodes),
-                    "members": ring_nodes,
-                    "risk_score": 0.7 + 0.1 * (len(ring_nodes) / 10),
-                    "detection_method": "cycle_detection",
-                })
-            
-            return fraud_rings
-            
-        except ImportError:
-            return self._simulate_fraud_rings()
+        except ImportError as e:
+            raise RuntimeError(
+                "networkx is required for fraud ring detection; "
+                "simulated fraud rings are disabled."
+            ) from e
 
-    def _simulate_fraud_rings(self) -> List[Dict[str, Any]]:
-        """Simulate fraud ring detection"""
-        return [
-            {
-                "ring_id": "ring_0",
-                "size": 4,
-                "members": ["cust_001", "cust_002", "cust_003", "cust_004"],
-                "risk_score": 0.85,
-                "detection_method": "simulated",
-            },
-            {
-                "ring_id": "ring_1",
-                "size": 3,
-                "members": ["cust_010", "cust_011", "cust_012"],
-                "risk_score": 0.72,
-                "detection_method": "simulated",
-            },
-        ]
+        # Convert to networkx for ring detection
+        G = to_networkx(graph_data, to_undirected=True)
+
+        # Find cycles (potential fraud rings)
+        cycles = []
+        try:
+            for cycle in nx.simple_cycles(G):
+                if len(cycle) >= min_ring_size:
+                    cycles.append(cycle)
+        except Exception:
+            # Fall back to connected components
+            for component in nx.connected_components(G):
+                if len(component) >= min_ring_size:
+                    cycles.append(list(component))
+
+        # Mean predicted fraud probability per node, if a trained model exists
+        fraud_probs: Optional[np.ndarray] = None
+        model = self.models.get(model_type.value) if model_type else None
+        if model is None and self.models:
+            model = next(iter(self.models.values()))
+        if model is not None:
+            model.eval()
+            with torch.no_grad():
+                out = model(graph_data.x, graph_data.edge_index)
+                probs = torch.exp(out)
+                fraud_probs = (probs[:, 1] + probs[:, 2]).cpu().numpy()
+
+        fraud_rings = []
+        node_ids = graph_data.node_ids
+
+        for i, cycle in enumerate(cycles[:10]):  # Limit to top 10
+            ring_nodes = [node_ids[idx] for idx in cycle if idx < len(node_ids)]
+            member_idx = [idx for idx in cycle if idx < len(node_ids)]
+
+            risk_score = None
+            if fraud_probs is not None and member_idx:
+                risk_score = float(np.mean(fraud_probs[member_idx]))
+
+            fraud_rings.append({
+                "ring_id": f"ring_{i}",
+                "size": len(ring_nodes),
+                "members": ring_nodes,
+                "risk_score": risk_score,
+                "risk_score_source": (
+                    "trained_gnn_mean_fraud_probability"
+                    if risk_score is not None else "unavailable_no_trained_model"
+                ),
+                "detection_method": "cycle_detection",
+            })
+
+        return fraud_rings
 
     def link_prediction(
         self,
@@ -677,55 +656,43 @@ class GNNFraudDetectionService:
         source_id: str,
         top_k: int = 10,
     ) -> List[Dict[str, Any]]:
-        """Predict potential links (relationships) for an entity"""
-        
-        if not self.torch_geometric_available:
-            return self._simulate_link_predictions(source_id, top_k)
-        
+        """Predict potential links (relationships) for an entity.
+
+        Raises RuntimeError when torch_geometric is unavailable — no
+        simulated link predictions.
+        """
+        self._require_torch_geometric()
+
         # Simple link prediction based on node similarity
         node_ids = graph_data.node_ids
         id_to_idx = graph_data.id_to_idx
-        
+
         if source_id not in id_to_idx:
             return []
-        
+
         source_idx = id_to_idx[source_id]
         source_features = graph_data.x[source_idx].cpu().numpy()
-        
+
         # Calculate similarity with all other nodes
         similarities = []
         for idx, node_id in enumerate(node_ids):
             if node_id == source_id:
                 continue
-            
+
             target_features = graph_data.x[idx].cpu().numpy()
             similarity = np.dot(source_features, target_features) / (
                 np.linalg.norm(source_features) * np.linalg.norm(target_features) + 1e-8
             )
-            
+
             similarities.append({
                 "target_id": node_id,
                 "similarity_score": float(similarity),
                 "predicted_relationship": "related_to",
             })
-        
+
         # Sort by similarity and return top_k
         similarities.sort(key=lambda x: x["similarity_score"], reverse=True)
         return similarities[:top_k]
-
-    def _simulate_link_predictions(self, source_id: str, top_k: int) -> List[Dict[str, Any]]:
-        """Simulate link predictions"""
-        np.random.seed(hash(source_id) % 2**32)
-        
-        predictions = []
-        for i in range(top_k):
-            predictions.append({
-                "target_id": f"entity_{i}",
-                "similarity_score": float(np.random.uniform(0.5, 0.95)),
-                "predicted_relationship": "related_to",
-            })
-        
-        return predictions
 
     def explain_prediction(
         self,
@@ -733,7 +700,7 @@ class GNNFraudDetectionService:
         entity_id: str,
     ) -> Dict[str, Any]:
         """Explain fraud prediction for an entity"""
-        
+
         if isinstance(graph_data, dict):
             node_ids = graph_data.get("node_ids", [])
             id_to_idx = graph_data.get("id_to_idx", {})
@@ -745,22 +712,22 @@ class GNNFraudDetectionService:
                 features = graph_data.x.cpu().numpy()
             else:
                 features = np.array([])
-        
+
         if entity_id not in id_to_idx:
             return {"error": f"Entity {entity_id} not found"}
-        
+
         idx = id_to_idx[entity_id]
         entity_features = features[idx] if len(features) > idx else np.zeros(8)
-        
+
         # Feature importance (simplified)
         feature_names = self.node_features["customer"]
         feature_importance = {}
-        
+
         for i, name in enumerate(feature_names):
             if i < len(entity_features):
                 importance = abs(entity_features[i]) / (np.sum(np.abs(entity_features)) + 1e-8)
                 feature_importance[name] = float(importance)
-        
+
         return {
             "entity_id": entity_id,
             "feature_importance": feature_importance,
@@ -790,27 +757,31 @@ async def gnn_fraud_detection_activity(
     labels: Optional[Dict[str, int]] = None,
     model_type: str = "gcn",
 ) -> Dict[str, Any]:
-    """Temporal activity for GNN-based fraud detection"""
+    """Temporal activity for GNN-based fraud detection.
+
+    Raises RuntimeError when torch_geometric is unavailable — simulated
+    training metrics and predictions are disabled.
+    """
     service = GNNFraudDetectionService()
-    
+
     # Prepare data
     graph_data = service.prepare_graph_data(nodes, edges, labels)
-    
+
     # Train model
     model_type_enum = GNNModelType.GCN
     if model_type == "gat":
         model_type_enum = GNNModelType.GAT
     elif model_type == "sage":
         model_type_enum = GNNModelType.SAGE
-    
+
     training_result = service.train_model(model_type_enum, graph_data)
-    
+
     # Get predictions
     predictions = service.predict_fraud(model_type_enum, graph_data)
-    
+
     # Detect fraud rings
-    fraud_rings = service.detect_fraud_rings(graph_data)
-    
+    fraud_rings = service.detect_fraud_rings(graph_data, model_type=model_type_enum)
+
     return {
         "training_result": {
             "accuracy": training_result.accuracy,
@@ -820,4 +791,5 @@ async def gnn_fraud_detection_activity(
         "predictions_count": len(predictions),
         "high_risk_entities": [p.entity_id for p in predictions if p.fraud_probability > 0.5],
         "fraud_rings_detected": len(fraud_rings),
+        "simulated": False,
     }
