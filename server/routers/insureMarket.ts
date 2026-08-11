@@ -36,6 +36,13 @@
  *   insureMarket.getEmbeddedSdkConfig   — embedded insurance SDK configuration
  *   insureMarket.getReinsurancePlacements — reinsurance marketplace listings
  *   insureMarket.getMonetizationDashboard — full revenue dashboard
+ *
+ * MOCKWARE FIX: the monetization dashboard previously reported random
+ * callsThisMonth for top apps, hardcoded revenue-stream percentages with
+ * fabricated growth trends, and hardcoded "opportunities". Top apps now come
+ * from real marketplace_api_calls counts, streams from real platform_revenue
+ * rows (empty when none), and opportunities is an honest empty list (no
+ * pipeline store exists).
  */
 
 import { z } from "zod";
@@ -277,13 +284,6 @@ export const insureMarketRouter = router({
         totalRevenueNGN:   Math.round(totalRevenueNGN),
         projectedAnnualNGN: Math.round(projectedAnnualNGN),
         period:            `${year}-${String(month).padStart(2, "0")}`,
-        breakdown: {
-          apiMarketplace:    0.35,  // 35% of revenue
-          whiteLabelSaaS:    0.30,  // 30%
-          dataIntelligence:  0.20,  // 20%
-          embeddedInsurance: 0.10,  // 10%
-          reinsurance:       0.05,  // 5%
-        },
       };
     }),
 
@@ -417,6 +417,42 @@ export const insureMarketRouter = router({
       const mrr = Math.round(apiRevenue + wlMRR);
       const arr = mrr * 12;
 
+      // Real top apps by actual call volume in the last 30 days.
+      const topAppRows = await db.execute(sql`
+        SELECT app_id, COUNT(*) AS call_count
+        FROM marketplace_api_calls
+        WHERE called_at >= NOW() - INTERVAL '30 days'
+        GROUP BY app_id
+        ORDER BY call_count DESC
+        LIMIT 3
+      `);
+      const topApps = (topAppRows.rows as Array<{ app_id: string; call_count: number }>).map(r => {
+        const app = MARKETPLACE_APPS.find(a => a.id === r.app_id);
+        return {
+          id: r.app_id,
+          name: app?.name ?? r.app_id,
+          category: app?.category ?? "unknown",
+          callsThisMonth: Number(r.call_count),
+        };
+      });
+
+      // Real revenue streams from platform_revenue (last 30 days).
+      const streamRows = await db.execute(sql`
+        SELECT revenue_stream, SUM(amount_ngn) AS total_ngn
+        FROM platform_revenue
+        WHERE recorded_at >= NOW() - INTERVAL '30 days'
+        GROUP BY revenue_stream
+        ORDER BY total_ngn DESC
+      `);
+      const streamTotal = (streamRows.rows as Array<{ total_ngn: number }>)
+        .reduce((s, r) => s + Number(r.total_ngn), 0);
+      const streams = (streamRows.rows as Array<{ revenue_stream: string; total_ngn: number }>).map(r => ({
+        name: r.revenue_stream,
+        revenuePct: streamTotal > 0 ? Math.round((Number(r.total_ngn) / streamTotal) * 100) : 0,
+        mrrNGN: Math.round(Number(r.total_ngn)),
+        trend: null, // no trend baseline is tracked — not fabricated
+      }));
+
       return {
         kpis: {
           mrr,
@@ -425,26 +461,15 @@ export const insureMarketRouter = router({
           activeSubscriptions,
           whiteLabelTenants:  wlCount,
         },
-        streams: [
-          { name: "API Marketplace",     revenuePct: 35, mrrNGN: Math.round(mrr * 0.35), trend: "+12%" },
-          { name: "White-Label SaaS",    revenuePct: 30, mrrNGN: Math.round(mrr * 0.30), trend: "+8%"  },
-          { name: "Data Intelligence",   revenuePct: 20, mrrNGN: Math.round(mrr * 0.20), trend: "+25%" },
-          { name: "Embedded Insurance",  revenuePct: 10, mrrNGN: Math.round(mrr * 0.10), trend: "+18%" },
-          { name: "Reinsurance Marketplace", revenuePct: 5, mrrNGN: Math.round(mrr * 0.05), trend: "+5%" },
-        ],
-        topApps: MARKETPLACE_APPS.slice(0, 3).map(a => ({
-          id:   a.id,
-          name: a.name,
-          category: a.category,
-          callsThisMonth: Math.floor(Math.random() * 50_000) + 1_000,
-        })),
-        opportunities: [
-          { title: "NHIA Integration",       potentialMRR: 5_000_000,  effort: "medium", priority: "high" },
-          { title: "PenCom Pension API",      potentialMRR: 3_000_000,  effort: "low",    priority: "high" },
-          { title: "NAICOM Data Feed",        potentialMRR: 2_000_000,  effort: "low",    priority: "medium" },
-          { title: "Microinsurance SDK",      potentialMRR: 8_000_000,  effort: "high",   priority: "high" },
-          { title: "Agricultural Insurance",  potentialMRR: 10_000_000, effort: "high",   priority: "medium" },
-        ],
+        streams,
+        topApps,
+        // No opportunity pipeline store exists — honest empty list.
+        opportunities: [] as Array<{
+          title: string;
+          potentialMRR: number;
+          effort: string;
+          priority: string;
+        }>,
       };
     }),
 });

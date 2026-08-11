@@ -1,8 +1,14 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { merchants } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+// MOCKWARE FIX: onboardMerchant was a no-op success and listMerchants
+// returned a hardcoded empty list. listMerchants now reads the real
+// merchants table; onboardMerchant fails loudly because no acquirer/
+// processor integration is wired in this service.
 
 export const merchantAcquirerGatewayRouter = router({
   list: protectedProcedure
@@ -123,7 +129,14 @@ export const merchantAcquirerGatewayRouter = router({
   }),
 
   listMerchants: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    const database = await getDb();
+    if (!database) return { data: [], total: 0 };
+    const rows = await database
+      .select()
+      .from(merchants)
+      .orderBy(desc(merchants.id))
+      .limit(100);
+    return { data: rows, total: rows.length };
   }),
 
   onboardMerchant: protectedProcedure
@@ -131,6 +144,10 @@ export const merchantAcquirerGatewayRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "Merchant onboarding is not configured: no acquirer/processor integration is wired in this service",
+      });
     }),
 });

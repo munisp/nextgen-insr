@@ -4,6 +4,16 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import {
+  generateVulnerabilityReport,
+  runPciDssChecks,
+  getOwaspCoverage,
+} from "../middleware/vulnerabilityScannerMiddleware";
+
+// MOCKWARE FIX: runScan was a no-op success and the compliance endpoints
+// returned canned results. runScan now executes the real vulnerability
+// scanner middleware (static configuration/OWASP/PCI-DSS checks) and the
+// compliance queries return its real check output.
 
 export const securityHardeningRouter = router({
   list: protectedProcedure
@@ -95,6 +105,7 @@ export const securityHardeningRouter = router({
     }),
 
   cbnCompliance: protectedProcedure.query(async () => {
+    // No CBN compliance checker is wired — honest empty.
     return { data: [], total: 0 };
   }),
 
@@ -108,14 +119,24 @@ export const securityHardeningRouter = router({
   }),
 
   owaspTop10: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    const coverage = getOwaspCoverage();
+    return { data: coverage, total: coverage.length };
   }),
 
   pciDssCompliance: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    const results = runPciDssChecks();
+    return {
+      data: {
+        passed: results.passed,
+        failed: results.failed,
+        compliant: results.failed.length === 0,
+      },
+      total: results.passed.length + results.failed.length,
+    };
   }),
 
   recentScans: protectedProcedure.query(async () => {
+    // Scan reports are not persisted — honest empty history.
     return { data: [], total: 0 };
   }),
 
@@ -124,7 +145,19 @@ export const securityHardeningRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      const report = generateVulnerabilityReport();
+      return {
+        success: true,
+        scanId: report.scanId,
+        timestamp: new Date(report.timestamp).toISOString(),
+        totalChecks: report.totalChecks,
+        passed: report.passed,
+        failed: report.failed,
+        warnings: report.warnings,
+        complianceScore: report.complianceScore,
+        pciDssCompliant: report.pciDssCompliant,
+        owaspCoverage: report.owaspCoverage,
+      };
     }),
   getDDoSConfig: protectedProcedure.query(async () => ({
     enabled: true,
@@ -134,7 +167,7 @@ export const securityHardeningRouter = router({
   })),
   getRansomwareGuardStatus: protectedProcedure.query(async () => ({
     enabled: true,
-    lastScan: new Date().toISOString(),
+    lastScan: null, // no guard scan has run — not fabricated
     threats: 0,
   })),
   evaluatePolicy: protectedProcedure
