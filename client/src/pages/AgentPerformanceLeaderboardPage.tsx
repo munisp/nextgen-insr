@@ -21,129 +21,6 @@ import {
   Target,
 } from "lucide-react";
 
-const MOCK_AGENTS = [
-  {
-    rank: 1,
-    id: "AGT-0012",
-    name: "Adebayo Ogundimu",
-    region: "Lagos",
-    txCount: 2847,
-    volume: 45230000,
-    commission: 1230000,
-    rating: 4.9,
-    trend: "up",
-    badge: "gold",
-  },
-  {
-    rank: 2,
-    id: "AGT-0034",
-    name: "Chidinma Okafor",
-    region: "Abuja",
-    txCount: 2654,
-    volume: 41800000,
-    commission: 1150000,
-    rating: 4.8,
-    trend: "up",
-    badge: "gold",
-  },
-  {
-    rank: 3,
-    id: "AGT-0056",
-    name: "Ibrahim Musa",
-    region: "Kano",
-    txCount: 2312,
-    volume: 38500000,
-    commission: 980000,
-    rating: 4.7,
-    trend: "up",
-    badge: "gold",
-  },
-  {
-    rank: 4,
-    id: "AGT-0078",
-    name: "Funke Adeyemi",
-    region: "Lagos",
-    txCount: 2198,
-    volume: 35200000,
-    commission: 920000,
-    rating: 4.6,
-    trend: "down",
-    badge: "silver",
-  },
-  {
-    rank: 5,
-    id: "AGT-0023",
-    name: "Emeka Nwosu",
-    region: "Port Harcourt",
-    txCount: 2045,
-    volume: 32100000,
-    commission: 850000,
-    rating: 4.5,
-    trend: "up",
-    badge: "silver",
-  },
-  {
-    rank: 6,
-    id: "AGT-0045",
-    name: "Aisha Bello",
-    region: "Abuja",
-    txCount: 1987,
-    volume: 30800000,
-    commission: 810000,
-    rating: 4.5,
-    trend: "up",
-    badge: "silver",
-  },
-  {
-    rank: 7,
-    id: "AGT-0067",
-    name: "Olumide Bakare",
-    region: "Ibadan",
-    txCount: 1876,
-    volume: 28500000,
-    commission: 750000,
-    rating: 4.4,
-    trend: "down",
-    badge: "bronze",
-  },
-  {
-    rank: 8,
-    id: "AGT-0089",
-    name: "Grace Eze",
-    region: "Enugu",
-    txCount: 1754,
-    volume: 26200000,
-    commission: 690000,
-    rating: 4.3,
-    trend: "up",
-    badge: "bronze",
-  },
-  {
-    rank: 9,
-    id: "AGT-0091",
-    name: "Yusuf Abdullahi",
-    region: "Kaduna",
-    txCount: 1632,
-    volume: 24800000,
-    commission: 640000,
-    rating: 4.2,
-    trend: "down",
-    badge: "bronze",
-  },
-  {
-    rank: 10,
-    id: "AGT-0103",
-    name: "Blessing Okoro",
-    region: "Benin",
-    txCount: 1521,
-    volume: 23100000,
-    commission: 590000,
-    rating: 4.1,
-    trend: "up",
-    badge: "bronze",
-  },
-];
-
 function formatNaira(n: number) {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -155,7 +32,12 @@ function formatNaira(n: number) {
 function LeaderboardContent() {
   const [search, setSearch] = useState("");
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: _liveData } = trpc.agentPerformanceLeaderboard.list.useQuery(
+  const {
+    data: _liveData,
+    isLoading,
+    isError,
+    error,
+  } = trpc.agentPerformanceLeaderboard.list.useQuery(
     // @ts-ignore Sprint 85
     undefined,
     { retry: 1 }
@@ -166,10 +48,32 @@ function LeaderboardContent() {
   >("volume");
   const [period, setPeriod] = useState("month");
 
-  const regions = [...new Set(MOCK_AGENTS.map(a => a.region))];
+  // Map real agent rows only — metrics the API does not provide stay unknown ("—")
+  const agents = useMemo(() => {
+    const rows = Array.isArray(_liveData?.data) ? _liveData.data : [];
+    return rows.map((a: any) => ({
+      rank: Number(a.rank ?? 0),
+      id: String(a.agentId ?? a.id),
+      name: a.name ?? "—",
+      region: a.location ?? "—",
+      txCount: a.txCount != null ? Number(a.txCount) : null,
+      volume: a.volume != null ? Number(a.volume) : null,
+      commission:
+        a.commission != null
+          ? Number(a.commission)
+          : a.commissionBalance != null
+            ? Number(a.commissionBalance)
+            : null,
+      rating: a.rating != null ? Number(a.rating) : null,
+      trend: a.trend ?? "flat",
+      badge: String(a.tier ?? "bronze").toLowerCase(),
+    }));
+  }, [_liveData]);
+
+  const regions = [...new Set(agents.map(a => a.region))];
 
   const filtered = useMemo(() => {
-    let result = [...MOCK_AGENTS];
+    let result = [...agents];
     if (search)
       result = result.filter(
         a =>
@@ -179,10 +83,11 @@ function LeaderboardContent() {
     if (regionFilter !== "all")
       result = result.filter(a => a.region === regionFilter);
     result.sort(
-      (a: any, b: any) => (b[sortBy] as number) - (a[sortBy] as number)
+      (a: any, b: any) =>
+        ((b[sortBy] as number | null) ?? -1) - ((a[sortBy] as number | null) ?? -1)
     );
     return result.map((a, i) => ({ ...a, rank: i + 1 }));
-  }, [search, regionFilter, sortBy]);
+  }, [agents, search, regionFilter, sortBy]);
 
   const badgeIcon = (badge: string) => {
     if (badge === "gold") return <Crown className="h-4 w-4 text-yellow-500" />;
@@ -215,7 +120,18 @@ function LeaderboardContent() {
         </div>
       </div>
 
+      {isError && (
+        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          Failed to load the leaderboard{error?.message ? `: ${error.message}` : "."}
+        </div>
+      )}
+
       {/* Top 3 Podium */}
+      {!isLoading && !isError && filtered.length === 0 ? (
+        <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+          No leaderboard data available yet
+        </div>
+      ) : (
       <div className="grid grid-cols-3 gap-4">
         {filtered.slice(0, 3).map((agent, i) => (
           <div
@@ -231,23 +147,32 @@ function LeaderboardContent() {
               {agent.id} — {agent.region}
             </div>
             <div className="text-lg font-bold text-primary">
-              {formatNaira(agent.volume)}
+              {agent.volume != null ? formatNaira(agent.volume) : "—"}
             </div>
             <div className="text-xs text-muted-foreground">
-              {agent.txCount.toLocaleString()} transactions
+              {agent.txCount != null
+                ? `${agent.txCount.toLocaleString()} transactions`
+                : "Transactions unknown"}
             </div>
-            <div className="flex items-center justify-center gap-1 mt-2">
-              {Array.from({ length: 5 }).map((_, s) => (
-                <Star
-                  key={s}
-                  className={`h-3 w-3 ${s < Math.floor(agent.rating) ? "text-yellow-500 fill-yellow-500" : "text-muted"}`}
-                />
-              ))}
-              <span className="text-xs ml-1">{agent.rating}</span>
-            </div>
+            {agent.rating != null ? (
+              <div className="flex items-center justify-center gap-1 mt-2">
+                {Array.from({ length: 5 }).map((_, s) => (
+                  <Star
+                    key={s}
+                    className={`h-3 w-3 ${s < Math.floor(agent.rating!) ? "text-yellow-500 fill-yellow-500" : "text-muted"}`}
+                  />
+                ))}
+                <span className="text-xs ml-1">{agent.rating}</span>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground mt-2">
+                Rating unavailable
+              </div>
+            )}
           </div>
         ))}
       </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -304,7 +229,15 @@ function LeaderboardContent() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(agent => (
+            {isLoading &&
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-t">
+                  <td colSpan={8} className="p-3">
+                    <div className="h-6 rounded bg-muted animate-pulse" />
+                  </td>
+                </tr>
+              ))}
+            {!isLoading && filtered.map(agent => (
               <tr key={agent.id} className="border-t hover:bg-muted/30">
                 <td className="p-3 font-bold">
                   <div className="flex items-center gap-2">
@@ -325,25 +258,33 @@ function LeaderboardContent() {
                 </td>
                 <td className="p-3">{agent.region}</td>
                 <td className="p-3 text-right font-mono">
-                  {agent.txCount.toLocaleString()}
+                  {agent.txCount != null ? agent.txCount.toLocaleString() : "—"}
                 </td>
                 <td className="p-3 text-right font-mono font-medium">
-                  {formatNaira(agent.volume)}
+                  {agent.volume != null ? formatNaira(agent.volume) : "—"}
                 </td>
                 <td className="p-3 text-right font-mono">
-                  {formatNaira(agent.commission)}
+                  {agent.commission != null
+                    ? formatNaira(agent.commission)
+                    : "—"}
                 </td>
                 <td className="p-3 text-center">
-                  <div className="flex items-center justify-center gap-1">
-                    <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-                    <span>{agent.rating}</span>
-                  </div>
+                  {agent.rating != null ? (
+                    <div className="flex items-center justify-center gap-1">
+                      <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                      <span>{agent.rating}</span>
+                    </div>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="p-3 text-center">
                   {agent.trend === "up" ? (
                     <TrendingUp className="h-4 w-4 text-green-500 mx-auto" />
-                  ) : (
+                  ) : agent.trend === "down" ? (
                     <TrendingDown className="h-4 w-4 text-red-500 mx-auto" />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </td>
               </tr>
