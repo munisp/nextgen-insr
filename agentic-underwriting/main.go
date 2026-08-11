@@ -21,9 +21,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
 )
 
 var db *sql.DB
@@ -892,13 +889,79 @@ func handleQuoteRisk(w http.ResponseWriter, r *http.Request) {
 	premiumModifier := riskScore / 100.0
 	decision := "approved"
 	if riskScore > 250 { decision = "declined" } else if riskScore > 180 { decision = "refer_to_medical" } else if riskScore > 140 { decision = "substandard" }
-	premium := req.SumAssured * 0.003 * premiumModifier
+
+	// Premium rating. The flat sum_assured × 0.003 rate below is an INTERIM
+	// placeholder: it ignores occupation_code and real rating tables, which
+	// require an actuarial pricing service. When ACTUARIAL_SERVICE_URL is
+	// configured the quote is delegated there; any failure is surfaced as an
+	// explicit error rather than silently falling back to the flat rate.
+	ratingMethod := "flat_interim"
+	var premium float64
+	if endpoint := os.Getenv("ACTUARIAL_SERVICE_URL"); endpoint != "" {
+		quoted, err := quoteFromActuarialService(endpoint, req.ApplicantAge, req.SumAssured, req.OccupationCode, req.BMI, req.Smoker, req.MedicalHistory, riskScore)
+		if err != nil {
+			jsonLog("warn", "actuarial_quote_failed", "error", err.Error())
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("actuarial pricing service unavailable: %s", err.Error())})
+			return
+		}
+		premium = quoted
+		ratingMethod = "actuarial_service"
+	} else {
+		premium = req.SumAssured * 0.003 * premiumModifier
+	}
+
 	if db != nil {
 		db.Exec("INSERT INTO underwriting_decisions (applicant_age, sum_assured, risk_score, decision, premium_quoted, created_at) VALUES ($1,$2,$3,$4,$5,NOW())",
 			req.ApplicantAge, req.SumAssured, riskScore, decision, premium)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"risk_score": riskScore, "decision": decision, "premium_quoted": premium, "premium_modifier": premiumModifier})
+	json.NewEncoder(w).Encode(map[string]interface{}{"risk_score": riskScore, "decision": decision, "premium_quoted": premium, "premium_modifier": premiumModifier, "rating_method": ratingMethod})
+}
+
+// quoteFromActuarialService delegates premium rating to the actuarial pricing
+// service, which owns the real rating tables (including occupation loadings).
+func quoteFromActuarialService(endpoint string, applicantAge int, sumAssured float64, occupationCode string, bmi float64, smoker bool, medicalHistory []string, riskScore float64) (float64, error) {
+	payload := map[string]interface{}{
+		"applicant_age":   applicantAge,
+		"sum_assured":     sumAssured,
+		"occupation_code": occupationCode,
+		"bmi":             bmi,
+		"smoker":          smoker,
+		"medical_history": medicalHistory,
+		"risk_score":      riskScore,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return 0, fmt.Errorf("marshal rating request: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(endpoint, "/")+"/quote", bytes.NewReader(data))
+	if err != nil {
+		return 0, fmt.Errorf("build rating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("actuarial service request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, fmt.Errorf("actuarial service rejected quote: HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Premium float64 `json:"premium"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("parse actuarial response: %w", err)
+	}
+	if result.Premium <= 0 {
+		return 0, fmt.Errorf("actuarial service returned no premium")
+	}
+	return result.Premium, nil
 }
 
 func handleAssessPortfolio(w http.ResponseWriter, r *http.Request) {
@@ -908,7 +971,33 @@ func handleAssessPortfolio(w http.ResponseWriter, r *http.Request) {
 	if db != nil {
 		db.QueryRow("SELECT COALESCE(SUM(sum_assured),0), COALESCE(AVG(risk_score),0), COUNT(*) FROM underwriting_decisions WHERE decision != 'declined'").Scan(&totalExposure, &avgRisk, &count)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"total_exposure": totalExposure, "avg_risk_score": avgRisk, "active_policies": count, "max_single_risk": totalExposure * 0.1})
+	resp := map[string]interface{}{"total_exposure": totalExposure, "avg_risk_score": avgRisk, "active_policies": count}
+	// max_single_risk must come from the configured reinsurance treaty limit
+	// (REINSURANCE_TREATY_LIMIT env or the reinsurance_treaties table), not
+	// from an invented fraction of exposure. The field is omitted when no
+	// treaty limit is configured.
+	if limit, ok := configuredTreatyLimit(); ok {
+		resp["max_single_risk"] = limit
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+// configuredTreatyLimit resolves the maximum single-risk retention from the
+// configured reinsurance treaty: REINSURANCE_TREATY_LIMIT env first, then the
+// reinsurance_treaties table. Returns ok=false when nothing is configured.
+func configuredTreatyLimit() (float64, bool) {
+	if v := os.Getenv("REINSURANCE_TREATY_LIMIT"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			return f, true
+		}
+	}
+	if db != nil {
+		var limit float64
+		if err := db.QueryRow("SELECT max_single_risk FROM reinsurance_treaties WHERE status = 'active' ORDER BY created_at DESC LIMIT 1").Scan(&limit); err == nil && limit > 0 {
+			return limit, true
+		}
+	}
+	return 0, false
 }
 
 

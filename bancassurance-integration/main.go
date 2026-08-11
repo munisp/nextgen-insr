@@ -268,28 +268,66 @@ func (s *BancassuranceService) CreateDebitMandate(customer *BankCustomer, policy
 	}
 }
 
-// ProcessPremiumCollection processes premium collection
-func (s *BancassuranceService) ProcessPremiumCollection(mandate *DebitMandateRequest) *PremiumCollection {
-	// Simulate collection process
-	status := "successful"
-	failureReason := ""
-
-	// Random failure simulation (in production, this would call bank API)
-	if time.Now().Unix()%10 == 0 {
-		status = "failed"
-		failureReason = "Insufficient funds"
+// ProcessPremiumCollection submits a premium debit request to the partner
+// bank API. It NEVER reports "successful": the collection stays "pending"
+// until the bank asynchronously confirms settlement via callback/webhook.
+// If no bank API is configured it returns an explicit error instead of
+// fabricating a collection outcome.
+func (s *BancassuranceService) ProcessPremiumCollection(mandate *DebitMandateRequest) (*PremiumCollection, error) {
+	bankAPI := os.Getenv("BANK_API_ENDPOINT")
+	if bankAPI == "" {
+		return nil, fmt.Errorf("bank API endpoint not configured (BANK_API_ENDPOINT): refusing to simulate premium collection for policy %s", mandate.PolicyNumber)
 	}
 
-	return &PremiumCollection{
+	collection := &PremiumCollection{
 		CollectionID:   fmt.Sprintf("COL-%d", time.Now().Unix()),
 		MandateID:      mandate.MandateID,
 		PolicyNumber:   mandate.PolicyNumber,
 		Amount:         mandate.Amount,
 		CollectionDate: time.Now(),
-		Status:         status,
-		FailureReason:  failureReason,
+		Status:         "pending", // pending until the bank confirms the debit
 		RetryCount:     0,
 	}
+
+	if err := s.submitDebitRequest(bankAPI, mandate); err != nil {
+		collection.Status = "failed"
+		collection.FailureReason = err.Error()
+	}
+	// On a successful submission the collection remains "pending"; only a
+	// bank confirmation callback may transition it to "successful".
+	return collection, nil
+}
+
+// submitDebitRequest performs the real HTTP debit call to the bank partner API.
+func (s *BancassuranceService) submitDebitRequest(bankAPI string, mandate *DebitMandateRequest) error {
+	payload := map[string]interface{}{
+		"mandate_id":      mandate.MandateID,
+		"bank_account_no": mandate.BankAccountNo,
+		"bank_code":       mandate.BankCode,
+		"amount":          mandate.Amount,
+		"policy_number":   mandate.PolicyNumber,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal debit request: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(bankAPI, "/")+"/debits", bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("build debit request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("bank debit request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("bank debit rejected: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func getProductName(productType string) string {
@@ -1099,27 +1137,62 @@ func (mc *mojaloopClient) PartyLookup(ctx context.Context, partyType, partyID st
 	return result, nil
 }
 
+// InitiateTransfer performs a real HTTP POST to the configured Mojaloop
+// switch. It never returns a success-looking transfer ID for a transfer
+// that was not actually accepted by the switch: without MOJALOOP_ENDPOINT
+// it fails with an explicit error, and any transport/protocol failure is
+// propagated as an error with an empty ID.
 func (mc *mojaloopClient) InitiateTransfer(ctx context.Context, amount, currency, payerID, payeeID string) (string, error) {
-	transferID := fmt.Sprintf("mj-%d", time.Now().UnixNano())
+	endpoint := os.Getenv("MOJALOOP_ENDPOINT")
+	if endpoint == "" {
+		return "", fmt.Errorf("mojaloop endpoint not configured")
+	}
 	payload := map[string]interface{}{
-		"transferId": transferID,
 		"payerFsp":   mc.dfspID,
 		"payeeFsp":   "counterparty-dfsp",
 		"amount":     map[string]string{"amount": amount, "currency": currency},
-		"ilpPacket":  "placeholder",
-		"condition":  "placeholder",
-		"expiration": time.Now().Add(30 * time.Second).Format(time.RFC3339),
+		"payer":      payerID,
+		"payee":      payeeID,
+		"expiration": time.Now().Add(60 * time.Second).Format(time.RFC3339),
 	}
-	data, _ := json.Marshal(payload)
-	jsonLog("info", "mojaloop_transfer_initiated",
-		"transfer_id", transferID,
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal transfer request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(endpoint, "/")+"/transfers", bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("build transfer request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/vnd.interoperability.transfers+json;version=1.1")
+	req.Header.Set("Accept", "application/vnd.interoperability.transfers+json;version=1.1")
+	req.Header.Set("FSPIOP-Source", mc.dfspID)
+	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("mojaloop transfer request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("mojaloop transfer rejected: HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		TransferID string `json:"transferId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("parse mojaloop transfer response: %w", err)
+	}
+	if result.TransferID == "" {
+		return "", fmt.Errorf("mojaloop transfer response missing transferId")
+	}
+	jsonLog("info", "mojaloop_transfer_accepted",
+		"transfer_id", result.TransferID,
 		"payer", payerID,
 		"payee", payeeID,
 		"amount", amount,
 		"currency", currency,
-		"size", fmt.Sprintf("%d", len(data)),
 	)
-	return transferID, nil
+	return result.TransferID, nil
 }
 
 var mojaloopCli *mojaloopClient
