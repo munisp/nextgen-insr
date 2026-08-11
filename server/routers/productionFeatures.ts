@@ -161,10 +161,16 @@ export const productionFeaturesRouter = router({
     }),
 
   batchOps: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Batch operations are not implemented yet",
+    });
   }),
 
   prefMatrix: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Preference matrix is not implemented yet",
+    });
   }),
 });

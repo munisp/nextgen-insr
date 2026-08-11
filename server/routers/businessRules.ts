@@ -295,14 +295,23 @@ export const businessRulesRouter = router({
   }),
 
   commissionRates: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Commission rates catalog is not implemented yet",
+    });
   }),
 
   kycTierLimits: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "KYC tier limits are not implemented yet",
+    });
   }),
 
   rewardCatalog: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Reward catalog is not implemented yet",
+    });
   }),
 });
