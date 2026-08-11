@@ -204,6 +204,7 @@ type DPIA struct {
 	ProportionalityAssessment string            `json:"proportionality_assessment"`
 	Risks                     []string          `json:"risks"`
 	Mitigations               []DPIAMitigation  `json:"mitigations"`
+	Metadata                  map[string]any    `json:"metadata,omitempty"`
 	DPOReviewed               bool              `json:"dpo_reviewed"`
 	DPOReviewedAt             *time.Time        `json:"dpo_reviewed_at,omitempty"`
 	DPOComments               string            `json:"dpo_comments,omitempty"`

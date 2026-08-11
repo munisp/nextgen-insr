@@ -190,7 +190,7 @@ func (s *CommissionService) ProcessClawback(ctx context.Context, id string) erro
 	}
 
 	// Get the clawback to update commission
-	cb, err := s.pg.GetCommission(ctx, context.Background(), "")
+	cb, err := s.pg.GetCommission(ctx, id)
 	if err == nil && cb != nil {
 		// Update the commission's clawback amount and status
 		_ = s.pg.UpdateCommissionStatus(ctx, cb.ID, string(models.StatusClawedBack), "")

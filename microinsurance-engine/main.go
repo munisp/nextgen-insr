@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
@@ -268,7 +267,15 @@ func createProductHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 			return
 		}
 
-		if err := validateProduct(req); err != nil {
+		if err := validateProduct(models.MicroProduct{
+			ProductID:      req.ProductID,
+			Name:           req.Name,
+			Premium:        req.Premium,
+			CoverageAmount: req.CoverageAmount,
+			MaxAge:         req.MaxAge,
+			MinAge:         req.MinAge,
+			Status:         models.ProductStatus(req.Status),
+		}); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error(), logger)
 			return
 		}
@@ -495,7 +502,7 @@ func enrollHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) ht
 			return
 		}
 
-		if err := validateEnrollment(req); err != nil {
+		if err := validateEnrollment(req.CustomerID, req.ProductID, req.Channel); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error(), logger)
 			return
 		}
@@ -506,7 +513,7 @@ func enrollHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) ht
 			return
 		}
 
-		if product.Status != string(models.ProductActive) {
+		if product.Status != models.ProductActive {
 			writeError(w, http.StatusBadRequest, "product is not active", logger)
 			return
 		}
@@ -602,7 +609,7 @@ func cancelEnrollmentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.
 			return
 		}
 
-		if enrollment.Status == string(models.EnrollmentCancelled) {
+		if enrollment.Status == models.EnrollmentCancelled {
 			writeError(w, http.StatusBadRequest, "enrollment already cancelled", logger)
 			return
 		}
@@ -689,7 +696,7 @@ func createClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 			return
 		}
 
-		if enrollment.Status != string(models.EnrollmentActive) {
+		if enrollment.Status != models.EnrollmentActive {
 			writeError(w, http.StatusBadRequest, "enrollment is not active", logger)
 			return
 		}
@@ -730,7 +737,7 @@ func createClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 			claim.ApprovedAt = &approvedAt
 		}
 
-		if err := pg.InsertClaim(r.Context(), claim); err != nil {
+		if _, err := pg.InsertClaim(r.Context(), claim); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create claim", logger)
 			return
 		}
@@ -783,7 +790,7 @@ func approveClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logg
 			return
 		}
 
-		if claim.Status == string(models.ClaimPaid) || claim.Status == string(models.ClaimSettled) {
+		if claim.Status == models.ClaimPaid || claim.Status == models.ClaimSettled {
 			writeError(w, http.StatusBadRequest, "claim already finalized", logger)
 			return
 		}
@@ -1032,7 +1039,7 @@ func recordPaymentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 			return
 		}
 
-		if enrollment.Status != string(models.EnrollmentActive) {
+		if enrollment.Status != models.EnrollmentActive {
 			writeError(w, http.StatusBadRequest, "enrollment is not active", logger)
 			return
 		}
@@ -1151,6 +1158,7 @@ func createTriggerHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 			Triggered:     triggered,
 			DataSource:    req.DataSource,
 			DataReference: req.DataReference,
+			CreatedAt:     now,
 		}
 
 		if triggered {
@@ -1221,18 +1229,14 @@ func validateProduct(product models.MicroProduct) error {
 	return nil
 }
 
-func validateEnrollment(req struct {
-	CustomerID, PhoneNumber, FirstName, LastName, DateOfBirth, ProductID, Channel, PaymentMethod, GroupID string
-	KYCDocuments map[string]string
-	Metadata map[string]any
-}) error {
-	if req.CustomerID == "" {
+func validateEnrollment(customerID, productID, channel string) error {
+	if customerID == "" {
 		return errors.New("customer_id is required")
 	}
-	if req.ProductID == "" {
+	if productID == "" {
 		return errors.New("product_id is required")
 	}
-	if req.Channel == "" {
+	if channel == "" {
 		return errors.New("channel is required")
 	}
 	validChannels := map[string]bool{
@@ -1240,7 +1244,7 @@ func validateEnrollment(req struct {
 		string(models.ChannelMobile): true, string(models.ChannelWeb): true,
 		string(models.ChannelMNO): true, string(models.ChannelGroup): true,
 	}
-	if !validChannels[req.Channel] {
+	if !validChannels[channel] {
 		return errors.New("invalid enrollment channel")
 	}
 	return nil

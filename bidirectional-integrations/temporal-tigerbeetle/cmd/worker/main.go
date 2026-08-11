@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+
 	"log"
 	"net/http"
 	"os"
@@ -11,9 +11,9 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
+	types "github.com/tigerbeetle/tigerbeetle-go"
 
-	ttb "temporal-tigerbeetle-integration"
+	ttb "github.com/munisp/nextgen-insr/bidirectional-integrations/temporal-tigerbeetle"
 	"database/sql"
 
 	_ "github.com/lib/pq"
@@ -75,7 +75,7 @@ func main() {
 	}
 	defer temporalClient.Close()
 
-	clusterID := types.Uint128{High: 0, Low: 0}
+	clusterID := types.Uint128{}
 	addresses := []string{tigerBeetleAddresses}
 
 	tigerBeetleClient, err := ttb.NewTigerBeetleClient(clusterID, addresses)

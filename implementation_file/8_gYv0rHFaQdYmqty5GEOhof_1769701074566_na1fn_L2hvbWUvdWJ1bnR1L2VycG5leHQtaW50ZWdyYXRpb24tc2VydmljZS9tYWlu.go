@@ -41,10 +41,10 @@ type StateData struct {
 
 // subscribeHandler is the handler for the Dapr Pub/Sub subscription
 func subscribeHandler(ctx context.Context, e *common.TopicEvent) (retry bool, err error) {
-	log.Printf("Event received: PubsubName: %s, Topic: %s, ID: %s, Data: %s", e.Pubsub, e.Topic, e.ID, e.Data)
+	log.Printf("Event received: PubsubName: %s, Topic: %s, ID: %s, Data: %s", e.PubsubName, e.Topic, e.ID, e.Data)
 
 	var payload EventPayload
-	if err := json.Unmarshal(e.Data, &payload); err != nil {
+	if err := e.Struct(&payload); err != nil {
 		log.Printf("Error unmarshalling event data: %v", err)
 		return false, err // Do not retry on unmarshalling error
 	}
@@ -88,17 +88,10 @@ func saveState(ctx context.Context, orderID string) error {
 	}
 	data, _ := json.Marshal(state)
 
-	item := &dapr.SetStateItem{
-		Key:   orderID,
-		Value: data,
-		Options: &dapr.StateOptions{
-			Concurrency: dapr.StateConcurrencyLastWrite,
-			Consistency: dapr.StateConsistencyStrong,
-		},
-	}
-
 	// Dapr automatically handles distributed tracing for client calls
-	if err := client.SaveState(ctx, stateStoreName, item); err != nil {
+	if err := client.SaveState(ctx, stateStoreName, orderID, data, nil,
+		dapr.WithConcurrency(dapr.StateConcurrencyLastWrite),
+		dapr.WithConsistency(dapr.StateConsistencyStrong)); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
@@ -151,9 +144,11 @@ func getSecret(ctx context.Context) error {
 }
 
 // healthCheckHandler is a simple handler for the Dapr sidecar to check service health
-func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Service is healthy"))
+func healthCheckHandler(ctx context.Context, in *common.InvocationEvent) (*common.Content, error) {
+	return &common.Content{
+		ContentType: "text/plain",
+		Data:        []byte("Service is healthy"),
+	}, nil
 }
 
 var db *sql.DB

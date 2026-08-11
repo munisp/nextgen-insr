@@ -144,7 +144,7 @@ type Claim struct {
 	ClaimAmount     float64      `json:"claim_amount"`
 	SettlementAmount float64     `json:"settlement_amount"`
 	Status          ClaimStatus  `json:"status"`
-	Documents       int          `json:"documents_required"`
+	DocumentsRequired int       `json:"documents_required"`
 	DocumentsSubmitted int       `json:"documents_submitted"`
 	ParametricValue float64      `json:"parametric_value,omitempty"`
 	ParametricTrigger string   `json:"parametric_trigger,omitempty"`
@@ -220,6 +220,7 @@ type ParametricTrigger struct {
 	DataReference string    `json:"data_reference"`
 	TotalPayout   float64   `json:"total_payout"`
 	EnrolledCount int       `json:"enrolled_count"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // PolicyStats holds aggregated microinsurance statistics

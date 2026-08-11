@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/insureportal/premium-finance-service/config"
 )
@@ -344,7 +343,10 @@ func (p *Postgres) UpsertCreditProfile(ctx context.Context, profile *CreditProfi
 		profile.ActivePolicies, profile.DefaultHistory, profile.IncomeEstimate,
 		profile.EmploymentStatus, profile.Rating, profile.Recommendation,
 		profile.MaxFinanced, profile.RecommendedRate)
-	return fmt.Errorf("upsert credit profile: %w", err)
+	if err != nil {
+		return fmt.Errorf("upsert credit profile: %w", err)
+	}
+	return nil
 }
 
 // GetCreditProfile retrieves a credit profile by customer
@@ -431,7 +433,10 @@ func (p *Postgres) GetPaymentSchedule(ctx context.Context, loanID string) ([]*Sc
 func (p *Postgres) UpdateScheduleEntryStatus(ctx context.Context, id, status string) error {
 	query := `UPDATE payment_schedule_entries SET status = $1, paid_at = NOW() WHERE id = $2`
 	_, err := p.Pool.Exec(ctx, query, status, id)
-	return fmt.Errorf("update schedule entry: %w", err)
+	if err != nil {
+		return fmt.Errorf("update schedule entry: %w", err)
+	}
+	return nil
 }
 
 // InsertCollateral creates collateral for a loan
@@ -440,7 +445,10 @@ func (p *Postgres) InsertCollateral(ctx context.Context, coll *CollateralDB) err
 		INSERT INTO collateral (id, loan_id, type, details, value, currency, status, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`, coll.ID, coll.LoanID, coll.Type, coll.Details, coll.Value, coll.Currency, coll.Status, coll.Metadata)
-	return fmt.Errorf("insert collateral: %w", err)
+	if err != nil {
+		return fmt.Errorf("insert collateral: %w", err)
+	}
+	return nil
 }
 
 // GetCollateral retrieves collateral for a loan
@@ -468,7 +476,10 @@ func (p *Postgres) InsertCollectionAction(ctx context.Context, action *Collectio
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`, action.ID, action.LoanID, action.CustomerID, action.ActionType,
 		action.Status, action.PerformedBy, action.ScheduledAt, action.Notes, action.Metadata)
-	return fmt.Errorf("insert collection action: %w", err)
+	if err != nil {
+		return fmt.Errorf("insert collection action: %w", err)
+	}
+	return nil
 }
 
 // InsertEarlySettlement creates an early settlement record
@@ -483,7 +494,10 @@ func (p *Postgres) InsertEarlySettlement(ctx context.Context, settlement *EarlyS
 		settlement.RebateAmount, settlement.RebatePercent,
 		settlement.TotalPayable, settlement.Status,
 		settlement.ProcessedBy, settlement.ProcessedAt)
-	return fmt.Errorf("insert early settlement: %w", err)
+	if err != nil {
+		return fmt.Errorf("insert early settlement: %w", err)
+	}
+	return nil
 }
 
 // GetLoanSummary retrieves the materialized loan summary
@@ -496,7 +510,7 @@ func (p *Postgres) GetLoanSummary(ctx context.Context) ([]map[string]interface{}
 
 	var results []map[string]interface{}
 	for rows.Next() {
-		columns, _ := rows.ColumnTypes()
+		columns := rows.FieldDescriptions()
 		values := make([]interface{}, len(columns))
 		valuePtrs := make([]interface{}, len(columns))
 		for i := range values {
@@ -507,7 +521,7 @@ func (p *Postgres) GetLoanSummary(ctx context.Context) ([]map[string]interface{}
 		}
 		row := make(map[string]interface{})
 		for i, col := range columns {
-			row[col.Name()] = values[i]
+			row[col.Name] = values[i]
 		}
 		results = append(results, row)
 	}

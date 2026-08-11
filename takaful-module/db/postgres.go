@@ -425,13 +425,16 @@ func (p *PostgreSQL) GetContributionsByParticipant(ctx context.Context, particip
 	query := `SELECT id,participant_id,product_id,transaction_id,amount,tabarru_portion,wakala_fee,
 		investment_portion,payment_method,status,processed_at,reference_no,notes,created_at
 		FROM contributions WHERE participant_id=$1 ORDER BY created_at DESC`
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", 2) }
-	rows, err := p.db.QueryContext(ctx, query, participantID)
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		query += " LIMIT $2"
+		rows, err = p.db.QueryContext(ctx, query, participantID, limit)
+	} else {
+		rows, err = p.db.QueryContext(ctx, query, participantID)
+	}
 	if err != nil { return nil, err }
 	defer rows.Close()
-	if limit > 0 {
-		rows.Scan(func() {} // placeholder
-	}
 	return scanContributions(rows)
 }
 
@@ -579,7 +582,9 @@ func (p *PostgreSQL) GetSurplusDistribution(ctx context.Context, period, poolID 
 // --- Zakat ---
 func (p *PostgreSQL) CreateZakatRecord(ctx context.Context, z *models.ZakatRecord) error {
 	z.ID = uuid.New().String()
-	z.CreatedAt = time.Now()
+	if z.CalculatedAt.IsZero() {
+		z.CalculatedAt = time.Now()
+	}
 	query := `INSERT INTO zakat_records (id,participant_id,year,net_wealth,nisab_threshold,
 		is_zakat_obliged,zakat_rate,zakat_amount,paid,paid_at,recipients,status,calculated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`
