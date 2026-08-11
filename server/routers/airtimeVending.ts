@@ -7,6 +7,12 @@
  *   - Commission: 3% of face value (credited to agent float)
  *   - Daily limit per agent: ₦500,000
  *   - Idempotency via unique reference
+ *
+ * MOCKWARE FIX: No airtime provider API is wired in this service. Vending
+ * now fails loudly when no provider is configured, and a vend is NEVER
+ * recorded as synchronous success — the transaction is stored as
+ * "pending" with providerStatus "pending_provider" until a real provider
+ * fulfilment webhook settles it.
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -24,6 +30,17 @@ const MAX_AMOUNT = 50_000;
 const DAILY_LIMIT = 500_000;
 const COMMISSION_RATE = 0.03;
 
+// Airtime provider integration is configured via environment; without it
+// the vend cannot be fulfilled and must fail loudly.
+function isAirtimeProviderConfigured(): boolean {
+  return !!(
+    process.env.AIRTIME_PROVIDER_URL ||
+    process.env.AIRTIME_PROVIDER_API_KEY ||
+    process.env.VTPASS_API_KEY ||
+    process.env.RELOADLY_API_KEY
+  );
+}
+
 export const airtimeVendingRouter = router({
   vend: protectedProcedure
     .input(z.object({
@@ -34,6 +51,10 @@ export const airtimeVendingRouter = router({
       reference: z.string().min(5),
     }))
     .mutation(async ({ input }) => {
+      if (!isAirtimeProviderConfigured()) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Airtime provider not configured" });
+      }
+
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
@@ -71,9 +92,11 @@ export const airtimeVendingRouter = router({
 
       try {
         await tbEnsureAgentAccount(agent.agentId);
-        const commission = Math.round(input.amountNGN * COMMISSION_RATE * 100) / 100;
+        // Commission is only earned once the provider fulfils the vend; it
+        // is not credited at initiation time.
+        const commission = 0;
 
-        // TigerBeetle: debit agent float, credit network provider pool
+        // TigerBeetle: hold the vend amount against the agent float
         const tbResult = await tbCreateTransfer({
           debitAccountId: `float-${agent.agentId}`,
           creditAccountId: `network-${input.network.toLowerCase()}`,
@@ -85,10 +108,6 @@ export const airtimeVendingRouter = router({
           agentId: agent.agentId,
         });
 
-        // Update agent float
-        const newBalance = agentBalance - input.amountNGN + commission;
-        await db.update(agents).set({ premiumReserve: String(newBalance), updatedAt: new Date() }).where(eq(agents.id, input.agentId));
-
         const [tx] = await db.insert(transactions).values({
           reference: input.reference,
           agentId: input.agentId,
@@ -98,14 +117,21 @@ export const airtimeVendingRouter = router({
           commission: String(commission),
           customerPhone: input.phoneNumber,
           channel: "POS",
-          status: "success",
+          // Never synchronous success: fulfilment is confirmed asynchronously
+          // by the airtime provider.
+          status: "pending",
           fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { network: input.network, phoneNumber: input.phoneNumber, tbTransferId: tbResult?.id ?? null },
+          metadata: {
+            network: input.network,
+            phoneNumber: input.phoneNumber,
+            providerStatus: "pending_provider",
+            tbTransferId: tbResult?.id ?? null,
+          },
         }).returning();
 
-        logger.info(`[Airtime] ₦${input.amountNGN} ${input.network} to ${input.phoneNumber} | agent ${agent.agentId} | TB: ${tbResult?.id ?? "pending"}`);
-        return { idempotent: false, transaction: tx, commission, tbTransferId: tbResult?.id ?? null, newBalanceNGN: newBalance };
+        logger.info(`[Airtime] ₦${input.amountNGN} ${input.network} to ${input.phoneNumber} | agent ${agent.agentId} | status pending_provider | TB: ${tbResult?.id ?? "pending"}`);
+        return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
       } finally {
         await releaseLock(lockKey);
       }

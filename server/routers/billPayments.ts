@@ -3,6 +3,11 @@
  * Full production implementation with TigerBeetle atomicity.
  * Billers: EKEDC, IKEDC, AEDC, PHED, DSTV, GOtv, WAEC, JAMB, etc.
  * Business Rules: Min ₦100, Max ₦500K, Daily limit ₦2M, commission 0.5-2%
+ *
+ * MOCKWARE FIX: No bill-payment provider API is wired in this service.
+ * Payments fail loudly when no provider is configured, and a payment is
+ * NEVER recorded as synchronous success — it is stored as "pending" with
+ * providerStatus "pending_provider" until provider fulfilment confirms it.
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -22,6 +27,17 @@ const BILLER_COMMISSION: Record<string, number> = {
 };
 const MIN_AMOUNT = 100, MAX_AMOUNT = 500_000, DAILY_LIMIT = 2_000_000;
 
+// Bill-payment provider integration is configured via environment; without
+// it a payment cannot be fulfilled and must fail loudly.
+function isBillProviderConfigured(): boolean {
+  return !!(
+    process.env.BILL_PROVIDER_URL ||
+    process.env.BILL_PROVIDER_API_KEY ||
+    process.env.VTPASS_API_KEY ||
+    process.env.BAXI_API_KEY
+  );
+}
+
 export const billPaymentsRouter = router({
   pay: protectedProcedure
     .input(z.object({
@@ -30,6 +46,9 @@ export const billPaymentsRouter = router({
       customerName: z.string().optional(), meterType: z.enum(["prepaid", "postpaid"]).optional(),
     }))
     .mutation(async ({ input }) => {
+      if (!isBillProviderConfigured()) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Bill payment provider not configured" });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       const existing = await db.select().from(transactions).where(eq(transactions.reference, input.reference)).limit(1);
@@ -49,26 +68,27 @@ export const billPaymentsRouter = router({
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Payment in progress" });
       try {
         await tbEnsureAgentAccount(agent.agentId);
-        const commissionRate = BILLER_COMMISSION[input.biller] ?? 0.01;
-        const commission = Math.round(input.amountNGN * commissionRate * 100) / 100;
+        // Commission is only earned once the biller confirms fulfilment; it
+        // is not credited at initiation time.
+        const commission = 0;
         const tbResult = await tbCreateTransfer({
           debitAccountId: `float-${agent.agentId}`, creditAccountId: `biller-${input.biller.toLowerCase()}`,
           amount: Math.round(input.amountNGN * 100), ledger: 2000, code: 200,
           ref: input.reference, txType: "Bill Payment", agentId: agent.agentId,
         });
-        const newBalance = agentBalance - input.amountNGN + commission;
-        await db.update(agents).set({ premiumReserve: String(newBalance), updatedAt: new Date() }).where(eq(agents.id, input.agentId));
         const [tx] = await db.insert(transactions).values({
           reference: input.reference, agentId: input.agentId, type: "Bill Payment",
           amount: String(input.amountNGN), fee: "0", commission: String(commission),
           customerAccount: input.customerNumber, customerName: input.customerName ?? null,
-          channel: "POS", status: "success", fraudScore: "0.00",
+          // Never synchronous success: fulfilment is confirmed asynchronously
+          // by the bill-payment provider.
+          channel: "POS", status: "pending", fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { biller: input.biller, customerNumber: input.customerNumber, meterType: input.meterType ?? null, tbTransferId: tbResult?.id ?? null },
+          metadata: { biller: input.biller, customerNumber: input.customerNumber, meterType: input.meterType ?? null, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();
-        await db.insert(auditLog).values({ action: "BILL_PAYMENT", resource: "bill_payment", resourceId: input.reference, status: "success", metadata: { biller: input.biller, amountNGN: input.amountNGN } }).catch(() => {});
-        logger.info(`[BillPayment] ₦${input.amountNGN} to ${input.biller} | agent ${agent.agentId} | TB: ${tbResult?.id ?? "pending"}`);
-        return { idempotent: false, transaction: tx, commission, newBalanceNGN: newBalance, tbTransferId: tbResult?.id ?? null, receiptNumber: `RCP-${input.reference}` };
+        await db.insert(auditLog).values({ action: "BILL_PAYMENT", resource: "bill_payment", resourceId: input.reference, status: "success", metadata: { biller: input.biller, amountNGN: input.amountNGN, providerStatus: "pending_provider" } }).catch(() => {});
+        logger.info(`[BillPayment] ₦${input.amountNGN} to ${input.biller} | agent ${agent.agentId} | status pending_provider | TB: ${tbResult?.id ?? "pending"}`);
+        return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null, receiptNumber: `RCP-${input.reference}` };
       } finally { await releaseLock(lockKey); }
     }),
 

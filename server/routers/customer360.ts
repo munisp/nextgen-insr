@@ -1,16 +1,34 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { customers } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
+// MOCKWARE FIX: getProfile returned a hardcoded "Default Customer" and
+// analyzeSentiment returned canned positive sentiment. getProfile now reads
+// the real customers table and sentiment analysis fails loudly because no
+// LLM is configured.
+
 export const customer360Router = router({
   dashboard: protectedProcedure.query(async () => {
+    const database = await getDb();
+    let totalRecords = 0;
+    let activeRecords = 0;
+    if (database) {
+      const [total] = await database.select({ value: count() }).from(customers);
+      const [active] = await database
+        .select({ value: count() })
+        .from(customers)
+        .where(eq(customers.status, "active"));
+      totalRecords = Number(total?.value ?? 0);
+      activeRecords = Number(active?.value ?? 0);
+    }
     return {
-      totalRecords: 0,
-      activeRecords: 0,
+      totalRecords,
+      activeRecords,
       lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
+      uptime: null, // no uptime probe wired — not fabricated
       version: "1.0.0",
     };
   }),
@@ -105,11 +123,34 @@ export const customer360Router = router({
       return results;
     }),
 
-  getProfile: protectedProcedure.query(async () => {
-    return { id: "C-001", name: "Default Customer", segments: [], ltv: 0 };
-  }),
+  getProfile: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const [customer] = await database
+        .select()
+        .from(customers)
+        .where(eq(customers.id, input.id))
+        .limit(1);
+      if (!customer) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Customer ${input.id} not found` });
+      }
+      return {
+        id: String(customer.id),
+        name: `${customer.firstName} ${customer.lastName}`,
+        segments: [], // no segmentation engine attached
+        ltv: 0, // no LTV model attached
+      };
+    }),
 
-  analyzeSentiment: protectedProcedure.query(async () => {
-    return { score: 0.75, label: "positive", confidence: 0.85 };
-  }),
+  analyzeSentiment: protectedProcedure
+    .input(z.object({ customerId: z.number().optional() }).optional())
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Sentiment analysis not configured: no LLM provider is wired in this service",
+      });
+    }),
 });

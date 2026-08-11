@@ -2,6 +2,12 @@
  * mobileMoney.ts — Mobile Money Operations Router
  * Full production: cash-in, cash-out, transfers via mobile money.
  * Business Rules: Min ₦100, Max ₦300K, Daily ₦1M, Commission 1.5%
+ *
+ * MOCKWARE FIX: No mobile-money provider (MoMo/Mojaloop) call is wired in
+ * this service. Cash-in/cash-out fail loudly when no provider is
+ * configured, and a transaction is NEVER recorded as synchronous success —
+ * it is stored as "pending" with providerStatus "pending_provider" until
+ * the provider confirms settlement.
  */
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -17,6 +23,17 @@ const PROVIDERS = ["MTN MoMo", "Airtel Money", "Glo Xtra", "9PSB"] as const;
 const MIN_AMOUNT = 100, MAX_AMOUNT = 300_000, DAILY_LIMIT = 1_000_000;
 const CASH_IN_COMMISSION = 0.015, CASH_OUT_COMMISSION = 0.015;
 
+// Mobile-money provider integration is configured via environment; without
+// it a cash-in/cash-out cannot be fulfilled and must fail loudly.
+function isMobileMoneyProviderConfigured(): boolean {
+  return !!(
+    process.env.MOBILE_MONEY_PROVIDER_URL ||
+    process.env.MOBILE_MONEY_PROVIDER_API_KEY ||
+    process.env.MOJALOOP_ENDPOINT ||
+    process.env.MOJALOOP_URL
+  );
+}
+
 export const mobileMoneyRouter = router({
   cashIn: protectedProcedure
     .input(z.object({
@@ -25,6 +42,9 @@ export const mobileMoneyRouter = router({
       reference: z.string().min(5), customerName: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      if (!isMobileMoneyProviderConfigured()) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Mobile money provider not configured" });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       const existing = await db.select().from(transactions).where(eq(transactions.reference, input.reference)).limit(1);
@@ -37,24 +57,26 @@ export const mobileMoneyRouter = router({
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Transaction in progress" });
       try {
         await tbEnsureAgentAccount(agent.agentId);
-        const commission = Math.round(input.amountNGN * CASH_IN_COMMISSION * 100) / 100;
+        // Commission is only earned once the provider confirms settlement;
+        // it is not credited at initiation time.
+        const commission = 0;
         const tbResult = await tbCreateTransfer({
           debitAccountId: "sys-bank-reserve", creditAccountId: `float-${agent.agentId}`,
           amount: Math.round(input.amountNGN * 100), ledger: 2000, code: 100,
           ref: input.reference, txType: "Mobile Money Cash-In", agentId: agent.agentId,
         });
-        const newBalance = Number(agent.premiumReserve ?? 0) + input.amountNGN;
-        await db.update(agents).set({ premiumReserve: String(newBalance), updatedAt: new Date() }).where(eq(agents.id, input.agentId));
         const [tx] = await db.insert(transactions).values({
           reference: input.reference, agentId: input.agentId, type: "Mobile Money Cash-In",
           amount: String(input.amountNGN), fee: "0", commission: String(commission),
           customerPhone: input.customerPhone, customerName: input.customerName ?? null,
-          channel: "Mobile Money", status: "success", fraudScore: "0.00",
+          // Never synchronous success: settlement is confirmed asynchronously
+          // by the mobile-money provider.
+          channel: "Mobile Money", status: "pending", fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { provider: input.provider, tbTransferId: tbResult?.id ?? null },
+          metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();
-        logger.info(`[MobileMoney] Cash-In ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId}`);
-        return { idempotent: false, transaction: tx, commission, newBalanceNGN: newBalance, tbTransferId: tbResult?.id ?? null };
+        logger.info(`[MobileMoney] Cash-In ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId} | status pending_provider`);
+        return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
       } finally { await releaseLock(lockKey); }
     }),
 
@@ -65,6 +87,9 @@ export const mobileMoneyRouter = router({
       reference: z.string().min(5), customerName: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      if (!isMobileMoneyProviderConfigured()) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Mobile money provider not configured" });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
       const existing = await db.select().from(transactions).where(eq(transactions.reference, input.reference)).limit(1);
@@ -79,24 +104,26 @@ export const mobileMoneyRouter = router({
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Transaction in progress" });
       try {
         await tbEnsureAgentAccount(agent.agentId);
-        const commission = Math.round(input.amountNGN * CASH_OUT_COMMISSION * 100) / 100;
+        // Commission is only earned once the provider confirms settlement;
+        // it is not credited at initiation time.
+        const commission = 0;
         const tbResult = await tbCreateTransfer({
           debitAccountId: `float-${agent.agentId}`, creditAccountId: "sys-bank-reserve",
           amount: Math.round(input.amountNGN * 100), ledger: 2000, code: 200,
           ref: input.reference, txType: "Mobile Money Cash-Out", agentId: agent.agentId,
         });
-        const newBalance = agentBalance - input.amountNGN + commission;
-        await db.update(agents).set({ premiumReserve: String(newBalance), updatedAt: new Date() }).where(eq(agents.id, input.agentId));
         const [tx] = await db.insert(transactions).values({
           reference: input.reference, agentId: input.agentId, type: "Mobile Money Cash-Out",
           amount: String(input.amountNGN), fee: "0", commission: String(commission),
           customerPhone: input.customerPhone, customerName: input.customerName ?? null,
-          channel: "Mobile Money", status: "success", fraudScore: "0.00",
+          // Never synchronous success: settlement is confirmed asynchronously
+          // by the mobile-money provider.
+          channel: "Mobile Money", status: "pending", fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { provider: input.provider, tbTransferId: tbResult?.id ?? null },
+          metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();
-        logger.info(`[MobileMoney] Cash-Out ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId}`);
-        return { idempotent: false, transaction: tx, commission, newBalanceNGN: newBalance, tbTransferId: tbResult?.id ?? null };
+        logger.info(`[MobileMoney] Cash-Out ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId} | status pending_provider`);
+        return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
       } finally { await releaseLock(lockKey); }
     }),
 

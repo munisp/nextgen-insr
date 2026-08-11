@@ -3,12 +3,19 @@
  * Real-Time Streaming Module
  * Emits live transaction and reconciliation events via Socket.IO
  * Connects to /settlement and /notifications namespaces
+ *
+ * MOCKWARE FIX: service health broadcasts previously claimed every Go
+ * service was "healthy" with a random latency. Health entries are now real
+ * probe results against each service's configured health endpoint (via the
+ * goServiceAdapter registry); unreachable services are reported as "down",
+ * never fabricated as healthy.
  */
 import type { Server as SocketServer } from "socket.io";
 import { getDb } from "../db";
 import { transactions } from "../../drizzle/schema";
 import { desc, sql, gte } from "drizzle-orm";
 import { logger } from '../_core/logger';
+import { getAllServiceConfigs } from "../adapters/goServiceAdapter";
 
 interface TransactionEvent {
   id: string;
@@ -37,23 +44,36 @@ interface ServiceHealthEntry {
   lastCheck: number;
 }
 
-const GO_SERVICES = [
-  "workflow-orchestrator",
-  "tigerbeetle-integrated",
-  "mdm-compliance",
-  "pbac-engine",
-  "connectivity-resilience",
-  "billing-aggregator",
-  "rbac-service",
-  "ussd-gateway",
-  "ussd-tx-processor",
-  "hierarchy-engine",
-  "settlement-gateway",
-  "at-ussd-handler",
-  "opensearch-analytics",
-  "revenue-reconciler",
-  "fluvio-streaming",
-];
+const HEALTH_PROBE_TIMEOUT_MS = 3000;
+
+// Probe every registered Go service's health endpoint and report the real
+// result. No fabricated "healthy" statuses or random latencies.
+async function probeServiceHealth(): Promise<ServiceHealthEntry[]> {
+  const configs = getAllServiceConfigs();
+  return Promise.all(
+    configs.map(async cfg => {
+      const start = Date.now();
+      try {
+        const res = await fetch(`${cfg.baseUrl}${cfg.healthPath}`, {
+          signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
+        });
+        return {
+          name: cfg.name,
+          status: res.ok ? ("healthy" as const) : ("degraded" as const),
+          latencyMs: Date.now() - start,
+          lastCheck: Date.now(),
+        };
+      } catch {
+        return {
+          name: cfg.name,
+          status: "down" as const,
+          latencyMs: Date.now() - start,
+          lastCheck: Date.now(),
+        };
+      }
+    })
+  );
+}
 
 /**
  * Initialize real-time streaming on Socket.IO namespaces
@@ -94,7 +114,7 @@ export function initRealtimeStreaming(io: SocketServer) {
   notificationsNs.on("connection", socket => {
     logger.info("[RealTime] Notifications client connected");
 
-    // Send initial service health
+    // Send initial service health (real probe results)
     emitServiceHealth(socket);
 
     socket.on("disconnect", () => {
@@ -102,15 +122,10 @@ export function initRealtimeStreaming(io: SocketServer) {
     });
   });
 
-  // Periodic health check broadcast (every 30s)
-  setInterval(() => {
+  // Periodic health check broadcast (every 30s) — real probe results
+  setInterval(async () => {
     if (notificationsNs.sockets.size > 0) {
-      const healthData = GO_SERVICES.map(name => ({
-        name,
-        status: "healthy" as const,
-        latencyMs: Math.floor(50 + Math.random() * 200),
-        lastCheck: Date.now(),
-      }));
+      const healthData = await probeServiceHealth();
       notificationsNs.emit("service:health", healthData);
     }
   }, 30_000);
@@ -218,12 +233,7 @@ async function sendRecentTransactions(socket: any) {
   }
 }
 
-function emitServiceHealth(socket: any) {
-  const healthData: ServiceHealthEntry[] = GO_SERVICES.map(name => ({
-    name,
-    status: "healthy" as const,
-    latencyMs: Math.floor(50 + Math.random() * 200),
-    lastCheck: Date.now(),
-  }));
+async function emitServiceHealth(socket: any) {
+  const healthData = await probeServiceHealth();
   socket.emit("service:health", healthData);
 }

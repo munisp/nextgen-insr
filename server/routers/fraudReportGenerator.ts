@@ -1,8 +1,14 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { fraudAlerts } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+// MOCKWARE FIX: generateReport/getReport returned fabricated report ids and
+// "completed" statuses with empty data. generateReport now builds a real
+// report synchronously from the fraud_alerts table; getReport fails loudly
+// because generated reports are not persisted; quickStats reads real counts.
 
 export const fraudReportGeneratorRouter = router({
   list: protectedProcedure
@@ -103,22 +109,56 @@ export const fraudReportGeneratorRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const start = new Date(input.startDate);
+      const end = new Date(input.endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid startDate/endDate" });
+      }
+      // Real on-demand report generated synchronously from fraud_alerts.
+      const alerts = await database
+        .select()
+        .from(fraudAlerts)
+        .where(
+          and(
+            gte(fraudAlerts.createdAt, start),
+            lte(fraudAlerts.createdAt, end)
+          )
+        )
+        .orderBy(desc(fraudAlerts.createdAt))
+        .limit(500);
+      const bySeverity: Record<string, number> = {};
+      const byStatus: Record<string, number> = {};
+      for (const a of alerts) {
+        bySeverity[a.severity] = (bySeverity[a.severity] ?? 0) + 1;
+        byStatus[a.status] = (byStatus[a.status] ?? 0) + 1;
+      }
       return {
-        reportId: `report-${Date.now()}`,
-        status: "generating" as const,
+        reportId: `fraud-report-${input.startDate}_${input.endDate}`,
+        status: "completed" as const,
+        generatedAt: new Date().toISOString(),
+        data: {
+          period: { startDate: input.startDate, endDate: input.endDate },
+          type: input.type ?? "fraud_alerts",
+          totalAlerts: alerts.length,
+          bySeverity,
+          byStatus,
+          alerts,
+        },
       };
     }),
   getReport: protectedProcedure
     .input(z.object({ reportId: z.string() }))
     .query(async ({ input }) => {
-      return {
-        id: input.reportId,
-        status: "completed" as const,
-        data: {},
-        generatedAt: new Date().toISOString(),
-      };
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `Report ${input.reportId} not found: generated reports are not persisted — call generateReport to build a report on demand`,
+      });
     }),
   listReports: protectedProcedure.query(async () => {
+    // Reports are generated on demand and not persisted — honest empty.
     return {
       reports: [] as Array<{
         id: string;
@@ -130,12 +170,40 @@ export const fraudReportGeneratorRouter = router({
     };
   }),
   quickStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) {
+      return {
+        totalCases: 0,
+        openCases: 0,
+        resolvedToday: 0,
+        avgResolutionTimeHours: 0,
+        totalLossPrevented: 0,
+      };
+    }
+    const [total] = await database
+      .select({ value: count() })
+      .from(fraudAlerts);
+    const [open] = await database
+      .select({ value: count() })
+      .from(fraudAlerts)
+      .where(eq(fraudAlerts.status, "open"));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [resolvedToday] = await database
+      .select({ value: count() })
+      .from(fraudAlerts)
+      .where(
+        and(
+          eq(fraudAlerts.status, "resolved"),
+          gte(fraudAlerts.resolvedAt, today)
+        )
+      );
     return {
-      totalCases: 0,
-      openCases: 0,
-      resolvedToday: 0,
-      avgResolutionTimeHours: 0,
-      totalLossPrevented: 0,
+      totalCases: Number(total.value),
+      openCases: Number(open.value),
+      resolvedToday: Number(resolvedToday.value),
+      avgResolutionTimeHours: 0, // not tracked
+      totalLossPrevented: 0, // not tracked
     };
   }),
 });

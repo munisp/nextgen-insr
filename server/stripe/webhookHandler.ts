@@ -6,9 +6,15 @@
  * and user account linking.
  *
  * Middleware: Kafka (event publishing), Redis (dedup), TigerBeetle (ledger)
+ *
+ * MOCKWARE FIX: the billing-ledger transactionId was a random number,
+ * breaking idempotency and traceability. It is now derived deterministically
+ * from the Stripe invoice id (SHA-256), so webhook replays map to the same
+ * ledger reference.
  */
 import { Request, Response } from "express";
 import Stripe from "stripe";
+import crypto from "crypto";
 import { getDb } from "../db";
 import {
   billingAuditLog,
@@ -83,6 +89,17 @@ export function calculateNextRetry(attemptCount: number): string {
   return new Date(Date.now() + daysUntilRetry * 86400000).toISOString();
 }
 
+// Deterministic positive integer derived from a Stripe object id. Webhook
+// replays of the same invoice always produce the same ledger reference.
+function deterministicLedgerId(stripeObjectId: string): number {
+  const hex = crypto
+    .createHash("sha256")
+    .update(stripeObjectId)
+    .digest("hex")
+    .slice(0, 12);
+  return parseInt(hex, 16) % 2147483647;
+}
+
 export async function handleStripeWebhook(req: Request, res: Response) {
   const sig = req.headers["stripe-signature"];
   if (!sig)
@@ -134,7 +151,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
             metadata: { eventId: event.id, source: "stripe_webhook" },
           });
           await db.insert(platformBillingLedger).values({
-            transactionId: Math.floor(Math.random() * 1000000),
+            transactionId: deterministicLedgerId(invoice.id),
             tenantId,
             agentId: 0,
             serviceNodeId: 0,

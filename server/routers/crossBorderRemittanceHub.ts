@@ -12,6 +12,19 @@ import { tbCreateTransfer } from "../tbClient";
 import { fluvioProduce } from "../fluvio";
 import { permifyCheck } from "../_core/permify";
 
+// MOCKWARE FIX: initiateTransfer previously returned success without any
+// remittance partner call. It now fails loudly when no remittance partner
+// is configured, and reports NOT_IMPLEMENTED when one is configured but the
+// client integration has not been built.
+
+function isRemittancePartnerConfigured(): boolean {
+  return !!(
+    process.env.REMITTANCE_PARTNER_URL ||
+    process.env.REMITTANCE_PARTNER_API_KEY ||
+    process.env.MOJALOOP_ENDPOINT
+  );
+}
+
 export const crossBorderRemittanceHubRouter = router({
   list: protectedProcedure
     .input(
@@ -173,15 +186,16 @@ export const crossBorderRemittanceHubRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      try {
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
+      if (!isRemittancePartnerConfigured()) {
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
+          code: "PRECONDITION_FAILED",
+          message: "Cross-border remittance partner not configured",
         });
       }
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Remittance partner integration is not wired in this service",
+      });
     }),
 
   listInsuranceRegions: protectedProcedure.query(async () => {

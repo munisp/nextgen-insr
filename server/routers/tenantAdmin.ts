@@ -15,8 +15,14 @@ import {
   or,
   asc,
 } from "drizzle-orm";
-import { tenants, auditLog } from "../../drizzle/schema";
+import { tenants, auditLog, users } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+
+// MOCKWARE FIX: inviteUser/removeUser were no-op successes, toggleLive never
+// touched state, updateUser was a no-op, and listUsers/activityLog returned
+// hardcoded empties. Invitations/removals now fail loudly (no identity or
+// email provider is wired), toggleLive/updateUser/listUsers/activityLog are
+// backed by the real tenants/users/audit_log tables.
 
 export const tenantAdminRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -241,11 +247,28 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "User invitation is not configured: no email/identity provider is wired to deliver invitations",
+      });
     }),
 
   listUsers: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    const db = await getDb();
+    if (!db) return { data: [], total: 0 };
+    const rows = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: users.role,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .orderBy(desc(users.createdAt))
+      .limit(100);
+    return { data: rows, total: rows.length };
   }),
 
   removeUser: protectedProcedure
@@ -253,7 +276,11 @@ export const tenantAdminRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "User removal is not configured: identity-provider deprovisioning is not wired in this service",
+      });
     }),
 
   settings: protectedProcedure.query(async () => {
@@ -264,8 +291,35 @@ export const tenantAdminRouter = router({
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
-    .mutation(async () => {
-      return { success: true };
+    .mutation(async ({ input }) => {
+      const tenantPk = Number(input?.id);
+      if (!Number.isFinite(tenantPk)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "A numeric tenant id is required" });
+      }
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const [tenant] = await db
+        .select()
+        .from(tenants)
+        .where(eq(tenants.id, tenantPk))
+        .limit(1);
+      if (!tenant) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `Tenant ${tenantPk} not found` });
+      }
+      const [updated] = await db
+        .update(tenants)
+        .set({ isLive: !tenant.isLive, updatedAt: new Date() })
+        .where(eq(tenants.id, tenantPk))
+        .returning();
+      await db.insert(auditLog).values({
+        action: "tenant_live_toggled",
+        resource: "tenants",
+        resourceId: String(tenantPk),
+        status: "success",
+        metadata: { isLive: updated?.isLive },
+      });
+      return { success: true, isLive: updated?.isLive };
     }),
   updateUser: protectedProcedure
     .input(
@@ -275,8 +329,44 @@ export const tenantAdminRouter = router({
         name: z.string().optional(),
       })
     )
-    .mutation(async () => ({ success: true })),
+    .mutation(async ({ input }) => {
+      const userPk = Number(input.userId);
+      if (!Number.isFinite(userPk)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid userId" });
+      }
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const setObj: any = { updatedAt: new Date() };
+      if (input.role) setObj.role = input.role;
+      if (input.name) setObj.name = input.name;
+      const [updated] = await db
+        .update(users)
+        .set(setObj)
+        .where(eq(users.id, userPk))
+        .returning({ id: users.id });
+      if (!updated) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `User ${input.userId} not found` });
+      }
+      await db.insert(auditLog).values({
+        action: "tenant_user_updated",
+        resource: "users",
+        resourceId: input.userId,
+        status: "success",
+        metadata: { role: input.role ?? null, name: input.name ?? null },
+      });
+      return { success: true };
+    }),
   activityLog: protectedProcedure
     .input(z.object({ limit: z.number().default(50) }).default({}))
-    .query(async () => ({ entries: [], total: 0 })),
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { entries: [], total: 0 };
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .orderBy(desc(auditLog.id))
+        .limit(input.limit);
+      return { entries: rows, total: rows.length };
+    }),
 });

@@ -1,13 +1,15 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import {
-  publicProcedure as openProcedure,
-  protectedProcedure,
-  router,
-} from "../_core/trpc";
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+// MOCKWARE FIX: The Sprint 78 endpoints previously returned fabricated USSD
+// sessions with canned keystrokes over openProcedure. No USSD session replay
+// store exists in the schema, so session queries now return honest empty
+// results, single-session lookups fail loudly, and all endpoints require
+// authentication.
 
 export const ussdSessionReplayRouter = router({
   list: protectedProcedure
@@ -93,7 +95,7 @@ export const ussdSessionReplayRouter = router({
     }),
 
   // ── Sprint 78 domain-specific procedures ──────────────────────────────────
-  listSessions: openProcedure
+  listSessions: protectedProcedure
     .input(
       z
         .object({
@@ -102,241 +104,40 @@ export const ussdSessionReplayRouter = router({
         })
         .optional()
     )
-    .query(async ({ input }) => {
-      const sessions = [
-        {
-          sessionId: "SESS-001",
-          msisdn: "+2348012345678",
-          carrier: "MTN_NG",
-          status: "completed",
-          startedAt: "2024-06-01T10:00:00Z",
-          duration: 45,
-          keystrokes: [
-            {
-              input: "*384#",
-              screenText: "Welcome to AgentPOS",
-              timestamp: "2024-06-01T10:00:01Z",
-            },
-            {
-              input: "1",
-              screenText: "Cash In",
-              timestamp: "2024-06-01T10:00:10Z",
-            },
-            {
-              input: "50000",
-              screenText: "Enter Amount",
-              timestamp: "2024-06-01T10:00:20Z",
-            },
-            {
-              input: "1234",
-              screenText: "Confirm PIN",
-              timestamp: "2024-06-01T10:00:35Z",
-            },
-          ],
-        },
-        {
-          sessionId: "SESS-002",
-          msisdn: "+2348098765432",
-          carrier: "MTN_NG",
-          status: "completed",
-          startedAt: "2024-06-01T11:00:00Z",
-          duration: 30,
-          keystrokes: [
-            {
-              input: "*384#",
-              screenText: "Welcome to AgentPOS",
-              timestamp: "2024-06-01T11:00:01Z",
-            },
-            {
-              input: "2",
-              screenText: "Cash Out",
-              timestamp: "2024-06-01T11:00:10Z",
-            },
-          ],
-        },
-        {
-          sessionId: "SESS-003",
-          msisdn: "+2348055555555",
-          carrier: "Airtel_NG",
-          status: "abandoned",
-          startedAt: "2024-06-01T12:00:00Z",
-          duration: 15,
-          keystrokes: [
-            {
-              input: "*384#",
-              screenText: "Welcome to AgentPOS",
-              timestamp: "2024-06-01T12:00:01Z",
-            },
-          ],
-        },
-        {
-          sessionId: "SESS-004",
-          msisdn: "+2348066666666",
-          carrier: "Glo_NG",
-          status: "completed",
-          startedAt: "2024-06-02T09:00:00Z",
-          duration: 60,
-          keystrokes: [
-            {
-              input: "*384#",
-              screenText: "Welcome to AgentPOS",
-              timestamp: "2024-06-02T09:00:01Z",
-            },
-            {
-              input: "3",
-              screenText: "Balance",
-              timestamp: "2024-06-02T09:00:10Z",
-            },
-          ],
-        },
-      ];
-      let filtered = sessions;
-      if (input?.status)
-        filtered = filtered.filter(s => s.status === input.status);
-      if (input?.carrier)
-        filtered = filtered.filter(s => s.carrier === input.carrier);
-      return { sessions: filtered, total: filtered.length };
+    .query(async () => {
+      // No USSD session replay store exists in the schema — honest empty.
+      return { sessions: [] as any[], total: 0 };
     }),
 
-  getSession: openProcedure
+  getSession: protectedProcedure
     .input(z.object({ sessionId: z.string() }))
     .query(async ({ input }) => {
-      const sessions: Record<
-        string,
-        {
-          sessionId: string;
-          msisdn: string;
-          carrier: string;
-          status: string;
-          startedAt: string;
-          duration: number;
-          keystrokes: Array<{
-            input: string;
-            screenText: string;
-            timestamp: string;
-          }>;
-        }
-      > = {
-        "SESS-001": {
-          sessionId: "SESS-001",
-          msisdn: "+2348012345678",
-          carrier: "MTN_NG",
-          status: "completed",
-          startedAt: "2024-06-01T10:00:00Z",
-          duration: 45,
-          keystrokes: [
-            {
-              input: "*384#",
-              screenText: "Welcome to AgentPOS",
-              timestamp: "2024-06-01T10:00:01Z",
-            },
-            {
-              input: "1",
-              screenText: "Cash In",
-              timestamp: "2024-06-01T10:00:10Z",
-            },
-            {
-              input: "50000",
-              screenText: "Enter Amount",
-              timestamp: "2024-06-01T10:00:20Z",
-            },
-            {
-              input: "1234",
-              screenText: "Confirm PIN",
-              timestamp: "2024-06-01T10:00:35Z",
-            },
-          ],
-        },
-        "SESS-002": {
-          sessionId: "SESS-002",
-          msisdn: "+2348098765432",
-          carrier: "MTN_NG",
-          status: "completed",
-          startedAt: "2024-06-01T11:00:00Z",
-          duration: 30,
-          keystrokes: [
-            {
-              input: "*384#",
-              screenText: "Welcome to AgentPOS",
-              timestamp: "2024-06-01T11:00:01Z",
-            },
-            {
-              input: "2",
-              screenText: "Cash Out",
-              timestamp: "2024-06-01T11:00:10Z",
-            },
-          ],
-        },
-      };
-      const session = sessions[input.sessionId];
-      if (!session)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Session not found",
-        });
-      return session;
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `USSD session ${input.sessionId} not found: no session replay store is configured`,
+      });
     }),
 
-  replaySession: openProcedure
+  replaySession: protectedProcedure
     .input(z.object({ sessionId: z.string() }))
     .query(async ({ input }) => {
-      const sessions: Record<
-        string,
-        {
-          keystrokes: Array<{
-            input: string;
-            screenText: string;
-            timestamp: string;
-          }>;
-        }
-      > = {
-        "SESS-001": {
-          keystrokes: [
-            {
-              input: "*384#",
-              screenText: "Welcome to AgentPOS",
-              timestamp: "2024-06-01T10:00:01Z",
-            },
-            {
-              input: "1",
-              screenText: "Cash In",
-              timestamp: "2024-06-01T10:00:10Z",
-            },
-            {
-              input: "50000",
-              screenText: "Enter Amount",
-              timestamp: "2024-06-01T10:00:20Z",
-            },
-            {
-              input: "1234",
-              screenText: "Confirm PIN",
-              timestamp: "2024-06-01T10:00:35Z",
-            },
-          ],
-        },
-      };
-      const session = sessions[input.sessionId];
-      if (!session)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Session not found",
-        });
-      return {
-        totalSteps: session.keystrokes.length,
-        keystrokes: session.keystrokes,
-      };
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `USSD session ${input.sessionId} not found: no session replay store is configured`,
+      });
     }),
 
-  getAnalytics: openProcedure.query(async () => {
+  getAnalytics: protectedProcedure.query(async () => {
+    // Honest zero analytics — no USSD sessions have been recorded.
     return {
-      totalSessions: 4,
-      completionRate: 75,
-      avgDuration: 37.5,
-      dropOffScreens: [
-        { screen: "Enter Amount", dropOffs: 12, percentage: 15 },
-        { screen: "Confirm PIN", dropOffs: 8, percentage: 10 },
-        { screen: "Welcome", dropOffs: 5, percentage: 6.25 },
-      ],
+      totalSessions: 0,
+      completionRate: 0,
+      avgDuration: 0,
+      dropOffScreens: [] as Array<{
+        screen: string;
+        dropOffs: number;
+        percentage: number;
+      }>,
     };
   }),
 });
