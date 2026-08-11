@@ -1,17 +1,17 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"context"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,21 +20,19 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
+
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -42,9 +40,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -58,15 +60,16 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
-
 
 // ─── Production Middleware ───────────────────────────────────────────────────
 
 var (
-	reqCount    int64
-	errCount    int64
+	reqCount     int64
+	errCount     int64
 	avgLatencyMs float64
 )
 
@@ -159,9 +162,6 @@ func metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
 func execInTransaction(fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -234,7 +234,6 @@ func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 // ─── Domain Handlers ─────────────────────────────────────────────────────────
 
 func handleList(w http.ResponseWriter, r *http.Request) {
@@ -253,9 +252,13 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -279,7 +282,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
 		if err := rows.Scan(ptrs...); err != nil {
 			continue
 		}
@@ -294,7 +299,9 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
@@ -337,7 +344,9 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -378,7 +387,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -406,7 +417,9 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
@@ -439,7 +452,9 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
 }
 
@@ -477,10 +492,10 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	db.QueryRow("SELECT COUNT(*) FROM broker_submissions").Scan(&count)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"service": "broker-api-service",
-		"table":   "broker_submissions",
+		"service":       "broker-api-service",
+		"table":         "broker_submissions",
 		"total_records": count,
-		"uptime":  time.Since(startTime).String(),
+		"uptime":        time.Since(startTime).String(),
 	})
 }
 
@@ -488,12 +503,11 @@ var startTime = time.Now()
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
-
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -504,6 +518,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -512,7 +527,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -533,35 +550,51 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
 	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
@@ -572,7 +605,9 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -583,6 +618,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -591,9 +627,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -650,6 +690,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -676,9 +717,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -796,11 +841,10 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
-
 func handlePlaceRisk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	var req struct {
 		BrokerID   string  `json:"broker_id"`
@@ -810,9 +854,12 @@ func handlePlaceRisk(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	if req.BrokerID == "" || req.SumInsured <= 0 {
-		http.Error(w, `{"error":"broker_id and sum_insured required"}`, http.StatusBadRequest); return
+		http.Error(w, `{"error":"broker_id and sum_insured required"}`, http.StatusBadRequest)
+		return
 	}
-	if req.CommRate <= 0 { req.CommRate = 0.15 }
+	if req.CommRate <= 0 {
+		req.CommRate = 0.15
+	}
 	// NAICOM broker commission cap: 15% motor, 20% fire, 25% marine
 	caps := map[string]float64{"motor": 0.15, "fire": 0.20, "marine": 0.25, "life": 0.10}
 	if cap, ok := caps[req.RiskType]; ok && req.CommRate > cap {
@@ -831,7 +878,8 @@ func handlePlaceRisk(w http.ResponseWriter, r *http.Request) {
 func handleBrokerStatement(w http.ResponseWriter, r *http.Request) {
 	brokerID := r.URL.Query().Get("broker_id")
 	if brokerID == "" {
-		http.Error(w, `{"error":"broker_id query param required"}`, http.StatusBadRequest); return
+		http.Error(w, `{"error":"broker_id query param required"}`, http.StatusBadRequest)
+		return
 	}
 	var totalPlaced, totalCommission float64
 	var placements int

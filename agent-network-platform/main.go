@@ -1,25 +1,24 @@
 package main
 
 import (
-	"fmt"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"database/sql"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"database/sql"
 
+	"context"
 	_ "github.com/lib/pq"
-		"context"
 	"os/signal"
 	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 // agent-network-platform — production microservice for InsurePortal platform
@@ -60,8 +59,6 @@ func initDB() {
 		log.Printf("WARN: table creation failed: %v", err)
 	}
 }
-
-
 
 // ── Kafka Event Publishing (via REST Proxy) ─────────────────────────────────
 var kafkaRestURL string
@@ -204,7 +201,7 @@ func main() {
 			}
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "kafka": "configured", "redis": "configured", "service": "agent-network-platform", "version": "1.0.0",
+			"status": "healthy", "database": dbStatus, "kafka": "configured", "redis": "configured", "service": "agent-network-platform", "version": "1.0.0",
 			"uptime": time.Since(startTime).String(),
 		})
 	})
@@ -214,7 +211,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"service": "agent-network-platform", "started_at": startTime.Format(time.RFC3339),
 			"uptime_seconds": int(time.Since(startTime).Seconds()),
-			"ready": true, "dependencies": []string{"postgres", "redis", "kafka"},
+			"ready":          true, "dependencies": []string{"postgres", "redis", "kafka"},
 		})
 	})
 	r.Get("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
@@ -224,18 +221,61 @@ func main() {
 	})
 	r.Get("/metrics", prodMetricsHandler)
 	port := os.Getenv("PORT")
-	if port == "" { port = "8120" }
+	if port == "" {
+		port = "8120"
+	}
 	log.Printf("agent-network-platform starting on :%s", port)
-	srv := &http.Server{Addr: ":"+port, Handler: corsMiddleware(r), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
-	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
+	srv := &http.Server{Addr: ":" + port, Handler: corsMiddleware(r), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"agent-network-platform"}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Forced shutdown: %v", err)
+	}
 	log.Println("Server stopped")
 }
 
 var startTime = time.Now()
+
+var (
+	metricsReqCount  int64
+	metricsStartTime = time.Now()
+)
+
+func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
+	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
+}
+
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}

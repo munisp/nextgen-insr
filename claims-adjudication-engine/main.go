@@ -23,8 +23,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"go.uber.org/zap"
 	_ "github.com/lib/pq"
+	"go.uber.org/zap"
 )
 
 // Engine is the central claims adjudication engine that orchestrates all components
@@ -49,7 +49,7 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 	defer logger.Sync()
 
 	if cfg.Observability.LogLevel != "" {
-	 lvl := zap.InfoLevel
+		lvl := zap.InfoLevel
 		switch cfg.Observability.LogLevel {
 		case "debug":
 			lvl = zap.DebugLevel
@@ -58,7 +58,9 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 		case "error":
 			lvl = zap.ErrorLevel
 		}
-		logger, _ = zap.NewProduction(zap.Level(lvl))
+		zcfg := zap.NewProductionConfig()
+		zcfg.Level = zap.NewAtomicLevelAt(lvl)
+		logger, _ = zcfg.Build()
 	}
 
 	engine := &Engine{
@@ -78,7 +80,7 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 	}
 
 	// Initialize cache
-	cache, err := db.NewClaimCache(&cfg.Redis, logger)
+	cache, err := db.NewClaimCache(&cfg.Redis, repo, logger)
 	if err != nil {
 		logger.Warn("Failed to initialize Redis cache (will operate without caching)", zap.Error(err))
 	} else {
@@ -119,12 +121,12 @@ func (e *Engine) adjudicateClaim(claim *models.Claim) *models.AdjudicationResult
 	if err := e.validateClaim(claim); err != nil {
 		e.logger.Warn("Claim validation failed", zap.String("claim_id", claim.ID), zap.Error(err))
 		return &models.AdjudicationResult{
-			ClaimID:       claim.ID,
-			Decision:      models.DecisionDenied,
-			Confidence:    1.0,
-			Reason:        fmt.Sprintf("Validation failed: %s", err.Error()),
-			SLADeadline:   time.Now().Add(1 * time.Hour),
-			RiskScore:     0,
+			ClaimID:        claim.ID,
+			Decision:       models.DecisionDenied,
+			Confidence:     1.0,
+			Reason:         fmt.Sprintf("Validation failed: %s", err.Error()),
+			SLADeadline:    time.Now().Add(1 * time.Hour),
+			RiskScore:      0,
 			ProcessingTime: time.Since(start),
 		}
 	}
@@ -160,17 +162,17 @@ func (e *Engine) adjudicateClaim(claim *models.Claim) *models.AdjudicationResult
 	}
 
 	result := &models.AdjudicationResult{
-		ClaimID:      claim.ID,
-		Decision:     decision,
-		Confidence:   confidence,
-		Reason:       reason,
-		AssignedTo:   queue,
-		Queue:        queue,
-		SLADeadline:  slaDeadline,
-		RiskScore:    riskScore,
-		FraudFlags:   fraudFlags,
+		ClaimID:        claim.ID,
+		Decision:       decision,
+		Confidence:     confidence,
+		Reason:         reason,
+		AssignedTo:     queue,
+		Queue:          queue,
+		SLADeadline:    slaDeadline,
+		RiskScore:      riskScore,
+		FraudFlags:     fraudFlags,
 		ComplianceTags: e.determineComplianceTags(claim, decision),
-		NextActions:  e.determineNextActions(claim, decision, fraudFlags),
+		NextActions:    e.determineNextActions(claim, decision, fraudFlags),
 		ProcessingTime: time.Since(start),
 	}
 
@@ -479,7 +481,7 @@ func (e *Engine) checkRateLimits(claim *models.Claim) error {
 		return fmt.Errorf("rate limit exceeded: policy %s has reached max claims per day", claim.PolicyID)
 	}
 
-	if err := e.cache.IncrementPolicyClaimCount(context.Background(), claim.PolicyID, e.config.RateLimit.MaxClaimsPerDay); err != nil {
+	if _, err := e.cache.IncrementPolicyClaimCount(context.Background(), claim.PolicyID, e.config.RateLimit.MaxClaimsPerDay); err != nil {
 		return fmt.Errorf("failed to update policy claim count: %w", err)
 	}
 
@@ -521,7 +523,6 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ========================== HTTP Handlers ==========================
-
 
 // ── Kafka Event Publishing (via REST Proxy) ─────────────────────────────────
 var kafkaRestURL string
@@ -728,9 +729,9 @@ func prodRateLimitMiddleware(next http.Handler) http.Handler {
 
 // Prometheus-compatible metrics
 var (
-	prodMetricsReqCount   int64
-	prodMetricsErrCount   int64
-	prodMetricsStartTime  = time.Now()
+	prodMetricsReqCount  int64
+	prodMetricsErrCount  int64
+	prodMetricsStartTime = time.Now()
 )
 
 func prodMetricsMiddleware(next http.Handler) http.Handler {
@@ -775,7 +776,6 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
 // legacyDB backs the standalone initDB helper below. It is named legacyDB to
 // avoid colliding with the imported "db" package (claims repository).
 var legacyDB *sql.DB
@@ -805,11 +805,9 @@ func initDB() {
 	}
 }
 
-
 func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
-
 
 // Circuit breaker for external API calls
 type circuitBreaker struct {
@@ -954,11 +952,11 @@ func main() {
 func handleHealth(e *Engine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status := models.HealthStatus{
-			Status:   "healthy",
-			Service:  "claims-adjudication-engine",
-			Version:  "1.0.0",
+			Status:    "healthy",
+			Service:   "claims-adjudication-engine",
+			Version:   "1.0.0",
 			Timestamp: time.Now(),
-			UpTime:   time.Since(e.startTime),
+			UpTime:    time.Since(e.startTime),
 		}
 
 		if e.db != nil {
@@ -1066,7 +1064,7 @@ func handleCreateClaim(e *Engine) http.HandlerFunc {
 			return
 		}
 
-		if err := input.validate(); err != nil {
+		if err := input.Validate(); err != nil {
 			http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
 			return
 		}
@@ -1089,10 +1087,10 @@ func handleCreateClaim(e *Engine) http.HandlerFunc {
 
 		for i, ev := range input.Evidence {
 			claim.Evidence[i] = models.EvidenceDoc{
-				ID:       fmt.Sprintf("EVD-%d-%d", time.Now().UnixNano(), i),
-				Type:     ev.Type,
-				FileName: ev.FileName,
-				URL:      ev.URL,
+				ID:         fmt.Sprintf("EVD-%d-%d", time.Now().UnixNano(), i),
+				Type:       ev.Type,
+				FileName:   ev.FileName,
+				URL:        ev.URL,
 				UploadedAt: time.Now(),
 			}
 		}
@@ -1158,9 +1156,9 @@ func handleGetClaim(e *Engine) http.HandlerFunc {
 func handleListClaims(e *Engine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filter := &models.ClaimFilter{
-			Limit:  20,
-			Offset: 0,
-			SortBy: "created_at",
+			Limit:     20,
+			Offset:    0,
+			SortBy:    "created_at",
 			SortOrder: "DESC",
 		}
 
@@ -1202,8 +1200,8 @@ func handleUpdateClaimStatus(e *Engine) http.HandlerFunc {
 		claimID := chi.URLParam(r, "claimID")
 
 		var update struct {
-			Status   string `json:"status"`
-			Reason   string `json:"reason"`
+			Status     string `json:"status"`
+			Reason     string `json:"reason"`
 			AssignedTo string `json:"assigned_to"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
@@ -1357,10 +1355,10 @@ func handleGetQueueClaims(e *Engine) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"queue":    queueName,
-			"claims":   claims,
-			"count":    len(claims),
-			"limit":    limit,
+			"queue":  queueName,
+			"claims": claims,
+			"count":  len(claims),
+			"limit":  limit,
 		})
 	}
 }
@@ -1406,16 +1404,16 @@ func handleMetrics(e *Engine) http.HandlerFunc {
 		if e.db != nil {
 			if m, err := e.db.GetMetrics(r.Context()); err == nil {
 				metrics = map[string]interface{}{
-					"total_claims_processed":    m.TotalClaimsProcessed,
-					"auto_approved_rate":        m.AutoApprovedRate,
-					"denied_rate":               m.DeniedRate,
-					"escalated_rate":            m.EscalatedRate,
-					"avg_processing_time":       m.AvgProcessingTime,
-					"max_processing_time":       m.MaxProcessingTime,
-					"sla_compliance":            m.SLACompliance,
-					"current_queue_size":        m.CurrentQueueSize,
-					"avg_claim_amount":          m.AvgClaimAmount,
-					"fraud_alert_count":         m.FraudAlertCount,
+					"total_claims_processed": m.TotalClaimsProcessed,
+					"auto_approved_rate":     m.AutoApprovedRate,
+					"denied_rate":            m.DeniedRate,
+					"escalated_rate":         m.EscalatedRate,
+					"avg_processing_time":    m.AvgProcessingTime,
+					"max_processing_time":    m.MaxProcessingTime,
+					"sla_compliance":         m.SLACompliance,
+					"current_queue_size":     m.CurrentQueueSize,
+					"avg_claim_amount":       m.AvgClaimAmount,
+					"fraud_alert_count":      m.FraudAlertCount,
 				}
 			}
 		}
