@@ -119,3 +119,6 @@ export const insurancePolicyQuoteCartRouter = router({
       return { count: Number(stats?.count ?? 0), totalPremium: Number(stats?.totalPremium ?? 0) };
     }),
 });
+
+// Alias: server/routers.ts imports this router as insurancePolicyQuoteManagerRouter.
+export const insurancePolicyQuoteManagerRouter = insurancePolicyQuoteCartRouter;
