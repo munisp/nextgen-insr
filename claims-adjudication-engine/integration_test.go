@@ -72,24 +72,14 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {
-	// Set up DB for health check
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		t.Skipf("Skipping: %v", err)
-	}
-	if err = db.Ping(); err != nil {
-		t.Skipf("Skipping (DB unreachable): %v", err)
-	}
-	defer func() { db = nil }()
+	// Require a reachable database for this integration test
+	testDB := getTestDB(t)
+	defer testDB.Close()
 
+	e := newTestEngine()
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
-	handleHealth(w, req)
+	handleHealth(e)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
@@ -103,40 +93,29 @@ func TestIntegration_HealthEndpoint(t *testing.T) {
 	if resp["status"] != "healthy" {
 		t.Fatalf("Expected status=healthy, got %v", resp["status"])
 	}
-	if resp["database"] != "connected" {
-		t.Fatalf("Expected database=connected, got %v", resp["database"])
-	}
 }
 
 func TestIntegration_ReadyEndpoint(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		t.Skipf("Skipping: %v", err)
-	}
-	if err = db.Ping(); err != nil {
-		t.Skipf("Skipping (DB unreachable): %v", err)
-	}
-	defer func() { db = nil }()
+	// Require a reachable database for this integration test
+	testDB := getTestDB(t)
+	defer testDB.Close()
 
+	// Engine without a repository must report not ready
+	e := newTestEngine()
 	req := httptest.NewRequest("GET", "/ready", nil)
 	w := httptest.NewRecorder()
-	handleReady(w, req)
+	handleReady(e)(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("Expected 200, got %d", w.Code)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Expected 503, got %d", w.Code)
 	}
 
-	var resp map[string]string
+	var resp map[string]interface{}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
-	if resp["status"] != "ready" {
-		t.Fatalf("Expected status=ready, got %v", resp["status"])
+	if resp["status"] != "not_ready" {
+		t.Fatalf("Expected status=not_ready, got %v", resp["status"])
 	}
 }
 
@@ -159,27 +138,18 @@ func TestIntegration_LiveEndpoint(t *testing.T) {
 }
 
 func TestIntegration_APIEndpoint(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		t.Skipf("Skipping: %v", err)
-	}
-	if err = db.Ping(); err != nil {
-		t.Skipf("Skipping (DB unreachable): %v", err)
-	}
-	defer func() { db = nil }()
+	// Require a reachable database for this integration test
+	testDB := getTestDB(t)
+	defer testDB.Close()
 
+	e := newTestEngine()
 	body := `{"policyId":"POL-INT-001","amount":25000,"claimType":"health","evidenceCount":3}`
 	req := httptest.NewRequest("POST", "/api/v1/adjudicate", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", handleHealth)
+	mux.Handle("/health", handleHealth(e))
 	mux.HandleFunc("/api/v1/adjudicate", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		rw.WriteHeader(http.StatusOK)

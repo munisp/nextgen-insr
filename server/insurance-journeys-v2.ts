@@ -163,9 +163,8 @@ export async function J01_CustomerOnboardingWorkflow(input: J01Input) {
     currentStep = "create_customer";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "postgresql" });
     const customer = await createOrFetchCustomer({
-      email: input.email, phone: input.phone,
-      firstName: input.firstName, lastName: input.lastName,
-      dateOfBirth: input.dateOfBirth, address: input.address, state: input.state,
+      fullName: `${input.firstName} ${input.lastName}`, phone: input.phone,
+      email: input.email, nin: input.nin, bvn: input.bvn,
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "postgresql" });
 
@@ -184,9 +183,12 @@ export async function J01_CustomerOnboardingWorkflow(input: J01Input) {
     // Step 4: NIBSS — verify BVN/NIN
     currentStep = "nibss_verification";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "nibss" });
-    const nibssResult = await verifyKycWithNibss({
+    const kycInit = await initiateKycVerification({
       customerId: customer.customerId, nin: input.nin, bvn: input.bvn,
-      firstName: input.firstName, lastName: input.lastName, dateOfBirth: input.dateOfBirth,
+      documentType: input.nin ? "nin" : "bvn", documentNumber: input.nin ?? input.bvn ?? "",
+    });
+    const nibssResult = await verifyKycWithNibss({
+      kycId: kycInit.kycId, customerId: customer.customerId, nin: input.nin, bvn: input.bvn,
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "nibss" });
 
@@ -216,7 +218,7 @@ export async function J01_CustomerOnboardingWorkflow(input: J01Input) {
     // Step 8: Fluvio — emit onboarding event
     currentStep = "emit_event";
     await emitInsuranceEvent({
-      topic: "customer.onboarded",
+      topic: "customer.onboarded", eventType: "customer.onboarded", entityId: String(customer.customerId),
       payload: { customerId: customer.customerId, email: input.email, kycLevel: kycResult.kycLevel },
     });
 
@@ -496,16 +498,16 @@ export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
     const fraudResult = await runClaimFraudCheck({
       claimId: claim.claimId, customerId: input.customerId,
       policyId: input.policyId, claimedAmount: input.claimedAmount,
-      claimType: input.claimType,
+      claimType: input.claimType, description: input.description,
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "fraud-engine",
-      metadata: { fraudScore: combinedScore, isFraud: fraudResult.isFraud } });
+      metadata: { fraudScore: combinedScore, isFraud: fraudResult.flagged } });
 
-    if (fraudResult.isFraud && combinedScore > 70) {
+    if (fraudResult.flagged && combinedScore > 70) {
       // High fraud risk — escalate for manual review
       currentStep = "awaiting_fraud_review";
       await emitInsuranceEvent({
-        topic: "claim.fraud.flagged",
+        topic: "claim.fraud.flagged", eventType: "claim.fraud.flagged", entityId: String(claim.claimId),
         payload: { claimId: claim.claimId, score: combinedScore, flags: fraudGate.flags },
       });
       // Wait for manual approval (up to 48 hours)
@@ -515,7 +517,7 @@ export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
 
     // Step 5: Assign adjuster
     currentStep = "assign_adjuster";
-    const adjuster = await assignClaimAdjuster({ claimId: claim.claimId, claimType: input.claimType, claimedAmount: input.claimedAmount });
+    const adjuster = await assignClaimAdjuster({ claimId: claim.claimId });
 
     // Step 6: Ollama AI — adjudication narrative
     currentStep = "ai_adjudication";
@@ -533,7 +535,7 @@ export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
       claimId: claim.claimId, adjusterId: adjuster.adjusterId,
       decision: narrative.recommendation === "decline" ? "rejected" : "approved",
       approvedAmount: narrative.recommendation === "decline" ? 0 : input.claimedAmount,
-      notes: narrative.narrative,
+      rejectionReason: narrative.recommendation === "decline" ? narrative.narrative : undefined,
     });
 
     if (adjudication.decision === "rejected") {
@@ -546,23 +548,23 @@ export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
     currentStep = "aml_screening";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "aml" });
     const aml = await runAmlScreening({
-      customerId: input.customerId, transactionAmount: adjudication.approvedAmount,
-      transactionType: "claim_payout", reference: input.paymentRef,
+      entityType: "customer", entityId: input.customerId, amount: adjudication.approvedAmount ?? undefined,
+      transactionType: "claim_payout",
     });
-    if (aml.blocked) throw new Error(`AML screening blocked claim payout: ${aml.reason}`);
+    if (!aml.cleared) throw new Error(`AML screening blocked claim payout: ${aml.flags.join(", ") || aml.riskLevel}`);
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "aml" });
 
     // Step 9: TigerBeetle — settle claim payment
     currentStep = "settle_payment";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "tigerbeetle" });
     const settlement = await settleClaimPayment({
-      claimId: claim.claimId, customerId: input.customerId,
-      approvedAmount: adjudication.approvedAmount, paymentRef: input.paymentRef,
+      claimId: claim.claimId,
+      approvedAmount: adjudication.approvedAmount ?? input.claimedAmount, paymentRef: input.paymentRef,
       paymentMethod: input.paymentMethod ?? "bank_transfer",
       beneficiaryAccount: input.beneficiaryAccount, beneficiaryBank: input.beneficiaryBank,
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "tigerbeetle",
-      metadata: { transactionId: settlement.transactionId } });
+      metadata: { transactionId: settlement.tbTransferId } });
 
     // Step 10: Permify — update claim status
     await writePermifyRelationship({
@@ -574,7 +576,7 @@ export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
     await notifyPolicyStakeholders({
       policyId: input.policyId, policyNumber: "",
       customerId: input.customerId, agentId: input.agentId,
-      premiumAmount: adjudication.approvedAmount, eventType: "claim.settled",
+      premiumAmount: adjudication.approvedAmount ?? 0, eventType: "claim.settled",
     });
 
     // Step 12: Lakehouse
@@ -585,11 +587,11 @@ export async function J03_ClaimsSettlementWorkflow(input: J03Input) {
     });
 
     await recordJourneyComplete({ executionId, workflowId: `J03-${Date.now()}`, status: "completed",
-      resultSnapshot: { claimId: claim.claimId, approvedAmount: adjudication.approvedAmount, transactionId: settlement.transactionId } });
+      resultSnapshot: { claimId: claim.claimId, approvedAmount: adjudication.approvedAmount, transactionId: settlement.tbTransferId } });
 
     return {
       success: true, claimId: claim.claimId, decision: "approved",
-      approvedAmount: adjudication.approvedAmount, transactionId: settlement.transactionId,
+      approvedAmount: adjudication.approvedAmount, transactionId: settlement.tbTransferId,
       fraudScore: combinedScore, aiNarrative: narrative.narrative,
     };
   } catch (err) {
@@ -659,10 +661,8 @@ export async function J04_AgentOnboardingWorkflow(input: J04Input) {
     currentStep = "register_agent";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "postgresql" });
     const agent = await registerAgent({
-      email: input.email, phone: input.phone,
-      firstName: input.firstName, lastName: input.lastName,
-      nin: input.nin, bvn: input.bvn,
-      agentType: input.agentType, state: input.state, lga: input.lga,
+      name: `${input.firstName} ${input.lastName}`, phone: input.phone,
+      email: input.email, nin: input.nin, bvn: input.bvn,
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "postgresql",
       metadata: { agentId: agent.agentId, agentCode: agent.agentCode } });
@@ -691,11 +691,11 @@ export async function J04_AgentOnboardingWorkflow(input: J04Input) {
 
     // Step 7: Activate agent
     currentStep = "activate_agent";
-    await activateAgent({ agentId: agent.agentId, agentCode: agent.agentCode });
+    await activateAgent({ agentId: agent.agentId, initialFloat: input.initialFloatAmount, activatedBy: input.triggeredBy });
 
     // Step 8: POS terminal provisioning
     currentStep = "provision_terminal";
-    const terminal = await provisionAgentPosTerminal({ agentId: agent.agentId, agentCode: agent.agentCode, state: input.state });
+    const terminal = await provisionAgentPosTerminal({ agentId: agent.agentId, terminalType: "pos" });
 
     // Step 9: Dapr — notify agent
     await invokeDaprService({
@@ -709,7 +709,7 @@ export async function J04_AgentOnboardingWorkflow(input: J04Input) {
 
     // Step 10: Fluvio
     await emitInsuranceEvent({
-      topic: "agent.onboarded",
+      topic: "agent.onboarded", eventType: "agent.onboarded", entityId: String(agent.agentId),
       payload: { agentId: agent.agentId, agentCode: agent.agentCode, state: input.state, kycLevel: kycResult.kycLevel },
     });
 
@@ -781,7 +781,7 @@ export async function J05_AgentDailyOpsWorkflow(input: J05Input) {
     // Step 2: Check float balance via TigerBeetle
     currentStep = "check_float";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "tigerbeetle" });
-    const balance = await probeServiceHealth({ service: "tigerbeetle" });
+    const balance = await probeServiceHealth({ serviceName: "tigerbeetle", serviceUrl: "http://tigerbeetle:3000/health" });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "tigerbeetle" });
 
     // Step 3: Process transaction
@@ -789,13 +789,13 @@ export async function J05_AgentDailyOpsWorkflow(input: J05Input) {
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "postgresql+tigerbeetle" });
     const txResult = await runTransactionFraudCheck({
       transactionId: 0, agentId: input.agentId,
-      amount: input.amount, type: input.operationType,
+      amount: input.amount, transactionType: input.operationType,
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "postgresql+tigerbeetle" });
 
     // Step 4: Fluvio — emit transaction event
     await emitInsuranceEvent({
-      topic: `agent.transaction.${input.operationType}`,
+      topic: `agent.transaction.${input.operationType}`, eventType: `agent.transaction.${input.operationType}`, entityId: String(input.agentId),
       payload: { agentId: input.agentId, amount: input.amount, paymentRef: input.paymentRef },
     });
 
@@ -848,7 +848,7 @@ export async function J06_PolicyRenewalWorkflow(input: J06Input) {
   try {
     // Step 1: Detect expiring policy
     currentStep = "detect_expiry";
-    const expiring = await detectExpiringPolicies({ policyId: input.policyId, daysAhead: 30 });
+    const expiring = await detectExpiringPolicies({ daysAhead: 30 });
 
     // Step 2: Ollama AI — renewal recommendation
     currentStep = "ai_renewal_analysis";
@@ -861,24 +861,22 @@ export async function J06_PolicyRenewalWorkflow(input: J06Input) {
     // Step 3: Generate renewal quote
     currentStep = "generate_quote";
     const quote = await generateRenewalQuote({
-      policyId: input.policyId, customerId: input.customerId,
-      renewalType: input.renewalType, newSumInsured: input.newSumInsured,
+      policyId: input.policyId,
     });
 
     // Step 4: Rust fraud-gate — pre-renewal check
     currentStep = "fraud_check";
     const fraudCheck = await callRustFraudGate({
-      userId: input.customerId, amount: quote.newPremiumAmount,
+      userId: input.customerId, amount: quote.renewalPremium,
       transactionType: "premium_renewal", traceId: `RENEW-${input.policyId}`,
     });
 
     // Step 5: Process renewal with TigerBeetle
     currentStep = "process_renewal";
     const renewal = await processRenewal({
-      policyId: input.policyId, customerId: input.customerId,
-      quoteId: quote.quoteId, newPremiumAmount: quote.newPremiumAmount,
-      newSumInsured: input.newSumInsured ?? quote.newSumInsured,
+      policyId: input.policyId, renewalQuoteId: quote.renewalQuoteId,
       paymentRef: `RENEW-${input.policyId}-${Date.now()}`,
+      premiumAmount: quote.renewalPremium,
     });
 
     // Step 6: Permify — update policy permissions
@@ -889,24 +887,24 @@ export async function J06_PolicyRenewalWorkflow(input: J06Input) {
 
     // Step 7: Fluvio + Dapr
     await notifyPolicyStakeholders({
-      policyId: input.policyId, policyNumber: renewal.policyNumber,
-      customerId: input.customerId, premiumAmount: quote.newPremiumAmount,
+      policyId: input.policyId, policyNumber: renewal.newPolicyNumber,
+      customerId: input.customerId, premiumAmount: quote.renewalPremium,
       eventType: "policy.renewed",
     });
 
     // Step 8: Lakehouse
     await ingestToLakehouse({
       dataset: "policy_renewals",
-      records: [{ policyId: input.policyId, customerId: input.customerId, renewalType: input.renewalType, newPremium: quote.newPremiumAmount }],
+      records: [{ policyId: input.policyId, customerId: input.customerId, renewalType: input.renewalType, newPremium: quote.renewalPremium }],
       partitionKey: "renewal_date",
     });
 
     await recordJourneyComplete({ executionId, workflowId: `J06-${Date.now()}`, status: "completed",
-      resultSnapshot: { policyId: input.policyId, newPremium: quote.newPremiumAmount } });
+      resultSnapshot: { policyId: input.policyId, newPremium: quote.renewalPremium } });
 
     return {
-      success: true, policyId: input.policyId, newPremiumAmount: quote.newPremiumAmount,
-      renewalId: renewal.renewalId, aiRecommendation: narrative.recommendation,
+      success: true, policyId: input.policyId, newPremiumAmount: quote.renewalPremium,
+      renewalId: renewal.newPolicyId, aiRecommendation: narrative.recommendation,
     };
   } catch (err) {
     await recordJourneyComplete({ executionId, workflowId: `J06-${Date.now()}`, status: "failed", errorMessage: (err as Error).message });
@@ -969,10 +967,10 @@ export async function J07_FraudResponseWorkflow(input: J07Input) {
     const combinedScore = (mlScore.fraudProbability * 100 * 0.6) + (gateResult.riskScore * 0.4);
     const fraudResult = await runTransactionFraudCheck({
       transactionId: input.transactionId, agentId: input.agentId,
-      amount: input.amount, type: input.transactionType,
+      amount: input.amount, transactionType: input.transactionType,
     });
 
-    if (!fraudResult.isFraud && combinedScore < 50) {
+    if (!fraudResult.flagged && combinedScore < 50) {
       await recordJourneyComplete({ executionId, workflowId: `J07-${Date.now()}`, status: "completed",
         resultSnapshot: { decision: "allowed", score: combinedScore } });
       return { success: true, decision: "allowed", fraudScore: combinedScore };
@@ -989,7 +987,7 @@ export async function J07_FraudResponseWorkflow(input: J07Input) {
 
     // Step 5: Freeze agent account
     currentStep = "freeze_account";
-    await freezeAgentAccount({ agentId: input.agentId, reason: narrative.narrative, fraudScore: combinedScore });
+    await freezeAgentAccount({ agentId: input.agentId, reason: narrative.narrative, frozenBy: input.triggeredBy });
 
     // Step 6: Permify — update agent status
     await writePermifyRelationship({
@@ -1001,14 +999,14 @@ export async function J07_FraudResponseWorkflow(input: J07Input) {
     currentStep = "aml_sar";
     if (combinedScore > 80) {
       await runAmlScreening({
-        customerId: input.agentId, transactionAmount: input.amount,
-        transactionType: "suspicious", reference: `FRD-${input.transactionId}`,
+        entityType: "agent", entityId: input.agentId, amount: input.amount,
+        transactionType: "suspicious",
       });
     }
 
     // Step 8: Fluvio — emit fraud alert
     await emitInsuranceEvent({
-      topic: "fraud.alert.raised",
+      topic: "fraud.alert.raised", eventType: "fraud.alert.raised", entityId: String(input.transactionId),
       payload: { transactionId: input.transactionId, agentId: input.agentId, score: combinedScore, flags: gateResult.flags },
     });
 
@@ -1087,10 +1085,10 @@ export async function J08_CommissionPayoutWorkflow(input: J08Input) {
     // Step 2: AML screening
     currentStep = "aml_screening";
     const aml = await runAmlScreening({
-      customerId: input.agentId, transactionAmount: commission.commissionAmount,
-      transactionType: "commission_payout", reference: input.paymentRef,
+      entityType: "agent", entityId: input.agentId, amount: commission.commissionAmount,
+      transactionType: "commission_payout",
     });
-    if (aml.blocked) throw new Error(`AML blocked commission payout: ${aml.reason}`);
+    if (!aml.cleared) throw new Error(`AML blocked commission payout: ${aml.flags.join(", ") || aml.riskLevel}`);
 
     // Step 3: Rust fraud-gate
     currentStep = "fraud_check";
@@ -1126,7 +1124,7 @@ export async function J08_CommissionPayoutWorkflow(input: J08Input) {
 
     // Step 7: Fluvio
     await emitInsuranceEvent({
-      topic: "agent.commission.paid",
+      topic: "agent.commission.paid", eventType: "agent.commission.paid", entityId: String(input.agentId),
       payload: { agentId: input.agentId, amount: commission.commissionAmount, period: input.payoutPeriod },
     });
 
@@ -1192,10 +1190,10 @@ export async function J09_RemittanceWorkflow(input: J09Input) {
     currentStep = "aml_screening";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "aml" });
     const aml = await runAmlScreening({
-      customerId: input.senderId, transactionAmount: input.sendAmount,
-      transactionType: "remittance", reference: input.paymentRef,
+      entityType: "customer", entityId: input.senderId, amount: input.sendAmount,
+      transactionType: "remittance",
     });
-    if (aml.blocked) throw new Error(`AML blocked remittance: ${aml.reason}`);
+    if (!aml.cleared) throw new Error(`AML blocked remittance: ${aml.flags.join(", ") || aml.riskLevel}`);
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "aml" });
 
     // Step 2: Rust fraud-gate
@@ -1247,14 +1245,14 @@ export async function J09_RemittanceWorkflow(input: J09Input) {
     if (input.sendAmount > 5_000_000) {
       currentStep = "regulatory_report";
       await fileNaicomReport({
-        reportType: "large_transaction", entityId: input.senderId,
-        entityType: "customer", data: { amount: input.sendAmount, currency: input.sendCurrency, channel: input.channel },
+        reportType: "sar", periodStart: new Date().toISOString(), periodEnd: new Date().toISOString(),
+        reportData: { senderId: input.senderId, amount: input.sendAmount, currency: input.sendCurrency, channel: input.channel },
       });
     }
 
     // Step 8: Fluvio
     await emitInsuranceEvent({
-      topic: "remittance.sent",
+      topic: "remittance.sent", eventType: "remittance.sent", entityId: order.orderId,
       payload: { orderId: order.orderId, senderId: input.senderId, amount: input.sendAmount, country: input.recipientCountry },
     });
 
@@ -1330,14 +1328,11 @@ export async function J10_ClaimDisputeWorkflow(input: J10Input) {
 
     // Step 3: Assign senior adjuster
     currentStep = "assign_senior_adjuster";
-    const adjuster = await assignClaimAdjuster({
-      claimId: input.claimId, claimType: "dispute",
-      claimedAmount: input.requestedAmount,
-    });
+    const adjuster = await assignClaimAdjuster({ claimId: input.claimId });
 
     // Step 4: Fluvio — emit dispute event
     await emitInsuranceEvent({
-      topic: "claim.disputed",
+      topic: "claim.disputed", eventType: "claim.disputed", entityId: String(input.claimId),
       payload: { claimId: input.claimId, customerId: input.customerId, reason: input.disputeReason },
     });
 
@@ -1355,8 +1350,8 @@ export async function J10_ClaimDisputeWorkflow(input: J10Input) {
       // Auto-escalate to NAICOM
       currentStep = "naicom_escalation";
       await fileNaicomReport({
-        reportType: "dispute_escalation", entityId: input.claimId,
-        entityType: "claim", data: { reason: input.disputeReason, requestedAmount: input.requestedAmount },
+        reportType: "claims_experience", periodStart: new Date().toISOString(), periodEnd: new Date().toISOString(),
+        reportData: { claimId: input.claimId, reason: input.disputeReason, requestedAmount: input.requestedAmount },
       });
     }
 
@@ -1495,7 +1490,7 @@ export async function J11_BrokerPolicyManagementWorkflow(input: J11Input) {
 
     // Step 5: Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: "broker.portfolio.updated",
+      topic: "broker.portfolio.updated", eventType: "broker.portfolio.updated", entityId: String(input.brokerId),
       payload: { brokerId: input.brokerId, clientId: input.clientId, policiesCreated: policies.length },
     });
     await ingestToLakehouse({
@@ -1571,10 +1566,10 @@ export async function J12_ActuaryIfrs17Workflow(input: J12Input) {
     // Step 4: NAICOM report
     currentStep = "naicom_report";
     await fileNaicomReport({
-      reportType: "ifrs17_reserve",
-      entityId: parseInt(input.portfolioId) || 0,
-      entityType: "portfolio",
-      data: {
+      reportType: "annual_report",
+      periodStart: input.reportingDate, periodEnd: input.reportingDate,
+      reportData: {
+        portfolioId: input.portfolioId,
         reportingDate: input.reportingDate,
         measurementModel: input.measurementModel,
         csm: ifrs17Result.csm,
@@ -1595,7 +1590,7 @@ export async function J12_ActuaryIfrs17Workflow(input: J12Input) {
 
     // Step 6: Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: "actuary.ifrs17.computed",
+      topic: "actuary.ifrs17.computed", eventType: "actuary.ifrs17.computed", entityId: input.portfolioId,
       payload: { portfolioId: input.portfolioId, reportingDate: input.reportingDate, csm: ifrs17Result.csm },
     });
     await ingestToLakehouse({
@@ -1644,11 +1639,11 @@ export async function J13_ComplianceMonitoringWorkflow(input: J13Input) {
     currentStep = "aml_screening";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "aml" });
     const aml = await runAmlScreening({
-      customerId: input.customerId, transactionAmount: input.amount,
-      transactionType: input.transactionType, reference: input.reference,
+      entityType: "customer", entityId: input.customerId, amount: input.amount,
+      transactionType: input.transactionType,
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "aml",
-      metadata: { blocked: aml.blocked, reason: aml.reason } });
+      metadata: { blocked: !aml.cleared, reason: aml.flags.join(", ") } });
 
     // Step 2: Python ML — fraud scoring
     currentStep = "ml_compliance_score";
@@ -1662,7 +1657,7 @@ export async function J13_ComplianceMonitoringWorkflow(input: J13Input) {
     const narrative = await generateOllamaRiskNarrative({
       context: `AML check: ${input.transactionType}, ₦${input.amount.toLocaleString()}, Customer: ${input.customerId}`,
       riskScore: mlScore.riskScore,
-      riskFactors: aml.blocked ? [aml.reason] : [],
+      riskFactors: aml.cleared ? [] : aml.flags,
       narrativeType: "compliance",
     });
 
@@ -1670,40 +1665,38 @@ export async function J13_ComplianceMonitoringWorkflow(input: J13Input) {
     currentStep = "regulatory_reporting";
     if (input.amount >= 5_000_000) {
       await fileNaicomReport({
-        reportType: "large_transaction_cbn",
-        entityId: input.customerId, entityType: "customer",
-        data: { amount: input.amount, type: input.transactionType, reference: input.reference },
+        reportType: "sar", periodStart: new Date().toISOString(), periodEnd: new Date().toISOString(),
+        reportData: { customerId: input.customerId, amount: input.amount, type: input.transactionType, reference: input.reference },
       });
     }
 
     // Step 5: SAR filing if blocked
-    if (aml.blocked) {
+    if (!aml.cleared) {
       currentStep = "sar_filing";
       await fileNaicomReport({
-        reportType: "sar",
-        entityId: input.customerId, entityType: "customer",
-        data: { amount: input.amount, reason: aml.reason, narrative: narrative.narrative },
+        reportType: "sar", periodStart: new Date().toISOString(), periodEnd: new Date().toISOString(),
+        reportData: { customerId: input.customerId, amount: input.amount, flags: aml.flags, narrative: narrative.narrative },
       });
     }
 
     // Step 6: Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: "compliance.check.completed",
-      payload: { customerId: input.customerId, amount: input.amount, blocked: aml.blocked, score: mlScore.riskScore },
+      topic: "compliance.check.completed", eventType: "compliance.check.completed", entityId: String(input.customerId),
+      payload: { customerId: input.customerId, amount: input.amount, blocked: !aml.cleared, score: mlScore.riskScore },
     });
     await ingestToLakehouse({
       dataset: "compliance_checks",
-      records: [{ customerId: input.customerId, amount: input.amount, blocked: aml.blocked, score: mlScore.riskScore }],
+      records: [{ customerId: input.customerId, amount: input.amount, blocked: !aml.cleared, score: mlScore.riskScore }],
       partitionKey: "check_date",
     });
 
     await recordJourneyComplete({ executionId, workflowId: `J13-${Date.now()}`, status: "completed",
-      resultSnapshot: { blocked: aml.blocked, riskScore: mlScore.riskScore } });
+      resultSnapshot: { blocked: !aml.cleared, riskScore: mlScore.riskScore } });
 
     return {
-      success: true, blocked: aml.blocked, reason: aml.reason,
+      success: true, blocked: !aml.cleared, reason: aml.flags.join(", "),
       riskScore: mlScore.riskScore, narrative: narrative.narrative,
-      sarFiled: aml.blocked,
+      sarFiled: !aml.cleared,
     };
   } catch (err) {
     await recordJourneyComplete({ executionId, workflowId: `J13-${Date.now()}`, status: "failed", errorMessage: (err as Error).message });
@@ -1751,7 +1744,7 @@ export async function J14_PosTerminalLifecycleWorkflow(input: J14Input) {
       currentStep = "provision_terminal";
       await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "postgresql" });
       const terminal = await provisionAgentPosTerminal({
-        agentId: input.agentId, agentCode: input.agentCode, state: "",
+        agentId: input.agentId, terminalType: "pos",
       });
       result = { terminalId: terminal.terminalId, serialNumber: terminal.serialNumber };
       await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "postgresql" });
@@ -1768,7 +1761,7 @@ export async function J14_PosTerminalLifecycleWorkflow(input: J14Input) {
 
     } else if (input.action === "health_check") {
       currentStep = "terminal_health_check";
-      const health = await probeServiceHealth({ service: "pos-terminal" });
+      const health = await probeServiceHealth({ serviceName: "pos-terminal", serviceUrl: "http://pos-terminal:8080/health" });
       result = { terminalId: input.terminalId, health };
 
     } else if (input.action === "decommission") {
@@ -1782,7 +1775,7 @@ export async function J14_PosTerminalLifecycleWorkflow(input: J14Input) {
 
     // Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: `terminal.${input.action}`,
+      topic: `terminal.${input.action}`, eventType: `terminal.${input.action}`, entityId: input.terminalId ?? String(input.agentId),
       payload: { agentId: input.agentId, terminalId: input.terminalId, action: input.action },
     });
     await ingestToLakehouse({
@@ -1840,24 +1833,24 @@ export async function J15_ReinsuranceCessionWorkflow(input: J15Input) {
     // Step 2: Calculate cession
     currentStep = "calculate_cession";
     const cession = await calculateReinsuranceCession({
-      treatyId: input.treatyId, portfolioId: input.portfolioId,
-      cessionPercentage: input.cessionPercentage, premiumAmount: input.premiumAmount,
+      policyId: 0, sumInsured: input.premiumAmount,
+      premiumAmount: input.premiumAmount, treatyId: input.treatyId,
     });
 
     // Step 3: AML screening
     currentStep = "aml_screening";
     const aml = await runAmlScreening({
-      customerId: input.treatyId, transactionAmount: cession.cessionPremium,
-      transactionType: "reinsurance_cession", reference: input.paymentRef,
+      entityType: "transaction", entityId: input.treatyId, amount: cession.cessionPremium,
+      transactionType: "reinsurance_cession",
     });
-    if (aml.blocked) throw new Error(`AML blocked reinsurance cession: ${aml.reason}`);
+    if (!aml.cleared) throw new Error(`AML blocked reinsurance cession: ${aml.flags.join(", ") || aml.riskLevel}`);
 
     // Step 4: TigerBeetle — transfer cession premium
     currentStep = "transfer_cession_premium";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "tigerbeetle" });
     const transfer = await transferReinsurancePremium({
-      treatyId: input.treatyId, cessionPremium: cession.cessionPremium,
-      paymentRef: input.paymentRef, reinsurerId: cession.reinsurerId,
+      policyId: 0, reinsurerId: `treaty-${input.treatyId}`,
+      cessionPremium: cession.cessionPremium, cessionRef: input.paymentRef,
     });
     compensations.push(async () => {
       await compensatePolicyBindingStep({
@@ -1866,19 +1859,18 @@ export async function J15_ReinsuranceCessionWorkflow(input: J15Input) {
       });
     });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "tigerbeetle",
-      metadata: { transactionId: transfer.transactionId } });
+      metadata: { transactionId: transfer.tbTransferId } });
 
     // Step 5: NAICOM report
     currentStep = "naicom_report";
     await fileNaicomReport({
-      reportType: "reinsurance_cession", entityId: input.treatyId,
-      entityType: "treaty",
-      data: { cessionPercentage: input.cessionPercentage, cessionPremium: cession.cessionPremium },
+      reportType: "quarterly_returns", periodStart: new Date().toISOString(), periodEnd: new Date().toISOString(),
+      reportData: { treatyId: input.treatyId, cessionPercentage: input.cessionPercentage, cessionPremium: cession.cessionPremium },
     });
 
     // Step 6: Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: "reinsurance.cession.completed",
+      topic: "reinsurance.cession.completed", eventType: "reinsurance.cession.completed", entityId: String(input.treatyId),
       payload: { treatyId: input.treatyId, cessionPremium: cession.cessionPremium },
     });
     await ingestToLakehouse({
@@ -1888,9 +1880,9 @@ export async function J15_ReinsuranceCessionWorkflow(input: J15Input) {
     });
 
     await recordJourneyComplete({ executionId, workflowId: `J15-${Date.now()}`, status: "completed",
-      resultSnapshot: { cessionPremium: cession.cessionPremium, transactionId: transfer.transactionId } });
+      resultSnapshot: { cessionPremium: cession.cessionPremium, transactionId: transfer.tbTransferId } });
 
-    return { success: true, cessionPremium: cession.cessionPremium, transactionId: transfer.transactionId };
+    return { success: true, cessionPremium: cession.cessionPremium, transactionId: transfer.tbTransferId };
   } catch (err) {
     for (const comp of compensations.reverse()) { try { await comp(); } catch {} }
     await recordJourneyComplete({ executionId, workflowId: `J15-${Date.now()}`, status: "failed", errorMessage: (err as Error).message });
@@ -1959,7 +1951,7 @@ export async function J16_CustomerSelfServiceWorkflow(input: J16Input) {
 
     // Fluvio — log self-service action
     await emitInsuranceEvent({
-      topic: "customer.self_service",
+      topic: "customer.self_service", eventType: "customer.self_service", entityId: String(input.customerId),
       payload: { customerId: input.customerId, action: input.action },
     });
 
@@ -2013,12 +2005,12 @@ export async function J17_BulkPremiumPaymentWorkflow(input: J17Input) {
 
       // AML per payment
       const aml = await runAmlScreening({
-        customerId: payment.customerId, transactionAmount: payment.amount,
-        transactionType: "premium_payment", reference: payment.reference,
+        entityType: "customer", entityId: payment.customerId, amount: payment.amount,
+        transactionType: "premium_payment",
       });
 
-      if (aml.blocked) {
-        results.push({ reference: payment.reference, success: false, error: `AML blocked: ${aml.reason}` });
+      if (!aml.cleared) {
+        results.push({ reference: payment.reference, success: false, error: `AML blocked: ${aml.flags.join(", ") || aml.riskLevel}` });
         continue;
       }
 
@@ -2052,7 +2044,7 @@ export async function J17_BulkPremiumPaymentWorkflow(input: J17Input) {
 
     // Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: "bulk.payment.completed",
+      topic: "bulk.payment.completed", eventType: "bulk.payment.completed", entityId: input.batchRef,
       payload: { batchRef: input.batchRef, successCount, totalAmount },
     });
     await ingestToLakehouse({
@@ -2110,23 +2102,22 @@ export async function J18_AgentFloatReconciliationWorkflow(input: J18Input) {
       await freezeAgentAccount({
         agentId: input.agentId,
         reason: `Major float discrepancy: PG=₦${reconciliation.pgBalance.toLocaleString()}, TB=₦${reconciliation.tbBalance.toLocaleString()}`,
-        fraudScore: 60,
+        frozenBy: input.triggeredBy,
       });
       await fileNaicomReport({
-        reportType: "float_discrepancy", entityId: input.agentId,
-        entityType: "agent",
-        data: { pgBalance: reconciliation.pgBalance, tbBalance: reconciliation.tbBalance, discrepancy: reconciliation.discrepancy },
+        reportType: "sar", periodStart: new Date().toISOString(), periodEnd: new Date().toISOString(),
+        reportData: { agentId: input.agentId, pgBalance: reconciliation.pgBalance, tbBalance: reconciliation.tbBalance, discrepancy: reconciliation.discrepancy },
       });
     }
 
     // Step 3: Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: "agent.float.reconciled",
+      topic: "agent.float.reconciled", eventType: "agent.float.reconciled", entityId: String(input.agentId),
       payload: { agentId: input.agentId, status: reconciliation.status, discrepancy: reconciliation.discrepancy },
     });
     await ingestToLakehouse({
       dataset: "float_reconciliations",
-      records: [{ agentId: input.agentId, ...reconciliation, date: input.date ?? new Date().toISOString().split("T")[0] }],
+      records: [{ ...reconciliation, date: input.date ?? new Date().toISOString().split("T")[0] }],
       partitionKey: "reconciliation_date",
     });
 
@@ -2181,10 +2172,10 @@ export async function J19_UnderwritingDecisionWorkflow(input: J19Input) {
     // Step 2: AML screening
     currentStep = "aml_screening";
     const aml = await runAmlScreening({
-      customerId: input.customerId, transactionAmount: input.premiumAmount,
-      transactionType: "underwriting", reference: `UW-${input.customerId}-${Date.now()}`,
+      entityType: "customer", entityId: input.customerId, amount: input.premiumAmount,
+      transactionType: "underwriting",
     });
-    if (aml.blocked) throw new Error(`AML blocked underwriting: ${aml.reason}`);
+    if (!aml.cleared) throw new Error(`AML blocked underwriting: ${aml.flags.join(", ") || aml.riskLevel}`);
 
     // Step 3: Python ML — risk scoring
     currentStep = "ml_risk_score";
@@ -2216,7 +2207,7 @@ export async function J19_UnderwritingDecisionWorkflow(input: J19Input) {
     if (mlScore.riskScore > 70 || !underwriting.approved) {
       currentStep = "awaiting_manual_approval";
       await emitInsuranceEvent({
-        topic: "underwriting.referred",
+        topic: "underwriting.referred", eventType: "underwriting.referred", entityId: String(input.customerId),
         payload: { customerId: input.customerId, riskScore: mlScore.riskScore, conditions: underwriting.conditions },
       });
       const manualApproval = await condition(() => approved, "5 days");
@@ -2237,7 +2228,7 @@ export async function J19_UnderwritingDecisionWorkflow(input: J19Input) {
 
     // Step 8: Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: `underwriting.${decision}`,
+      topic: `underwriting.${decision}`, eventType: `underwriting.${decision}`, entityId: String(input.customerId),
       payload: { customerId: input.customerId, productId: input.productId, riskScore: mlScore.riskScore },
     });
     await ingestToLakehouse({
@@ -2292,18 +2283,19 @@ export async function J20_PlatformHealthMonitoringWorkflow(input: J20Input) {
 
     // Step 2: Record SLA metrics
     currentStep = "record_sla_metrics";
-    await recordSlaMetrics({
-      services: healthResult.services,
-      overallStatus: healthResult.overallStatus,
-      slaBreaches: healthResult.slaBreaches,
-    });
+    for (const svc of healthResult.services) {
+      await recordSlaMetrics({
+        serviceName: svc.name, healthy: svc.status === "healthy",
+        latencyMs: svc.latencyMs, slaThresholdMs: input.slaThresholdMs ?? 500,
+      });
+    }
 
     // Step 3: Handle SLA breaches
     if (healthResult.slaBreaches.length > 0) {
       currentStep = "handle_sla_breaches";
       for (const breach of healthResult.slaBreaches) {
         await emitInsuranceEvent({
-          topic: "platform.sla.breach",
+          topic: "platform.sla.breach", eventType: "platform.sla.breach", entityId: breach.service,
           payload: { service: breach.service, metric: breach.metric, threshold: breach.threshold, actual: breach.actual },
         });
         // Notify ops team via Dapr
@@ -2321,14 +2313,14 @@ export async function J20_PlatformHealthMonitoringWorkflow(input: J20Input) {
     if (healthResult.overallStatus === "critical") {
       currentStep = "file_incident";
       await fileNaicomReport({
-        reportType: "platform_incident", entityId: 0, entityType: "platform",
-        data: { status: healthResult.overallStatus, breaches: healthResult.slaBreaches },
+        reportType: "sar", periodStart: new Date().toISOString(), periodEnd: new Date().toISOString(),
+        reportData: { status: healthResult.overallStatus, breaches: healthResult.slaBreaches },
       });
     }
 
     // Step 5: Fluvio + Lakehouse
     await emitInsuranceEvent({
-      topic: "platform.health.checked",
+      topic: "platform.health.checked", eventType: "platform.health.checked", entityId: "platform",
       payload: { status: healthResult.overallStatus, breachCount: healthResult.slaBreaches.length },
     });
     await ingestToLakehouse({

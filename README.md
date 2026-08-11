@@ -2,6 +2,13 @@
 
 A comprehensive, production-grade insurance technology platform built for the Nigerian market. Covers the full insurance value chain: policy administration, claims adjudication, agent network management, KYC/AML compliance, regulatory reporting (NAICOM), and financial accounting (IFRS 17).
 
+## Repository status
+
+- **Canonical layout:** the application lives at the repository root — `client/` (React/Vite frontend), `server/` (tRPC/Express backend), `drizzle/` (schema/migrations). The nested `insureportal/` directory is a deprecated, reference-only duplicate and must not be deployed (see `insureportal/README-DEPRECATED.md`).
+- **Build commands:** `pnpm install --frozen-lockfile` then `pnpm build` from the repo root.
+- **Verified state (latest build verification):** `pnpm build` is green; Go services compile ~130+/140 (`go build ./...` per service); Rust crates pass `cargo check` 22/22; Python checks clean. Remaining known issues are concentrated in a few `server/insurance-journeys-*.ts` TypeScript files.
+- **Audit trail:** see `AUDIT_REPORT.md`, `SECURITY_AUDIT_REPORT.md`, and the `test-report-*.md` / `PRODUCTION_READINESS_REPORT.md` files at the repo root for detailed findings.
+
 ## Architecture
 
 ```

@@ -16,15 +16,18 @@ import (
 
 // ClaimsRepository handles all database operations for claims
 type ClaimsRepository struct {
-	db       *sql.DB
-	logger   *zap.Logger
+	db         *sql.DB
+	logger     *zap.Logger
 	migrations []string
 }
 
 // NewClaimsRepository creates a new repository with database connection and migrations
 func NewClaimsRepository(cfg *config.DatabaseConfig, logger *zap.Logger) (*ClaimsRepository, error) {
-	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s connect_timeout=10",
-		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode)
+	dsn := cfg.URL
+	if dsn == "" {
+		dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s connect_timeout=10",
+			cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode)
+	}
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
