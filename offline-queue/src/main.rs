@@ -4,7 +4,7 @@ fn database_url() -> String {
     env::var("DATABASE_URL").unwrap_or_else(|_| "postgresql://ngapp:ngapp@localhost:5432/ngapp".to_string())
 }
 
-/*!
+/*
  * offline-queue — InsurePortal Offline Transaction Queue & USSD Encoder
  *
  * HTTP API (port 8032):
@@ -27,7 +27,6 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::sync::Arc;
 use tokio_postgres::{Client, NoTls};
 use tower_http::cors::CorsLayer;
