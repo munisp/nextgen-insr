@@ -212,7 +212,9 @@ func (p *Postgres) RunMigrations(ctx context.Context) error {
 
 func toJSON(v interface{}) ([]byte, error) { return json.Marshal(v) }
 func fromJSON(data string, v interface{}) error {
-	if data == "" || data == "null" { return nil }
+	if data == "" || data == "null" {
+		return nil
+	}
 	return json.Unmarshal([]byte(data), v)
 }
 
@@ -261,13 +263,13 @@ func (p *Postgres) GetUserPoints(ctx context.Context, userID string) (*models.Us
 func (p *Postgres) AwardPoints(ctx context.Context, userID string, points int, source models.PointSource, action string, refID string, metadata map[string]any) (*models.PointTransaction, error) {
 	txID := generateTxID()
 	ptx := &models.PointTransaction{
-		ID:     txID,
-		UserID: userID,
-		Source: source,
-		Action: action,
-		Points: points,
-		RefID:  refID,
-		Metadata: metadata,
+		ID:        txID,
+		UserID:    userID,
+		Source:    source,
+		Action:    action,
+		Points:    points,
+		RefID:     refID,
+		Metadata:  metadata,
 		CreatedAt: time.Now().UTC(),
 	}
 
@@ -279,12 +281,13 @@ func (p *Postgres) AwardPoints(ctx context.Context, userID string, points int, s
 	ptx.Balance = currentPoints + points
 
 	// Record transaction
+	metadataJSON, _ := toJSON(metadata)
 	if _, err := p.Pool.Exec(ctx, `
 		INSERT INTO point_transactions
 			(id, user_id, source, action, points, balance_after, reference_id, metadata)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 	`, ptx.ID, ptx.UserID, string(ptx.Source), ptx.Action, ptx.Points,
-		ptx.Balance, ptx.RefID, toJSON(metadata)); err != nil {
+		ptx.Balance, ptx.RefID, metadataJSON); err != nil {
 		return nil, err
 	}
 
@@ -329,7 +332,29 @@ func (p *Postgres) GetPointHistory(ctx context.Context, userID string, limit, of
 	}
 	defer rows.Close()
 
-	return scanPointTransactions(rows)
+	txns, err := scanPointTransactions(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	return txns, total, nil
+}
+
+// scanPointTransactions scans point transaction rows.
+func scanPointTransactions(rows pgx.Rows) ([]*models.PointTransaction, error) {
+	var txns []*models.PointTransaction
+	for rows.Next() {
+		t := &models.PointTransaction{}
+		var meta []byte
+		if err := rows.Scan(&t.ID, &t.UserID, (*string)(&t.Source), &t.Action, &t.Points,
+			&t.Balance, &t.RefID, &meta, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		if len(meta) > 0 {
+			_ = json.Unmarshal(meta, &t.Metadata)
+		}
+		txns = append(txns, t)
+	}
+	return txns, rows.Err()
 }
 
 // GetUserRedemptions retrieves redemptions for a user.
@@ -646,11 +671,11 @@ func (p *Postgres) GetReferralStats(ctx context.Context, userID string) (map[str
 	}
 
 	return map[string]any{
-		"referrer_id":  userID,
-		"total_referrals": total,
+		"referrer_id":      userID,
+		"total_referrals":  total,
 		"active_referrals": active,
 		"failed_referrals": failed,
-		"awarded_count":  awarded,
+		"awarded_count":    awarded,
 	}, nil
 }
 

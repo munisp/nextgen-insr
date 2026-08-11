@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,10 +25,10 @@ import (
 
 // package-level state
 var (
-	gcfg    *config.Config
-	gpg     *db.Postgres
-	gredis  *db.RedisCache
-	glog    *zap.Logger
+	gcfg   *config.Config
+	gpg    *db.Postgres
+	gredis *db.RedisCache
+	glog   *zap.Logger
 )
 
 // pointAwardRules defines points awarded per action type.
@@ -39,147 +38,6 @@ var pointAwardRules = map[string]models.ActionAward{
 	"referral":        {Action: "referral", Points: 200, Limit: 10, Enabled: true},
 	"doc_upload":      {Action: "doc_upload", Points: 50, Limit: 20, Enabled: true},
 	"early_payment":   {Action: "early_payment", Points: 75, Limit: 5, Enabled: true},
-}
-
-var db *sql.DB
-
-func initDB() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dsn)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
-		return
-	}
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
-		db = nil
-		return
-	}
-	log.Printf("Connected to PostgreSQL for gamification_service")
-
-	// Create table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS gamification_service (
-		id SERIAL PRIMARY KEY,
-		data JSONB NOT NULL DEFAULT '{}',
-		status VARCHAR(50) DEFAULT 'active',
-		created_at TIMESTAMPTZ DEFAULT NOW(),
-		updated_at TIMESTAMPTZ DEFAULT NOW(),
-		tenant_id INTEGER DEFAULT 1
-	)`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func tracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := r.Header.Get("X-Request-ID")
-		if requestID == "" {
-			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-ID", requestID)
-		start := time.Now()
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
-	})
-}
-
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
-var (
-	rateLimitMu    sync.Mutex
-	rateLimitStore = make(map[string][]time.Time)
-)
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		rateLimitMu.Lock()
-		now := time.Now()
-		window := now.Add(-1 * time.Minute)
-		var recent []time.Time
-		for _, t := range rateLimitStore[ip] {
-			if t.After(window) {
-				recent = append(recent, t)
-			}
-		}
-		if len(recent) >= 100 {
-			rateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
-			return
-		}
-		recent = append(recent, now)
-		rateLimitStore[ip] = recent
-		rateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
 }
 
 func main() {
@@ -355,9 +213,9 @@ func getProfileHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 		if err != nil {
 			// Create user if not exists
 			up = &models.UserPoints{
-				ID:     generateID(),
-				UserID: userID,
-				Tier:   models.TierBronze,
+				ID:        generateID(),
+				UserID:    userID,
+				Tier:      models.TierBronze,
 				CreatedAt: time.Now().UTC(),
 				UpdatedAt: time.Now().UTC(),
 			}
@@ -375,27 +233,27 @@ func getProfileHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 
 		if redis != nil {
 			data, _ := json.Marshal(map[string]any{
-				"user_id":              userID,
-				"total_points":         up.TotalPoints,
+				"user_id":                userID,
+				"total_points":           up.TotalPoints,
 				"redeemable_value_naira": redeemableValue,
-				"tier":                 up.Tier,
-				"points_to_next":       up.PointsToNext,
-				"next_tier":            up.NextTier,
-				"badges_earned":        len(userBadges),
-				"last_awarded_at":      up.LastAwardedAt,
+				"tier":                   up.Tier,
+				"points_to_next":         up.PointsToNext,
+				"next_tier":              up.NextTier,
+				"badges_earned":          len(userBadges),
+				"last_awarded_at":        up.LastAwardedAt,
 			})
 			redis.CacheUserPoints(r.Context(), userID, data, db.TCacheShort)
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
-			"user_id":              userID,
-			"total_points":         up.TotalPoints,
+			"user_id":                userID,
+			"total_points":           up.TotalPoints,
 			"redeemable_value_naira": redeemableValue,
-			"tier":                 up.Tier,
-			"points_to_next":       up.PointsToNext,
-			"next_tier":            up.NextTier,
-			"badges_earned":        len(userBadges),
-			"last_awarded_at":      up.LastAwardedAt,
+			"tier":                   up.Tier,
+			"points_to_next":         up.PointsToNext,
+			"next_tier":              up.NextTier,
+			"badges_earned":          len(userBadges),
+			"last_awarded_at":        up.LastAwardedAt,
 		})
 	}
 }
@@ -404,9 +262,9 @@ func awardPointsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req struct {
-			UserID string            `json:"user_id"`
-			Action string            `json:"action"`
-			Amount int               `json:"amount"`
+			UserID   string         `json:"user_id"`
+			Action   string         `json:"action"`
+			Amount   int            `json:"amount"`
 			Metadata map[string]any `json:"metadata,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -466,16 +324,16 @@ func awardPointsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		// Update Redis cache
 		if redis != nil {
 			redis.InvalidateUserPoints(r.Context(), req.UserID)
-			for _, b := range badges {
+			for range badges {
 				redis.InvalidateUserBadges(r.Context(), req.UserID)
 			}
 		}
 
 		result := map[string]any{
-			"user_id":      req.UserID,
-			"action":       req.Action,
-			"points_awarded": req.Amount,
-			"new_total":    tx.Balance,
+			"user_id":                req.UserID,
+			"action":                 req.Action,
+			"points_awarded":         req.Amount,
+			"new_total":              tx.Balance,
 			"redeemable_value_naira": float64(tx.Balance) * 0.5,
 		}
 		if len(badges) > 0 {
@@ -566,16 +424,17 @@ func redeemPointsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logg
 			valueNaira = req.ValueNaira
 		}
 
+		expiresAt := time.Now().UTC().Add(30 * 24 * time.Hour)
 		redemption := &models.PointRedemption{
-			ID:           generateID(),
-			UserID:       userID,
-			PointsUsed:   pointsToRedeem,
-			ValueNaira:   valueNaira,
-			Type:         req.Type,
-			Status:       "pending",
-			Reference:    fmt.Sprintf("RED-%s", generateID()),
-			ExpiresAt:    time.Now().UTC().Add(30 * 24 * time.Hour),
-			CreatedAt:    time.Now().UTC(),
+			ID:         generateID(),
+			UserID:     userID,
+			PointsUsed: pointsToRedeem,
+			ValueNaira: valueNaira,
+			Type:       req.Type,
+			Status:     "pending",
+			Reference:  fmt.Sprintf("RED-%s", generateID()),
+			ExpiresAt:  &expiresAt,
+			CreatedAt:  time.Now().UTC(),
 		}
 
 		if err := pg.RecordRedemption(r.Context(), redemption); err != nil {
@@ -596,10 +455,10 @@ func redeemPointsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logg
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
-			"redemption":   redemption,
-			"points_used":  pointsToRedeem,
-			"value_naira":  valueNaira,
-			"status":       "pending",
+			"redemption":  redemption,
+			"points_used": pointsToRedeem,
+			"value_naira": valueNaira,
+			"status":      "pending",
 		})
 	}
 }
@@ -617,8 +476,8 @@ func listBadgesHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
-			"badges":  badges,
-			"total":   len(badges),
+			"badges": badges,
+			"total":  len(badges),
 		})
 	}
 }
@@ -682,7 +541,7 @@ func leaderboardHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 
 		if redis != nil {
 			data, _ := json.Marshal(map[string]any{
-				"period": period,
+				"period":  period,
 				"entries": entries,
 			})
 			redis.CacheLeaderboard(r.Context(), period, data, db.TCacheShort)
@@ -795,11 +654,11 @@ func joinChallengeHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
-			"user_id":       userID,
-			"challenge_id":  challengeID,
-			"challenge":     challenge.Title,
-			"status":        "joined",
-			"joined_at":     time.Now().UTC().Format(time.RFC3339),
+			"user_id":      userID,
+			"challenge_id": challengeID,
+			"challenge":    challenge.Title,
+			"status":       "joined",
+			"joined_at":    time.Now().UTC().Format(time.RFC3339),
 		})
 	}
 }
@@ -818,11 +677,11 @@ func referralStatsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
-			"referrer_id":  userID,
-			"total_referrals": stats["total_referrals"],
+			"referrer_id":      userID,
+			"total_referrals":  stats["total_referrals"],
 			"active_referrals": stats["active_referrals"],
 			"failed_referrals": stats["failed_referrals"],
-			"awarded_count":  stats["awarded_count"],
+			"awarded_count":    stats["awarded_count"],
 		})
 	}
 }
@@ -868,12 +727,12 @@ func redeemReferralHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Lo
 		}
 
 		referral := &models.Referral{
-			ID:            generateID(),
-			ReferrerID:    req.ReferrerID,
-			ReferredID:    req.ReferredID,
-			ReferralCode:  referralCode,
-			Status:        models.ReferralActive,
-			ReferredAt:    time.Now().UTC(),
+			ID:           generateID(),
+			ReferrerID:   req.ReferrerID,
+			ReferredID:   req.ReferredID,
+			ReferralCode: referralCode,
+			Status:       models.ReferralActive,
+			ReferredAt:   time.Now().UTC(),
 		}
 
 		if err := pg.CreateReferral(r.Context(), referral); err != nil {
@@ -938,11 +797,11 @@ func redemptionHistoryHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
-			"user_id":  userID,
-			"history":  history,
-			"total":    total,
-			"limit":    limit,
-			"offset":   offset,
+			"user_id": userID,
+			"history": history,
+			"total":   total,
+			"limit":   limit,
+			"offset":  offset,
 		})
 	}
 }

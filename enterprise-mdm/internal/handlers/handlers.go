@@ -205,7 +205,7 @@ func (h *Handlers) AssessQuality(w http.ResponseWriter, r *http.Request) {
 		"quality_metric": qm,
 		"overall_score":  qm.OverallScore,
 		"status":         qm.Status,
-		"threshold":      h.mdm.cfg.MinQualityScore,
+		"threshold":      h.mdm.Config().MinQualityScore,
 	})
 }
 

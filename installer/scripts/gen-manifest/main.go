@@ -22,11 +22,12 @@ package main
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -72,7 +73,6 @@ func initDB() {
 		log.Printf("WARN: table creation failed: %v", err)
 	}
 }
-
 
 func main() {
 	initDB()

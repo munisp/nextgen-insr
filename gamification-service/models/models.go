@@ -17,18 +17,18 @@ const (
 type TierLevel string
 
 const (
-	TierBronze     TierLevel = "bronze"
-	TierSilver     TierLevel = "silver"
-	TierGold       TierLevel = "gold"
-	TierPlatinum   TierLevel = "platinum"
-	TierDiamond    TierLevel = "diamond"
+	TierBronze   TierLevel = "bronze"
+	TierSilver   TierLevel = "silver"
+	TierGold     TierLevel = "gold"
+	TierPlatinum TierLevel = "platinum"
+	TierDiamond  TierLevel = "diamond"
 )
 
 type ActionAward struct {
-	Action   string  `json:"action"`
-	Points   int     `json:"points"`
-	Limit    int     `json:"daily_limit"`
-	Enabled  bool    `json:"enabled"`
+	Action  string `json:"action"`
+	Points  int    `json:"points"`
+	Limit   int    `json:"daily_limit"`
+	Enabled bool   `json:"enabled"`
 }
 
 type UserPoints struct {
@@ -45,15 +45,15 @@ type UserPoints struct {
 }
 
 type PointTransaction struct {
-	ID        string      `json:"id"`
-	UserID    string      `json:"user_id"`
-	Source    PointSource `json:"source"`
-	Action    string      `json:"action"`
-	Points    int         `json:"points"`
-	Balance   int         `json:"balance_after"`
-	RefID     string      `json:"reference_id,omitempty"`
+	ID        string         `json:"id"`
+	UserID    string         `json:"user_id"`
+	Source    PointSource    `json:"source"`
+	Action    string         `json:"action"`
+	Points    int            `json:"points"`
+	Balance   int            `json:"balance_after"`
+	RefID     string         `json:"reference_id,omitempty"`
 	Metadata  map[string]any `json:"metadata,omitempty"`
-	CreatedAt time.Time   `json:"created_at"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 type RedeemType string
@@ -64,16 +64,16 @@ const (
 )
 
 type PointRedemption struct {
-	ID             string      `json:"id"`
-	UserID         string      `json:"user_id"`
-	PointsUsed     int         `json:"points_used"`
-	ValueNaira     float64     `json:"value_naira"`
-	Type           RedeemType  `json:"type"`
-	Status         string      `json:"status"` // pending, applied, cancelled
-	Reference      string      `json:"reference,omitempty"`
-	ExpiresAt      *time.Time  `json:"expires_at,omitempty"`
-	CreatedAt      time.Time   `json:"created_at"`
-	AppliedAt      *time.Time  `json:"applied_at,omitempty"`
+	ID         string     `json:"id"`
+	UserID     string     `json:"user_id"`
+	PointsUsed int        `json:"points_used"`
+	ValueNaira float64    `json:"value_naira"`
+	Type       RedeemType `json:"type"`
+	Status     string     `json:"status"` // pending, applied, cancelled
+	Reference  string     `json:"reference,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	AppliedAt  *time.Time `json:"applied_at,omitempty"`
 }
 
 type BadgeType string
@@ -115,54 +115,54 @@ type UserBadge struct {
 type LeaderboardPeriod string
 
 const (
-	PeriodWeekly   LeaderboardPeriod = "weekly"
-	PeriodMonthly  LeaderboardPeriod = "monthly"
-	PeriodAllTime  LeaderboardPeriod = "alltime"
+	PeriodWeekly  LeaderboardPeriod = "weekly"
+	PeriodMonthly LeaderboardPeriod = "monthly"
+	PeriodAllTime LeaderboardPeriod = "alltime"
 )
 
 type LeaderboardEntry struct {
-	Rank     int     `json:"rank"`
-	UserID   string  `json:"user_id"`
-	UserName string  `json:"user_name"`
-	Points   int     `json:"points"`
+	Rank     int       `json:"rank"`
+	UserID   string    `json:"user_id"`
+	UserName string    `json:"user_name"`
+	Points   int       `json:"points"`
 	Tier     TierLevel `json:"tier"`
-	Region   string  `json:"region,omitempty"`
+	Region   string    `json:"region,omitempty"`
 }
 
 type ChallengeStatus string
 
 const (
-	ChallengeActive   ChallengeStatus = "active"
+	ChallengeActive    ChallengeStatus = "active"
 	ChallengeCompleted ChallengeStatus = "completed"
-	ChallengeExpired  ChallengeStatus = "expired"
+	ChallengeExpired   ChallengeStatus = "expired"
 	ChallengeCancelled ChallengeStatus = "cancelled"
 )
 
 type Challenge struct {
-	ID           string        `json:"id"`
-	ChallengeID  string        `json:"challenge_id"`
-	Title        string        `json:"title"`
-	Description  string        `json:"description"`
-	Rules        string        `json:"rules"`
-	PointsReward int           `json:"points_reward"`
-	StartDate    time.Time     `json:"start_date"`
-	EndDate      time.Time     `json:"end_date"`
-	MinAgeMonths int           `json:"min_age_months"`
-	MaxParticipants int        `json:"max_participants"`
-	IsActive     bool          `json:"is_active"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
-	CreatedAt    time.Time     `json:"created_at"`
+	ID              string         `json:"id"`
+	ChallengeID     string         `json:"challenge_id"`
+	Title           string         `json:"title"`
+	Description     string         `json:"description"`
+	Rules           string         `json:"rules"`
+	PointsReward    int            `json:"points_reward"`
+	StartDate       time.Time      `json:"start_date"`
+	EndDate         time.Time      `json:"end_date"`
+	MinAgeMonths    int            `json:"min_age_months"`
+	MaxParticipants int            `json:"max_participants"`
+	IsActive        bool           `json:"is_active"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
 }
 
 type UserChallengeProgress struct {
-	ID            string        `json:"id"`
-	UserID        string        `json:"user_id"`
-	ChallengeID   string        `json:"challenge_id"`
-	Progress      int           `json:"progress"`
-	TotalRequired int           `json:"total_required"`
+	ID            string          `json:"id"`
+	UserID        string          `json:"user_id"`
+	ChallengeID   string          `json:"challenge_id"`
+	Progress      int             `json:"progress"`
+	TotalRequired int             `json:"total_required"`
 	Status        ChallengeStatus `json:"status"`
-	JoinedAt      time.Time     `json:"joined_at"`
-	CompletedAt   *time.Time    `json:"completed_at,omitempty"`
+	JoinedAt      time.Time       `json:"joined_at"`
+	CompletedAt   *time.Time      `json:"completed_at,omitempty"`
 }
 
 type ReferralStatus string
@@ -174,71 +174,73 @@ const (
 )
 
 type Referral struct {
-	ID             string        `json:"id"`
-	ReferrerID     string        `json:"referrer_id"`
-	ReferredID     string        `json:"referred_id"`
-	ReferralCode   string        `json:"referral_code"`
-	Status         ReferralStatus `json:"status"`
-	RewardAwarded  bool          `json:"reward_awarded"`
-	AwardedPoints  int           `json:"awarded_points"`
-	AwardedAt      *time.Time    `json:"awarded_at,omitempty"`
-	ReferredAt     time.Time     `json:"referred_at"`
+	ID            string         `json:"id"`
+	ReferrerID    string         `json:"referrer_id"`
+	ReferredID    string         `json:"referred_id"`
+	ReferralCode  string         `json:"referral_code"`
+	Status        ReferralStatus `json:"status"`
+	RewardAwarded bool           `json:"reward_awarded"`
+	AwardedPoints int            `json:"awarded_points"`
+	AwardedAt     *time.Time     `json:"awarded_at,omitempty"`
+	ReferredAt    time.Time      `json:"referred_at"`
 }
 
 type RewardType string
 
 const (
-	RewardDiscount RewardType = "discount"
-	RewardCashback RewardType = "cashback"
+	RewardDiscount  RewardType = "discount"
+	RewardCashback  RewardType = "cashback"
 	RewardFreeMonth RewardType = "free_month"
 )
 
 type Reward struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	Description  string     `json:"description"`
-	PointsCost   int        `json:"points_cost"`
-	ValueNaira   float64    `json:"value_naira"`
-	Type         RewardType `json:"type"`
-	IsActive     bool       `json:"is_active"`
-	MaxRedemptions int      `json:"max_redemptions"`
-	RedeemedCount  int      `json:"redeemed_count"`
-	ExpirationDays int      `json:"expiration_days"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	PointsCost     int        `json:"points_cost"`
+	ValueNaira     float64    `json:"value_naira"`
+	Type           RewardType `json:"type"`
+	IsActive       bool       `json:"is_active"`
+	MaxRedemptions int        `json:"max_redemptions"`
+	RedeemedCount  int        `json:"redeemed_count"`
+	ExpirationDays int        `json:"expiration_days"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 type RedemptionHistory struct {
-	ID           string     `json:"id"`
-	UserID       string     `json:"user_id"`
-	RewardID     string     `json:"reward_id"`
-	RewardName   string     `json:"reward_name"`
-	PointsSpent  int        `json:"points_spent"`
-	ValueNaira   float64    `json:"value_naira"`
-	Status       string     `json:"status"`
-	Reference    string     `json:"reference,omitempty"`
-	RedeemedAt   time.Time  `json:"redeemed_at"`
-	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
-	AppliedAt    *time.Time `json:"applied_at,omitempty"`
+	ID          string     `json:"id"`
+	UserID      string     `json:"user_id"`
+	RewardID    string     `json:"reward_id"`
+	RewardName  string     `json:"reward_name"`
+	PointsSpent int        `json:"points_spent"`
+	ValueNaira  float64    `json:"value_naira"`
+	Status      string     `json:"status"`
+	Reference   string     `json:"reference,omitempty"`
+	RedeemedAt  time.Time  `json:"redeemed_at"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	AppliedAt   *time.Time `json:"applied_at,omitempty"`
 }
 
 type TierDefinition struct {
+	ID          string    `json:"id"`
 	Tier        TierLevel `json:"tier"`
 	MinPoints   int       `json:"min_points"`
 	MaxPoints   int       `json:"max_points,omitempty"`
 	DiscountPct float64   `json:"discount_percent"`
 	Icon        string    `json:"icon"`
 	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type GamificationMetrics struct {
-	TotalUsers    int64 `json:"total_users"`
-	ActiveUsers   int64 `json:"active_users"`
-	TotalPointsIssued int64 `json:"total_points_issued"`
-	TotalPointsRedeemed int64 `json:"total_points_redeemed"`
-	ActiveChallenges int `json:"active_challenges"`
-	TotalChallengesCompleted int `json:"challenges_completed"`
-	AvgPointsPerUser float64 `json:"avg_points_per_user"`
-	TopTierCount   map[string]int64 `json:"top_tier_count"`
-	ReferralsTotal int64 `json:"referrals_total"`
-	RedemptionsToday int64 `json:"redemptions_today"`
+	TotalUsers               int64            `json:"total_users"`
+	ActiveUsers              int64            `json:"active_users"`
+	TotalPointsIssued        int64            `json:"total_points_issued"`
+	TotalPointsRedeemed      int64            `json:"total_points_redeemed"`
+	ActiveChallenges         int              `json:"active_challenges"`
+	TotalChallengesCompleted int              `json:"challenges_completed"`
+	AvgPointsPerUser         float64          `json:"avg_points_per_user"`
+	TopTierCount             map[string]int64 `json:"top_tier_count"`
+	ReferralsTotal           int64            `json:"referrals_total"`
+	RedemptionsToday         int64            `json:"redemptions_today"`
 }

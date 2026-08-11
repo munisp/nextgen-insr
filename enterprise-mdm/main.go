@@ -14,7 +14,7 @@ import (
 	"github.com/insureportal/enterprise_mdm/config"
 	"github.com/insureportal/enterprise_mdm/db"
 	"github.com/insureportal/enterprise_mdm/internal/handlers"
-	"github.com/insureportal/enterprise_mdm/internal/middleware"
+	appmw "github.com/insureportal/enterprise_mdm/internal/middleware"
 	"github.com/insureportal/enterprise_mdm/internal/service"
 	"go.uber.org/zap"
 )
@@ -56,7 +56,7 @@ func main() {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.CORSMiddleware())
+	r.Use(appmw.CORSMiddleware())
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 	r.Use(middleware.RealIP)
@@ -65,7 +65,7 @@ func main() {
 	r.Get("/ready", h.ReadinessCheck)
 
 	r.Group(func(api chi.Router) {
-		api.Use(middleware.APIKeyAuth)
+		api.Use(appmw.APIKeyAuth)
 
 		// Golden Records
 		api.Post("/api/v1/golden-records", h.CreateGoldenRecord)
