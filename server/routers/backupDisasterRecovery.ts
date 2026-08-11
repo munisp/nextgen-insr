@@ -122,34 +122,10 @@ export const backupDisasterRecoveryRouter = router({
       }
     }),
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-      lastBackup: {
-        timestamp: new Date().toISOString(),
-        size: "2.4GB",
-        type: "incremental",
-        status: "completed",
-      },
-      drStatus: {
-        rto: "4 hours",
-        rpo: "1 hour",
-        lastTest: new Date().toISOString(),
-        status: "ready",
-        drRegion: "us-east-1",
-      },
-      recentBackups: [
-        {
-          id: "BK-001",
-          timestamp: new Date().toISOString(),
-          size: "2.4GB",
-          status: "completed",
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Backup/DR dashboard is not implemented yet",
+    });
   }),
 
   getStats: protectedProcedure.query(async () => {
@@ -271,12 +247,10 @@ export const backupDisasterRecoveryRouter = router({
 
   triggerBackup: publicProcedure
     .input(z.object({ type: z.string().optional() }))
-    .mutation(async ({ input }) => {
-      return {
-        backupId: "BK-001",
-        status: "in_progress",
-        startedAt: new Date().toISOString(),
-        type: input.type || "full",
-      };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "On-demand backup trigger is not implemented yet",
+      });
     }),
 });
