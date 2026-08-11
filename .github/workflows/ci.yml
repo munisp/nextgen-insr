@@ -157,7 +157,6 @@ jobs:
     strategy:
       matrix:
         module:
-          - actuarial-module
           - ab-testing-framework
           - agent-commission-management
           - agent-mobile-app

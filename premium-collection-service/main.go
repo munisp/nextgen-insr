@@ -19,6 +19,7 @@ import (
 
 	"premium-collection-service/config"
 	"premium-collection-service/db"
+	"premium-collection-service/models"
 )
 
 // chiURLParam wraps chi.URLParam for safe access
@@ -28,13 +29,13 @@ func chiURLParam(r *http.Request, key string) string {
 
 // Server holds all dependencies
 type Server struct {
-	Config        *config.Config
-	Postgres      *db.Postgres
-	Redis         *db.RedisCache
-	Logger        *zap.SugaredLogger
-	ready         atomic.Bool
-	requestCount  atomic.Int64
-	healthyCount  atomic.Int64
+	Config       *config.Config
+	Postgres     *db.Postgres
+	Redis        *db.RedisCache
+	Logger       *zap.SugaredLogger
+	ready        atomic.Bool
+	requestCount atomic.Int64
+	healthyCount atomic.Int64
 }
 
 // Response wraps standard API responses
@@ -89,11 +90,11 @@ func main() {
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(middleware.GetHead)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: cfg.CORS.AllowedOrigins,
-		AllowedMethods: cfg.CORS.AllowedMethods,
-		AllowedHeaders: cfg.CORS.AllowedHeaders,
+		AllowedOrigins:   cfg.CORS.AllowedOrigins,
+		AllowedMethods:   cfg.CORS.AllowedMethods,
+		AllowedHeaders:   cfg.CORS.AllowedHeaders,
 		AllowCredentials: cfg.CORS.AllowCredentials,
-		MaxAge:         int(cfg.CORS.MaxAge.Seconds()),
+		MaxAge:           int(cfg.CORS.MaxAge.Seconds()),
 	}))
 	r.Use(srv.instrumentMiddleware)
 
@@ -203,28 +204,29 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleReadiness checks database and cache connectivity
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	checks := map[string]string{}
 	resp := map[string]interface{}{
 		"service": "premium-collection-service",
 		"status":  "ready",
 		"version": "1.0.0",
-		"checks":  map[string]string{},
+		"checks":  checks,
 	}
 	statusCode := http.StatusOK
 
 	if err := s.Postgres.Pool.Ping(r.Context()); err != nil {
 		resp["status"] = "not_ready"
-		resp["checks"]["database"] = fmt.Sprintf("unavailable: %s", err.Error())
+		checks["database"] = fmt.Sprintf("unavailable: %s", err.Error())
 		statusCode = http.StatusServiceUnavailable
 	} else {
-		resp["checks"]["database"] = "ok"
+		checks["database"] = "ok"
 	}
 
 	if err := s.Redis.Client.Ping(r.Context()).Err(); err != nil {
 		resp["status"] = "not_ready"
-		resp["checks"]["redis"] = fmt.Sprintf("unavailable: %s", err.Error())
+		checks["redis"] = fmt.Sprintf("unavailable: %s", err.Error())
 		statusCode = http.StatusServiceUnavailable
 	} else {
-		resp["checks"]["redis"] = "ok"
+		checks["redis"] = "ok"
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -235,13 +237,13 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 // handleCollectPayment processes a premium payment through any supported channel
 func (s *Server) handleCollectPayment(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		PolicyID     string  `json:"policy_id"`
-		CustomerID   string  `json:"customer_id"`
-		Amount       float64 `json:"amount"`
-		Currency     string  `json:"currency"`
-		Method       string  `json:"method"`
-		ReferenceID  string  `json:"reference_id"`
-		Metadata     map[string]any `json:"metadata"`
+		PolicyID    string         `json:"policy_id"`
+		CustomerID  string         `json:"customer_id"`
+		Amount      float64        `json:"amount"`
+		Currency    string         `json:"currency"`
+		Method      string         `json:"method"`
+		ReferenceID string         `json:"reference_id"`
+		Metadata    map[string]any `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -258,8 +260,8 @@ func (s *Server) handleCollectPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	feeRate := s.Config.Finance.FeeRate(req.Method)
-	fee := math.Round(req.Amount*feeRate, 2)
-	netAmount := math.Round(req.Amount-fee, 2)
+	fee := math.Round(req.Amount*feeRate*100) / 100
+	netAmount := math.Round((req.Amount-fee)*100) / 100
 
 	if feeRate == 0 {
 		fee = 0
@@ -298,11 +300,11 @@ func (s *Server) handleCollectPayment(w http.ResponseWriter, r *http.Request) {
 
 	// Publish event
 	_ = s.Redis.PublishPaymentEvent(r.Context(), map[string]interface{}{
-		"event":     "payment.collected",
+		"event":      "payment.collected",
 		"payment_id": payment.ID,
-		"policy_id": payment.PolicyID,
-		"amount":    req.Amount,
-		"method":    req.Method,
+		"policy_id":  payment.PolicyID,
+		"amount":     req.Amount,
+		"method":     req.Method,
 	})
 
 	// Increment stats
@@ -313,18 +315,18 @@ func (s *Server) handleCollectPayment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"payment_id":  payment.ID,
-			"receipt_id":  receiptID,
+			"payment_id":   payment.ID,
+			"receipt_id":   receiptID,
 			"reference_id": payment.ReferenceID,
-			"policy_id":   req.PolicyID,
-			"customer_id": req.CustomerID,
-			"amount":      req.Amount,
-			"currency":    req.Currency,
-			"fee":         fee,
-			"fee_rate":    feeRate,
-			"net_amount":  netAmount,
-			"method":      req.Method,
-			"status":      "confirmed",
+			"policy_id":    req.PolicyID,
+			"customer_id":  req.CustomerID,
+			"amount":       req.Amount,
+			"currency":     req.Currency,
+			"fee":          fee,
+			"fee_rate":     feeRate,
+			"net_amount":   netAmount,
+			"method":       req.Method,
+			"status":       "confirmed",
 			"collected_at": time.Now().UTC().Format(time.RFC3339),
 		},
 	})
@@ -365,15 +367,15 @@ func (s *Server) handleRefundPayment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"refund_id":       fmt.Sprintf("REF-%d", time.Now().UnixNano()),
-			"payment_id":      payment.ID,
-			"reference_id":    payment.ReferenceID,
-			"refund_amount":   payment.Amount,
-			"fee_refunded":    payment.Fee,
-			"net_refund":      payment.NetAmount,
-			"status":          "refunded",
-			"refunded_at":     time.Now().UTC().Format(time.RFC3339),
-			"reverse_policy":  true,
+			"refund_id":           fmt.Sprintf("REF-%d", time.Now().UnixNano()),
+			"payment_id":          payment.ID,
+			"reference_id":        payment.ReferenceID,
+			"refund_amount":       payment.Amount,
+			"fee_refunded":        payment.Fee,
+			"net_refund":          payment.NetAmount,
+			"status":              "refunded",
+			"refunded_at":         time.Now().UTC().Format(time.RFC3339),
+			"reverse_policy":      true,
 			"settlement_reversal": true,
 		},
 	})
@@ -382,7 +384,7 @@ func (s *Server) handleRefundPayment(w http.ResponseWriter, r *http.Request) {
 // handleListPayments retrieves payments with filtering and pagination
 func (s *Server) handleListPayments(w http.ResponseWriter, r *http.Request) {
 	policyID := r.URL.Query().Get("policy_id")
-	status := r.URL.Query().Get("status")
+	_ = r.URL.Query().Get("status") // reserved for status filtering
 	limit := 20
 	offset := 0
 
@@ -486,12 +488,12 @@ func (s *Server) handleCollectionStats(w http.ResponseWriter, r *http.Request) {
 // handleCreateInstallmentPlan creates an installment payment plan
 func (s *Server) handleCreateInstallmentPlan(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		PolicyID      string  `json:"policy_id"`
-		CustomerID    string  `json:"customer_id"`
-		TotalAmount   float64 `json:"total_amount"`
-		Months        int     `json:"months"`
-		StartDate     string  `json:"start_date"`
-		InterestRate  float64 `json:"interest_rate"`
+		PolicyID     string  `json:"policy_id"`
+		CustomerID   string  `json:"customer_id"`
+		TotalAmount  float64 `json:"total_amount"`
+		Months       int     `json:"months"`
+		StartDate    string  `json:"start_date"`
+		InterestRate float64 `json:"interest_rate"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -512,7 +514,7 @@ func (s *Server) handleCreateInstallmentPlan(w http.ResponseWriter, r *http.Requ
 
 	// Calculate with interest
 	totalWithInterest := req.TotalAmount * (1 + req.InterestRate*float64(req.Months))
-	installmentAmt := math.Ceil(totalWithInterest/float64(req.Months))
+	installmentAmt := math.Ceil(totalWithInterest / float64(req.Months))
 
 	start := time.Now()
 	if req.StartDate != "" {
@@ -522,22 +524,22 @@ func (s *Server) handleCreateInstallmentPlan(w http.ResponseWriter, r *http.Requ
 	}
 
 	plan := &db.InstallmentPlanDB{
-		ID:              fmt.Sprintf("plan_%d", time.Now().UnixNano()),
-		PolicyID:        req.PolicyID,
-		CustomerID:      req.CustomerID,
-		TotalAmount:     totalWithInterest,
-		Remaining:       totalWithInterest,
-		Installments:    req.Months,
+		ID:                fmt.Sprintf("plan_%d", time.Now().UnixNano()),
+		PolicyID:          req.PolicyID,
+		CustomerID:        req.CustomerID,
+		TotalAmount:       totalWithInterest,
+		Remaining:         totalWithInterest,
+		Installments:      req.Months,
 		InstallmentAmount: installmentAmt,
-		Status:          string(db.InstallmentPending),
-		StartDate:       start.Format("2006-01-02"),
+		Status:            string(db.InstallmentPending),
+		StartDate:         start.Format("2006-01-02"),
 	}
 
 	// Generate schedule entries
 	plan.Schedule = make([]*db.InstallmentEntryDB, req.Months)
 	for i := 0; i < req.Months; i++ {
 		plan.Schedule[i] = &db.InstallmentEntryDB{
-			ID: fmt.Sprintf("entry_%d_%d", time.Now().UnixNano(), i),
+			ID:     fmt.Sprintf("entry_%d_%d", time.Now().UnixNano(), i),
 			PlanID: plan.ID,
 			Amount: installmentAmt,
 			Status: string(db.InstallmentPending),
@@ -631,17 +633,17 @@ func (s *Server) handleGenerateReceipt(w http.ResponseWriter, r *http.Request) {
 	validUntil := time.Now().Add(time.Duration(s.Config.Finance.ReceiptValidityHours) * time.Hour)
 
 	receipt := map[string]interface{}{
-		"id":            receiptID,
-		"payment_id":    payment.ID,
-		"policy_id":     payment.PolicyID,
-		"amount":        payment.Amount,
-		"fee":           payment.Fee,
-		"net_amount":    payment.NetAmount,
-		"method":        payment.Method,
-		"reference_id":  payment.ReferenceID,
-		"issued_at":     time.Now().UTC().Format(time.RFC3339),
-		"valid_until":   validUntil.Format(time.RFC3339),
-		"download_url":  fmt.Sprintf("/api/v1/receipts/%d/download", time.Now().UnixNano()),
+		"id":           receiptID,
+		"payment_id":   payment.ID,
+		"policy_id":    payment.PolicyID,
+		"amount":       payment.Amount,
+		"fee":          payment.Fee,
+		"net_amount":   payment.NetAmount,
+		"method":       payment.Method,
+		"reference_id": payment.ReferenceID,
+		"issued_at":    time.Now().UTC().Format(time.RFC3339),
+		"valid_until":  validUntil.Format(time.RFC3339),
+		"download_url": fmt.Sprintf("/api/v1/receipts/%d/download", time.Now().UnixNano()),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -704,15 +706,15 @@ func (s *Server) handleCreateDunningRecord(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"dunning_id":     dunning.ID,
-			"policy_id":      req.PolicyID,
-			"customer_id":    req.CustomerID,
-			"amount":         req.Amount,
-			"reminder_type":  primaryType,
-			"attempt":        1,
-			"max_attempts":   s.Config.Finance.DunningMaxAttempts,
-			"next_attempt":   nextAttempt.Format(time.RFC3339),
-			"status":         "pending",
+			"dunning_id":    dunning.ID,
+			"policy_id":     req.PolicyID,
+			"customer_id":   req.CustomerID,
+			"amount":        req.Amount,
+			"reminder_type": primaryType,
+			"attempt":       1,
+			"max_attempts":  s.Config.Finance.DunningMaxAttempts,
+			"next_attempt":  nextAttempt.Format(time.RFC3339),
+			"status":        "pending",
 		},
 	})
 }
@@ -731,7 +733,7 @@ func (s *Server) handleGetPendingDunning(w http.ResponseWriter, r *http.Request)
 
 // handleSendDunningReminder sends a dunning reminder
 func (s *Server) handleSendDunningReminder(w http.ResponseWriter, r *http.Request) {
-	id := chiURLParam(r, "id")
+	_ = chiURLParam(r, "id") // record selected from pending queue
 
 	records, err := s.Postgres.GetPendingDunningRecords(r.Context())
 	if err != nil || len(records) == 0 {
@@ -754,15 +756,15 @@ func (s *Server) handleSendDunningReminder(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"dunning_id":       record.ID,
-			"reminder_sent":    true,
-			"reminder_type":    record.ReminderType,
-			"attempt":          record.Attempt,
-			"max_attempts":     s.Config.Finance.DunningMaxAttempts,
-			"next_attempt":     record.NextAttempt,
-			"status":           record.Status,
-			"sent_at":          record.SentAt,
-			"escalated":        record.Status == string(db.DunningEscalated),
+			"dunning_id":    record.ID,
+			"reminder_sent": true,
+			"reminder_type": record.ReminderType,
+			"attempt":       record.Attempt,
+			"max_attempts":  s.Config.Finance.DunningMaxAttempts,
+			"next_attempt":  record.NextAttempt,
+			"status":        record.Status,
+			"sent_at":       record.SentAt,
+			"escalated":     record.Status == string(db.DunningEscalated),
 		},
 	})
 }
@@ -884,8 +886,8 @@ func (s *Server) handleCancelAutoDebit(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"policy_id": policyID,
-			"status":    "cancelled",
+			"policy_id":    policyID,
+			"status":       "cancelled",
 			"cancelled_at": time.Now().UTC().Format(time.RFC3339),
 		},
 	})
@@ -894,10 +896,10 @@ func (s *Server) handleCancelAutoDebit(w http.ResponseWriter, r *http.Request) {
 // handleCreateReconciliation creates or updates a reconciliation record
 func (s *Server) handleCreateReconciliation(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Date               string                     `json:"date"`
-		TotalCollected     float64                    `json:"total_collected"`
-		TotalReconciled    float64                    `json:"total_reconciled"`
-		ChannelBreakdown   []db.ChannelSettlement     `json:"channel_breakdown"`
+		Date             string                     `json:"date"`
+		TotalCollected   float64                    `json:"total_collected"`
+		TotalReconciled  float64                    `json:"total_reconciled"`
+		ChannelBreakdown []models.ChannelSettlement `json:"channel_breakdown"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -933,14 +935,14 @@ func (s *Server) handleCreateReconciliation(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"record_id":        rec.ID,
-			"date":             req.Date,
-			"total_collected":  req.TotalCollected,
-			"total_reconciled": req.TotalReconciled,
-			"total_pending":    rec.TotalPending,
+			"record_id":         rec.ID,
+			"date":              req.Date,
+			"total_collected":   req.TotalCollected,
+			"total_reconciled":  req.TotalReconciled,
+			"total_pending":     rec.TotalPending,
 			"total_discrepancy": rec.TotalDiscrepancy,
 			"discrepancy_count": rec.DiscrepancyCount,
-			"status":           "completed",
+			"status":            "completed",
 		},
 	})
 }

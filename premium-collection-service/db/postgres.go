@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -292,8 +293,12 @@ func (p *Postgres) CreateInstallmentPlan(ctx context.Context, plan *InstallmentP
 	_ = result
 
 	// Generate schedule entries
+	startDate, err := time.Parse("2006-01-02", plan.StartDate)
+	if err != nil {
+		return fmt.Errorf("invalid plan start date: %w", err)
+	}
 	for i := 1; i <= plan.Installments; i++ {
-		dueDate := plan.StartDate.AddDate(0, i-1, 0)
+		dueDate := startDate.AddDate(0, i-1, 0)
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO installment_entries (id, plan_id, installment_number, due_date, amount, status)
 			VALUES ($1, $2, $3, $4, $5, $6)
@@ -484,12 +489,12 @@ func (p *Postgres) GetReconciliationByDate(ctx context.Context, date string) (*R
 
 // PaymentCollectionStats holds aggregate payment statistics
 type PaymentCollectionStats struct {
-	TotalCollected    float64 `json:"total_collected"`
-	TotalFees         float64 `json:"total_fees"`
-	TotalNet          float64 `json:"total_net"`
-	PaymentCount      int64   `json:"payment_count"`
-	ByMethod          []MethodBreakdown `json:"by_method"`
-	ByStatus          []StatusBreakdown   `json:"by_status"`
+	TotalCollected float64           `json:"total_collected"`
+	TotalFees      float64           `json:"total_fees"`
+	TotalNet       float64           `json:"total_net"`
+	PaymentCount   int64             `json:"payment_count"`
+	ByMethod       []MethodBreakdown `json:"by_method"`
+	ByStatus       []StatusBreakdown `json:"by_status"`
 }
 
 // MethodBreakdown shows collection stats per payment method
@@ -568,40 +573,64 @@ func (p *Postgres) GetCollectionStats(ctx context.Context, startDate, endDate st
 
 // PaymentDB is the database model for payments
 type PaymentDB struct {
-	ID           string         `db:"id"`
-	PolicyID     string         `db:"policy_id"`
-	CustomerID   string         `db:"customer_id"`
-	Amount       float64        `db:"amount"`
-	Currency     string         `db:"currency"`
-	Method       string         `db:"method"`
-	Status       string         `db:"status"`
-	Fee          float64        `db:"fee"`
-	FeeRate      float64        `db:"fee_rate"`
-	NetAmount    float64        `db:"net_amount"`
-	ReceiptID    string         `db:"receipt_id"`
-	ReferenceID  string         `db:"reference_id"`
-	SettledAt    *string        `db:"settled_at"`
-	FailedAt     *string        `db:"failed_at"`
-	FailedReason string         `db:"failed_reason"`
-	Metadata     string         `db:"metadata"`
-	CreatedAt    string         `db:"created_at"`
-	UpdatedAt    string         `db:"updated_at"`
+	ID           string  `db:"id"`
+	PolicyID     string  `db:"policy_id"`
+	CustomerID   string  `db:"customer_id"`
+	Amount       float64 `db:"amount"`
+	Currency     string  `db:"currency"`
+	Method       string  `db:"method"`
+	Status       string  `db:"status"`
+	Fee          float64 `db:"fee"`
+	FeeRate      float64 `db:"fee_rate"`
+	NetAmount    float64 `db:"net_amount"`
+	ReceiptID    string  `db:"receipt_id"`
+	ReferenceID  string  `db:"reference_id"`
+	SettledAt    *string `db:"settled_at"`
+	FailedAt     *string `db:"failed_at"`
+	FailedReason string  `db:"failed_reason"`
+	Metadata     string  `db:"metadata"`
+	CreatedAt    string  `db:"created_at"`
+	UpdatedAt    string  `db:"updated_at"`
 }
+
+// Payment and installment status constants (mirror models package values)
+const (
+	PaymentStatusPending   = "pending"
+	PaymentStatusConfirmed = "confirmed"
+	PaymentStatusRefunded  = "refunded"
+	PaymentStatusFailed    = "failed"
+
+	InstallmentPending = "pending"
+	InstallmentDue     = "due"
+	InstallmentPaid    = "paid"
+	InstallmentOverdue = "overdue"
+
+	DunningPending   = "pending"
+	DunningSent      = "sent"
+	DunningEscalated = "escalated"
+
+	DunningEmail    = "email"
+	DunningSMS      = "sms"
+	DunningWhatsApp = "whatsapp"
+
+	AutoDebitPending = "pending"
+	AutoDebitActive  = "active"
+)
 
 // InstallmentPlanDB is the database model for installment plans
 type InstallmentPlanDB struct {
-	ID              string               `db:"id"`
-	PolicyID        string               `db:"policy_id"`
-	CustomerID      string               `db:"customer_id"`
-	TotalAmount     float64              `db:"total_amount"`
-	Remaining       float64              `db:"remaining"`
-	Installments    int                  `db:"installments"`
-	InstallmentAmount float64            `db:"installment_amount"`
-	Status          string               `db:"status"`
-	StartDate       string               `db:"start_date"`
-	Schedule        []*InstallmentEntryDB `db:"-"`
-	CreatedAt       string               `db:"created_at"`
-	UpdatedAt       string               `db:"updated_at"`
+	ID                string                `db:"id"`
+	PolicyID          string                `db:"policy_id"`
+	CustomerID        string                `db:"customer_id"`
+	TotalAmount       float64               `db:"total_amount"`
+	Remaining         float64               `db:"remaining"`
+	Installments      int                   `db:"installments"`
+	InstallmentAmount float64               `db:"installment_amount"`
+	Status            string                `db:"status"`
+	StartDate         string                `db:"start_date"`
+	Schedule          []*InstallmentEntryDB `db:"-"`
+	CreatedAt         string                `db:"created_at"`
+	UpdatedAt         string                `db:"updated_at"`
 }
 
 // InstallmentEntryDB is the database model for installment schedule entries
@@ -620,45 +649,45 @@ type InstallmentEntryDB struct {
 
 // DunningDB is the database model for dunning records
 type DunningDB struct {
-	ID             string         `db:"id"`
-	PolicyID       string         `db:"policy_id"`
-	CustomerID     string         `db:"customer_id"`
-	Amount         float64        `db:"amount"`
-	Attempt        int            `db:"attempt"`
-	Status         string         `db:"status"`
-	ReminderType   string         `db:"reminder_type"`
-	SentAt         *string        `db:"sent_at"`
-	NextAttempt    string         `db:"next_attempt"`
-	Metadata       string         `db:"metadata"`
-	CreatedAt      string         `db:"created_at"`
-	UpdatedAt      string         `db:"updated_at"`
+	ID           string  `db:"id"`
+	PolicyID     string  `db:"policy_id"`
+	CustomerID   string  `db:"customer_id"`
+	Amount       float64 `db:"amount"`
+	Attempt      int     `db:"attempt"`
+	Status       string  `db:"status"`
+	ReminderType string  `db:"reminder_type"`
+	SentAt       *string `db:"sent_at"`
+	NextAttempt  string  `db:"next_attempt"`
+	Metadata     string  `db:"metadata"`
+	CreatedAt    string  `db:"created_at"`
+	UpdatedAt    string  `db:"updated_at"`
 }
 
 // AutoDebitDB is the database model for auto-debit configurations
 type AutoDebitDB struct {
-	ID            string         `db:"id"`
-	PolicyID      string         `db:"policy_id"`
-	CustomerID    string         `db:"customer_id"`
-	BankName      string         `db:"bank_name"`
-	AccountNumber string         `db:"account_number"`
-	AccountName   string         `db:"account_name"`
-	Status        string         `db:"status"`
-	NextDebitDate *string        `db:"next_debit_date"`
-	Metadata      string         `db:"metadata"`
-	CreatedAt     string         `db:"created_at"`
-	UpdatedAt     string         `db:"updated_at"`
+	ID            string  `db:"id"`
+	PolicyID      string  `db:"policy_id"`
+	CustomerID    string  `db:"customer_id"`
+	BankName      string  `db:"bank_name"`
+	AccountNumber string  `db:"account_number"`
+	AccountName   string  `db:"account_name"`
+	Status        string  `db:"status"`
+	NextDebitDate *string `db:"next_debit_date"`
+	Metadata      string  `db:"metadata"`
+	CreatedAt     string  `db:"created_at"`
+	UpdatedAt     string  `db:"updated_at"`
 }
 
 // ReconciliationDB is the database model for reconciliation records
 type ReconciliationDB struct {
-	ID               string    `db:"id"`
-	Date             string    `db:"date"`
-	TotalCollected   float64   `db:"total_collected"`
-	TotalReconciled  float64   `db:"total_reconciled"`
-	TotalPending     float64   `db:"total_pending"`
-	TotalDiscrepancy float64   `db:"total_discrepancy"`
-	DiscrepancyCount int       `db:"discrepancy_count"`
-	ChannelBreakdown string    `db:"channel_breakdown"`
-	Status           string    `db:"status"`
-	CreatedAt        string    `db:"created_at"`
+	ID               string  `db:"id"`
+	Date             string  `db:"date"`
+	TotalCollected   float64 `db:"total_collected"`
+	TotalReconciled  float64 `db:"total_reconciled"`
+	TotalPending     float64 `db:"total_pending"`
+	TotalDiscrepancy float64 `db:"total_discrepancy"`
+	DiscrepancyCount int     `db:"discrepancy_count"`
+	ChannelBreakdown string  `db:"channel_breakdown"`
+	Status           string  `db:"status"`
+	CreatedAt        string  `db:"created_at"`
 }

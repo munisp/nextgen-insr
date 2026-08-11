@@ -1,24 +1,22 @@
 package main
 
 import (
-	"fmt"
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"database/sql"
-
-	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
-
 	_ "github.com/lib/pq"
 )
 
@@ -66,7 +64,6 @@ func initDB() {
 		log.Printf("WARN: table creation failed: %v", err)
 	}
 }
-
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +169,42 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// ─── Metrics & Probes ────────────────────────────────────────────────────────
+
+var (
+	metricsReqCount  int64
+	metricsStartTime = time.Now()
+)
+
+func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
+	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
+}
+
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		return
+	}
+	if err := db.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
 func main() {
 	initDB()
 	initKafka()
@@ -195,17 +228,25 @@ func main() {
 	r.Get("/metrics", prodMetricsHandler)
 
 	port := os.Getenv("PORT")
-	if port == "" { port = "8127" }
+	if port == "" {
+		port = "8127"
+	}
 	log.Printf("Mobile Money Service starting on :%s", port)
-	srv := &http.Server{Addr: ":"+port, Handler: tracingMiddleware(corsMiddleware(r)), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
-	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
+	srv := &http.Server{Addr: ":" + port, Handler: tracingMiddleware(corsMiddleware(r)), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"mobile-money-service"}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Forced shutdown: %v", err)
+	}
 	log.Println("Server stopped")
 }
 
@@ -218,7 +259,7 @@ func collectPremium(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&body)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"transaction_id": "MMT-" + time.Now().Format("20060102150405"),
-		"amount": body.Amount, "operator": body.Operator, "status": "successful",
+		"amount":         body.Amount, "operator": body.Operator, "status": "successful",
 		"settlement": "T+0", "reference": body.WalletID,
 	})
 }
@@ -226,7 +267,7 @@ func collectPremium(w http.ResponseWriter, r *http.Request) {
 func disburseToClaim(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"payout_id": "MMP-" + time.Now().Format("20060102150405"),
-		"status": "completed", "channel": "mobile_wallet", "settlement": "instant",
+		"status":    "completed", "channel": "mobile_wallet", "settlement": "instant",
 	})
 }
 
