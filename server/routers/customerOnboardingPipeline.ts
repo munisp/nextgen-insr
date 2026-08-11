@@ -232,21 +232,16 @@ export const customerOnboardingPipelineRouter = router({
     }),
 
   getMetrics: protectedProcedure.query(async () => {
-    const db = (await getDb())!;
-    const [{ count }] = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(users)
-      .limit(100);
-    return {
-      totalOnboarded: Number(count),
-      avgDaysToComplete: 3.2,
-      dropoffRate: 0.12,
-      conversionRate: 0.88,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "Onboarding metrics are not implemented yet (avg days, drop-off and conversion rates were previously fabricated)",
+    });
   }),
-  getStats: protectedProcedure.query(async () => ({
-    totalRecords: 0,
-    activeRecords: 0,
-    lastUpdated: new Date().toISOString(),
-  })),
+  getStats: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Onboarding pipeline stats are not implemented yet",
+    });
+  }),
 });
