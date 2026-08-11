@@ -2,19 +2,19 @@ package temporaltigerbeetle
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"math/big"
 	"time"
 
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
-	tb "github.com/tigerbeetle/tigerbeetle-go"
-	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
+	types "github.com/tigerbeetle/tigerbeetle-go"
 	"github.com/google/uuid"
 )
 
 type TigerBeetleClient struct {
-	client tb.Client
+	client types.Client
 }
 
 type TransferRequest struct {
@@ -46,7 +46,7 @@ type AccountBalance struct {
 }
 
 func NewTigerBeetleClient(clusterID types.Uint128, addresses []string) (*TigerBeetleClient, error) {
-	client, err := tb.NewClient(clusterID, addresses)
+	client, err := types.NewClient(clusterID, addresses)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TigerBeetle client: %w", err)
 	}
@@ -73,7 +73,7 @@ func (c *TigerBeetleClient) CreateAccount(ctx context.Context, accountID types.U
 	}
 
 	if len(results) > 0 {
-		return fmt.Errorf("account creation failed with result: %v", results[0].Result)
+		return fmt.Errorf("account creation failed with result: %v", results[0].Status)
 	}
 
 	return nil
@@ -92,7 +92,7 @@ func (c *TigerBeetleClient) CreateTransfer(ctx context.Context, req TransferRequ
 			ID:              transferID,
 			DebitAccountID:  req.DebitAccountID,
 			CreditAccountID: req.CreditAccountID,
-			Amount:          req.Amount,
+			Amount:          uint64ToUint128(req.Amount),
 			Ledger:          req.Ledger,
 			Code:            req.Code,
 			Flags:           flags,
@@ -115,10 +115,10 @@ func (c *TigerBeetleClient) CreateTransfer(ctx context.Context, req TransferRequ
 		return &TransferResult{
 			TransferID:   req.TransferID,
 			Status:       "failed",
-			ErrorCode:    fmt.Sprintf("%d", results[0].Result),
+			ErrorCode:    fmt.Sprintf("%d", results[0].Status),
 			ErrorMessage: "Transfer creation failed",
 			Timestamp:    time.Now(),
-		}, fmt.Errorf("transfer creation failed with result: %v", results[0].Result)
+		}, fmt.Errorf("transfer creation failed with result: %v", results[0].Status)
 	}
 
 	return &TransferResult{
@@ -157,10 +157,10 @@ func (c *TigerBeetleClient) PostPendingTransfer(ctx context.Context, transferID,
 		return &TransferResult{
 			TransferID:   transferID,
 			Status:       "failed",
-			ErrorCode:    fmt.Sprintf("%d", results[0].Result),
+			ErrorCode:    fmt.Sprintf("%d", results[0].Status),
 			ErrorMessage: "Post pending transfer failed",
 			Timestamp:    time.Now(),
-		}, fmt.Errorf("post pending transfer failed with result: %v", results[0].Result)
+		}, fmt.Errorf("post pending transfer failed with result: %v", results[0].Status)
 	}
 
 	return &TransferResult{
@@ -199,10 +199,10 @@ func (c *TigerBeetleClient) VoidPendingTransfer(ctx context.Context, transferID,
 		return &TransferResult{
 			TransferID:   transferID,
 			Status:       "failed",
-			ErrorCode:    fmt.Sprintf("%d", results[0].Result),
+			ErrorCode:    fmt.Sprintf("%d", results[0].Status),
 			ErrorMessage: "Void pending transfer failed",
 			Timestamp:    time.Now(),
-		}, fmt.Errorf("void pending transfer failed with result: %v", results[0].Result)
+		}, fmt.Errorf("void pending transfer failed with result: %v", results[0].Status)
 	}
 
 	return &TransferResult{
@@ -223,14 +223,18 @@ func (c *TigerBeetleClient) GetAccountBalance(ctx context.Context, accountID typ
 	}
 
 	account := accounts[0]
-	netBalance := int64(account.CreditsPosted) - int64(account.DebitsPosted)
+	creditsPosted, _ := account.CreditsPosted.Uint64()
+	debitsPosted, _ := account.DebitsPosted.Uint64()
+	creditsPending, _ := account.CreditsPending.Uint64()
+	debitsPending, _ := account.DebitsPending.Uint64()
+	netBalance := int64(creditsPosted) - int64(debitsPosted)
 
 	return &AccountBalance{
 		AccountID:      accountID,
-		DebitsPosted:   account.DebitsPosted,
-		CreditsPosted:  account.CreditsPosted,
-		DebitsPending:  account.DebitsPending,
-		CreditsPending: account.CreditsPending,
+		DebitsPosted:   debitsPosted,
+		CreditsPosted:  creditsPosted,
+		DebitsPending:  debitsPending,
+		CreditsPending: creditsPending,
 		NetBalance:     netBalance,
 	}, nil
 }
@@ -342,7 +346,7 @@ func PaymentWorkflow(ctx workflow.Context, input PaymentWorkflowInput) (*Payment
 
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Second,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -441,7 +445,7 @@ func ClaimPaymentWorkflow(ctx workflow.Context, input PaymentWorkflowInput) (*Pa
 
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Second,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -495,15 +499,11 @@ func ClaimPaymentWorkflow(ctx workflow.Context, input PaymentWorkflowInput) (*Pa
 	}, nil
 }
 
+func uint64ToUint128(v uint64) types.Uint128 {
+	return types.BigIntToUint128(new(big.Int).SetUint64(v))
+}
+
 func parseTransferID(transferID string) types.Uint128 {
 	id := uuid.MustParse(transferID)
-	high := uint64(id[0])<<56 | uint64(id[1])<<48 | uint64(id[2])<<40 | uint64(id[3])<<32 |
-		uint64(id[4])<<24 | uint64(id[5])<<16 | uint64(id[6])<<8 | uint64(id[7])
-	low := uint64(id[8])<<56 | uint64(id[9])<<48 | uint64(id[10])<<40 | uint64(id[11])<<32 |
-		uint64(id[12])<<24 | uint64(id[13])<<16 | uint64(id[14])<<8 | uint64(id[15])
-
-	return types.Uint128{
-		High: high,
-		Low:  low,
-	}
+	return types.BytesToUint128(id)
 }
