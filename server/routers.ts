@@ -16,8 +16,7 @@ import {
 import { insurancePolicyQuoteManagerRouter } from "./routers/insurancePolicyQuoteManager";
 import { insuranceProductCatalogRouter } from "./routers/insuranceProductCatalog";
 // Sprint 98: Missing router imports
-import { insuranceProductCatalogRouter } from "./routers/insuranceProductCatalog";
- // Insurance policy purchase orders
+// Insurance policy purchase orders
 import { insuranceServiceFleetRouter } from "./routers/posTerminalFleet";
 import { remittanceRouter } from "./routers/remittance";
 import { terminalLeasingRouter } from "./routers/terminalLeasing";
@@ -340,6 +339,7 @@ import { agentPerformanceLeaderboardRouter } from "./routers/agentPerformanceLea
 import { automatedSettlementSchedulerRouter } from "./routers/automatedSettlementScheduler";
 import { customerWalletSystemRouter } from "./routers/customerWalletSystem";
 import { merchantAnalyticsDashRouter } from "./routers/merchantAnalyticsDash";
+import { posServiceUpdateRouter } from "./routers/posServiceUpdate";
 import { firmwareOTARouter } from "./routers/firmwareOTA";
 import { transactionReceiptGeneratorRouter } from "./routers/transactionReceiptGenerator";
 import { agentLoanAdvanceRouter } from "./routers/agentLoanAdvance";
@@ -873,6 +873,7 @@ export const appRouter = router({
   automatedSettlementScheduler: automatedSettlementSchedulerRouter,
   customerWalletSystem: customerWalletSystemRouter,
   merchantAnalyticsDash: merchantAnalyticsDashRouter,
+  posServiceUpdate: posServiceUpdateRouter,
   firmwareOTA: firmwareOTARouter,
   transactionReceiptGenerator: transactionReceiptGeneratorRouter,
   agentLoanAdvance: agentLoanAdvanceRouter,
@@ -1046,7 +1047,7 @@ export const appRouter = router({
   billingLedger: billingLedgerRouter,
   revenueReconciliation: revenueReconciliationRouter,
   liveBillingDashboard: liveBillingDashboardRouter,
-  // Sprint 80 — Billing RBAC, Audit, Tenant Onboarding
+  // Sprint 80: Billing RBAC, Audit, Tenant Onboarding
   billingRbac: billingRbacRouter,
   billingAudit: billingAuditRouter,
   tenantBillingOnboarding: tenantBillingOnboardingRouter,
@@ -1107,7 +1108,8 @@ export const appRouter = router({
   kycEnforcement: kycEnforcementRouter,
   // Insurance KPI Dashboards — all 16 roles
   insuranceKpiDashboard: insuranceKpiDashboardRouter,
-  // E-Commerce, Remittance & Terminal Fleet (Sprint 98 gap closure)  insuranceProductCatalog: insuranceProductCatalogRouter,  insuranceServiceFleet: insuranceServiceFleetRouter,
+  // E-Commerce, Remittance & Terminal Fleet (Sprint 98 gap closure)
+  insuranceServiceFleet: insuranceServiceFleetRouter,
   remittance: remittanceRouter,
   terminalLeasing: terminalLeasingRouter,
   crossBorderRemittanceHub: crossBorderRemittanceHubRouter,
