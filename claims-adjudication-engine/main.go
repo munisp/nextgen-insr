@@ -69,15 +69,14 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 		startTime: time.Now(),
 	}
 
-	// Initialize database
+	// Initialize database (required: the engine persists claims, decisions and
+	// fraud flags to PostgreSQL and does not support in-memory operation)
 	repo, err := db.NewClaimsRepository(&cfg.Database, logger)
 	if err != nil {
-		logger.Error("Failed to initialize database", zap.Error(err))
-		engine.healthy.Store(false)
-	} else {
-		engine.db = repo
-		logger.Info("Database initialized successfully")
+		return nil, fmt.Errorf("failed to initialize database (set DATABASE_URL or DB_* variables): %w", err)
 	}
+	engine.db = repo
+	logger.Info("Database initialized successfully")
 
 	// Initialize cache
 	cache, err := db.NewClaimCache(&cfg.Redis, repo, logger)
