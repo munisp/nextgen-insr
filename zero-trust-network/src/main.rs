@@ -45,7 +45,6 @@ async fn get_mesh_status() -> HttpResponse {
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Mutex;
-use std::env;
 
 struct RedisClient {
     addr: String,

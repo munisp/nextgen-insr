@@ -17,7 +17,7 @@ static XSS: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)(<script[^>]*>|javascript:|on\w+\s*=|<iframe|<object|<embed|<link[^>]*rel\s*=\s*['"]stylesheet|eval\s*\(|document\.cookie|window\.location)"#).unwrap()
 });
 static PATH_TRAVERSAL: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\..%2f|%252e%252e)"#).unwrap()
+    Regex::new(r#"(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\.\.%2f|%252e%252e)"#).unwrap()
 });
 static COMMAND_INJECTION: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)(;\s*(?:ls|cat|pwd|whoami|id|uname|wget|curl|bash|sh|cmd|powershell)|&&\s*(?:ls|cat|pwd|whoami)|\|\s*(?:ls|cat|pwd|whoami))").unwrap()
