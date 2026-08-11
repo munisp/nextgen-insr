@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+
+const notImplemented = () =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: "Currency hedging is not implemented yet",
+  });
 
 export const currencyHedgingRouter = router({
   list: protectedProcedure
@@ -13,76 +17,18 @@ export const currencyHedgingRouter = router({
         search: z.string().optional(),
       })
     )
-    .query(async ({ input }) => {
-      try {
-        const database = await getDb();
-        if (!database)
-          return {
-            data: [],
-            items: [],
-            total: 0,
-            limit: input.limit,
-            offset: input.offset,
-          };
-        const results = await database
-          .select()
-          .from(auditLog)
-          .orderBy(desc(auditLog.id))
-          .limit(input.limit)
-          .offset(input.offset);
-
-        const totalRows = await database
-          .select({ total: count() })
-          .from(auditLog);
-        const totalResult = Array.isArray(totalRows) ? totalRows[0] : totalRows;
-
-        return {
-          data: Array.isArray(results) ? results : [],
-          items: Array.isArray(results) ? results : [],
-          total: totalResult?.total ?? 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      } catch {
-        return {
-          data: [],
-          items: [],
-          total: 0,
-          limit: input.limit,
-          offset: input.offset,
-        };
-      }
+    .query(async () => {
+      throw notImplemented();
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database)
-        return { data: [], items: [], total: 0, limit: 0, offset: 0 };
-      const [record] = await database
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.id, input.id))
-        .limit(1);
-
-      if (!record) {
-        throw new Error(`Record with id ${input.id} not found`);
-      }
-      return record;
+    .query(async () => {
+      throw notImplemented();
     }),
 
   getSummary: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return { data: [], items: [], total: 0, limit: 0, offset: 0 };
-    const _totalRows = await database.select({ total: count() }).from(auditLog);
-    const totalResult = Array.isArray(_totalRows) ? _totalRows[0] : _totalRows;
-
-    return {
-      totalRecords: totalResult?.total ?? 0,
-      lastUpdated: new Date().toISOString(),
-    };
+    throw notImplemented();
   }),
 
   getRecent: protectedProcedure
@@ -92,24 +38,10 @@ export const currencyHedgingRouter = router({
         limit: z.number().min(1).max(50).default(10),
       })
     )
-    .query(async ({ input }) => {
-      const database = await getDb();
-      if (!database)
-        return { data: [], items: [], total: 0, limit: 0, offset: 0 };
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-
-      const results = await database
-        .select()
-        .from(auditLog)
-        .orderBy(desc(auditLog.id))
-        .limit(input.limit);
-
-      return results;
+    .query(async () => {
+      throw notImplemented();
     }),
-  getStats: protectedProcedure.query(async () => ({
-    totalRecords: 0,
-    activeRecords: 0,
-    lastUpdated: new Date().toISOString(),
-  })),
+  getStats: protectedProcedure.query(async () => {
+    throw notImplemented();
+  }),
 });
