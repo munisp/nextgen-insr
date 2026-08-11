@@ -142,16 +142,16 @@ export const advancedRateLimiterRouter = router({
     }),
 
   getBlockedIps: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Blocked IP tracking is not implemented yet",
+    });
   }),
 
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalRecords: 0,
-      activeRecords: 0,
-      lastUpdated: new Date().toISOString(),
-      uptime: 99.9,
-      version: "1.0.0",
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Rate limiter stats are not implemented yet",
+    });
   }),
 });
