@@ -6,7 +6,7 @@
  *   1. Twilio (primary) — global coverage, reliable delivery
  *   2. Africa's Talking (secondary) — optimized for African markets
  *   3. Termii (tertiary) — existing integration for Nigerian numbers
- *   4. Console (dev fallback) — logs to structured logger
+ *   4. Console (dev-only fallback) — logs to structured logger
  *
  * Features:
  *   - Automatic failover between providers
@@ -15,6 +15,11 @@
  *   - Template rendering for common message types
  *   - Retry logic with exponential backoff
  *   - Phone number normalization (E.164)
+ *
+ * MOCKWARE FIX: The console "provider" previously reported success even in
+ * production. It is now disabled when NODE_ENV=production; with no real
+ * provider configured the service returns a degraded failure
+ * ("SMS provider not configured") instead of faking delivery.
  *
  * Environment variables:
  *   TWILIO_ACCOUNT_SID    — Twilio Account SID
@@ -46,6 +51,7 @@ export interface SmsResult {
   error?: string;
   timestamp: Date;
   cost?: number;
+  degraded?: boolean;
 }
 
 export interface SmsDeliveryLog {
@@ -100,8 +106,9 @@ const smsProviders: SmsProviderConfig[] = [
     lastResetAt: Date.now(),
   },
   {
+    // Development-only fallback: never fake SMS delivery in production.
     name: "console",
-    enabled: true,
+    enabled: process.env.NODE_ENV !== "production",
     priority: 99,
     rateLimit: 999,
     sentThisMinute: 0,
@@ -287,12 +294,14 @@ async function sendViaTermii(msg: SmsMessage): Promise<{ messageId: string }> {
   return { messageId: data.message_id ?? `termii_${Date.now()}` };
 }
 
+// Development-only console fallback: logs instead of sending. Never used in
+// production (provider is disabled when NODE_ENV=production).
 async function sendViaConsole(msg: SmsMessage): Promise<{ messageId: string }> {
   logger.info(
     { service: "sms", provider: "console", to: msg.to, bodyPreview: msg.body.substring(0, 100) },
-    `[SmsService/DEV] Would send SMS to ${msg.to}`
+    `[SmsService/DEV-ONLY — no SMS sent] Would send SMS to ${msg.to}`
   );
-  return { messageId: `sms_console_${Date.now()}` };
+  return { messageId: `sms_console_dev_${Date.now()}` };
 }
 
 // ── Provider Dispatch ───────────────────────────────────────────────────────
@@ -350,6 +359,32 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
     .filter(p => p.enabled)
     .sort((a, b) => a.priority - b.priority);
 
+  // No real SMS provider configured (production): fail loudly instead of
+  // pretending a console log is a delivery.
+  if (sortedProviders.length === 0) {
+    const result: SmsResult = {
+      success: false,
+      degraded: true,
+      provider: "console",
+      error: "SMS provider not configured",
+      timestamp: new Date(),
+    };
+    logDelivery({
+      id: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      to: normalizedTo,
+      body: msg.body,
+      provider: "console",
+      status: "failed",
+      error: result.error,
+      sentAt: new Date(),
+    });
+    logger.error(
+      { service: "sms", to: normalizedTo },
+      "[SmsService] SMS provider not configured — message not sent"
+    );
+    return result;
+  }
+
   for (const provider of sortedProviders) {
     if (!checkProviderRateLimit(provider)) {
       logger.info(
@@ -386,6 +421,7 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
         provider: provider.name,
         messageId: result.messageId,
         cost: result.cost,
+        degraded: provider.name === "console", // console = dev fallback, not real delivery
         timestamp: new Date(),
       };
     } catch (err) {

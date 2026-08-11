@@ -8,9 +8,11 @@ import { logger } from './_core/logger';
  * pinReset, settlement, smsReceipt, disputes) uses the same API client and
  * graceful-fallback behaviour.
  *
- * When TERMII_API_KEY is absent the helper logs to console and returns a
- * synthetic CONSOLE-{timestamp} messageId so callers can treat it as success
- * without crashing.
+ * MOCKWARE FIX: When TERMII_API_KEY is absent the helper no longer fakes
+ * success. In production it returns a degraded failure
+ * ({success:false, degraded:true, error:"SMS provider not configured"}).
+ * The console fallback only applies outside production and is clearly
+ * labelled as a development fallback.
  */
 
 const TERMII_URL = "https://api.ng.termii.com/api/sms/send";
@@ -19,6 +21,7 @@ export interface SmsResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  degraded?: boolean;
 }
 
 /**
@@ -32,9 +35,23 @@ export async function sendSms(to: string, message: string): Promise<SmsResult> {
   const apiKey = process.env.TERMII_API_KEY ?? ENV.termiiApiKey;
 
   if (!apiKey) {
-    // Graceful fallback — log to console when API key is not configured.
-    logger.info(`[SMS Console Fallback] To: ${to}\n${message}\n`);
-    return { success: true, messageId: `CONSOLE-${Date.now()}` };
+    if (process.env.NODE_ENV === "production") {
+      // Honest degraded failure — never fake delivery in production.
+      logger.error(`[SMS] Termii API key not configured — cannot send SMS to ${to}`);
+      return {
+        success: false,
+        degraded: true,
+        error: "SMS provider not configured",
+      };
+    }
+    // Development-only console fallback (labelled — not a real send).
+    logger.info(`[SMS DEV-ONLY Console Fallback — no SMS sent] To: ${to}\n${message}\n`);
+    return {
+      success: true,
+      degraded: true,
+      messageId: `CONSOLE-DEV-${Date.now()}`,
+      error: "SMS provider not configured — logged to console (development only)",
+    };
   }
 
   try {
