@@ -61,358 +61,6 @@ var supportedBanks = []db.BankDB{
 	{Code: "050", Name: "Moniepoint MFB", NIPEnabled: true},
 }
 
-var db *sql.DB
-
-func initDB() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dsn)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
-		return
-	}
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
-		db = nil
-		return
-	}
-	log.Printf("Connected to PostgreSQL for nigerian_bank_integrations")
-
-	// Create table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS nigerian_bank_integrations (
-		id SERIAL PRIMARY KEY,
-		data JSONB NOT NULL DEFAULT '{}',
-		status VARCHAR(50) DEFAULT 'active',
-		created_at TIMESTAMPTZ DEFAULT NOW(),
-		updated_at TIMESTAMPTZ DEFAULT NOW(),
-		tenant_id INTEGER DEFAULT 1
-	)`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
-func tracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := r.Header.Get("X-Request-ID")
-		if requestID == "" {
-			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-ID", requestID)
-		start := time.Now()
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
-	})
-}
-
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-var (
-	rateLimitMu    sync.Mutex
-	rateLimitStore = make(map[string][]time.Time)
-)
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		rateLimitMu.Lock()
-		now := time.Now()
-		window := now.Add(-1 * time.Minute)
-		var recent []time.Time
-		for _, t := range rateLimitStore[ip] {
-			if t.After(window) {
-				recent = append(recent, t)
-			}
-		}
-		if len(recent) >= 100 {
-			rateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
-			return
-		}
-		recent = append(recent, now)
-		rateLimitStore[ip] = recent
-		rateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
-
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
-// --- Production Middleware ---
-
-type statusResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.statusCode = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-// Tracing middleware - adds X-Request-ID to all requests
-func prodTracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqID := r.Header.Get("X-Request-Id")
-		if reqID == "" {
-			reqID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-Id", reqID)
-		start := time.Now()
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf(`{"level":"debug","msg":"request","method":"%s","path":"%s","status":%d,"duration":"%s","request_id":"%s"}`, r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
-	})
-}
-
-// CORS middleware - handles preflight and sets headers
-func prodCorsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Rate limiting - token bucket per IP, 100 req/min
-var (
-	prodRateLimitMu      sync.Mutex
-	prodRateLimitBuckets = make(map[string]*prodTokenBucket)
-)
-
-type prodTokenBucket struct {
-	tokens     float64
-	lastRefill time.Time
-}
-
-func prodRateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		prodRateLimitMu.Lock()
-		bucket, ok := prodRateLimitBuckets[ip]
-		if !ok {
-			bucket = &prodTokenBucket{tokens: 100, lastRefill: time.Now()}
-			prodRateLimitBuckets[ip] = bucket
-		}
-		elapsed := time.Since(bucket.lastRefill).Seconds()
-		bucket.tokens = math.Min(100, bucket.tokens+elapsed*(100.0/60.0))
-		bucket.lastRefill = time.Now()
-		if bucket.tokens < 1 {
-			prodRateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
-			return
-		}
-		bucket.tokens--
-		prodRateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Prometheus-compatible metrics
-var (
-	prodMetricsReqCount   int64
-	prodMetricsErrCount   int64
-	prodMetricsStartTime  = time.Now()
-)
-
-func prodMetricsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&prodMetricsReqCount, 1)
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		if wrapped.statusCode >= 400 {
-			atomic.AddInt64(&prodMetricsErrCount, 1)
-		}
-	})
-}
-
-func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(prodMetricsStartTime).Seconds()
-	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
-	errCount := atomic.LoadInt64(&prodMetricsErrCount)
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
-}
-
-// Panic recovery middleware - catches panics and returns 500
-func prodRecoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
-				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-
-var db *sql.DB
-
-func initDB() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v", err)
-		return
-	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v", err)
-		return
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"nigerian-bank-integrations","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS bank_transactions (id TEXT PRIMARY KEY, bank_code TEXT NOT NULL, account_number TEXT, amount NUMERIC(15,2), direction TEXT, reference TEXT, narration TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMPTZ DEFAULT NOW())`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
-
 func main() {
 	cfg := config.NewConfig()
 	logger, _ := zap.NewProduction()
@@ -514,22 +162,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	resp := map[string]interface{}{"service": "nigerian-bank-integrations", "status": "ready", "checks": map[string]string{}}
+	checks := map[string]string{}
+	resp := map[string]interface{}{"service": "nigerian-bank-integrations", "status": "ready", "checks": checks}
 	statusCode := http.StatusOK
 
 	if err := s.Postgres.Pool.Ping(r.Context()); err != nil {
 		resp["status"] = "not_ready"
-		resp["checks"]["database"] = fmt.Sprintf("unavailable: %s", err.Error())
+		checks["database"] = fmt.Sprintf("unavailable: %s", err.Error())
 		statusCode = http.StatusServiceUnavailable
 	} else {
-		resp["checks"]["database"] = "ok"
+		checks["database"] = "ok"
 	}
 	if err := s.Redis.Client.Ping(r.Context()).Err(); err != nil {
 		resp["status"] = "not_ready"
-		resp["checks"]["redis"] = fmt.Sprintf("unavailable: %s", err.Error())
+		checks["redis"] = fmt.Sprintf("unavailable: %s", err.Error())
 		statusCode = http.StatusServiceUnavailable
 	} else {
-		resp["checks"]["redis"] = "ok"
+		checks["redis"] = "ok"
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -545,7 +194,9 @@ func (s *Server) handleListBanks(w http.ResponseWriter, r *http.Request) {
 		"nip_enabled": func() int {
 			n := 0
 			for _, b := range supportedBanks {
-				if b.NIPEnabled { n++ }
+				if b.NIPEnabled {
+					n++
+				}
 			}
 			return n
 		}(),
@@ -592,22 +243,22 @@ func (s *Server) handleVerifyAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accountName := fmt.Sprintf("ACCOUNT HOLDER %s", req.AccountNumber[len(req.AccountNumber)-4:])
-	status := string(db.AccountActive)
+	status := "active"
 
 	expiryAt := time.Now().Add(s.Config.Bank.NameEnquiryTTL)
 
 	verification := &db.VerificationDB{
-		ID:          fmt.Sprintf("ver_%d", time.Now().UnixNano()),
+		ID:            fmt.Sprintf("ver_%d", time.Now().UnixNano()),
 		AccountNumber: req.AccountNumber,
-		BankCode:    req.BankCode,
-		BankName:    bankName,
-		AccountName: accountName,
-		Status:      status,
-		AccountType: "savings",
-		Branch:      "Head Office",
-		VerifiedAt:  time.Now().Format(time.RFC3339),
-		ExpiryAt:    expiryAt.Format(time.RFC3339),
-		CreatedAt:   time.Now().Format(time.RFC3339),
+		BankCode:      req.BankCode,
+		BankName:      bankName,
+		AccountName:   accountName,
+		Status:        status,
+		AccountType:   "savings",
+		Branch:        "Head Office",
+		VerifiedAt:    time.Now().Format(time.RFC3339),
+		ExpiryAt:      expiryAt.Format(time.RFC3339),
+		CreatedAt:     time.Now().Format(time.RFC3339),
 	}
 
 	// Cache the verification
@@ -650,16 +301,16 @@ func (s *Server) handleGetVerification(w http.ResponseWriter, r *http.Request) {
 // handleInitiateTransfer creates and processes a NIP transfer
 func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SourceAccount      string  `json:"source_account"`
-		SourceBankCode     string  `json:"source_bank_code"`
-		DestinationAccount string  `json:"destination_account"`
-		DestinationBankCode string `json:"destination_bank_code"`
-		Amount             float64 `json:"amount"`
-		Currency           string  `json:"currency"`
-		Description        string  `json:"description"`
-		Reference          string  `json:"reference"`
-		Channel            string  `json:"channel"`
-		CallbackURL        string  `json:"callback_url"`
+		SourceAccount       string  `json:"source_account"`
+		SourceBankCode      string  `json:"source_bank_code"`
+		DestinationAccount  string  `json:"destination_account"`
+		DestinationBankCode string  `json:"destination_bank_code"`
+		Amount              float64 `json:"amount"`
+		Currency            string  `json:"currency"`
+		Description         string  `json:"description"`
+		Reference           string  `json:"reference"`
+		Channel             string  `json:"channel"`
+		CallbackURL         string  `json:"callback_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -691,7 +342,7 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Calculate fee
-	fee := math.Round(req.Amount*s.Config.Bank.DefaultFeePercent, 2)
+	fee := math.Round(req.Amount*s.Config.Bank.DefaultFeePercent*100) / 100
 
 	// Generate reference
 	if req.Reference == "" {
@@ -707,25 +358,25 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 	}
 
 	transfer := &db.TransferDB{
-		ID:                fmt.Sprintf("txn_%d", time.Now().UnixNano()),
-		Reference:         req.Reference,
-		SourceAccount:     req.SourceAccount,
-		SourceBankCode:    req.SourceBankCode,
-		DestinationAccount: req.DestinationAccount,
+		ID:                  fmt.Sprintf("txn_%d", time.Now().UnixNano()),
+		Reference:           req.Reference,
+		SourceAccount:       req.SourceAccount,
+		SourceBankCode:      req.SourceBankCode,
+		DestinationAccount:  req.DestinationAccount,
 		DestinationBankCode: req.DestinationBankCode,
-		DestinationBank:    "Unknown",
-		DestinationName:    "Account Holder",
-		Amount:            req.Amount,
-		Currency:          req.Currency,
-		Fee:               fee,
-		Description:       req.Description,
-		Channel:           channel,
-		Status:            string(db.TransferSuccess),
-		TxnDate:           time.Now().Format(time.RFC3339),
-		CallbackURL:       req.CallbackURL,
-		Metadata:          "{}",
-		CreatedAt:         time.Now().Format(time.RFC3339),
-		UpdatedAt:         time.Now().Format(time.RFC3339),
+		DestinationBank:     "Unknown",
+		DestinationName:     "Account Holder",
+		Amount:              req.Amount,
+		Currency:            req.Currency,
+		Fee:                 fee,
+		Description:         req.Description,
+		Channel:             channel,
+		Status:              "success",
+		TxnDate:             time.Now().Format(time.RFC3339),
+		CallbackURL:         req.CallbackURL,
+		Metadata:            "{}",
+		CreatedAt:           time.Now().Format(time.RFC3339),
+		UpdatedAt:           time.Now().Format(time.RFC3339),
 	}
 
 	// Store in DB
@@ -741,10 +392,10 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 
 	// Publish transfer event
 	_ = s.Redis.PublishEvent(r.Context(), "transfers", map[string]interface{}{
-		"event":          "transfer.initiated",
-		"reference":      req.Reference,
-		"amount":         req.Amount,
-		"destination":    req.DestinationAccount,
+		"event":            "transfer.initiated",
+		"reference":        req.Reference,
+		"amount":           req.Amount,
+		"destination":      req.DestinationAccount,
 		"destination_bank": req.DestinationBankCode,
 	})
 
@@ -757,16 +408,16 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"reference":         req.Reference,
-			"status":            "success",
-			"channel":           channel,
-			"destination_bank":  transfer.DestinationBank,
-			"destination_name":  transfer.DestinationName,
-			"amount":            req.Amount,
-			"fee":               fee,
-			"settlement":        settlementPeriod,
-			"timestamp":         time.Now().Format(time.RFC3339),
-			"callback_url":      req.CallbackURL,
+			"reference":        req.Reference,
+			"status":           "success",
+			"channel":          channel,
+			"destination_bank": transfer.DestinationBank,
+			"destination_name": transfer.DestinationName,
+			"amount":           req.Amount,
+			"fee":              fee,
+			"settlement":       settlementPeriod,
+			"timestamp":        time.Now().Format(time.RFC3339),
+			"callback_url":     req.CallbackURL,
 		},
 	})
 }
@@ -809,7 +460,7 @@ func (s *Server) handleApproveTransfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Postgres.UpdateTransferStatus(r.Context(), reference, string(db.TransferSuccess)); err != nil {
+	if err := s.Postgres.UpdateTransferStatus(r.Context(), reference, "success"); err != nil {
 		writeError(w, "failed to approve transfer", http.StatusInternalServerError)
 		return
 	}
@@ -818,9 +469,9 @@ func (s *Server) handleApproveTransfer(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"reference":  reference,
-		"previous":   transfer.Status,
-		"new_status": string(db.TransferSuccess),
+		"reference":   reference,
+		"previous":    transfer.Status,
+		"new_status":  "success",
 		"approved_by": req.ApprovedBy,
 		"approved_at": time.Now().Format(time.RFC3339),
 	}})
@@ -833,7 +484,9 @@ func (s *Server) handleListTransfers(w http.ResponseWriter, r *http.Request) {
 	offset := 0
 	if l := r.URL.Query().Get("limit"); l != "" {
 		fmt.Sscanf(l, "%d", &limit)
-		if limit > 100 { limit = 100 }
+		if limit > 100 {
+			limit = 100
+		}
 	}
 	if o := r.URL.Query().Get("offset"); o != "" {
 		fmt.Sscanf(o, "%d", &offset)
@@ -848,22 +501,22 @@ func (s *Server) handleListTransfers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"transfers": transfers,
-		"total":    len(transfers),
-		"limit":    limit,
-		"offset":   offset,
+		"total":     len(transfers),
+		"limit":     limit,
+		"offset":    offset,
 	}})
 }
 
 // handleCreateReconciliation creates a settlement report
 func (s *Server) handleCreateReconciliation(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Date             string                       `json:"date"`
-		TotalTxnCount    int64                        `json:"total_txn_count"`
-		TotalTxnValue    float64                      `json:"total_txn_value"`
-		SuccessCount     int64                        `json:"success_count"`
-		FailedCount      int64                        `json:"failed_count"`
-		TotalFees        float64                      `json:"total_fees"`
-		ChannelBreakdown []map[string]interface{}     `json:"channel_breakdown"`
+		Date             string                   `json:"date"`
+		TotalTxnCount    int64                    `json:"total_txn_count"`
+		TotalTxnValue    float64                  `json:"total_txn_value"`
+		SuccessCount     int64                    `json:"success_count"`
+		FailedCount      int64                    `json:"failed_count"`
+		TotalFees        float64                  `json:"total_fees"`
+		ChannelBreakdown []map[string]interface{} `json:"channel_breakdown"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -872,14 +525,14 @@ func (s *Server) handleCreateReconciliation(w http.ResponseWriter, r *http.Reque
 
 	netAmount := req.TotalTxnValue - req.TotalFees
 	report := &db.SettlementDB{
-		ID:             fmt.Sprintf("sett_%d", time.Now().UnixNano()),
-		Date:           req.Date,
-		TotalTxnCount:  req.TotalTxnCount,
-		TotalTxnValue:  req.TotalTxnValue,
-		SuccessCount:   req.SuccessCount,
-		FailedCount:    req.FailedCount,
-		TotalFees:      req.TotalFees,
-		NetAmount:      netAmount,
+		ID:            fmt.Sprintf("sett_%d", time.Now().UnixNano()),
+		Date:          req.Date,
+		TotalTxnCount: req.TotalTxnCount,
+		TotalTxnValue: req.TotalTxnValue,
+		SuccessCount:  req.SuccessCount,
+		FailedCount:   req.FailedCount,
+		TotalFees:     req.TotalFees,
+		NetAmount:     netAmount,
 		ChannelBreakdown: func() string {
 			ch, _ := json.Marshal(req.ChannelBreakdown)
 			return string(ch)
@@ -896,15 +549,15 @@ func (s *Server) handleCreateReconciliation(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"report_id":     report.ID,
-		"date":          req.Date,
+		"report_id":       report.ID,
+		"date":            req.Date,
 		"total_txn_count": req.TotalTxnCount,
 		"total_txn_value": req.TotalTxnValue,
-		"success_count":  req.SuccessCount,
-		"failed_count":   req.FailedCount,
-		"total_fees":     req.TotalFees,
-		"net_amount":     netAmount,
-		"status":         "completed",
+		"success_count":   req.SuccessCount,
+		"failed_count":    req.FailedCount,
+		"total_fees":      req.TotalFees,
+		"net_amount":      netAmount,
+		"status":          "completed",
 	}})
 }
 
@@ -963,8 +616,8 @@ func (s *Server) handleProcessCallbacks(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"processed": processed,
-		"total":     len(events),
+		"processed":    processed,
+		"total":        len(events),
 		"processed_at": time.Now().Format(time.RFC3339),
 	}})
 }
@@ -991,10 +644,10 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"endpoint_url":  req.EndpointURL,
-			"events":        req.Events,
-			"active":        true,
-			"created_at":    time.Now().Format(time.RFC3339),
+			"endpoint_url": req.EndpointURL,
+			"events":       req.Events,
+			"active":       true,
+			"created_at":   time.Now().Format(time.RFC3339),
 		},
 	})
 }

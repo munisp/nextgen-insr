@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -48,13 +47,17 @@ func main() {
 
 	var err error
 	srv.Postgres, err = db.NewPostgres(ctx, &cfg.Postgres)
-	if err != nil { sugar.Fatalf("Failed to connect to PostgreSQL: %v", err) }
+	if err != nil {
+		sugar.Fatalf("Failed to connect to PostgreSQL: %v", err)
+	}
 	if err := srv.Postgres.RunMigrations(ctx); err != nil {
 		sugar.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	srv.Redis, err = db.NewRedisCache(ctx, &cfg.Redis)
-	if err != nil { sugar.Fatalf("Failed to connect to Redis: %v", err) }
+	if err != nil {
+		sugar.Fatalf("Failed to connect to Redis: %v", err)
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
@@ -92,9 +95,9 @@ func main() {
 	})
 
 	httpServer := &http.Server{
-		Addr: fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port),
-		Handler: r,
-		ReadTimeout: cfg.Server.ReadTimeout,
+		Addr:         fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port),
+		Handler:      r,
+		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
@@ -136,18 +139,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	resp := map[string]interface{}{"service": "reinsurance-service", "status": "ready", "checks": map[string]string{}}
+	checks := map[string]string{}
+	resp := map[string]interface{}{"service": "reinsurance-service", "status": "ready", "checks": checks}
 	statusCode := http.StatusOK
 	if err := s.Postgres.Pool.Ping(r.Context()); err != nil {
 		resp["status"] = "not_ready"
-		resp["checks"]["database"] = fmt.Sprintf("unavailable: %s", err.Error())
+		checks["database"] = fmt.Sprintf("unavailable: %s", err.Error())
 		statusCode = http.StatusServiceUnavailable
-	} else { resp["checks"]["database"] = "ok" }
+	} else {
+		checks["database"] = "ok"
+	}
 	if err := s.Redis.Client.Ping(r.Context()).Err(); err != nil {
 		resp["status"] = "not_ready"
-		resp["checks"]["redis"] = fmt.Sprintf("unavailable: %s", err.Error())
+		checks["redis"] = fmt.Sprintf("unavailable: %s", err.Error())
 		statusCode = http.StatusServiceUnavailable
-	} else { resp["checks"]["redis"] = "ok" }
+	} else {
+		checks["redis"] = "ok"
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(resp)
@@ -225,19 +233,19 @@ func (s *Server) handleCreateTreaty(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"treaty_id":        treaty.TreatyID,
-		"name":             req.Name,
-		"type":             req.Type,
-		"reinsurer":        req.Reinsurer,
-		"retention":        req.Retention,
-		"limit":            req.Limit,
-		"cession_rate":     req.CessionRate,
-		"commission_rate":  req.CommissionRate,
-		"clawback_rate":    req.ClawbackRate,
-		"period":           req.Period,
-		"status":           req.Status,
-		"currency":         s.Config.Reins.DefaultCurrency,
-		"created_at":       treaty.CreatedAt,
+		"treaty_id":       treaty.TreatyID,
+		"name":            req.Name,
+		"type":            req.Type,
+		"reinsurer":       req.Reinsurer,
+		"retention":       req.Retention,
+		"limit":           req.Limit,
+		"cession_rate":    req.CessionRate,
+		"commission_rate": req.CommissionRate,
+		"clawback_rate":   req.ClawbackRate,
+		"period":          req.Period,
+		"status":          req.Status,
+		"currency":        s.Config.Reins.DefaultCurrency,
+		"created_at":      treaty.CreatedAt,
 	}})
 }
 
@@ -249,7 +257,9 @@ func (s *Server) handleListTreaties(w http.ResponseWriter, r *http.Request) {
 	offset := 0
 	if l := r.URL.Query().Get("limit"); l != "" {
 		fmt.Sscanf(l, "%d", &limit)
-		if limit > 100 { limit = 100 }
+		if limit > 100 {
+			limit = 100
+		}
 	}
 	if o := r.URL.Query().Get("offset"); o != "" {
 		fmt.Sscanf(o, "%d", &offset)
@@ -294,9 +304,9 @@ func (s *Server) handleUpdateTreaty(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var req struct {
-		Status string  `json:"status"`
+		Status    string  `json:"status"`
 		Retention float64 `json:"retention"`
-		Limit  float64 `json:"limit"`
+		Limit     float64 `json:"limit"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -320,10 +330,10 @@ func (s *Server) handleUpdateTreaty(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"treaty_id":    id,
-		"previous":     treaty.Status,
-		"new_status":   req.Status,
-		"updated_at":   time.Now().Format(time.RFC3339),
+		"treaty_id":  id,
+		"previous":   treaty.Status,
+		"new_status": req.Status,
+		"updated_at": time.Now().Format(time.RFC3339),
 	}})
 }
 
@@ -331,7 +341,7 @@ func (s *Server) handleUpdateTreaty(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteTreaty(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	treaty, err := s.Postgres.GetTreaty(r.Context(), id)
+	_, err := s.Postgres.GetTreaty(r.Context(), id)
 	if err != nil {
 		writeError(w, "treaty not found", http.StatusNotFound)
 		return
@@ -346,8 +356,8 @@ func (s *Server) handleDeleteTreaty(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"treaty_id":   id,
-		"status":      string(models.TreatyTerminated),
+		"treaty_id":     id,
+		"status":        string(models.TreatyTerminated),
 		"terminated_at": time.Now().Format(time.RFC3339),
 	}})
 }
@@ -355,10 +365,10 @@ func (s *Server) handleDeleteTreaty(w http.ResponseWriter, r *http.Request) {
 // handleCedeRisk creates a cession of risk to reinsurer
 func (s *Server) handleCedeRisk(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		PolicyID   string  `json:"policy_id"`
-		TreatyID   string  `json:"treaty_id"`
+		PolicyID    string  `json:"policy_id"`
+		TreatyID    string  `json:"treaty_id"`
 		GrossAmount float64 `json:"gross_amount"`
-		RiskType   string  `json:"risk_type"`
+		RiskType    string  `json:"risk_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -468,17 +478,17 @@ func (s *Server) handleCedeRisk(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"cession_id":      cessionID,
-		"treaty_id":       req.TreatyID,
-		"treaty_type":     treaty.Type,
-		"policy_id":       req.PolicyID,
-		"gross_amount":    req.GrossAmount,
-		"retention":       retention,
-		"ceded_amount":    ceded,
-		"cession_rate":    cessionRate,
-		"reinsurer":       treaty.Reinsurer,
-		"status":          string(models.CessionSubmitted),
-		"auto_ceeded":     req.GrossAmount >= s.Config.Reins.AutoCedeThreshold,
+		"cession_id":   cessionID,
+		"treaty_id":    req.TreatyID,
+		"treaty_type":  treaty.Type,
+		"policy_id":    req.PolicyID,
+		"gross_amount": req.GrossAmount,
+		"retention":    retention,
+		"ceded_amount": ceded,
+		"cession_rate": cessionRate,
+		"reinsurer":    treaty.Reinsurer,
+		"status":       string(models.CessionSubmitted),
+		"auto_ceeded":  req.GrossAmount >= s.Config.Reins.AutoCedeThreshold,
 	}})
 }
 
@@ -574,7 +584,7 @@ func (s *Server) handleRejectCession(w http.ResponseWriter, r *http.Request) {
 // handleCalculateRecovery calculates reinsurance recovery for a claim
 func (s *Server) handleCalculateRecovery(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		CessionID string  `json:"cession_id"`
+		CessionID   string  `json:"cession_id"`
 		ClaimAmount float64 `json:"claim_amount"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -629,15 +639,15 @@ func (s *Server) handleCalculateRecovery(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"recovery_id":   recovery.ID,
-		"cession_id":    req.CessionID,
-		"claim_amount":  req.ClaimAmount,
+		"recovery_id":    recovery.ID,
+		"cession_id":     req.CessionID,
+		"claim_amount":   req.ClaimAmount,
 		"gross_recovery": grossRecovery,
-		"commission":    commission,
-		"clawback":      clawback,
-		"net_recovery":  netRecovery,
-		"reinsurer":     treaty.Reinsurer,
-		"status":        "calculated",
+		"commission":     commission,
+		"clawback":       clawback,
+		"net_recovery":   netRecovery,
+		"reinsurer":      treaty.Reinsurer,
+		"status":         "calculated",
 	}})
 }
 
@@ -672,8 +682,8 @@ func (s *Server) handleGetRecovery(w http.ResponseWriter, r *http.Request) {
 // handleCalculateCommission calculates commission for a treaty period
 func (s *Server) handleCalculateCommission(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		TreatyID string  `json:"treaty_id"`
-		Period   string  `json:"period"`
+		TreatyID     string  `json:"treaty_id"`
+		Period       string  `json:"period"`
 		CededPremium float64 `json:"ceded_premium"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -716,16 +726,16 @@ func (s *Server) handleCalculateCommission(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"commission_id":   commission.ID,
-		"treaty_id":       req.TreatyID,
-		"period":          req.Period,
-		"ceded_premium":   req.CededPremium,
-		"commission_rate": treaty.CommissionRate * 100,
+		"commission_id":    commission.ID,
+		"treaty_id":        req.TreatyID,
+		"period":           req.Period,
+		"ceded_premium":    req.CededPremium,
+		"commission_rate":  treaty.CommissionRate * 100,
 		"gross_commission": grossCommission,
-		"clawback":        clawbackAmount,
-		"net_commission":  netCommission,
-		"outstanding":     netCommission,
-		"status":          "calculated",
+		"clawback":         clawbackAmount,
+		"net_commission":   netCommission,
+		"outstanding":      netCommission,
+		"status":           "calculated",
 	}})
 }
 
@@ -763,10 +773,10 @@ func (s *Server) handleGetCommission(w http.ResponseWriter, r *http.Request) {
 // handleQuotaShareCalc performs quota share calculation
 func (s *Server) handleQuotaShareCalc(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		GrossPremium float64 `json:"gross_premium"`
+		GrossPremium     float64 `json:"gross_premium"`
 		RetentionPercent float64 `json:"retention_percent"`
-		CessionPercent float64 `json:"cession_percent"`
-		CommissionRate float64 `json:"commission_rate"`
+		CessionPercent   float64 `json:"cession_percent"`
+		CommissionRate   float64 `json:"commission_rate"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -784,14 +794,14 @@ func (s *Server) handleQuotaShareCalc(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"gross_premium":     req.GrossPremium,
-		"retention_percent": req.RetentionPercent,
-		"cession_percent":   req.CessionPercent,
-		"retained_premium":  retained,
-		"ceded_premium":     ceded,
-		"commission":        commission,
-		"net_premium":       netPremium,
-		"reinsurer_share":   ceded,
+		"gross_premium":      req.GrossPremium,
+		"retention_percent":  req.RetentionPercent,
+		"cession_percent":    req.CessionPercent,
+		"retained_premium":   retained,
+		"ceded_premium":      ceded,
+		"commission":         commission,
+		"net_premium":        netPremium,
+		"reinsurer_share":    ceded,
 		"retention_exposure": retained,
 	}})
 }
@@ -827,13 +837,13 @@ func (s *Server) handleExcessOfLossCalc(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"gross_loss":       req.GrossLoss,
-		"attachment":       attachment,
-		"limit":            req.Limit,
-		"reinsurer_share":  reinsurerShare,
-		"retention":        retention,
-		"commission":       commission,
-		"net_loss":         netLoss,
+		"gross_loss":          req.GrossLoss,
+		"attachment":          attachment,
+		"limit":               req.Limit,
+		"reinsurer_share":     reinsurerShare,
+		"retention":           retention,
+		"commission":          commission,
+		"net_loss":            netLoss,
 		"exceeded_attachment": exceeded,
 	}})
 }
@@ -862,7 +872,9 @@ func (s *Server) handleSurplusCalc(w http.ResponseWriter, r *http.Request) {
 			ceded = maxCeded
 		}
 		availableLines -= ceded / req.LineValue
-		if availableLines < 0 { availableLines = 0 }
+		if availableLines < 0 {
+			availableLines = 0
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

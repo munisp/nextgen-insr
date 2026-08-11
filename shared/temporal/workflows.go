@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -64,14 +64,14 @@ var FundFlowRetryPolicy = RetryPolicy{
 }
 
 type StartWorkflowRequest struct {
-	WorkflowID          string        `json:"workflow_id"`
-	WorkflowType        string        `json:"workflow_type"`
-	TaskQueue           string        `json:"task_queue"`
-	Input               interface{}   `json:"input"`
-	Timeout             time.Duration `json:"-"`
-	RetryPolicy         *RetryPolicy  `json:"-"`
-	IdempotencyKey      string        `json:"idempotency_key,omitempty"`
-	SearchAttributes    map[string]interface{} `json:"search_attributes,omitempty"`
+	WorkflowID       string                 `json:"workflow_id"`
+	WorkflowType     string                 `json:"workflow_type"`
+	TaskQueue        string                 `json:"task_queue"`
+	Input            interface{}            `json:"input"`
+	Timeout          time.Duration          `json:"-"`
+	RetryPolicy      *RetryPolicy           `json:"-"`
+	IdempotencyKey   string                 `json:"idempotency_key,omitempty"`
+	SearchAttributes map[string]interface{} `json:"search_attributes,omitempty"`
 }
 
 func (t *TemporalClient) isCircuitOpen() bool {
@@ -132,16 +132,16 @@ func (t *TemporalClient) StartWorkflow(ctx context.Context, req StartWorkflowReq
 	}
 
 	payload := map[string]interface{}{
-		"workflow_id":   req.WorkflowID,
-		"workflow_type": map[string]string{"name": req.WorkflowType},
-		"task_queue":    map[string]string{"name": req.TaskQueue},
-		"input":         req.Input,
+		"workflow_id":                req.WorkflowID,
+		"workflow_type":              map[string]string{"name": req.WorkflowType},
+		"task_queue":                 map[string]string{"name": req.TaskQueue},
+		"input":                      req.Input,
 		"workflow_execution_timeout": fmt.Sprintf("%ds", int(timeout.Seconds())),
 		"retry_policy": map[string]interface{}{
-			"maximum_attempts":  retryPolicy.MaxAttempts,
-			"initial_interval":  fmt.Sprintf("%ds", int(retryPolicy.InitialInterval.Seconds())),
+			"maximum_attempts":    retryPolicy.MaxAttempts,
+			"initial_interval":    fmt.Sprintf("%ds", int(retryPolicy.InitialInterval.Seconds())),
 			"backoff_coefficient": retryPolicy.BackoffCoeff,
-			"maximum_interval":  fmt.Sprintf("%ds", int(retryPolicy.MaxInterval.Seconds())),
+			"maximum_interval":    fmt.Sprintf("%ds", int(retryPolicy.MaxInterval.Seconds())),
 		},
 	}
 	if req.IdempotencyKey != "" {
@@ -218,7 +218,7 @@ func (t *TemporalClient) StartFundFlowWorkflow(ctx context.Context, workflowType
 	return t.StartWorkflow(ctx, StartWorkflowRequest{
 		WorkflowID:     fmt.Sprintf("fund-flow-%s-%s", workflowType, traceID),
 		WorkflowType:   workflowType,
-		TaskQueue:       "fund-flow-queue",
+		TaskQueue:      "fund-flow-queue",
 		Input:          input,
 		Timeout:        10 * time.Minute,
 		RetryPolicy:    &FundFlowRetryPolicy,

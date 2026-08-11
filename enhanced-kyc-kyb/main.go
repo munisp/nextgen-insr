@@ -46,11 +46,11 @@ func generateID() string {
 // --- HTTP Handlers ---
 
 type Handler struct {
-	store    *db.PostgresStore
-	cache    *db.RedisCache
-	cfg      *config.Config
-	log      *zap.Logger
-	httpCl   *http.Client
+	store  *db.PostgresStore
+	cache  *db.RedisCache
+	cfg    *config.Config
+	log    *zap.Logger
+	httpCl *http.Client
 }
 
 func NewHandler(store *db.PostgresStore, cache *db.RedisCache, cfg *config.Config, log *zap.Logger) *Handler {
@@ -131,14 +131,14 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 	// Process submitted documents
 	for _, doc := range req.Documents {
 		kycDoc := models.KYCDocument{
-			ID:               generateID(),
-			IndividualKYCID:  &kyc.ID,
-			DocType:          models.DocumentType(doc.DocType),
-			Number:           doc.Number,
-			Issuer:           doc.Issuer,
-			Verified:         false,
+			ID:                 generateID(),
+			IndividualKYCID:    &kyc.ID,
+			DocType:            models.DocumentType(doc.DocType),
+			Number:             doc.Number,
+			Issuer:             doc.Issuer,
+			Verified:           false,
 			VerificationMethod: models.VerifyManual,
-			CreatedAt:        time.Now().UTC(),
+			CreatedAt:          time.Now().UTC(),
 		}
 		if doc.Expiry != "" {
 			if exp, err := time.Parse("2006-01-02", doc.Expiry); err == nil {
@@ -170,12 +170,12 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf("NIN=%s BVN=%s tier=%d risk=%s", req.NIN, req.BVN, tier, string(kyc.RiskLevel)))
 
 	result := models.VerificationResult{
-		Success: true,
-		Status:  kyc.Status,
-		Score:   riskScore,
+		Success:   true,
+		Status:    kyc.Status,
+		Score:     riskScore,
 		RiskLevel: kyc.RiskLevel,
-		Details: []string{"KYC record created, pending verification"},
-		Flags:   flags,
+		Details:   []string{"KYC record created, pending verification"},
+		Flags:     flags,
 	}
 
 	if len(flags) > 0 {
@@ -189,15 +189,15 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(w, http.StatusCreated, map[string]interface{}{
-		"customer_id":       customerID,
-		"status":            kyc.Status,
-		"risk_level":        kyc.RiskLevel,
-		"risk_score":        riskScore,
-		"tier":              tier,
-		"daily_limit":       dailyLimit,
-		"expires_at":        kyc.ExpiresAt.Format(time.RFC3339),
-		"flags":             flags,
-		"requires_review":   len(flags) > 0,
+		"customer_id":     customerID,
+		"status":          kyc.Status,
+		"risk_level":      kyc.RiskLevel,
+		"risk_score":      riskScore,
+		"tier":            tier,
+		"daily_limit":     dailyLimit,
+		"expires_at":      kyc.ExpiresAt.Format(time.RFC3339),
+		"flags":           flags,
+		"requires_review": len(flags) > 0,
 	})
 }
 
@@ -279,14 +279,14 @@ func (h *Handler) submitBusinessKYC(w http.ResponseWriter, r *http.Request) {
 	// Process submitted documents
 	for _, doc := range req.Documents {
 		kycDoc := models.KYCDocument{
-			ID:               generateID(),
-			BusinessKYCID:    &kyc.ID,
-			DocType:          models.DocumentType(doc.DocType),
-			Number:           doc.Number,
-			Issuer:           doc.Issuer,
-			Verified:         false,
+			ID:                 generateID(),
+			BusinessKYCID:      &kyc.ID,
+			DocType:            models.DocumentType(doc.DocType),
+			Number:             doc.Number,
+			Issuer:             doc.Issuer,
+			Verified:           false,
 			VerificationMethod: models.VerifyManual,
-			CreatedAt:        time.Now().UTC(),
+			CreatedAt:          time.Now().UTC(),
 		}
 		if doc.Expiry != "" {
 			if exp, err := time.Parse("2006-01-02", doc.Expiry); err == nil {
@@ -465,15 +465,15 @@ func (h *Handler) verifyNIN(w http.ResponseWriter, r *http.Request) {
 
 	// Store verification record in DB
 	ninRec := &models.NINVerification{
-		ID:         generateID(),
-		NIN:        req.NIN,
-		Status:     ninResult.Status,
-		Name:       req.FullNamel,
-		NameMatch:  ninResult.NameMatch,
-		DOB:        nil,
-		DOBMatch:   ninResult.DOBMatch,
-		PhotoMatch: ninResult.PhotoMatch,
-		Source:     "nibss_api",
+		ID:          generateID(),
+		NIN:         req.NIN,
+		Status:      ninResult.Status,
+		Name:        req.FullNamel,
+		NameMatch:   ninResult.NameMatch,
+		DOB:         nil,
+		DOBMatch:    ninResult.DOBMatch,
+		PhotoMatch:  ninResult.PhotoMatch,
+		Source:      "nibss_api",
 		RequestedAt: time.Now().UTC(),
 	}
 
@@ -487,14 +487,14 @@ func (h *Handler) verifyNIN(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(w, http.StatusOK, map[string]interface{}{
-		"nin":           req.NIN,
-		"verified":      ninRec.Status == "verified",
-		"status":        ninRec.Status,
-		"name_match":    ninRec.NameMatch,
-		"dob_match":     ninRec.DOBMatch,
-		"photo_match":   ninRec.PhotoMatch,
-		"cached":        false,
-		"verified_at":   time.Now().UTC().Format(time.RFC3339),
+		"nin":         req.NIN,
+		"verified":    ninRec.Status == "verified",
+		"status":      ninRec.Status,
+		"name_match":  ninRec.NameMatch,
+		"dob_match":   ninRec.DOBMatch,
+		"photo_match": ninRec.PhotoMatch,
+		"cached":      false,
+		"verified_at": time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -1212,116 +1212,6 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 // =====================================================================
 // Main
 // =====================================================================
-
-// Panic recovery middleware - catches panics and returns 500
-func prodRecoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
-				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-
-var db *sql.DB
-
-func initDB() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v", err)
-		return
-	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v", err)
-		return
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"enhanced-kyc-kyb","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS kyc_verifications (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL, verification_type TEXT, document_type TEXT, document_number TEXT, status TEXT DEFAULT 'pending', risk_level TEXT, verified_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
-
-
-// Circuit breaker for external API calls
-type circuitBreaker struct {
-	maxFailures int
-	failures    int
-	state       string // "closed", "open", "half-open"
-	lastFailure time.Time
-	timeout     time.Duration
-	mu          sync.Mutex
-}
-
-var externalAPIBreaker = &circuitBreaker{
-	maxFailures: 5,
-	state:       "closed",
-	timeout:     30 * time.Second,
-}
-
-func (cb *circuitBreaker) execute(fn func() error) error {
-	cb.mu.Lock()
-	if cb.state == "open" {
-		if time.Since(cb.lastFailure) > cb.timeout {
-			cb.state = "half-open"
-		} else {
-			cb.mu.Unlock()
-			log.Printf(`{"level":"warn","msg":"circuit breaker open","failures":%d}`, cb.failures)
-			return fmt.Errorf("circuit breaker open: too many failures")
-		}
-	}
-	cb.mu.Unlock()
-
-	err := fn()
-
-	cb.mu.Lock()
-	defer cb.mu.Unlock()
-	if err != nil {
-		cb.failures++
-		cb.lastFailure = time.Now()
-		if cb.failures >= cb.maxFailures {
-			cb.state = "open"
-			log.Printf(`{"level":"error","msg":"circuit breaker tripped","failures":%d}`, cb.failures)
-		}
-		return err
-	}
-	cb.failures = 0
-	cb.state = "closed"
-	return nil
-}
 
 func main() {
 	log, err := zap.NewProduction()

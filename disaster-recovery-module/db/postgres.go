@@ -295,7 +295,7 @@ func (p *PostgreSQL) GetDashboard(ctx context.Context) (*models.DRDashboard, err
 	dash := &models.DRDashboard{}
 
 	// Service counts
-	var healthy, degraded, down int
+	var degraded, down int
 	err := p.db.QueryRowContext(ctx,
 		`SELECT 
 			COUNT(*) FILTER (WHERE status='healthy'),

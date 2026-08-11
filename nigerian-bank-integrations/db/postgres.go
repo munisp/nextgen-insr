@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/insureportal/nigerian-bank-integrations/config"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Postgres wraps a connection pool
@@ -34,7 +33,9 @@ func NewPostgres(ctx context.Context, cfg *config.PostgresConfig) (*Postgres, er
 }
 
 func (p *Postgres) Close() {
-	if p != nil && p.Pool != nil { p.Pool.Close() }
+	if p != nil && p.Pool != nil {
+		p.Pool.Close()
+	}
 }
 
 func (p *Postgres) RunMigrations(ctx context.Context) error {
@@ -367,73 +368,73 @@ type BankDB struct {
 
 // TransferDB is the database model for transfers
 type TransferDB struct {
-	ID                string         `db:"id"`
-	Reference         string         `db:"reference"`
-	SourceAccount     string         `db:"source_account"`
-	SourceBankCode    string         `db:"source_bank_code"`
-	DestinationAccount string         `db:"destination_account"`
-	DestinationBankCode string        `db:"destination_bank_code"`
-	DestinationBank   string         `db:"destination_bank"`
-	DestinationName   string         `db:"destination_name"`
-	Amount            float64        `db:"amount"`
-	Currency          string         `db:"currency"`
-	Fee               float64        `db:"fee"`
-	Description       string         `db:"description"`
-	Channel           string         `db:"channel"`
-	Status            string         `db:"status"`
-	ApprovedBy        string         `db:"approved_by"`
-	TxnDate           string         `db:"txn_date"`
-	SettlementDate    *string        `db:"settlement_date"`
-	FailedReason      string         `db:"failed_reason"`
-	CallbackURL       string         `db:"callback_url"`
-	Metadata          string         `db:"metadata"`
-	CreatedAt         string         `db:"created_at"`
-	UpdatedAt         string         `db:"updated_at"`
+	ID                  string  `db:"id"`
+	Reference           string  `db:"reference"`
+	SourceAccount       string  `db:"source_account"`
+	SourceBankCode      string  `db:"source_bank_code"`
+	DestinationAccount  string  `db:"destination_account"`
+	DestinationBankCode string  `db:"destination_bank_code"`
+	DestinationBank     string  `db:"destination_bank"`
+	DestinationName     string  `db:"destination_name"`
+	Amount              float64 `db:"amount"`
+	Currency            string  `db:"currency"`
+	Fee                 float64 `db:"fee"`
+	Description         string  `db:"description"`
+	Channel             string  `db:"channel"`
+	Status              string  `db:"status"`
+	ApprovedBy          string  `db:"approved_by"`
+	TxnDate             string  `db:"txn_date"`
+	SettlementDate      *string `db:"settlement_date"`
+	FailedReason        string  `db:"failed_reason"`
+	CallbackURL         string  `db:"callback_url"`
+	Metadata            string  `db:"metadata"`
+	CreatedAt           string  `db:"created_at"`
+	UpdatedAt           string  `db:"updated_at"`
 }
 
 // VerificationDB is the database model for account verifications
 type VerificationDB struct {
-	ID            string    `db:"id"`
-	AccountNumber string    `db:"account_number"`
-	BankCode      string    `db:"bank_code"`
-	BankName      string    `db:"bank_name"`
-	AccountName   string    `db:"account_name"`
-	Status        string    `db:"status"`
-	AccountType   string    `db:"account_type"`
-	Branch        string    `db:"branch"`
-	VerifiedAt    string    `db:"verified_at"`
-	ExpiryAt      string    `db:"expiry_at"`
-	CreatedAt     string    `db:"created_at"`
+	ID            string `db:"id"`
+	AccountNumber string `db:"account_number"`
+	BankCode      string `db:"bank_code"`
+	BankName      string `db:"bank_name"`
+	AccountName   string `db:"account_name"`
+	Status        string `db:"status"`
+	AccountType   string `db:"account_type"`
+	Branch        string `db:"branch"`
+	VerifiedAt    string `db:"verified_at"`
+	ExpiryAt      string `db:"expiry_at"`
+	CreatedAt     string `db:"created_at"`
 }
 
 // CallbackEventDB is the database model for callback events
 type CallbackEventDB struct {
-	ID        string    `db:"id"`
-	EventType string    `db:"event_type"`
-	Reference string    `db:"reference"`
-	TxnID     string    `db:"txn_id"`
-	Amount    float64   `db:"amount"`
-	Status    string    `db:"status"`
-	BankCode  string    `db:"bank_code"`
-	BankRef   string    `db:"bank_reference"`
-	Timestamp string    `db:"timestamp"`
-	Payload   []byte    `db:"payload"`
-	Processed bool      `db:"processed"`
+	ID          string  `db:"id"`
+	EventType   string  `db:"event_type"`
+	Reference   string  `db:"reference"`
+	TxnID       string  `db:"txn_id"`
+	Amount      float64 `db:"amount"`
+	Status      string  `db:"status"`
+	BankCode    string  `db:"bank_code"`
+	BankRef     string  `db:"bank_reference"`
+	Timestamp   string  `db:"timestamp"`
+	Payload     []byte  `db:"payload"`
+	Processed   bool    `db:"processed"`
 	ProcessedAt *string `db:"processed_at"`
-	CreatedAt string    `db:"created_at"`
+	CreatedAt   string  `db:"created_at"`
 }
 
 // SettlementDB is the database model for settlement reports
 type SettlementDB struct {
-	ID               string    `db:"id"`
-	Date             string    `db:"date"`
-	TotalTxnCount    int64     `db:"total_txn_count"`
-	TotalTxnValue    float64   `db:"total_txn_value"`
-	SuccessCount     int64     `db:"success_count"`
-	FailedCount      int64     `db:"failed_count"`
-	TotalFees        float64   `db:"total_fees"`
-	NetAmount        float64   `db:"net_amount"`
-	ChannelBreakdown string    `db:"channel_breakdown"`
-	Status           string    `db:"status"`
-	CreatedAt        string    `db:"created_at"`
+	ID               string  `db:"id"`
+	Date             string  `db:"date"`
+	TotalTxnCount    int64   `db:"total_txn_count"`
+	TotalTxnValue    float64 `db:"total_txn_value"`
+	SuccessCount     int64   `db:"success_count"`
+	FailedCount      int64   `db:"failed_count"`
+	TotalFees        float64 `db:"total_fees"`
+	NetAmount        float64 `db:"net_amount"`
+	ChannelBreakdown string  `db:"channel_breakdown"`
+	Status           string  `db:"status"`
+	CreatedAt        string  `db:"created_at"`
 }
