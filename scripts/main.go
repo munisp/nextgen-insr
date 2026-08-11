@@ -18,9 +18,6 @@ import (
 	"database/sql"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
 )
 
 // Circuit breaker for external HTTP calls
@@ -90,6 +87,46 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 		return 0, fmt.Errorf("parameter %q must be a valid integer", key)
 	}
 	return n, nil
+}
+
+var db *sql.DB
+
+func initDB() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Println("WARN: DATABASE_URL not set; running without database")
+		return
+	}
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Printf("WARN: database connection failed: %v", err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	if err = db.Ping(); err != nil {
+		log.Printf("WARN: database ping failed: %v", err)
+	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id, X-Trace-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newRouter() *chi.Mux {

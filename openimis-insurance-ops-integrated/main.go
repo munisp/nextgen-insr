@@ -8,10 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"sync"
 	"time"
 
@@ -22,11 +20,7 @@ import (
 	"fmt"
 
 	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
 
-	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
@@ -236,7 +230,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 func jsonLog(level, msg string, kvs ...string) {
 	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
 	for i := 0; i+1 < len(kvs); i += 2 {
-		entry += fmt.Sprintf(`,"%s":"%s"`, kvs[i], kvs[i+1])
+		entry += fmt.Sprintf(`","%s":"%s"`, kvs[i], kvs[i+1])
 	}
 	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
 	log.Println(entry)
@@ -645,59 +639,13 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 }
 
 
-var db *sql.DB
-
-func initDB() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v", err)
-		return
-	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v", err)
-		return
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"openimis-insurance-ops-integrated","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS openimis_policies (id TEXT PRIMARY KEY, insured_id TEXT, product_code TEXT, effective_date DATE, expiry_date DATE, premium_paid NUMERIC(15,2), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
-
 func main() {
 	initDB()
 	initMiddleware()
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(tracingMiddleware)
-	r.Use(rateLimitMiddleware)
+	r.Use(rateLimitMiddleware(newRateLimiter(100, time.Minute)))
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -720,7 +668,12 @@ func main() {
 			"uptime_seconds": int(time.Since(startTime).Seconds()), "ready": true,
 		})
 	})
-	return r
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("openimis-insurance-ops-integrated starting on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, r))
 }
 
 func tracingMiddleware(next http.Handler) http.Handler {
@@ -751,57 +704,5 @@ var (
 	rateLimitMu    sync.Mutex
 	rateLimitStore = make(map[string][]time.Time)
 )
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		rateLimitMu.Lock()
-		now := time.Now()
-		window := now.Add(-1 * time.Minute)
-		var recent []time.Time
-		for _, t := range rateLimitStore[ip] {
-			if t.After(window) {
-				recent = append(recent, t)
-			}
-		}
-		if len(recent) >= 100 {
-			rateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
-			return
-		}
-		recent = append(recent, now)
-		rateLimitStore[ip] = recent
-		rateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
-
-func main() {
-	initDB()
-	if db != nil {
-		defer db.Close()
-	}
-	r := newRouter()
-	port := os.Getenv("PORT")
-	if port == "" { port = "8115" }
-	log.Printf("openimis-insurance-ops-integrated starting on :%s", port)
-	srv := &http.Server{Addr: ":" + port, Handler: r}
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-		<-sigCh
-		jsonLog("info", "shutting down gracefully", "service", "openimis-insurance-ops-integrated")
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
-			jsonLog("error", "shutdown error", "error", err.Error())
-		}
-	}()
-	log.Fatal(srv.ListenAndServe())
-}
 
 var startTime = time.Now()

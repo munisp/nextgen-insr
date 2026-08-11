@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
-	tigerbeetle_go "github.com/tigerbeetle/tigerbeetle-go"
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"gorm.io/gorm"
 
@@ -268,7 +267,7 @@ func (s *MojaloopPaymentService) completePayment(payment *Payment) {
 			transferID := ledger.GenerateTransferID(
 				fmt.Sprintf("mojaloop-%s", payment.MojaloopTransferID), 1,
 			)
-			customerAccountID := ledger.GenerateAccountID("customer", payment.CustomerID.ID())
+			customerAccountID := ledger.GenerateAccountID("customer", uint64(payment.CustomerID.ID()))
 			companyAccountID := ledger.GenerateAccountID("company", 1)
 
 			transfer := types.Transfer{
@@ -280,7 +279,7 @@ func (s *MojaloopPaymentService) completePayment(payment *Payment) {
 				Code:            100, // Premium payment
 			}
 
-			if _, err := s.tigerBeetleClient.CreateTransfer(
+			if err := s.tigerBeetleClient.CreateTransfer(
 				context.Background(), transfer,
 			); err != nil {
 				log.Printf("TigerBeetle transfer failed for payment %s: %v", payment.ID, err)
