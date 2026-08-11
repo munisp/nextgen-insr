@@ -18,6 +18,12 @@ import {
 import { auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
+const notImplemented = () =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: "Scheduled reports are not implemented yet",
+  });
+
 export const scheduledReportsRouter = router({
   getStats: protectedProcedure.query(async () => {
     const db = await getDb();
@@ -164,26 +170,22 @@ export const scheduledReportsRouter = router({
 
   create: protectedProcedure
     .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
-    .mutation(async ({ input }) => {
-      return {
-        success: true,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-      };
+    .mutation(async () => {
+      throw notImplemented();
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
-    .mutation(async ({ input }) => {
-      return { success: true, deletedId: input.id };
+    .mutation(async () => {
+      throw notImplemented();
     }),
 
   list: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented();
   }),
 
   recentRuns: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented();
   }),
 
   runNow: protectedProcedure
@@ -191,11 +193,11 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented();
     }),
 
   templates: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented();
   }),
 
   update: protectedProcedure
@@ -203,6 +205,6 @@ export const scheduledReportsRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented();
     }),
 });

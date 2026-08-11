@@ -18,6 +18,12 @@ import {
 import { auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
+const notImplemented = () =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: "Report template designer is not implemented yet",
+  });
+
 export const reportTemplateDesignerRouter = router({
   getStats: protectedProcedure.query(async () => {
     const db = await getDb();
@@ -172,7 +178,7 @@ export const reportTemplateDesignerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented();
     }),
 
   delete: protectedProcedure
@@ -180,11 +186,11 @@ export const reportTemplateDesignerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented();
     }),
 
   list: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented();
   }),
 
   setDefault: protectedProcedure
@@ -192,14 +198,15 @@ export const reportTemplateDesignerRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw notImplemented();
     }),
 
   widgetCatalog: protectedProcedure.query(async () => {
-    // Widget types: kpi, chart, table, gauge, heatmap
-    return { data: [], total: 0 };
+    throw notImplemented();
   }),
   update: protectedProcedure
     .input(z.object({ id: z.string(), name: z.string().optional() }))
-    .mutation(async ({ input }) => ({ id: input.id, updated: true })),
+    .mutation(async () => {
+      throw notImplemented();
+    }),
 });

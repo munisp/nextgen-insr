@@ -118,34 +118,17 @@ export const predictiveAgentChurnRouter = router({
     }),
 
   getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    try {
-      await database.execute(sql`SELECT 1 as ok`);
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Agent churn statistics are not implemented yet",
+    });
   }),
 
   listAtRisk: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "At-risk agent prediction is not implemented yet",
+    });
   }),
 
   triggerIntervention: protectedProcedure
@@ -153,6 +136,9 @@ export const predictiveAgentChurnRouter = router({
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      return { success: true };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Churn interventions are not implemented yet",
+      });
     }),
 });
