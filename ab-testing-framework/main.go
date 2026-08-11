@@ -21,10 +21,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-		"os/signal"
-	"syscall"
-
-	_ "github.com/lib/pq"
 )
 
 var db *sql.DB
@@ -201,7 +197,7 @@ func otelMiddleware(next http.Handler) http.Handler {
 func jsonLog(level, msg string, kvs ...string) {
 	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
 	for i := 0; i+1 < len(kvs); i += 2 {
-		entry += fmt.Sprintf(`,"%s":"%s"`, kvs[i], kvs[i+1])
+		entry += fmt.Sprintf(`","%s":"%s"`, kvs[i], kvs[i+1])
 	}
 	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
 	log.Println(entry)
