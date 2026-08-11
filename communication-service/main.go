@@ -19,12 +19,6 @@ import (
 	"database/sql"
 	"os"
 	"os/signal"
-	"fmt"
-
-	_ "github.com/lib/pq"
-		"context"
-	"os/signal"
-	"syscall"
 
 	_ "github.com/lib/pq"
 )
@@ -111,7 +105,16 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
-
+func metricsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			fmt.Fprintf(w, "# HELP db_connection_active Database connected\n")
+			fmt.Fprintf(w, "# TYPE db_connection_active gauge\n")
+			fmt.Fprintf(w, "db_connection_active 1\n")
+		}
+	}
+}
 
 func handleSend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -319,7 +322,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 func jsonLog(level, msg string, kvs ...string) {
 	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
 	for i := 0; i+1 < len(kvs); i += 2 {
-		entry += fmt.Sprintf(`,"%s":"%s"`, kvs[i], kvs[i+1])
+		entry += fmt.Sprintf(`","%s":"%s"`, kvs[i], kvs[i+1])
 	}
 	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
 	log.Println(entry)

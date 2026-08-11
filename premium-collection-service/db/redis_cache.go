@@ -53,10 +53,10 @@ const (
 
 // CacheTTL values
 const (
-	TCacheShort = 5 * time.Minute
+	TCacheShort  = 5 * time.Minute
 	TCacheMedium = 30 * time.Minute
-	TCacheLong  = 2 * time.Hour
-	TCacheDaily = 24 * time.Hour
+	TCacheLong   = 2 * time.Hour
+	TCacheDaily  = 24 * time.Hour
 )
 
 // CachePayment stores a payment record in cache
@@ -194,8 +194,19 @@ func (r *RedisCache) PublishPaymentEvent(ctx context.Context, event map[string]i
 
 // StreamPaymentEvents reads recent payment events from a Redis stream
 func (r *RedisCache) StreamPaymentEvents(ctx context.Context, count int) ([]*redis.XMessage, error) {
-	return r.Client.XRead(ctx, &redis.XReadArgs{
-		Streams: []string{"pc:events:payments"},
+	streams, err := r.Client.XRead(ctx, &redis.XReadArgs{
+		Streams: []string{"pc:events:payments", "0"},
 		Count:   int64(count),
 	}).Result()
+	if err != nil {
+		return nil, err
+	}
+	if len(streams) == 0 {
+		return nil, nil
+	}
+	messages := make([]*redis.XMessage, 0, len(streams[0].Messages))
+	for i := range streams[0].Messages {
+		messages = append(messages, &streams[0].Messages[i])
+	}
+	return messages, nil
 }
