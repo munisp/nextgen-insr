@@ -176,31 +176,11 @@ export const analyticsDashboardRouter = router({
 
   // ── Sprint 11: Analytics Dashboard procedures ──────────────────────
   kpiSummary: protectedProcedure.query(async () => {
-    try {
-      const db = (await getDb())!;
-      const [agentCount] = await db.select({ value: count() }).from(agents);
-      const [txCount] = await db.select({ value: count() }).from(transactions);
-      const [txVol] = await db
-        .select({ value: sum(transactions.amount) })
-        .from(transactions);
-      return {
-        totalTransactions: Number(txCount?.value ?? 0),
-        totalVolume: Number(txVol?.value ?? 0),
-        activeAgents: Number(agentCount?.value ?? 0),
-        fraudDetectionRate: 0.023,
-        kycApprovalRate: 0.87,
-        settlementSuccessRate: 0.994,
-      };
-    } catch {
-      return {
-        totalTransactions: 0,
-        totalVolume: 0,
-        activeAgents: 0,
-        fraudDetectionRate: 0,
-        kycApprovalRate: 0,
-        settlementSuccessRate: 0,
-      };
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "KPI summary is not implemented yet (fraud/KYC/settlement rates were previously fabricated)",
+    });
   }),
 
   transactionVolume: protectedProcedure
@@ -224,51 +204,45 @@ export const analyticsDashboardRouter = router({
     }),
 
   agentOnboardingFunnel: protectedProcedure.query(async () => {
-    try {
-      const db = (await getDb())!;
-      const [total] = await db.select({ value: count() }).from(agents);
-      return {
-        registered: Number(total?.value ?? 0),
-        kycSubmitted: 0,
-        kycApproved: 0,
-        active: 0,
-      };
-    } catch {
-      return { registered: 0, kycSubmitted: 0, kycApproved: 0, active: 0 };
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Agent onboarding funnel is not implemented yet",
+    });
   }),
 
   fraudDetectionRates: protectedProcedure.query(async () => {
-    return { detected: 0, blocked: 0, falsePositives: 0, rate: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Fraud detection rates are not implemented yet",
+    });
   }),
 
   revenueBreakdown: protectedProcedure.query(async () => {
-    return { categories: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Revenue breakdown is not implemented yet",
+    });
   }),
 
   geographicDistribution: protectedProcedure.query(async () => {
-    return {
-      regions: [
-        { name: "Lagos", lat: 6.5244, lng: 3.3792, agents: 0, volume: 0 },
-        { name: "Abuja", lat: 9.0579, lng: 7.4951, agents: 0, volume: 0 },
-        { name: "Kano", lat: 12.0022, lng: 8.592, agents: 0, volume: 0 },
-        {
-          name: "Port Harcourt",
-          lat: 4.8156,
-          lng: 7.0498,
-          agents: 0,
-          volume: 0,
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Geographic distribution is not implemented yet",
+    });
   }),
 
   settlementTrend: protectedProcedure.query(async () => {
-    return { data: [], period: "30d" };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Settlement trend is not implemented yet",
+    });
   }),
 
   kycApprovalTrend: protectedProcedure.query(async () => {
-    return { data: [], period: "30d" };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "KYC approval trend is not implemented yet",
+    });
   }),
 
   topAgents: protectedProcedure
@@ -282,37 +256,17 @@ export const analyticsDashboardRouter = router({
         })
         .optional()
     )
-    .query(async ({ input }) => {
-      try {
-        const db = (await getDb())!;
-        const rows = await db
-          .select()
-          .from(agents)
-          .limit(input?.limit ?? 10);
-        return {
-          agents: rows.map((a: any) => ({
-            ...a,
-            tier:
-              a.premiumReserve > 1000000
-                ? "Diamond"
-                : a.premiumReserve > 500000
-                  ? "Gold"
-                  : a.premiumReserve > 100000
-                    ? "Silver"
-                    : "Bronze",
-            txCount: 0,
-            volume: 0,
-            commission: 0,
-            rating: 0,
-          })),
-          sortBy: input?.sortBy ?? "volume",
-        };
-      } catch {
-        return { agents: [], sortBy: input?.sortBy ?? "volume" };
-      }
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "Top agents leaderboard is not implemented yet",
+      });
     }),
 
   activeUsers: protectedProcedure.query(async () => {
-    return { count: 0, trend: [] };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "Active users metric is not implemented yet",
+    });
   }),
 });

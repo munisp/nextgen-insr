@@ -22,6 +22,12 @@ import {
 } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
+const notImplemented = (feature: string) =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
+
 export const sprint23Router = router({
   dashboard: protectedProcedure.query(async () => {
     const db = await getDb();
@@ -125,30 +131,30 @@ export const sprint23Router = router({
   }),
 
   disputeAutoRules: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Dispute auto-rules");
   }),
 
   kycVerification: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("KYC verification");
   }),
 
   rateLimits: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Rate limits");
   }),
 
   reportComparison: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Report comparison");
   }),
 
   scheduledDelivery: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Scheduled report delivery");
   }),
 
   thresholds: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Thresholds");
   }),
 
   webhookDelivery: protectedProcedure.query(async () => {
-    return { data: [], total: 0 };
+    throw notImplemented("Webhook delivery");
   }),
 });
