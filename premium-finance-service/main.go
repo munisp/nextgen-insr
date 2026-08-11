@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/insureportal/premium-finance-service/config"
 	"github.com/insureportal/premium-finance-service/db"
+	"github.com/insureportal/premium-finance-service/models"
 )
 
 // Server holds all dependencies
@@ -37,324 +39,6 @@ type Response struct {
 	Error   string      `json:"error,omitempty"`
 }
 
-var db *sql.DB
-
-func initDB() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dsn)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
-		return
-	}
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
-		db = nil
-		return
-	}
-	log.Printf("Connected to PostgreSQL for premium_finance_service")
-
-	// Create table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS premium_finance_service (
-		id SERIAL PRIMARY KEY,
-		data JSONB NOT NULL DEFAULT '{}',
-		status VARCHAR(50) DEFAULT 'active',
-		created_at TIMESTAMPTZ DEFAULT NOW(),
-		updated_at TIMESTAMPTZ DEFAULT NOW(),
-		tenant_id INTEGER DEFAULT 1
-	)`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func tracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := r.Header.Get("X-Request-ID")
-		if requestID == "" {
-			requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-ID", requestID)
-		start := time.Now()
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf("[TRACE] %s %s %d %s request_id=%s", r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), requestID)
-	})
-}
-
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-var (
-	rateLimitMu    sync.Mutex
-	rateLimitStore = make(map[string][]time.Time)
-)
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		rateLimitMu.Lock()
-		now := time.Now()
-		window := now.Add(-1 * time.Minute)
-		var recent []time.Time
-		for _, t := range rateLimitStore[ip] {
-			if t.After(window) {
-				recent = append(recent, t)
-			}
-		}
-		if len(recent) >= 100 {
-			rateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
-			return
-		}
-		recent = append(recent, now)
-		rateLimitStore[ip] = recent
-		rateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
-
-var kafkaRestURL string
-
-func initKafka() {
-	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
-	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
-	}
-	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
-}
-
-func publishEvent(topic string, key string, payload interface{}) {
-	if kafkaRestURL == "" {
-		return
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
-	}
-	msg := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{"key": key, "value": string(data)},
-		},
-	}
-	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-}
-
-// --- Production Middleware ---
-
-type statusResponseWriter struct {
-	http.ResponseWriter
-	statusCode int
-}
-
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.statusCode = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-// Tracing middleware - adds X-Request-ID to all requests
-func prodTracingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqID := r.Header.Get("X-Request-Id")
-		if reqID == "" {
-			reqID = fmt.Sprintf("req-%d", time.Now().UnixNano())
-		}
-		w.Header().Set("X-Request-Id", reqID)
-		start := time.Now()
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		log.Printf(`{"level":"debug","msg":"request","method":"%s","path":"%s","status":%d,"duration":"%s","request_id":"%s"}`, r.Method, r.URL.Path, wrapped.statusCode, time.Since(start), reqID)
-	})
-}
-
-// CORS middleware - handles preflight and sets headers
-func prodCorsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Rate limiting - token bucket per IP, 100 req/min
-var (
-	prodRateLimitMu      sync.Mutex
-	prodRateLimitBuckets = make(map[string]*prodTokenBucket)
-)
-
-type prodTokenBucket struct {
-	tokens     float64
-	lastRefill time.Time
-}
-
-func prodRateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		prodRateLimitMu.Lock()
-		bucket, ok := prodRateLimitBuckets[ip]
-		if !ok {
-			bucket = &prodTokenBucket{tokens: 100, lastRefill: time.Now()}
-			prodRateLimitBuckets[ip] = bucket
-		}
-		elapsed := time.Since(bucket.lastRefill).Seconds()
-		bucket.tokens = math.Min(100, bucket.tokens+elapsed*(100.0/60.0))
-		bucket.lastRefill = time.Now()
-		if bucket.tokens < 1 {
-			prodRateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
-			return
-		}
-		bucket.tokens--
-		prodRateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Prometheus-compatible metrics
-var (
-	prodMetricsReqCount   int64
-	prodMetricsErrCount   int64
-	prodMetricsStartTime  = time.Now()
-)
-
-func prodMetricsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt64(&prodMetricsReqCount, 1)
-		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(wrapped, r)
-		if wrapped.statusCode >= 400 {
-			atomic.AddInt64(&prodMetricsErrCount, 1)
-		}
-	})
-}
-
-func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(prodMetricsStartTime).Seconds()
-	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
-	errCount := atomic.LoadInt64(&prodMetricsErrCount)
-	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
-}
-
-// Panic recovery middleware - catches panics and returns 500
-func prodRecoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
-				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-
-var db *sql.DB
-
-func initDB() {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
-	}
-	var err error
-	db, err = sql.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("WARN: database connection failed: %v", err)
-		return
-	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v", err)
-		return
-	}
-	log.Printf(`{"level":"info","msg":"database connected","service":"premium-finance-service","driver":"postgresql"}`)
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS premium_finance_agreements (id TEXT PRIMARY KEY, policy_id TEXT NOT NULL, customer_id TEXT, total_premium NUMERIC(15,2), down_payment NUMERIC(15,2), installments INT, interest_rate NUMERIC(5,4), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
-	}
-}
-
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
 
 func main() {
 	cfg := config.NewConfig()
@@ -466,22 +150,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	resp := map[string]interface{}{"service": "premium-finance-service", "status": "ready", "checks": map[string]string{}}
+	checks := map[string]string{}
+	resp := map[string]interface{}{"service": "premium-finance-service", "status": "ready", "checks": checks}
 	statusCode := http.StatusOK
 
 	if err := s.Postgres.Pool.Ping(r.Context()); err != nil {
 		resp["status"] = "not_ready"
-		resp["checks"]["database"] = fmt.Sprintf("unavailable: %s", err.Error())
+		checks["database"] = fmt.Sprintf("unavailable: %s", err.Error())
 		statusCode = http.StatusServiceUnavailable
 	} else {
-		resp["checks"]["database"] = "ok"
+		checks["database"] = "ok"
 	}
 	if err := s.Redis.Client.Ping(r.Context()).Err(); err != nil {
 		resp["status"] = "not_ready"
-		resp["checks"]["redis"] = fmt.Sprintf("unavailable: %s", err.Error())
+		checks["redis"] = fmt.Sprintf("unavailable: %s", err.Error())
 		statusCode = http.StatusServiceUnavailable
 	} else {
-		resp["checks"]["redis"] = "ok"
+		checks["redis"] = "ok"
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -518,7 +203,7 @@ func (s *Server) handleCalculate(w http.ResponseWriter, r *http.Request) {
 	total := req.Premium + totalInterest
 	monthly := math.Ceil(total/float64(req.Months))
 
-	_ = s.Redis.IncrementStatsAtomically(r.Context(), "calculations", 1)
+	_, _ = s.Redis.IncrementStatsAtomically(r.Context(), "calculations", 1)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
@@ -582,7 +267,7 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 			InstallmentNumber: i + 1,
 			DueDate:          time.Now().AddDate(0, i+1, 0).Format("2006-01-02"),
 			Amount:           monthlyPayment,
-			Status:           string(db.InstPending),
+			Status:           string(models.InstPending),
 		}
 	}
 
@@ -596,7 +281,7 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 		Currency:       "NGN",
 		TermMonths:     req.Months,
 		Frequency:      req.Frequency,
-		Status:         string(db.LoanStatusSubmitted),
+		Status:         string(models.LoanStatusSubmitted),
 		InterestRate:   rate,
 		TotalPayable:   totalPayable,
 		MonthlyPayment: monthlyPayment,
@@ -724,19 +409,19 @@ func (s *Server) handleUpdateApplicationStatus(w http.ResponseWriter, r *http.Re
 	}
 
 	// Handle status-specific side effects
-	if req.Status == string(db.LoanStatusApproved) {
+	if req.Status == string(models.LoanStatusApproved) {
 		app.ApprovedBy = req.By
 		app.ApprovedAt = &nowStr
-	} else if req.Status == string(db.LoanStatusRejected) {
+	} else if req.Status == string(models.LoanStatusRejected) {
 		app.RejectionReason = req.Reason
 		app.RejectedAt = &nowStr
-	} else if req.Status == string(db.LoanStatusSuspended) {
+	} else if req.Status == string(models.LoanStatusSuspended) {
 		_ = s.Redis.PublishFinanceEvent(r.Context(), map[string]interface{}{
 			"event":   "finance.policy_suspended",
 			"loan_id": appID,
 			"reason":  req.Reason,
 		})
-	} else if req.Status == string(db.LoanStatusTerminated) {
+	} else if req.Status == string(models.LoanStatusTerminated) {
 		_ = s.Redis.PublishFinanceEvent(r.Context(), map[string]interface{}{
 			"event":   "finance.policy_terminated",
 			"loan_id": appID,
@@ -819,15 +504,15 @@ func (s *Server) handleCreditScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Determine rating
-	rating := string(db.CreditVeryPoor)
+	rating := string(models.CreditVeryPoor)
 	if score >= 750 {
-		rating = string(db.CreditExcellent)
+		rating = string(models.CreditExcellent)
 	} else if score >= 650 {
-		rating = string(db.CreditGood)
+		rating = string(models.CreditGood)
 	} else if score >= 550 {
-		rating = string(db.CreditFair)
+		rating = string(models.CreditFair)
 	} else if score >= 450 {
-		rating = string(db.CreditPoor)
+		rating = string(models.CreditPoor)
 	}
 
 	// Determine max financed amount and rate
@@ -1025,7 +710,7 @@ func (s *Server) handleCollectionAction(w http.ResponseWriter, r *http.Request) 
 
 // handleGetOverdue retrieves overdue loans with collection recommendations
 func (s *Server) handleGetOverdue(w http.ResponseWriter, r *http.Request) {
-	applications, err := s.Postgres.ListApplications(r.Context(), string(db.LoanStatusActive), 100, 0)
+	applications, err := s.Postgres.ListApplications(r.Context(), string(models.LoanStatusActive), 100, 0)
 	if err != nil {
 		writeError(w, "failed to retrieve active loans", http.StatusInternalServerError)
 		return
@@ -1035,7 +720,7 @@ func (s *Server) handleGetOverdue(w http.ResponseWriter, r *http.Request) {
 	for _, app := range applications {
 		schedule, _ := s.Postgres.GetPaymentSchedule(r.Context(), app.ID)
 		for _, entry := range schedule {
-			if entry.Status == string(db.InstPending) || entry.Status == string(db.InstOverdue) {
+			if entry.Status == string(models.InstPending) || entry.Status == string(models.InstOverdue) {
 				dueDate, _ := time.Parse("2006-01-02", entry.DueDate)
 				if time.Now().After(dueDate) {
 					overdueLoans = append(overdueLoans, map[string]interface{}{
@@ -1046,7 +731,7 @@ func (s *Server) handleGetOverdue(w http.ResponseWriter, r *http.Request) {
 						"due_date":        entry.DueDate,
 						"amount":          entry.Amount,
 						"days_overdue":    int(time.Since(dueDate).Hours() / 24),
-						"recommended_action": string(db.ActionSMS),
+						"recommended_action": string(models.ActionSMS),
 					})
 				}
 			}
@@ -1092,7 +777,7 @@ func (s *Server) handleEarlySettlement(w http.ResponseWriter, r *http.Request) {
 	totalInstallments := len(schedule)
 
 	for _, entry := range schedule {
-		if entry.Status == string(db.InstPaid) {
+		if entry.Status == string(models.InstPaid) {
 			paidInstallments++
 		} else {
 			remainingBalance += entry.Amount
@@ -1132,7 +817,7 @@ func (s *Server) handleEarlySettlement(w http.ResponseWriter, r *http.Request) {
 		"total_payable_now":    totalPayable,
 		"status":               "pending_approval",
 		"early_savings":        rebateAmount,
-		"policy_upon_payment":  string(db.LoanStatusPaidOff),
+		"policy_upon_payment":  string(models.LoanStatusPaidOff),
 	}})
 }
 
@@ -1162,12 +847,12 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		schedule, _ := s.Postgres.GetPaymentSchedule(r.Context(), app.ID)
 
 		for _, entry := range schedule {
-			if entry.Status == string(db.InstPaid) {
+			if entry.Status == string(models.InstPaid) {
 				totalCollected += entry.PaidAmount
 			} else {
 				totalReceivable += entry.Amount - entry.PaidAmount
 			}
-			if entry.Status == string(db.InstOverdue) {
+			if entry.Status == string(models.InstOverdue) {
 				dueDate, _ := time.Parse("2006-01-02", entry.DueDate)
 				if time.Now().After(dueDate) {
 					overdueAmount += entry.Amount
@@ -1176,9 +861,9 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch app.Status {
-		case string(db.LoanStatusApproved):
+		case string(models.LoanStatusApproved):
 			approvedApp++
-		case string(db.LoanStatusActive):
+		case string(models.LoanStatusActive):
 			activeLoans++
 		}
 
@@ -1205,6 +890,29 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: summary})
+}
+
+// validateQueryParam extracts a query parameter, enforcing a maximum length.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	v := r.URL.Query().Get(key)
+	if len(v) > maxLen {
+		return "", fmt.Errorf("query parameter %q exceeds maximum length of %d", key, maxLen)
+	}
+	return v, nil
+}
+
+// validateIntParam extracts an integer query parameter. An absent parameter
+// yields 0 with no error.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	s := r.URL.Query().Get(key)
+	if s == "" {
+		return 0, nil
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("query parameter %q must be an integer", key)
+	}
+	return v, nil
 }
 
 func writeError(w http.ResponseWriter, msg string, code int) {

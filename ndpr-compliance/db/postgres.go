@@ -460,7 +460,8 @@ func (p *Postgres) ListDSARs(ctx context.Context, status, subjectID string, limi
 		return nil, 0, err
 	}
 	defer rows.Close()
-	return scanDSARs(rows)
+	dsars, err := scanDSARs(rows)
+	return dsars, total, err
 }
 
 func scanDSARs(rows pgx.Rows) ([]*models.DSAR, error) {
@@ -515,7 +516,8 @@ func (p *Postgres) GetDSARReporting(ctx context.Context) (*models.DSARStats, err
 
 // InsertBreach creates a new breach record.
 func (p *Postgres) InsertBreach(ctx context.Context, breach *models.Breach) error {
-	dataTypes, remediation, _ := toJSON(breach.DataTypes), toJSON(breach.RemediationSteps), (any)(nil)
+	dataTypes, _ := toJSON(breach.DataTypes)
+	remediation, _ := toJSON(breach.RemediationSteps)
 	metadataJSON, _ := toJSON(breach.Metadata)
 
 	_, err := p.Pool.Exec(ctx, `
@@ -654,8 +656,10 @@ func (p *Postgres) ListBreaches(ctx context.Context, status, severity string, li
 
 // InsertDPIA creates a new DPIA record.
 func (p *Postgres) InsertDPIA(ctx context.Context, dpia *models.DPIA) error {
-	dataCats, subjects, risks, mitigations, metadataJSON :=
-		toJSON(dpia.DataCategories), toJSON(dpia.Subjects), toJSON(dpia.Risks), toJSON(dpia.Mitigations), toJSON(dpia.Metadata)
+	dataCats, _ := toJSON(dpia.DataCategories)
+	subjects, _ := toJSON(dpia.Subjects)
+	risks, _ := toJSON(dpia.Risks)
+	metadataJSON, _ := toJSON(dpia.Metadata)
 
 	_, err := p.Pool.Exec(ctx, `
 		INSERT INTO dpias
@@ -674,8 +678,10 @@ func (p *Postgres) InsertDPIA(ctx context.Context, dpia *models.DPIA) error {
 
 // UpdateDPIA updates a DPIA record.
 func (p *Postgres) UpdateDPIA(ctx context.Context, dpia *models.DPIA) error {
-	dataCats, subjects, risks, mitigations, metadataJSON :=
-		toJSON(dpia.DataCategories), toJSON(dpia.Subjects), toJSON(dpia.Risks), toJSON(dpia.Mitigations), toJSON(dpia.Metadata)
+	dataCats, _ := toJSON(dpia.DataCategories)
+	subjects, _ := toJSON(dpia.Subjects)
+	risks, _ := toJSON(dpia.Risks)
+	metadataJSON, _ := toJSON(dpia.Metadata)
 
 	_, err := p.Pool.Exec(ctx, `
 		UPDATE dpias SET
@@ -868,7 +874,7 @@ func (p *Postgres) CreateAuditReport(ctx context.Context, report *models.AuditRe
 // GetLatestAuditReport retrieves the most recent audit report for a year.
 func (p *Postgres) GetLatestAuditReport(ctx context.Context, year int) (*models.AuditReport, error) {
 	report := &models.AuditReport{}
-	var recommendationsJSON string
+	var recommendationsJSON, metadataJSON string
 	err := p.Pool.QueryRow(ctx, `
 		SELECT id, year, report_date, overall_status, consent_records, active_consents,
 			withdrawn_consents, dsar_total, dsar_completed, dsar_on_time, dsar_overdue,
