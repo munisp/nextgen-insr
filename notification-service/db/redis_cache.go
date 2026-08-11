@@ -166,7 +166,7 @@ func (r *RedisCache) IsInQuietHours(startTime, endTime string) bool {
 
 func splitTime(t string) []int {
 	var parts []int
-	for i, c := range t {
+	for _, c := range t {
 		if c == ':' {
 			parts = append(parts, -1)
 			continue

@@ -14,7 +14,7 @@ import (
 	"github.com/insureportal/notification_service/config"
 	"github.com/insureportal/notification_service/db"
 	"github.com/insureportal/notification_service/internal/handlers"
-	"github.com/insureportal/notification_service/internal/middleware"
+	appmiddleware "github.com/insureportal/notification_service/internal/middleware"
 	"github.com/insureportal/notification_service/internal/service"
 	"go.uber.org/zap"
 )
@@ -56,7 +56,7 @@ func main() {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.CORSMiddleware())
+	r.Use(appmiddleware.CORSMiddleware())
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 	r.Use(middleware.RealIP)
@@ -65,7 +65,7 @@ func main() {
 	r.Get("/ready", h.ReadinessCheck)
 
 	r.Group(func(api chi.Router) {
-		api.Use(middleware.APIKeyAuth)
+		api.Use(appmiddleware.APIKeyAuth)
 
 		// Send notification
 		api.Post("/api/v1/send", h.SendNotification)

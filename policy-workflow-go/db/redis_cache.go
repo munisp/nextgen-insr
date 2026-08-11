@@ -110,5 +110,5 @@ func (r *RedisCache) PublishStateChange(ctx context.Context, policyID string, fr
 }
 
 func (r *RedisCache) CheckLapseDue(ctx context.Context) (int64, error) {
-	return r.client.Incr(ctx, lapseCheckKey)
+	return r.client.Incr(ctx, lapseCheckKey).Result()
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -196,7 +197,7 @@ func otelMiddleware(next http.Handler) http.Handler {
 func jsonLog(level, msg string, kvs ...string) {
 	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
 	for i := 0; i+1 < len(kvs); i += 2 {
-		entry += fmt.Sprintf(`,"%s":"%s"`, kvs[i], kvs[i+1])
+		entry += fmt.Sprintf(`","%s":"%s"`, kvs[i], kvs[i+1])
 	}
 	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
 	log.Println(entry)
@@ -801,20 +802,6 @@ func bodyLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 func tracingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get("X-Request-ID")
@@ -843,34 +830,6 @@ var (
 	rateLimitMu    sync.Mutex
 	rateLimitStore = make(map[string][]time.Time)
 )
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		rateLimitMu.Lock()
-		now := time.Now()
-		window := now.Add(-1 * time.Minute)
-		var recent []time.Time
-		for _, t := range rateLimitStore[ip] {
-			if t.After(window) {
-				recent = append(recent, t)
-			}
-		}
-		if len(recent) >= 100 {
-			rateLimitMu.Unlock()
-			w.Header().Set("Retry-After", "60")
-			http.Error(w, `{"error":"rate limit exceeded","retry_after":60}`, http.StatusTooManyRequests)
-			return
-		}
-		recent = append(recent, now)
-		rateLimitStore[ip] = recent
-		rateLimitMu.Unlock()
-		next.ServeHTTP(w, r)
-	})
-}
 
 var kafkaRestURL string
 
@@ -1037,8 +996,6 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 }
 
 
-var db *sql.DB
-
 func initDB() {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -1064,24 +1021,6 @@ func initDB() {
 	}
 }
 
-
-func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
-		return
-	}
-	if err := db.Ping(); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
-}
-
-func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
-}
 
 func main() {
 	port := os.Getenv("PORT")

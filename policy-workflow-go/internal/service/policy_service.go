@@ -141,7 +141,6 @@ func (s *PolicyService) validateTransition(pol *models.Policy, from, to models.P
 }
 
 func (s *PolicyService) executeTransition(ctx context.Context, pol *models.Policy, from, to models.PolicyState, actor, actorRole, reason string) error {
-	startTime := time.Now()
 
 	// Create transition record
 	transition := &models.PolicyTransition{
@@ -271,6 +270,7 @@ func (s *PolicyService) ProcessRenewal(ctx context.Context, policyID string, new
 		return err
 	}
 
+	gracePeriodEnd := pol.CoverageEnd.AddDate(0, 0, s.cfg.RenewalGracePeriodDays)
 	renewal := &models.RenewalRecord{
 		PolicyID:       pol.ID,
 		OriginalExpiry: pol.CoverageEnd,
@@ -281,7 +281,7 @@ func (s *PolicyService) ProcessRenewal(ctx context.Context, policyID string, new
 		RenewalStatus:  "offered",
 		PaymentStatus:  "pending",
 		RenewalMethod:  "auto",
-		GracePeriodEnd: pol.CoverageEnd.AddDate(0, 0, s.cfg.RenewalGracePeriodDays),
+		GracePeriodEnd: &gracePeriodEnd,
 	}
 
 	if err := s.pg.CreateRenewalRecord(ctx, renewal); err != nil {
@@ -379,7 +379,7 @@ func (s *PolicyService) CancelPolicy(ctx context.Context, policyID, cancelType, 
 			refundAmount = pol.Premium // Full refund within cooling-off period
 		} else if pol.SumAssured > 0 {
 			// Pro-rata refund
-			totalDays := pol.CoverageEnd.Sub(pol.IssuedAt).Hours() / 24
+			totalDays := pol.CoverageEnd.Sub(*pol.IssuedAt).Hours() / 24
 			remainingDays := pol.CoverageEnd.Sub(now()).Hours() / 24
 			if totalDays > 0 {
 				refundAmount = pol.Premium * (remainingDays / totalDays)
