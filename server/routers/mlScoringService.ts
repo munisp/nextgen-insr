@@ -1,8 +1,19 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { desc, eq, count } from "drizzle-orm";
+
+// NOTE: No real ML/fraud scoring model is attached to this service.
+// Scoring endpoints fail loudly instead of returning fabricated zero scores.
+// The list/getById/getSummary/getRecent queries read real audit_log rows.
+
+const NOT_CONFIGURED = () =>
+  new TRPCError({
+    code: "NOT_IMPLEMENTED",
+    message: "ML scoring service not configured",
+  });
 
 export const mlScoringServiceRouter = router({
   list: protectedProcedure
@@ -92,38 +103,32 @@ export const mlScoringServiceRouter = router({
 
       return results;
     }),
+
+  // Honest empty analytics — no scoring has been performed by any real model.
   analytics: protectedProcedure.query(async () => {
     return { totalScored: 0, avgScore: 0, highRiskCount: 0, modelAccuracy: 0 };
   }),
+
   batchScore: protectedProcedure
     .input(z.object({ transactionIds: z.array(z.number()) }))
-    .mutation(async ({ input }) => {
-      return { scored: input.transactionIds.length, avgScore: 0, highRisk: 0 };
+    .mutation(async () => {
+      throw NOT_CONFIGURED();
     }),
+
   explainScore: protectedProcedure
     .input(z.object({ transactionId: z.number() }))
-    .query(async ({ input }) => {
-      return {
-        transactionId: input.transactionId,
-        score: 0,
-        factors: [] as Array<{
-          feature: string;
-          weight: number;
-          value: string;
-        }>,
-      };
+    .query(async () => {
+      throw NOT_CONFIGURED();
     }),
+
   scoreTransaction: protectedProcedure
     .input(
       z.object({ transactionId: z.number(), amount: z.number().optional() })
     )
-    .mutation(async ({ input }) => {
-      return {
-        transactionId: input.transactionId,
-        score: 0,
-        risk: "low" as const,
-      };
+    .mutation(async () => {
+      throw NOT_CONFIGURED();
     }),
+
   scoringHistory: protectedProcedure.query(async () => {
     return {
       history: [] as Array<{

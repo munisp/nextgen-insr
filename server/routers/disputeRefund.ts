@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { disputes, refunds, transactions } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count, sum } from "drizzle-orm";
+import { disputes, refunds } from "../../drizzle/schema";
+import { desc, count, sql } from "drizzle-orm";
+import crypto from "crypto";
 
 /**
  * Dispute Refund Router
@@ -17,6 +19,10 @@ import { desc, eq, sql, and, gte, lte, count, sum } from "drizzle-orm";
  * - Daily refund cap per agent: ₦2,000,000
  * - Velocity check: Max 5 refunds per customer per 30 days
  * - Duplicate detection: Same amount ± ₦100 to same account within 24h
+ *
+ * NOTE: No payment rail call is made here. Every initiated refund is
+ * persisted to the refunds table with status "pending" (queued) and is
+ * only marked processed by a downstream approval/payout flow.
  */
 
 const REFUND_TIERS = [
@@ -31,15 +37,6 @@ const MAX_REFUNDS_PER_CUSTOMER_30D = 5;
 
 function getRefundTier(amount: number) {
   return REFUND_TIERS.find((t) => amount <= t.max)!;
-}
-
-function detectDuplicate(amount: number, recentRefunds: any[]): boolean {
-  const tolerance = 100;
-  const now = Date.now();
-  const oneDayAgo = now - 24 * 60 * 60 * 1000;
-  return recentRefunds.some(
-    (r) => Math.abs(r.amount - amount) <= tolerance && new Date(r.createdAt).getTime() > oneDayAgo
-  );
 }
 
 export const disputeRefundRouter = router({
@@ -57,7 +54,7 @@ export const disputeRefundRouter = router({
       const totalRows = await database.select({ total: count() }).from(disputes);
 
       const enriched = results.map((d: any) => {
-        const tier = getRefundTier(d.amount ?? 0);
+        const tier = getRefundTier(Number(d.amount ?? 0));
         return {
           ...d,
           refundTier: tier.approval,
@@ -84,12 +81,13 @@ export const disputeRefundRouter = router({
 
       // Velocity check — real DB query for refunds in last 30 days
       const database = await getDb();
-      if (!database) throw new Error("Database unavailable");
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const [{ customerRefundCount }] = await database.select({
+      const velocityRows = await database.select({
         customerRefundCount: sql<number>`COUNT(*) FILTER (WHERE customer_id = ${input.customerId} AND created_at >= ${thirtyDaysAgo.toISOString()})`,
-      }).from(disputes);
-      if (Number(customerRefundCount ?? 0) >= MAX_REFUNDS_PER_CUSTOMER_30D) {
+      }).from(refunds);
+      const customerRefundCount = (velocityRows as any)[0]?.customerRefundCount ?? 0;
+      if (Number(customerRefundCount) >= MAX_REFUNDS_PER_CUSTOMER_30D) {
         return {
           success: false,
           error: "velocity_exceeded",
@@ -98,23 +96,43 @@ export const disputeRefundRouter = router({
         };
       }
 
-      // Auto-approve for small amounts
+      // Persist the refund as a real queued record. No rail call is made
+      // here, so the status is always "pending" — even for the auto tier,
+      // which is queued without requiring manual approval.
+      const refundRef = `REF-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+      const [inserted] = await database
+        .insert(refunds)
+        .values({
+          ref: refundRef,
+          disputeId: input.disputeId,
+          agentId: input.agentId ?? 0,
+          customerId: input.customerId,
+          originalAmount: Math.round(input.amount),
+          refundAmount: Math.round(input.amount),
+          currency: "NGN",
+          reason: input.reason,
+          category: "dispute_refund",
+          status: "pending",
+          method: "original_method",
+          notes: `destination_account:${input.accountNumber}`,
+        })
+        .returning();
+
       if (tier.approval === "auto") {
         return {
           success: true,
-          refundId: `REF-${Date.now()}`,
-          status: "processed",
+          refundId: inserted?.ref ?? refundRef,
+          status: "pending",
           amount: input.amount,
           approval: "auto",
-          message: `Auto-refunded ₦${input.amount.toLocaleString()} (within ₦5,000 threshold)`,
-          processedAt: new Date().toISOString(),
-          sla: "1 hour (met)",
+          message: `Auto-tier refund of ₦${input.amount.toLocaleString()} queued for payout (within ₦5,000 threshold). No funds have moved yet.`,
+          sla: "1 hour",
         };
       }
 
       return {
         success: true,
-        refundId: `REF-${Date.now()}`,
+        refundId: inserted?.ref ?? refundRef,
         status: "pending_approval",
         amount: input.amount,
         approval: tier.approval,
@@ -134,24 +152,20 @@ export const disputeRefundRouter = router({
 
     const [[{ total }], [{ pending }], [{ processedToday }], [{ totalRefunded }]] = await Promise.all([
       database.select({ total: count() }).from(disputes),
-      database.select({ pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')` }).from(disputes),
-      database.select({ processedToday: sql<number>`COUNT(*) FILTER (WHERE status = 'processed' AND created_at >= ${today.toISOString()})` }).from(disputes),
-      database.select({ totalRefunded: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE status = 'processed'), 0)` }).from(disputes),
+      database.select({ pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')` }).from(refunds),
+      database.select({ processedToday: sql<number>`COUNT(*) FILTER (WHERE status = 'processed' AND processed_at >= ${today.toISOString()})` }).from(refunds),
+      database.select({ totalRefunded: sql<string>`COALESCE(SUM(refund_amount) FILTER (WHERE status = 'processed'), 0)` }).from(refunds),
     ]);
 
     const totalCount = Number(total ?? 0);
     const pendingCount = Number(pending ?? 0);
-    const autoApproved = await database.select({ n: sql<number>`COUNT(*) FILTER (WHERE amount <= 5000 AND status = 'processed')` }).from(disputes);
-    const autoApprovedPct = totalCount > 0 ? Math.round((Number(autoApproved[0]?.n ?? 0) / totalCount) * 100) : 0;
 
     return {
       totalDisputes: totalCount,
       pendingRefunds: pendingCount,
       processedToday: Number(processedToday ?? 0),
       totalRefundedAmount: Number(totalRefunded ?? 0),
-      avgProcessingTime: 18.5, // hours — computed from settled disputes in production
-      slaCompliance: 94.2,
-      autoApprovedPct,
+      avgProcessingTime: 0, // unknown — no settled-refund timing data yet
       lastUpdated: new Date().toISOString(),
     };
   }),
