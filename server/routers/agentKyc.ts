@@ -1,10 +1,6 @@
 // @ts-check
 import { z } from "zod";
-import {
-  router,
-  publicProcedure as openProcedure,
-  protectedProcedure,
-} from "../_core/trpc";
+import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   eq,
@@ -12,15 +8,14 @@ import {
   and,
   sql,
   count,
-  sum,
-  isNull,
-  gte,
-  lte,
-  or,
-  asc,
 } from "drizzle-orm";
 import { kycSessions, kycDocuments, auditLog } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
+
+// MOCKWARE FIX: The Sprint 78 endpoints previously returned 12 fabricated
+// KYC profiles/documents over openProcedure. They now require auth and read
+// / persist to the real kyc_sessions and kyc_documents tables. Submitted
+// documents are stored as "pending" — no verification is fabricated.
 
 export const agentKycRouter = router({
   getStats: protectedProcedure.query(async () => {
@@ -144,141 +139,112 @@ export const agentKycRouter = router({
     }),
 
   // ── Sprint 78 domain-specific procedures ──────────────────────────────────
-  listProfiles: openProcedure
+  listProfiles: protectedProcedure
     .input(z.object({ status: z.string().optional() }).optional())
     .query(async ({ input }) => {
-      const profiles = [
-        {
-          agentId: "AGT-001",
-          agentName: "Adebayo Okonkwo",
-          kycLevel: 2,
-          overallStatus: "complete",
-          riskScore: 15,
-          documents: [
-            { docId: "DOC-001A", docType: "nin", status: "verified" },
-            { docId: "DOC-001B", docType: "bvn", status: "verified" },
-          ],
-        },
-        {
-          agentId: "AGT-002",
-          agentName: "Fatima Ibrahim",
-          kycLevel: 1,
-          overallStatus: "pending",
-          riskScore: 45,
-          documents: [{ docId: "DOC-002A", docType: "nin", status: "pending" }],
-        },
-        {
-          agentId: "AGT-003",
-          agentName: "Chidi Nnamdi",
-          kycLevel: 2,
-          overallStatus: "complete",
-          riskScore: 10,
-          documents: [
-            { docId: "DOC-003A", docType: "nin", status: "verified" },
-            { docId: "DOC-003B", docType: "passport", status: "verified" },
-          ],
-        },
-        {
-          agentId: "AGT-004",
-          agentName: "Amina Yusuf",
-          kycLevel: 0,
-          overallStatus: "rejected",
-          riskScore: 80,
-          documents: [
-            { docId: "DOC-004A", docType: "nin", status: "rejected" },
-          ],
-        },
-      ];
-      let filtered = profiles;
+      const db = await getDb();
+      if (!db) return { profiles: [], total: 0 };
+      const sessions = await db
+        .select()
+        .from(kycSessions)
+        .orderBy(desc(kycSessions.createdAt))
+        .limit(100);
+      const docs = await db
+        .select()
+        .from(kycDocuments)
+        .orderBy(desc(kycDocuments.createdAt))
+        .limit(500);
+      const docsByAgent = new Map<number, typeof docs>();
+      for (const d of docs) {
+        const arr = docsByAgent.get(d.agentId) ?? [];
+        arr.push(d);
+        docsByAgent.set(d.agentId, arr);
+      }
+      let profiles = sessions.map(s => ({
+        agentId: String(s.agentId ?? ""),
+        agentName: null as string | null,
+        kycLevel: s.status === "approved" ? 2 : 0,
+        overallStatus: s.status,
+        riskScore: null as number | null, // no risk scorer attached
+        documents: (docsByAgent.get(s.agentId ?? -1) ?? []).map(d => ({
+          docId: String(d.id),
+          docType: d.docType,
+          status: d.status,
+        })),
+      }));
       if (input?.status)
-        filtered = filtered.filter(p => p.overallStatus === input.status);
-      return { profiles: filtered, total: filtered.length };
+        profiles = profiles.filter(p => p.overallStatus === input.status);
+      return { profiles, total: profiles.length };
     }),
 
-  getProfile: openProcedure
+  getProfile: protectedProcedure
     .input(z.object({ agentId: z.string() }))
     .query(async ({ input }) => {
-      const profiles: Record<
-        string,
-        {
-          agentId: string;
-          agentName: string;
-          kycLevel: number;
-          overallStatus: string;
-          riskScore: number;
-          documents: Array<{ docId: string; docType: string; status: string }>;
-        }
-      > = {
-        "AGT-001": {
-          agentId: "AGT-001",
-          agentName: "Adebayo Okonkwo",
-          kycLevel: 2,
-          overallStatus: "complete",
-          riskScore: 15,
-          documents: [
-            { docId: "DOC-001A", docType: "nin", status: "verified" },
-            { docId: "DOC-001B", docType: "bvn", status: "verified" },
-          ],
-        },
-        "AGT-002": {
-          agentId: "AGT-002",
-          agentName: "Fatima Ibrahim",
-          kycLevel: 1,
-          overallStatus: "pending",
-          riskScore: 45,
-          documents: [{ docId: "DOC-002A", docType: "nin", status: "pending" }],
-        },
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const agentPk = Number(input.agentId);
+      if (!Number.isFinite(agentPk)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid agentId" });
+      }
+      const [session] = await db
+        .select()
+        .from(kycSessions)
+        .where(eq(kycSessions.agentId, agentPk))
+        .orderBy(desc(kycSessions.createdAt))
+        .limit(1);
+      if (!session) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Agent KYC profile not found" });
+      }
+      const docs = await db
+        .select()
+        .from(kycDocuments)
+        .where(eq(kycDocuments.agentId, agentPk))
+        .limit(50);
+      return {
+        agentId: input.agentId,
+        agentName: null,
+        kycLevel: session.status === "approved" ? 2 : 0,
+        overallStatus: session.status,
+        riskScore: null,
+        documents: docs.map(d => ({
+          docId: String(d.id),
+          docType: d.docType,
+          status: d.status,
+        })),
       };
-      const profile = profiles[input.agentId];
-      if (!profile)
-        throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-      return profile;
     }),
 
-  getDocument: openProcedure
+  getDocument: protectedProcedure
     .input(z.object({ docId: z.string() }))
     .query(async ({ input }) => {
-      const docs: Record<
-        string,
-        {
-          docId: string;
-          docType: string;
-          status: string;
-          confidenceScore: number;
-          agentId: string;
-          docNumber: string;
-          fullName: string;
-        }
-      > = {
-        "DOC-001A": {
-          docId: "DOC-001A",
-          docType: "nin",
-          status: "verified",
-          confidenceScore: 95,
-          agentId: "AGT-001",
-          docNumber: "12345678901",
-          fullName: "Adebayo Okonkwo",
-        },
-        "DOC-001B": {
-          docId: "DOC-001B",
-          docType: "bvn",
-          status: "verified",
-          confidenceScore: 98,
-          agentId: "AGT-001",
-          docNumber: "22345678901",
-          fullName: "Adebayo Okonkwo",
-        },
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const docPk = Number(input.docId);
+      if (!Number.isFinite(docPk)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid docId" });
+      }
+      const [doc] = await db
+        .select()
+        .from(kycDocuments)
+        .where(eq(kycDocuments.id, docPk))
+        .limit(1);
+      if (!doc) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
+      }
+      return {
+        docId: String(doc.id),
+        docType: doc.docType,
+        status: doc.status,
+        confidenceScore: null, // no automated verification has run
+        agentId: String(doc.agentId),
+        docNumber: doc.docNumber,
+        fullName: null,
       };
-      const doc = docs[input.docId];
-      if (!doc)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Document not found",
-        });
-      return doc;
     }),
 
-  submitDocument: openProcedure
+  submitDocument: protectedProcedure
     .input(
       z.object({
         agentId: z.string(),
@@ -293,46 +259,91 @@ export const agentKycRouter = router({
       })
     )
     .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const agentPk = Number(input.agentId);
+      if (!Number.isFinite(agentPk)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid agentId" });
+      }
+      // Format validation only — the document is persisted as "pending" and
+      // requires human/system review before it can be marked verified.
       const isValidNin =
         input.docType === "nin" && /^\d{11}$/.test(input.docNumber);
       const isValidBvn =
         input.docType === "bvn" && /^\d{11}$/.test(input.docNumber);
       const isValidPassport =
         input.docType === "passport" && /^[A-Z]\d{8}$/.test(input.docNumber);
-      const isValid = isValidNin || isValidBvn || isValidPassport;
+      const isFormatValid = isValidNin || isValidBvn || isValidPassport;
+      const [doc] = await db
+        .insert(kycDocuments)
+        .values({
+          agentId: agentPk,
+          docType: input.docType,
+          docNumber: input.docNumber,
+          status: "pending",
+        })
+        .returning();
+      await db.insert(auditLog).values({
+        action: "kyc_document_submitted",
+        resource: "kyc_documents",
+        resourceId: String(doc.id),
+        status: "success",
+        metadata: { agentId: agentPk, docType: input.docType, formatValid: isFormatValid },
+      }).catch(() => {});
       return {
-        docId: `DOC-${Date.now()}`,
+        docId: String(doc.id),
         agentId: input.agentId,
         docType: input.docType,
-        status: isValid ? ("verified" as const) : ("manual_review" as const),
-        confidenceScore: isValid ? 95 : 40,
-        submittedAt: new Date().toISOString(),
+        status: "pending" as const,
+        confidenceScore: null, // no automated verification has run
+        submittedAt: doc.createdAt?.toISOString?.() ?? new Date().toISOString(),
       };
     }),
 
-  getDashboard: openProcedure.query(async () => {
+  getDashboard: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db)
+      return {
+        totalAgents: 0,
+        verificationRate: 0,
+        avgRiskScore: null,
+        byStatus: {},
+        recentSubmissions: [],
+      };
+    const [totalSessions] = await db
+      .select({ value: count() })
+      .from(kycSessions);
+    const statusCounts = await db
+      .select({ status: kycSessions.status, cnt: count() })
+      .from(kycSessions)
+      .groupBy(kycSessions.status)
+      .limit(100);
+    const byStatus: Record<string, number> = {};
+    statusCounts.forEach(r => {
+      byStatus[r.status] = Number(r.cnt);
+    });
+    const total = Number(totalSessions.value);
+    const approved = byStatus["approved"] ?? 0;
+    const recentDocs = await db
+      .select()
+      .from(kycDocuments)
+      .orderBy(desc(kycDocuments.createdAt))
+      .limit(5);
     return {
-      totalAgents: 4,
-      verificationRate: 50,
-      avgRiskScore: 37.5,
-      byStatus: { complete: 2, pending: 1, rejected: 1 },
-      recentSubmissions: [
-        {
-          agentId: "AGT-001",
-          docType: "nin",
-          status: "verified",
-          submittedAt: "2024-06-01",
-        },
-        {
-          agentId: "AGT-002",
-          docType: "nin",
-          status: "pending",
-          submittedAt: "2024-06-02",
-        },
-      ],
+      totalAgents: total,
+      verificationRate: total > 0 ? Math.round((approved / total) * 100) : 0,
+      avgRiskScore: null, // no risk scorer attached
+      byStatus,
+      recentSubmissions: recentDocs.map(d => ({
+        agentId: String(d.agentId),
+        docType: d.docType,
+        status: d.status,
+        submittedAt: d.createdAt?.toISOString?.()?.slice(0, 10) ?? null,
+      })),
     };
   }),
-  list: openProcedure
+  list: protectedProcedure
     .input(
       z
         .object({
@@ -341,9 +352,18 @@ export const agentKycRouter = router({
         })
         .default({})
     )
-    .query(async () => ({
-      items: [],
-      data: [],
-      total: 0,
-    })),
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { items: [], data: [], total: 0 };
+      const rows = await db
+        .select()
+        .from(kycSessions)
+        .orderBy(desc(kycSessions.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+      const [totalRow] = await db
+        .select({ total: count() })
+        .from(kycSessions);
+      return { items: rows, data: rows, total: Number(totalRow?.total ?? 0) };
+    }),
 });
