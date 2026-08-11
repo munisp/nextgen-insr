@@ -3,6 +3,11 @@ Neo4j + GNN Integration for Insurance Fraud Detection
 
 This module integrates Neo4j graph database with Graph Neural Networks (GNN)
 for advanced fraud detection in the insurance platform.
+
+FAIL-LOUD DESIGN: Neo4j driver failures and Cypher errors are propagated as
+exceptions — simulated customers/policies/claims are never mixed into live
+results. Empty query results produce honest empty responses, not fabricated
+entities with random fraud scores.
 """
 
 import os
@@ -38,6 +43,17 @@ try:
     GNN_AVAILABLE = True
 except ImportError:
     GNN_AVAILABLE = False
+
+    # Stub enum so default arguments still evaluate when the GNN module is
+    # missing; any actual use is blocked by _require_gnn().
+    class GNNModelType(Enum):
+        GCN = "graph_convolutional_network"
+        GAT = "graph_attention_network"
+        SAGE = "graphsage"
+
+    GNNConfig = None
+    GNNFraudDetectionService = None
+    FraudPrediction = None
 
 
 @dataclass
@@ -79,105 +95,89 @@ class FraudRingResult:
 class Neo4jGNNIntegration:
     """
     Integrates Neo4j graph database with GNN for fraud detection.
-    
+
     This service:
     1. Extracts graph data from Neo4j
     2. Prepares data for GNN training/inference
     3. Runs GNN predictions
     4. Stores predictions back in Neo4j
     5. Enables real-time fraud detection queries
+
+    Requires a reachable Neo4j instance (constructor raises RuntimeError
+    otherwise) and the GNN service for training/prediction. No simulated
+    graph data is ever returned.
     """
 
-    def __init__(self, neo4j_config: Neo4jConfig = None, gnn_config: GNNConfig = None):
+    def __init__(self, neo4j_config: Neo4jConfig = None, gnn_config: "GNNConfig" = None):
         self.neo4j_config = neo4j_config or Neo4jConfig()
-        self.gnn_config = gnn_config or GNNConfig()
-        
+        self.gnn_config = gnn_config or (GNNConfig() if GNN_AVAILABLE else None)
+
         self.driver = None
         self.gnn_service = None
         self.model_version = "v1.0.0"
-        
+
         self._initialize_connections()
 
     def _initialize_connections(self):
-        """Initialize Neo4j and GNN connections"""
+        """Initialize Neo4j and GNN connections. Fails loudly when Neo4j
+        is unavailable — simulated graph data is disabled."""
         # Initialize Neo4j driver
-        if NEO4J_AVAILABLE:
-            try:
-                self.driver = GraphDatabase.driver(
-                    self.neo4j_config.uri,
-                    auth=(self.neo4j_config.username, self.neo4j_config.password),
-                    max_connection_pool_size=self.neo4j_config.max_connection_pool_size,
-                    connection_timeout=self.neo4j_config.connection_timeout,
-                )
-                logger.info("Neo4j driver initialized successfully")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Neo4j driver: {e}")
-                self.driver = None
-        else:
-            logger.warning("Neo4j driver not available, using simulation mode")
-        
-        # Initialize GNN service
+        if not NEO4J_AVAILABLE:
+            raise RuntimeError(
+                "neo4j driver is not installed; cannot extract graph data. "
+                "Simulated Neo4j results are disabled. Install the neo4j package."
+            )
+        try:
+            self.driver = GraphDatabase.driver(
+                self.neo4j_config.uri,
+                auth=(self.neo4j_config.username, self.neo4j_config.password),
+                max_connection_pool_size=self.neo4j_config.max_connection_pool_size,
+                connection_timeout=self.neo4j_config.connection_timeout,
+            )
+            self.driver.verify_connectivity()
+            logger.info("Neo4j driver initialized successfully")
+        except Exception as e:
+            self.driver = None
+            raise RuntimeError(
+                f"Failed to connect to Neo4j at {self.neo4j_config.uri}: {e}. "
+                "Simulated Neo4j results are disabled."
+            ) from e
+
+        # Initialize GNN service (optional — training/prediction require it)
         if GNN_AVAILABLE:
             self.gnn_service = GNNFraudDetectionService(config=self.gnn_config)
             logger.info("GNN service initialized successfully")
         else:
-            logger.warning("GNN service not available, using simulation mode")
+            logger.warning(
+                "GNN service not available; train/predict operations will raise."
+            )
+
+    def _require_gnn(self) -> None:
+        if self.gnn_service is None:
+            raise RuntimeError(
+                "GNN service is unavailable (graph_neural_network_fraud import "
+                "failed); simulated GNN results are disabled."
+            )
 
     def _execute_cypher(self, query: str, parameters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        """Execute a Cypher query against Neo4j"""
+        """Execute a Cypher query against Neo4j.
+
+        Raises RuntimeError on any failure — errors are never masked with
+        simulated rows.
+        """
         if not self.driver:
-            return self._simulate_cypher_result(query)
-        
+            raise RuntimeError(
+                "Neo4j driver is not connected; cannot execute Cypher. "
+                "Simulated query results are disabled."
+            )
+
         try:
             with self.driver.session(database=self.neo4j_config.database) as session:
                 result = session.run(query, parameters or {})
                 return [record.data() for record in result]
         except Exception as e:
             logger.error(f"Cypher query failed: {e}")
-            return self._simulate_cypher_result(query)
-
-    def _simulate_cypher_result(self, query: str) -> List[Dict[str, Any]]:
-        """Simulate Cypher query results for testing"""
-        np.random.seed(42)
-        
-        if "Customer" in query:
-            return [
-                {
-                    "id": f"cust_{i:03d}",
-                    "name": f"Customer {i}",
-                    "segment": np.random.choice(["Premium", "Standard", "Basic"]),
-                    "risk_score": float(np.random.beta(2, 5)),
-                    "tenure_years": int(np.random.randint(1, 15)),
-                    "num_policies": int(np.random.randint(1, 5)),
-                    "num_claims": int(np.random.poisson(2)),
-                    "claim_ratio": float(np.random.beta(2, 8)),
-                }
-                for i in range(100)
-            ]
-        elif "Policy" in query:
-            return [
-                {
-                    "id": f"pol_{i:03d}",
-                    "type": np.random.choice(["Life", "Health", "Auto", "Property"]),
-                    "premium": float(np.random.uniform(50000, 500000)),
-                    "coverage": float(np.random.uniform(1000000, 10000000)),
-                    "status": np.random.choice(["Active", "Expired", "Cancelled"]),
-                }
-                for i in range(200)
-            ]
-        elif "Claim" in query:
-            return [
-                {
-                    "id": f"claim_{i:03d}",
-                    "amount": float(np.random.uniform(10000, 1000000)),
-                    "status": np.random.choice(["Pending", "Approved", "Rejected"]),
-                    "fraud_score": float(np.random.beta(2, 10)),
-                    "days_to_file": int(np.random.randint(1, 90)),
-                }
-                for i in range(150)
-            ]
-        else:
-            return []
+            raise RuntimeError(f"Neo4j Cypher query failed: {e}") from e
 
     def extract_graph_for_gnn(
         self,
@@ -188,15 +188,17 @@ class Neo4jGNNIntegration:
     ) -> Tuple[List[Dict[str, Any]], List[Tuple[str, str, str]]]:
         """
         Extract graph data from Neo4j for GNN processing.
-        
+
         Returns:
             Tuple of (nodes, edges) where:
             - nodes: List of node dictionaries with id, type, and properties
             - edges: List of (source_id, target_id, edge_type) tuples
+
+        Empty graph queries return honestly empty node/edge lists.
         """
         nodes = []
         edges = []
-        
+
         # Query for customers
         if customer_ids:
             customer_query = """
@@ -212,7 +214,7 @@ class Neo4jGNNIntegration:
             LIMIT 1000
             """
             params = {}
-        
+
         customer_results = self._execute_cypher(customer_query, params)
         for record in customer_results:
             nodes.append({
@@ -220,7 +222,7 @@ class Neo4jGNNIntegration:
                 "type": "customer",
                 "properties": record.get("properties", record),
             })
-        
+
         # Query for policies
         if include_policies:
             policy_query = """
@@ -239,7 +241,7 @@ class Neo4jGNNIntegration:
                 customer_id = record.get("customer_id")
                 if customer_id:
                     edges.append((customer_id, policy_id, "HAS_POLICY"))
-        
+
         # Query for claims
         if include_claims:
             claim_query = """
@@ -258,7 +260,7 @@ class Neo4jGNNIntegration:
                 policy_id = record.get("policy_id")
                 if policy_id:
                     edges.append((policy_id, claim_id, "HAS_CLAIM"))
-        
+
         # Query for customer relationships (shared address, phone, agent)
         relationship_query = """
         MATCH (c1:Customer)-[r:RELATED_TO|SHARES_ADDRESS|SHARES_PHONE|SHARES_AGENT]-(c2:Customer)
@@ -273,7 +275,7 @@ class Neo4jGNNIntegration:
             rel_type = record.get("rel_type", "RELATED_TO")
             if source and target:
                 edges.append((source, target, rel_type))
-        
+
         logger.info(f"Extracted {len(nodes)} nodes and {len(edges)} edges from Neo4j")
         return nodes, edges
 
@@ -284,9 +286,7 @@ class Neo4jGNNIntegration:
         labels: Dict[str, int] = None,
     ) -> Any:
         """Prepare extracted graph data for GNN processing"""
-        if not self.gnn_service:
-            return {"nodes": nodes, "edges": edges, "labels": labels}
-        
+        self._require_gnn()
         return self.gnn_service.prepare_graph_data(nodes, edges, labels)
 
     def train_fraud_model(
@@ -298,48 +298,38 @@ class Neo4jGNNIntegration:
     ) -> Dict[str, Any]:
         """
         Train GNN fraud detection model on Neo4j graph data.
-        
+
         Args:
             model_type: Type of GNN model (GCN, GAT, SAGE)
             nodes: Optional pre-extracted nodes
             edges: Optional pre-extracted edges
             labels: Known fraud labels {entity_id: label}
-        
+
         Returns:
-            Training result with metrics
+            Training result with real metrics. Raises RuntimeError when the
+            GNN service is unavailable — no simulated metrics.
         """
+        self._require_gnn()
+
         # Extract data if not provided
         if nodes is None or edges is None:
             nodes, edges = self.extract_graph_for_gnn()
-        
+
         # Prepare data for GNN
         graph_data = self.prepare_gnn_data(nodes, edges, labels)
-        
-        # Train model
-        if self.gnn_service:
-            training_result = self.gnn_service.train_model(model_type, graph_data)
-            return {
-                "model_type": training_result.model_type,
-                "accuracy": training_result.accuracy,
-                "precision": training_result.precision,
-                "recall": training_result.recall,
-                "f1_score": training_result.f1_score,
-                "auc_roc": training_result.auc_roc,
-                "training_time_seconds": training_result.training_time_seconds,
-                "best_epoch": training_result.best_epoch,
-            }
-        else:
-            # Simulate training result
-            return {
-                "model_type": model_type.value,
-                "accuracy": 0.89,
-                "precision": 0.85,
-                "recall": 0.82,
-                "f1_score": 0.83,
-                "auc_roc": 0.91,
-                "training_time_seconds": 45.2,
-                "best_epoch": 150,
-            }
+
+        # Train model (raises RuntimeError if torch_geometric missing)
+        training_result = self.gnn_service.train_model(model_type, graph_data)
+        return {
+            "model_type": training_result.model_type,
+            "accuracy": training_result.accuracy,
+            "precision": training_result.precision,
+            "recall": training_result.recall,
+            "f1_score": training_result.f1_score,
+            "auc_roc": training_result.auc_roc,
+            "training_time_seconds": training_result.training_time_seconds,
+            "best_epoch": training_result.best_epoch,
+        }
 
     def predict_fraud(
         self,
@@ -348,39 +338,25 @@ class Neo4jGNNIntegration:
     ) -> List[GNNPredictionResult]:
         """
         Predict fraud probability for entities using GNN.
-        
+
         Args:
             entity_ids: Specific entities to predict (None for all)
             model_type: GNN model type to use
-        
+
         Returns:
-            List of prediction results
+            List of prediction results. Raises RuntimeError when the GNN
+            service or a trained model is unavailable — no random
+            probabilities are generated.
         """
+        self._require_gnn()
+
         # Extract graph data
         nodes, edges = self.extract_graph_for_gnn(customer_ids=entity_ids)
         graph_data = self.prepare_gnn_data(nodes, edges)
-        
-        # Get predictions
-        if self.gnn_service:
-            predictions = self.gnn_service.predict_fraud(model_type, graph_data, entity_ids)
-        else:
-            # Simulate predictions
-            np.random.seed(42)
-            predictions = []
-            for node in nodes:
-                if entity_ids and node["id"] not in entity_ids:
-                    continue
-                fraud_prob = float(np.random.beta(2, 10))
-                predictions.append(FraudPrediction(
-                    entity_id=node["id"],
-                    entity_type=node["type"],
-                    fraud_probability=fraud_prob,
-                    fraud_class=2 if fraud_prob > 0.7 else (1 if fraud_prob > 0.3 else 0),
-                    confidence=float(np.random.uniform(0.7, 0.95)),
-                    contributing_factors=["network_connections", "claim_pattern"],
-                    connected_suspicious_entities=[],
-                ))
-        
+
+        # Get predictions (raises if model untrained)
+        predictions = self.gnn_service.predict_fraud(model_type, graph_data, entity_ids)
+
         # Convert to result objects
         results = []
         for pred in predictions:
@@ -395,23 +371,20 @@ class Neo4jGNNIntegration:
                 prediction_timestamp=datetime.utcnow().isoformat(),
                 model_version=self.model_version,
             ))
-        
+
         return results
 
     def store_predictions_in_neo4j(self, predictions: List[GNNPredictionResult]) -> int:
         """
         Store GNN predictions back in Neo4j for querying.
-        
+
         Args:
             predictions: List of prediction results
-        
+
         Returns:
-            Number of predictions stored
+            Number of predictions stored. Raises RuntimeError on connection
+            or query failure — never pretends to store.
         """
-        if not self.driver:
-            logger.info(f"Simulation: Would store {len(predictions)} predictions in Neo4j")
-            return len(predictions)
-        
         stored_count = 0
         for pred in predictions:
             query = """
@@ -433,25 +406,29 @@ class Neo4jGNNIntegration:
                 "timestamp": pred.prediction_timestamp,
                 "model_version": pred.model_version,
             }
-            
-            try:
-                result = self._execute_cypher(query, params)
-                if result:
-                    stored_count += 1
-            except Exception as e:
-                logger.error(f"Failed to store prediction for {pred.entity_id}: {e}")
-        
+
+            result = self._execute_cypher(query, params)
+            if result:
+                stored_count += 1
+            else:
+                logger.warning(
+                    f"No Neo4j node matched id={pred.entity_id}; prediction not stored"
+                )
+
         logger.info(f"Stored {stored_count} predictions in Neo4j")
         return stored_count
 
     def detect_fraud_rings(self, min_ring_size: int = 3) -> List[FraudRingResult]:
         """
         Detect fraud rings using GNN and Neo4j graph analysis.
-        
+
         Combines:
         1. Neo4j graph algorithms for community detection
         2. GNN predictions for risk scoring
         3. Pattern matching for fraud indicators
+
+        Empty results are returned as an empty list — simulated rings are
+        never fabricated.
         """
         # Query for potential fraud rings from Neo4j
         ring_query = """
@@ -465,45 +442,29 @@ class Neo4jGNNIntegration:
         RETURN DISTINCT ring_members
         LIMIT 50
         """
-        
+
         ring_results = self._execute_cypher(ring_query, {"min_size": min_ring_size})
-        
-        # If no results from Neo4j, use GNN-based detection
+
+        # If no results from Neo4j, use GNN-based detection on the real graph
         if not ring_results:
             nodes, edges = self.extract_graph_for_gnn()
+            if not nodes:
+                logger.info("detect_fraud_rings: empty graph, no rings detected")
+                return []
+            self._require_gnn()
             graph_data = self.prepare_gnn_data(nodes, edges)
-            
-            if self.gnn_service:
-                gnn_rings = self.gnn_service.detect_fraud_rings(graph_data, min_ring_size)
-            else:
-                # Simulate fraud rings
-                gnn_rings = [
-                    {
-                        "ring_id": "ring_0",
-                        "size": 4,
-                        "members": ["cust_001", "cust_002", "cust_003", "cust_004"],
-                        "risk_score": 0.85,
-                    },
-                    {
-                        "ring_id": "ring_1",
-                        "size": 3,
-                        "members": ["cust_010", "cust_011", "cust_012"],
-                        "risk_score": 0.72,
-                    },
-                ]
-            
-            ring_results = gnn_rings
-        
+            ring_results = self.gnn_service.detect_fraud_rings(graph_data, min_ring_size)
+
         # Convert to FraudRingResult objects
         fraud_rings = []
         for i, ring in enumerate(ring_results):
             if isinstance(ring, dict):
                 members = ring.get("members", ring.get("ring_members", []))
-                risk_score = ring.get("risk_score", 0.75)
+                risk_score = ring.get("risk_score")
             else:
                 members = list(ring) if hasattr(ring, '__iter__') else []
-                risk_score = 0.75
-            
+                risk_score = None
+
             # Calculate total claims amount for ring members
             claims_query = """
             MATCH (c:Customer)-[:HAS_POLICY]->(:Policy)-[:HAS_CLAIM]->(cl:Claim)
@@ -511,25 +472,28 @@ class Neo4jGNNIntegration:
             RETURN sum(cl.amount) as total_claims
             """
             claims_result = self._execute_cypher(claims_query, {"member_ids": members})
-            total_claims = claims_result[0].get("total_claims", 0) if claims_result else 0
-            
+            total_claims = claims_result[0].get("total_claims") if claims_result else None
+
             fraud_rings.append(FraudRingResult(
                 ring_id=f"ring_{i}",
                 members=members,
-                risk_score=risk_score,
-                total_claims_amount=float(total_claims) if total_claims else np.random.uniform(500000, 5000000),
+                risk_score=float(risk_score) if risk_score is not None else 0.0,
+                total_claims_amount=float(total_claims) if total_claims else 0.0,
                 shared_attributes=["address", "phone", "agent"],
-                detection_method="gnn_community_detection",
+                detection_method="neo4j_graph_query" if not isinstance(ring, dict) else ring.get("detection_method", "gnn_cycle_detection"),
             ))
-        
+
         logger.info(f"Detected {len(fraud_rings)} potential fraud rings")
         return fraud_rings
 
     def get_entity_fraud_context(self, entity_id: str) -> Dict[str, Any]:
         """
         Get comprehensive fraud context for an entity from Neo4j + GNN.
-        
-        Returns entity details, GNN predictions, connected entities, and risk factors.
+
+        Returns entity details, any GNN predictions previously stored on the
+        node, connected entities, and risk factors. When the entity does not
+        exist, an honest not-found response is returned — never a fabricated
+        entity with a random fraud probability.
         """
         # Get entity details
         entity_query = """
@@ -543,51 +507,69 @@ class Neo4jGNNIntegration:
                    fraud_probability: connected.gnn_fraud_probability
                }) as connections
         """
-        
+
         result = self._execute_cypher(entity_query, {"entity_id": entity_id})
-        
-        if not result:
-            # Simulate result
-            result = [{
-                "entity": {
-                    "id": entity_id,
-                    "type": "customer",
-                    "gnn_fraud_probability": float(np.random.beta(2, 10)),
-                    "gnn_fraud_class": 0,
-                    "gnn_confidence": 0.85,
-                },
-                "connections": [
-                    {"id": f"pol_{i}", "type": "Policy", "relationship": "HAS_POLICY", "fraud_probability": 0.1}
-                    for i in range(3)
-                ],
-            }]
-        
-        entity_data = result[0] if result else {}
+
+        if not result or result[0].get("entity") is None:
+            logger.info(f"Entity {entity_id} not found in Neo4j")
+            return {
+                "entity_id": entity_id,
+                "found": False,
+                "entity_details": None,
+                "gnn_prediction": None,
+                "connections": [],
+                "network_risk_score": None,
+                "suspicious_connections_count": 0,
+                "total_connections_count": 0,
+                "risk_assessment": None,
+                "detail": "entity not found in knowledge graph",
+            }
+
+        entity_data = result[0]
         entity = entity_data.get("entity", {})
-        connections = entity_data.get("connections", [])
-        
-        # Get GNN prediction if not already stored
-        predictions = self.predict_fraud([entity_id])
-        gnn_prediction = predictions[0] if predictions else None
-        
-        # Calculate network risk score
-        suspicious_connections = [c for c in connections if c.get("fraud_probability", 0) > 0.5]
-        network_risk = len(suspicious_connections) / max(len(connections), 1)
-        
+        connections = [
+            c for c in entity_data.get("connections", []) if c.get("id") is not None
+        ]
+
+        # Use GNN prediction values persisted on the node (written by
+        # store_predictions_in_neo4j). If none were stored, report that
+        # honestly instead of fabricating a probability.
+        gnn_prediction = None
+        if entity.get("gnn_fraud_probability") is not None:
+            gnn_prediction = {
+                "fraud_probability": entity.get("gnn_fraud_probability"),
+                "fraud_class": entity.get("gnn_fraud_class"),
+                "confidence": entity.get("gnn_confidence"),
+                "contributing_factors": entity.get("gnn_contributing_factors", []),
+                "model_version": entity.get("gnn_model_version"),
+                "prediction_timestamp": entity.get("gnn_prediction_timestamp"),
+                "source": "neo4j_persisted_prediction",
+            }
+
+        # Calculate network risk score from real connected-entity probabilities
+        scored = [c for c in connections if c.get("fraud_probability") is not None]
+        suspicious_connections = [c for c in scored if c["fraud_probability"] > 0.5]
+        network_risk = (
+            len(suspicious_connections) / len(scored) if scored else None
+        )
+
+        risk_assessment = None
+        if network_risk is not None:
+            risk_assessment = (
+                "HIGH" if network_risk > 0.5
+                else ("MEDIUM" if network_risk > 0.2 else "LOW")
+            )
+
         return {
             "entity_id": entity_id,
+            "found": True,
             "entity_details": entity,
-            "gnn_prediction": {
-                "fraud_probability": gnn_prediction.fraud_probability if gnn_prediction else 0,
-                "fraud_class": gnn_prediction.fraud_class if gnn_prediction else 0,
-                "confidence": gnn_prediction.confidence if gnn_prediction else 0,
-                "contributing_factors": gnn_prediction.contributing_factors if gnn_prediction else [],
-            },
+            "gnn_prediction": gnn_prediction,
             "connections": connections,
             "network_risk_score": network_risk,
             "suspicious_connections_count": len(suspicious_connections),
             "total_connections_count": len(connections),
-            "risk_assessment": "HIGH" if network_risk > 0.5 else ("MEDIUM" if network_risk > 0.2 else "LOW"),
+            "risk_assessment": risk_assessment,
         }
 
     def run_fraud_detection_pipeline(
@@ -598,15 +580,16 @@ class Neo4jGNNIntegration:
     ) -> Dict[str, Any]:
         """
         Run complete fraud detection pipeline.
-        
+
         1. Extract graph from Neo4j
         2. Train GNN model (optional)
         3. Generate predictions
         4. Detect fraud rings
         5. Store results in Neo4j
-        
+
         Returns:
-            Pipeline execution results
+            Pipeline execution results. Any dependency failure (Neo4j, GNN,
+            untrained model) raises RuntimeError instead of being masked.
         """
         start_time = datetime.utcnow()
         results = {
@@ -614,7 +597,7 @@ class Neo4jGNNIntegration:
             "start_time": start_time.isoformat(),
             "steps": [],
         }
-        
+
         # Step 1: Extract graph
         nodes, edges = self.extract_graph_for_gnn(customer_ids=customer_ids)
         results["steps"].append({
@@ -623,8 +606,9 @@ class Neo4jGNNIntegration:
             "edges_count": len(edges),
             "status": "completed",
         })
-        
+
         # Step 2: Train model (optional)
+        training_result = None
         if train_model:
             training_result = self.train_fraud_model(nodes=nodes, edges=edges)
             results["steps"].append({
@@ -632,7 +616,7 @@ class Neo4jGNNIntegration:
                 "metrics": training_result,
                 "status": "completed",
             })
-        
+
         # Step 3: Generate predictions
         predictions = self.predict_fraud(entity_ids=customer_ids)
         high_risk_count = len([p for p in predictions if p.fraud_probability > 0.5])
@@ -642,7 +626,7 @@ class Neo4jGNNIntegration:
             "high_risk_count": high_risk_count,
             "status": "completed",
         })
-        
+
         # Step 4: Detect fraud rings
         fraud_rings = self.detect_fraud_rings()
         results["steps"].append({
@@ -651,7 +635,7 @@ class Neo4jGNNIntegration:
             "total_ring_members": sum(len(r.members) for r in fraud_rings),
             "status": "completed",
         })
-        
+
         # Step 5: Store predictions
         if store_predictions:
             stored_count = self.store_predictions_in_neo4j(predictions)
@@ -660,7 +644,7 @@ class Neo4jGNNIntegration:
                 "stored_count": stored_count,
                 "status": "completed",
             })
-        
+
         end_time = datetime.utcnow()
         results["end_time"] = end_time.isoformat()
         results["duration_seconds"] = (end_time - start_time).total_seconds()
@@ -668,9 +652,9 @@ class Neo4jGNNIntegration:
             "total_entities_analyzed": len(predictions),
             "high_risk_entities": high_risk_count,
             "fraud_rings_detected": len(fraud_rings),
-            "model_accuracy": results["steps"][1]["metrics"]["accuracy"] if train_model else None,
+            "model_accuracy": training_result["accuracy"] if training_result else None,
         }
-        
+
         logger.info(f"Fraud detection pipeline completed in {results['duration_seconds']:.2f}s")
         return results
 
@@ -686,7 +670,11 @@ async def neo4j_gnn_fraud_detection_activity(
     customer_ids: List[str] = None,
     train_model: bool = False,
 ) -> Dict[str, Any]:
-    """Temporal activity for Neo4j-GNN fraud detection"""
+    """Temporal activity for Neo4j-GNN fraud detection.
+
+    Raises RuntimeError when Neo4j or the GNN service is unavailable —
+    simulated results are disabled.
+    """
     service = Neo4jGNNIntegration()
     try:
         result = service.run_fraud_detection_pipeline(
