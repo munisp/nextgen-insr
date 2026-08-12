@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, defaultExclude } from "vitest/config";
 import path from "path";
 
 const templateRoot = path.resolve(import.meta.dirname);
@@ -39,6 +39,9 @@ export default defineConfig({
       "tests/**/*.test.ts",
       "tests/**/*.spec.ts",
     ],
+    // Integration tests require a real database and run via
+    // `pnpm test:integration` (vitest.integration.config.ts).
+    exclude: [...defaultExclude, "**/*.integration.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
