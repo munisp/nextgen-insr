@@ -76,16 +76,28 @@ export async function getDb(): Promise<ReturnType<typeof drizzle> | null> {
       typeof require !== "undefined" ? (await import("os")).cpus().length : 4;
     const effectiveSpindleCount = 1;
     const formulaPoolSize = cpuCores * 2 + effectiveSpindleCount;
-    const poolSize = Math.max(5, Math.min(50, formulaPoolSize));
+    // Env-overridable pool size (DB_POOL_MAX / DB_POOL_MIN). Defaults are
+    // unchanged from the formula above; overrides are needed for constrained
+    // environments (e.g. single-connection embedded Postgres in tests).
+    const envPoolMax = Number.parseInt(process.env.DB_POOL_MAX ?? "", 10);
+    const envPoolMin = Number.parseInt(process.env.DB_POOL_MIN ?? "", 10);
+    const poolSize =
+      Number.isFinite(envPoolMax) && envPoolMax > 0
+        ? envPoolMax
+        : Math.max(5, Math.min(50, formulaPoolSize));
+    const poolMin =
+      Number.isFinite(envPoolMin) && envPoolMin >= 0
+        ? envPoolMin
+        : Math.max(2, Math.floor(poolSize / 4));
     logger.info(
-      `[DB] Initializing connection pool: ${poolSize} connections (formula: ${cpuCores} cores × 2 + ${effectiveSpindleCount} spindle)`
+      `[DB] Initializing connection pool: max=${poolSize} min=${poolMin} connections (formula: ${cpuCores} cores × 2 + ${effectiveSpindleCount} spindle)`
     );
 
     _pool = new Pool({
       connectionString: url,
       ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
       max: poolSize,
-      min: Math.max(2, Math.floor(poolSize / 4)),
+      min: poolMin,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
       maxUses: 7500,
@@ -548,7 +560,6 @@ export async function getChatMessages(sessionId: number) {
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 export async function writeAuditLog(data: {
   agentId?: number;
-  agentId?: string;
   action: string;
   resource: string;
   resourceId?: string;
@@ -560,7 +571,6 @@ export async function writeAuditLog(data: {
   if (!db) return;
   try {
     await db.insert(auditLog).values({
-      agentId: data.agentId ?? null,
       agentId: data.agentId ?? null,
       action: data.action,
       resource: data.resource,

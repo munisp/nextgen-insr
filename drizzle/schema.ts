@@ -548,7 +548,6 @@ export const auditLog = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     agentId: integer("agentId"),
-    agentId2: varchar("agentId", { length: 32 }),
     action: varchar("action", { length: 128 }).notNull(),
     resource: varchar("resource", { length: 64 }),
     resourceId: varchar("resourceId", { length: 64 }),
@@ -2723,7 +2722,9 @@ export type TenantUser = typeof tenantUsers.$inferSelect;
 export type InsertTenantUser = typeof tenantUsers.$inferInsert;
 
 // ─── Premium Fee Schedules (Insurance Fee Configuration) ─────────────────────
-export const feeTypeEnum = pgEnum("fee_type", ["percentage", "flat"]);
+// Must match the enum created by migration 0028 ('percentage','flat','tiered'),
+// otherwise drizzle-kit push and runtime inserts disagree with the real DB.
+export const feeTypeEnum = pgEnum("fee_type", ["percentage", "flat", "tiered"]);
 export const premiumFeeSchedules = pgTable(
   "premium_fee_schedules",
   {
