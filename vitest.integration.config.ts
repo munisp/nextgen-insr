@@ -72,6 +72,8 @@ export default defineConfig({
       KEYCLOAK_REALM: "insureportal",
       KEYCLOAK_CLIENT_ID: "insurance-portal",
       KEYCLOAK_CLIENT_SECRET: "integration-keycloak-secret-55aa02d9",
+      MINIO_SECRET_KEY: "integration-minio-secret-6c2b91e0",
+      APISIX_ADMIN_KEY: "integration-apisix-key-a04d77c3",
       // POSTGRES_URL is intentionally NOT set here: it is passed through from
       // the environment when provided (CI), otherwise globalSetup spawns
       // PGlite and exports the connection string before workers start.
