@@ -272,7 +272,7 @@ export const amlScreeningRouter = router({
         .from(transactions)
         .where(and(
           gte(transactions.createdAt, twentyFourHoursAgo),
-          sql`LOWER(${transactions.description}) LIKE LOWER(${`%${input.entityName}%`})`,
+          sql`LOWER(${transactions.customerName}) LIKE LOWER(${`%${input.entityName}%`})`,
         ));
 
       const { score, flags, level } = computeAmlRiskScore({
@@ -359,10 +359,11 @@ export const amlScreeningRouter = router({
 
       await writeAuditLog({
         action: "AML_SCREENING",
-        entityType: "compliance_filing",
-        entityId: String(filing.id),
-        userId: ctx.user?.id ?? 0,
-        details: { entityName: input.entityName, riskScore: score, riskLevel: level, flags },
+        resource: "compliance_filing",
+        resourceId: String(filing.id),
+        agentId: ctx.user?.id,
+        status: "success",
+        metadata: { entityName: input.entityName, riskScore: score, riskLevel: level, flags },
       });
 
       return {
@@ -460,10 +461,11 @@ export const amlScreeningRouter = router({
 
       await writeAuditLog({
         action: "SAR_FILED",
-        entityType: "compliance_filing",
-        entityId: String(sarFiling.id),
-        userId: ctx.user?.id ?? 0,
-        details: {
+        resource: "compliance_filing",
+        resourceId: String(sarFiling.id),
+        agentId: ctx.user?.id,
+        status: nfiuResult.success ? "success" : "warning",
+        metadata: {
           sarReference: sarRef,
           nfiuReference: nfiuResult.nfiuReference,
           submitted: nfiuResult.success,
@@ -531,7 +533,7 @@ export const amlScreeningRouter = router({
         const amount = parseFloat(String(txn.amount ?? 0));
         const { score, flags, level } = computeAmlRiskScore({
           amount,
-          entityName: String(txn.description ?? "Unknown"),
+          entityName: String(txn.customerName ?? "Unknown"),
           entityType: "individual",
           transactionCount24h: 0,
         });
@@ -559,10 +561,11 @@ export const amlScreeningRouter = router({
 
       await writeAuditLog({
         action: "BULK_AML_SCREEN",
-        entityType: "compliance",
-        entityId: "bulk",
-        userId: ctx.user?.id ?? 0,
-        details: { screened, flagged, ctrs, startDate: input.startDate, endDate: input.endDate },
+        resource: "compliance",
+        resourceId: "bulk",
+        agentId: ctx.user?.id,
+        status: "success",
+        metadata: { screened, flagged, ctrs, startDate: input.startDate, endDate: input.endDate },
       });
 
       return { screened, flagged, ctrs, message: `Bulk AML sweep: ${screened} transactions screened, ${flagged} flagged, ${ctrs} CTRs required` };

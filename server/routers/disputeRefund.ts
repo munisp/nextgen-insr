@@ -84,7 +84,7 @@ export const disputeRefundRouter = router({
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const velocityRows = await database.select({
-        customerRefundCount: sql<number>`COUNT(*) FILTER (WHERE customer_id = ${input.customerId} AND created_at >= ${thirtyDaysAgo.toISOString()})`,
+        customerRefundCount: sql<number>`COUNT(*) FILTER (WHERE "customerId" = ${input.customerId} AND "createdAt" >= ${thirtyDaysAgo.toISOString()})`,
       }).from(refunds);
       const customerRefundCount = (velocityRows as any)[0]?.customerRefundCount ?? 0;
       if (Number(customerRefundCount) >= MAX_REFUNDS_PER_CUSTOMER_30D) {
@@ -153,8 +153,8 @@ export const disputeRefundRouter = router({
     const [[{ total }], [{ pending }], [{ processedToday }], [{ totalRefunded }]] = await Promise.all([
       database.select({ total: count() }).from(disputes),
       database.select({ pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')` }).from(refunds),
-      database.select({ processedToday: sql<number>`COUNT(*) FILTER (WHERE status = 'processed' AND processed_at >= ${today.toISOString()})` }).from(refunds),
-      database.select({ totalRefunded: sql<string>`COALESCE(SUM(refund_amount) FILTER (WHERE status = 'processed'), 0)` }).from(refunds),
+      database.select({ processedToday: sql<number>`COUNT(*) FILTER (WHERE status = 'processed' AND "processedAt" >= ${today.toISOString()})` }).from(refunds),
+      database.select({ totalRefunded: sql<string>`COALESCE(SUM("refundAmount") FILTER (WHERE status = 'processed'), 0)` }).from(refunds),
     ]);
 
     const totalCount = Number(total ?? 0);
