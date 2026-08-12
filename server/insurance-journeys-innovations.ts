@@ -186,11 +186,11 @@ export async function J22_UBIMonthlyAdjustmentWorkflow(input: J22Input): Promise
 
   // Step 1: Fetch telematics data
   currentStep = "fetch_telematics";
-  const telematicsData = await ext.invokeDaprService({ appId: "telematics-engine", method: "get-score", data: {
+  const telematicsData = (await ext.invokeDaprService({ appId: "telematics-engine", method: "get-score", data: {
     policyId: input.policyId,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
-  }}).data as { drivingScore: number; events: number; hardBrakes: number; speedingEvents: number };
+  }})).data as { drivingScore: number; events: number; hardBrakes: number; speedingEvents: number };
 
   const drivingScore = telematicsData.drivingScore ?? 70;
 

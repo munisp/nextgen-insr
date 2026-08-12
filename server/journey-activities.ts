@@ -1182,42 +1182,53 @@ export async function fileNaicomReport(input: {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function calculateReinsuranceCession(input: {
-  policyId: number;
-  sumInsured: number;
-  premiumAmount: number;
+  policyId?: number;
+  sumInsured?: number;
+  premiumAmount?: number;
   treatyId?: number;
   reinsurerCode?: string;
+  treatyType?: string;
+  portfolioType?: string;
+  exposureAmount?: number;
+  retentionLimit?: number;
 }): Promise<{ cessionAmount: number; cessionPremium: number; retentionAmount: number; cessionPercentage: number }> {
   const d = await db();
+  const sumInsured = input.sumInsured ?? input.exposureAmount ?? 0;
+  const premiumAmount = input.premiumAmount ?? 0;
 
   // Get applicable treaty
-  let retentionLimit = 10_000_000; // ₦10M default retention limit
+  let retentionLimit = input.retentionLimit ?? 10_000_000; // ₦10M default retention limit
   if (input.treatyId) {
     const [treaty] = await d.select().from(reinsuranceTreaties).where(eq(reinsuranceTreaties.id, input.treatyId)).limit(1);
     if (treaty) retentionLimit = Number(treaty.retentionLimit ?? retentionLimit);
   }
 
-  const cessionAmount = Math.max(0, input.sumInsured - retentionLimit);
-  const cessionRatio = cessionAmount / input.sumInsured;
-  const cessionPremium = Math.round(input.premiumAmount * cessionRatio * 100) / 100;
-  const retentionAmount = input.sumInsured - cessionAmount;
+  const cessionAmount = Math.max(0, sumInsured - retentionLimit);
+  const cessionRatio = sumInsured > 0 ? cessionAmount / sumInsured : 0;
+  const cessionPremium = Math.round(premiumAmount * cessionRatio * 100) / 100;
+  const retentionAmount = sumInsured - cessionAmount;
   const cessionPercentage = Math.round(cessionRatio * 10000) / 100;
 
   return { cessionAmount, cessionPremium, retentionAmount, cessionPercentage };
 }
 
 export async function transferReinsurancePremium(input: {
-  policyId: number;
+  policyId?: number;
   reinsurerId?: string;
   reinsurerCode?: string;
-  cessionPremium: number;
-  cessionRef: string;
+  cessionPremium?: number;
+  cedingPremium?: number;
+  cessionRef?: string;
+  treatyRef?: string;
+  currency?: string;
 }): Promise<{ transferred: boolean; tbTransferId: string | null; transferId: string | null }> {
   const d = await db();
   const reinsurerId = input.reinsurerId ?? input.reinsurerCode ?? "unknown";
+  const cessionPremium = input.cessionPremium ?? input.cedingPremium ?? 0;
+  const cessionRef = cessionRef ?? input.treatyRef ?? `CESSION-${reinsurerId}-${Date.now().toString(36).toUpperCase()}`;
 
   // Idempotency
-  const [existing] = await d.select().from(transactions).where(eq(transactions.ref, input.cessionRef)).limit(1);
+  const [existing] = await d.select().from(transactions).where(eq(transactions.ref, cessionRef)).limit(1);
   if (existing) {
     const meta = existing.metadata as { tbTransferId?: string } | null;
     return { transferred: true, tbTransferId: meta?.tbTransferId ?? null, transferId: meta?.tbTransferId ?? null };
@@ -1227,26 +1238,26 @@ export async function transferReinsurancePremium(input: {
   const tbResult = await tbCreateTransfer({
     debitAccountId: "insurer-premium-pool",
     creditAccountId: `reinsurer-${reinsurerId}`,
-    amount: Math.round(input.cessionPremium * 100),
+    amount: Math.round(cessionPremium * 100),
     ledger: 3000,
     code: 700,
-    ref: input.cessionRef,
+    ref: cessionRef,
     txType: "reinsurance_cession",
   });
 
   await d.insert(transactions).values({
-    ref: input.cessionRef,
+    ref: cessionRef,
     agentId: 0,
     type: "Insurance",
-    amount: String(input.cessionPremium),
+    amount: String(cessionPremium),
     fee: "0", commission: "0",
     channel: "App",
     status: "success",
     fraudScore: "0.00",
-    metadata: { policyId: input.policyId, reinsurerId, tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
+    metadata: { policyId: input.policyId ?? null, reinsurerId, tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
   });
 
-  await emit("reinsurance-events", { eventType: "reinsurance.premium_ceded", policyId: input.policyId, cessionPremium: input.cessionPremium });
+  await emit("reinsurance-events", { eventType: "reinsurance.premium_ceded", policyId: input.policyId ?? null, cessionPremium });
   return { transferred: true, tbTransferId: tbResult?.id ?? null, transferId: tbResult?.id ?? null };
 }
 
