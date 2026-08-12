@@ -2723,6 +2723,7 @@ export type TenantUser = typeof tenantUsers.$inferSelect;
 export type InsertTenantUser = typeof tenantUsers.$inferInsert;
 
 // ─── Premium Fee Schedules (Insurance Fee Configuration) ─────────────────────
+export const feeTypeEnum = pgEnum("fee_type", ["percentage", "flat"]);
 export const premiumFeeSchedules = pgTable(
   "premium_fee_schedules",
   {
