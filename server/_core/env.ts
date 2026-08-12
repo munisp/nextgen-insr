@@ -247,4 +247,13 @@ export const ENV = {
   actuarialServiceUrl: optEnv("ACTUARIAL_SERVICE_URL", "http://actuarial-module:8080"),
   reinsuranceServiceUrl: optEnv("REINSURANCE_SERVICE_URL", "http://reinsurance-service:8080"),
   ifrs17ServiceUrl: optEnv("IFRS17_SERVICE_URL", "http://ifrs17-engine:8080"),
+
+  // ── Ollama AI (risk scoring, fraud detection) ───────────────────────────────
+  ollamaUrl: optEnv("OLLAMA_URL", "http://ollama:11434"),
+
+  // ── Public application base URL (certificate/portal links) ─────────────────
+  appUrl: optEnv("APP_URL", "https://insureportal.ng"),
+
+  // ── Lakehouse analytics ingestion endpoint ─────────────────────────────────
+  lakehouseUrl: optEnv("LAKEHOUSE_URL", "http://minio:9000"),
 };

@@ -25,7 +25,7 @@ import {
   kycVerifications, fraudAlerts, auditLog, notifications,
   insuranceProducts, underwritingApplications as underwritingApps,
   complianceChecks, policyRenewals, reinsuranceTreaties,
-  agentTrainingSessions, posTerminals,
+  posTerminals,
 } from "../drizzle/schema";
 import { premiums, claimsPayments, commissions } from "../drizzle/schema.additions";
 import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
@@ -89,19 +89,21 @@ export async function createOrFetchCustomer(input: {
   const d = await db();
   // Check for existing customer by phone
   const [existing] = await d.select().from(customers).where(eq(customers.phone, input.phone)).limit(1);
-  if (existing) return { customerId: existing.id, isNew: false, customerCode: existing.customerCode ?? `CUST-${existing.id}` };
+  if (existing) return { customerId: existing.id, isNew: false, customerCode: existing.externalId ?? `CUST-${existing.id}` };
 
   const customerCode = `CUST-${Date.now().toString(36).toUpperCase()}`;
+  const firstName = input.fullName.trim().split(/\s+/)[0] ?? input.fullName;
+  const lastName = input.fullName.trim().split(/\s+/).slice(1).join(" ") || firstName;
   const [customer] = await d.insert(customers).values({
-    name: input.fullName,
+    firstName,
+    lastName,
     phone: input.phone,
     email: input.email ?? null,
     nin: input.nin ?? null,
     bvn: input.bvn ?? null,
-    agentId: input.agentId ?? null,
-    customerCode,
-    kycStatus: "pending",
-    status: "active",
+    preferredAgentId: input.agentId ?? null,
+    externalId: customerCode,
+    status: "pending_kyc",
   }).returning();
 
   await emit("customer-events", { eventType: "customer.created", customerId: customer.id, phone: input.phone });
@@ -127,7 +129,6 @@ export async function initiateKycVerification(input: {
     nin: input.nin ?? null,
     bvn: input.bvn ?? null,
     selfieUrl: input.selfieUrl ?? null,
-    verificationRef,
     status: "pending",
   }).returning();
 
@@ -141,7 +142,8 @@ export async function verifyKycWithNibss(input: {
   customerId: number;
   nin?: string;
   bvn?: string;
-}): Promise<{ verified: boolean; score: number; message: string }> {
+  verificationType?: string;
+}): Promise<{ verified: boolean; score: number; message: string; failureReason: string | null }> {
   const d = await db();
 
   // In production: call NIBSS NIN/BVN verification API via APISIX gateway
@@ -158,11 +160,16 @@ export async function verifyKycWithNibss(input: {
   }).where(eq(kycVerifications.id, input.kycId));
 
   if (verified) {
-    await d.update(customers).set({ kycStatus: "verified", updatedAt: new Date() }).where(eq(customers.id, input.customerId));
+    await d.update(customers).set({ status: "active", updatedAt: new Date() }).where(eq(customers.id, input.customerId));
   }
 
   await emit("kyc-events", { eventType: verified ? "kyc.verified" : "kyc.failed", kycId: input.kycId, customerId: input.customerId, score });
-  return { verified, score, message: verified ? "KYC verified via NIBSS" : "KYC verification failed — invalid NIN/BVN" };
+  return {
+    verified,
+    score,
+    message: verified ? "KYC verified via NIBSS" : "KYC verification failed — invalid NIN/BVN",
+    failureReason: verified ? null : "KYC verification failed — invalid NIN/BVN",
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -170,37 +177,49 @@ export async function verifyKycWithNibss(input: {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function validateInsuranceQuote(input: {
-  quoteId: number;
+  quoteId?: number;
   customerId: number;
-  productId: number;
+  productId?: number;
   premiumAmount: number;
-}): Promise<{ valid: boolean; quote: Record<string, unknown> }> {
+  policyType?: string;
+  sumInsured?: number;
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ valid: boolean; approved: boolean; quote: Record<string, unknown> }> {
+  // Journeys that create quotes inline (e.g. broker portfolios) pass no quoteId:
+  // validate the request basics only.
+  if (input.quoteId == null) {
+    if (!(input.premiumAmount > 0)) throw new Error("Premium amount must be positive");
+    return { valid: true, approved: true, quote: { ...input } };
+  }
   const d = await db();
   const [quote] = await d.select().from(policyQuotes).where(eq(policyQuotes.id, input.quoteId)).limit(1);
   if (!quote) throw new Error(`Quote ${input.quoteId} not found`);
   if (quote.status !== "pending") throw new Error(`Quote ${input.quoteId} is no longer pending (status: ${quote.status})`);
   if (quote.validUntil && new Date(quote.validUntil) < new Date()) throw new Error(`Quote ${input.quoteId} has expired`);
   if (Number(quote.premiumAmount) !== input.premiumAmount) throw new Error(`Premium mismatch: expected ${quote.premiumAmount}, got ${input.premiumAmount}`);
-  return { valid: true, quote: quote as Record<string, unknown> };
+  return { valid: true, approved: true, quote: quote as Record<string, unknown> };
 }
 
 export async function runUnderwritingCheck(input: {
   customerId: number;
-  productId: number;
+  productId?: number;
   sumInsured: number;
   agentId?: number;
-}): Promise<{ approved: boolean; riskScore: number; riskCategory: string; conditions: string[] }> {
+  policyType?: string;
+  riskFactors?: Record<string, unknown>;
+}): Promise<{ approved: boolean; riskScore: number; riskCategory: string; conditions: string[]; suggestedPremium: number; declineReason: string | null }> {
   const d = await db();
 
   // Get customer history
   const [customer] = await d.select().from(customers).where(eq(customers.id, input.customerId)).limit(1);
   const existingClaims = await d.select({ count: count() }).from(claims)
-    .where(and(eq(claims.customerId, input.customerId), eq(claims.status, "paid")));
+    .where(and(eq(claims.claimantId, input.customerId), eq(claims.status, "paid")));
   const claimCount = Number(existingClaims[0]?.count ?? 0);
 
   // AI-powered risk scoring
   const prompt = `Insurance underwriting risk assessment:
-Customer KYC status: ${customer?.kycStatus ?? "unknown"}
+Customer KYC status: ${customer?.status ?? "unknown"}
 Prior claims count: ${claimCount}
 Sum insured: ₦${input.sumInsured.toLocaleString()}
 Product ID: ${input.productId}
@@ -221,7 +240,7 @@ Return JSON: {"score": number, "category": "low|medium|high|declined", "conditio
   } catch { /* use fallback */ }
 
   // Business rules override
-  if (customer?.kycStatus !== "verified") {
+  if (customer?.status !== "active") {
     riskCategory = "declined";
     conditions.push("KYC verification required before policy issuance");
   }
@@ -235,36 +254,48 @@ Return JSON: {"score": number, "category": "low|medium|high|declined", "conditio
   }
 
   const approved = riskCategory !== "declined";
+  // Suggested premium: 2% of sum insured with risk loading (NAICOM floor rates)
+  const suggestedPremium = Math.round(input.sumInsured * 0.02 * (1 + riskScore / 100) * 100) / 100;
+  const declineReason = approved ? null : (conditions[0] ?? "Underwriting declined");
 
   // Record underwriting application
   await d.insert(underwritingApps).values({
+    applicationRef: `UW-${Date.now().toString(36).toUpperCase()}`,
     customerId: input.customerId,
-    productId: input.productId,
+    productId: input.productId ?? 0,
     agentId: input.agentId ?? null,
     sumInsured: String(input.sumInsured),
     riskScore: String(riskScore),
     riskCategory,
     status: approved ? "approved" : "declined",
     conditions: conditions.length > 0 ? conditions : null,
-    underwrittenAt: new Date(),
+    decisionAt: new Date(),
   }).catch(() => {}); // non-blocking
 
   await emit("underwriting-events", { eventType: "underwriting.completed", customerId: input.customerId, riskScore, riskCategory, approved });
-  return { approved, riskScore, riskCategory, conditions };
+  return { approved, riskScore, riskCategory, conditions, suggestedPremium, declineReason };
 }
 
 export async function collectInsurancePremium(input: {
   customerId: number;
   agentId?: number;
-  productId: number;
+  productId?: number;
   premiumAmount: number;
-  paymentRef: string;
-}): Promise<{ collected: boolean; tbTransferId: string | null; transactionId: number }> {
+  paymentRef?: string;
+  policyType?: string;
+  currency?: string;
+  paymentMethod?: string;
+  idempotencyKey?: string;
+}): Promise<{ collected: boolean; success: boolean; tbTransferId: string | null; transactionId: number }> {
   const d = await db();
+  const paymentRef = input.paymentRef ?? input.idempotencyKey ?? `PREM-${input.customerId}-${Date.now().toString(36).toUpperCase()}`;
 
   // Idempotency check
-  const [existing] = await d.select().from(transactions).where(eq(transactions.reference, input.paymentRef)).limit(1);
-  if (existing) return { collected: true, tbTransferId: existing.metadata?.tbTransferId ?? null, transactionId: existing.id };
+  const [existing] = await d.select().from(transactions).where(eq(transactions.ref, paymentRef)).limit(1);
+  if (existing) {
+    const meta = existing.metadata as { tbTransferId?: string } | null;
+    return { collected: true, success: true, tbTransferId: meta?.tbTransferId ?? null, transactionId: existing.id };
+  }
 
   // TigerBeetle: customer-pool → insurer-premium-pool (INSURANCE_PREMIUMS ledger)
   const tbResult = await tbCreateTransfer({
@@ -273,69 +304,94 @@ export async function collectInsurancePremium(input: {
     amount: Math.round(input.premiumAmount * 100),
     ledger: 3000,
     code: 700,
-    ref: input.paymentRef,
+    ref: paymentRef,
     txType: "premium_payment",
     agentId: input.agentId ? String(input.agentId) : undefined,
   });
 
   const [tx] = await d.insert(transactions).values({
-    reference: input.paymentRef,
-    agentId: input.agentId ?? null,
-    type: "Premium Payment",
+    ref: paymentRef,
+    agentId: input.agentId ?? 0,
+    type: "Insurance",
     amount: String(input.premiumAmount),
     fee: "0",
     commission: "0",
-    channel: "insurance_portal",
+    channel: "App",
     status: "success",
     fraudScore: "0.00",
-    tbSyncStatus: tbResult ? "synced" : "pending",
-    metadata: { customerId: input.customerId, productId: input.productId, tbTransferId: tbResult?.id ?? null },
+    metadata: { customerId: input.customerId, productId: input.productId ?? null, tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
   }).returning();
 
   await emit("payment-events", { eventType: "premium.collected", customerId: input.customerId, amount: input.premiumAmount, tbTransferId: tbResult?.id });
-  return { collected: true, tbTransferId: tbResult?.id ?? null, transactionId: tx.id };
+  return { collected: true, success: true, tbTransferId: tbResult?.id ?? null, transactionId: tx.id };
 }
 
 export async function createInsurancePolicy(input: {
-  quoteId: number;
+  quoteId?: number;
   customerId: number;
   agentId?: number;
-  productId: number;
+  brokerId?: number;
+  productId?: number;
   sumInsured: number;
   premiumAmount: number;
-  durationMonths: number;
-  coverageStartDate: string;
-  paymentRef: string;
+  durationMonths?: number;
+  coverageStartDate?: string;
+  paymentRef?: string;
   beneficiaryName?: string;
+  policyType?: string;
+  startDate?: string;
+  endDate?: string;
 }): Promise<{ policyId: number; policyNumber: string }> {
   const d = await db();
 
   // Idempotency: check if policy already exists for this quote
-  const [existingPolicy] = await d.select().from(policies).where(eq(policies.quoteId, input.quoteId)).limit(1).catch(() => [null]);
-  if (existingPolicy) return { policyId: existingPolicy.id, policyNumber: existingPolicy.policyNumber ?? `POL-${existingPolicy.id}` };
+  if (input.quoteId != null) {
+    const [existingPolicy] = await d.select().from(policies)
+      .where(sql`${policies.metadata}::jsonb ->> 'quoteId' = ${String(input.quoteId)}`)
+      .limit(1).catch(() => [null]);
+    if (existingPolicy) return { policyId: existingPolicy.id, policyNumber: existingPolicy.policyNumber ?? `POL-${existingPolicy.id}` };
+  }
 
-  const policyNumber = `POL-${Date.now().toString(36).toUpperCase()}-${input.productId}`;
-  const startDate = new Date(input.coverageStartDate);
-  const endDate = new Date(startDate);
-  endDate.setMonth(endDate.getMonth() + input.durationMonths);
+  const [quote] = input.quoteId != null
+    ? await d.select().from(policyQuotes).where(eq(policyQuotes.id, input.quoteId)).limit(1).catch(() => [])
+    : [undefined];
+  const COVERAGE_TYPES = ["life", "health", "motor", "property", "liability", "marine", "aviation", "agriculture", "credit", "travel", "micro", "group_life"] as const;
+  const coverageType = (COVERAGE_TYPES as readonly string[]).includes(input.policyType ?? "")
+    ? (input.policyType as (typeof COVERAGE_TYPES)[number])
+    : (COVERAGE_TYPES as readonly string[]).includes(quote?.coverageType ?? "")
+      ? (quote!.coverageType as (typeof COVERAGE_TYPES)[number])
+      : "micro";
+
+  const productId = input.productId ?? quote?.productId ?? 0;
+  const policyNumber = `POL-${Date.now().toString(36).toUpperCase()}-${productId}`;
+  const startDate = new Date(input.coverageStartDate ?? input.startDate ?? Date.now());
+  const endDate = input.endDate ? new Date(input.endDate) : new Date(startDate);
+  if (!input.endDate) endDate.setMonth(endDate.getMonth() + (input.durationMonths ?? 12));
+  const paymentRef = input.paymentRef ?? `PAY-${policyNumber}`;
 
   const [policy] = await d.insert(policies).values({
     policyNumber,
     customerId: input.customerId,
     agentId: input.agentId ?? null,
-    productId: input.productId,
-    quoteId: input.quoteId,
+    brokerId: input.brokerId ?? null,
+    productId,
+    coverageType,
     sumInsured: String(input.sumInsured),
-    premiumAmount: String(input.premiumAmount),
+    annualPremium: String(input.premiumAmount),
     startDate,
     endDate,
     status: "active",
-    beneficiaryName: input.beneficiaryName ?? null,
-    paymentRef: input.paymentRef,
+    metadata: { quoteId: input.quoteId ?? null, beneficiaryName: input.beneficiaryName ?? null, paymentRef },
   }).returning();
 
   // Mark quote as converted
-  await d.update(policyQuotes).set({ status: "converted", convertedPolicyId: policy.id }).where(eq(policyQuotes.id, input.quoteId)).catch(() => {});
+  if (input.quoteId != null) {
+    await d.update(policyQuotes).set({
+      status: "converted",
+      metadata: sql`jsonb_set(COALESCE(${policyQuotes.metadata}::jsonb, '{}'::jsonb), '{convertedPolicyId}', to_jsonb(${policy.id}::int))`,
+      updatedAt: new Date(),
+    }).where(eq(policyQuotes.id, input.quoteId)).catch(() => {});
+  }
 
   await emit("policy-events", { eventType: "policy.created", policyId: policy.id, policyNumber, customerId: input.customerId });
   await audit("POLICY_CREATED", "policies", String(policy.id), { policyNumber, customerId: input.customerId, premiumAmount: input.premiumAmount });
@@ -345,6 +401,7 @@ export async function createInsurancePolicy(input: {
 export async function issuePolicyCertificate(input: {
   policyId: number;
   customerId: number;
+  policyNumber?: string;
 }): Promise<{ certificateUrl: string; issuedAt: string }> {
   const d = await db();
   const [policy] = await d.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
@@ -354,7 +411,7 @@ export async function issuePolicyCertificate(input: {
   const certificateUrl = `${ENV.appUrl ?? "https://insureportal.ng"}/certificates/${policy.policyNumber}.pdf`;
   const issuedAt = new Date().toISOString();
 
-  await d.update(policies).set({ certificateUrl, certificateIssuedAt: new Date() }).where(eq(policies.id, input.policyId)).catch(() => {});
+  await d.update(policies).set({ policyDocument: certificateUrl, updatedAt: new Date() }).where(eq(policies.id, input.policyId)).catch(() => {});
   await emit("policy-events", { eventType: "policy.certificate_issued", policyId: input.policyId, certificateUrl });
   return { certificateUrl, issuedAt };
 }
@@ -368,7 +425,7 @@ export async function notifyPolicyStakeholders(input: {
   eventType: string;
 }): Promise<{ notified: number }> {
   const d = await db();
-  const [customer] = await d.select({ name: customers.name, phone: customers.phone, email: customers.email })
+  const [customer] = await d.select({ firstName: customers.firstName, lastName: customers.lastName, phone: customers.phone, email: customers.email })
     .from(customers).where(eq(customers.id, input.customerId)).limit(1);
 
   const notificationRecords = [];
@@ -443,11 +500,12 @@ export async function compensatePolicyBindingStep(input: {
         txType: "premium_refund",
       });
       await d.insert(transactions).values({
-        reference: `REFUND-${input.paymentRef}`,
-        type: "Premium Refund",
+        ref: `REFUND-${input.paymentRef}`,
+        agentId: 0,
+        type: "Reversal",
         amount: String(input.premiumAmount),
         fee: "0", commission: "0",
-        channel: "insurance_portal",
+        channel: "App",
         status: "success",
         fraudScore: "0.00",
         metadata: { originalRef: input.paymentRef, reason: "policy_binding_failed" },
@@ -491,14 +549,13 @@ export async function fileClaim(input: {
   const [claim] = await d.insert(claims).values({
     claimNumber,
     policyId: input.policyId,
-    customerId: input.customerId,
     claimantId: input.customerId,
-    agentId: input.agentId ?? null,
     claimType: input.claimType,
     incidentDate: new Date(input.incidentDate),
     claimedAmount: String(input.claimedAmount),
-    description: input.description,
+    incidentDescription: input.description,
     status: "submitted",
+    metadata: input.agentId != null ? { filedByAgentId: input.agentId } : null,
   }).returning();
 
   await emit("claims-events", { eventType: "claim.filed", claimId: claim.id, claimNumber, policyId: input.policyId, claimedAmount: input.claimedAmount });
@@ -518,7 +575,7 @@ export async function runClaimFraudCheck(input: {
 
   // Get customer claim history
   const [claimHistory] = await d.select({ count: count() }).from(claims)
-    .where(and(eq(claims.customerId, input.customerId), eq(claims.status, "paid")));
+    .where(and(eq(claims.claimantId, input.customerId), eq(claims.status, "paid")));
   const priorClaims = Number(claimHistory?.count ?? 0);
 
   // AI fraud analysis
@@ -553,17 +610,16 @@ Analyze for fraud indicators. Return JSON:
   if (fraudScore >= 60) {
     flagged = true;
     await d.insert(fraudAlerts).values({
-      claimId: input.claimId,
       agentId: null,
       severity: fraudScore >= 80 ? "critical" : "high",
       type: "CLAIM_FRAUD_SUSPECTED",
       fraudScore: String(fraudScore),
-      reason: reasons.join("; "),
+      reason: `Claim #${input.claimId}: ${reasons.join("; ")}`,
       status: "open",
     }).catch(() => {});
   }
 
-  await d.update(claims).set({ fraudScore: String(fraudScore), fraudFlagged: flagged }).where(eq(claims.id, input.claimId)).catch(() => {});
+  await d.update(claims).set({ fraudScore: String(fraudScore), isFraudSuspected: flagged }).where(eq(claims.id, input.claimId)).catch(() => {});
   await emit("fraud-events", { eventType: "claim.fraud_checked", claimId: input.claimId, fraudScore, flagged });
   return { fraudScore, flagged, reasons };
 }
@@ -579,12 +635,12 @@ export async function assignClaimAdjuster(input: {
   if (!adjusterId) {
     // Find least-loaded active adjuster
     const [adjuster] = await d.select({ id: agents.id }).from(agents)
-      .where(and(eq(agents.status, "active"), eq(agents.role, "adjuster")))
+      .where(and(eq(agents.isActive, true), eq(agents.role, "adjuster")))
       .limit(1).catch(() => []);
     adjusterId = adjuster?.id ?? 1; // fallback to admin
   }
 
-  await d.update(claims).set({ adjusterId, status: "under_review", updatedAt: new Date() }).where(eq(claims.id, input.claimId));
+  await d.update(claims).set({ assignedAdjusterId: adjusterId, status: "under_review", updatedAt: new Date() }).where(eq(claims.id, input.claimId));
   await emit("claims-events", { eventType: "claim.adjuster_assigned", claimId: input.claimId, adjusterId });
   return { adjusterId, assignedAt: new Date().toISOString() };
 }
@@ -597,13 +653,12 @@ export async function adjudicateClaim(input: {
   adjusterId: number;
 }): Promise<{ decision: string; approvedAmount: number | null }> {
   const d = await db();
-  const statusMap = { approved: "approved", partially_approved: "partially_approved", rejected: "rejected" };
+  const statusMap = { approved: "approved", partially_approved: "partially_approved", rejected: "rejected" } as const;
 
   await d.update(claims).set({
-    status: statusMap[input.decision] as any,
+    status: statusMap[input.decision],
     approvedAmount: input.approvedAmount ? String(input.approvedAmount) : null,
     rejectionReason: input.rejectionReason ?? null,
-    adjudicatedAt: new Date(),
     updatedAt: new Date(),
   }).where(eq(claims.id, input.claimId));
 
@@ -680,13 +735,12 @@ export async function registerAgent(input: {
     name: input.name,
     phone: input.phone,
     email: input.email ?? null,
-    nin: input.nin ?? null,
-    bvn: input.bvn ?? null,
     agentId: agentCode,
-    supervisorId: input.supervisorId ?? null,
+    // PIN must be set by the agent on first login; store an unusable placeholder hash
+    pinHash: `PENDING_ACTIVATION:${agentCode}`,
+    parentAgentId: input.supervisorId ?? null,
     tenantId: input.tenantId ?? null,
-    status: "pending",
-    kycStatus: "pending",
+    isActive: false,
     premiumReserve: "0",
     commissionBalance: "0",
     floatLocked: false,
@@ -725,11 +779,8 @@ export async function activateAgent(input: {
   }
 
   await d.update(agents).set({
-    status: "active",
-    kycStatus: "verified",
+    isActive: true,
     premiumReserve: String(input.initialFloat),
-    activatedAt: new Date(),
-    activatedBy: input.activatedBy,
     updatedAt: new Date(),
   }).where(eq(agents.id, input.agentId));
 
@@ -746,11 +797,11 @@ export async function provisionAgentPosTerminal(input: {
   const serialNumber = input.serialNumber ?? `POS-${Date.now().toString(36).toUpperCase()}`;
 
   const [terminal] = await d.insert(posTerminals).values({
+    terminalId: `TERM-${serialNumber}`,
     agentId: input.agentId,
     serialNumber,
-    terminalType: input.terminalType,
+    model: input.terminalType,
     status: "active",
-    provisionedAt: new Date(),
   }).returning();
 
   await emit("terminal-events", { eventType: "terminal.provisioned", terminalId: terminal.id, agentId: input.agentId });
@@ -772,11 +823,11 @@ export async function detectExpiringPolicies(input: {
     policyNumber: policies.policyNumber,
     customerId: policies.customerId,
     endDate: policies.endDate,
-    premiumAmount: policies.premiumAmount,
+    premiumAmount: policies.annualPremium,
   }).from(policies).where(and(
     eq(policies.status, "active"),
-    sql`end_date <= ${cutoff.toISOString()}`,
-    sql`end_date >= NOW()`
+    sql`${policies.endDate} <= ${cutoff.toISOString()}`,
+    sql`${policies.endDate} >= NOW()`
   )).limit(100);
 
   return {
@@ -798,7 +849,7 @@ export async function generateRenewalQuote(input: {
   const [policy] = await d.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
   if (!policy) throw new Error(`Policy ${input.policyId} not found`);
 
-  const basePremium = Number(policy.premiumAmount ?? 0);
+  const basePremium = Number(policy.annualPremium ?? 0);
   const adjustment = input.renewalPremiumAdjustment ?? 1.05; // 5% default increase
   const renewalPremium = Math.round(basePremium * adjustment * 100) / 100;
 
@@ -848,18 +899,21 @@ export async function processRenewal(input: {
     customerId: policy.customerId,
     agentId: policy.agentId,
     productId: policy.productId,
-    quoteId: input.renewalQuoteId,
+    coverageType: policy.coverageType,
     sumInsured: policy.sumInsured,
-    premiumAmount: String(input.premiumAmount),
+    annualPremium: String(input.premiumAmount),
     startDate,
     endDate,
     status: "active",
-    renewedFromPolicyId: input.policyId,
-    paymentRef: input.paymentRef,
+    metadata: { quoteId: input.renewalQuoteId, renewedFromPolicyId: input.policyId, paymentRef: input.paymentRef },
   }).returning();
 
   // Mark original policy as renewed
-  await d.update(policies).set({ status: "renewed", renewedToPolicyId: newPolicy.id, updatedAt: new Date() }).where(eq(policies.id, input.policyId));
+  await d.update(policies).set({
+    status: "renewed",
+    metadata: sql`jsonb_set(COALESCE(${policies.metadata}::jsonb, '{}'::jsonb), '{renewedToPolicyId}', to_jsonb(${newPolicy.id}::int))`,
+    updatedAt: new Date(),
+  }).where(eq(policies.id, input.policyId));
 
   await emit("renewal-events", { eventType: "policy.renewed", originalPolicyId: input.policyId, newPolicyId: newPolicy.id, newPolicyNumber });
   await audit("POLICY_RENEWED", "policies", String(newPolicy.id), { originalPolicyId: input.policyId, premiumAmount: input.premiumAmount });
@@ -941,7 +995,7 @@ export async function freezeAgentAccount(input: {
 }): Promise<{ frozen: boolean }> {
   const d = await db();
   await d.update(agents).set({
-    status: "suspended",
+    isActive: false,
     floatLocked: true,
     terminalEnabled: false,
     terminalDisabledReason: input.reason,
@@ -960,7 +1014,7 @@ export async function unfreezeAgentAccount(input: {
 }): Promise<{ unfrozen: boolean }> {
   const d = await db();
   await d.update(agents).set({
-    status: "active",
+    isActive: true,
     floatLocked: false,
     terminalEnabled: true,
     terminalDisabledReason: null,
@@ -978,9 +1032,13 @@ export async function unfreezeAgentAccount(input: {
 
 export async function calculateAgentCommission(input: {
   agentId: number;
-  policyId: number;
-  premiumAmount: number;
-  productType: string;
+  policyId?: number;
+  premiumAmount?: number;
+  productType?: string;
+  transactionId?: number;
+  transactionAmount?: number;
+  commissionRate?: number; // percentage, e.g. 15 = 15%
+  commissionType?: string;
 }): Promise<{ commissionAmount: number; commissionRate: number }> {
   // NAICOM commission rates by product type
   const COMMISSION_RATES: Record<string, number> = {
@@ -993,19 +1051,22 @@ export async function calculateAgentCommission(input: {
     default: 0.10,
   };
 
-  const rate = COMMISSION_RATES[input.productType] ?? COMMISSION_RATES.default;
-  const commissionAmount = Math.round(input.premiumAmount * rate * 100) / 100;
+  const rate = input.commissionRate != null
+    ? input.commissionRate / 100
+    : COMMISSION_RATES[input.productType ?? "default"] ?? COMMISSION_RATES.default;
+  const baseAmount = input.transactionAmount ?? input.premiumAmount ?? 0;
+  const commissionAmount = Math.round(baseAmount * rate * 100) / 100;
 
   const d = await db();
   await d.insert(commissions).values({
     agentId: input.agentId,
-    policyId: input.policyId,
-    commissionRef: `COMM-${input.policyId}-${Date.now()}`,
-    amount: String(commissionAmount),
+    policyId: input.policyId ?? null,
+    transactionId: input.transactionId ?? null,
+    commissionType: input.commissionType ?? "policy_commission",
+    grossAmount: String(commissionAmount),
+    netAmount: String(commissionAmount),
     currency: "NGN",
-    commissionRate: String(rate),
     status: "pending",
-    earnedDate: new Date(),
   }).catch(() => {});
 
   return { commissionAmount, commissionRate: rate };
@@ -1019,8 +1080,10 @@ export async function creditAgentCommission(input: {
 }): Promise<{ credited: boolean; newBalance: number }> {
   const d = await db();
 
-  // Idempotency
-  const [existing] = await d.select().from(commissions).where(eq(commissions.commissionRef, input.commissionRef)).limit(1);
+  // Idempotency: a paid commission for this agent+policy means already credited
+  const [existing] = await d.select().from(commissions)
+    .where(and(eq(commissions.agentId, input.agentId), eq(commissions.policyId, input.policyId)))
+    .limit(1);
   if (existing?.status === "paid") {
     const [agent] = await d.select({ commissionBalance: agents.commissionBalance }).from(agents).where(eq(agents.id, input.agentId)).limit(1);
     return { credited: true, newBalance: Number(agent?.commissionBalance ?? 0) };
@@ -1043,7 +1106,8 @@ export async function creditAgentCommission(input: {
 
   const newBalance = Number(agent.commissionBalance ?? 0) + input.commissionAmount;
   await d.update(agents).set({ commissionBalance: String(newBalance), updatedAt: new Date() }).where(eq(agents.id, input.agentId));
-  await d.update(commissions).set({ status: "paid", paidDate: new Date() }).where(eq(commissions.commissionRef, input.commissionRef)).catch(() => {});
+  await d.update(commissions).set({ status: "paid", updatedAt: new Date() })
+    .where(and(eq(commissions.agentId, input.agentId), eq(commissions.policyId, input.policyId))).catch(() => {});
 
   await emit("commission-events", { eventType: "commission.credited", agentId: input.agentId, amount: input.commissionAmount, policyId: input.policyId });
   return { credited: true, newBalance };
@@ -1058,7 +1122,7 @@ export async function runAmlScreening(input: {
   entityId: number;
   amount?: number;
   transactionType?: string;
-}): Promise<{ cleared: boolean; riskLevel: string; flags: string[] }> {
+}): Promise<{ cleared: boolean; riskLevel: string; flags: string[]; flagged: boolean; riskScore: number }> {
   const d = await db();
   const flags: string[] = [];
   let riskLevel = "low";
@@ -1071,37 +1135,42 @@ export async function runAmlScreening(input: {
 
   // Record compliance check
   await d.insert(complianceChecks).values({
-    entityType: input.entityType,
-    entityId: String(input.entityId),
-    checkType: "aml_screening",
-    status: flags.length > 0 ? "flagged" : "passed",
-    riskLevel,
-    flags: flags.length > 0 ? flags : null,
-    checkedAt: new Date(),
+    checkType: "AML",
+    ruleCode: "aml_screening",
+    result: flags.length > 0 ? "flag" : "pass",
+    details: [`${input.entityType}#${input.entityId}`, `risk=${riskLevel}`, ...flags].join("; "),
+    flaggedAmount: input.amount != null ? String(input.amount) : null,
   }).catch(() => {});
 
   await emit("compliance-events", { eventType: "aml.screened", entityType: input.entityType, entityId: input.entityId, riskLevel, flagCount: flags.length });
-  return { cleared: flags.length === 0 || riskLevel !== "high", riskLevel, flags };
+  const RISK_SCORES: Record<string, number> = { low: 20, medium: 50, high: 85 };
+  return {
+    cleared: flags.length === 0 || riskLevel !== "high",
+    riskLevel,
+    flags,
+    flagged: flags.length > 0,
+    riskScore: RISK_SCORES[riskLevel] ?? 20,
+  };
 }
 
 export async function fileNaicomReport(input: {
-  reportType: "quarterly_returns" | "annual_report" | "sar" | "claims_experience";
-  periodStart: string;
-  periodEnd: string;
-  reportData: Record<string, unknown>;
+  reportType: "quarterly_returns" | "annual_report" | "sar" | "claims_experience" | (string & {});
+  periodStart?: string;
+  periodEnd?: string;
+  reportingPeriod?: string;
+  reportData?: Record<string, unknown>;
+  data?: Record<string, unknown>;
 }): Promise<{ reportId: string; filed: boolean; filedAt: string }> {
   const reportId = `NAICOM-${input.reportType.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+  const period = input.reportingPeriod ?? `${input.periodStart ?? ""}..${input.periodEnd ?? ""}`;
 
   // In production: submit to NAICOM reporting portal via APISIX gateway
   const d = await db();
   await d.insert(complianceChecks).values({
-    entityType: "platform",
-    entityId: "0",
-    checkType: `naicom_${input.reportType}`,
-    status: "passed",
-    riskLevel: "low",
-    metadata: { reportId, periodStart: input.periodStart, periodEnd: input.periodEnd },
-    checkedAt: new Date(),
+    checkType: "NAICOM",
+    ruleCode: `naicom_${input.reportType}`,
+    result: "pass",
+    details: JSON.stringify({ reportId, period, data: input.reportData ?? input.data ?? null }),
   }).catch(() => {});
 
   await emit("compliance-events", { eventType: "naicom.report_filed", reportType: input.reportType, reportId });
@@ -1113,65 +1182,83 @@ export async function fileNaicomReport(input: {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function calculateReinsuranceCession(input: {
-  policyId: number;
-  sumInsured: number;
-  premiumAmount: number;
+  policyId?: number;
+  sumInsured?: number;
+  premiumAmount?: number;
   treatyId?: number;
-}): Promise<{ cessionAmount: number; cessionPremium: number; retentionAmount: number }> {
+  reinsurerCode?: string;
+  treatyType?: string;
+  portfolioType?: string;
+  exposureAmount?: number;
+  retentionLimit?: number;
+}): Promise<{ cessionAmount: number; cessionPremium: number; retentionAmount: number; cessionPercentage: number }> {
   const d = await db();
+  const sumInsured = input.sumInsured ?? input.exposureAmount ?? 0;
+  const premiumAmount = input.premiumAmount ?? 0;
 
   // Get applicable treaty
-  let retentionLimit = 10_000_000; // ₦10M default retention limit
+  let retentionLimit = input.retentionLimit ?? 10_000_000; // ₦10M default retention limit
   if (input.treatyId) {
     const [treaty] = await d.select().from(reinsuranceTreaties).where(eq(reinsuranceTreaties.id, input.treatyId)).limit(1);
     if (treaty) retentionLimit = Number(treaty.retentionLimit ?? retentionLimit);
   }
 
-  const cessionAmount = Math.max(0, input.sumInsured - retentionLimit);
-  const cessionRatio = cessionAmount / input.sumInsured;
-  const cessionPremium = Math.round(input.premiumAmount * cessionRatio * 100) / 100;
-  const retentionAmount = input.sumInsured - cessionAmount;
+  const cessionAmount = Math.max(0, sumInsured - retentionLimit);
+  const cessionRatio = sumInsured > 0 ? cessionAmount / sumInsured : 0;
+  const cessionPremium = Math.round(premiumAmount * cessionRatio * 100) / 100;
+  const retentionAmount = sumInsured - cessionAmount;
+  const cessionPercentage = Math.round(cessionRatio * 10000) / 100;
 
-  return { cessionAmount, cessionPremium, retentionAmount };
+  return { cessionAmount, cessionPremium, retentionAmount, cessionPercentage };
 }
 
 export async function transferReinsurancePremium(input: {
-  policyId: number;
-  reinsurerId: string;
-  cessionPremium: number;
-  cessionRef: string;
-}): Promise<{ transferred: boolean; tbTransferId: string | null }> {
+  policyId?: number;
+  reinsurerId?: string;
+  reinsurerCode?: string;
+  cessionPremium?: number;
+  cedingPremium?: number;
+  cessionRef?: string;
+  treatyRef?: string;
+  currency?: string;
+}): Promise<{ transferred: boolean; tbTransferId: string | null; transferId: string | null }> {
   const d = await db();
+  const reinsurerId = input.reinsurerId ?? input.reinsurerCode ?? "unknown";
+  const cessionPremium = input.cessionPremium ?? input.cedingPremium ?? 0;
+  const cessionRef = cessionRef ?? input.treatyRef ?? `CESSION-${reinsurerId}-${Date.now().toString(36).toUpperCase()}`;
 
   // Idempotency
-  const [existing] = await d.select().from(transactions).where(eq(transactions.reference, input.cessionRef)).limit(1);
-  if (existing) return { transferred: true, tbTransferId: existing.metadata?.tbTransferId ?? null };
+  const [existing] = await d.select().from(transactions).where(eq(transactions.ref, cessionRef)).limit(1);
+  if (existing) {
+    const meta = existing.metadata as { tbTransferId?: string } | null;
+    return { transferred: true, tbTransferId: meta?.tbTransferId ?? null, transferId: meta?.tbTransferId ?? null };
+  }
 
   // TigerBeetle: insurer-premium-pool → reinsurer-account
   const tbResult = await tbCreateTransfer({
     debitAccountId: "insurer-premium-pool",
-    creditAccountId: `reinsurer-${input.reinsurerId}`,
-    amount: Math.round(input.cessionPremium * 100),
+    creditAccountId: `reinsurer-${reinsurerId}`,
+    amount: Math.round(cessionPremium * 100),
     ledger: 3000,
     code: 700,
-    ref: input.cessionRef,
+    ref: cessionRef,
     txType: "reinsurance_cession",
   });
 
   await d.insert(transactions).values({
-    reference: input.cessionRef,
-    type: "Reinsurance Cession",
-    amount: String(input.cessionPremium),
+    ref: cessionRef,
+    agentId: 0,
+    type: "Insurance",
+    amount: String(cessionPremium),
     fee: "0", commission: "0",
-    channel: "reinsurance",
+    channel: "App",
     status: "success",
     fraudScore: "0.00",
-    tbSyncStatus: tbResult ? "synced" : "pending",
-    metadata: { policyId: input.policyId, reinsurerId: input.reinsurerId, tbTransferId: tbResult?.id ?? null },
+    metadata: { policyId: input.policyId ?? null, reinsurerId, tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
   });
 
-  await emit("reinsurance-events", { eventType: "reinsurance.premium_ceded", policyId: input.policyId, cessionPremium: input.cessionPremium });
-  return { transferred: true, tbTransferId: tbResult?.id ?? null };
+  await emit("reinsurance-events", { eventType: "reinsurance.premium_ceded", policyId: input.policyId ?? null, cessionPremium });
+  return { transferred: true, tbTransferId: tbResult?.id ?? null, transferId: tbResult?.id ?? null };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1180,18 +1267,20 @@ export async function transferReinsurancePremium(input: {
 
 export async function probeServiceHealth(input: {
   serviceName: string;
-  serviceUrl: string;
+  serviceUrl?: string;
+  endpoint?: string;
   timeoutMs?: number;
-}): Promise<{ healthy: boolean; latencyMs: number; statusCode?: number }> {
+}): Promise<{ healthy: boolean; latencyMs: number; statusCode?: number; status: "healthy" | "unhealthy" }> {
+  const url = input.serviceUrl ?? input.endpoint ?? "";
   const start = Date.now();
   try {
-    const res = await fetch(input.serviceUrl, {
+    const res = await fetch(url, {
       signal: AbortSignal.timeout(input.timeoutMs ?? 5000),
     });
     const latencyMs = Date.now() - start;
-    return { healthy: res.ok, latencyMs, statusCode: res.status };
+    return { healthy: res.ok, latencyMs, statusCode: res.status, status: res.ok ? "healthy" : "unhealthy" };
   } catch {
-    return { healthy: false, latencyMs: Date.now() - start };
+    return { healthy: false, latencyMs: Date.now() - start, status: "unhealthy" };
   }
 }
 
@@ -1200,19 +1289,17 @@ export async function recordSlaMetrics(input: {
   healthy: boolean;
   latencyMs: number;
   slaThresholdMs: number;
+  timestamp?: string;
 }): Promise<{ slaBreached: boolean }> {
   const slaBreached = !input.healthy || input.latencyMs > input.slaThresholdMs;
 
   if (slaBreached) {
     const d = await db();
     await d.insert(complianceChecks).values({
-      entityType: "service",
-      entityId: input.serviceName,
-      checkType: "sla_health_check",
-      status: "flagged",
-      riskLevel: input.healthy ? "medium" : "high",
-      metadata: { latencyMs: input.latencyMs, slaThresholdMs: input.slaThresholdMs, healthy: input.healthy },
-      checkedAt: new Date(),
+      checkType: "SLA",
+      ruleCode: "sla_health_check",
+      result: "flag",
+      details: JSON.stringify({ serviceName: input.serviceName, latencyMs: input.latencyMs, slaThresholdMs: input.slaThresholdMs, healthy: input.healthy }),
     }).catch(() => {});
 
     await emit("platform-events", { eventType: "sla.breached", serviceName: input.serviceName, latencyMs: input.latencyMs, slaThresholdMs: input.slaThresholdMs });
@@ -1225,22 +1312,146 @@ export async function recordSlaMetrics(input: {
 // LAKEHOUSE INGESTION ACTIVITY
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function ingestToLakehouse(input: {
-  dataset: string;
-  records: Record<string, unknown>[];
-  partitionKey?: string;
-}): Promise<{ ingested: boolean; recordCount: number }> {
+export async function ingestToLakehouse(
+  input: string | {
+    dataset: string;
+    records: Record<string, unknown>[];
+    partitionKey?: string;
+  },
+  record?: Record<string, unknown>
+): Promise<{ ingested: boolean; recordCount: number }> {
+  const normalized = typeof input === "string"
+    ? { dataset: input, records: record ? [record] : [] }
+    : input;
   try {
     // In production: write to MinIO/Delta Lake via lakehouse service
-    const res = await fetch(`${ENV.lakehouseUrl ?? "http://localhost:9000"}/ingest/${input.dataset}`, {
+    const res = await fetch(`${ENV.lakehouseUrl}/ingest/${normalized.dataset}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ records: input.records, partitionKey: input.partitionKey }),
+      body: JSON.stringify({ records: normalized.records, partitionKey: typeof input === "string" ? undefined : input.partitionKey }),
       signal: AbortSignal.timeout(10_000),
     });
-    return { ingested: res.ok, recordCount: input.records.length };
+    return { ingested: res.ok, recordCount: normalized.records.length };
   } catch {
     // Fail-open: lakehouse ingestion is best-effort
     return { ingested: false, recordCount: 0 };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GENERIC ACTIVITIES (idempotency, notifications, ledger, events)
+// Used by innovation journeys J21–J28
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Look up a previously recorded idempotency result for a journey step.
+ * Returns the stored result payload, or null if this key has not completed.
+ * Fail-open: if Redis is unavailable, returns null (workflow re-executes).
+ */
+export async function checkIdempotency(key: string, journey: string): Promise<unknown> {
+  try {
+    const redis = getRedisClient();
+    const cached = await redis.get(`idem:${journey}:${key}`);
+    return cached ? JSON.parse(cached) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Record the final result of a journey under its idempotency key (24h TTL). */
+export async function recordIdempotency(key: string, journey: string, result: unknown): Promise<{ recorded: boolean }> {
+  try {
+    const redis = getRedisClient();
+    await redis.set(`idem:${journey}:${key}`, JSON.stringify(result), "EX", 86400);
+    return { recorded: true };
+  } catch {
+    return { recorded: false };
+  }
+}
+
+/** AML screening wrapper keyed by customer (used by payout journeys). */
+export async function runAmlCheck(input: {
+  customerId: number;
+  amount: number;
+  transactionType: string;
+}): Promise<{ cleared: boolean; riskLevel: string; flags: string[]; flagged: boolean; riskScore: number }> {
+  return runAmlScreening({
+    entityType: "customer",
+    entityId: input.customerId,
+    amount: input.amount,
+    transactionType: input.transactionType,
+  });
+}
+
+/** Submit a double-entry transfer to TigerBeetle; returns the transfer ID. */
+export async function createTigerBeetleTransfer(input: {
+  debitAccountId: string;
+  creditAccountId: string;
+  amount: number; // in kobo
+  code?: number;
+  ledger?: number;
+  userData?: number;
+}): Promise<{ transferId: string }> {
+  const result = await tbCreateTransfer({
+    debitAccountId: input.debitAccountId,
+    creditAccountId: input.creditAccountId,
+    amount: input.amount,
+    ledger: input.ledger ?? 3000,
+    code: input.code ?? 0,
+    ref: input.userData != null ? `UD-${input.userData}-${Date.now().toString(36)}` : undefined,
+  });
+  return { transferId: result?.id ?? `OFFLINE-${Date.now().toString(36).toUpperCase()}` };
+}
+
+/** Persist a notification and fan it out via Dapr pub/sub. */
+export async function sendNotification(input: {
+  userId: number;
+  type: string;
+  message: string;
+  channel?: string;
+  title?: string;
+}): Promise<{ sent: boolean }> {
+  const d = await db();
+  await d.insert(notifications).values({
+    userId: input.userId,
+    type: input.type,
+    title: input.title ?? input.type,
+    message: input.message,
+    channel: input.channel ?? "sms",
+    status: "pending",
+  }).catch(() => {});
+  await daprPublish({
+    pubsubName: "insureportal-pubsub",
+    topic: "notifications",
+    data: { userId: input.userId, type: input.type, channel: input.channel ?? "sms" },
+  }).catch(() => {});
+  return { sent: true };
+}
+
+/** Emit an event to a Fluvio topic (fail-open). */
+export async function emitFluvioEvent(topic: string, payload: Record<string, unknown>): Promise<{ emitted: boolean }> {
+  await emit(topic, payload);
+  return { emitted: true };
+}
+
+/** Fetch core policy data for journey decisions. */
+export async function getPolicyData(policyId: number): Promise<{
+  policyId: number;
+  policyNumber: string;
+  customerId: number;
+  premiumAmount: number;
+  sumInsured: number;
+  status: string;
+}> {
+  const d = await db();
+  const [policy] = await d.select().from(policies).where(eq(policies.id, policyId)).limit(1);
+  if (!policy) throw new Error(`Policy ${policyId} not found`);
+  return {
+    policyId: policy.id,
+    policyNumber: policy.policyNumber,
+    customerId: policy.customerId,
+    premiumAmount: Number(policy.annualPremium ?? 0),
+    sumInsured: Number(policy.sumInsured ?? 0),
+    status: policy.status,
+  };
 }

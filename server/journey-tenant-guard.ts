@@ -62,14 +62,14 @@ export interface TenantContext {
  * `tenantId`. If tenantId is absent, defaults to "insureportal" (single-tenant).
  */
 export function buildTenantContext(input: {
-  triggeredBy: number;
+  triggeredBy?: number | string;
   tenantId?: string;
   userRole?: string;
   organizationId?: string;
-}): TenantContext {
+} & Record<string, unknown>): TenantContext {
   return {
     tenantId: input.tenantId ?? process.env.PERMIFY_TENANT_ID ?? "insureportal",
-    userId: String(input.triggeredBy),
+    userId: input.triggeredBy != null ? String(input.triggeredBy) : "system",
     userRole: input.userRole ?? "agent",
     organizationId: input.organizationId,
   };

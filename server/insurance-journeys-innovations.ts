@@ -108,7 +108,7 @@ export async function J21_ParametricTriggerWorkflow(input: J21Input): Promise<{
 
   // Step 5: Record payout in DB
   currentStep = "record_payout";
-  const payoutResult = await ext.invokeDaprService("parametric-service", "record-payout", {
+  const payoutResult = await ext.invokeDaprService({ appId: "parametric-service", method: "record-payout", data: {
     triggerId: input.triggerId,
     policyId: input.policyId,
     customerId: input.customerId,
@@ -116,8 +116,8 @@ export async function J21_ParametricTriggerWorkflow(input: J21Input): Promise<{
     tbTransferId,
     dataSourceUrl: input.dataSourceUrl,
     status: "paid",
-  });
-  payoutId = (payoutResult as { payoutId: number }).payoutId ?? input.triggerId;
+  }});
+  payoutId = (payoutResult.data as { payoutId: number }).payoutId ?? input.triggerId;
 
   // Step 6: Notify customer
   currentStep = "notify_customer";
@@ -186,11 +186,11 @@ export async function J22_UBIMonthlyAdjustmentWorkflow(input: J22Input): Promise
 
   // Step 1: Fetch telematics data
   currentStep = "fetch_telematics";
-  const telematicsData = await ext.invokeDaprService("telematics-engine", "get-score", {
+  const telematicsData = (await ext.invokeDaprService({ appId: "telematics-engine", method: "get-score", data: {
     policyId: input.policyId,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
-  }) as { drivingScore: number; events: number; hardBrakes: number; speedingEvents: number };
+  }})).data as { drivingScore: number; events: number; hardBrakes: number; speedingEvents: number };
 
   const drivingScore = telematicsData.drivingScore ?? 70;
 
@@ -221,11 +221,11 @@ export async function J22_UBIMonthlyAdjustmentWorkflow(input: J22Input): Promise
 
   // Step 5: Update policy premium
   currentStep = "update_policy";
-  await ext.invokeDaprService("policy-service", "update-premium", {
+  await ext.invokeDaprService({ appId: "policy-service", method: "update-premium", data: {
     policyId: input.policyId,
     newPremium,
     adjustmentReason: `UBI adjustment: driving score ${drivingScore}/100`,
-  });
+  }});
 
   // Step 6: Notify customer
   currentStep = "notify_customer";
@@ -281,7 +281,7 @@ export async function J23_P2PPoolLifecycleWorkflow(input: J23Input): Promise<{
 
   if (input.action === "activate") {
     currentStep = "activate_pool";
-    await ext.invokeDaprService("p2p-service", "activate-pool", { poolId: input.poolId });
+    await ext.invokeDaprService({ appId: "p2p-service", method: "activate-pool", data: { poolId: input.poolId }});
     await act.emitFluvioEvent("p2p.pool.activated", { poolId: input.poolId });
     currentStep = "completed";
     return { status: "activated", membersProcessed: 0, totalCollected: 0 };
@@ -289,7 +289,7 @@ export async function J23_P2PPoolLifecycleWorkflow(input: J23Input): Promise<{
 
   if (input.action === "collect_contributions") {
     currentStep = "fetch_members";
-    const members = await ext.invokeDaprService("p2p-service", "get-members", { poolId: input.poolId }) as { members: Array<{ customerId: number; contributionAmount: number }> };
+    const members = (await ext.invokeDaprService({ appId: "p2p-service", method: "get-members", data: { poolId: input.poolId }})).data as { members: Array<{ customerId: number; contributionAmount: number }> };
 
     for (const member of (members.members ?? [])) {
       currentStep = `collect_from_${member.customerId}`;
@@ -317,7 +317,7 @@ export async function J23_P2PPoolLifecycleWorkflow(input: J23Input): Promise<{
 
   if (input.action === "settle_year_end") {
     currentStep = "compute_surplus";
-    const poolData = await ext.invokeDaprService("p2p-service", "get-pool-data", { poolId: input.poolId }) as {
+    const poolData = (await ext.invokeDaprService({ appId: "p2p-service", method: "get-pool-data", data: { poolId: input.poolId }})).data as {
       poolBalance: number;
       totalContributions: number;
       totalClaims: number;
@@ -331,7 +331,7 @@ export async function J23_P2PPoolLifecycleWorkflow(input: J23Input): Promise<{
       currentStep = "distribute_surplus";
       const surplusPerMember = surplus / poolData.memberCount;
 
-      const members = await ext.invokeDaprService("p2p-service", "get-members", { poolId: input.poolId }) as { members: Array<{ customerId: number }> };
+      const members = (await ext.invokeDaprService({ appId: "p2p-service", method: "get-members", data: { poolId: input.poolId }})).data as { members: Array<{ customerId: number }> };
       for (const member of (members.members ?? [])) {
         try {
           await act.createTigerBeetleTransfer({
@@ -392,11 +392,11 @@ export async function J24_WellnessRewardsWorkflow(input: J24Input): Promise<{
 
   // Step 1: Fetch wearable readings
   currentStep = "fetch_wearable_data";
-  const wearableData = await ext.invokeDaprService("health-wearables", "get-summary", {
+  const wearableData = (await ext.invokeDaprService({ appId: "health-wearables", method: "get-summary", data: {
     customerId: input.customerId,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
-  }) as { wellnessScore: number; totalRewardPoints: number; premiumDiscountPct: number };
+  }})).data as { wellnessScore: number; totalRewardPoints: number; premiumDiscountPct: number };
 
   const wellnessScore = wearableData.wellnessScore ?? 50;
   const rewardPoints = wearableData.totalRewardPoints ?? 0;
@@ -419,11 +419,11 @@ export async function J24_WellnessRewardsWorkflow(input: J24Input): Promise<{
   // Step 3: Apply premium discount if earned
   if (premiumDiscountPct > 0) {
     currentStep = "apply_discount";
-    await ext.invokeDaprService("policy-service", "apply-wellness-discount", {
+    await ext.invokeDaprService({ appId: "policy-service", method: "apply-wellness-discount", data: {
       policyId: input.policyId,
       discountPct: premiumDiscountPct,
       reason: `Wellness score: ${wellnessScore}/100`,
-    });
+    }});
   }
 
   // Step 4: Notify customer
@@ -478,12 +478,12 @@ export async function J25_NHIAClaimsWorkflow(input: J25Input): Promise<{
 
   // Step 1: Submit to NHIA
   currentStep = "submit_to_nhia";
-  const nhiaResult = await ext.invokeDaprService("nhia-integration", "submit-claim", {
+  const nhiaResult = (await ext.invokeDaprService({ appId: "nhia-integration", method: "submit-claim", data: {
     enrollmentId: input.enrollmentId,
     facilityCode: input.facilityCode,
     diagnosisCode: input.diagnosisCode,
     claimAmount: input.claimAmount,
-  }) as { nhiaClaimRef: string; approvedAmount: number; status: string };
+  }})).data as { nhiaClaimRef: string; approvedAmount: number; status: string };
 
   const nhiaClaimRef = nhiaResult.nhiaClaimRef ?? `NHIA-${Date.now()}`;
   const approvedAmount = nhiaResult.approvedAmount ?? input.claimAmount;
@@ -594,10 +594,10 @@ export async function J26_PredictiveRenewalWorkflow(input: J26Input): Promise<{
   currentStep = "apply_renewal_discount";
   const discountApplied = input.discountOfferPct;
 
-  await ext.invokeDaprService("policy-service", "apply-renewal-discount", {
+  await ext.invokeDaprService({ appId: "policy-service", method: "apply-renewal-discount", data: {
     policyId: input.policyId,
     discountPct: discountApplied,
-  });
+  }});
 
   // Step 4: Trigger J06 Policy Renewal workflow
   currentStep = "trigger_renewal";
@@ -658,9 +658,9 @@ export async function J27_EmbeddedInsuranceWorkflow(input: J27Input): Promise<{
 
   // Step 1: Validate partner
   currentStep = "validate_partner";
-  const partnerValid = await ext.invokeDaprService("embedded-insurance", "validate-partner", {
+  const partnerValid = (await ext.invokeDaprService({ appId: "embedded-insurance", method: "validate-partner", data: {
     partnerCode: input.partnerCode,
-  }) as { valid: boolean };
+  }})).data as { valid: boolean };
   if (!partnerValid.valid) {
     throw new Error(`Invalid partner code: ${input.partnerCode}`);
   }
@@ -686,7 +686,7 @@ export async function J27_EmbeddedInsuranceWorkflow(input: J27Input): Promise<{
 
   // Step 4: Issue policy
   currentStep = "issue_policy";
-  const policyResult = await ext.invokeDaprService("embedded-insurance", "bind-policy", {
+  const policyResult = (await ext.invokeDaprService({ appId: "embedded-insurance", method: "bind-policy", data: {
     productId: input.productId,
     partnerCode: input.partnerCode,
     customerRef: input.customerRef,
@@ -694,7 +694,7 @@ export async function J27_EmbeddedInsuranceWorkflow(input: J27Input): Promise<{
     startDate: input.startDate,
     endDate: input.endDate,
     metadata: input.metadata,
-  }) as { policyNumber: string; certificateUrl: string };
+  }})).data as { policyNumber: string; certificateUrl: string };
 
   // Step 5: Emit Fluvio event
   currentStep = "emit_event";
@@ -767,12 +767,12 @@ export async function J28_GroupInsuranceEnrollmentWorkflow(input: J28Input): Pro
   currentStep = "enroll_members";
   for (const member of input.members) {
     try {
-      await ext.invokeDaprService("group-insurance", "enroll-member", {
+      await ext.invokeDaprService({ appId: "group-insurance", method: "enroll-member", data: {
         groupPolicyId: input.groupPolicyId,
         customerId: member.customerId,
         employeeId: member.employeeId,
         memberType: member.memberType,
-      });
+      }});
       enrolledCount++;
     } catch {
       failedCount++;

@@ -248,6 +248,28 @@ export async function writePermifyRelationship(input: {
   return { success: true };
 }
 
+/**
+ * Grant a subject a relation on an object (policy-level access update).
+ * Alias-shaped wrapper over writePermifyRelationship with object/subject naming.
+ */
+export async function updatePermifyPolicy(input: {
+  tenantId?: string;
+  subjectType: string;
+  subjectId: string;
+  relation: string;
+  objectType: string;
+  objectId: string;
+}): Promise<{ success: boolean }> {
+  return writePermifyRelationship({
+    tenantId: input.tenantId,
+    entityType: input.objectType,
+    entityId: input.objectId,
+    relation: input.relation,
+    subjectType: input.subjectType,
+    subjectId: input.subjectId,
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // KEYCLOAK SESSION ACTIVITIES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -849,52 +871,52 @@ export async function topUpAgentFloat(input: {
     const existing = await d.select().from(transactions)
       .where(and(
         eq(transactions.agentId, input.agentId),
-        eq(transactions.reference, input.paymentRef),
-        eq(transactions.type, "float_topup")
+        eq(transactions.ref, input.paymentRef),
+        eq(transactions.type, "Cash In")
       )).limit(1);
 
     if (existing.length > 0) {
       const agent = await d.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       return {
         success: true,
-        newBalance: parseFloat(agent[0]?.floatBalance ?? "0"),
+        newBalance: parseFloat(agent[0]?.premiumReserve ?? "0"),
         transactionId: existing[0].id.toString(),
         tbTransferId: "idempotent-replay",
       };
     }
 
     // Ensure TB account exists
-    await tbEnsureAgentAccount(input.agentId, input.agentCode);
+    await tbEnsureAgentAccount(input.agentCode);
 
     // TigerBeetle transfer: FLOAT_POOL → agent account
-    const FLOAT_POOL_ID = BigInt(process.env.TB_FLOAT_POOL_ID ?? "1");
     const tbResult = await tbCreateTransfer({
-      id: BigInt(Date.now()),
-      debitAccountId: FLOAT_POOL_ID,
-      creditAccountId: BigInt(input.agentId),
-      amount: BigInt(Math.round(input.amount * 100)), // kobo
-      ledger: 1,
+      id: `float-topup-${input.agentId}-${Date.now()}`,
+      debitAccountId: process.env.TB_FLOAT_POOL_ID ?? "float-pool",
+      creditAccountId: `float-${input.agentCode}`,
+      amount: Math.round(input.amount * 100), // kobo
+      ledger: 2000,
       code: 300, // WALLET_TOPUP
-      flags: 0,
+      ref: input.paymentRef,
+      txType: "float_topup",
+      agentId: input.agentCode,
     });
 
     // Update PostgreSQL balance
     await d.update(agents)
       .set({
-        floatBalance: sql`float_balance + ${input.amount}`,
+        premiumReserve: sql`${agents.premiumReserve} + ${input.amount}`,
         updatedAt: new Date(),
       })
       .where(eq(agents.id, input.agentId));
 
     // Record transaction
     const [txn] = await d.insert(transactions).values({
+      ref: input.paymentRef,
       agentId: input.agentId,
-      type: "float_topup",
+      type: "Cash In",
       amount: input.amount.toString(),
-      reference: input.paymentRef,
-      status: "completed",
-      description: `Float top-up via ${input.fundingSource}`,
-      metadata: { tbTransferId: tbResult.id?.toString(), fundingSource: input.fundingSource },
+      status: "success",
+      metadata: { description: `Float top-up via ${input.fundingSource}`, tbTransferId: tbResult?.id ?? null, fundingSource: input.fundingSource },
     }).returning({ id: transactions.id });
 
     const agent = await d.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
@@ -902,7 +924,7 @@ export async function topUpAgentFloat(input: {
     await emit("agent.float.topup", {
       agentId: input.agentId,
       amount: input.amount,
-      newBalance: parseFloat(agent[0]?.floatBalance ?? "0"),
+      newBalance: parseFloat(agent[0]?.premiumReserve ?? "0"),
       paymentRef: input.paymentRef,
     });
 
@@ -913,9 +935,9 @@ export async function topUpAgentFloat(input: {
 
     return {
       success: true,
-      newBalance: parseFloat(agent[0]?.floatBalance ?? "0"),
+      newBalance: parseFloat(agent[0]?.premiumReserve ?? "0"),
       transactionId: txn.id.toString(),
-      tbTransferId: tbResult.id?.toString() ?? "tb-posted",
+      tbTransferId: tbResult?.id ?? "tb-posted",
     };
   } finally {
     await release(idempotencyKey);
@@ -958,14 +980,14 @@ export async function createRemittanceOrder(input: {
 
   // Record remittance order in transactions table
   await d.insert(transactions).values({
+    ref: input.paymentRef,
     agentId: input.senderId,
-    type: "remittance",
+    type: "Transfer",
     amount: input.sendAmount.toString(),
-    reference: input.paymentRef,
     status: "pending",
-    description: `Remittance to ${input.recipientName} in ${input.recipientCountry}`,
     metadata: {
       orderId,
+      description: `Remittance to ${input.recipientName} in ${input.recipientCountry}`,
       trackingCode,
       recipientName: input.recipientName,
       recipientAccount: input.recipientAccount,
