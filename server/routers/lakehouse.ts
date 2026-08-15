@@ -669,8 +669,7 @@ export const lakehouseRouter = router({
           )) as {
             rows: Array<{
               summaryDate: string;
-              agentId: number;
-              agentId: string;
+              agentId: number | string; // numeric FK or string agent code
               agentTier: string;
               txCount: number;
               txVolume: number;

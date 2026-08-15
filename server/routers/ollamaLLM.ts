@@ -228,7 +228,7 @@ export const ollamaLLMRouter = router({
 
   generateRiskNarrative: protectedProcedure
     .input(z.object({
-      applicantData: z.record(z.unknown()),
+      applicantData: z.record(z.string(), z.unknown()),
       productType: z.string(),
       riskScore: z.number().min(0).max(100),
       model: z.string().default(DEFAULT_MODEL),
@@ -250,7 +250,7 @@ export const ollamaLLMRouter = router({
 
   generateFraudNarrative: protectedProcedure
     .input(z.object({
-      transactionData: z.record(z.unknown()),
+      transactionData: z.record(z.string(), z.unknown()),
       fraudScore: z.number().min(0).max(100),
       indicators: z.array(z.string()),
       model: z.string().default(DEFAULT_MODEL),

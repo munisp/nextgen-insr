@@ -211,7 +211,7 @@ const J19Schema = z.object({
   customerId: z.number().positive(),
   policyType: z.string(),
   sumInsured: z.number().positive(),
-  riskFactors: z.record(z.unknown()).default({}),
+  riskFactors: z.record(z.string(), z.unknown()).default({}),
   underwriterId: z.number().positive(),
   autoBindThreshold: z.number().min(0).max(100).optional(),
 });
@@ -413,7 +413,7 @@ export const insuranceJourneyOrchestratorRouter = router({
   trigger: protectedProcedure
     .input(z.object({
       journeyId: z.enum(["J01","J02","J03","J04","J05","J06","J07","J08","J09","J10","J11","J12","J13","J14","J15","J16","J17","J18","J19","J20"]),
-      input: z.record(z.unknown()),
+      input: z.record(z.string(), z.unknown()),
     }))
     .mutation(async ({ input, ctx }) => {
       const workflowTypeMap: Record<string, string> = {

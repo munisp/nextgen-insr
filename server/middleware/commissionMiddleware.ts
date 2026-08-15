@@ -167,8 +167,7 @@ export async function setCachedHierarchyChain(
 export async function tbRecordCommissionCredit(params: {
   transactionId: number;
   transactionRef: string;
-  agentId: number;
-  agentId: string;
+  agentId: number | string; // numeric FK or string agent code
   amount: number;
   entryType: "direct" | "hierarchy_split";
   hierarchyLevel: number;

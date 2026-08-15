@@ -26,7 +26,7 @@ export default function TenantAdminDashboard() {
   const cards = [
     { title: "Total Tenants", value: s.total ?? "—", icon: Users, trend: "up" as const, trendValue: "↑ 2 MTD", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-primary)" },
     { title: "Active Tenants", value: s.active ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: "subscribed", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--risk-low)" },
-    { title: "Suspended", value: s.suspended ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "review", status: (Number(s.suspended ?? 0) > 0 ? "warning" : "good") as const, href: "/tenant-admin-dashboard", accent: "var(--risk-medium)" },
+    { title: "Suspended", value: s.suspended ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "review", status: (Number(s.suspended ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/tenant-admin-dashboard", accent: "var(--risk-medium)" },
     { title: "Trial Tenants", value: s.trial ?? "—", icon: Clock, trend: "up" as const, trendValue: "converting", status: "neutral" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-secondary)" },
     { title: "Total Users", value: d.totalUsers ?? "—", icon: Users, trend: "up" as const, trendValue: "↑ 5%", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-primary)" },
     { title: "Revenue (MTD ₦M)", value: d.revenueMtd ? (d.revenueMtd/1e6).toFixed(2) : "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/billing-dashboard", accent: "var(--risk-low)" },

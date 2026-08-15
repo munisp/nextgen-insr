@@ -151,7 +151,6 @@ export const disputeMediationAIRouter = router({
             disputeId: did,
           } as any);
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeMediation]: " + e);
         }
         return {
@@ -212,7 +211,6 @@ export const disputeMediationAIRouter = router({
             type: "ai_resolution",
           });
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeMediation]: " + e);
         }
         return {
@@ -275,7 +273,6 @@ export const disputeMediationAIRouter = router({
             disputeId: did,
           } as any);
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeMediation]: " + e);
         }
         return {

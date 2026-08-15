@@ -56,7 +56,6 @@ export const automatedSettlementSchedulerRouter = router({
         const batchRef = `MANUAL-${input.scheduleId}-${Date.now()}`;
         await db.insert(reconciliationBatches).values({
           batchReference: batchRef,
-          // @ts-expect-error middleware type mismatch
           sourceType: "manual_trigger",
           status: "processing",
           totalRecords: 0,
@@ -77,7 +76,6 @@ export const automatedSettlementSchedulerRouter = router({
             amount: 0,
           });
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[SettlementScheduler] Middleware:: " + e);
         }
         return {

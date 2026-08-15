@@ -40,8 +40,7 @@ export async function publishSettlementEvent(params: {
     | "settlement.netting.calculated"
     | "settlement.disbursement.initiated";
   batchId?: string;
-  agentId?: number;
-  agentId?: string;
+  agentId?: number | string; // numeric FK or string agent code
   amount?: number;
   currency?: string;
   metadata?: Record<string, unknown>;
@@ -123,8 +122,7 @@ export async function getCachedSettlementBatchStatus(
 // Uses tbCreateTransfer(req: TBTransferRequest) from tbClient.ts
 export async function tbRecordSettlementTransfer(params: {
   batchId: string;
-  agentId: number;
-  agentId: string;
+  agentId: number | string; // numeric FK or string agent code
   amount: number;
   transactionCount: number;
 }): Promise<{ transferId: string; syncStatus: string } | null> {

@@ -22,10 +22,10 @@ export default function RansomwareAlertDashboard() {
 
   const s = data ?? {};
   const cards = [
-    { title: "Active Threats", value: s.activeThreats ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "monitored", status: (Number(s.activeThreats ?? 0) > 0 ? "critical" : "good") as const, href: "/ransomware-alert-dashboard", accent: "var(--risk-critical)" },
+    { title: "Active Threats", value: s.activeThreats ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "monitored", status: (Number(s.activeThreats ?? 0) > 0 ? "critical" : "good") as "critical" | "good", href: "/ransomware-alert-dashboard", accent: "var(--risk-critical)" },
     { title: "Quarantined Files", value: s.quarantined ?? "—", icon: Shield, trend: "flat" as const, trendValue: "isolated", status: "warning" as const, href: "/ransomware-alert-dashboard", accent: "var(--risk-medium)" },
     { title: "Alerts (24h)", value: s.alertsToday ?? "—", icon: Zap, trend: "up" as const, trendValue: "logged", status: "neutral" as const, href: "/ransomware-alert-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Last Backup", value: s.lastBackupAge ? s.lastBackupAge + "h ago" : "—", icon: Clock, trend: "flat" as const, trendValue: "recovery", status: (Number(s.lastBackupAge ?? 0) < 24 ? "good" : "warning") as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "Last Backup", value: s.lastBackupAge ? s.lastBackupAge + "h ago" : "—", icon: Clock, trend: "flat" as const, trendValue: "recovery", status: (Number(s.lastBackupAge ?? 0) < 24 ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
     { title: "Resolved (MTD)", value: s.resolvedMtd ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "cleared", status: "good" as const, href: "/ransomware-alert-dashboard", accent: "var(--risk-low)" },
     { title: "Detection Rate", value: s.detectionRate ? s.detectionRate + "%" : "—", icon: Activity, trend: "up" as const, trendValue: "↑ 2%", status: "good" as const, href: "/ransomware-alert-dashboard", accent: "var(--risk-low)" },
   ];

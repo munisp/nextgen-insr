@@ -173,7 +173,6 @@ export const disputeResolutionRouter = router({
             disputeId: d.id,
           } as any);
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeResolution]: " + e);
         }
         return { id: d.id, ref: d.ref, status: d.status };
@@ -229,7 +228,6 @@ export const disputeResolutionRouter = router({
             disputeId: input.disputeId,
           } as any);
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeResolution]: " + e);
         }
         return { success: true };

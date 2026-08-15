@@ -606,7 +606,7 @@ export const comparisonRouter = router({
   getQuotes: publicProcedure
     .input(z.object({
       productType: z.enum(["motor", "health", "life", "property", "travel", "marine"]),
-      riskData: z.record(z.unknown()),
+      riskData: z.record(z.string(), z.unknown()),
       customerId: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -1117,7 +1117,7 @@ export const bancassuranceRouter = router({
     .input(z.object({
       partnerCode: z.string(),
       productType: z.string(),
-      customerData: z.record(z.unknown()).optional(),
+      customerData: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
