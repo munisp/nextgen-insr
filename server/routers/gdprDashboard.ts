@@ -25,24 +25,24 @@ export const gdprDashboardRouter = router({
   // ── GDPR Dashboard Overview ───────────────────────────────────────────────
   getDashboard: protectedProcedure.query(async ({ ctx }) => {
     const db = (await getDb())!;
-    const [totalCustomers] = await db.execute(
+    const [totalCustomers] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM customers`
-    );
-    const [consentedCustomers] = await db.execute(
+    )).rows;
+    const [consentedCustomers] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM customers WHERE consent_given = true`
-    );
-    const [dsarRequests] = await db.execute(
+    )).rows;
+    const [dsarRequests] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DSAR_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    );
-    const [erasureRequests] = await db.execute(
+    )).rows;
+    const [erasureRequests] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'ERASURE_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    );
-    const [dataBreaches] = await db.execute(
+    )).rows;
+    const [dataBreaches] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_BREACH_REPORTED' AND created_at > NOW() - INTERVAL '1 year'`
-    );
-    const [portabilityRequests] = await db.execute(
+    )).rows;
+    const [portabilityRequests] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_PORTABILITY_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    );
+    )).rows;
 
     return {
       regulation: ["GDPR 2016/679", "NDPR 2019"],
@@ -89,6 +89,7 @@ export const gdprDashboardRouter = router({
         action: "DSAR_REQUEST",
         resource: "customer",
         resourceId: String(input.customerId),
+        status: "success",
         metadata: { requestType: input.requestType, reason: input.reason },
         ipAddress: ctx.req.ip,
       });
@@ -131,6 +132,7 @@ export const gdprDashboardRouter = router({
         action: "DATA_PORTABILITY_REQUEST",
         resource: "customer",
         resourceId: String(input.customerId),
+        status: "success",
         metadata: { exportedAt: new Date().toISOString() },
         ipAddress: ctx.req.ip,
       });
@@ -143,7 +145,7 @@ export const gdprDashboardRouter = router({
         data: {
           personal: {
             id: customer.id,
-            name: customer.name,
+            name: [customer.firstName, customer.lastName].filter(Boolean).join(" "),
             email: customer.email,
             phone: customer.phone,
             address: customer.address,
@@ -158,7 +160,7 @@ export const gdprDashboardRouter = router({
           } : null,
           policies: customerPolicies.map(p => ({
             id: p.id,
-            type: p.policyType,
+            type: p.coverageType,
             status: p.status,
             startDate: p.startDate,
             endDate: p.endDate,
@@ -207,6 +209,7 @@ export const gdprDashboardRouter = router({
         action: "ERASURE_REQUEST",
         resource: "customer",
         resourceId: String(input.customerId),
+        status: "success",
         metadata: { reason: input.reason, anonymized: input.retainForLegal },
         ipAddress: ctx.req.ip,
       });
@@ -244,6 +247,7 @@ export const gdprDashboardRouter = router({
         action: "DATA_BREACH_REPORTED",
         resource: "platform",
         resourceId: breachId,
+        status: "success",
         metadata: {
           breachType: input.breachType,
           affectedRecords: input.affectedRecords,
@@ -272,12 +276,12 @@ export const gdprDashboardRouter = router({
   // ── NDPR Compliance Status ────────────────────────────────────────────────
   getNdprStatus: protectedProcedure.query(async ({ ctx }) => {
     const db = (await getDb())!;
-    const [consentCount] = await db.execute(
+    const [consentCount] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM customers WHERE consent_given = true`
-    );
-    const [breachCount] = await db.execute(
+    )).rows;
+    const [breachCount] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_BREACH_REPORTED' AND created_at > NOW() - INTERVAL '1 year'`
-    );
+    )).rows;
 
     return {
       regulation: "NDPR 2019",
@@ -320,6 +324,7 @@ export const gdprDashboardRouter = router({
         action: input.consentGiven ? "CONSENT_GIVEN" : "CONSENT_WITHDRAWN",
         resource: "customer",
         resourceId: String(input.customerId),
+        status: "success",
         metadata: { purposes: input.consentPurposes },
         ipAddress: ctx.req.ip,
       });

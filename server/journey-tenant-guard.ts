@@ -66,7 +66,7 @@ export function buildTenantContext(input: {
   tenantId?: string;
   userRole?: string;
   organizationId?: string;
-} & Record<string, unknown>): TenantContext {
+}): TenantContext {
   return {
     tenantId: input.tenantId ?? process.env.PERMIFY_TENANT_ID ?? "insureportal",
     userId: input.triggeredBy != null ? String(input.triggeredBy) : "system",

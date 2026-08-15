@@ -2,7 +2,8 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { otpTokens, auditLog } from "../../drizzle/schema";
+import { auditLog } from "../../drizzle/schema";
+import { paymentTokens } from "../../drizzle/schema.additions";
 import { desc, eq, count, and, lt, gt } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
@@ -47,8 +48,8 @@ export const paymentTokenVaultRouter = router({
     .query(async ({ input }) => {
       const database = await getDb();
       if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
-      const results = await database.select().from(otpTokens).orderBy(desc(otpTokens.id)).limit(input.limit).offset(input.offset);
-      const totalRows = await database.select({ total: count() }).from(otpTokens);
+      const results = await database.select().from(paymentTokens).orderBy(desc(paymentTokens.id)).limit(input.limit).offset(input.offset);
+      const totalRows = await database.select({ total: count() }).from(paymentTokens);
       const masked = results.map((t: any) => ({
         id: t.id,
         token: t.token?.slice(0, 7) + "***",
@@ -79,7 +80,7 @@ export const paymentTokenVaultRouter = router({
       const rotationAt = new Date(expiresAt.getTime() - ROTATION_BUFFER_DAYS * 24 * 3600000);
 
       // Persist token to DB
-      await database.insert(otpTokens).values({
+      await database.insert(paymentTokens).values({
         token,
         identifier: input.lastFourDigits,
         type: input.type,
@@ -91,9 +92,9 @@ export const paymentTokenVaultRouter = router({
       // Audit log
       await database.insert(auditLog).values({
         action: "TOKEN_CREATED",
-        entityType: "payment_token",
-        entityId: token.slice(0, 10),
-        userId: String(ctx.user?.id ?? "system"),
+        resource: "payment_token",
+        resourceId: token.slice(0, 10),
+        agentId: ctx.user?.id ?? null,
         metadata: { customerId: input.customerId, type: input.type, maskedPan: maskPAN(input.lastFourDigits) },
       });
 
@@ -121,8 +122,8 @@ export const paymentTokenVaultRouter = router({
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
       // Look up the token in DB
-      const [tokenRecord] = await database.select().from(otpTokens)
-        .where(and(eq(otpTokens.token, input.token), eq(otpTokens.used, false)))
+      const [tokenRecord] = await database.select().from(paymentTokens)
+        .where(and(eq(paymentTokens.token, input.token), eq(paymentTokens.used, false)))
         .limit(1);
 
       if (!tokenRecord) {
@@ -134,12 +135,12 @@ export const paymentTokenVaultRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Token has expired" });
       }
 
-      // Validate 2FA OTP from DB (otpTokens table stores OTPs too)
-      const [otpRecord] = await database.select().from(otpTokens)
+      // Validate 2FA OTP from DB (paymentTokens table stores OTPs too)
+      const [otpRecord] = await database.select().from(paymentTokens)
         .where(and(
-          eq(otpTokens.identifier, input.twoFactorCode),
-          eq(otpTokens.used, false),
-          gt(otpTokens.expiresAt, new Date()),
+          eq(paymentTokens.identifier, input.twoFactorCode),
+          eq(paymentTokens.used, false),
+          gt(paymentTokens.expiresAt, new Date()),
         ))
         .limit(1);
 
@@ -147,8 +148,8 @@ export const paymentTokenVaultRouter = router({
         // Log failed attempt
         await database.insert(auditLog).values({
           action: "TOKEN_DETOKENIZE_FAILED",
-          entityType: "payment_token",
-          entityId: input.token.slice(0, 10),
+          resource: "payment_token",
+          resourceId: input.token.slice(0, 10),
           userId: String(ctx.user?.id ?? "unknown"),
           metadata: { reason: "invalid_2fa", ip: input.requestIp ?? "unknown" },
         });
@@ -156,14 +157,14 @@ export const paymentTokenVaultRouter = router({
       }
 
       // Mark OTP as used
-      await database.update(otpTokens).set({ used: true, usedAt: new Date() }).where(eq(otpTokens.id, otpRecord.id));
+      await database.update(paymentTokens).set({ used: true, usedAt: new Date() }).where(eq(paymentTokens.id, otpRecord.id));
 
       // Audit successful detokenization
       await database.insert(auditLog).values({
         action: "TOKEN_DETOKENIZED",
-        entityType: "payment_token",
-        entityId: input.token.slice(0, 10),
-        userId: String(ctx.user?.id ?? "system"),
+        resource: "payment_token",
+        resourceId: input.token.slice(0, 10),
+        agentId: ctx.user?.id ?? null,
         metadata: { reason: input.reason, ip: input.requestIp ?? "unknown", maskedPan: maskPAN(tokenRecord.identifier ?? "0000") },
       });
 
@@ -183,10 +184,10 @@ export const paymentTokenVaultRouter = router({
     if (!database) return { totalTokens: 0, activeTokens: 0, expiringIn30d: 0 };
     const now = new Date();
     const in30d = new Date(now.getTime() + 30 * 24 * 3600000);
-    const [totalRow] = await database.select({ total: count() }).from(otpTokens);
-    const [activeRow] = await database.select({ total: count() }).from(otpTokens).where(and(eq(otpTokens.used, false), gt(otpTokens.expiresAt, now)));
-    const [expiringRow] = await database.select({ total: count() }).from(otpTokens).where(and(eq(otpTokens.used, false), gt(otpTokens.expiresAt, now), lt(otpTokens.expiresAt, in30d)));
-    const [usedRow] = await database.select({ total: count() }).from(otpTokens).where(eq(otpTokens.used, true));
+    const [totalRow] = await database.select({ total: count() }).from(paymentTokens);
+    const [activeRow] = await database.select({ total: count() }).from(paymentTokens).where(and(eq(paymentTokens.used, false), gt(paymentTokens.expiresAt, now)));
+    const [expiringRow] = await database.select({ total: count() }).from(paymentTokens).where(and(eq(paymentTokens.used, false), gt(paymentTokens.expiresAt, now), lt(paymentTokens.expiresAt, in30d)));
+    const [usedRow] = await database.select({ total: count() }).from(paymentTokens).where(eq(paymentTokens.used, true));
     const total = (totalRow as any)?.total ?? 0;
     const active = (activeRow as any)?.total ?? 0;
     const expiring = (expiringRow as any)?.total ?? 0;

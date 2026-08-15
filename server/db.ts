@@ -4,10 +4,11 @@
  * Uses Drizzle ORM with PostgreSQL connection pooling.
  * Production mode requires a valid database URL. Test mode allows noop fallback.
  */
-import { drizzle, type DrizzleQueryResult, type PostgresTransaction } from "drizzle-orm/node-postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type { NodePgDatabase, NodePgQueryResultHKT, NodePgTransaction } from "drizzle-orm/node-postgres";
-import { eq, desc, and, isNull, lt, gt } from "drizzle-orm";
+import { eq, desc, and, isNull, lt, gt, type ExtractTablesWithRelations, type PgColumn, type ColumnBaseConfig, type ColumnDataType } from "drizzle-orm";
+import type { PgTable, PgTransaction, TableConfig } from "drizzle-orm/pg-core";
 import { logger } from "./_core/logger";
 import {
   agents,
@@ -103,7 +104,6 @@ export async function getDb(): Promise<ReturnType<typeof drizzle> | null> {
       maxUses: 7500,
       statement_timeout: 30_000,
       maxLifetimeSeconds: 3600, // Rotate connections every hour
-      reapIntervalMillis: 1000, // Check every second for dead connections
     });
 
     _pool.on("error", (err) => {
@@ -431,7 +431,7 @@ export async function updateTransactionStatus(
   if (!db) return;
   await db
     .update(transactions)
-    .set({ status: status as "pending" | "completed" | "failed" | "reversed" | "cancelled", failureReason: notes ?? null })
+    .set({ status: status as "pending" | "success" | "failed" | "reversed" | "pending_reversal_approval", failureReason: notes ?? null })
     .where(eq(transactions.id, id));
 }
 
@@ -581,7 +581,7 @@ export async function writeAuditLog(data: {
   resource: string;
   resourceId?: string;
   ipAddress?: string;
-  status: "success" | "failure" | "warning";
+  status?: "success" | "failure" | "warning";
   metadata?: Record<string, unknown>;
 }) {
   const db = await getDb();
@@ -593,7 +593,7 @@ export async function writeAuditLog(data: {
       resource: data.resource,
       resourceId: data.resourceId ?? null,
       ipAddress: data.ipAddress ?? null,
-      status: data.status,
+      status: data.status ?? "success",
       metadata: data.metadata ?? null,
     });
   } catch (err) {
@@ -619,7 +619,10 @@ export async function getAuditLog(agentId?: number, limit = 50, offset = 0) {
  * Use this instead of hard-deletes for auditable entities.
  */
 export async function softDelete(
-  table: { id: number; deletedAt?: Date | null },
+  table: PgTable<TableConfig> & {
+    id: PgColumn<ColumnBaseConfig<ColumnDataType, "number">>;
+    deletedAt: PgColumn<ColumnBaseConfig<ColumnDataType, "date">>;
+  },
   id: number
 ): Promise<void> {
   const db = await getDb();
@@ -635,13 +638,15 @@ export async function softDelete(
  * Callers must handle the case where db is null (no connection string).
  */
 export async function withTransaction<T>(
-  fn: (tx: ReturnType<typeof drizzle>) => Promise<T>
+  fn: (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      Record<string, never>,
+      ExtractTablesWithRelations<Record<string, never>>
+    >
+  ) => Promise<T>
 ): Promise<T> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const transaction = db.transaction;
-  if (typeof transaction !== "function") {
-    throw new Error("Database does not support transactions");
-  }
-  return transaction.call(db, fn);
+  return db.transaction(fn);
 }

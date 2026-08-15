@@ -146,7 +146,7 @@ export const tigerBeetleRouter = router({
 
       const results = input.status === "all"
         ? await query
-        : await query.where(eq(tigerBeetleSyncLog.syncStatus, input.status));
+        : await query.where(eq(tigerBeetleSyncLog.status, input.status));
 
       const [{ total }] = await db.select({ total: count() }).from(tigerBeetleSyncLog);
       return { data: results, total: Number(total) };
@@ -214,7 +214,7 @@ export const tigerBeetleRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       const pending = await db.select().from(tigerBeetleSyncLog)
-        .where(eq(tigerBeetleSyncLog.syncStatus, "pending"))
+        .where(eq(tigerBeetleSyncLog.status, "pending"))
         .orderBy(tigerBeetleSyncLog.id)
         .limit(input.limit);
 
@@ -223,20 +223,17 @@ export const tigerBeetleRouter = router({
       for (const entry of pending) {
         retried++;
         const result = await tbCreateTransfer({
-          id: entry.tbTransferId ?? undefined,
+          id: entry.transferId ?? undefined,
           debitAccountId: entry.debitAccountId ?? "sys-bank-reserve",
           creditAccountId: entry.creditAccountId ?? "sys-bank-reserve",
-          amount: Number(entry.amountKobo ?? 0),
+          amount: Number(entry.amount ?? 0),
           ledger: Number(entry.ledger ?? 2000),
           code: Number(entry.code ?? 300),
-          ref: entry.ref ?? undefined,
-          txType: entry.txType ?? undefined,
-          agentId: entry.agentId ?? undefined,
         });
 
         if (result) {
           await db.update(tigerBeetleSyncLog)
-            .set({ syncStatus: "synced", syncedAt: new Date() })
+            .set({ status: "synced", syncedAt: new Date() })
             .where(eq(tigerBeetleSyncLog.id, entry.id));
           succeeded++;
         } else {

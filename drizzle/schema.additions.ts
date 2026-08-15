@@ -14,6 +14,7 @@ import {
   timestamp,
   numeric,
   jsonb,
+  json,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -203,6 +204,30 @@ export const posTerminals = pgTable(
   })
 );
 export type PosTerminal = typeof posTerminals.$inferSelect;
+// ─── Payment Token Vault ─────────────────────────────────────────────────────
+// Tokenized payment instruments (cards, accounts) used by paymentTokenVault router.
+export const paymentTokens = pgTable(
+  "payment_tokens",
+  {
+    id: serial("id").primaryKey(),
+    token: varchar("token", { length: 128 }).notNull().unique(),
+    identifier: varchar("identifier", { length: 64 }), // masked PAN last-four / 2FA reference
+    type: varchar("type", { length: 32 }).notNull(),
+    used: boolean("used").default(false).notNull(),
+    usedAt: timestamp("usedAt"),
+    expiresAt: timestamp("expiresAt"),
+    metadata: json("metadata"),
+    tenantId: integer("tenantId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    tokenIdx: uniqueIndex("payment_token_idx").on(t.token),
+    tenantIdx: index("payment_token_tenant_idx").on(t.tenantId),
+  })
+);
+export type PaymentToken = typeof paymentTokens.$inferSelect;
+export type InsertPaymentToken = typeof paymentTokens.$inferInsert;
+
 export type InsertPosTerminal = typeof posTerminals.$inferInsert;
 
 // ─── Claims Payments ──────────────────────────────────────────────────────────
