@@ -21,8 +21,9 @@
  *     assumption, see THREAT_MODEL.md "Residual risks").
  *
  * Single-tenant-by-design note: multiTenantIsolationRouter (tenant CRUD) is
- * platform-admin surface mounted on protectedProcedure; it is NOT tenant-
- * scoped by design and is documented in THREAT_MODEL.md instead of tested here.
+ * platform-admin surface now mounted on adminProcedure (was plain
+ * protectedProcedure — fixed per THREAT_MODEL.md §7.3); its authorization
+ * gates are tested in tenantAdminAuthz.integration.test.ts.
  */
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, count } from "drizzle-orm";

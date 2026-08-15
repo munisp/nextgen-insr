@@ -100,19 +100,52 @@ function deterministicLedgerId(stripeObjectId: string): number {
   return parseInt(hex, 16) % 2147483647;
 }
 
+// Replay freshness: Stripe signs a `t=` unix timestamp into the
+// stripe-signature header; constructEvent rejects events whose timestamp is
+// older than this tolerance (fail-closed against captured-payload replays).
+export const STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300; // 5 minutes
+
 export async function handleStripeWebhook(req: Request, res: Response) {
   const sig = req.headers["stripe-signature"];
   if (!sig)
     return res.status(400).json({ error: "Missing stripe-signature header" });
+
+  // FAIL-CLOSED (THREAT_MODEL.md §7.4): a missing signing secret in
+  // production is a deployment error — answer 503 loudly instead of
+  // accepting or silently dropping unverified webhooks.
+  let webhookSecret: string;
+  try {
+    webhookSecret = getWebhookSecret();
+  } catch {
+    if (process.env.NODE_ENV === "production") {
+      logger.error(
+        "[Stripe Webhook] STRIPE_WEBHOOK_SECRET NOT SET in production — rejecting webhook (fail-closed)"
+      );
+      return res.status(503).json({
+        error:
+          "Webhook signing secret STRIPE_WEBHOOK_SECRET is not configured (PRECONDITION_FAILED)",
+      });
+    }
+    // Labeled dev/test bypass: the event is NOT processed, only acknowledged.
+    logger.warn(
+      "[Stripe Webhook] DEV BYPASS: STRIPE_WEBHOOK_SECRET not set — event acknowledged but NOT processed (never allowed in production)"
+    );
+    return res.json({
+      received: true,
+      devBypass: "signature verification skipped — STRIPE_WEBHOOK_SECRET unset",
+    });
+  }
 
   let event: Stripe.Event;
   try {
     event = getStripe().webhooks.constructEvent(
       req.body,
       sig,
-      getWebhookSecret()
+      webhookSecret,
+      STRIPE_WEBHOOK_TOLERANCE_SECONDS
     );
   } catch (err: any) {
+    // Covers both signature mismatch and stale-timestamp replay attempts.
     logger.error({ err: err.message }, "[Stripe Webhook] Signature verification failed");
     return res.status(400).json({ error: `Webhook Error: ${err.message}` });
   }

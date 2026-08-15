@@ -27,9 +27,21 @@ export function verifyWebhookHmac(
   return (req: Request, res: Response, next: NextFunction) => {
     const secret = process.env[secretEnvKey];
     if (!secret) {
-      // If no secret is configured, skip verification (dev/test mode)
+      // FAIL-CLOSED (THREAT_MODEL.md §7.4): in production an unconfigured
+      // signing secret is a deployment error, not a reason to accept
+      // unverified webhooks. Answer 503 loudly so monitoring fires.
+      if (process.env.NODE_ENV === "production") {
+        logger.error(
+          `[WebhookHmac] ${secretEnvKey} NOT SET in production — rejecting webhook (fail-closed). Set the secret or remove the route.`
+        );
+        res.status(503).json({
+          error: `Webhook signing secret ${secretEnvKey} is not configured (PRECONDITION_FAILED)`,
+        });
+        return;
+      }
+      // Labeled dev/test bypass only — every skipped verification is logged.
       logger.warn(
-        `[WebhookHmac] ${secretEnvKey} not set — skipping signature check`
+        `[WebhookHmac] DEV BYPASS: ${secretEnvKey} not set — skipping signature check (never allowed in production)`
       );
       return next();
     }

@@ -25,6 +25,8 @@
  */
 import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, and, count, sql, inArray, like } from "drizzle-orm";
+import { Pool } from "pg";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { getDb } from "../../server/db";
 import { refunds, transactions, agents } from "../../drizzle/schema";
 import {
@@ -74,14 +76,43 @@ async function seedAgent(suffix: string, balance: number): Promise<number> {
   return a!.id;
 }
 
+// ── PGlite desync containment (harness level) ───────────────────────────────
+// Test 8 deliberately triggers a unique-violation INSIDE a transaction. The
+// PGlite wire-protocol server (pglite-socket multiplexer) can desync the
+// shared single-connection pool after that intentional in-transaction error:
+// subsequent queries on the poisoned connection intermittently return rows
+// from the WRONG query (observed ~25% flake: balanceOf → undefined row,
+// SUM() → "1"). Once the intentional error has fired, all further harness
+// reads in this file go through a dedicated fresh pool, bypassing the
+// poisoned shared connection entirely.
+let harnessPool: Pool | null = null;
+let harnessDb: NodePgDatabase | null = null;
+
+/** Call after the intentional in-transaction error (test 8). */
+function switchToFreshHarnessConnection(): void {
+  if (harnessDb) return;
+  harnessPool = new Pool({
+    connectionString: process.env.POSTGRES_URL,
+    max: 1,
+    ssl: false,
+  });
+  harnessDb = drizzle(harnessPool);
+}
+
+/** DB handle for harness reads/writes: shared pool until poisoned, then fresh. */
+async function harnessDbHandle(): Promise<NodePgDatabase> {
+  if (harnessDb) return harnessDb;
+  return (await getDb())! as unknown as NodePgDatabase;
+}
+
 async function balanceOf(agentId: number): Promise<number> {
-  const db = (await getDb())!;
+  const db = await harnessDbHandle();
   const [row] = await db.select().from(agents).where(eq(agents.id, agentId));
   return Number(row!.premiumReserve);
 }
 
 async function refundCountByKey(key: string): Promise<number> {
-  const db = (await getDb())!;
+  const db = await harnessDbHandle();
   const [row] = await db
     .select({ c: count() })
     .from(refunds)
@@ -90,7 +121,7 @@ async function refundCountByKey(key: string): Promise<number> {
 }
 
 async function txRowsByRef(ref: string) {
-  const db = (await getDb())!;
+  const db = await harnessDbHandle();
   return db
     .select()
     .from(transactions)
@@ -109,10 +140,17 @@ describe("funds-flow integrity (integration, real DB)", () => {
   afterAll(async () => {
     // Remove this file's fixtures so sibling suites (e.g. disputeRefund's
     // global pending-count summary) see the same baseline as before.
-    const db = (await getDb())!;
+    // Routed through the harness handle: after test 8 the shared pool may be
+    // desynced by PGlite, so cleanup uses the dedicated fresh connection.
+    const db = await harnessDbHandle();
     await db.delete(refunds).where(like(refunds.idempotencyKey, "ff-refund-key-%"));
     await db.delete(transactions).where(like(transactions.ref, "FF-TR-%"));
     await db.delete(agents).where(like(agents.agentId, "AGT-FF-%"));
+    if (harnessPool) {
+      await harnessPool.end();
+      harnessPool = null;
+      harnessDb = null;
+    }
     console.log(`[integration] ${FILE}: ${getAssertionCount()} assertions`);
   });
 
@@ -268,7 +306,7 @@ describe("funds-flow integrity (integration, real DB)", () => {
 
   // ── 8. Atomicity: forced mid-operation failure rolls back the first write ──
   it("atomicity: unique violation on the receiver credit rolls back the sender debit", async () => {
-    const db = (await getDb())!;
+    const db = await harnessDbHandle();
     // Pre-seed a blocker row so the receiver-credit insert (ref `${reference}-RCV`)
     // violates the unique ref constraint mid-operation.
     await db.insert(transactions).values({
@@ -298,10 +336,15 @@ describe("funds-flow integrity (integration, real DB)", () => {
     }
     expect(threw).toBe(true);
 
+    // The intentional in-transaction error above can desync the PGlite wire
+    // server on the shared single-connection pool. Move all remaining harness
+    // reads in this file to a dedicated fresh connection (see helper comment).
+    switchToFreshHarnessConnection();
+
     // First write (sender debit + balance update) must NOT survive.
     expect(await balanceOf(senderId)).toBe(sBefore);
     expect(await balanceOf(receiverId)).toBe(rBefore);
-    const leaked = await db
+    const leaked = await (await harnessDbHandle())
       .select({ c: count() })
       .from(transactions)
       .where(eq(transactions.ref, "FF-TR-ATOMIC"));
@@ -310,7 +353,7 @@ describe("funds-flow integrity (integration, real DB)", () => {
 
   // ── 9. Conservation invariant: reconciliation query ────────────────────────
   it("reconciliation: pair float conserved and debit sum == credit sum across all seeded transfers", async () => {
-    const db = (await getDb())!;
+    const db = await harnessDbHandle();
     const [totals] = await db
       .select({ total: sql<string>`COALESCE(SUM(CAST("premiumReserve" AS NUMERIC)), 0)` })
       .from(agents)

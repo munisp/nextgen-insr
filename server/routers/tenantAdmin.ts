@@ -1,6 +1,6 @@
 // @ts-check
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   eq,
@@ -321,15 +321,24 @@ export const tenantAdminRouter = router({
       });
       return { success: true, isLive: updated?.isLive };
     }),
-  updateUser: protectedProcedure
+  // SECURITY (platform-provisioning invariant, THREAT_MODEL.md §7.1):
+  // user-management is admin surface. The input schema is .strict() so a
+  // `tenantId` key is rejected loudly instead of silently stripped — no
+  // caller may ever move a user across the tenant boundary or to platform
+  // scope (tenantId NULL) through this procedure. Additionally, a
+  // tenant-scoped admin (tenantId non-NULL) may only touch users inside
+  // their own tenant: platform-scope users and other tenants are FORBIDDEN.
+  updateUser: adminProcedure
     .input(
-      z.object({
-        userId: z.string(),
-        role: z.string().optional(),
-        name: z.string().optional(),
-      })
+      z
+        .object({
+          userId: z.string(),
+          role: z.enum(["user", "admin", "supervisor"]).optional(),
+          name: z.string().optional(),
+        })
+        .strict()
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const userPk = Number(input.userId);
       if (!Number.isFinite(userPk)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid userId" });
@@ -337,6 +346,23 @@ export const tenantAdminRouter = router({
       const db = await getDb();
       if (!db)
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const [target] = await db
+        .select({ id: users.id, tenantId: users.tenantId })
+        .from(users)
+        .where(eq(users.id, userPk))
+        .limit(1);
+      if (!target) {
+        throw new TRPCError({ code: "NOT_FOUND", message: `User ${input.userId} not found` });
+      }
+      const callerTenantId = (ctx.user as { tenantId?: number | null }).tenantId ?? null;
+      if (callerTenantId !== null && target.tenantId !== callerTenantId) {
+        // Tenant-scoped admin may not edit platform-scope (tenantId NULL) or
+        // cross-tenant users — fail closed.
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Tenant-scoped admins may only manage users within their own tenant",
+        });
+      }
       const setObj: any = { updatedAt: new Date() };
       if (input.role) setObj.role = input.role;
       if (input.name) setObj.name = input.name;
