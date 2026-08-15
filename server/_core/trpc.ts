@@ -6,7 +6,7 @@ import { permifyCheck } from "../_core/permify";
 import { createObservabilityMiddleware } from "../middleware/observabilityMiddleware";
 import { createSidecarMiddleware } from "../middleware/sidecarIntegration";
 
-const t = initTRPC.context<TrpcContext>().create({
+export const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
 });
 

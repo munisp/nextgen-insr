@@ -141,7 +141,7 @@ export const insuranceKpiDashboardRouter = router({
           active: sql<number>`COUNT(*) FILTER (WHERE status = 'active')`,
           lapsed: sql<number>`COUNT(*) FILTER (WHERE status = 'lapsed')`,
           newPolicies: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${since.toISOString()})`,
-          totalPremium: sql<string>`COALESCE(SUM(CAST(premium_amount AS NUMERIC)), 0)`,
+          totalPremium: sql<string>`COALESCE(SUM(CAST("annualPremium" AS NUMERIC)), 0)`,
         })
         .from(policies);
 
@@ -150,7 +150,7 @@ export const insuranceKpiDashboardRouter = router({
           total: count(),
           open: sql<number>`COUNT(*) FILTER (WHERE status IN ('reported','investigating','pending_payment'))`,
           settled: sql<number>`COUNT(*) FILTER (WHERE status = 'settled')`,
-          totalPaid: sql<string>`COALESCE(SUM(CAST(settlement_amount AS NUMERIC) FILTER (WHERE settlement_amount IS NOT NULL)), 0)`,
+          totalPaid: sql<string>`COALESCE(SUM(CAST("paidAmount" AS NUMERIC) FILTER (WHERE "paidAmount" IS NOT NULL)), 0)`,
           avgCycleHours: sql<number>`COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/3600) FILTER (WHERE status = 'settled'), 0)`,
         })
         .from(claims);
@@ -236,7 +236,7 @@ export const insuranceKpiDashboardRouter = router({
       const [policyStats] = await db
         .select({
           newPolicies: count(),
-          totalPremium: sql<string>`COALESCE(SUM(CAST(premium_amount AS NUMERIC)), 0)`,
+          totalPremium: sql<string>`COALESCE(SUM(CAST("annualPremium" AS NUMERIC)), 0)`,
         })
         .from(policies)
         .where(gte(policies.createdAt, since));
@@ -292,7 +292,7 @@ export const insuranceKpiDashboardRouter = router({
           avgLossRatio: sql<number>`COALESCE(AVG(CAST(loss_ratio AS NUMERIC)), 0)`,
         })
         .from(actuarialReserves)
-        .where(gte(actuarialReserves.valuationDate, since));
+        .where(gte(actuarialReserves.calculationDate, since));
 
       // Fetch IFRS17 full breakdown from Python analytics
       const ifrs17 = await fetchPythonAnalytics("/ifrs17/full-breakdown", {
@@ -307,10 +307,10 @@ export const insuranceKpiDashboardRouter = router({
       const [claimStats] = await db
         .select({
           totalIncurred: sql<string>`COALESCE(SUM(CAST(incurred_amount AS NUMERIC)), 0)`,
-          totalPaid: sql<string>`COALESCE(SUM(CAST(settlement_amount AS NUMERIC) FILTER (WHERE settlement_amount IS NOT NULL)), 0)`,
+          totalPaid: sql<string>`COALESCE(SUM(CAST("paidAmount" AS NUMERIC) FILTER (WHERE "paidAmount" IS NOT NULL)), 0)`,
           lossRatio: sql<number>`COALESCE(
             SUM(CAST(incurred_amount AS NUMERIC)) /
-            NULLIF((SELECT SUM(CAST(premium_amount AS NUMERIC)) FROM policies), 0) * 100, 0)`,
+            NULLIF((SELECT SUM(CAST("annualPremium" AS NUMERIC)) FROM policies), 0) * 100, 0)`,
         })
         .from(claims)
         .where(gte(claims.createdAt, since));
@@ -354,7 +354,7 @@ export const insuranceKpiDashboardRouter = router({
           settled: sql<number>`COUNT(*) FILTER (WHERE status = 'settled')`,
           rejected: sql<number>`COUNT(*) FILTER (WHERE status = 'rejected')`,
           totalIncurred: sql<string>`COALESCE(SUM(CAST(incurred_amount AS NUMERIC)), 0)`,
-          totalSettled: sql<string>`COALESCE(SUM(CAST(settlement_amount AS NUMERIC) FILTER (WHERE settlement_amount IS NOT NULL)), 0)`,
+          totalSettled: sql<string>`COALESCE(SUM(CAST("paidAmount" AS NUMERIC) FILTER (WHERE "paidAmount" IS NOT NULL)), 0)`,
           avgCycleHours: sql<number>`COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/3600) FILTER (WHERE status = 'settled'), 0)`,
           fraudSuspected: sql<number>`COUNT(*) FILTER (WHERE fraud_flag = true)`,
         })
@@ -428,14 +428,14 @@ export const insuranceKpiDashboardRouter = router({
       if (!db) return null;
       const since = daysAgo(input.periodDays);
 
-      const brokerId = input.brokerId ?? ctx.user?.id;
+      const brokerId = input.brokerId !== undefined ? Number(input.brokerId) : ctx.user?.id;
 
       const [policyStats] = await db
         .select({
           total: count(),
           active: sql<number>`COUNT(*) FILTER (WHERE status = 'active')`,
           lapsed: sql<number>`COUNT(*) FILTER (WHERE status = 'lapsed')`,
-          totalPremium: sql<string>`COALESCE(SUM(CAST(premium_amount AS NUMERIC)), 0)`,
+          totalPremium: sql<string>`COALESCE(SUM(CAST("annualPremium" AS NUMERIC)), 0)`,
           newThisPeriod: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${since.toISOString()})`,
         })
         .from(policies)
@@ -558,7 +558,7 @@ export const insuranceKpiDashboardRouter = router({
           total: count(),
           active: sql<number>`COUNT(*) FILTER (WHERE status = 'active')`,
           lapsed: sql<number>`COUNT(*) FILTER (WHERE status = 'lapsed')`,
-          totalPremium: sql<string>`COALESCE(SUM(CAST(premium_amount AS NUMERIC)), 0)`,
+          totalPremium: sql<string>`COALESCE(SUM(CAST("annualPremium" AS NUMERIC)), 0)`,
           nextRenewal: sql<string>`MIN(end_date) FILTER (WHERE status = 'active' AND end_date > NOW())`,
         })
         .from(policies)
@@ -569,10 +569,10 @@ export const insuranceKpiDashboardRouter = router({
           total: count(),
           open: sql<number>`COUNT(*) FILTER (WHERE status NOT IN ('settled','rejected'))`,
           settled: sql<number>`COUNT(*) FILTER (WHERE status = 'settled')`,
-          totalSettled: sql<string>`COALESCE(SUM(CAST(settlement_amount AS NUMERIC) FILTER (WHERE settlement_amount IS NOT NULL)), 0)`,
+          totalSettled: sql<string>`COALESCE(SUM(CAST("paidAmount" AS NUMERIC) FILTER (WHERE "paidAmount" IS NOT NULL)), 0)`,
         })
         .from(claims)
-        .where(eq(claims.customerId, userId));
+        .where(eq(claims.claimantId, userId));
 
       const [premiumStats] = await db
         .select({
@@ -682,7 +682,7 @@ export const insuranceKpiDashboardRouter = router({
         .select({
           total: count(),
           active: sql<number>`COUNT(*) FILTER (WHERE status = 'active')`,
-          totalPremium: sql<string>`COALESCE(SUM(CAST(premium_amount AS NUMERIC)), 0)`,
+          totalPremium: sql<string>`COALESCE(SUM(CAST("annualPremium" AS NUMERIC)), 0)`,
         })
         .from(policies);
 
@@ -691,7 +691,7 @@ export const insuranceKpiDashboardRouter = router({
           total: count(),
           settled: sql<number>`COUNT(*) FILTER (WHERE status = 'settled')`,
           rejected: sql<number>`COUNT(*) FILTER (WHERE status = 'rejected')`,
-          totalPaid: sql<string>`COALESCE(SUM(CAST(settlement_amount AS NUMERIC) FILTER (WHERE settlement_amount IS NOT NULL)), 0)`,
+          totalPaid: sql<string>`COALESCE(SUM(CAST("paidAmount" AS NUMERIC) FILTER (WHERE "paidAmount" IS NOT NULL)), 0)`,
           avgCycleHours: sql<number>`COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/3600) FILTER (WHERE status = 'settled'), 0)`,
         })
         .from(claims);
@@ -904,7 +904,7 @@ export const insuranceKpiDashboardRouter = router({
           lapsed: sql<number>`COUNT(*) FILTER (WHERE status = 'lapsed')`,
           cancelled: sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled')`,
           renewed: sql<number>`COUNT(*) FILTER (WHERE status = 'renewed')`,
-          totalPremium: sql<string>`COALESCE(SUM(CAST(premium_amount AS NUMERIC)), 0)`,
+          totalPremium: sql<string>`COALESCE(SUM(CAST("annualPremium" AS NUMERIC)), 0)`,
         })
         .from(policies);
 
@@ -1015,7 +1015,7 @@ export const insuranceKpiDashboardRouter = router({
           avgLossRatio: sql<number>`COALESCE(AVG(CAST(loss_ratio AS NUMERIC)), 0)`,
         })
         .from(actuarialReserves)
-        .where(gte(actuarialReserves.valuationDate, since));
+        .where(gte(actuarialReserves.calculationDate, since));
 
       // Full IFRS17 computation from Python analytics engine
       const ifrs17Full = await fetchPythonAnalytics("/ifrs17/full-breakdown", {
@@ -1110,13 +1110,13 @@ export const insuranceKpiDashboardRouter = router({
       const db = await getDb();
       if (!db) return null;
       const since = daysAgo(input.periodDays);
-      const [openRow] = await db.select({ total: count() }).from(claims).where(eq(claims.status, "open"));
-      const [fnolRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "reported"), gte(claims.createdAt, daysAgo(1))));
-      const [settledRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "settled"), gte(claims.updatedAt, daysAgo(1))));
+      const [openRow] = await db.select({ total: count() }).from(claims).where(sql`${claims.status} NOT IN ('paid', 'closed', 'rejected')`);
+      const [fnolRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "submitted"), gte(claims.createdAt, daysAgo(1))));
+      const [settledRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "paid"), gte(claims.updatedAt, daysAgo(1))));
       const [fraudRow] = await db.select({ total: count() }).from(fraudAlerts).where(and(eq(fraudAlerts.status, "open"), gte(fraudAlerts.createdAt, since)));
-      const [disputedRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "disputed"), gte(claims.createdAt, since)));
-      const [paidRow] = await db.select({ total: sql<string>`COALESCE(SUM(CAST(settlement_amount AS NUMERIC)), 0)` }).from(claims).where(and(eq(claims.status, "settled"), gte(claims.updatedAt, daysAgo(30))));
-      const [avgDaysRow] = await db.select({ avg: sql<number>`COALESCE(AVG(EXTRACT(DAY FROM (updated_at - created_at))), 0)` }).from(claims).where(and(eq(claims.status, "settled"), gte(claims.updatedAt, since)));
+      const [disputedRow] = await db.select({ total: count() }).from(claims).where(and(eq(claims.status, "appealed"), gte(claims.createdAt, since)));
+      const [paidRow] = await db.select({ total: sql<string>`COALESCE(SUM(CAST("paidAmount" AS NUMERIC)), 0)` }).from(claims).where(and(eq(claims.status, "paid"), gte(claims.updatedAt, daysAgo(30))));
+      const [avgDaysRow] = await db.select({ avg: sql<number>`COALESCE(AVG(EXTRACT(DAY FROM (updated_at - created_at))), 0)` }).from(claims).where(and(eq(claims.status, "paid"), gte(claims.updatedAt, since)));
       const [totalRow] = await db.select({ total: count() }).from(claims).where(gte(claims.createdAt, since));
       const [slaRow] = await db.select({ total: count() }).from(claims).where(and(gte(claims.createdAt, since), sql`EXTRACT(DAY FROM (COALESCE(updated_at, NOW()) - created_at)) > 30`));
       const totalInPeriod = Number((totalRow as any)?.total ?? 1);
@@ -1149,7 +1149,7 @@ export const insuranceKpiDashboardRouter = router({
         totalNet: sql<string>`COALESCE(SUM(CAST(net_reserve AS NUMERIC)), 0)`,
         totalRa: sql<string>`COALESCE(SUM(CAST(risk_adjustment AS NUMERIC)), 0)`,
         avgLossRatio: sql<number>`COALESCE(AVG(CAST(loss_ratio AS NUMERIC)), 0)`,
-      }).from(actuarialReserves).where(gte(actuarialReserves.valuationDate, since));
+      }).from(actuarialReserves).where(gte(actuarialReserves.calculationDate, since));
       const ifrs17 = await fetchPythonAnalytics("/ifrs17/full-breakdown", { period_days: input.periodDays });
       return {
         kpis: {

@@ -176,6 +176,23 @@ export async function isDbHealthy(): Promise<boolean> {
 /**
  * Gets database status for health checks.
  */
+/**
+ * Legacy raw-SQL adapter exposing parameterized `$1..$n` queries against the
+ * underlying pg Pool. Used by kafka-event-consumer (raw INSERT/UPDATE with
+ * positional placeholders). New code should prefer drizzle query builders.
+ */
+export const db = {
+  async execute(
+    text: string,
+    params?: unknown[]
+  ): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
+    const pool = await getPool();
+    if (!pool) return { rows: [], rowCount: 0 };
+    const res = await pool.query(text, params);
+    return { rows: res.rows, rowCount: res.rowCount };
+  },
+};
+
 export async function getDbStatus(): Promise<{
   connected: boolean;
   poolSize: number;

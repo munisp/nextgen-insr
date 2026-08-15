@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { complianceChecks, complianceFilings, auditLog, policies, transactions, agents } from "../../drizzle/schema";
+import { complianceChecks, complianceFilings, auditLog, policies, transactions, agents, claims, kycSessions } from "../../drizzle/schema";
 import { desc, eq, count, and, gte, sql } from "drizzle-orm";
 
 /**
@@ -41,7 +41,7 @@ export const regulatoryComplianceChecksRouter = router({
           // NAICOM minimum capital: ₦3B for life, ₦2B for non-life
           // Use total premium collected as proxy for capital adequacy
           const [premiumRow] = await database.select({ total: sql<number>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)` })
-            .from(transactions).where(and(eq(transactions.type, "Premium Payment"), gte(transactions.createdAt, periodStart)));
+            .from(transactions).where(and(eq(transactions.type, "Insurance"), gte(transactions.createdAt, periodStart)));
           const totalPremium = Number((premiumRow as any)?.total ?? 0);
           score = Math.min((totalPremium / 3_000_000_000) * 100, 100);
           status = score >= 100 ? "passed" : score >= 70 ? "warning" : "failed";
@@ -72,9 +72,9 @@ export const regulatoryComplianceChecksRouter = router({
         }
         case "kyc_completeness": {
           // All active agents must have completed KYC
-          const [agentRow] = await database.select({ total: count() }).from(agents).where(eq(agents.status, "active"));
-          const [kycRow] = await database.select({ total: count() }).from(agents)
-            .where(and(eq(agents.status, "active"), eq(agents.kycStatus, "verified")));
+          const [agentRow] = await database.select({ total: count() }).from(agents).where(eq(agents.isActive, true));
+          const [kycRow] = await database.select({ total: sql<number>`COUNT(DISTINCT ${kycSessions.agentId})` })
+            .from(kycSessions).where(sql`${kycSessions.status} = 'verified'`);
           const totalAgents = Number((agentRow as any)?.total ?? 0);
           const kycAgents = Number((kycRow as any)?.total ?? 0);
           score = totalAgents === 0 ? 100 : (kycAgents / totalAgents) * 100;
@@ -86,9 +86,9 @@ export const regulatoryComplianceChecksRouter = router({
         case "claims_ratio": {
           // NAICOM: claims ratio should not exceed 80%
           const [premRow] = await database.select({ total: sql<number>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)` })
-            .from(transactions).where(and(eq(transactions.type, "Premium Payment"), gte(transactions.createdAt, periodStart)));
-          const [claimRow] = await database.select({ total: sql<number>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)` })
-            .from(transactions).where(and(eq(transactions.type, "Claim Settlement"), gte(transactions.createdAt, periodStart)));
+            .from(transactions).where(and(eq(transactions.type, "Insurance"), gte(transactions.createdAt, periodStart)));
+          const [claimRow] = await database.select({ total: sql<number>`COALESCE(SUM(CAST("paidAmount" AS NUMERIC)), 0)` })
+            .from(claims).where(gte(claims.createdAt, periodStart));
           const premiums = Number((premRow as any)?.total ?? 1);
           const claims = Number((claimRow as any)?.total ?? 0);
           const ratio = premiums > 0 ? (claims / premiums) * 100 : 0;
@@ -100,9 +100,9 @@ export const regulatoryComplianceChecksRouter = router({
         }
         case "agent_licensing": {
           // All agents must have valid NAICOM license
-          const [totalRow] = await database.select({ total: count() }).from(agents).where(eq(agents.status, "active"));
+          const [totalRow] = await database.select({ total: count() }).from(agents).where(eq(agents.isActive, true));
           const [licensedRow] = await database.select({ total: count() }).from(agents)
-            .where(and(eq(agents.status, "active"), sql`metadata->>'naicomLicenseNumber' IS NOT NULL`));
+            .where(and(eq(agents.isActive, true), sql`metadata->>'naicomLicenseNumber' IS NOT NULL`));
           const total = Number((totalRow as any)?.total ?? 0);
           const licensed = Number((licensedRow as any)?.total ?? 0);
           score = total === 0 ? 100 : (licensed / total) * 100;
@@ -121,13 +121,16 @@ export const regulatoryComplianceChecksRouter = router({
       // Persist compliance check result
       const [record] = await database.insert(complianceChecks).values({
         checkType: input.checkType,
-        status,
-        score: String(score.toFixed(1)),
-        details,
-        findings: findings.length > 0 ? findings : null,
-        periodStart,
-        periodEnd,
-        performedBy: String(ctx.user?.id ?? "system"),
+        ruleCode: input.checkType,
+        result: status,
+        details: JSON.stringify({
+          details,
+          findings: findings.length > 0 ? findings : null,
+          score: Number(score.toFixed(1)),
+          periodStart,
+          periodEnd,
+          performedBy: String(ctx.user?.id ?? "system"),
+        }),
         createdAt: now,
       }).returning();
 
@@ -149,8 +152,8 @@ export const regulatoryComplianceChecksRouter = router({
     const database = await getDb();
     if (!database) return { totalChecks: 0, passed: 0, failed: 0, warnings: 0, overallScore: "0.0", riskLevel: "unknown", lastUpdated: new Date().toISOString() };
     const [total] = await database.select({ total: count() }).from(complianceChecks);
-    const [passed] = await database.select({ total: count() }).from(complianceChecks).where(eq(complianceChecks.status, "passed"));
-    const [failed] = await database.select({ total: count() }).from(complianceChecks).where(eq(complianceChecks.status, "failed"));
+    const [passed] = await database.select({ total: count() }).from(complianceChecks).where(eq(complianceChecks.result, "passed"));
+    const [failed] = await database.select({ total: count() }).from(complianceChecks).where(eq(complianceChecks.result, "failed"));
     const totalCount = Number((total as any)?.total ?? 0);
     const passedCount = Number((passed as any)?.total ?? 0);
     const failedCount = Number((failed as any)?.total ?? 0);
