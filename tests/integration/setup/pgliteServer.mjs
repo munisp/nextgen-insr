@@ -22,6 +22,12 @@ const server = new PGLiteSocketServer({
   db,
   host: HOST,
   port: PORT,
+  // Default is 1 (single concurrent client). The integration suite constrains
+  // itself to one pooled connection, but the HTTP E2E suite also opens
+  // short-lived secondary connections (e.g. the /api/health endpoint creates
+  // its own pg.Pool), so allow a small number of concurrent connections.
+  // Queries are still serialized at the query level by the multiplexer.
+  maxConnections: Number(process.env.PGLITE_MAX_CONNECTIONS ?? 10),
 });
 
 await server.start();

@@ -17,7 +17,13 @@ import {
 import { eq, and, desc } from "drizzle-orm";
 import { requireBillingPermission } from "./billingRbac";
 import { recordBillingAudit } from "./billingAudit";
-import { Client, Connection } from "@temporalio/client";
+// Type-only import: erased at compile time. The runtime import is lazy
+// (inside getTemporalClient) because @temporalio/client's module graph can
+// fail to load in environments where the Temporal/protobufjs dependency chain
+// is unavailable or incompatible — that must not take down the whole router
+// at import time. The existing catch below already degrades gracefully to
+// local execution.
+import type { Client } from "@temporalio/client";
 import { TRPCError } from "@trpc/server";
 import { logger } from '../_core/logger';
 
@@ -26,6 +32,7 @@ let temporalClient: Client | null = null;
 async function getTemporalClient(): Promise<Client | null> {
   if (temporalClient) return temporalClient;
   try {
+    const { Client, Connection } = await import("@temporalio/client");
     const connection = await Connection.connect({
       address: process.env.TEMPORAL_ADDRESS || "localhost:7233",
     });

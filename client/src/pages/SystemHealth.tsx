@@ -110,17 +110,22 @@ export default function SystemHealth() {
     }
   };
 
+  // Sprint 87: Wired to serviceHealth router. This hook MUST live at the
+  // top level of the component — calling it inside useEffect is an invalid
+  // hook call and crashes the render. The query result currently feeds no
+  // side effects; the /api/health polling below remains the source of truth
+  // for this page.
+  // @ts-ignore Sprint 85
+  trpc.serviceHealth.getAll.useQuery({
+    page: 1,
+    limit: 10,
+  });
+
   useEffect(() => {
     fetchHealth();
     const interval = setInterval(fetchHealth, 15_000);
-    // Sprint 87: Wired to serviceHealth router
-    // @ts-ignore Sprint 85
-    const { data, isLoading } = trpc.serviceHealth.getAll.useQuery({
-      page: 1,
-      limit: 10,
-    });
-
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const overallStatus = health?.status ?? "error";
