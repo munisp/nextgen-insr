@@ -1,0 +1,99 @@
+# claims.yaml — machine-readable feature-claim manifest (finding F-10)
+#
+# Every material capability claim about this platform MUST have an entry here
+# with a stable ID. CI (scripts/verify-claims.mjs) validates that every
+# `verified` claim points at evidence files that exist and — for test files —
+# are actually registered in a vitest config include glob. Stale or missing
+# evidence fails the build.
+#
+# Statuses:
+#   verified   — capability proven by executed evidence cited below
+#   incomplete — known-not-done; `reason` must say exactly what is missing
+#
+# Rules: never mark verified without executed evidence you can point to.
+# YAML subset (parsed by scripts/verify-claims.mjs): 2-space indent,
+# single-line scalars only, double-quote strings containing colons/#.
+
+version: 1
+generated: "2026-08-15"
+revision: d94d847728e86df88f2c58ba6b0849d1509054dd
+
+claims:
+  - id: CLAIM-001
+    title: "Dispute refund lifecycle persists real refunds rows (auto/supervisor tiers, velocity rule, no fake settlement)"
+    status: verified
+    evidence:
+      - tests/integration/disputeRefund.integration.test.ts
+    verification: "Executed: pnpm test:integration — 6 files / 36 tests passed, local PGlite, 2026-08-15, revision d94d847"
+
+  - id: CLAIM-002
+    title: "AML screening router persists honest pending records when external compliance endpoints are unreachable"
+    status: verified
+    evidence:
+      - tests/integration/amlScreening.integration.test.ts
+    verification: "Executed: pnpm test:integration — 6 files / 36 tests passed, local PGlite, 2026-08-15, revision d94d847"
+
+  - id: CLAIM-003
+    title: "Airtime vending router persists transactions against a real database"
+    status: verified
+    evidence:
+      - tests/integration/airtimeVending.integration.test.ts
+    verification: "Executed: pnpm test:integration — 6 files / 36 tests passed, local PGlite, 2026-08-15, revision d94d847"
+
+  - id: CLAIM-004
+    title: "Management settings router reads/writes platform settings against a real database"
+    status: verified
+    evidence:
+      - tests/integration/managementSettings.integration.test.ts
+    verification: "Executed: pnpm test:integration — 6 files / 36 tests passed, local PGlite, 2026-08-15, revision d94d847"
+
+  - id: CLAIM-005
+    title: "ML scoring router persists scoring results with honest fallback when the Python ML service is unreachable"
+    status: verified
+    evidence:
+      - tests/integration/mlScoring.integration.test.ts
+    verification: "Executed: pnpm test:integration — 6 files / 36 tests passed, local PGlite, 2026-08-15, revision d94d847"
+
+  - id: CLAIM-006
+    title: "Transaction monitor router persists monitoring state against a real database"
+    status: verified
+    evidence:
+      - tests/integration/txMonitor.integration.test.ts
+    verification: "Executed: pnpm test:integration — 6 files / 36 tests passed, local PGlite, 2026-08-15, revision d94d847"
+
+  - id: CLAIM-007
+    title: "Integration suite is wired into CI and runs against postgres:16 with drizzle-kit push --force"
+    status: verified
+    evidence:
+      - vitest.integration.config.ts
+      - .github/workflows/integration.yml
+      - tests/integration/setup/globalSetup.ts
+    verification: "Config + workflow inspected; suite executed locally 2026-08-15 (36/36 passed, PGlite), revision d94d847"
+
+  - id: CLAIM-008
+    title: "Demo seed covers 180 tables (161 of 167 schema.ts tables + 19 schema.additions.ts tables)"
+    status: incomplete
+    reason: "seed.mjs declares this coverage in its header, but the seed was NOT executed during this remediation; first executed evidence will be the nightly backup-rehearsal.yml run"
+    evidence:
+      - seed.mjs
+
+  - id: CLAIM-009
+    title: "pg_dump backups are restorable (dump → drop → restore round-trip with row-count assertions)"
+    status: incomplete
+    reason: "Rehearsal script and nightly CI workflow added by this remediation, but docker was unavailable in the authoring sandbox; script passed bash -n only — awaiting first green CI run"
+    evidence:
+      - scripts/backup-restore-rehearsal.sh
+      - .github/workflows/backup-rehearsal.yml
+
+  - id: CLAIM-010
+    title: "Full application server boots (server/_core/index.ts)"
+    status: incomplete
+    reason: "Pre-existing defect at revision d94d847: server/routers/transactions.ts line 140 declares duplicate parameter name agentId (TS2300); node ESM loader throws SyntaxError on boot via tsx. Observed in authoring sandbox 2026-08-15."
+
+  - id: CLAIM-011
+    title: "Load/latency baseline exists for critical API paths"
+    status: incomplete
+    reason: "scripts/load-smoke.mjs validated against a stub HTTP server only; real-server baseline is blocked by CLAIM-010 (server cannot boot at d94d847). Numbers in PERFORMANCE.md §4 are budgets, not measurements."
+    evidence:
+      - scripts/load-smoke.mjs
+      - PERFORMANCE.md

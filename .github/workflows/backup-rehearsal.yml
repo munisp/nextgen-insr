@@ -1,0 +1,70 @@
+name: Backup/Restore Rehearsal
+
+# Nightly proof that pg_dump backups are actually restorable (finding F-06).
+# Runs the full round-trip: schema push → seed (180 tables) → row-count
+# snapshot → pg_dump → DROP SCHEMA → pg_restore → row-count assertion.
+# See BACKUP_RESTORE.md for the operational procedure this rehearses.
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # nightly 02:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  rehearsal:
+    name: pg_dump / pg_restore round-trip rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: rehearsal
+          POSTGRES_DB: rehearsal_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:rehearsal@localhost:5432/rehearsal_db
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install PostgreSQL 16 client tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          psql --version
+          pg_dump --version
+
+      - name: Run backup/restore rehearsal
+        # CONFIRM_DESTROY=YES is safe here: the target is the ephemeral
+        # postgres:16 service container created by this job, and the script
+        # independently refuses to run against non-localhost hosts.
+        run: ./scripts/backup-restore-rehearsal.sh
+        env:
+          CONFIRM_DESTROY: "YES"
+          SCHEMA_PUSH: "1"
+          SEED: "1"
