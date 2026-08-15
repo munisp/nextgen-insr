@@ -86,6 +86,24 @@ jobs:
         - name: Notify on failure
           run: echo "Node.js quality checks failed — check lint, type-check, and build output."
 
+  # ── Feature-Claim Manifest Gate (F-10) ───────────────────────────────
+  claims-verify:
+    name: Feature-Claim Manifest Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Dependency-free by design — no pnpm install needed. Fails the build
+      # when a `verified` claim's evidence paths are missing/stale or its
+      # test files are not registered in any vitest config.
+      - name: Verify feature-claim manifest
+        run: node scripts/verify-claims.mjs
+
   # ── Node.js Tests ────────────────────────────────────────────────────
   node-tests:
     name: Node.js Tests (Vitest)
