@@ -83,7 +83,7 @@ export const fraudRouter = router({
         await updateFraudAlertStatus(input.id, input.status);
         await writeAuditLog({
           agentId: agent?.id,
-          agentId: agent?.agentId,
+          metadata: { agentCode: agent?.agentId },
           action: `FRAUD_ALERT_${input.status.toUpperCase()}`,
           resource: "fraud_alert",
           resourceId: String(input.id),
@@ -476,7 +476,7 @@ export const fraudRouter = router({
         .returning({ id: fraudRules.id });
       await writeAuditLog({
         agentId: agent.id,
-        agentId: agent.agentId,
+        metadata: { agentCode: agent.agentId },
         action: "FRAUD_RULES_SEEDED",
         resource: "fraud_rules",
         resourceId: "default",

@@ -64,6 +64,9 @@ export const txTypeEnum = pgEnum("tx_type", [
   "Reversal",
   "Nano Loan",
   "Insurance",
+  // F-01: agent-to-agent float movement legs (debit / credit)
+  "Float Transfer",
+  "Float Transfer Received",
 ]);
 export const txChannelEnum = pgEnum("tx_channel", [
   "Cash",
@@ -72,6 +75,8 @@ export const txChannelEnum = pgEnum("tx_channel", [
   "QR",
   "NFC",
   "App",
+  // F-01: internal ledger movements (no external rail)
+  "Internal",
 ]);
 export const txStatusEnum = pgEnum("tx_status", [
   "success",
@@ -798,6 +803,10 @@ export const refunds = pgTable(
   {
     id: serial("id").primaryKey(),
     ref: varchar("ref", { length: 32 }).notNull().unique(),
+    // F-01: idempotency — client-supplied key binds one durable refund to one
+    // logical request; payloadHash detects key reuse with a different payload.
+    idempotencyKey: varchar("idempotencyKey", { length: 64 }),
+    payloadHash: varchar("payloadHash", { length: 64 }),
     disputeId: integer("disputeId"),
     transactionId: integer("transactionId"),
     transactionRef: varchar("transactionRef", { length: 32 }),
@@ -832,6 +841,11 @@ export const refunds = pgTable(
     statusIdx: index("refund_status_idx").on(t.status),
     disputeIdIdx: index("refund_disputeId_idx").on(t.disputeId),
     transactionRefIdx: index("refund_transactionRef_idx").on(t.transactionRef),
+    // F-01: unique constraint is the durable single-effect guarantee under
+    // concurrent retries (DB enforces it even if app-level checks race).
+    idempotencyKeyIdx: uniqueIndex("refund_idempotencyKey_idx").on(
+      t.idempotencyKey
+    ),
   })
 );
 

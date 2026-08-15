@@ -134,7 +134,6 @@ export const commissionPayoutsRouter = router({
         const [payout] = await db
           .insert(commissionPayouts)
           .values({
-            agentId: agent.id,
             agentId: input.agentId,
             amount: String(input.amount),
             bankCode: input.bankCode,
@@ -147,7 +146,7 @@ export const commissionPayoutsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentId: input.agentId,
+          metadata: { agentCode: input.agentId },
           action: "commission_payout_requested",
           resource: "commission_payout",
           resourceId: String(payout.id),

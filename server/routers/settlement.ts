@@ -312,7 +312,7 @@ export const settlementRouter = router({
     }
 
     const outstanding = rows.map((r: any) => ({
-      agentId: r.agentId,
+      agentNumericId: r.agentId,
       agentId: agentMap[r.agentId]?.agentId ?? `#${r.agentId}`,
       agentName: agentMap[r.agentId]?.name ?? "Unknown",
       totalVolume: Number(r.totalVolume),

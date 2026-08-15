@@ -44,7 +44,6 @@ export const agentOnboardingRouter = router({
           const [created] = await db
             .insert(agentOnboardingProgress)
             .values({
-              agentId: agent.id,
               agentId: input.agentId,
               currentStep: "profile",
             })
@@ -111,7 +110,7 @@ export const agentOnboardingRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentId: input.agentId,
+          metadata: { agentCode: input.agentId },
           action: "onboarding_profile_complete",
           resource: "agent_onboarding",
           resourceId: String(agent.id),
@@ -317,7 +316,7 @@ export const agentOnboardingRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentId: input.agentId,
+          metadata: { agentCode: input.agentId },
           action: "agent_activated_via_onboarding",
           resource: "agent",
           resourceId: String(agent.id),
@@ -638,7 +637,6 @@ export const agentOnboardingRouter = router({
         const [record] = await db
           .insert(agentOnboardingProgress)
           .values({
-            agentId: agent.id,
             agentId: agent.agentId,
             currentStep: "profile",
           })

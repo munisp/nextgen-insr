@@ -373,7 +373,6 @@ export async function executeCommissionCascade(params: {
     // [Kafka] Commission cascade completed
     await publishCommissionEvent({
       eventType: "commission.cascade.completed",
-      agentId: originAgentId,
       agentId: originAgentCode,
       amount: totalCommission,
       metadata: {
@@ -390,7 +389,6 @@ export async function executeCommissionCascade(params: {
       await tbRecordCommissionCredit({
         transactionId,
         transactionRef,
-        agentId: entry.recipientAgentId,
         agentId: entry.recipientAgentCode,
         amount: entry.commissionAmount,
         entryType:

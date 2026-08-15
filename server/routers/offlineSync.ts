@@ -144,12 +144,12 @@ export const offlineSyncRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "OFFLINE_SYNC_BATCH",
           resource: "offline_sync",
           resourceId: input.sessionId,
           status: "success",
           metadata: {
+            agentCode: session.agentId,
             total: input.transactions.length,
             synced,
             duplicates,
@@ -297,12 +297,11 @@ export const offlineSyncRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "OFFLINE_SYNC_RETRY",
           resource: "offline_sync",
           resourceId: input.sessionId,
           status: "success",
-          metadata: { retriedCount: updated.length },
+          metadata: { agentCode: session.agentId, retriedCount: updated.length },
         });
 
         return { retriedCount: updated.length };

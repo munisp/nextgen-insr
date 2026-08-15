@@ -104,7 +104,7 @@ export const agentRouter = router({
         if (!valid) {
           await writeAuditLog({
             agentId: agent.id,
-            agentId: agent.agentId,
+            metadata: { agentCode: agent.agentId },
             action: "LOGIN_FAILED",
             resource: "agent",
             resourceId: String(agent.id),
@@ -120,7 +120,7 @@ export const agentRouter = router({
         await updateAgentLastLogin(agent.id);
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
+          metadata: { agentCode: agent.agentId },
           action: "LOGIN_SUCCESS",
           resource: "agent",
           resourceId: String(agent.id),
@@ -500,12 +500,11 @@ export const agentRouter = router({
           .where(eq(agents.id, id));
         await writeAuditLog({
           agentId: id,
-          agentId: agent.agentId,
           action: "AGENT_UPDATED",
           resource: "agent",
           resourceId: String(id),
           status: "success",
-          metadata: updates as Record<string, unknown>,
+          metadata: { agentCode: agent.agentId, ...updates },
         });
         return { success: true };
       } catch (error) {
@@ -540,12 +539,11 @@ export const agentRouter = router({
           .where(eq(agents.id, input.id));
         await writeAuditLog({
           agentId: input.id,
-          agentId: agent.agentId,
           action: "AGENT_DELETED",
           resource: "agent",
           resourceId: String(input.id),
           status: "success",
-          metadata: { reason: input.reason },
+          metadata: { agentCode: agent.agentId, reason: input.reason },
         });
         return { success: true };
       } catch (error) {
@@ -580,12 +578,11 @@ export const agentRouter = router({
           .where(eq(agents.id, input.id));
         await writeAuditLog({
           agentId: input.id,
-          agentId: agent.agentId,
           action: input.locked ? "FLOAT_LOCKED" : "FLOAT_UNLOCKED",
           resource: "agent",
           resourceId: String(input.id),
           status: "success",
-          metadata: { reason: input.reason },
+          metadata: { agentCode: agent.agentId, reason: input.reason },
         });
         return { success: true };
       } catch (error) {
@@ -626,12 +623,11 @@ export const agentRouter = router({
           .where(eq(agents.id, input.id));
         await writeAuditLog({
           agentId: input.id,
-          agentId: agent.agentId,
           action: input.enabled ? "TERMINAL_ENABLED" : "TERMINAL_DISABLED",
           resource: "agent",
           resourceId: String(input.id),
           status: "success",
-          metadata: { reason: input.reason },
+          metadata: { agentCode: agent.agentId, reason: input.reason },
         });
         return { success: true };
       } catch (error) {

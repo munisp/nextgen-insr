@@ -985,12 +985,11 @@ export const mdmRouter = router({
         }
         await writeAuditLog({
           agentId: agent.id,
-          agentId: input.agentId,
           action: "TERMINAL_DISABLED",
           resource: "agent",
           resourceId: String(agent.id),
           status: "success",
-          metadata: { reason: input.reason, disabledBy: ctx.user.keycloakSub },
+          metadata: { agentCode: input.agentId, reason: input.reason, disabledBy: ctx.user.keycloakSub },
         });
         return { ok: true, agentId: input.agentId, terminalEnabled: false };
       } catch (error) {
@@ -1456,12 +1455,11 @@ export const mdmRouter = router({
       }
       await writeAuditLog({
         agentId: agent.id,
-        agentId: input.agentId,
         action: "TERMINAL_ENABLED",
         resource: "agent",
         resourceId: String(agent.id),
         status: "success",
-        metadata: { enabledBy: ctx.user.keycloakSub },
+        metadata: { agentCode: input.agentId, enabledBy: ctx.user.keycloakSub },
       });
       return { ok: true, agentId: input.agentId, terminalEnabled: true };
     }),

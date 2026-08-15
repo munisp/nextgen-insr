@@ -535,12 +535,11 @@ export const loyaltyRouter = router({
         );
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "LOYALTY_CHALLENGE_CLAIMED",
           resource: "loyalty",
           resourceId: input.challengeId,
           status: "success",
-          metadata: { points: input.points },
+          metadata: { agentCode: session.agentId, points: input.points },
         });
         // Check tier upgrade
         const agent = await getAgentById(session.id);
@@ -625,12 +624,12 @@ export const loyaltyRouter = router({
         );
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "LOYALTY_REWARD_REDEEMED",
           resource: "loyalty",
           resourceId: input.rewardId,
           status: "success",
           metadata: {
+            agentCode: session.agentId,
             rewardName: input.rewardName,
             pointsCost: input.pointsCost,
           },

@@ -51,7 +51,6 @@ export async function writeEnhancedAuditLog(
 
     await db.insert(auditLog).values({
       agentId: entry.agentId,
-      agentId: entry.agentId,
       action: entry.action,
       resource: entry.resource,
       resourceId: entry.resourceId ?? null,

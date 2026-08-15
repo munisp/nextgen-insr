@@ -21,10 +21,16 @@ import { txMonitorRouter } from "../../../server/routers/txMonitor";
 import { managementRouter } from "../../../server/routers/management";
 import { mlScoringServiceRouter } from "../../../server/routers/mlScoringService";
 import { amlScreeningRouter } from "../../../server/routers/amlScreening";
+import { agentFloatTransferRouter } from "../../../server/routers/agentFloatTransfer";
+import { transactionsRouter } from "../../../server/routers/transactions";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
   disputeRefund: disputeRefundRouter,
+  agentFloatTransfer: agentFloatTransferRouter,
+  // Imported and mounted (same path as production) so the suite can never
+  // again miss a module-level SyntaxError in this money path (F-01 boot blocker).
+  transactions: transactionsRouter,
   airtimeVending: airtimeVendingRouter,
   txMonitor: txMonitorRouter,
   management: managementRouter,

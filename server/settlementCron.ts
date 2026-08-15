@@ -31,7 +31,7 @@ import { ENV } from "./_core/env";
 import { logger } from './_core/logger';
 
 interface AgentSettlement {
-  agentId: number;
+  agentNumericId: number;
   agentId: string;
   name: string;
   phone: string;
@@ -133,7 +133,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
       );
 
       const settlementData: AgentSettlement = {
-        agentId: agent.id,
+        agentNumericId: agent.id,
         agentId: agent.agentId,
         name: agent.name,
         phone: agent.phone,
@@ -154,7 +154,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
       }
 
       await db.insert(auditLog).values({
-        agentId: agent.id,
+        agentNumericId: agent.id,
         agentId: agent.agentId,
         action: "DAILY_SETTLEMENT_SENT",
         resource: "settlement",

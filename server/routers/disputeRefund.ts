@@ -2,8 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { disputes, refunds } from "../../drizzle/schema";
-import { desc, count, sql } from "drizzle-orm";
+import { disputes, refunds, type Refund } from "../../drizzle/schema";
+import { desc, count, eq, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 /**
@@ -37,6 +37,80 @@ const MAX_REFUNDS_PER_CUSTOMER_30D = 5;
 
 function getRefundTier(amount: number) {
   return REFUND_TIERS.find((t) => amount <= t.max)!;
+}
+
+// ─── F-01: Idempotency helpers ───────────────────────────────────────────────
+type RefundPayload = {
+  disputeId: number;
+  amount: number;
+  reason: string;
+  customerId: number;
+  accountNumber: string;
+  agentId?: number;
+};
+
+/**
+ * Canonical SHA-256 fingerprint of the business payload bound to an
+ * idempotency key. Key reuse with a different payload is a client bug or a
+ * replay attack and must be rejected explicitly — never silently re-executed.
+ */
+function refundPayloadHash(input: RefundPayload): string {
+  return crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify({
+        disputeId: input.disputeId,
+        amount: input.amount,
+        reason: input.reason,
+        customerId: input.customerId,
+        accountNumber: input.accountNumber,
+        agentId: input.agentId ?? null,
+      })
+    )
+    .digest("hex");
+}
+
+/** Build the replay response for an already-persisted refund row. */
+function idempotentReplay(row: Refund) {
+  const amount = Number(row.refundAmount);
+  const tier = getRefundTier(amount);
+  const base = {
+    success: true as const,
+    idempotent: true as const,
+    refundId: row.ref,
+    amount,
+  };
+  if (tier.approval === "auto") {
+    return {
+      ...base,
+      status: "pending",
+      approval: "auto",
+      message: `Idempotent replay: refund ${row.ref} already queued. No duplicate funds movement.`,
+      sla: "1 hour",
+    };
+  }
+  return {
+    ...base,
+    status: "pending_approval",
+    approval: tier.approval,
+    requiresFraudCheck: tier.fraud_check,
+    slaDeadline: new Date(Date.now() + tier.sla_hours * 3600000).toISOString(),
+    message: `Idempotent replay: refund ${row.ref} already queued for ${tier.approval} approval.`,
+    nextAction: tier.fraud_check ? "fraud_screening" : `${tier.approval}_review`,
+  };
+}
+
+/** Same key + different payload → explicit CONFLICT; same payload → replay. */
+function replayOrConflict(row: Refund, payloadHash: string) {
+  if (row.payloadHash && row.payloadHash !== payloadHash) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message:
+        "Idempotency key was already used with a different refund payload. " +
+        "Refusing to re-execute; submit with a new idempotency key.",
+    });
+  }
+  return idempotentReplay(row);
 }
 
 export const disputeRefundRouter = router({
@@ -75,13 +149,29 @@ export const disputeRefundRouter = router({
       customerId: z.number(),
       accountNumber: z.string(),
       agentId: z.number().optional(),
+      // F-01: optional idempotency key. When supplied, the refund is bound to
+      // the key (unique constraint) and to the payload hash; retries are
+      // replayed, key reuse with a different payload is rejected (CONFLICT).
+      idempotencyKey: z.string().min(8).max(64).optional(),
     }))
     .mutation(async ({ input }) => {
       const tier = getRefundTier(input.amount);
 
-      // Velocity check — real DB query for refunds in last 30 days
       const database = await getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      // ── Idempotency: replay or reject before doing any work ─────────────
+      const payloadHash = input.idempotencyKey ? refundPayloadHash(input) : null;
+      if (input.idempotencyKey) {
+        const [existing] = await database
+          .select()
+          .from(refunds)
+          .where(eq(refunds.idempotencyKey, input.idempotencyKey))
+          .limit(1);
+        if (existing) return replayOrConflict(existing, payloadHash!);
+      }
+
+      // Velocity check — real DB query for refunds in last 30 days
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const velocityRows = await database.select({
         customerRefundCount: sql<number>`COUNT(*) FILTER (WHERE "customerId" = ${input.customerId} AND "createdAt" >= ${thirtyDaysAgo.toISOString()})`,
@@ -100,10 +190,16 @@ export const disputeRefundRouter = router({
       // here, so the status is always "pending" — even for the auto tier,
       // which is queued without requiring manual approval.
       const refundRef = `REF-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
-      const [inserted] = await database
+      // ON CONFLICT DO NOTHING is the race-safe single-effect guarantee: when
+      // concurrent retries with the same key pass the pre-check, exactly one
+      // insert lands; the losers get zero rows back (no error, no aborted
+      // transaction) and replay the winner below.
+      const insertedRows = await database
         .insert(refunds)
         .values({
           ref: refundRef,
+          idempotencyKey: input.idempotencyKey ?? null,
+          payloadHash,
           disputeId: input.disputeId,
           agentId: input.agentId ?? 0,
           customerId: input.customerId,
@@ -116,7 +212,25 @@ export const disputeRefundRouter = router({
           method: "original_method",
           notes: `destination_account:${input.accountNumber}`,
         })
+        .onConflictDoNothing(
+          input.idempotencyKey ? { target: refunds.idempotencyKey } : undefined
+        )
         .returning();
+      let inserted: Refund | undefined = insertedRows[0];
+      if (!inserted && input.idempotencyKey) {
+        // Lost the race: a row with this key already exists — replay it, or
+        // reject explicitly if the payload differs.
+        const [winner] = await database
+          .select()
+          .from(refunds)
+          .where(eq(refunds.idempotencyKey, input.idempotencyKey))
+          .limit(1);
+        if (winner) return replayOrConflict(winner, payloadHash!);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Refund insert conflicted but no existing row was found",
+        });
+      }
 
       if (tier.approval === "auto") {
         return {

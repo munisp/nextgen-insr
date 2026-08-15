@@ -108,12 +108,12 @@ export const gdprRouter = router({
       // Write audit log for the export request
       await writeAuditLog({
         agentId: agent.id,
-        agentId: agent.agentId,
         action: "GDPR_EXPORT_REQUEST",
         resource: "agent",
         resourceId: String(agent.id),
         status: "success",
         metadata: {
+          agentCode: agent.agentId,
           categories: [
             "profile",
             "transactions",
@@ -216,12 +216,12 @@ export const gdprRouter = router({
         // Log the erasure request
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "GDPR_ERASURE_REQUEST",
           resource: "agent",
           resourceId: String(agent.id),
           status: "warning" as const, // pending erasure — using warning as closest audit status
           metadata: {
+            agentCode: agent.agentId,
             reason: input.reason,
             requestedAt: new Date().toISOString(),
             note: "PII will be anonymised; financial records retained per CBN AML regulations",

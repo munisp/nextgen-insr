@@ -38,8 +38,7 @@ export async function publishCommissionEvent(params: {
     | "commission.split.updated";
   transactionId?: number;
   transactionRef?: string;
-  agentId: number;
-  agentId: string;
+  agentId: number | string; // numeric FK or string agent code
   amount: number;
   currency?: string;
   hierarchyLevel?: number;

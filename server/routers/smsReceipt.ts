@@ -146,12 +146,12 @@ export const smsReceiptRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: smsResult.success ? "SMS_RECEIPT_SENT" : "SMS_RECEIPT_FAILED",
           resource: "transaction",
           resourceId: tx.ref,
           status: smsResult.success ? "success" : "failure",
           metadata: {
+            agentCode: session.agentId,
             phone: input.recipientPhone,
             messageId: smsResult.messageId,
             error: smsResult.error,

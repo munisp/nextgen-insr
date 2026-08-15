@@ -31,6 +31,16 @@ const MAX_TRANSFER = 500_000;
 const DAILY_TRANSFER_LIMIT = 1_000_000;
 const SUPERVISOR_THRESHOLD = 100_000;
 
+/** Walk the error/cause chain looking for a Postgres unique violation. */
+function isUniqueViolation(err: unknown): boolean {
+  let e: unknown = err;
+  while (typeof e === "object" && e !== null) {
+    if ((e as { code?: string }).code === "23505") return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 export const agentFloatTransferRouter = router({
   // ── Initiate transfer ────────────────────────────────────────────────────────
   transfer: protectedProcedure
@@ -50,9 +60,12 @@ export const agentFloatTransferRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      // Idempotency check
+      // Idempotency check — transactions.ref is UNIQUE, so a transfer
+      // reference binds to exactly one durable effect. (F-01: this previously
+      // referenced a non-existent `transactions.reference` column and every
+      // call failed with a SQL syntax error.)
       const existing = await db.select().from(transactions)
-        .where(eq(transactions.reference, input.reference)).limit(1);
+        .where(eq(transactions.ref, input.reference)).limit(1);
       if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
 
       // Load both agents
@@ -63,8 +76,8 @@ export const agentFloatTransferRouter = router({
 
       if (!sender) throw new TRPCError({ code: "NOT_FOUND", message: "Sender agent not found" });
       if (!receiver) throw new TRPCError({ code: "NOT_FOUND", message: "Receiver agent not found" });
-      if (sender.status !== "active") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Sender agent is not active" });
-      if (receiver.status !== "active") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Receiver agent is not active" });
+      if (!sender.isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Sender agent is not active" });
+      if (!receiver.isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Receiver agent is not active" });
       if (sender.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Sender float is locked" });
       if (receiver.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Receiver float is locked" });
 
@@ -134,75 +147,145 @@ export const agentFloatTransferRouter = router({
           agentId: sender.agentId,
         });
 
-        // Update both balances atomically in PostgreSQL
-        const newSenderBalance = senderBalance - input.amountNGN;
-        const newReceiverBalance = Number(receiver.premiumReserve ?? 0) + input.amountNGN;
+        // F-01: ALL PostgreSQL effects (sender debit, receiver credit, both
+        // transaction legs, audit) commit or roll back as ONE unit. The
+        // sender debit is a conditional atomic UPDATE so concurrent transfers
+        // can never drive the balance below MIN_FLOAT, regardless of how the
+        // reads above raced. Previously the two balance updates ran in a
+        // non-transactional Promise.all: a failure on the second write left
+        // the first one committed — value was created/destroyed.
+        type TransferOutcome =
+          | { replay: true }
+          | {
+              replay: false;
+              txRow: typeof transactions.$inferSelect;
+              senderNewBalanceNGN: number;
+              receiverNewBalanceNGN: number;
+            };
+        let outcome: TransferOutcome;
+        try {
+          outcome = await db.transaction(async (tx): Promise<TransferOutcome> => {
+            // Reserve the reference first: ON CONFLICT DO NOTHING means a
+            // concurrent duplicate gets zero rows back (no DB error, no
+            // aborted transaction) and replays the winner after commit.
+            const reserved = await tx.insert(transactions).values({
+              ref: input.reference,
+              agentId: input.senderAgentId,
+              type: "Float Transfer",
+              amount: String(input.amountNGN),
+              fee: "0",
+              commission: "0",
+              channel: "Internal",
+              status: "success",
+              fraudScore: "0.00",
+              metadata: {
+                receiverAgentId: input.receiverAgentId,
+                receiverAgentCode: receiver.agentId,
+                reason: input.reason,
+                tbTransferId: tbResult?.id ?? null,
+                tbSyncStatus: tbResult ? "synced" : "pending",
+              },
+            }).onConflictDoNothing({ target: transactions.ref }).returning();
+            if (reserved.length === 0) return { replay: true };
 
-        await Promise.all([
-          db.update(agents).set({ premiumReserve: String(newSenderBalance), updatedAt: new Date() }).where(eq(agents.id, input.senderAgentId)),
-          db.update(agents).set({ premiumReserve: String(newReceiverBalance), updatedAt: new Date() }).where(eq(agents.id, input.receiverAgentId)),
-        ]);
+            // Atomic conditional debit — the no-overdraft invariant is
+            // enforced by the database, not by the earlier read.
+            const debited = await tx
+              .update(agents)
+              .set({
+                premiumReserve: sql`CAST("premiumReserve" AS NUMERIC) - ${input.amountNGN}`,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(agents.id, input.senderAgentId),
+                sql`CAST("premiumReserve" AS NUMERIC) - ${input.amountNGN} >= ${MIN_FLOAT}`
+              ))
+              .returning({ balance: agents.premiumReserve });
+            if (debited.length === 0) {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: `Insufficient float. Available: ₦${(senderBalance - MIN_FLOAT).toLocaleString()}`,
+              });
+            }
 
-        // Record debit transaction for sender
-        const [tx] = await db.insert(transactions).values({
-          reference: input.reference,
-          agentId: input.senderAgentId,
-          type: "Float Transfer",
-          amount: String(input.amountNGN),
-          fee: "0",
-          commission: "0",
-          channel: "internal",
-          status: "success",
-          fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: {
-            receiverAgentId: input.receiverAgentId,
-            receiverAgentCode: receiver.agentId,
-            reason: input.reason,
-            tbTransferId: tbResult?.id ?? null,
-          },
-        }).returning();
+            const credited = await tx
+              .update(agents)
+              .set({
+                premiumReserve: sql`CAST("premiumReserve" AS NUMERIC) + ${input.amountNGN}`,
+                updatedAt: new Date(),
+              })
+              .where(eq(agents.id, input.receiverAgentId))
+              .returning({ balance: agents.premiumReserve });
+            if (credited.length === 0) {
+              throw new TRPCError({ code: "NOT_FOUND", message: "Receiver agent not found" });
+            }
 
-        // Record credit transaction for receiver
-        await db.insert(transactions).values({
-          reference: `${input.reference}-RCV`,
-          agentId: input.receiverAgentId,
-          type: "Float Transfer Received",
-          amount: String(input.amountNGN),
-          fee: "0",
-          commission: "0",
-          channel: "internal",
-          status: "success",
-          fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: {
-            senderAgentId: input.senderAgentId,
-            senderAgentCode: sender.agentId,
-            reason: input.reason,
-            tbTransferId: tbResult?.id ?? null,
-          },
-        });
+            // Record credit transaction for receiver
+            await tx.insert(transactions).values({
+              ref: `${input.reference}-RCV`,
+              agentId: input.receiverAgentId,
+              type: "Float Transfer Received",
+              amount: String(input.amountNGN),
+              fee: "0",
+              commission: "0",
+              channel: "Internal",
+              status: "success",
+              fraudScore: "0.00",
+              metadata: {
+                senderAgentId: input.senderAgentId,
+                senderAgentCode: sender.agentId,
+                reason: input.reason,
+                tbTransferId: tbResult?.id ?? null,
+                tbSyncStatus: tbResult ? "synced" : "pending",
+              },
+            });
 
-        await db.insert(auditLog).values({
-          action: "FLOAT_TRANSFER",
-          resource: "agent_float",
-          resourceId: String(input.senderAgentId),
-          status: "success",
-          metadata: {
-            amountNGN: input.amountNGN,
-            senderAgentId: input.senderAgentId,
-            receiverAgentId: input.receiverAgentId,
-            tbTransferId: tbResult?.id ?? null,
-          },
-        }).catch(() => {});
+            await tx.insert(auditLog).values({
+              action: "FLOAT_TRANSFER",
+              resource: "agent_float",
+              resourceId: String(input.senderAgentId),
+              status: "success",
+              metadata: {
+                amountNGN: input.amountNGN,
+                senderAgentId: input.senderAgentId,
+                receiverAgentId: input.receiverAgentId,
+                tbTransferId: tbResult?.id ?? null,
+              },
+            });
+
+            return {
+              replay: false,
+              txRow: reserved[0]!,
+              senderNewBalanceNGN: Number(debited[0]!.balance),
+              receiverNewBalanceNGN: Number(credited[0]!.balance),
+            };
+          });
+        } catch (err) {
+          // Last-resort race handler (e.g. constraint race outside the
+          // reservation above): if a committed winner exists for this
+          // reference, replay it instead of double-moving funds.
+          if (isUniqueViolation(err)) {
+            const [winner] = await db.select().from(transactions)
+              .where(eq(transactions.ref, input.reference)).limit(1);
+            if (winner) return { idempotent: true, transaction: winner };
+          }
+          throw err;
+        }
+
+        if (outcome.replay) {
+          const [winner] = await db.select().from(transactions)
+            .where(eq(transactions.ref, input.reference)).limit(1);
+          if (winner) return { idempotent: true, transaction: winner };
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Transfer conflicted but no winner row found" });
+        }
 
         logger.info(`[FloatTransfer] ₦${input.amountNGN} from agent ${sender.agentId} to ${receiver.agentId} | TB: ${tbResult?.id ?? "pending"}`);
 
         return {
           idempotent: false,
-          transaction: tx,
-          senderNewBalanceNGN: newSenderBalance,
-          receiverNewBalanceNGN: newReceiverBalance,
+          transaction: outcome.txRow,
+          senderNewBalanceNGN: outcome.senderNewBalanceNGN,
+          receiverNewBalanceNGN: outcome.receiverNewBalanceNGN,
           tbTransferId: tbResult?.id ?? null,
           tbSyncStatus: tbResult?.syncStatus ?? "pending",
         };
