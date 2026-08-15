@@ -5,6 +5,7 @@ import { getDb } from "../db";
 import { disputes, refunds, type Refund } from "../../drizzle/schema";
 import { desc, count, eq, sql } from "drizzle-orm";
 import crypto from "crypto";
+import { assertTenantOwnership } from "../middleware/tenantIsolation";
 
 /**
  * Dispute Refund Router
@@ -120,12 +121,18 @@ export const disputeRefundRouter = router({
       offset: z.number().min(0).default(0),
       status: z.enum(["all", "pending", "approved", "processed", "rejected", "flagged"]).default("all"),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const database = await getDb();
       if (!database) return { data: [], total: 0, limit: input.limit, offset: input.offset };
 
-      const results = await database.select().from(disputes).orderBy(desc(disputes.id)).limit(input.limit).offset(input.offset);
-      const totalRows = await database.select({ total: count() }).from(disputes);
+      // Tenant isolation (F-05): tenant users only see their own tenant's
+      // disputes. Users without a tenantId (platform staff, tenantId=0
+      // sentinel per server/middleware/tenantIsolation.ts) are unscoped.
+      const tenantId = ctx.user?.tenantId ?? 0;
+      const where = tenantId !== 0 ? eq(disputes.tenantId, tenantId) : undefined;
+
+      const results = await database.select().from(disputes).where(where).orderBy(desc(disputes.id)).limit(input.limit).offset(input.offset);
+      const totalRows = await database.select({ total: count() }).from(disputes).where(where);
 
       const enriched = results.map((d: any) => {
         const tier = getRefundTier(Number(d.amount ?? 0));
@@ -154,11 +161,26 @@ export const disputeRefundRouter = router({
       // replayed, key reuse with a different payload is rejected (CONFLICT).
       idempotencyKey: z.string().min(8).max(64).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const tier = getRefundTier(input.amount);
 
       const database = await getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      // Tenant isolation (F-05): when the referenced dispute exists and is
+      // tenant-scoped, it must belong to the caller's tenant. Prevents
+      // cross-tenant refund initiation (refund abuse via IDOR on disputeId).
+      // Disputes that do not exist (legacy/free-form ids) are not blocked
+      // here; the refund is still queued as "pending" with no rail call.
+      const tenantId = ctx.user?.tenantId ?? 0;
+      const [linkedDispute] = await database
+        .select()
+        .from(disputes)
+        .where(eq(disputes.id, input.disputeId))
+        .limit(1);
+      if (linkedDispute) {
+        assertTenantOwnership(linkedDispute.tenantId, tenantId, "Dispute");
+      }
 
       // ── Idempotency: replay or reject before doing any work ─────────────
       const payloadHash = input.idempotencyKey ? refundPayloadHash(input) : null;
@@ -168,6 +190,11 @@ export const disputeRefundRouter = router({
           .from(refunds)
           .where(eq(refunds.idempotencyKey, input.idempotencyKey))
           .limit(1);
+        // Cross-tenant replay guard (F-05): a tenant user may not replay or
+        // probe another tenant's refund by guessing its idempotency key.
+        if (existing && existing.tenantId != null) {
+          assertTenantOwnership(existing.tenantId, tenantId, "Refund");
+        }
         if (existing) return replayOrConflict(existing, payloadHash!);
       }
 
@@ -211,6 +238,7 @@ export const disputeRefundRouter = router({
           status: "pending",
           method: "original_method",
           notes: `destination_account:${input.accountNumber}`,
+          tenantId: ctx.user?.tenantId ?? null,
         })
         .onConflictDoNothing(
           input.idempotencyKey ? { target: refunds.idempotencyKey } : undefined
@@ -257,18 +285,24 @@ export const disputeRefundRouter = router({
       };
     }),
 
-  getSummary: protectedProcedure.query(async () => {
+  getSummary: protectedProcedure.query(async ({ ctx }) => {
     const database = await getDb();
     if (!database) return { totalDisputes: 0, pendingRefunds: 0, processedToday: 0, totalRefundedAmount: 0, avgProcessingTime: 0 };
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    // Tenant isolation (F-05): aggregate counts are scoped to the caller's
+    // tenant; platform users (no tenantId) see global totals.
+    const tenantId = ctx.user?.tenantId ?? 0;
+    const disputeWhere = tenantId !== 0 ? eq(disputes.tenantId, tenantId) : undefined;
+    const refundWhere = tenantId !== 0 ? eq(refunds.tenantId, tenantId) : undefined;
+
     const [[{ total }], [{ pending }], [{ processedToday }], [{ totalRefunded }]] = await Promise.all([
-      database.select({ total: count() }).from(disputes),
-      database.select({ pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')` }).from(refunds),
-      database.select({ processedToday: sql<number>`COUNT(*) FILTER (WHERE status = 'processed' AND "processedAt" >= ${today.toISOString()})` }).from(refunds),
-      database.select({ totalRefunded: sql<string>`COALESCE(SUM("refundAmount") FILTER (WHERE status = 'processed'), 0)` }).from(refunds),
+      database.select({ total: count() }).from(disputes).where(disputeWhere),
+      database.select({ pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')` }).from(refunds).where(refundWhere),
+      database.select({ processedToday: sql<number>`COUNT(*) FILTER (WHERE status = 'processed' AND "processedAt" >= ${today.toISOString()})` }).from(refunds).where(refundWhere),
+      database.select({ totalRefunded: sql<string>`COALESCE(SUM("refundAmount") FILTER (WHERE status = 'processed'), 0)` }).from(refunds).where(refundWhere),
     ]);
 
     const totalCount = Number(total ?? 0);

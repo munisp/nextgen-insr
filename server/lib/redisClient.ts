@@ -26,7 +26,14 @@ export function getRedisClient(): Redis {
       enableReadyCheck: false,
       lazyConnect: true,
       retryStrategy: (times: number) => {
-        if (times > 20) return null; // stop retrying after 20 attempts (~3 min total)
+        // Test environments (PGlite harness, no Redis): give up immediately so
+        // fail-open paths engage in ms instead of ~31s. The long stall let the
+        // pg pool's 30s idle timeout reap the single shared connection
+        // mid-procedure, and reconnecting to pglite-socket desynced its
+        // wire-protocol state (misaligned columns in later queries) — the root
+        // cause of order-dependent funds-flow flakes.
+        const maxAttempts = process.env.NODE_ENV === "test" ? 2 : 20;
+        if (times > maxAttempts) return null; // stop retrying (~3 min in prod)
         return Math.min(times * 200, 2000);
       },
       reconnectOnError: (err: Error) => {

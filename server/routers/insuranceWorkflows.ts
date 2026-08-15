@@ -19,6 +19,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql, count, sum, gte, lte, or, asc, isNull, isNotNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import {
   policies,
   claims,
@@ -1019,19 +1020,24 @@ export const insuranceWorkflowsRouter = router({
 
   getPolicyById: protectedProcedure
     .input(z.object({ policyId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
       const [policy] = await db.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      // Tenant isolation (F-05): a tenant user may not read another tenant's
+      // policy. Platform users (no tenantId → 0 sentinel) are unscoped.
+      if (policy) assertTenantOwnership(policy.tenantId, ctx.user?.tenantId ?? 0, "Policy");
       return policy ?? null;
     }),
 
   getClaimById: protectedProcedure
     .input(z.object({ claimId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return null;
       const [claim] = await db.select().from(claims).where(eq(claims.id, input.claimId)).limit(1);
+      // Tenant isolation (F-05): same ownership rule as getPolicyById.
+      if (claim) assertTenantOwnership(claim.tenantId, ctx.user?.tenantId ?? 0, "Claim");
       return claim ?? null;
     }),
 
@@ -1043,11 +1049,15 @@ export const insuranceWorkflowsRouter = router({
       limit: z.number().default(20),
       offset: z.number().default(0),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { policies: [], total: 0 };
 
       const conditions: ReturnType<typeof eq>[] = [];
+      // Tenant isolation (F-05): tenant users only list their own tenant's
+      // policies. Platform users (no tenantId → 0 sentinel) are unscoped.
+      const tenantId = ctx.user?.tenantId ?? 0;
+      if (tenantId !== 0) conditions.push(eq(policies.tenantId, tenantId));
       if (input.customerId) conditions.push(eq(policies.customerId, input.customerId));
       if (input.agentId) conditions.push(eq(policies.agentId, input.agentId));
       if (input.status) conditions.push(eq(policies.status, input.status as any));
@@ -1071,11 +1081,15 @@ export const insuranceWorkflowsRouter = router({
       limit: z.number().default(20),
       offset: z.number().default(0),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { claims: [], total: 0 };
 
       const conditions: ReturnType<typeof eq>[] = [];
+      // Tenant isolation (F-05): tenant users only list their own tenant's
+      // claims. Platform users (no tenantId → 0 sentinel) are unscoped.
+      const tenantId = ctx.user?.tenantId ?? 0;
+      if (tenantId !== 0) conditions.push(eq(claims.tenantId, tenantId));
       if (input.policyId) conditions.push(eq(claims.policyId, input.policyId));
       if (input.status) conditions.push(eq(claims.status, input.status as any));
       if (input.adjusterId) conditions.push(eq(claims.assignedAdjusterId, input.adjusterId));

@@ -75,8 +75,8 @@ export function requestLoggingMiddleware(
   next: NextFunction
 ) {
   const requestId =
-    (req.headers["x-request-id"] as string) ?? crypto.randomUUID();
-  const traceId = (req.headers["x-trace-id"] as string) ?? crypto.randomUUID();
+    (req.headers["x-request-id"] as string) || crypto.randomUUID();
+  const traceId = (req.headers["x-trace-id"] as string) || crypto.randomUUID();
   const startTime = Date.now();
 
   res.setHeader("X-Request-ID", requestId);

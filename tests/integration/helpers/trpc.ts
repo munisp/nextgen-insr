@@ -23,6 +23,8 @@ import { mlScoringServiceRouter } from "../../../server/routers/mlScoringService
 import { amlScreeningRouter } from "../../../server/routers/amlScreening";
 import { agentFloatTransferRouter } from "../../../server/routers/agentFloatTransfer";
 import { transactionsRouter } from "../../../server/routers/transactions";
+import { insuranceWorkflowsRouter } from "../../../server/routers/insuranceWorkflows";
+import { agentRouter } from "../../../server/routers/agent";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -36,11 +38,16 @@ export const integrationRouter = router({
   management: managementRouter,
   mlScoring: mlScoringServiceRouter,
   amlScreening: amlScreeningRouter,
+  insuranceWorkflows: insuranceWorkflowsRouter,
+  agent: agentRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;
 
-export type TestUser = Pick<User, "id" | "email" | "name" | "role">;
+export type TestUser = Pick<User, "id" | "email" | "name" | "role"> & {
+  /** Optional tenant assignment; undefined/null = platform-level (unscoped). */
+  tenantId?: number | null;
+};
 
 export const adminUser: TestUser = {
   id: 91001,
@@ -60,14 +67,17 @@ export const regularUser: TestUser = {
  * Build a caller for the given user (null = anonymous). The context matches
  * server/_core/context.ts: { req, res, user }.
  */
-export function callerFor(user: TestUser | null) {
+export function callerFor(user: TestUser | null, requestId?: string) {
   const ctx = {
     user: user as User | null,
-    req: { headers: {} } as unknown as TrpcContext["req"],
+    req: {
+      headers: requestId ? { "x-request-id": requestId } : {},
+    } as unknown as TrpcContext["req"],
     res: {
       cookie: () => undefined,
       clearCookie: () => undefined,
     } as unknown as TrpcContext["res"],
+    requestId: requestId ?? "integration-test-request",
   };
   return integrationRouter.createCaller(ctx);
 }
