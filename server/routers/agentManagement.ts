@@ -117,12 +117,11 @@ export const agentManagementRouter = router({
           .where(eq(agents.id, input.agentId));
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "AGENT_ROLE_CHANGED",
           resource: "agent",
           resourceId: String(input.agentId),
           status: "success",
-          metadata: { newRole: input.role },
+          metadata: { agentCode: session.agentId, newRole: input.role },
         });
         return { success: true };
       } catch (error) {
@@ -164,7 +163,7 @@ export const agentManagementRouter = router({
           .where(eq(agents.id, input.agentId));
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
+          metadata: { agentCode: session.agentId },
           action: input.isActive ? "AGENT_ACTIVATED" : "AGENT_SUSPENDED",
           resource: "agent",
           resourceId: String(input.agentId),
@@ -198,7 +197,7 @@ export const agentManagementRouter = router({
         const rows = await db
           .select({
             id: premiumTopUpRequests.id,
-            agentId: premiumTopUpRequests.agentId,
+            agentNumericId: premiumTopUpRequests.agentId,
             requestedAmount: premiumTopUpRequests.requestedAmount,
             status: premiumTopUpRequests.status,
             approvedBy: premiumTopUpRequests.approvedBy,
@@ -295,12 +294,12 @@ export const agentManagementRouter = router({
         });
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FLOAT_TOPUP_APPROVED",
           resource: "float_topup",
           resourceId: String(input.requestId),
           status: "success",
           metadata: {
+            agentCode: session.agentId,
             amount: Number(req.requestedAmount),
             targetAgentId: req.agentId,
           },
@@ -404,12 +403,11 @@ export const agentManagementRouter = router({
           .where(eq(premiumTopUpRequests.id, input.requestId));
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FLOAT_TOPUP_REJECTED",
           resource: "float_topup",
           resourceId: String(input.requestId),
           status: "success",
-          metadata: { reason: input.reason, targetAgentId: req.agentId },
+          metadata: { agentCode: session.agentId, reason: input.reason, targetAgentId: req.agentId },
         });
         return { success: true };
       } catch (error) {
@@ -467,12 +465,11 @@ export const agentManagementRouter = router({
         });
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "FLOAT_TOPUP_REQUESTED",
           resource: "float_topup",
           resourceId: session.agentId,
           status: "success",
-          metadata: { amount: input.amount, notes: input.notes },
+          metadata: { agentCode: session.agentId, amount: input.amount, notes: input.notes },
         });
         return { success: true };
       } catch (error) {

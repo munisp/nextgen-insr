@@ -202,12 +202,11 @@ export const agentTrainingGamificationRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TRAINING_ENROLLED",
           resource: "training",
           resourceId: String(enrollment.id),
           status: "success",
-          metadata: { courseId: input.courseId, courseTitle: course.title },
+          metadata: { agentCode: session.agentId, courseId: input.courseId, courseTitle: course.title },
         });
 
         return enrollment;
@@ -263,7 +262,7 @@ export const agentTrainingGamificationRouter = router({
 
           await writeAuditLog({
             agentId: session.id,
-            agentId: session.agentId,
+            metadata: { agentCode: session.agentId },
             action: "TRAINING_COMPLETED",
             resource: "training",
             resourceId: String(input.enrollmentId),

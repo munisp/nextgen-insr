@@ -141,14 +141,21 @@ async function checkVelocityLimits(
   agentId: number,
   tier: string,
   amount: number,
-  agentId?: string
+  agentCode?: string
 ): Promise<{ allowed: boolean; reason?: string }> {
   try {
     const enabled = await getPlatformSetting("velocity_limits_enabled", "true");
     if (enabled !== "true") return { allowed: true };
 
     const db = (await getDb())!;
-    if (!db) return { allowed: true };
+    if (!db) {
+      // Funds control must not silently fail open (F-01 class).
+      if (process.env.VELOCITY_FAIL_OPEN === "true") {
+        logger.warn("[Velocity] VELOCITY_FAIL_OPEN=true — allowing transaction while velocity store is unavailable (INSECURE)");
+        return { allowed: true };
+      }
+      return { allowed: false, reason: "Velocity check unavailable — transaction rejected for safety" };
+    }
 
     const limitRows = await db
       .select()
@@ -182,12 +189,12 @@ async function checkVelocityLimits(
     const hourlyCount = Number(hourlyRows[0]?.count ?? 0);
 
     // Emit 80% warning before hard block
-    if (agentId && maxHourly > 0) {
+    if (agentCode && maxHourly > 0) {
       const hourlyPct = (hourlyCount + 1) / maxHourly;
       if (hourlyPct >= 0.8 && hourlyPct < 1.0) {
         getIO()
           ?.of("/terminal")
-          .to(`agent:${agentId}`)
+          .to(`agent:${agentCode}`)
           .emit("terminal:velocity_warning", {
             type: "hourly_count",
             used: hourlyCount + 1,
@@ -220,12 +227,12 @@ async function checkVelocityLimits(
     const dailyVolume = Number(dailyRows[0]?.total ?? 0);
 
     // Emit 80% daily volume warning
-    if (agentId && maxDaily > 0) {
+    if (agentCode && maxDaily > 0) {
       const dailyPct = (dailyVolume + amount) / maxDaily;
       if (dailyPct >= 0.8 && dailyPct < 1.0) {
         getIO()
           ?.of("/terminal")
-          .to(`agent:${agentId}`)
+          .to(`agent:${agentCode}`)
           .emit("terminal:velocity_warning", {
             type: "daily_volume",
             used: dailyVolume + amount,
@@ -246,8 +253,14 @@ async function checkVelocityLimits(
 
     return { allowed: true };
   } catch (err) {
-    logger.error("[Velocity] Check error (fail-open):: " + String(err));
-    return { allowed: true };
+    logger.error("[Velocity] Check error:: " + String(err));
+    // Fail closed by default: a funds control that cannot be evaluated must
+    // reject. VELOCITY_FAIL_OPEN=true is an explicit, loudly-logged opt-out.
+    if (process.env.VELOCITY_FAIL_OPEN === "true") {
+      logger.warn("[Velocity] VELOCITY_FAIL_OPEN=true — allowing transaction despite velocity check failure (INSECURE)");
+      return { allowed: true };
+    }
+    return { allowed: false, reason: "Velocity check unavailable — transaction rejected for safety" };
   }
 }
 
@@ -391,11 +404,11 @@ export const transactionsRouter = router({
         if (!deviceCheck.valid) {
           await writeAuditLog({
             agentId: agent.id,
-            agentId: agent.agentId,
             action: "DEVICE_TOKEN_REJECTED",
             resource: "transaction",
             status: "failure",
             metadata: {
+              agentCode: agent.agentId,
               reason: deviceCheck.reason,
               providedToken: input.deviceToken,
             },
@@ -456,11 +469,11 @@ export const transactionsRouter = router({
           });
           await writeAuditLog({
             agentId: agent.id,
-            agentId: agent.agentId,
             action: "VELOCITY_LIMIT_BREACHED",
             resource: "transaction",
             status: "failure",
             metadata: {
+              agentCode: agent.agentId,
               reason: velocityCheck.reason,
               amount: input.amount,
               tier: agentRecord.tier,
@@ -534,12 +547,10 @@ export const transactionsRouter = router({
                     fraudScore: "0.80",
                   });
                   await writeAuditLog({
-                    agentId: agent.id,
-                    agentId: agent.agentId,
-                    action: "GEOFENCE_VIOLATION",
+                    agentId: agent.id,                    action: "GEOFENCE_VIOLATION",
                     resource: "transaction",
                     status: "failure",
-                    metadata: { amount: input.amount, type: input.type },
+                    metadata: { agentCode: agent.agentId, amount: input.amount, type: input.type },
                   });
                   getIO()
                     ?.of("/terminal")
@@ -654,11 +665,11 @@ export const transactionsRouter = router({
           if (amlResult.triggered) {
             await writeAuditLog({
               agentId: agent.id,
-              agentId: agent.agentId,
               action: "AML_TRIGGER",
               resource: "transaction",
               status: "flagged" as any,
               metadata: {
+                agentCode: agent.agentId,
                 triggered: amlResult.triggered,
                 amount: input.amount,
               },
@@ -799,13 +810,11 @@ export const transactionsRouter = router({
         }
 
         await writeAuditLog({
-          agentId: agent.id,
-          agentId: agent.agentId,
-          action: "TRANSACTION_CREATED",
+          agentId: agent.id,          action: "TRANSACTION_CREATED",
           resource: "transaction",
           resourceId: ref,
           status: "success",
-          metadata: { type: input.type, amount: input.amount },
+          metadata: { agentCode: agent.agentId, type: input.type, amount: input.amount },
         });
 
         // ── Phase 44: Customer SMS confirmation (fire-and-forget) ─────────────
@@ -1106,12 +1115,12 @@ export const transactionsRouter = router({
 
           await writeAuditLog({
             agentId: agent.id,
-            agentId: agent.agentId,
             action: "REVERSAL_APPROVAL_REQUESTED",
             resource: "transaction",
             resourceId: input.ref,
             status: "warning",
             metadata: {
+              agentCode: agent.agentId,
               amount,
               threshold,
               reason: input.reason ?? "Agent-initiated reversal",
@@ -1149,12 +1158,12 @@ export const transactionsRouter = router({
         const reversalRef = generateRef();
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "TRANSACTION_REVERSED",
           resource: "transaction",
           resourceId: input.ref,
           status: "success",
           metadata: {
+            agentCode: agent.agentId,
             originalRef: input.ref,
             reversalRef,
             originalType: tx.type,
@@ -1196,7 +1205,7 @@ export const transactionsRouter = router({
         .select({
           id: transactions.id,
           ref: transactions.ref,
-          agentId: transactions.agentId,
+          agentNumericId: transactions.agentId,
           type: transactions.type,
           amount: transactions.amount,
           customerName: transactions.customerName,
@@ -1284,12 +1293,12 @@ export const transactionsRouter = router({
         const reversalRef = generateRef();
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "REVERSAL_APPROVED",
           resource: "transaction",
           resourceId: tx.ref,
           status: "success",
           metadata: {
+            agentCode: agent.agentId,
             approvedBy: agent.agentId,
             originalRef: tx.ref,
             reversalRef,
@@ -1366,13 +1375,11 @@ export const transactionsRouter = router({
           .where(eq(transactions.id, tx.id));
 
         await writeAuditLog({
-          agentId: agent.id,
-          agentId: agent.agentId,
-          action: "REVERSAL_REJECTED",
+          agentId: agent.id,          action: "REVERSAL_REJECTED",
           resource: "transaction",
           resourceId: tx.ref,
           status: "warning",
-          metadata: { rejectedBy: agent.agentId, reason: input.reason },
+          metadata: { agentCode: agent.agentId, rejectedBy: agent.agentId, reason: input.reason },
         });
 
         return { success: true };
@@ -1449,12 +1456,12 @@ export const transactionsRouter = router({
           .where(eq(velocityLimits.tier, input.tier));
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "VELOCITY_LIMIT_UPDATED",
           resource: "velocity_limits",
           resourceId: input.tier,
           status: "success",
           metadata: {
+            agentCode: agent.agentId,
             tier: input.tier,
             maxTxPerHour: input.maxTxPerHour,
             maxSingleTxAmount: input.maxSingleTxAmount,
@@ -1526,13 +1533,11 @@ export const transactionsRouter = router({
           })
           .where(eq(platformSettings.key, input.key));
         await writeAuditLog({
-          agentId: agent.id,
-          agentId: agent.agentId,
-          action: "PLATFORM_SETTING_UPDATED",
+          agentId: agent.id,          action: "PLATFORM_SETTING_UPDATED",
           resource: "platform_settings",
           resourceId: input.key,
           status: "success",
-          metadata: { key: input.key, value: input.value },
+          metadata: { agentCode: agent.agentId, key: input.key, value: input.value },
         });
         return { success: true };
       } catch (error) {
@@ -1667,13 +1672,11 @@ export const transactionsRouter = router({
           })
           .where(eq(fraudAlerts.id, input.alertId));
         await writeAuditLog({
-          agentId: agent.id,
-          agentId: agent.agentId,
-          action: "FRAUD_ALERT_REVIEWED",
+          agentId: agent.id,          action: "FRAUD_ALERT_REVIEWED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
           status: "success",
-          metadata: { alertId: input.alertId, resolution: input.resolution },
+          metadata: { agentCode: agent.agentId, alertId: input.alertId, resolution: input.resolution },
         });
         return { success: true };
       } catch (error) {
@@ -1774,11 +1777,11 @@ export const transactionsRouter = router({
 
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "SECURITY_AUDIT_EXPORTED",
           resource: "fraud_alerts",
           status: "success",
           metadata: {
+            agentCode: agent.agentId,
             rowCount: rows.length,
             severity: input.severity,
             type: input.type,
@@ -1827,12 +1830,12 @@ export const transactionsRouter = router({
           .where(eq(fraudAlerts.id, input.alertId));
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "FRAUD_ALERT_SNOOZED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
           status: "success",
           metadata: {
+            agentCode: agent.agentId,
             minutesToSnooze: input.minutesToSnooze,
             snoozedUntil: snoozedUntil.toISOString(),
           },
@@ -1900,12 +1903,12 @@ export const transactionsRouter = router({
         }
         await writeAuditLog({
           agentId: agent.id,
-          agentId: agent.agentId,
           action: "FRAUD_ALERT_ESCALATED",
           resource: "fraud_alerts",
           resourceId: String(input.alertId),
           status: "success",
           metadata: {
+            agentCode: agent.agentId,
             escalatedAt: escalatedAt.toISOString(),
             escalatedTo: input.supervisorId,
           },

@@ -146,12 +146,12 @@ export const kybRouter = router({
 
         await writeAuditLog({
           agentId: 0,
-          agentId: "system",
           action: "kyb_verification_started",
           resource: "kyb_verification",
           resourceId: result.id || "unknown",
           status: "success",
           metadata: {
+            agentCode: "system",
             business_name: input.business_name,
             business_type: input.business_type,
           },
@@ -354,7 +354,7 @@ export const kybRouter = router({
 
         await writeAuditLog({
           agentId: 0,
-          agentId: "system",
+          metadata: { agentCode: "system" },
           action: "kyb_verification_approved",
           resource: "kyb_verification",
           resourceId: input.verification_id,
@@ -398,12 +398,11 @@ export const kybRouter = router({
 
         await writeAuditLog({
           agentId: 0,
-          agentId: "system",
           action: "kyb_verification_rejected",
           resource: "kyb_verification",
           resourceId: input.verification_id,
           status: "success",
-          metadata: { reason: input.reason },
+          metadata: { agentCode: "system", reason: input.reason },
         });
 
         return result;

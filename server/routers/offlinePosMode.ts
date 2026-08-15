@@ -127,12 +127,12 @@ export const offlinePosModeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "OFFLINE_SESSION_STARTED",
           resource: "offline_session",
           resourceId: sessionId,
           status: "success",
           metadata: {
+            agentCode: session.agentId,
             reason: input.reason,
             floatSnapshot,
             tier: agentRows[0].tier,
@@ -175,12 +175,12 @@ export const offlinePosModeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "OFFLINE_SESSION_ENDED",
           resource: "offline_session",
           resourceId: input.sessionId,
           status: "success",
           metadata: {
+            agentCode: session.agentId,
             transactionsProcessed: input.transactionsProcessed,
             totalAmountProcessed: input.totalAmountProcessed,
           },
@@ -233,11 +233,10 @@ export const offlinePosModeRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "OFFLINE_CONFIG_UPDATED",
           resource: "offline_config",
           status: "success",
-          metadata: { tier, ...configValues },
+          metadata: { agentCode: session.agentId, tier, ...configValues },
         });
 
         return { success: true, tier, config: configValues };

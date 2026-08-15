@@ -84,12 +84,12 @@ export const eodReconciliationRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "EOD_REPORT_GENERATED",
           resource: "eod_reconciliation",
           resourceId: reportId,
           status: "success",
           metadata: {
+            agentCode: session.agentId,
             date: dayStart.toISOString().split("T")[0],
             totalTxns: summary.totalTxns,
             totalAmount: summary.totalAmount,

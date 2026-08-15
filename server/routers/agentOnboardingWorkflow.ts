@@ -135,7 +135,6 @@ export const agentOnboardingWorkflowRouter = router({
   initiate: protectedProcedure
     .input(
       z.object({
-        agentId: z.number(),
         agentId: z.string().min(3),
       })
     )
@@ -155,7 +154,6 @@ export const agentOnboardingWorkflowRouter = router({
       const [record] = await database
         .insert(agentOnboardingProgress)
         .values({
-          agentId: input.agentId,
           agentId: input.agentId,
           currentStep: "profile",
           profileComplete: false,

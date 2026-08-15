@@ -63,12 +63,12 @@ export const recurringPaymentsRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "RECURRING_PAYMENT_CREATED",
           resource: "recurring_payment",
           resourceId: scheduleId,
           status: "success",
           metadata: {
+            agentCode: session.agentId,
             type: input.type,
             amount: input.amount,
             frequency: input.frequency,
@@ -153,7 +153,7 @@ export const recurringPaymentsRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
+          metadata: { agentCode: session.agentId },
           action: "RECURRING_PAYMENT_CANCELLED",
           resource: "recurring_payment",
           resourceId: input.scheduleId,

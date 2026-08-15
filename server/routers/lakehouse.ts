@@ -700,7 +700,7 @@ export const lakehouseRouter = router({
 
         const rows = await db
           .select({
-            agentId: transactions.agentId,
+            agentNumericId: transactions.agentId,
             agentId: agents.agentId,
             agentTier: agents.tier,
             txCount: sql<number>`count(*)::int`,
@@ -729,7 +729,6 @@ export const lakehouseRouter = router({
         return {
           rows: rows.map((r: any) => ({
             summaryDate: date,
-            agentId: r.agentId ?? 0,
             agentId: r.agentId,
             agentTier: r.agentTier ?? "bronze",
             txCount: r.txCount ?? 0,

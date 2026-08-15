@@ -75,12 +75,12 @@ export const terminalLeasingRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TERMINAL_LEASE_CREATED",
           resource: "terminal_lease",
           resourceId: leaseId,
           status: "success",
           metadata: {
+            agentCode: session.agentId,
             terminalId: input.terminalId,
             monthlyRate: input.monthlyRate,
             duration: input.durationMonths,
@@ -166,12 +166,11 @@ export const terminalLeasingRouter = router({
 
         await writeAuditLog({
           agentId: session.id,
-          agentId: session.agentId,
           action: "TERMINAL_LEASE_TERMINATED",
           resource: "terminal_lease",
           resourceId: input.leaseId,
           status: "success",
-          metadata: { reason: input.reason },
+          metadata: { agentCode: session.agentId, reason: input.reason },
         });
 
         return { leaseId: input.leaseId, status: "terminated" };

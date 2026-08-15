@@ -103,7 +103,7 @@ async function snapshotAgentMetrics(date: string): Promise<void> {
   // Aggregate per-agent metrics for the day
   const rows = await db
     .select({
-      agentId: transactions.agentId,
+      agentNumericId: transactions.agentId,
       agentId: agents.agentId,
       tier: agents.tier,
       txCount: sql<number>`count(*)::int`,
@@ -124,7 +124,6 @@ async function snapshotAgentMetrics(date: string): Promise<void> {
 
   const metrics = rows.map(r => ({
     date,
-    agentId: r.agentId,
     agentId: r.agentId,
     tier: r.tier,
     txCount: r.txCount ?? 0,
