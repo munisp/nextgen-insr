@@ -11,6 +11,7 @@
  * DEVELOPMENT: A mock admin user is created when DB is unavailable (opt-in via
  *   DEV_AUTH_BYPASS=true, defaults to false even in development).
  */
+import crypto from "node:crypto";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./keycloakAuth";
@@ -47,7 +48,42 @@ export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
+  /**
+   * Correlation ID for this request. Honors an inbound `x-request-id` header
+   * (set by the Express middleware in server/_core/index.ts or by an edge
+   * proxy); otherwise a fresh UUID is generated here so every tRPC call —
+   * including direct context creation in tests — always has one.
+   */
+  requestId: string;
 };
+
+/**
+ * Resolve the correlation ID for a request: inbound `x-request-id` wins,
+ * otherwise generate one. Also stamps the `X-Request-ID` response header so
+ * clients can correlate even when the Express middleware did not run first.
+ */
+function resolveRequestId(
+  req: CreateExpressContextOptions["req"],
+  res: CreateExpressContextOptions["res"]
+): string {
+  const inbound = req.headers?.["x-request-id"];
+  const requestId =
+    (typeof inbound === "string" && inbound.trim().length > 0
+      ? inbound
+      : Array.isArray(inbound) && inbound[0]
+        ? inbound[0]
+        : null) ?? crypto.randomUUID();
+  try {
+    // Guarded: test contexts use minimal res mocks without setHeader.
+    (res as { setHeader?: (k: string, v: string) => void } | undefined)?.setHeader?.(
+      "X-Request-ID",
+      requestId
+    );
+  } catch {
+    // header stamping is best-effort; never fail context creation over it
+  }
+  return requestId;
+}
 
 function parseCookies(cookieHeader: string): Map<string, string> {
   const map = new Map<string, string>();
@@ -122,5 +158,6 @@ export async function createContext(
     req: opts.req,
     res: opts.res,
     user,
+    requestId: resolveRequestId(opts.req, opts.res),
   };
 }

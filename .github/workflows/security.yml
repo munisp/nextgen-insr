@@ -1,0 +1,73 @@
+name: Security
+
+# F-05 remediation: dependency vulnerability audit (fail on High/Critical)
+# and secret scanning on every push/PR, plus a weekly scheduled run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+
+jobs:
+  audit:
+    name: Dependency audit (prod deps, fail on High+)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # pnpm audit has no --audit-level flag; parse the JSON and fail only
+      # on high/critical so low/moderate advisories don't block CI.
+      - name: pnpm audit — fail on High/Critical
+        run: |
+          pnpm audit --prod --json > audit.json || true
+          node -e "
+            const a = require('./audit.json');
+            const v = (a.metadata && a.metadata.vulnerabilities) || {};
+            console.log('vulnerability counts:', JSON.stringify(v));
+            const bad = (v.high || 0) + (v.critical || 0);
+            if (bad > 0) {
+              console.error('FAIL: ' + bad + ' high/critical vulnerabilities in production dependencies');
+              process.exit(1);
+            }
+          "
+
+      - name: Generate SBOM (CycloneDX)
+        run: pnpm dlx @cyclonedx/cdxgen -t js -o sbom.ci.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.ci.json
+          retention-days: 90
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so gitleaks can scan all commits
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

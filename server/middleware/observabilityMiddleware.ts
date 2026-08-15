@@ -37,6 +37,8 @@ export interface ObservabilityContext {
   type: string;
   /** The user ID if authenticated, or "anonymous" */
   userId: string;
+  /** Correlation ID from the tRPC context (x-request-id or generated UUID) */
+  requestId?: string;
   /** Start timestamp */
   startMs: number;
   /** Duration in ms */
@@ -59,11 +61,30 @@ export async function emitObservabilityEvent(
     path: ctx.path,
     type: ctx.type,
     userId: ctx.userId,
+    requestId: ctx.requestId,
     durationMs: ctx.durationMs,
     success: ctx.success,
     error: ctx.error,
     timestamp: Date.now(),
   };
+
+  // Structured log line with correlation ID (F-07). Contains no PII or
+  // secrets: path, numeric user id, request id, duration, success, error
+  // message only.
+  const log = ctx.requestId
+    ? logger.child({ requestId: ctx.requestId })
+    : logger;
+  if (ctx.success) {
+    log.info(
+      { path: ctx.path, type: ctx.type, userId: ctx.userId, durationMs: ctx.durationMs },
+      `[trpc] ${ctx.path} ${ctx.type} ok ${ctx.durationMs}ms`
+    );
+  } else {
+    log.warn(
+      { path: ctx.path, type: ctx.type, userId: ctx.userId, durationMs: ctx.durationMs, error: ctx.error },
+      `[trpc] ${ctx.path} ${ctx.type} failed ${ctx.durationMs}ms`
+    );
+  }
 
   // 1. Kafka — event bus for downstream consumers (analytics, audit, alerting)
   try {
@@ -122,6 +143,7 @@ export function createObservabilityMiddleware(t: any) {
     }) => {
       const startMs = Date.now();
       const userId = ctx.user ? String(ctx.user.id) : "anonymous";
+      const requestId: string | undefined = ctx.requestId;
 
       try {
         const result = await next({ ctx });
@@ -132,6 +154,7 @@ export function createObservabilityMiddleware(t: any) {
           path,
           type,
           userId,
+          requestId,
           startMs,
           durationMs,
           success: true,
@@ -145,6 +168,7 @@ export function createObservabilityMiddleware(t: any) {
           path,
           type,
           userId,
+          requestId,
           startMs,
           durationMs,
           success: false,

@@ -56,6 +56,7 @@ import {
 } from "../db";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { agents } from "../../drizzle/schema";
+import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { getJwtSecret } from "../lib/envValidation";
 import {
   eq,
@@ -307,7 +308,7 @@ export const agentRouter = router({
         limit: z.number().int().min(1).max(200).default(20),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const db = (await getDb())!;
         if (!db)
@@ -316,6 +317,11 @@ export const agentRouter = router({
         const offset = (input.page - 1) * input.limit;
 
         const conditions = [isNull(agents.deletedAt)];
+        // Tenant isolation (F-05): tenant users only see agents of their own
+        // tenant. Platform users (no tenantId → 0 sentinel per
+        // server/middleware/tenantIsolation.ts) are unscoped.
+        const tenantId = ctx.user?.tenantId ?? 0;
+        if (tenantId !== 0) conditions.push(eq(agents.tenantId, tenantId));
         if (input.status !== "all") {
           if (input.status === "active")
             conditions.push(eq(agents.isActive, true));
@@ -412,7 +418,7 @@ export const agentRouter = router({
   // ── Get agent by ID ───────────────────────────────────────────────────────
   getById: protectedProcedure
     .input(z.object({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const agent = await getAgentById(input.id);
         if (!agent || agent.deletedAt)
@@ -420,6 +426,10 @@ export const agentRouter = router({
             code: "NOT_FOUND",
             message: "Agent not found",
           });
+        // Tenant isolation (F-05): a tenant user may not read another
+        // tenant's agent record (PII). Platform users (no tenantId → 0
+        // sentinel) are unscoped.
+        assertTenantOwnership(agent.tenantId, ctx.user?.tenantId ?? 0, "Agent");
         return agent;
       } catch (error) {
         if (error instanceof TRPCError) throw error;

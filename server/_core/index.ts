@@ -50,7 +50,7 @@ import { restBridgeRouter } from "../restBridge";
 import { registry, httpRequestDurationMs } from "../metrics";
 import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
 import { enforceEnvironment } from "../lib/envValidation";
-import { logger } from "./logger";
+import { logger, requestLoggingMiddleware } from "./logger";
 import { sql } from "drizzle-orm";
 import cron from "node-cron";
 import { setupGracefulShutdown } from "../lib/gracefulShutdown";
@@ -242,6 +242,13 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
     res.setHeader("X-Request-ID", reqId);
     next();
   });
+
+  // ── Per-request structured logging (F-07) ─────────────────────────────────
+  // Attaches a pino child logger (with requestId/traceId) to req.log and emits
+  // one structured log line per response. Runs AFTER the X-Request-ID
+  // middleware above so the logged requestId matches the response header and
+  // the tRPC context requestId (server/_core/context.ts).
+  app.use(requestLoggingMiddleware);
 
   // ── Compression ─────────────────────────────────────────────────
   app.use(compression());
@@ -500,12 +507,14 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
             type,
             path,
             userId: (ctx as any)?.user?.id,
+            requestId: (ctx as any)?.requestId,
           }, "[tRPC] Internal server error");
         } else if (error.code !== "UNAUTHORIZED" && error.code !== "NOT_FOUND") {
           logger.warn({
             code: error.code,
             type,
             path,
+            requestId: (ctx as any)?.requestId,
           }, "[tRPC] Procedure error");
         }
       },
