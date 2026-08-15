@@ -97,8 +97,8 @@ export const aiMonitoringRouter = router({
       events: alerts.map(a => ({
         id: String(a.id),
         timestamp: a.createdAt?.toISOString() ?? new Date().toISOString(),
-        score: Number(a.riskScore ?? 0),
-        type: a.alertType ?? "unknown",
+        score: Number(a.fraudScore ?? 0),
+        type: a.type ?? "unknown",
         agentId: String(a.agentId ?? ""),
       })),
       total: total ?? 0,
@@ -126,10 +126,10 @@ export const aiMonitoringRouter = router({
     return {
       items: items.map(a => ({
         id: String(a.id),
-        severity: Number(a.riskScore ?? 0) >= 80 ? "critical" : Number(a.riskScore ?? 0) >= 60 ? "high" : "medium",
-        message: `${a.alertType ?? "Fraud"} alert — risk score ${a.riskScore ?? 0}`,
+        severity: Number(a.fraudScore ?? 0) >= 80 ? "critical" : Number(a.fraudScore ?? 0) >= 60 ? "high" : "medium",
+        message: `${a.type ?? "Fraud"} alert — risk score ${a.fraudScore ?? 0}`,
         timestamp: a.createdAt?.toISOString() ?? new Date().toISOString(),
-        acknowledged: a.status === "acknowledged",
+        acknowledged: a.status === "investigating",
       })),
       total: items.length,
     };
@@ -180,7 +180,7 @@ export const aiMonitoringRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) return { success: false };
-      await db.update(fraudAlerts).set({ status: "acknowledged" }).where(eq(fraudAlerts.id, Number(input.alertId)));
+      await db.update(fraudAlerts).set({ status: "investigating" }).where(eq(fraudAlerts.id, Number(input.alertId)));
       return { success: true, alertId: input.alertId };
     }),
 });

@@ -26,7 +26,7 @@ export default function GdprDashboard() {
     { title: "Export Requests", value: s.export ?? "—", icon: Activity, trend: "flat" as const, trendValue: "processed", status: "neutral" as const, href: "/gdpr-dashboard", accent: "var(--insurance-secondary)" },
     { title: "Compliance Rate", value: s.complianceRate ? s.complianceRate + "%" : "—", icon: CheckCircle, trend: "up" as const, trendValue: "↑ 2%", status: "good" as const, href: "/gdpr-dashboard", accent: "var(--risk-low)" },
     { title: "Avg Response (days)", value: s.avgResponseDays ?? "—", icon: Clock, trend: "down" as const, trendValue: "↓ 1d", status: "good" as const, href: "/gdpr-dashboard", accent: "var(--risk-low)" },
-    { title: "Overdue Requests", value: s.overdue ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "30-day limit", status: (Number(s.overdue ?? 0) > 0 ? "critical" : "good") as const, href: "/gdpr-dashboard", accent: "var(--risk-critical)" },
+    { title: "Overdue Requests", value: s.overdue ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "30-day limit", status: (Number(s.overdue ?? 0) > 0 ? "critical" : "good") as "critical" | "good", href: "/gdpr-dashboard", accent: "var(--risk-critical)" },
   ];
 
   const requestTypes = [

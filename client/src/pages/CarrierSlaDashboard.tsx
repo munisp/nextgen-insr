@@ -24,10 +24,10 @@ export default function CarrierSlaDashboard() {
   const cards = [
     { title: "Total Carriers", value: s.totalCarriers ?? "—", icon: Shield, trend: "flat" as const, trendValue: "registered", status: "neutral" as const, href: "/carrier-sla-dashboard", accent: "var(--insurance-primary)" },
     { title: "Meeting SLA", value: s.meetingSla ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "↑ 2", status: "good" as const, href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
-    { title: "SLA Breaches (MTD)", value: s.breachesMtd ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 3", status: (Number(s.breachesMtd ?? 0) > 0 ? "warning" : "good") as const, href: "/carrier-sla-dashboard", accent: "var(--risk-medium)" },
+    { title: "SLA Breaches (MTD)", value: s.breachesMtd ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 3", status: (Number(s.breachesMtd ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/carrier-sla-dashboard", accent: "var(--risk-medium)" },
     { title: "Avg Response (hrs)", value: s.avgResponseHours ? Number(s.avgResponseHours).toFixed(1) : "—", icon: Clock, trend: "down" as const, trendValue: "↓ 0.5h", status: "good" as const, href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
-    { title: "Claims SLA (%)", value: s.claimsSlaRate ? s.claimsSlaRate.toFixed(1)+"%" : "—", icon: Activity, trend: "up" as const, trendValue: "↑ 1.2%", status: (Number(s.claimsSlaRate ?? 0) >= 95 ? "good" : "warning") as const, href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
-    { title: "Premium SLA (%)", value: s.premiumSlaRate ? s.premiumSlaRate.toFixed(1)+"%" : "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 0.8%", status: (Number(s.premiumSlaRate ?? 0) >= 95 ? "good" : "warning") as const, href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
+    { title: "Claims SLA (%)", value: s.claimsSlaRate ? s.claimsSlaRate.toFixed(1)+"%" : "—", icon: Activity, trend: "up" as const, trendValue: "↑ 1.2%", status: (Number(s.claimsSlaRate ?? 0) >= 95 ? "good" : "warning") as "good" | "warning", href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
+    { title: "Premium SLA (%)", value: s.premiumSlaRate ? s.premiumSlaRate.toFixed(1)+"%" : "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 0.8%", status: (Number(s.premiumSlaRate ?? 0) >= 95 ? "good" : "warning") as "good" | "warning", href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
   ];
 
   const slaByCarrier = (carriers?.data ?? []).slice(0, 6).map((c: any) => ({

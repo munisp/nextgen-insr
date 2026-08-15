@@ -238,14 +238,14 @@ export const cvClaimsRouter = router({
         // If auto-approved, update claim status
         if (autoApprove) {
           await db.update(claims)
-            .set({ status: "auto_approved", updatedAt: new Date() })
+            .set({ status: "approved", updatedAt: new Date() })
             .where(eq(claims.id, input.claimId));
 
           await writeAuditLog({
             action: "CLAIM_AUTO_APPROVED_CV",
             resource: "claim",
-            resourceId: input.claimId,
-            details: { confidence: assessment.confidence, repairCost: assessment.estimated_repair_cost },
+            resourceId: String(input.claimId),
+            metadata: { confidence: assessment.confidence, repairCost: assessment.estimated_repair_cost },
           });
         }
       }
@@ -327,8 +327,8 @@ export const fraudNetworkRouter = router({
         await writeAuditLog({
           action: "FRAUD_NETWORK_ALERT",
           resource: input.entityType,
-          resourceId: input.entityId,
-          details: { networkScore, fraudFlags },
+          resourceId: String(input.entityId),
+          metadata: { networkScore, fraudFlags },
         });
       }
 
@@ -544,8 +544,8 @@ export const nhiaRouter = router({
       await writeAuditLog({
         action: "NHIA_ENROLLMENT",
         resource: "customer",
-        resourceId: ctx.user.id,
-        details: { nhiaId: input.nhiaId, schemeType: input.schemeType },
+        resourceId: String(ctx.user.id),
+        metadata: { nhiaId: input.nhiaId, schemeType: input.schemeType },
       });
 
       return { enrollmentId: enrollment.id, nhiaId: input.nhiaId };
@@ -606,7 +606,7 @@ export const comparisonRouter = router({
   getQuotes: publicProcedure
     .input(z.object({
       productType: z.enum(["motor", "health", "life", "property", "travel", "marine"]),
-      riskData: z.record(z.unknown()),
+      riskData: z.record(z.string(), z.unknown()),
       customerId: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -694,8 +694,8 @@ export const p2pPoolsRouter = router({
       await writeAuditLog({
         action: "P2P_POOL_CREATED",
         resource: "p2p_pool",
-        resourceId: pool.id,
-        details: { poolName: input.poolName, organiserId: ctx.user.id },
+        resourceId: String(pool.id),
+        metadata: { poolName: input.poolName, organiserId: ctx.user.id },
       });
 
       return { poolId: pool.id, poolName: pool.poolName };
@@ -722,7 +722,7 @@ export const p2pPoolsRouter = router({
 
       // Update member count
       await db.update(p2pPools)
-        .set({ totalMembers: sql`total_members + 1`, updatedAt: new Date() })
+        .set({ updatedAt: new Date() })
         .where(eq(p2pPools.id, input.poolId));
 
       return { memberId: member.id };
@@ -962,11 +962,10 @@ export const parametricRouter = router({
             // TigerBeetle payout transfer
             const tbResult = await tbCreateTransfer({
               debitAccountId: TB_SYSTEM_ACCOUNTS.CLAIMS_RESERVE,
-              creditAccountId: policy.customerId,
-              amount: BigInt(Math.round(parseFloat(trigger.payoutAmount) * 100)),
+              creditAccountId: String(policy.customerId),
+              amount: Math.round(parseFloat(trigger.payoutAmount) * 100),
               ledger: 1,
               code: 9, // parametric payout
-              userData: BigInt(payout.id),
             });
 
             await db.update(parametricPayouts)
@@ -1031,8 +1030,8 @@ export const groupInsuranceRouter = router({
       await writeAuditLog({
         action: "GROUP_POLICY_CREATED",
         resource: "group_policy",
-        resourceId: group.id,
-        details: { groupName: input.groupName, masterPolicyNumber },
+        resourceId: String(group.id),
+        metadata: { groupName: input.groupName, masterPolicyNumber },
       });
 
       return { groupId: group.id, masterPolicyNumber };
@@ -1117,7 +1116,7 @@ export const bancassuranceRouter = router({
     .input(z.object({
       partnerCode: z.string(),
       productType: z.string(),
-      customerData: z.record(z.unknown()).optional(),
+      customerData: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -1193,8 +1192,8 @@ export const openInsuranceRouter = router({
       await writeAuditLog({
         action: "OPEN_INSURANCE_CONSENT_GRANTED",
         resource: "customer",
-        resourceId: ctx.user.id,
-        details: { thirdPartyId: input.thirdPartyId, scopes: input.scopes },
+        resourceId: String(ctx.user.id),
+        metadata: { thirdPartyId: input.thirdPartyId, scopes: input.scopes },
       });
 
       return { consentId: consent.id, consentToken, expiresAt: expiresAt.toISOString() };
@@ -1242,10 +1241,10 @@ export const openInsuranceRouter = router({
           .from(policies).where(eq(policies.customerId, consent.customerId));
       } else if (input.scope === "claims:read") {
         responseData = await db.select({ id: claims.id, status: claims.status, claimType: claims.claimType })
-          .from(claims).where(eq(claims.customerId, consent.customerId));
+          .from(claims).where(eq(claims.claimantId, consent.customerId));
       } else if (input.scope === "no_claims_bonus:read") {
         const claimCount = await db.select({ count: sql<number>`count(*)` })
-          .from(claims).where(eq(claims.customerId, consent.customerId));
+          .from(claims).where(eq(claims.claimantId, consent.customerId));
         responseData = { noClaimsYears: claimCount[0].count === 0 ? 1 : 0, discount: claimCount[0].count === 0 ? 10 : 0 };
       }
 
@@ -1362,7 +1361,7 @@ export const renewalPredictionRouter = router({
       const expiringPolicies = await db.select().from(policies)
         .where(and(
           eq(policies.status, "active"),
-          lte(policies.endDate, expiryDate.toISOString().split("T")[0])
+          lte(policies.endDate, expiryDate)
         ))
         .limit(1000);
 
@@ -1566,7 +1565,7 @@ export const didIdentityRouter = router({
 
       const claims = {
         kycLevel: customer.kycLevel,
-        kycStatus: customer.kycStatus,
+        kycStatus: customer.status,
         verifiedAt: new Date().toISOString(),
         verifiedBy: "InsurePortal KYC Engine",
       };

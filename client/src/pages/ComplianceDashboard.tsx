@@ -22,13 +22,13 @@ export default function ComplianceDashboard() {
   const kpi = data?.checks ?? data ?? {}; const sar = data?.sar ?? {}; const kyc = data?.kyc ?? {};
 
   const cards = [
-    { title: "Compliance Score", value: kpi.overallScore ? kpi.overallScore+"%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 2%", status: (Number(kpi.overallScore??0)>=90?"good":"warning") as const, href: "/compliance-dashboard", accent: "var(--risk-low)" },
+    { title: "Compliance Score", value: kpi.overallScore ? kpi.overallScore+"%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 2%", status: (Number(kpi.overallScore??0)>=90?"good":"warning") as "good" | "warning", href: "/compliance-dashboard", accent: "var(--risk-low)" },
     { title: "Checks Passed", value: kpi.passed ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "MTD", status: "good" as const, href: "/regulatory-compliance-checks", accent: "var(--risk-low)" },
     { title: "Checks Failed", value: kpi.failed ?? "—", icon: XCircle, trend: "flat" as const, trendValue: "stable", status: "critical" as const, href: "/regulatory-compliance-checks", accent: "var(--risk-critical)" },
     { title: "SARs Filed", value: sar.filed ?? kpi.sarsFiled ?? "—", icon: FileText, trend: "flat" as const, trendValue: "CBN", status: "neutral" as const, href: "/cbn-reporting-dashboard", accent: "var(--insurance-primary)" },
     { title: "AML Alerts", value: kpi.amlAlerts ?? "—", icon: AlertTriangle, trend: "up" as const, trendValue: "+3", status: "warning" as const, href: "/aml-monitoring", accent: "var(--risk-medium)" },
     { title: "KYC Pending", value: kyc.pending ?? kpi.kycPending ?? "—", icon: Clock, trend: "up" as const, trendValue: "review", status: "warning" as const, href: "/kyc-management", accent: "var(--risk-medium)" },
-    { title: "Overdue Filings", value: kpi.overdueFilings ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: (Number(kpi.overdueFilings??0)>0?"critical":"good") as const, href: "/compliance-cert-manager", accent: "var(--risk-critical)" },
+    { title: "Overdue Filings", value: kpi.overdueFilings ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: (Number(kpi.overdueFilings??0)>0?"critical":"good") as "critical" | "good", href: "/compliance-cert-manager", accent: "var(--risk-critical)" },
     { title: "Risk Level", value: kpi.riskLevel ?? "—", icon: Activity, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/compliance-dashboard", accent: "var(--insurance-secondary)" },
   ];
 

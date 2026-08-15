@@ -60,7 +60,6 @@ export const disputeWorkflowEngineRouter = router({
             disputeId: d.id,
           } as any);
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeWorkflow]: " + e);
         }
         return {
@@ -179,7 +178,6 @@ export const disputeWorkflowEngineRouter = router({
             disputeId: input.disputeId,
           } as any);
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeWorkflow]: " + e);
         }
         return {
@@ -234,7 +232,6 @@ export const disputeWorkflowEngineRouter = router({
             disputeId: input.disputeId,
           } as any);
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeWorkflow]: " + e);
         }
         return {
@@ -327,7 +324,6 @@ export const disputeWorkflowEngineRouter = router({
             disputeId: input.disputeId,
           } as any);
         } catch (e) {
-          // @ts-expect-error middleware type mismatch
           logger.warn("[DisputeWorkflow]: " + e);
         }
         return {

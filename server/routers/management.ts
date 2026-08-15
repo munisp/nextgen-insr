@@ -28,6 +28,7 @@ import {
   platformSettings,
 } from "../../drizzle/schema";
 import {
+  posTerminals,
   serviceNodes,
   marketplaceAds,
 } from "../../drizzle/schema.additions";
@@ -672,19 +673,19 @@ export const managementRouter = router({
           const offset = (input.page - 1) * input.limit;
           const conditions = [];
           if (input.status)
-            conditions.push(eq(serviceNodes.status, input.status));
+            conditions.push(eq(posTerminals.status, input.status));
           if (input.agentId)
-            conditions.push(eq(serviceNodes.agentId, input.agentId));
+            conditions.push(eq(posTerminals.agentId, input.agentId));
           const where = conditions.length > 0 ? and(...conditions) : undefined;
           const [items, [{ total }]] = await Promise.all([
             db
               .select()
-              .from(serviceNodes)
+              .from(posTerminals)
               .where(where)
-              .orderBy(desc(serviceNodes.createdAt))
+              .orderBy(desc(posTerminals.createdAt))
               .limit(input.limit)
               .offset(offset),
-            db.select({ total: count() }).from(serviceNodes).where(where),
+            db.select({ total: count() }).from(posTerminals).where(where),
           ]);
           return { items, total };
         } catch (error) {
@@ -704,8 +705,8 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "NOT_FOUND" });
           const [t] = await db
             .select()
-            .from(serviceNodes)
-            .where(eq(serviceNodes.id, input.id))
+            .from(posTerminals)
+            .where(eq(posTerminals.id, input.id))
             .limit(100);
           if (!t) throw new TRPCError({ code: "NOT_FOUND" });
           return t;
@@ -732,7 +733,7 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .insert(serviceNodes)
+            .insert(posTerminals)
             .values(input as any)
             .returning();
           return t;
@@ -765,13 +766,11 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(serviceNodes)
+            .update(posTerminals)
             .set({
-              lastCommand: input.command,
-              lastCommandAt: new Date(),
               updatedAt: new Date(),
             })
-            .where(eq(serviceNodes.id, input.terminalId))
+            .where(eq(posTerminals.id, input.terminalId))
             .returning();
           return { success: true, terminal: t };
         } catch (error) {
@@ -854,9 +853,9 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           // Unassign all terminals in this group first
           await db
-            .update(serviceNodes)
+            .update(posTerminals)
             .set({ groupId: null, updatedAt: new Date() })
-            .where(eq(serviceNodes.groupId, input.id));
+            .where(eq(posTerminals.groupId, input.id));
           await db
             .delete(terminalGroups)
             .where(eq(terminalGroups.id, input.id));
@@ -879,9 +878,9 @@ export const managementRouter = router({
           const db = (await getDb())!;
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const [t] = await db
-            .update(serviceNodes)
+            .update(posTerminals)
             .set({ groupId: input.groupId, updatedAt: new Date() })
-            .where(eq(serviceNodes.id, input.terminalId))
+            .where(eq(posTerminals.id, input.terminalId))
             .returning();
           if (!t)
             throw new TRPCError({
@@ -911,19 +910,19 @@ export const managementRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
           const terminals = await db
             .select()
-            .from(serviceNodes)
-            .where(eq(serviceNodes.groupId, input.groupId))
+            .from(posTerminals)
+            .where(eq(posTerminals.groupId, input.groupId))
             .limit(100);
           let dispatched = 0;
           for (const t of terminals) {
             await db
-              .update(serviceNodes)
+              .update(posTerminals)
               .set({
                 lastCommand: input.command,
                 lastCommandAt: new Date(),
                 updatedAt: new Date(),
               })
-              .where(eq(serviceNodes.id, t.id));
+              .where(eq(posTerminals.id, t.id));
             dispatched++;
           }
           return { dispatched, command: input.command, groupId: input.groupId };
@@ -1030,12 +1029,12 @@ export const managementRouter = router({
       if (!db) return { active: 0, inactive: 0, maintenance: 0, total: 0 };
       const [total] = await db
         .select({ c: count() })
-        .from(serviceNodes)
+        .from(posTerminals)
         .limit(100);
       const [active] = await db
         .select({ c: count() })
-        .from(serviceNodes)
-        .where(eq(serviceNodes.status, "active"))
+        .from(posTerminals)
+        .where(eq(posTerminals.status, "active"))
         .limit(100);
       return { total: total.c, active: active.c, inactive: 0, maintenance: 0 };
     }),

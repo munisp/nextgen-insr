@@ -992,12 +992,15 @@ export async function J20_PlatformHealthMonitoringWorkflow(input: J20_PlatformHe
   const downServices = healthResults.filter(r => r.status === "down");
   const degradedServices = healthResults.filter(r => r.status === "degraded");
 
-  await acts.recordSlaMetrics({
-    timestamp: new Date().toISOString(),
-    services: healthResults,
-    overallStatus: downServices.some(r => r.critical) ? "critical" :
-                   downServices.length > 0 || degradedServices.length > 0 ? "degraded" : "healthy",
-  });
+  for (const svc of healthResults) {
+    await acts.recordSlaMetrics({
+      serviceName: svc.service,
+      healthy: svc.status === "healthy",
+      latencyMs: svc.latencyMs,
+      slaThresholdMs: 1000,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   // Step 3: Emit health event
   await acts.emitInsuranceEvent({

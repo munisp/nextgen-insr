@@ -23,11 +23,11 @@ export default function SecurityDashboardPage() {
 
   const s = scan ?? {};
   const cards = [
-    { title: "Security Score", value: s.overallScore ? s.overallScore + "%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 3%", status: (Number(s.overallScore ?? 0) >= 90 ? "good" : "warning") as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
-    { title: "Open Vulnerabilities", value: s.openVulnerabilities ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 2", status: (Number(s.openVulnerabilities ?? 0) > 0 ? "critical" : "good") as const, href: "/security-audit-dashboard", accent: "var(--risk-critical)" },
-    { title: "DDoS Status", value: ddos?.status ?? "—", icon: Zap, trend: "flat" as const, trendValue: "monitoring", status: (ddos?.status === "clean" ? "good" : "warning") as const, href: "/security-audit-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Backup Status", value: backup?.status ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: backup?.lastBackup ? "recent" : "check", status: (backup?.status === "healthy" ? "good" : "warning") as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
-    { title: "File Integrity", value: integrity?.status ?? "—", icon: Lock, trend: "flat" as const, trendValue: "monitored", status: (integrity?.status === "clean" ? "good" : "critical") as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "Security Score", value: s.overallScore ? s.overallScore + "%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 3%", status: (Number(s.overallScore ?? 0) >= 90 ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "Open Vulnerabilities", value: s.openVulnerabilities ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 2", status: (Number(s.openVulnerabilities ?? 0) > 0 ? "critical" : "good") as "critical" | "good", href: "/security-audit-dashboard", accent: "var(--risk-critical)" },
+    { title: "DDoS Status", value: ddos?.status ?? "—", icon: Zap, trend: "flat" as const, trendValue: "monitoring", status: (ddos?.status === "clean" ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Backup Status", value: backup?.status ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: backup?.lastBackup ? "recent" : "check", status: (backup?.status === "healthy" ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "File Integrity", value: integrity?.status ?? "—", icon: Lock, trend: "flat" as const, trendValue: "monitored", status: (integrity?.status === "clean" ? "good" : "critical") as "good" | "critical", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
     { title: "Last Scan", value: s.lastScanAt ? new Date(s.lastScanAt).toLocaleDateString() : "—", icon: Clock, trend: "flat" as const, trendValue: "automated", status: "neutral" as const, href: "/security-audit-dashboard", accent: "var(--insurance-secondary)" },
   ];
 

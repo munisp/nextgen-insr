@@ -63,8 +63,8 @@ export default function AgentPortal() {
       agentId,
       page: txPage,
       limit: 15,
-      ...(txStatus !== "all" ? { status: txStatus as any } : {}),
-      ...(txType !== "all" ? { type: txType as any } : {}),
+      ...(txStatus !== "all" ? { status: txStatus } : {}),
+      ...(txType !== "all" ? { type: txType } : {}),
     },
     { enabled: agentId > 0, retry: false }
   );
@@ -156,7 +156,7 @@ export default function AgentPortal() {
   const wallet = {
     premiumReserve: dashData?.premiumReserve ?? agent?.premiumReserve ?? "0",
     commissionBalance:
-      (dashData as any)?.commissionBalance ?? agent?.commissionBalance ?? "0",
+      dashData?.commissionBalance ?? agent?.commissionBalance ?? "0",
     loyaltyPoints: dashData?.loyaltyPoints ?? agent?.loyaltyPoints ?? 0,
   };
 

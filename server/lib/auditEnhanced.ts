@@ -4,8 +4,7 @@ import { auditLog } from "../../drizzle/schema";
 import { logger } from '../_core/logger';
 
 interface AuditSnapshot {
-  agentId: number;
-  agentId: string;
+  agentId: number | string; // numeric FK or string agent code
   action: string;
   resource: string;
   resourceId?: string;

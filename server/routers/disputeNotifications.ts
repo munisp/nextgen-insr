@@ -172,7 +172,6 @@ export const disputeNotificationsRouter = router({
           disputeId: input.disputeId,
         });
       } catch (e) {
-        // @ts-expect-error auto-fix
         logger.warn("[DisputeNotifications]: " + e);
       }
       return {

@@ -62,7 +62,7 @@ const J15Schema = z.object({ treatyId: z.number().positive(), portfolioId: z.str
 const J16Schema = z.object({ customerId: z.number().positive(), action: z.enum(["view_policies", "download_certificate", "update_beneficiary", "check_claim_status"]), policyId: z.number().optional(), claimId: z.number().optional(), beneficiaryName: z.string().optional(), beneficiaryRelationship: z.string().optional(), idempotencyKey: z.string().optional() });
 const J17Schema = z.object({ corporateId: z.number().positive(), payments: z.array(z.object({ customerId: z.number(), policyId: z.number(), amount: z.number().positive(), reference: z.string() })).min(1), batchRef: z.string(), idempotencyKey: z.string().optional() });
 const J18Schema = z.object({ agentId: z.number().positive(), agentCode: z.string(), date: z.string().optional(), idempotencyKey: z.string().optional() });
-const J19Schema = z.object({ customerId: z.number().positive(), productId: z.number().positive(), sumInsured: z.number().positive(), premiumAmount: z.number().positive(), applicationData: z.record(z.unknown()).default({}), agentId: z.number().optional(), idempotencyKey: z.string().optional() });
+const J19Schema = z.object({ customerId: z.number().positive(), productId: z.number().positive(), sumInsured: z.number().positive(), premiumAmount: z.number().positive(), applicationData: z.record(z.string(), z.unknown()).default({}), agentId: z.number().optional(), idempotencyKey: z.string().optional() });
 const J20Schema = z.object({ services: z.array(z.string()).optional(), slaThresholdMs: z.number().optional(), idempotencyKey: z.string().optional() });
 
 // ── Helper: start a journey workflow ─────────────────────────────────────────
@@ -227,7 +227,7 @@ export const insuranceJourneyOrchestratorV2Router = router({
       journeyId: z.enum(["J01","J02","J03","J04","J05","J06","J07","J08","J09","J10","J11","J12","J13","J14","J15","J16","J17","J18","J19","J20"]),
       cronExpression: z.string().optional(),
       intervalMs: z.number().optional(),
-      inputTemplate: z.record(z.unknown()),
+      inputTemplate: z.record(z.string(), z.unknown()),
     }))
     .mutation(async ({ input, ctx }) => {
       const d = await getDb();
@@ -315,7 +315,7 @@ export const insuranceJourneyOrchestratorV2Router = router({
   trigger: protectedProcedure
     .input(z.object({
       journeyId: z.enum(["J01","J02","J03","J04","J05","J06","J07","J08","J09","J10","J11","J12","J13","J14","J15","J16","J17","J18","J19","J20"]),
-      input: z.record(z.unknown()),
+      input: z.record(z.string(), z.unknown()),
       idempotencyKey: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {

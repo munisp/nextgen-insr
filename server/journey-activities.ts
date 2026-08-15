@@ -138,7 +138,7 @@ export async function initiateKycVerification(input: {
 }
 
 export async function verifyKycWithNibss(input: {
-  kycId: number;
+  kycId?: number;
   customerId: number;
   nin?: string;
   bvn?: string;
@@ -153,11 +153,13 @@ export async function verifyKycWithNibss(input: {
   const verified = !!(hasValidNin || hasValidBvn);
   const score = verified ? 85 : 0;
 
-  await d.update(kycVerifications).set({
-    status: verified ? "verified" : "failed",
-    verificationScore: String(score),
-    verifiedAt: verified ? new Date() : null,
-  }).where(eq(kycVerifications.id, input.kycId));
+  if (input.kycId != null) {
+    await d.update(kycVerifications).set({
+      status: verified ? "verified" : "failed",
+      verificationScore: String(score),
+      verifiedAt: verified ? new Date() : null,
+    }).where(eq(kycVerifications.id, input.kycId));
+  }
 
   if (verified) {
     await d.update(customers).set({ status: "active", updatedAt: new Date() }).where(eq(customers.id, input.customerId));

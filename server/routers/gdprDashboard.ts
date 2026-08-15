@@ -15,7 +15,7 @@
 
 import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
-import { db } from "../db";
+import { getDb } from "../db";
 import { sql, eq, and, gte } from "drizzle-orm";
 import { customers, auditLog, kycVerifications, policies, transactions } from "../../drizzle/schema";
 import { writeAuditLog } from "../lib/auditLogger";
@@ -24,24 +24,25 @@ export const gdprDashboardRouter = router({
 
   // ── GDPR Dashboard Overview ───────────────────────────────────────────────
   getDashboard: protectedProcedure.query(async ({ ctx }) => {
-    const [totalCustomers] = await db.execute(
+    const db = (await getDb())!;
+    const [totalCustomers] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM customers`
-    );
-    const [consentedCustomers] = await db.execute(
+    )).rows;
+    const [consentedCustomers] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM customers WHERE consent_given = true`
-    );
-    const [dsarRequests] = await db.execute(
+    )).rows;
+    const [dsarRequests] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DSAR_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    );
-    const [erasureRequests] = await db.execute(
+    )).rows;
+    const [erasureRequests] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'ERASURE_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    );
-    const [dataBreaches] = await db.execute(
+    )).rows;
+    const [dataBreaches] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_BREACH_REPORTED' AND created_at > NOW() - INTERVAL '1 year'`
-    );
-    const [portabilityRequests] = await db.execute(
+    )).rows;
+    const [portabilityRequests] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_PORTABILITY_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    );
+    )).rows;
 
     return {
       regulation: ["GDPR 2016/679", "NDPR 2019"],
@@ -82,13 +83,15 @@ export const gdprDashboardRouter = router({
       reason: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
       await writeAuditLog({
-        userId: ctx.user.id,
+        agentId: ctx.user.id,
         action: "DSAR_REQUEST",
         resource: "customer",
         resourceId: String(input.customerId),
-        details: { requestType: input.requestType, reason: input.reason },
-        ipAddress: ctx.ip,
+        status: "success",
+        metadata: { requestType: input.requestType, reason: input.reason },
+        ipAddress: ctx.req.ip,
       });
 
       return {
@@ -106,6 +109,7 @@ export const gdprDashboardRouter = router({
   exportCustomerData: protectedProcedure
     .input(z.object({ customerId: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
       // Fetch all personal data for the customer
       const [customer] = await db.select().from(customers)
         .where(eq(customers.id, input.customerId));
@@ -121,15 +125,16 @@ export const gdprDashboardRouter = router({
         .where(eq(policies.customerId, input.customerId));
 
       const customerTransactions = await db.select().from(transactions)
-        .where(eq(transactions.customerId, input.customerId));
+        .where(eq(transactions.customerPhone, customer.phone));
 
       await writeAuditLog({
-        userId: ctx.user.id,
+        agentId: ctx.user.id,
         action: "DATA_PORTABILITY_REQUEST",
         resource: "customer",
         resourceId: String(input.customerId),
-        details: { exportedAt: new Date().toISOString() },
-        ipAddress: ctx.ip,
+        status: "success",
+        metadata: { exportedAt: new Date().toISOString() },
+        ipAddress: ctx.req.ip,
       });
 
       return {
@@ -140,7 +145,7 @@ export const gdprDashboardRouter = router({
         data: {
           personal: {
             id: customer.id,
-            name: customer.name,
+            name: [customer.firstName, customer.lastName].filter(Boolean).join(" "),
             email: customer.email,
             phone: customer.phone,
             address: customer.address,
@@ -155,7 +160,7 @@ export const gdprDashboardRouter = router({
           } : null,
           policies: customerPolicies.map(p => ({
             id: p.id,
-            type: p.policyType,
+            type: p.coverageType,
             status: p.status,
             startDate: p.startDate,
             endDate: p.endDate,
@@ -180,6 +185,7 @@ export const gdprDashboardRouter = router({
       retainForLegal: z.boolean().default(true), // Retain anonymized data for regulatory compliance
     }))
     .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
       // Anonymize rather than delete (required for regulatory compliance)
       // NAICOM requires 7-year retention of insurance records
       if (input.retainForLegal) {
@@ -199,12 +205,13 @@ export const gdprDashboardRouter = router({
       }
 
       await writeAuditLog({
-        userId: ctx.user.id,
+        agentId: ctx.user.id,
         action: "ERASURE_REQUEST",
         resource: "customer",
         resourceId: String(input.customerId),
-        details: { reason: input.reason, anonymized: input.retainForLegal },
-        ipAddress: ctx.ip,
+        status: "success",
+        metadata: { reason: input.reason, anonymized: input.retainForLegal },
+        ipAddress: ctx.req.ip,
       });
 
       return {
@@ -230,23 +237,25 @@ export const gdprDashboardRouter = router({
       description: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
       const breachId = `BREACH-${Date.now()}`;
       const discoveredAt = new Date(input.discoveredAt);
       const reportDeadline = new Date(discoveredAt.getTime() + 72 * 60 * 60 * 1000);
 
       await writeAuditLog({
-        userId: ctx.user.id,
+        agentId: ctx.user.id,
         action: "DATA_BREACH_REPORTED",
         resource: "platform",
         resourceId: breachId,
-        details: {
+        status: "success",
+        metadata: {
           breachType: input.breachType,
           affectedRecords: input.affectedRecords,
           dataCategories: input.dataCategories,
           discoveredAt: input.discoveredAt,
           description: input.description,
         },
-        ipAddress: ctx.ip,
+        ipAddress: ctx.req.ip,
       });
 
       return {
@@ -266,12 +275,13 @@ export const gdprDashboardRouter = router({
 
   // ── NDPR Compliance Status ────────────────────────────────────────────────
   getNdprStatus: protectedProcedure.query(async ({ ctx }) => {
-    const [consentCount] = await db.execute(
+    const db = (await getDb())!;
+    const [consentCount] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM customers WHERE consent_given = true`
-    );
-    const [breachCount] = await db.execute(
+    )).rows;
+    const [breachCount] = (await db.execute(
       sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_BREACH_REPORTED' AND created_at > NOW() - INTERVAL '1 year'`
-    );
+    )).rows;
 
     return {
       regulation: "NDPR 2019",
@@ -301,6 +311,7 @@ export const gdprDashboardRouter = router({
       consentPurposes: z.array(z.string()),
     }))
     .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
       await db.execute(sql`
         UPDATE customers SET
           consent_given = ${input.consentGiven},
@@ -309,12 +320,13 @@ export const gdprDashboardRouter = router({
       `);
 
       await writeAuditLog({
-        userId: ctx.user.id,
+        agentId: ctx.user.id,
         action: input.consentGiven ? "CONSENT_GIVEN" : "CONSENT_WITHDRAWN",
         resource: "customer",
         resourceId: String(input.customerId),
-        details: { purposes: input.consentPurposes },
-        ipAddress: ctx.ip,
+        status: "success",
+        metadata: { purposes: input.consentPurposes },
+        ipAddress: ctx.req.ip,
       });
 
       return { success: true, customerId: input.customerId, consentGiven: input.consentGiven };

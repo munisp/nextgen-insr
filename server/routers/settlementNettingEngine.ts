@@ -222,7 +222,6 @@ export const settlementNettingEngineRouter = router({
           .set({ status: "settled", settledAt: new Date() } as any)
           .where(eq(merchantSettlements.id, numId));
       } catch (e) {
-        // @ts-expect-error middleware type mismatch
         logger.warn("[NettingEngine]: " + e);
       }
       try {

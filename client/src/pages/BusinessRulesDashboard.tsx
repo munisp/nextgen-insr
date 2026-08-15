@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
+import { useIsMobile } from "@/hooks/useMobile";
 
 export default function BusinessRulesDashboard() {
   const [activeTab, setActiveTab] = useState<
@@ -25,6 +26,10 @@ export default function BusinessRulesDashboard() {
   const rewardsQ = trpc.businessRules.rewardCatalog.useQuery(undefined, {
     retry: false,
   });
+  const statsQ = trpc.businessRules.getStats.useQuery(undefined, {
+    retry: false,
+  });
+  const isMobile = useIsMobile();
 
   const tabs = [
     { id: "limits" as const, label: "CBN Limits" },
@@ -33,6 +38,22 @@ export default function BusinessRulesDashboard() {
     { id: "rewards" as const, label: "Rewards" },
   ];
 
+  const data:
+    | {
+        premiumRules?: number;
+        claimsRules?: number;
+        uwRules?: number;
+        complianceRules?: number;
+        activeRules?: number;
+        inactiveRules?: number;
+        draftRules?: number;
+      }
+    | undefined = statsQ.data
+    ? {
+        activeRules: statsQ.data.activeRules,
+        inactiveRules: statsQ.data.disabledRules,
+      }
+    : undefined;
   const rulesCats = [{ name: 'Premium', value: Number(data?.premiumRules??0) }, { name: 'Claims', value: Number(data?.claimsRules??0) }, { name: 'Underwriting', value: Number(data?.uwRules??0) }, { name: 'Compliance', value: Number(data?.complianceRules??0) }].filter(d=>d.value>0);
   const rulesStatus = [{ name: 'Active', value: Number(data?.activeRules??0) }, { name: 'Inactive', value: Number(data?.inactiveRules??0) }, { name: 'Draft', value: Number(data?.draftRules??0) }].filter(d=>d.value>0);
 

@@ -4,6 +4,7 @@
  * These run inside the Temporal sandbox (no direct I/O).
  * All I/O is delegated to activities.
  */
+import * as journeyActivities from "./journey-activities";
 import {
   proxyActivities,
   defineSignal,

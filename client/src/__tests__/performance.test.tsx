@@ -14,6 +14,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 // ── Mock Web Vitals ──────────────────────────────────────────────────────────
+import { Suspense } from "react";
 vi.mock("web-vitals", () => ({
   getLCP: vi.fn(() => Promise.resolve({ value: 2500 })),
   getFID: vi.fn(() => Promise.resolve({ value: 120 })),
@@ -24,7 +25,7 @@ vi.mock("web-vitals", () => ({
 describe("Performance: Core Web Vitals", () => {
   it("should have LCP under 2.5 seconds", async () => {
     const lcp = await import("web-vitals").then((m) =>
-      m.getLCP().then((r) => r.value)
+      (m.getLCP as unknown as () => Promise<{ value: number }>)().then((r) => r.value)
     );
 
     // LCP should be under 2500ms for good performance
@@ -33,7 +34,7 @@ describe("Performance: Core Web Vitals", () => {
 
   it("should have FID under 100ms", async () => {
     const fid = await import("web-vitals").then((m) =>
-      m.getFID().then((r) => r.value)
+      (m.getFID as unknown as () => Promise<{ value: number }>)().then((r) => r.value)
     );
 
     // FID should be under 100ms for good performance
@@ -42,7 +43,7 @@ describe("Performance: Core Web Vitals", () => {
 
   it("should have CLS under 0.1", async () => {
     const cls = await import("web-vitals").then((m) =>
-      m.getCLS().then((r) => r.value)
+      (m.getCLS as unknown as () => Promise<{ value: number }>)().then((r) => r.value)
     );
 
     // CLS should be under 0.1 for good performance
@@ -161,7 +162,7 @@ describe("Performance: Resource Hints", () => {
     render(
       <>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://api.example.com" />
       </>
     );
@@ -176,7 +177,7 @@ describe("Performance: Resource Hints", () => {
   it("should have preload for critical resources", () => {
     render(
       <>
-        <link rel="preload" href="/critical-font.woff2" as="font" type="font/woff2" crossOrigin />
+        <link rel="preload" href="/critical-font.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/hero-image.jpg" as="image" />
       </>
     );

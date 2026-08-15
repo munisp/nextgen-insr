@@ -669,9 +669,10 @@ export async function J27_EmbeddedInsuranceWorkflow(input: J27Input): Promise<{
   currentStep = "fraud_check";
   await ext.callRustFraudGate({
     amount: input.premiumAmount,
-    customerId: 0,
+    userId: 0, // J27 is partner-referenced; no numeric customer id at this step
     transactionType: "embedded_premium",
-    reference: input.paymentRef,
+    recipient: input.customerRef,
+    traceId: input.paymentRef,
   });
 
   // Step 3: TigerBeetle premium collection

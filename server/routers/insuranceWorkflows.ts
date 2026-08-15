@@ -64,10 +64,10 @@ async function emitAuditLog(
   try {
     await db.insert(auditLog).values({
       action,
-      entityType,
-      entityId: String(entityId),
-      userId: userId ?? null,
-      details: JSON.stringify(details),
+      resource: entityType,
+      resourceId: String(entityId),
+      agentId: userId ?? null,
+      metadata: { ...details, userId: userId ?? null },
       createdAt: new Date(),
     });
   } catch {
@@ -109,7 +109,7 @@ export const insuranceWorkflowsRouter = router({
       customerId: z.number(),
       coverageAmount: z.number(),
       startDate: z.string(),
-      additionalData: z.record(z.unknown()).optional(),
+      additionalData: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -122,7 +122,7 @@ export const insuranceWorkflowsRouter = router({
       const p = product[0];
       const basePremium = Number(p.minPremium ?? 0);
       // Actuarial risk factor: coverage loading + age loading
-      const maxCoverage = Number(p.maxCoverage ?? input.coverageAmount);
+      const maxCoverage = Number(p.maxCoverageAmount ?? input.coverageAmount);
       const coverageRatio = maxCoverage > 0 ? Math.min(input.coverageAmount / maxCoverage, 1.0) : 1.0;
       const coverageLoading = coverageRatio * 0.15; // up to 15% for max coverage
       const ageLoading = (input.additionalData?.age && typeof input.additionalData.age === 'number')
@@ -204,12 +204,12 @@ export const insuranceWorkflowsRouter = router({
         eventType: "policy.bound",
         fromStatus: "quoted",
         toStatus: "bound",
-        triggeredBy: ctx.session?.userId ?? undefined,
+        triggeredBy: ctx.user?.id ?? undefined,
         payload: { quoteRef: input.quoteRef },
       });
 
       await emitFluvioEvent(db, "policy-events", { eventType: "policy.bound", policyId: policy.id, policyNumber });
-      await emitAuditLog(db, "POLICY_BOUND", "policy", policy.id, ctx.session?.userId, { policyNumber });
+      await emitAuditLog(db, "POLICY_BOUND", "policy", policy.id, ctx.user?.id, { policyNumber });
 
       return { policy, policyNumber };
     }),
@@ -307,12 +307,12 @@ export const insuranceWorkflowsRouter = router({
         claimId: claim.id,
         eventType: "claim.submitted",
         toStatus: "submitted",
-        triggeredBy: ctx.session?.userId ?? undefined,
+        triggeredBy: ctx.user?.id ?? undefined,
         payload: { claimNumber },
       });
 
       await emitFluvioEvent(db, "claims-events", { eventType: "claim.submitted", claimId: claim.id, claimNumber });
-      await emitAuditLog(db, "CLAIM_FILED", "claim", claim.id, ctx.session?.userId, { claimNumber });
+      await emitAuditLog(db, "CLAIM_FILED", "claim", claim.id, ctx.user?.id, { claimNumber });
 
       return { claim, claimNumber };
     }),
@@ -368,7 +368,7 @@ export const insuranceWorkflowsRouter = router({
         eventType: "policy.cancelled",
         fromStatus: "active",
         toStatus: "cancelled",
-        triggeredBy: ctx.session?.userId ?? undefined,
+        triggeredBy: ctx.user?.id ?? undefined,
         payload: { reason: input.reason },
       });
 
@@ -398,7 +398,7 @@ export const insuranceWorkflowsRouter = router({
 
       const brokerCode = `BRK-${Date.now()}`;
       const [broker] = await db.insert(brokers).values({
-        userId: ctx.session?.userId ?? undefined,
+        userId: ctx.user?.id ?? undefined,
         brokerCode,
         companyName: input.companyName,
         licenseNumber: input.licenseNumber,
@@ -413,7 +413,7 @@ export const insuranceWorkflowsRouter = router({
         updatedAt: new Date(),
       }).returning();
 
-      await emitAuditLog(db, "BROKER_REGISTERED", "broker", broker.id, ctx.session?.userId, { brokerCode });
+      await emitAuditLog(db, "BROKER_REGISTERED", "broker", broker.id, ctx.user?.id, { brokerCode });
       return { broker, brokerCode };
     }),
 
@@ -463,7 +463,7 @@ export const insuranceWorkflowsRouter = router({
 
       const [assessment] = await db.insert(underwritingAssessments).values({
         policyId: input.policyId,
-        underwriterId: ctx.session?.userId ?? undefined,
+        underwriterId: ctx.user?.id ?? undefined,
         decision: input.decision,
         riskScore: String(input.riskScore),
         riskCategory: input.riskCategory,
@@ -492,7 +492,7 @@ export const insuranceWorkflowsRouter = router({
         riskScore: input.riskScore,
       });
 
-      await emitAuditLog(db, "UNDERWRITING_DECISION", "underwriting_assessment", assessment.id, ctx.session?.userId, {
+      await emitAuditLog(db, "UNDERWRITING_DECISION", "underwriting_assessment", assessment.id, ctx.user?.id, {
         policyId: input.policyId, decision: input.decision,
       });
 
@@ -545,7 +545,7 @@ export const insuranceWorkflowsRouter = router({
         eventType: "claim.assigned",
         fromStatus: "submitted",
         toStatus: "under_review",
-        triggeredBy: ctx.session?.userId ?? undefined,
+        triggeredBy: ctx.user?.id ?? undefined,
         payload: { adjusterId: input.adjusterId },
       });
 
@@ -583,7 +583,7 @@ export const insuranceWorkflowsRouter = router({
         claimId: input.claimId,
         eventType: `claim.${input.decision}`,
         toStatus: statusMap[input.decision] as any,
-        triggeredBy: ctx.session?.userId ?? undefined,
+        triggeredBy: ctx.user?.id ?? undefined,
         payload: { approvedAmount: input.approvedAmount, rejectionReason: input.rejectionReason },
       });
 
@@ -656,7 +656,7 @@ export const insuranceWorkflowsRouter = router({
           status: "processed",
           tbTransferId: tbResult?.id ?? null,
           processedAt: new Date(),
-          approvedBy: ctx.session?.userId ?? null,
+          approvedBy: ctx.user?.id ?? null,
         }).returning();
 
         // Update claim to paid
@@ -675,7 +675,7 @@ export const insuranceWorkflowsRouter = router({
           tigerBeetleRef: tbResult?.id,
         });
 
-        await emitAuditLog(db, "CLAIM_SETTLED", "claim", input.claimId, ctx.session?.userId, {
+        await emitAuditLog(db, "CLAIM_SETTLED", "claim", input.claimId, ctx.user?.id, {
           amount: input.amount, paymentRef: payRef, tbTransferId: tbResult?.id ?? null,
         });
 
@@ -719,11 +719,11 @@ export const insuranceWorkflowsRouter = router({
         netReserve: String(netReserve),
         methodology: input.methodology ?? "chain_ladder",
         reportingPeriod: input.reportingPeriod,
-        calculatedBy: ctx.session?.userId ?? undefined,
+        calculatedBy: ctx.user?.id ?? undefined,
         createdAt: new Date(),
       }).returning();
 
-      await emitAuditLog(db, "RESERVES_COMPUTED", "actuarial_reserve", reserve.id, ctx.session?.userId, {
+      await emitAuditLog(db, "RESERVES_COMPUTED", "actuarial_reserve", reserve.id, ctx.user?.id, {
         reserveType: input.reserveType, grossReserve, netReserve,
       });
 
@@ -757,7 +757,7 @@ export const insuranceWorkflowsRouter = router({
         lrc: String(lrc),
         lrc_remaining: String(lrc * 0.9),
         calculatedAt: new Date(),
-        calculatedBy: ctx.session?.userId ?? undefined,
+        calculatedBy: ctx.user?.id ?? undefined,
         createdAt: new Date(),
       }).returning();
 
@@ -774,7 +774,7 @@ export const insuranceWorkflowsRouter = router({
       reportType: z.string(),
       reportingPeriod: z.string(),
       dueDate: z.string(),
-      reportData: z.record(z.unknown()),
+      reportData: z.record(z.string(), z.unknown()),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -786,13 +786,13 @@ export const insuranceWorkflowsRouter = router({
         submissionDate: new Date(),
         status: "submitted",
         reportData: input.reportData,
-        submittedBy: ctx.session?.userId ?? undefined,
+        submittedBy: ctx.user?.id ?? undefined,
         dueDate: new Date(input.dueDate),
         createdAt: new Date(),
         updatedAt: new Date(),
       }).returning();
 
-      await emitAuditLog(db, "NAICOM_REPORT_SUBMITTED", "naicom_report", report.id, ctx.session?.userId, {
+      await emitAuditLog(db, "NAICOM_REPORT_SUBMITTED", "naicom_report", report.id, ctx.user?.id, {
         reportType: input.reportType, reportingPeriod: input.reportingPeriod,
       });
 
@@ -848,7 +848,7 @@ export const insuranceWorkflowsRouter = router({
         updatedAt: new Date(),
       }).returning();
 
-      await emitAuditLog(db, "TREATY_CREATED", "reinsurance_treaty", treaty.id, ctx.session?.userId, { treatyNumber });
+      await emitAuditLog(db, "TREATY_CREATED", "reinsurance_treaty", treaty.id, ctx.user?.id, { treatyNumber });
       return { treaty, treatyNumber };
     }),
 
@@ -930,7 +930,7 @@ export const insuranceWorkflowsRouter = router({
         updatedAt: new Date(),
       }).returning();
 
-      await emitAuditLog(db, "PRODUCT_CREATED", "insurance_product", product.id, ctx.session?.userId, {
+      await emitAuditLog(db, "PRODUCT_CREATED", "insurance_product", product.id, ctx.user?.id, {
         productCode: input.productCode, name: input.name,
       });
 
@@ -984,7 +984,7 @@ export const insuranceWorkflowsRouter = router({
       description: z.string(),
       premiumAdjustment: z.number().optional(),
       sumInsuredAdjustment: z.number().optional(),
-      changesDetail: z.record(z.unknown()).optional(),
+      changesDetail: z.record(z.string(), z.unknown()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();

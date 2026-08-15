@@ -294,24 +294,36 @@ export const businessRulesRouter = router({
     ];
   }),
 
-  commissionRates: protectedProcedure.query(async () => {
+  commissionRates: protectedProcedure.query(
+    async (): Promise<
+      Array<{ type?: string; name?: string; rate?: number; percentage?: number; value?: number }>
+    > => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "Commission rates catalog is not implemented yet",
     });
-  }),
+    }
+  ),
 
-  kycTierLimits: protectedProcedure.query(async () => {
+  kycTierLimits: protectedProcedure.query(
+    async (): Promise<
+      Array<{ tier: string; dailyLimit: number; singleTxLimit: number; currency: string }>
+    > => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "KYC tier limits are not implemented yet",
     });
-  }),
+    }
+  ),
 
-  rewardCatalog: protectedProcedure.query(async () => {
+  rewardCatalog: protectedProcedure.query(
+    async (): Promise<
+      Array<{ name?: string; title?: string; points?: number; value?: number }>
+    > => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "Reward catalog is not implemented yet",
     });
-  }),
+    }
+  ),
 });

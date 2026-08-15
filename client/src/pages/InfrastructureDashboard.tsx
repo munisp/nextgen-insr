@@ -25,14 +25,14 @@ export default function InfrastructureDashboard() {
   const n = network ?? {};
 
   const cards = [
-    { title: "Platform Health", value: h.overallStatus ?? "—", icon: Shield, trend: "flat" as const, trendValue: "all services", status: (h.overallStatus === "healthy" ? "good" : "warning") as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
-    { title: "CPU Usage (%)", value: m.cpuPercent ? Number(m.cpuPercent).toFixed(1) + "%" : "—", icon: Zap, trend: "flat" as const, trendValue: "avg", status: (Number(m.cpuPercent ?? 0) > 80 ? "critical" : "good") as const, href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Memory Usage (%)", value: m.memPercent ? Number(m.memPercent).toFixed(1) + "%" : "—", icon: Database, trend: "flat" as const, trendValue: "used", status: (Number(m.memPercent ?? 0) > 85 ? "critical" : "good") as const, href: "/system-health-dashboard", accent: "var(--insurance-secondary)" },
+    { title: "Platform Health", value: h.overallStatus ?? "—", icon: Shield, trend: "flat" as const, trendValue: "all services", status: (h.overallStatus === "healthy" ? "good" : "warning") as "good" | "warning", href: "/system-health-dashboard", accent: "var(--risk-low)" },
+    { title: "CPU Usage (%)", value: m.cpuPercent ? Number(m.cpuPercent).toFixed(1) + "%" : "—", icon: Zap, trend: "flat" as const, trendValue: "avg", status: (Number(m.cpuPercent ?? 0) > 80 ? "critical" : "good") as "critical" | "good", href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Memory Usage (%)", value: m.memPercent ? Number(m.memPercent).toFixed(1) + "%" : "—", icon: Database, trend: "flat" as const, trendValue: "used", status: (Number(m.memPercent ?? 0) > 85 ? "critical" : "good") as "critical" | "good", href: "/system-health-dashboard", accent: "var(--insurance-secondary)" },
     { title: "DB Connections", value: m.dbConnections ?? "—", icon: Server, trend: "flat" as const, trendValue: "active", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
     { title: "Network Latency (ms)", value: n.avgLatencyMs ?? "—", icon: Activity, trend: "down" as const, trendValue: "↓ 2ms", status: "good" as const, href: "/network-status-dashboard", accent: "var(--risk-low)" },
     { title: "Uptime (%)", value: h.uptime ? Number(h.uptime).toFixed(3) + "%" : "—", icon: TrendingUp, trend: "flat" as const, trendValue: "SLA", status: "good" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
     { title: "Services Healthy", value: h.healthyCount ? `${h.healthyCount}/${h.totalServices ?? h.healthyCount}` : "—", icon: CheckCircle, trend: "flat" as const, trendValue: "online", status: "good" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
-    { title: "Alerts Open", value: h.openAlerts ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "active", status: (Number(h.openAlerts ?? 0) > 0 ? "warning" : "good") as const, href: "/system-health-dashboard", accent: "var(--risk-medium)" },
+    { title: "Alerts Open", value: h.openAlerts ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "active", status: (Number(h.openAlerts ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/system-health-dashboard", accent: "var(--risk-medium)" },
   ];
 
   const resourceUsage = [

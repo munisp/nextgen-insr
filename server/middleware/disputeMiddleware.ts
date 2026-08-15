@@ -41,8 +41,7 @@ export async function publishDisputeEvent(params: {
     | "refund.rejected";
   disputeId?: number;
   refundId?: number;
-  agentId?: number;
-  agentId?: string;
+  agentId?: number | string; // numeric FK or string agent code
   amount?: number;
   transactionRef?: string;
   metadata?: Record<string, unknown>;
