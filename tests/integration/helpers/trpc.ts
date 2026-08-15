@@ -25,6 +25,9 @@ import { agentFloatTransferRouter } from "../../../server/routers/agentFloatTran
 import { transactionsRouter } from "../../../server/routers/transactions";
 import { insuranceWorkflowsRouter } from "../../../server/routers/insuranceWorkflows";
 import { agentRouter } from "../../../server/routers/agent";
+import { multiTenantIsolationRouter } from "../../../server/routers/multiTenantIsolation";
+import { pinResetRouter } from "../../../server/routers/pinReset";
+import { tenantAdminRouter } from "../../../server/routers/tenantAdmin";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -40,6 +43,9 @@ export const integrationRouter = router({
   amlScreening: amlScreeningRouter,
   insuranceWorkflows: insuranceWorkflowsRouter,
   agent: agentRouter,
+  multiTenantIsolation: multiTenantIsolationRouter,
+  pinReset: pinResetRouter,
+  tenantAdmin: tenantAdminRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

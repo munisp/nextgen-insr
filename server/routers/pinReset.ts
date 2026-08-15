@@ -19,6 +19,11 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { sendSms } from "../termii";
 import crypto from "crypto";
 const OTP_EXPIRY_MINUTES = 10;
+// SECURITY (THREAT_MODEL.md §7.6): online brute-force guard for the 6-digit
+// OTP. After MAX_OTP_ATTEMPTS failed verifications the token is locked
+// (fail-closed: even the correct OTP is then rejected) and the agent must
+// request a fresh code, which resets the counter.
+export const MAX_OTP_ATTEMPTS = 5;
 // SECURITY: Use crypto.randomInt for cryptographically secure OTP generation
 function generateOtp(): string {
   // Generates a 6-digit OTP using CSPRNG (crypto.randomInt is uniform in [100000, 999999])
@@ -50,7 +55,7 @@ export const pinResetRouter = router({
         const agentRows = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentCode))
           .limit(1);
 
         if (agentRows.length === 0) {
@@ -147,7 +152,7 @@ export const pinResetRouter = router({
         const agentRows = await db
           .select()
           .from(agents)
-          .where(eq(agents.agentCode, input.agentCode))
+          .where(eq(agents.agentId, input.agentCode))
           .limit(1);
 
         if (agentRows.length === 0) {
@@ -181,16 +186,38 @@ export const pinResetRouter = router({
 
         const token = tokenRows[0];
 
+        // Attempt lockout: a locked token rejects EVERY further verification,
+        // including the correct OTP — the agent must request a new code.
+        if ((token.attempts ?? 0) >= MAX_OTP_ATTEMPTS) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Too many incorrect attempts. This code is locked — please request a new OTP.",
+          });
+        }
+
         // Verify OTP
         const valid = await bcrypt.compare(input.otp, token.hashedOtp);
         if (!valid) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid OTP" });
+          const attempts = (token.attempts ?? 0) + 1;
+          await db
+            .update(otpTokens)
+            .set({ attempts })
+            .where(eq(otpTokens.id, token.id));
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              attempts >= MAX_OTP_ATTEMPTS
+                ? "Too many incorrect attempts. This code is locked — please request a new OTP."
+                : "Invalid OTP",
+          });
         }
 
-        // Mark token as used
+        // Mark token as used (a successful verification consumes the code and
+        // ends the attempt lifecycle; a new requestOtp starts a fresh counter)
         await db
           .update(otpTokens)
-          .set({ used: true })
+          .set({ used: true, usedAt: new Date() })
           .where(eq(otpTokens.id, token.id));
 
         // Hash and update PIN

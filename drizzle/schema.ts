@@ -616,6 +616,10 @@ export const otpTokens = pgTable(
     hashedOtp: varchar("hashedOtp", { length: 128 }).notNull(),
     purpose: varchar("purpose", { length: 32 }).default("pin_reset").notNull(),
     expiresAt: timestamp("expiresAt").notNull(),
+    // SECURITY (THREAT_MODEL.md §7.6): failed-verification counter. The code
+    // locks after MAX_OTP_ATTEMPTS wrong guesses (see server/routers/pinReset.ts)
+    // so a 6-digit OTP cannot be brute-forced online.
+    attempts: integer("attempts").default(0).notNull(),
     // Legacy field used by routers
     used: boolean("used").default(false).notNull(),
     usedAt: timestamp("usedAt"),
