@@ -90,8 +90,8 @@ export const regulatoryComplianceChecksRouter = router({
           const [claimRow] = await database.select({ total: sql<number>`COALESCE(SUM(CAST("paidAmount" AS NUMERIC)), 0)` })
             .from(claims).where(gte(claims.createdAt, periodStart));
           const premiums = Number((premRow as any)?.total ?? 1);
-          const claims = Number((claimRow as any)?.total ?? 0);
-          const ratio = premiums > 0 ? (claims / premiums) * 100 : 0;
+          const claimsPaid = Number((claimRow as any)?.total ?? 0);
+          const ratio = premiums > 0 ? (claimsPaid / premiums) * 100 : 0;
           score = ratio <= 80 ? 100 : ratio <= 90 ? 70 : 40;
           status = score >= 100 ? "passed" : score >= 70 ? "warning" : "failed";
           details = `Claims ratio: ${ratio.toFixed(1)}% (NAICOM maximum: 80%)`;

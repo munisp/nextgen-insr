@@ -7,8 +7,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type { NodePgDatabase, NodePgQueryResultHKT, NodePgTransaction } from "drizzle-orm/node-postgres";
-import { eq, desc, and, isNull, lt, gt, type ExtractTablesWithRelations, type PgColumn, type ColumnBaseConfig, type ColumnDataType } from "drizzle-orm";
-import type { PgTable, PgTransaction, TableConfig } from "drizzle-orm/pg-core";
+import { eq, desc, and, isNull, lt, gt, type ExtractTablesWithRelations, type ColumnBaseConfig, type ColumnDataType } from "drizzle-orm";
+import type { PgTable, PgTransaction, TableConfig, PgColumn } from "drizzle-orm/pg-core";
 import { logger } from "./_core/logger";
 import {
   agents,
