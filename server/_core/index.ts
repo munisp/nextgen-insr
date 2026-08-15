@@ -15,12 +15,17 @@
 
 import "dotenv/config";
 import crypto from "crypto";
-import express from "express";
+import path from "path";
+import { pathToFileURL } from "url";
+import express, { type Express } from "express";
 import { loadVaultSecrets } from "../_core/vault";
-import { startTemporalWorker } from "../temporal-worker";
-import { tbSeedSystemAccounts } from "../tbClient";
-import { ensureFluvioTopics } from "../fluvio";
-import { createServer } from "http";
+// NOTE: ../temporal-worker, ../tbClient and ../fluvio are imported lazily
+// inside startServer()'s listen callback. They pull in heavyweight optional
+// infra clients (protobufjs-based Temporal codecs etc.) that are only needed
+// once the server is actually listening; keeping them out of the module graph
+// lets createApp() boot the real HTTP stack in test environments without
+// those sidecar dependencies.
+import { createServer, type Server } from "http";
 import net from "net";
 import helmet from "helmet";
 import compression from "compression";
@@ -97,7 +102,17 @@ function handleSecurityMiddlewareError(label: string, err: unknown): never | voi
 
 // ── Server bootstrap ──────────────────────────────────────────────────────────
 
-async function startServer() {
+/**
+ * createApp — builds the fully-middlewared Express app + HTTP server WITHOUT
+ * listening and WITHOUT starting background workers (crons, pool monitor,
+ * Temporal, Socket.IO side effects that require infra). This is the testable
+ * seam used by the HTTP E2E suite (tests/e2e), which boots the real app
+ * against a real database on an ephemeral port.
+ *
+ * Production behavior is unchanged: startServer() below calls createApp() and
+ * then performs the listen + background-worker registration exactly as before.
+ */
+export async function createApp(): Promise<{ app: Express; server: Server }> {
   // ── Vault secret injection (must run before any env-dependent code) ───────────
   // Falls back gracefully when Vault is unavailable (dev/test without Docker).
   await loadVaultSecrets().catch(err =>
@@ -114,20 +129,6 @@ async function startServer() {
   const shutdownMiddleware = setupGracefulShutdown(server);
   app.use(shutdownMiddleware);
   logger.info("[Shutdown] Graceful shutdown handler registered");
-
-  // ── Sprint 70: DB Pool Monitor ──────────────────────────────────────
-  startPoolMonitor(60000);
-  logger.info("[DBPool] Connection pool monitoring started");
-
-  // ── Sprint 70: Cron Jobs ──────────────────────────────────────────
-  cron.schedule("*/15 * * * *", runDisputeAutoEscalation); // Every 15 min
-  cron.schedule("0 6 * * *", runKycExpiryCheck); // Daily at 6 AM
-
-  // SAR retry cron — every 15 minutes, retries pending NFIU submissions
-  startSarRetryCronSchedule();
-  logger.info(
-    "[Cron] Dispute auto-escalation (15min), KYC expiry check (daily 06:00) and SAR retry (15min) registered"
-  );
 
   // Trust reverse proxy (nginx, Cloudflare, etc.) for accurate IP detection
   app.set("trust proxy", 1);
@@ -478,7 +479,12 @@ async function startServer() {
   }
 
   // ── Socket.IO ────────────────────────────────────────────────────────────────
-  initSocketIO(server);
+  // Skipped under NODE_ENV=test: initSocketIO starts a permanent polling
+  // interval that would keep a short-lived test process alive, and the HTTP
+  // E2E suite exercises the request/response surface only.
+  if (process.env.NODE_ENV !== "test") {
+    initSocketIO(server);
+  }
 
   // ── tRPC API ─────────────────────────────────────────────────────────────────
   app.use(
@@ -783,11 +789,36 @@ async function startServer() {
   });
 
   // ── Frontend ──────────────────────────────────────────────────────────────
+  // Skipped entirely in test runs (NODE_ENV=test): the E2E suite only exercises
+  // the API surface and must not require a client build.
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
-  } else {
+  } else if (process.env.NODE_ENV !== "test") {
     serveStatic(app);
   }
+
+  return { app, server };
+}
+
+// ── Production entry point ──────────────────────────────────────────────────────
+// Registers background workers, binds the port and installs signal handlers.
+// Only invoked when this file is run directly (see the guard at the bottom).
+async function startServer() {
+  const { server } = await createApp();
+
+  // ── Sprint 70: DB Pool Monitor ──────────────────────────────────────
+  startPoolMonitor(60000);
+  logger.info("[DBPool] Connection pool monitoring started");
+
+  // ── Sprint 70: Cron Jobs ──────────────────────────────────────────
+  cron.schedule("*/15 * * * *", runDisputeAutoEscalation); // Every 15 min
+  cron.schedule("0 6 * * *", runKycExpiryCheck); // Daily at 6 AM
+
+  // SAR retry cron — every 15 minutes, retries pending NFIU submissions
+  startSarRetryCronSchedule();
+  logger.info(
+    "[Cron] Dispute auto-escalation (15min), KYC expiry check (daily 06:00) and SAR retry (15min) registered"
+  );
 
   // ── Start listening ───────────────────────────────────────────────────────────
   const preferredPort = parseInt(process.env.PORT || "3000");
@@ -809,19 +840,25 @@ async function startServer() {
     // Start archival cron worker (S60-3)
     startArchivalCronWorker();
     // Ensure Fluvio topics exist (idempotent)
-    ensureFluvioTopics().catch(err =>
-      logger.warn("[Fluvio] Topic creation failed:: " + (err as Error).message)
-    );
+    import("../fluvio")
+      .then(({ ensureFluvioTopics }) => ensureFluvioTopics())
+      .catch(err =>
+        logger.warn("[Fluvio] Topic creation failed:: " + (err as Error).message)
+      );
     // Seed TigerBeetle system accounts (idempotent — safe to call on every startup)
-    tbSeedSystemAccounts().catch(err =>
-      logger.warn("[TigerBeetle] System account seeding failed:: " + (err as Error).message)
-    );
+    import("../tbClient")
+      .then(({ tbSeedSystemAccounts }) => tbSeedSystemAccounts())
+      .catch(err =>
+        logger.warn("[TigerBeetle] System account seeding failed:: " + (err as Error).message)
+      );
     // Start Temporal worker for SettlementWorkflow, FloatReplenishmentWorkflow, etc.
     // Runs in-process; in production it can also be a separate Docker container.
-    startTemporalWorker().catch(err =>
-      logger.warn("[Temporal] Worker startup skipped (Temporal server not available):: " + (err as Error).message
-      )
-    );
+    import("../temporal-worker")
+      .then(({ startTemporalWorker }) => startTemporalWorker())
+      .catch(err =>
+        logger.warn("[Temporal] Worker startup skipped (Temporal server not available):: " + (err as Error).message
+        )
+      );
   });
 
   // ── Graceful shutdown ─────────────────────────────────────────────────────────
@@ -902,26 +939,40 @@ async function startServer() {
 }
 
 
-// ── Process-level error handlers (must be registered before startServer) ──────
-// These catch any unhandled promise rejections or synchronous throws that escape
-// the Express/tRPC error handlers. Without these, Node.js will crash silently.
-process.on("uncaughtException", (err: Error) => {
-  // Use console.error as logger may not be initialized yet
-  console.error("[FATAL] Uncaught exception — process will exit:", err);
-  // Give logger a chance to flush, then exit with non-zero code
-  setTimeout(() => process.exit(1), 500);
-});
+// ── Direct-run guard ───────────────────────────────────────────────────────────
+// Importing this module (e.g. from the HTTP E2E test harness, which calls
+// createApp() directly) must never bind a port, start background workers, or
+// install process-level handlers. Only the real entry point does that.
+// This holds for every supported launch mode:
+//   - tsx watch server/_core/index.ts   (dev)
+//   - node dist/index.js                (production esbuild bundle, ESM)
+//   - ts-node / tsx one-shot runs
+const isDirectRun =
+  typeof process.argv[1] === "string" &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
-process.on("unhandledRejection", (reason: unknown, promise: Promise<unknown>) => {
-  console.error("[FATAL] Unhandled promise rejection:", reason, "at:", promise);
-  // Do NOT exit — unhandled rejections in non-critical paths should not crash the server.
-  // Log and continue; critical paths use explicit try/catch.
-});
+if (isDirectRun) {
+  // ── Process-level error handlers (must be registered before startServer) ──────
+  // These catch any unhandled promise rejections or synchronous throws that escape
+  // the Express/tRPC error handlers. Without these, Node.js will crash silently.
+  process.on("uncaughtException", (err: Error) => {
+    // Use console.error as logger may not be initialized yet
+    console.error("[FATAL] Uncaught exception — process will exit:", err);
+    // Give logger a chance to flush, then exit with non-zero code
+    setTimeout(() => process.exit(1), 500);
+  });
 
-// A startup failure is FATAL: log and exit non-zero so the process supervisor
-// (Docker/Kubernetes/systemd) restarts or alerts instead of leaving a
-// half-initialised server running (e.g. missing security middleware).
-startServer().catch(err => {
-  console.error("[FATAL] Server startup failed:", err);
-  process.exit(1);
-});
+  process.on("unhandledRejection", (reason: unknown, promise: Promise<unknown>) => {
+    console.error("[FATAL] Unhandled promise rejection:", reason, "at:", promise);
+    // Do NOT exit — unhandled rejections in non-critical paths should not crash the server.
+    // Log and continue; critical paths use explicit try/catch.
+  });
+
+  // A startup failure is FATAL: log and exit non-zero so the process supervisor
+  // (Docker/Kubernetes/systemd) restarts or alerts instead of leaving a
+  // half-initialised server running (e.g. missing security middleware).
+  startServer().catch(err => {
+    console.error("[FATAL] Server startup failed:", err);
+    process.exit(1);
+  });
+}

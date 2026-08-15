@@ -61,3 +61,86 @@ jobs:
         run: pnpm test:integration
         env:
           POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/insurance_portal_test
+
+  e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: insurance_portal_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The e2e globalSetup applies the schema itself (drizzle-kit push
+      # --force) against POSTGRES_URL, so no separate push step is needed.
+
+      # HTTP end-to-end: boots the REAL express/tRPC server and drives raw
+      # HTTP through the full middleware chain against the postgres:16 and
+      # redis:7 services. No PGlite, no mini-Redis, no skips.
+      - name: Run HTTP E2E tests
+        run: pnpm test:e2e
+        env:
+          POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/insurance_portal_e2e
+          REDIS_URL: redis://localhost:6379
+
+  client:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Client page tests: real page components in happy-dom with the tRPC
+      # network client stubbed at the boundary.
+      - name: Run client page tests
+        run: pnpm test:client

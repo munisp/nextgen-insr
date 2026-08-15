@@ -23,9 +23,13 @@ const isTest = process.env.NODE_ENV === "test";
 // CRITICAL: DEV_AUTH_BYPASS must NEVER activate in production.
 // We explicitly block it when NODE_ENV !== "development" even if the
 // env var is set — this prevents accidental leaks from CI/staging.
+// The HTTP E2E suite sets DEV_AUTH_BYPASS=false explicitly so anonymous
+// requests exercise the real UNAUTHORIZED path even under NODE_ENV=test.
 const devBypassEnabled =
-  isTest ||
-  (isDev && process.env.DEV_AUTH_BYPASS === "true");
+  process.env.DEV_AUTH_BYPASS === "false"
+    ? false
+    : isTest ||
+      (isDev && process.env.DEV_AUTH_BYPASS === "true");
 
 if (
   !isDev &&

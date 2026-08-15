@@ -11,11 +11,12 @@
  *   import { triggerSettlement, getTemporalClient } from "./temporal";
  *   await triggerSettlement({ date: "2025-01-15" });
  */
-import {
-  Connection,
-  Client,
-  WorkflowExecutionAlreadyStartedError,
-} from "@temporalio/client";
+// Type-only import: erased at compile time. The runtime import is lazy
+// (inside getTemporalClient) because @temporalio/client's module graph can
+// fail to load where the Temporal/protobufjs dependency chain is unavailable
+// or incompatible — that must not take down every router importing this
+// module at import time. Callers already degrade gracefully on null.
+import type { Client } from "@temporalio/client";
 import logger from "./_core/logger";
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";
@@ -23,6 +24,10 @@ const TEMPORAL_NAMESPACE = process.env.TEMPORAL_NAMESPACE ?? "default";
 const SETTLEMENT_TASK_QUEUE = "settlement-queue";
 
 let _client: Client | null = null;
+// Captured when the SDK import succeeds so instanceof checks keep working.
+let WorkflowExecutionAlreadyStartedErrorRef:
+  | (new (...args: any[]) => Error)
+  | null = null;
 
 /**
  * Get (or create) the shared Temporal client.
@@ -32,6 +37,10 @@ export async function getTemporalClient(): Promise<Client | null> {
   if (_client) return _client;
 
   try {
+    const { Connection, Client, WorkflowExecutionAlreadyStartedError } =
+      await import("@temporalio/client");
+    WorkflowExecutionAlreadyStartedErrorRef =
+      WorkflowExecutionAlreadyStartedError;
     const connection = await Connection.connect({
       address: TEMPORAL_ADDRESS,
     });
@@ -92,7 +101,10 @@ export async function triggerSettlement(
     );
     return handle.firstExecutionRunId;
   } catch (err) {
-    if (err instanceof WorkflowExecutionAlreadyStartedError) {
+    if (
+      WorkflowExecutionAlreadyStartedErrorRef &&
+      err instanceof WorkflowExecutionAlreadyStartedErrorRef
+    ) {
       logger.warn(`[Temporal] Settlement for ${input.date} already running`);
       return null;
     }
