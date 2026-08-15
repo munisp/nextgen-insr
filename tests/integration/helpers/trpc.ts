@@ -21,10 +21,12 @@ import { txMonitorRouter } from "../../../server/routers/txMonitor";
 import { managementRouter } from "../../../server/routers/management";
 import { mlScoringServiceRouter } from "../../../server/routers/mlScoringService";
 import { amlScreeningRouter } from "../../../server/routers/amlScreening";
+import { agentFloatTransferRouter } from "../../../server/routers/agentFloatTransfer";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
   disputeRefund: disputeRefundRouter,
+  agentFloatTransfer: agentFloatTransferRouter,
   airtimeVending: airtimeVendingRouter,
   txMonitor: txMonitorRouter,
   management: managementRouter,
