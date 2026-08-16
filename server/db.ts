@@ -206,7 +206,7 @@ export function getDbStatus(): {
   poolIdle: number;
   verified: boolean;
   error: string | null;
-}> {
+} {
   return {
     connected: _dbVerified,
     poolSize: _pool ? _pool.options.max : 0,
