@@ -33,13 +33,13 @@ export const ussdReceiptRouter = router({
       const amount = Number(tx.amount);
       if (input.format === "sms") {
         return {
-          receipt: `InsurePortal Rcpt\nRef:${tx.reference}\nAmt:₦${amount.toLocaleString()}\nDate:${tx.createdAt?.toISOString().split("T")[0]}\nStatus:${tx.status}`,
+          receipt: `InsurePortal Rcpt\nRef:${tx.ref}\nAmt:₦${amount.toLocaleString()}\nDate:${tx.createdAt?.toISOString().split("T")[0]}\nStatus:${tx.status}`,
           charCount: 120,
           segments: 1,
         };
       }
       return {
-        receipt: `INSUREPORTAL RECEIPT\n${"=".repeat(30)}\nReference: ${tx.reference}\nAmount: ₦${amount.toLocaleString()}\nType: ${tx.type}\nStatus: ${tx.status}\nDate: ${tx.createdAt?.toISOString()}\n${"=".repeat(30)}`,
+        receipt: `INSUREPORTAL RECEIPT\n${"=".repeat(30)}\nReference: ${tx.ref}\nAmount: ₦${amount.toLocaleString()}\nType: ${tx.type}\nStatus: ${tx.status}\nDate: ${tx.createdAt?.toISOString()}\n${"=".repeat(30)}`,
         charCount: 200,
         segments: 2,
       };

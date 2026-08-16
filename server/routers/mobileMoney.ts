@@ -71,7 +71,7 @@ export const mobileMoneyRouter = router({
           customerPhone: input.customerPhone, customerName: input.customerName ?? null,
           // Never synchronous success: settlement is confirmed asynchronously
           // by the mobile-money provider.
-          channel: "Mobile Money", status: "pending", fraudScore: "0.00",
+          channel: "App", status: "pending", fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
           metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();
@@ -118,7 +118,7 @@ export const mobileMoneyRouter = router({
           customerPhone: input.customerPhone, customerName: input.customerName ?? null,
           // Never synchronous success: settlement is confirmed asynchronously
           // by the mobile-money provider.
-          channel: "Mobile Money", status: "pending", fraudScore: "0.00",
+          channel: "App", status: "pending", fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
           metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();

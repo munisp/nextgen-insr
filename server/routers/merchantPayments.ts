@@ -57,9 +57,9 @@ export const merchantPaymentsRouter = router({
         const [tx] = await db.insert(transactions).values({
           ref: input.reference, agentId: input.agentId, type: txType,
           amount: String(input.amountNGN), fee: String(mdrFee), commission: "0",
-          channel: input.paymentMethod, status: "success", fraudScore: "0.00", metadata: { category: "merchant_payment", merchantRef: input.reference },
+          channel: ({ card: "Card", transfer: "Internal", qr: "QR", ussd: "USSD" } as const)[input.paymentMethod], status: "success", fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { merchantId: input.merchantId, mdrFee, merchantAmount, description: input.description ?? null, tbTransferId: tbResult?.id ?? null },
+          metadata: { category: "merchant_payment", merchantRef: input.reference, merchantId: input.merchantId, mdrFee, merchantAmount, description: input.description ?? null, tbTransferId: tbResult?.id ?? null },
         }).returning();
         await db.insert(auditLog).values({ action: "MERCHANT_PAYMENT", resource: "merchant_payment", resourceId: input.reference, status: "success", metadata: { merchantId: input.merchantId, amountNGN: input.amountNGN } }).catch(() => {});
         logger.info(`[MerchantPayment] ₦${input.amountNGN} to merchant ${input.merchantId} | agent ${agent.agentId} | TB: ${tbResult?.id ?? "pending"}`);

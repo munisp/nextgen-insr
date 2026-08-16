@@ -171,7 +171,7 @@ export const floatManagementRouter = router({
           amount: String(input.amountNGN),
           fee: "0",
           commission: "0",
-          channel: input.source,
+          channel: ({ bank_transfer: "Internal", cash: "Cash", internal_transfer: "Internal" } as const)[input.source],
           status: "success",
           fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",

@@ -28,7 +28,7 @@ export const premiumTopUpRouter = router({
 
       // Idempotency
       const existing = await db.select().from(transactions)
-        .where(eq(transactions.reference, input.reference)).limit(1);
+        .where(eq(transactions.ref, input.reference)).limit(1);
       if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
 
       const [policy] = await db.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
@@ -74,14 +74,18 @@ export const premiumTopUpRouter = router({
           await db.update(policies).set({ status: "active", updatedAt: new Date() }).where(eq(policies.id, input.policyId));
         }
 
+        const txAgentId = input.agentId ?? policy.agentId;
+        if (txAgentId == null) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "agentId required: policy has no agent and none was provided" });
+        }
         const [tx] = await db.insert(transactions).values({
-          reference: input.reference,
-          agentId: input.agentId ?? null,
-          type: "Premium Payment",
+          ref: input.reference,
+          agentId: txAgentId,
+          type: "Insurance",
           amount: String(input.amountNGN),
           fee: "0",
           commission: "0",
-          channel: input.paymentMethod,
+          channel: ({ cash: "Cash", bank_transfer: "Internal", mobile_money: "App", card: "Card" } as const)[input.paymentMethod],
           status: "success",
           fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",

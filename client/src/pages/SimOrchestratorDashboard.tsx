@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
 const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
+import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 export default function SimOrchestratorDashboard() {
+  // No aggregate stats endpoint exists for these charts; render empty state.
+  const data: Record<string, number | undefined> | undefined = undefined;
+  const isMobile = useIsMobile();
   const [terminalId, setTerminalId] = useState("TERM-001");
   const [agentId, setAgentCode] = useState("AGT-001");
 

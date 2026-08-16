@@ -2337,9 +2337,6 @@ export const commissionPayouts = pgTable(
   "commission_payouts",
   {
     id: serial("id").primaryKey(),
-    agentId: integer("agent_id")
-      .notNull()
-      .references(() => agents.id),
     agentId: varchar("agent_code", { length: 32 }).notNull(),
     amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
     currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
@@ -2475,10 +2472,6 @@ export const agentOnboardingProgress = pgTable(
   "agent_onboarding_progress",
   {
     id: serial("id").primaryKey(),
-    agentId: integer("agent_id")
-      .notNull()
-      .references(() => agents.id)
-      .unique(),
     agentId: varchar("agent_code", { length: 32 }).notNull(),
     currentStep: onboardingStepEnum("current_step")
       .default("profile")
