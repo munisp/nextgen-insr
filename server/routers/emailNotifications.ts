@@ -196,7 +196,7 @@ export const emailNotificationsRouter = router({
       return { sent: false, queued: true, messageId: String(queued.id), provider };
     }),
   getDeliveryLog: protectedProcedure
-    .input(z.object({ limit: z.number().default(20) }).default({}))
+    .input(z.object({ limit: z.number().default(20) }).default({ limit: 20 }))
     .query(async ({ input }) => {
       const database = await getDb();
       if (!database) return { entries: [], total: 0 };

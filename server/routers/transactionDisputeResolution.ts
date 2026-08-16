@@ -162,7 +162,7 @@ export const transactionDisputeResolutionRouter = router({
         fileUrl: z.string().url().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
 
@@ -170,9 +170,10 @@ export const transactionDisputeResolutionRouter = router({
         .insert(disputeEvidence)
         .values({
           disputeId: input.disputeId,
-          evidenceType: input.type,
-          description: input.description,
+          fileKey: input.type,
+          fileName: input.description ?? input.type,
           fileUrl: input.fileUrl ?? "",
+          uploadedBy: ctx.user?.id != null ? String(ctx.user.id) : "system",
         })
         .returning();
 

@@ -37,8 +37,7 @@ export default function AgentLoanFacilityPage() {
 
   // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const loansQuery = trpc.agentLoanFacility.listLoans.useQuery({ limit: 100 });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const statsQuery = trpc.agentLoanFacility.getStats.useQuery();
+  const statsQuery = trpc.agentLoanFacility.getSummary.useQuery();
   const applyMutation = trpc.agentLoanFacility.applyLoan.useMutation({
     onSuccess: () => {
       loansQuery.refetch();
@@ -373,7 +372,6 @@ export default function AgentLoanFacilityPage() {
                 <button
                   onClick={() =>
                     applyMutation.mutate({
-                      // @ts-ignore Sprint 85
                       agent_id: parseInt(applyForm.agent_id),
                       principal_amount: parseFloat(applyForm.principal_amount),
                       tenure_months: parseInt(applyForm.tenure_months),

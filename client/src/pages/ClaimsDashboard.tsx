@@ -3,7 +3,7 @@
  * Fully wired to real tRPC data with Recharts visualisations.
  */
 import { trpc } from "@/_core/trpc";
-import { KpiCard } from "@/components/insurance/KpiCard";
+import { KpiCard, type KpiTrend, type KpiStatus } from "@/components/insurance/KpiCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
 import {
@@ -26,7 +26,11 @@ export default function ClaimsDashboard() {
 
   const kpi = data?.kpis ?? {};
 
-  const cards = [
+  const cards: Array<{
+    title: string; value: string | number; icon: React.ElementType;
+    trend?: KpiTrend; trendValue?: string; subtitle?: string;
+    status?: KpiStatus; href?: string; accent: string;
+  }> = [
     { title: "Open Claims", value: kpi.openClaims ?? "—", icon: ClipboardList, trend: "up", trendValue: "+5 today", status: "warning" as const, href: "/claims", accent: "var(--risk-medium)" },
     { title: "FNOL Today", value: kpi.fnolToday ?? "—", icon: PlusCircle, trend: "up", trendValue: "+8", status: "neutral" as const, href: "/claims/new", accent: "var(--role-claims-adjuster)" },
     { title: "Avg Settlement Days", value: kpi.avgSettlementDays ?? "—", icon: Clock, trend: "down", trendValue: "↓ 1.2d", status: "good" as const, href: "/claims", accent: "var(--risk-low)" },
@@ -91,7 +95,7 @@ export default function ClaimsDashboard() {
             {cards.map((c) => (
               <KpiCard key={c.title} title={c.title} value={c.value} icon={c.icon}
                 trend={c.trend} trendValue={c.trendValue} status={c.status}
-                accentColor={c.accent} loading={isLoading} onClick={() => navigate(c.href)} />
+                accentColor={c.accent} loading={isLoading} onClick={() => c.href && navigate(c.href)} />
             ))}
           </div>
         </section>

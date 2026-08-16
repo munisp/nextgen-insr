@@ -36,7 +36,7 @@ export const agentOnboardingRouter = router({
         const [progress] = await db
           .select()
           .from(agentOnboardingProgress)
-          .where(eq(agentOnboardingProgress.agentId, agent.id))
+          .where(eq(agentOnboardingProgress.agentId, agent.agentId))
           .limit(1);
 
         if (!progress) {

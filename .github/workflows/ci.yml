@@ -86,6 +86,32 @@ jobs:
         - name: Notify on failure
           run: echo "Node.js quality checks failed — check lint, type-check, and build output."
 
+  # ── TypeScript Typecheck Gate (F-04) ─────────────────────────────────
+  # Hard gate: tsc --noEmit must be clean. No continue-on-error.
+  typecheck:
+    name: TypeScript Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
+
   # ── Feature-Claim Manifest Gate (F-10) ───────────────────────────────
   claims-verify:
     name: Feature-Claim Manifest Verification

@@ -49,12 +49,13 @@ export async function writeEnhancedAuditLog(
     }
 
     await db.insert(auditLog).values({
-      agentId: entry.agentId,
+      // audit_log.agentId is a numeric FK; string agent codes go to metadata
+      agentId: typeof entry.agentId === "number" ? entry.agentId : null,
       action: entry.action,
       resource: entry.resource,
       resourceId: entry.resourceId ?? null,
       status: entry.status as "success" | "warning" | "failure",
-      metadata: { ...changeDetails, userAgent: entry.userAgent ?? null },
+      metadata: { ...changeDetails, userAgent: entry.userAgent ?? null, ...(typeof entry.agentId === "string" ? { agentCode: entry.agentId } : {}) },
       ipAddress: entry.ipAddress ?? null,
     });
   } catch (err) {

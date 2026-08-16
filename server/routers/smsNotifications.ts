@@ -67,7 +67,11 @@ export const smsNotificationsRouter = router({
       const [log] = await database
         .insert(notification_logs)
         .values({
+          channelId: 1, // SMS channel
           recipientId: input.recipientId,
+          recipientType: "agent",
+          body: input.message,
+          subject: input.template ?? null,
         })
         .returning();
 

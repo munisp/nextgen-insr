@@ -156,6 +156,7 @@ export const insuranceServiceFleetRouter = router({
         const [terminal] = await db
           .insert(posTerminals)
           .values({
+            terminalId: input.serialNumber, // serial is uniqueness-checked above
             serialNumber: input.serialNumber,
             model: input.model,
             agentId: input.agentId ?? null,

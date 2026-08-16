@@ -151,7 +151,7 @@ export const fxRatesRouter = router({
           target: z.string().default("USD"),
           days: z.number().default(30),
         })
-        .default({})
+        .default({ base: "NGN", target: "USD", days: 30 })
     )
     .query(async ({ input }) => {
       const end = new Date();

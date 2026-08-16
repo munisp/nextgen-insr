@@ -186,7 +186,7 @@ export const lakehouseAiIntegrationRouter = router({
           action: "ML_MODEL_PROMOTED",
           resource: "ml_model",
           resourceId: input.modelId,
-          agentId: String(ctx.user?.id ?? "system"),
+          agentId: ctx.user?.id ?? null,
           metadata: { modelId: input.modelId, targetEnv: input.targetEnv },
         });
       }
@@ -212,7 +212,7 @@ export const lakehouseAiIntegrationRouter = router({
           action: "LAKEHOUSE_BATCH_JOB_SUBMITTED",
           resource: "batch_job",
           resourceId: jobId,
-          agentId: String(ctx.user?.id ?? "system"),
+          agentId: ctx.user?.id ?? null,
           metadata: { name: input.name, query: input.query.slice(0, 200), schedule: input.schedule },
         });
       }
