@@ -29,8 +29,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run ESLint
-        run: pnpm exec eslint --max-warnings 0 server/ --ext .ts,.tsx,.js,.jsx
+      - name: Run ESLint (ratchet gate)
+        # Same strict ruleset, enforced as a count ratchet vs scripts/eslint-baseline.json:
+        # fails only if any rule's violations INCREASE. See LINT_DEBT.md.
+        run: node scripts/check-eslint-baseline.mjs
 
       - name: Run TypeScript type check
         run: pnpm check
