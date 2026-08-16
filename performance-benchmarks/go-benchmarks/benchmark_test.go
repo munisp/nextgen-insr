@@ -2,6 +2,7 @@ package benchmarks
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -9,9 +10,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	ttb "temporal-tigerbeetle-integration"
-	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
+	ttb "github.com/munisp/nextgen-insr/bidirectional-integrations/temporal-tigerbeetle"
+	types "github.com/tigerbeetle/tigerbeetle-go"
 )
+
+// uint128HL builds a tigerbeetle Uint128 from high/low 64-bit parts
+// (the API exposes no High/Low composite literal; BytesToUint128 is the
+// sanctioned constructor — values preserved exactly).
+func uint128HL(high, low uint64) types.Uint128 {
+	var b [16]byte
+	binary.LittleEndian.PutUint64(b[0:8], low)
+	binary.LittleEndian.PutUint64(b[8:16], high)
+	return types.BytesToUint128(b)
+}
 
 type BenchmarkMetrics struct {
 	TotalOperations   int64
@@ -30,7 +41,7 @@ type BenchmarkMetrics struct {
 }
 
 func BenchmarkCreateAccount(b *testing.B) {
-	client, err := ttb.NewTigerBeetleClient(types.Uint128{High: 0, Low: 0}, []string{"localhost:3000"})
+	client, err := ttb.NewTigerBeetleClient(uint128HL(0, 0), []string{"localhost:3000"})
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
@@ -39,10 +50,7 @@ func BenchmarkCreateAccount(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			accountID := types.Uint128{
-				High: uint64(time.Now().UnixNano()),
-				Low:  uint64(b.N),
-			}
+			accountID := uint128HL(uint64(time.Now().UnixNano()), uint64(b.N))
 			err := client.CreateAccount(context.Background(), accountID, 1, 1)
 			if err != nil {
 				b.Logf("Create account failed: %v", err)
@@ -52,15 +60,15 @@ func BenchmarkCreateAccount(b *testing.B) {
 }
 
 func BenchmarkCreateTransfer(b *testing.B) {
-	client, err := ttb.NewTigerBeetleClient(types.Uint128{High: 0, Low: 0}, []string{"localhost:3000"})
+	client, err := ttb.NewTigerBeetleClient(uint128HL(0, 0), []string{"localhost:3000"})
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	// Setup accounts
-	debitAccount := types.Uint128{High: 1, Low: 1}
-	creditAccount := types.Uint128{High: 1, Low: 2}
+	debitAccount := uint128HL(1, 1)
+	creditAccount := uint128HL(1, 2)
 	
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
@@ -90,15 +98,15 @@ func BenchmarkCreateTransfer(b *testing.B) {
 }
 
 func BenchmarkPendingTransferWorkflow(b *testing.B) {
-	client, err := ttb.NewTigerBeetleClient(types.Uint128{High: 0, Low: 0}, []string{"localhost:3000"})
+	client, err := ttb.NewTigerBeetleClient(uint128HL(0, 0), []string{"localhost:3000"})
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	// Setup accounts
-	debitAccount := types.Uint128{High: 2, Low: 1}
-	creditAccount := types.Uint128{High: 2, Low: 2}
+	debitAccount := uint128HL(2, 1)
+	creditAccount := uint128HL(2, 2)
 	
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
@@ -144,15 +152,15 @@ func BenchmarkConcurrentWorkflows(b *testing.B) {
 	
 	for _, concurrency := range concurrencyLevels {
 		b.Run(fmt.Sprintf("Concurrency-%d", concurrency), func(b *testing.B) {
-			client, err := ttb.NewTigerBeetleClient(types.Uint128{High: 0, Low: 0}, []string{"localhost:3000"})
+			client, err := ttb.NewTigerBeetleClient(uint128HL(0, 0), []string{"localhost:3000"})
 			if err != nil {
 				b.Fatalf("Failed to create client: %v", err)
 			}
 			defer client.Close()
 
 			// Setup accounts
-			debitAccount := types.Uint128{High: uint64(concurrency), Low: 1}
-			creditAccount := types.Uint128{High: uint64(concurrency), Low: 2}
+			debitAccount := uint128HL(uint64(concurrency), 1)
+			creditAccount := uint128HL(uint64(concurrency), 2)
 			
 			client.CreateAccount(context.Background(), debitAccount, 1, 1)
 			client.CreateAccount(context.Background(), creditAccount, 1, 2)
@@ -200,15 +208,15 @@ func BenchmarkConcurrentWorkflows(b *testing.B) {
 }
 
 func BenchmarkThroughput(b *testing.B) {
-	client, err := ttb.NewTigerBeetleClient(types.Uint128{High: 0, Low: 0}, []string{"localhost:3000"})
+	client, err := ttb.NewTigerBeetleClient(uint128HL(0, 0), []string{"localhost:3000"})
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	// Setup accounts
-	debitAccount := types.Uint128{High: 100, Low: 1}
-	creditAccount := types.Uint128{High: 100, Low: 2}
+	debitAccount := uint128HL(100, 1)
+	creditAccount := uint128HL(100, 2)
 	
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
@@ -243,15 +251,15 @@ func BenchmarkThroughput(b *testing.B) {
 }
 
 func BenchmarkLatencyDistribution(b *testing.B) {
-	client, err := ttb.NewTigerBeetleClient(types.Uint128{High: 0, Low: 0}, []string{"localhost:3000"})
+	client, err := ttb.NewTigerBeetleClient(uint128HL(0, 0), []string{"localhost:3000"})
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	// Setup accounts
-	debitAccount := types.Uint128{High: 200, Low: 1}
-	creditAccount := types.Uint128{High: 200, Low: 2}
+	debitAccount := uint128HL(200, 1)
+	creditAccount := uint128HL(200, 2)
 	
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
@@ -312,15 +320,15 @@ func calculatePercentiles(latencies []time.Duration) (p50, p95, p99 time.Duratio
 }
 
 func BenchmarkMemoryUsage(b *testing.B) {
-	client, err := ttb.NewTigerBeetleClient(types.Uint128{High: 0, Low: 0}, []string{"localhost:3000"})
+	client, err := ttb.NewTigerBeetleClient(uint128HL(0, 0), []string{"localhost:3000"})
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	// Setup accounts
-	debitAccount := types.Uint128{High: 300, Low: 1}
-	creditAccount := types.Uint128{High: 300, Low: 2}
+	debitAccount := uint128HL(300, 1)
+	creditAccount := uint128HL(300, 2)
 	
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)

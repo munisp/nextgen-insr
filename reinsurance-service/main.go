@@ -407,7 +407,6 @@ func (s *Server) handleCedeRisk(w http.ResponseWriter, r *http.Request) {
 			retention = req.GrossAmount
 			ceded = 0
 		} else {
-			retention = retention
 			ceded = req.GrossAmount - retention
 			if ceded > treaty.Limit {
 				ceded = treaty.Limit

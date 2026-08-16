@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	_ "github.com/lib/pq"
+
+	"github.com/insureportal/notification_service/internal/handlers"
 )
 
 // testConn holds the package-level connection used by legacy integration tests below.
@@ -117,7 +119,7 @@ func TestIntegration_ReadyEndpoint(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/ready", nil)
 	w := httptest.NewRecorder()
-	handleReady(w, req)
+	handlers.NewHandlers(nil).ReadinessCheck(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)

@@ -319,12 +319,12 @@ func (p *Postgres) GetPointHistory(ctx context.Context, userID string, limit, of
 		return nil, 0, err
 	}
 
-	query := fmt.Sprintf(`
+	query := `
 		SELECT id, user_id, source, action, points, balance_after,
 			reference_id, metadata, created_at
 		FROM point_transactions WHERE user_id = $1
 		ORDER BY created_at DESC LIMIT $2 OFFSET $3
-	`, userID)
+	`
 
 	rows, err := p.Pool.Query(ctx, query, userID, limit, offset)
 	if err != nil {
@@ -365,12 +365,12 @@ func (p *Postgres) GetUserRedemptions(ctx context.Context, userID string, limit,
 		return nil, 0, err
 	}
 
-	query := fmt.Sprintf(`
+	query := `
 		SELECT id, user_id, points_used, value_naira, type, status,
 			reference, expires_at, created_at, applied_at
 		FROM point_redemptions WHERE user_id = $1
 		ORDER BY created_at DESC LIMIT $2 OFFSET $3
-	`, userID)
+	`
 
 	rows, err := p.Pool.Query(ctx, query, userID, limit, offset)
 	if err != nil {
@@ -513,30 +513,30 @@ func (p *Postgres) GetLeaderboard(ctx context.Context, period string, limit int)
 	var query string
 	switch strings.ToLower(period) {
 	case "weekly":
-		query = fmt.Sprintf(`
+		query = `
 			SELECT up.user_id, up.total_points, up.tier,
 				COALESCE(jsonb_build_object('name', up.metadata->>'name'), 'User')
 			FROM user_points up
 			ORDER BY up.total_points DESC
 			LIMIT $1
-		`, limit)
+		`
 	case "monthly":
-		query = fmt.Sprintf(`
+		query = `
 			SELECT up.user_id, up.total_points, up.tier,
 				COALESCE(jsonb_build_object('name', up.metadata->>'name'), 'User')
 			FROM user_points up
 			WHERE up.updated_at >= NOW() - INTERVAL '30 days'
 			ORDER BY up.total_points DESC
 			LIMIT $1
-		`, limit)
+		`
 	default: // alltime
-		query = fmt.Sprintf(`
+		query = `
 			SELECT up.user_id, up.total_points, up.tier,
 				COALESCE(jsonb_build_object('name', up.metadata->>'name'), 'User')
 			FROM user_points up
 			ORDER BY up.total_points DESC
 			LIMIT $1
-		`, limit)
+		`
 	}
 
 	rows, err := p.Pool.Query(ctx, query, limit)
@@ -781,12 +781,12 @@ func (p *Postgres) GetUserRedemptionHistory(ctx context.Context, userID string, 
 		return nil, 0, err
 	}
 
-	query := fmt.Sprintf(`
+	query := `
 		SELECT id, user_id, reward_id, reward_name, points_spent, value_naira,
 			status, reference, redeemed_at, expires_at, applied_at
 		FROM redemption_history WHERE user_id = $1
 		ORDER BY redeemed_at DESC LIMIT $2 OFFSET $3
-	`, userID)
+	`
 
 	rows, err := p.Pool.Query(ctx, query, userID, limit, offset)
 	if err != nil {

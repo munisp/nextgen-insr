@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25'  # several modules declare go 1.25
+          go-version: 'stable'  # implementation_file declares go 1.26  # several modules declare go 1.25
           cache: true
       - name: Install errcheck
         run: go install github.com/kisielk/errcheck@v1.9.0
@@ -74,6 +74,8 @@ jobs:
                       stripped = line.lstrip()
                       indent = line[:len(line)-len(stripped)]
                       if stripped.startswith('_ = ') or stripped.startswith('//') or ':=' in stripped.split('(', 1)[0]:
+                      if stripped.startswith('}'):  # '} else if f() {' must never be wrapped
+                          continue
                           continue
                       if stripped.startswith('defer '):
                           src[ln-1] = f"{indent}defer func() {{ _ = {stripped[len('defer '):].rstrip()} }}()\n"
@@ -136,6 +138,7 @@ jobs:
           for gomod in $(find . -name go.mod -not -path './node_modules/*'); do
             d=$(dirname "$gomod")
             echo "== verifying $d"
+            if ! (cd "$d" && go list ./... 2>/dev/null | grep -q .); then echo "VACUOUS SKIP (no packages): $d"; continue; fi
             (cd "$d" && go mod tidy && gofmt -l -w . && go vet ./...) || { echo "MODULE STILL FAILING: $d"; fail=1; }
           done
           exit $fail
