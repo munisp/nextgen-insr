@@ -91,7 +91,7 @@ jobs:
           for it in range(15):
               mism = []
               for mod in mods:
-                  out = subprocess.run(['go', 'build', './...'], cwd=mod, capture_output=True, text=True, timeout=300)
+                  out = subprocess.run(['go', 'vet', './...'], cwd=mod, capture_output=True, text=True, timeout=300)
                   for m in re.finditer(r'(?:\./)?([^ :\n]+\.go):(\d+):\d+: assignment mismatch: 1 variable but \S+ returns (\d+) values', out.stderr):
                       mism.append((mod, m.group(1), int(m.group(2)), int(m.group(3))))
               if not mism:
@@ -111,7 +111,7 @@ jobs:
           fail=0
           for gomod in $(find . -name go.mod -not -path './node_modules/*'); do
             d=$(dirname "$gomod")
-            (cd "$d" && gofmt -l -w . && go build ./... && go vet ./...) || { echo "MODULE STILL FAILING: $d"; fail=1; }
+            (cd "$d" && go mod tidy && gofmt -l -w . && go build ./... && go vet ./...) || { echo "MODULE STILL FAILING: $d"; fail=1; }
           done
           exit $fail
       - name: Commit fixes
