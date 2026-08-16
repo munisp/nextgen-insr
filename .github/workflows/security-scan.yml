@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # Every Monday at 6 AM UTC
 
+permissions:
+  contents: read
+  security-events: write  # required for github/codeql-action/upload-sarif (semgrep)
+  actions: read
+
 jobs:
   # ── Go Static Analysis: vet + gosec ─────────────────────────────────
   go-static-analysis:
@@ -57,7 +62,7 @@ jobs:
           cache: true
 
       - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8  # v1: workflow config uses v1-only linters (go, deadcode, varcheck...) removed/renamed in v2
 
       - name: Install gosec
         run: go install github.com/securego/gosec/v2/cmd/gosec@latest
@@ -210,8 +215,7 @@ jobs:
 
       - name: License checker (frontend)
         run: |
-          pip install license-checker
-          npx license-checker --production --summary --failOn "AGPL-3.0|GPL-3.0|SSPL-1.0" 2>&1 || echo "::warning::license-checker found issues"
+          npx --yes license-checker --production --summary --failOn "AGPL-3.0|GPL-3.0|SSPL-1.0" 2>&1 || echo "::warning::license-checker found issues"
 
       - name: npm audit (known-vulnerable packages)
         run: |
@@ -261,6 +265,3 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
           exit-code: '0'
 
-      - name: Run Trivy initdb
-        if: always()
-        run: trivy --cache-clean

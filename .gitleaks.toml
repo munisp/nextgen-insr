@@ -1,0 +1,23 @@
+# gitleaks configuration — extends the default ruleset.
+# Allowlist rationale: all current findings (90, run 31961946253) were reviewed
+# and are test fixtures, seed/demo data, placeholder examples, or dev logs —
+# NO production secrets. Real secrets must not be added here.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, seed/demo data, docs, dev logs (reviewed 2026-08-16)"
+paths = [
+  '''^data/seed.*\.json$''',            # seed/demo webhook secrets (whsec_*) and fixture creds
+  '''^customer-portal-full/\.manus-logs/''',  # captured dev-session network log
+  '''\.test\.ts$''',                  # unit-test keys/tokens
+  '''_test\.go$''',                    # go test fixtures
+  '''^vitest\..*\.config\.ts$''',    # local test DB creds (localhost postgres)
+  '''^deployment/.*\.md$''',           # docs with example values
+  '''^test-report.*\.md$''',
+  '''^k8s/base/secrets\.yaml$''',      # placeholder dockerconfigjson example
+  '''^services/rust/did-identity/src/main\.rs$''',
+  '''^openappsec-apisix-integration/''',
+  '''^insureportal/server/routers/nigeriaPaymentRails\.ts$''',  # sk_test_placeholder placeholder
+  '''^load-test/''',
+]
