@@ -94,6 +94,8 @@ jobs:
                   out = subprocess.run(['go', 'vet', './...'], cwd=mod, capture_output=True, text=True, timeout=300)
                   for m in re.finditer(r'(?:\./)?([^ :\n]+\.go):(\d+):\d+: assignment mismatch: 1 variable but \S+ returns (\d+) values', out.stderr):
                       mism.append((mod, m.group(1), int(m.group(2)), int(m.group(3))))
+                      if it >= 12:
+                          print(f"  rawvet {mod}: {m.group(0)[:140]}", flush=True)
               if not mism:
                   print(f"arity fixup converged after {it} iterations", flush=True); break
               for mod, f, ln, arity in mism:
@@ -108,7 +110,10 @@ jobs:
               print(f"arity fixup iteration {it}: {len(mism)} sites", flush=True)
               if it >= 12:
                   for mod, f, ln, ar in mism:
-                      print(f"  stuck {mod}/{f}:{ln} arity={ar}", flush=True)
+                      pth = mod / f
+                      cur = pth.read_text().splitlines()
+                      actual = cur[ln-1] if 0 < ln <= len(cur) else '<out of range>'
+                      print(f"  stuck {mod}/{f}:{ln} arity={ar} | current: {actual.rstrip()[:120]}", flush=True)
           else:
               print("arity fixup did NOT converge", flush=True); sys.exit(1)
           PYEOF
