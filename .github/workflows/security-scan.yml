@@ -178,7 +178,7 @@ jobs:
         run: gitleaks detect --report-path=gitleaks-results.json --report-format=json --verbose --no-git 
 
       - name: gitleaks protect (on recent changes)
-        run: gitleaks protect --report-path=gitleaks-protect-results.json --report-format=json --verbose --no-git 
+        run: gitleaks protect --report-path=gitleaks-protect-results.json --report-format=json --verbose  # protect has no --no-git flag
 
       - name: Custom secret patterns fallback
         run: |
