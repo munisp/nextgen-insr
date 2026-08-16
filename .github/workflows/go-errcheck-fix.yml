@@ -88,34 +88,29 @@ jobs:
                       total += len(linenos)
           print(f"TOTAL fix sites: {total}", flush=True)
           
-          for it in range(30):
-              mism = []
-              for mod in mods:
+          converged_all = True
+          for mod in mods:
+              for it in range(400):
                   out = subprocess.run(['go', 'vet', './...'], cwd=mod, capture_output=True, text=True, timeout=300)
-                  for m in re.finditer(r'(?:\./)?([^ :\n]+\.go):(\d+):\d+: assignment mismatch: 1 variable but \S+ returns (\d+) values', out.stderr):
-                      mism.append((mod, m.group(1), int(m.group(2)), int(m.group(3))))
-                      if it >= 12:
-                          print(f"  rawvet {mod}: {m.group(0)[:140]}", flush=True)
-              if not mism:
-                  print(f"arity fixup converged after {it} iterations", flush=True); break
-              for mod, f, ln, arity in mism:
-                  p = mod / f
-                  lines = p.read_text().splitlines(keepends=True)
-                  lhs = ', '.join(['_'] * arity) + ' = '
-                  if '_ = ' not in lines[ln-1]:
-                      print(f"  UNFIXABLE {mod}/{f}:{ln}: {lines[ln-1].rstrip()}", flush=True)
-                      continue
-                  lines[ln-1] = lines[ln-1].replace('_ = ', lhs, 1)
-                  p.write_text(''.join(lines))
-              print(f"arity fixup iteration {it}: {len(mism)} sites", flush=True)
-              if it >= 12:
-                  for mod, f, ln, ar in mism:
-                      pth = mod / f
-                      cur = pth.read_text().splitlines()
-                      actual = cur[ln-1] if 0 < ln <= len(cur) else '<out of range>'
-                      print(f"  stuck {mod}/{f}:{ln} arity={ar} | current: {actual.rstrip()[:120]}", flush=True)
-          else:
-              print("arity fixup did NOT converge", flush=True); sys.exit(1)
+                  mism = [(m.group(1), int(m.group(2)), int(m.group(3)))
+                          for m in re.finditer(r'(?:\./)?([^ :\n]+\.go):(\d+):\d+: assignment mismatch: 1 variable but \S+ returns (\d+) values', out.stderr)]
+                  if not mism:
+                      break
+                  for f, ln, arity in mism:
+                      p = mod / f
+                      lines = p.read_text().splitlines(keepends=True)
+                      lhs = ', '.join(['_'] * arity) + ' = '
+                      if '_ = ' not in lines[ln-1]:
+                          print(f"  UNFIXABLE {mod}/{f}:{ln}: {lines[ln-1].rstrip()}", flush=True)
+                          continue
+                      lines[ln-1] = lines[ln-1].replace('_ = ', lhs, 1)
+                      p.write_text(''.join(lines))
+              else:
+                  print(f"{mod}: arity fixup did NOT converge in 400 iterations", flush=True)
+                  converged_all = False
+          if not converged_all:
+              sys.exit(1)
+          print("arity fixup converged (module-local)", flush=True)
           PYEOF
       - name: gofmt + verify (build & vet each module)
         run: |
