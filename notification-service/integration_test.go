@@ -137,7 +137,7 @@ func TestIntegration_ReadyEndpoint(t *testing.T) {
 func TestIntegration_LiveEndpoint(t *testing.T) {
 	req := httptest.NewRequest("GET", "/live", nil)
 	w := httptest.NewRecorder()
-	handleLive(w, req)
+	handlers.NewHandlers(nil).LivenessCheck(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)

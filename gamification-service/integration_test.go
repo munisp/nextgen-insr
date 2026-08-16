@@ -13,6 +13,9 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// db holds the package-level connection used by the legacy integration tests below.
+var db *sql.DB
+
 func getTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")

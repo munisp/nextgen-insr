@@ -38,6 +38,15 @@ func (h *Handlers) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// LivenessCheck reports the process is alive (k8s liveness convention).
+func (h *Handlers) LivenessCheck(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "alive",
+		"service":   "notification-service",
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
+}
+
 // --- Send Notification ---
 func (h *Handlers) SendNotification(w http.ResponseWriter, r *http.Request) {
 	var body struct {

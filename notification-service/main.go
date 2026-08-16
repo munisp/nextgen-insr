@@ -63,6 +63,7 @@ func main() {
 
 	r.Get(cfg.HealthCheckPath, h.HealthCheck)
 	r.Get("/ready", h.ReadinessCheck)
+	r.Get("/live", h.LivenessCheck)
 
 	r.Group(func(api chi.Router) {
 		api.Use(appmw.APIKeyAuth)

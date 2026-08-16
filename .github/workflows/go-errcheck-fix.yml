@@ -80,7 +80,8 @@ jobs:
                           changed = True
                       elif stripped.startswith('go '):
                           continue
-                      elif re.match(r'^[A-Za-z0-9_\)\]\}\.\'\"]', stripped) and not re.match(r'^(if|for|switch|return|func|var|const|type|else|case|default)\b', stripped):
+                      elif (re.match(r'^[A-Za-z0-9_\)\]\}\.\'\"]', stripped) and not re.match(r'^(if|for|switch|return|func|var|const|type|else|case|default)\b', stripped)
+                                and stripped.rstrip().endswith((')', '('))):  # statement-level calls only; never continuation lines (','-terminated) — errcheck misreports lines in packages with pre-existing type errors
                           src[ln-1] = f"{indent}_ = {stripped}"
                           changed = True
                   if changed:
@@ -137,7 +138,11 @@ jobs:
             d=$(dirname "$gomod")
             echo "== verifying $d"
             if ! (cd "$d" && go list ./... 2>/dev/null | grep -q .); then echo "VACUOUS SKIP (no packages): $d"; continue; fi
-            (cd "$d" && go mod tidy && gofmt -l -w . && go vet ./...) || { echo "MODULE STILL FAILING: $d"; fail=1; }
+            (cd "$d" && go mod tidy && gofmt -l -w . && go vet ./...) || {
+              echo "MODULE STILL FAILING: $d"; fail=1
+              fl=$(cd "$d" && go vet ./... 2>&1 | grep -oE '[^ :]+\.go:[0-9]+' | head -1)
+              if [ -n "$fl" ]; then f=${fl%:*}; n=${fl##*:}; echo "--- $f around line $n:"; sed -n "$((n>3?n-3:1)),$((n+3))p" "$d/$f"; fi
+            }
           done
           exit $fail
       - name: Commit fixes
