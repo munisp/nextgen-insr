@@ -25,5 +25,7 @@ paths = [
   '''^geospatial-service/k8s/deployment\.yaml$''',  # empty PG_REPLICA_PASSWORD=
   '''^customer-portal-full/\.env\.example$''',     # example file, empty values
   '''^COMPREHENSIVE_ANALYSIS_REPORT\.md$''',        # documented dev vapid key
+  '''^vitest\.config\.ts$''',                       # CI dummy values for requireEnv (non-production)
 ]
+
 
