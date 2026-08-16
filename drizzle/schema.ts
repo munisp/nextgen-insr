@@ -5068,7 +5068,9 @@ export const reinsuranceTreaties = pgTable(
     coverageType: coverageTypeEnum("coverageType"),
     retentionLimit: numeric("retentionLimit", { precision: 18, scale: 2 }),
     cessionLimit: numeric("cessionLimit", { precision: 18, scale: 2 }),
-    cessionPercentage: numeric("cessionPercentage", { precision: 5, scale: 4 }),
+    // Cession percentage (0-100, e.g. 40.00%) — numeric(5,4) caps at 9.9999
+    // and overflows on real Postgres (PGlite does not enforce precision).
+    cessionPercentage: numeric("cessionPercentage", { precision: 7, scale: 4 }),
     premiumRate: numeric("premiumRate", { precision: 5, scale: 4 }),
     startDate: timestamp("startDate").notNull(),
     endDate: timestamp("endDate"),
@@ -5408,8 +5410,13 @@ export const permifyRelationshipCache = pgTable(
 export type PermifyRelationshipCache = typeof permifyRelationshipCache.$inferSelect;
 
 // ─── Additional tables (definitions in schema.additions.ts) ──────────────────
-// Re-export everything so drizzle-kit push (rehearsal, preview envs) creates
-// ALL additions tables — the selective export silently omitted 12 of them
-// (insurance_categories, premiums, claims_payments, ...) which broke seeding
-// against real Postgres. No name collisions with this file (verified).
-export * from "./schema.additions";
+export {
+  posTerminals,
+  underwritingApplications,
+  insuranceServices,
+  policyQuotes,
+  kycVerifications,
+  notifications,
+  insuranceProductTypes,
+  insurance_portalAds,
+} from "./schema.additions";
