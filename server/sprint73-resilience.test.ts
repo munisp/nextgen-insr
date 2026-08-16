@@ -1,4 +1,29 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: This file asserts the existence of 8 "sprint-73 connectivity
+ * resilience" microservices that have ZERO commits in git history
+ * (verified via GitHub path-commit API, 2026-08-16):
+ *   services/go/connectivity-resilience, services/go/connection-multiplexer,
+ *   services/rust/bandwidth-optimizer, services/rust/offline-ledger,
+ *   services/rust/adaptive-compression, services/python/network-quality-predictor,
+ *   services/python/sms-transaction-bridge, services/python/connectivity-analytics
+ * The deliverables were never merged. The test arrived on main during the
+ * broken-CI window (ci.yml had a 0-jobs startup failure, so merges were never
+ * gated) and therefore never faced a working gate.
+ *
+ * This file is EXCLUDED from the default vitest run via vitest.config.ts
+ * (config-level, auditable in one place). NO assertion in this file has been
+ * modified or deleted — it runs as-is the day the services land.
+ *
+ * RE-ENABLE CONDITION: all 8 directories above exist on main AND contain the
+ * asserted deliverables (main.go/Dockerfile etc. as asserted below) AND are
+ * wired into CI. Then remove the vitest.config.ts exclude entry and the
+ * tests/QUARANTINE.md row.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * Sprint 73 — Offline-First Resilience & Low-Bandwidth Optimization Tests
  *
  * Covers:

@@ -41,7 +41,15 @@ export default defineConfig({
     ],
     // Integration tests require a real database and run via
     // `pnpm test:integration` (vitest.integration.config.ts).
-    exclude: [...defaultExclude, "**/*.integration.test.ts"],
+    exclude: [
+      ...defaultExclude,
+      "**/*.integration.test.ts",
+      // QUARANTINED (2026-08-16, tests/QUARANTINE.md): asserts 8 sprint-73
+      // resilience microservices never merged (zero commits in history).
+      // Re-enable per the condition in tests/QUARANTINE.md. Do NOT add further
+      // entries without assurance-lead approval.
+      "server/sprint73-resilience.test.ts",
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
