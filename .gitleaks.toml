@@ -20,4 +20,10 @@ paths = [
   '''^openappsec-apisix-integration/''',
   '''^insureportal/server/routers/nigeriaPaymentRails\.ts$''',  # sk_test_placeholder placeholder
   '''^load-test/''',
+  '''^tests/integration/stress_test_10k\.mjs$''',   # idempotency test key constant
+  '''^infra/vault/init-vault-complete\.sh$''',      # dev Vault bootstrap (dev-only key)
+  '''^geospatial-service/k8s/deployment\.yaml$''',  # empty PG_REPLICA_PASSWORD=
+  '''^customer-portal-full/\.env\.example$''',     # example file, empty values
+  '''^COMPREHENSIVE_ANALYSIS_REPORT\.md$''',        # documented dev vapid key
 ]
+

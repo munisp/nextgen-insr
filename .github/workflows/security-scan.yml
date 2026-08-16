@@ -73,7 +73,7 @@ jobs:
 
       - name: golangci-lint
         working-directory: ${{ matrix.module }}
-        run: golangci-lint run --timeout=5m --enable=errcheck,gosimple,go vet staticcheck
+        run: golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck
 
       - name: gosec (SAST)
         working-directory: ${{ matrix.module }}
