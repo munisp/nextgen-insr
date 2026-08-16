@@ -256,7 +256,7 @@ export const commissionPayoutsRouter = router({
           .where(eq(commissionPayouts.id, input.id))
           .limit(1);
         if (!payout) throw new TRPCError({ code: "NOT_FOUND" });
-        // Idempotency: already completed
+        // Idempotency: already completed — replay the durable row, no re-deduction
         if (payout.status === "completed") return payout;
         if (payout.status !== "approved") {
           throw new TRPCError({
@@ -265,7 +265,9 @@ export const commissionPayoutsRouter = router({
           });
         }
 
-        // Distributed lock to prevent double-processing
+        // Distributed lock to prevent double-processing (optimization only —
+        // the DB transaction below enforces single-effect even when Redis is
+        // down and this lock fails open).
         const { acquireLock, releaseLock } = await import("../lib/redisClient");
         const { tbCreateTransfer } = await import("../tbClient");
         const lockKey = `commission-payout:${input.id}`;
@@ -274,8 +276,11 @@ export const commissionPayoutsRouter = router({
 
         let updated: typeof payout;
         try {
+          // F-02: deterministic ledger reference (no Date.now()) so a worker
+          // retry after a timeout re-submits the SAME ref and the sidecar can
+          // deduplicate it instead of double-posting.
+          const payRef = input.nubanRef ?? `COMM-PAYOUT-${input.id}`;
           // TigerBeetle: commissions-pool → agent-commission (COMMISSIONS ledger)
-          const payRef = input.nubanRef ?? `COMM-PAYOUT-${input.id}-${Date.now()}`;
           const tbResult = await tbCreateTransfer({
             debitAccountId: "commissions-pool",
             creditAccountId: `agent-commission-${payout.agentId}`,
@@ -287,25 +292,63 @@ export const commissionPayoutsRouter = router({
             agentId: String(payout.agentId),
           });
 
-          // Deduct from agent commission balance
-          await db
-            .update(agents)
-            .set({
-              commissionBalance: sql`${agents.commissionBalance} - ${payout.amount}`,
-              updatedAt: new Date(),
-            })
-            .where(eq(agents.agentId, payout.agentId));
+          // F-02: status transition + balance deduction commit or roll back as
+          // ONE unit. Previously these were two independent writes: a crash
+          // (or any error) between them left the balance deducted while the
+          // payout stayed "approved", and the status-based idempotency check
+          // then allowed a retry to deduct AGAIN (double payout).
+          type ProcessOutcome = { replay: true } | { replay: false; row: typeof payout };
+          const outcome = await db.transaction(async (tx): Promise<ProcessOutcome> => {
+            // Atomic claim: exactly one concurrent processor transitions
+            // approved → completed. Everyone else gets zero rows and replays.
+            const claimed = await tx
+              .update(commissionPayouts)
+              .set({
+                status: "completed",
+                nubanRef: payRef,
+                processedAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(commissionPayouts.id, input.id),
+                eq(commissionPayouts.status, "approved"),
+              ))
+              .returning();
+            if (claimed.length === 0) return { replay: true };
 
-          [updated] = await db
-            .update(commissionPayouts)
-            .set({
-              status: "completed",
-              nubanRef: input.nubanRef ?? payRef,
-              processedAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .where(eq(commissionPayouts.id, input.id))
-            .returning();
+            // Guarded atomic deduction — the no-negative-balance invariant is
+            // enforced by the database, not by the earlier request-time read.
+            const debited = await tx
+              .update(agents)
+              .set({
+                commissionBalance: sql`CAST("commissionBalance" AS NUMERIC) - CAST(${payout.amount} AS NUMERIC)`,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(agents.agentId, payout.agentId),
+                sql`CAST("commissionBalance" AS NUMERIC) - CAST(${payout.amount} AS NUMERIC) >= 0`,
+              ))
+              .returning({ balance: agents.commissionBalance });
+            if (debited.length === 0) {
+              // Rolls back the status claim — no partial durable state.
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: "Insufficient commission balance at processing time",
+              });
+            }
+            return { replay: false, row: claimed[0]! };
+          });
+
+          if (outcome.replay) {
+            const [winner] = await db
+              .select()
+              .from(commissionPayouts)
+              .where(eq(commissionPayouts.id, input.id))
+              .limit(1);
+            if (winner?.status === "completed") return winner; // idempotent replay
+            throw new TRPCError({ code: "BAD_REQUEST", message: "Payout must be approved first" });
+          }
+          updated = outcome.row;
         } finally {
           await releaseLock(lockKey);
         }

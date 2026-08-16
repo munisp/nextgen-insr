@@ -28,6 +28,8 @@ import { agentRouter } from "../../../server/routers/agent";
 import { multiTenantIsolationRouter } from "../../../server/routers/multiTenantIsolation";
 import { pinResetRouter } from "../../../server/routers/pinReset";
 import { tenantAdminRouter } from "../../../server/routers/tenantAdmin";
+import { commissionPayoutsRouter } from "../../../server/routers/commissionPayouts";
+import { premiumTopUpRouter } from "../../../server/routers/premiumTopUp";
 import { auditComplianceRouter } from "../../../server/routers/auditCompliance";
 import { gdprDashboardRouter } from "../../../server/routers/gdprDashboard";
 import { fxRatesRouter } from "../../../server/routers/fxRates";
@@ -51,6 +53,9 @@ export const integrationRouter = router({
   multiTenantIsolation: multiTenantIsolationRouter,
   pinReset: pinResetRouter,
   tenantAdmin: tenantAdminRouter,
+  // F-02: additional money paths under the real middleware chain.
+  commissionPayouts: commissionPayoutsRouter,
+  premiumTopUp: premiumTopUpRouter,
   auditCompliance: auditComplianceRouter,
   gdprDashboard: gdprDashboardRouter,
   // Provider-integration routers (F-02) — same mount paths as production.
