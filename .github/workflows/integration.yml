@@ -115,6 +115,62 @@ jobs:
           POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/insurance_portal_e2e
           REDIS_URL: redis://localhost:6379
 
+  contract:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: insurance_portal_contract
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The contract suite reuses the e2e globalSetup, which applies the
+      # schema itself (drizzle-kit push --force) against POSTGRES_URL.
+
+      # API contract: boots the REAL express/tRPC server and asserts the
+      # public wire contract over raw HTTP — superjson envelope shapes, zod
+      # 400 field detail, 401/403 auth shapes, 501 NOT_IMPLEMENTED stubs,
+      # pagination limit caps — against the postgres:16 and redis:7 services.
+      - name: Run API contract tests
+        run: pnpm test:contract
+        env:
+          POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/insurance_portal_contract
+          REDIS_URL: redis://localhost:6379
+
   client:
     runs-on: ubuntu-latest
 
