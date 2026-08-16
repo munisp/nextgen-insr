@@ -226,7 +226,6 @@ export async function closeDb(): Promise<void> {
     _pool = null;
     _db = null;
     _dbVerified = false;
-    _poolReady = false;
     logger.info("[DB] Connection pool closed");
   }
 }
