@@ -28,6 +28,8 @@ import { agentRouter } from "../../../server/routers/agent";
 import { multiTenantIsolationRouter } from "../../../server/routers/multiTenantIsolation";
 import { pinResetRouter } from "../../../server/routers/pinReset";
 import { tenantAdminRouter } from "../../../server/routers/tenantAdmin";
+import { auditComplianceRouter } from "../../../server/routers/auditCompliance";
+import { gdprDashboardRouter } from "../../../server/routers/gdprDashboard";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -46,6 +48,8 @@ export const integrationRouter = router({
   multiTenantIsolation: multiTenantIsolationRouter,
   pinReset: pinResetRouter,
   tenantAdmin: tenantAdminRouter,
+  auditCompliance: auditComplianceRouter,
+  gdprDashboard: gdprDashboardRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

@@ -407,6 +407,9 @@ import { dataExportRouter as dataExportRouterV2 } from "./routers/dataExport";
 import { loadTestMetricsRouter } from "./routers/loadTestMetrics";
 import { agentSuspensionWorkflowRouter } from "./routers/agentSuspensionWorkflow";
 import { auditExportRouter } from "./routers/auditExport";
+// F-08: tamper-evident audit chain verification/export + GDPR/NDPR dashboard
+import { auditComplianceRouter } from "./routers/auditCompliance";
+import { gdprDashboardRouter } from "./routers/gdprDashboard";
 import { networkTelemetryRouter } from "./routers/networkTelemetry";
 // Sprint 75: USSD Integration, Carrier Switching, Network Status Dashboard
 import { ussdIntegrationRouter } from "./routers/ussdIntegration";
@@ -571,6 +574,8 @@ export const appRouter = router({
   loyalty: loyaltyRouter,
   chat: chatRouter,
   auditLog: auditLogRouter,
+  // F-08: admin-gated audit chain verify/export/retention
+  auditCompliance: auditComplianceRouter,
   agentMgmt: agentManagementRouter,
   premiumTopUp: premiumTopUpRouter,
   smsReceipt: smsReceiptRouter,
@@ -601,6 +606,8 @@ export const appRouter = router({
   analytics: analyticsRouter,
   // NDPR/GDPR data portability and erasure
   gdpr: gdprRouter,
+  // GDPR/NDPR compliance dashboard + customer DSAR/erasure (was unmounted)
+  gdprDashboard: gdprDashboardRouter,
   // P3-A: Merchant Portal
   merchant: merchantRouter,
   // P3-C: Developer Portal (API key management)

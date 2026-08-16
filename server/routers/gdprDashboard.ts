@@ -11,56 +11,91 @@
  *   - Consent management
  *   - Data breach notification (72-hour NITDA reporting)
  *   - Privacy impact assessments
+ *
+ * F-08 remediation notes (honest state):
+ *   - This router previously issued raw SQL against columns that do not exist
+ *     in the real schema (snake_case `consent_given`, `date_of_birth`, `name`,
+ *     `created_at`...) and was not mounted in appRouter. It now uses drizzle
+ *     against the real camelCase columns and consent is tracked in
+ *     data_consent_records (there is no customers.consent_given column).
+ *   - Erasure ANONYMIZES: customers PII + transactions.customerPhone linkage.
+ *     It does NOT touch: audit_log rows referencing the customer (regulatory
+ *     retention, tamper-evident chain), policies/claims financial records
+ *     (NAICOM 7-year retention), kyc_verifications document numbers (listed
+ *     as an OPEN GAP in COMPLIANCE_MATRIX.md), or backups.
  */
 
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { sql, eq, and, gte } from "drizzle-orm";
-import { customers, auditLog, kycVerifications, policies, transactions } from "../../drizzle/schema";
+import { sql, eq, and, gte, isNull, count } from "drizzle-orm";
+import {
+  customers,
+  auditLog,
+  kycVerifications,
+  policies,
+  transactions,
+  dataConsentRecords,
+  dataRightsRequests,
+} from "../../drizzle/schema";
 import { writeAuditLog } from "../lib/auditLogger";
+
+const THIRTY_DAYS_AGO = () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+const ONE_YEAR_AGO = () => new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+async function countAuditActions(db: Db, action: string, since: Date) {
+  const [row] = await db
+    .select({ total: count() })
+    .from(auditLog)
+    .where(and(eq(auditLog.action, action), gte(auditLog.createdAt, since)));
+  return Number(row?.total ?? 0);
+}
+
+async function countConsentedCustomers(db: Db) {
+  // Consent is tracked in data_consent_records; a customer counts as
+  // consented when they hold at least one granted, non-revoked record.
+  const [row] = await db
+    .select({ total: sql<number>`count(distinct ${dataConsentRecords.entityId})` })
+    .from(dataConsentRecords)
+    .where(
+      and(
+        eq(dataConsentRecords.entityType, "customer"),
+        eq(dataConsentRecords.granted, true),
+        isNull(dataConsentRecords.revokedAt)
+      )
+    );
+  return Number(row?.total ?? 0);
+}
 
 export const gdprDashboardRouter = router({
 
   // ── GDPR Dashboard Overview ───────────────────────────────────────────────
-  getDashboard: protectedProcedure.query(async ({ ctx }) => {
+  getDashboard: protectedProcedure.query(async () => {
     const db = (await getDb())!;
-    const [totalCustomers] = (await db.execute(
-      sql`SELECT COUNT(*) as total FROM customers`
-    )).rows;
-    const [consentedCustomers] = (await db.execute(
-      sql`SELECT COUNT(*) as total FROM customers WHERE consent_given = true`
-    )).rows;
-    const [dsarRequests] = (await db.execute(
-      sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DSAR_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    )).rows;
-    const [erasureRequests] = (await db.execute(
-      sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'ERASURE_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    )).rows;
-    const [dataBreaches] = (await db.execute(
-      sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_BREACH_REPORTED' AND created_at > NOW() - INTERVAL '1 year'`
-    )).rows;
-    const [portabilityRequests] = (await db.execute(
-      sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_PORTABILITY_REQUEST' AND created_at > NOW() - INTERVAL '30 days'`
-    )).rows;
+    const [totalRow] = await db.select({ total: count() }).from(customers);
+    const totalCustomers = Number(totalRow?.total ?? 0);
+    const consentedCustomers = await countConsentedCustomers(db);
 
     return {
       regulation: ["GDPR 2016/679", "NDPR 2019"],
       regulators: ["EU DPA", "NITDA Nigeria"],
       overview: {
-        totalCustomers: Number((totalCustomers as any)[0]?.total || 0),
-        consentedCustomers: Number((consentedCustomers as any)[0]?.total || 0),
-        consentRate: Number((totalCustomers as any)[0]?.total) > 0
-          ? Math.round((Number((consentedCustomers as any)[0]?.total) / Number((totalCustomers as any)[0]?.total)) * 100)
+        totalCustomers,
+        consentedCustomers,
+        consentRate: totalCustomers > 0
+          ? Math.round((consentedCustomers / totalCustomers) * 100)
           : 0,
       },
       last30Days: {
-        dsarRequests: Number((dsarRequests as any)[0]?.total || 0),
-        erasureRequests: Number((erasureRequests as any)[0]?.total || 0),
-        portabilityRequests: Number((portabilityRequests as any)[0]?.total || 0),
+        dsarRequests: await countAuditActions(db, "DSAR_REQUEST", THIRTY_DAYS_AGO()),
+        erasureRequests: await countAuditActions(db, "ERASURE_REQUEST", THIRTY_DAYS_AGO()),
+        portabilityRequests: await countAuditActions(db, "DATA_PORTABILITY_REQUEST", THIRTY_DAYS_AGO()),
       },
       last12Months: {
-        dataBreachesReported: Number((dataBreaches as any)[0]?.total || 0),
+        dataBreachesReported: await countAuditActions(db, "DATA_BREACH_REPORTED", ONE_YEAR_AGO()),
       },
       dpiaCompleted: true,
       lastDpiaDate: "2025-01-15",
@@ -83,7 +118,6 @@ export const gdprDashboardRouter = router({
       reason: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = (await getDb())!;
       await writeAuditLog({
         agentId: ctx.user.id,
         action: "DSAR_REQUEST",
@@ -115,7 +149,7 @@ export const gdprDashboardRouter = router({
         .where(eq(customers.id, input.customerId));
 
       if (!customer) {
-        throw new Error("Customer not found");
+        throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found" });
       }
 
       const [kyc] = await db.select().from(kycVerifications)
@@ -178,6 +212,14 @@ export const gdprDashboardRouter = router({
 
   // ── Right to Erasure ──────────────────────────────────────────────────────
   // GDPR Art. 17 / NDPR Sec. 2.3: Right to erasure ("right to be forgotten")
+  //
+  // Admin-only. Coverage (verified by tests/integration/gdprDataRights.integration.test.ts):
+  //   COVERED:   customers PII columns; transactions.customerPhone linkage;
+  //              active consent records (revoked).
+  //   NOT COVERED (documented gaps): audit_log entries referencing the
+  //   customer (tamper-evident chain, regulatory retention), policies/claims
+  //   (NAICOM 7-year retention), kyc_verifications documentNumber/nin/bvn
+  //   (OPEN GAP — see COMPLIANCE_MATRIX.md), offsite backups.
   requestErasure: adminProcedure
     .input(z.object({
       customerId: z.number(),
@@ -186,23 +228,72 @@ export const gdprDashboardRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = (await getDb())!;
-      // Anonymize rather than delete (required for regulatory compliance)
-      // NAICOM requires 7-year retention of insurance records
-      if (input.retainForLegal) {
-        await db.execute(sql`
-          UPDATE customers SET
-            name = 'ANONYMIZED',
-            email = CONCAT('anon_', id, '@deleted.insureportal.ng'),
-            phone = 'ANONYMIZED',
-            address = 'ANONYMIZED',
-            date_of_birth = NULL,
-            bvn = 'ANONYMIZED',
-            nin = 'ANONYMIZED',
-            consent_given = false,
-            updated_at = NOW()
-          WHERE id = ${input.customerId}
-        `);
+
+      const [customer] = await db
+        .select()
+        .from(customers)
+        .where(eq(customers.id, input.customerId));
+      if (!customer) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found" });
       }
+      const originalPhone = customer.phone;
+      const anonymizedPhone = `anon_${input.customerId}`;
+      const anonymizedEmail = `anon_${input.customerId}@deleted.insureportal.ng`;
+      const now = new Date();
+
+      // Anonymize rather than delete (required for regulatory compliance).
+      // NAICOM requires 7-year retention of insurance records; the row
+      // remains for financial joins but carries no PII. phone is UNIQUE so
+      // it is replaced with a per-customer sentinel, not a constant.
+      await db
+        .update(customers)
+        .set({
+          firstName: "ANONYMIZED",
+          lastName: "ANONYMIZED",
+          email: anonymizedEmail,
+          phone: anonymizedPhone,
+          address: "ANONYMIZED",
+          dateOfBirth: null,
+          bvn: null,
+          nin: null,
+          passwordHash: null,
+          refreshToken: null,
+          keycloakSub: null,
+          ...(input.retainForLegal ? {} : { deletedAt: now }),
+          updatedAt: now,
+        })
+        .where(eq(customers.id, input.customerId));
+
+      // Break the direct PII linkage on financial records while preserving
+      // the regulated transaction data itself (amounts/statuses untouched).
+      await db
+        .update(transactions)
+        .set({ customerPhone: anonymizedPhone, customerName: "ANONYMIZED", updatedAt: now })
+        .where(eq(transactions.customerPhone, originalPhone));
+
+      // Revoke any active consent records for the customer.
+      await db
+        .update(dataConsentRecords)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(dataConsentRecords.entityType, "customer"),
+            eq(dataConsentRecords.entityId, input.customerId),
+            isNull(dataConsentRecords.revokedAt)
+          )
+        );
+
+      // Record the completed erasure in the data-rights register.
+      await db.insert(dataRightsRequests).values({
+        requestType: "erasure",
+        requesterId: input.customerId,
+        requesterType: "customer",
+        requesterEmail: anonymizedEmail,
+        status: "completed",
+        processedBy: ctx.user.email ?? String(ctx.user.id),
+        processedAt: now,
+        notes: `reason=${input.reason}; retainForLegal=${input.retainForLegal}; anonymized customers + transactions.customerPhone`,
+      });
 
       await writeAuditLog({
         agentId: ctx.user.id,
@@ -210,19 +301,28 @@ export const gdprDashboardRouter = router({
         resource: "customer",
         resourceId: String(input.customerId),
         status: "success",
-        metadata: { reason: input.reason, anonymized: input.retainForLegal },
+        metadata: { reason: input.reason, anonymized: true, retainForLegal: input.retainForLegal },
         ipAddress: ctx.req.ip,
       });
 
       return {
         requestId: `ERASURE-${Date.now()}`,
         customerId: input.customerId,
-        status: input.retainForLegal ? "anonymized" : "deleted",
+        status: input.retainForLegal ? "anonymized" : "anonymized_soft_deleted",
         reason: input.reason,
-        completedAt: new Date().toISOString(),
+        completedAt: now.toISOString(),
+        coverage: {
+          anonymized: ["customers (PII columns)", "transactions.customerPhone", "data_consent_records (revoked)"],
+          retained: [
+            "audit_log (tamper-evident chain; regulatory retention)",
+            "policies/claims (NAICOM 7-year retention)",
+            "kyc_verifications document numbers (OPEN GAP)",
+            "backups (expire per backup retention schedule)",
+          ],
+        },
         legalNote: input.retainForLegal
           ? "Data anonymized (not deleted) to comply with NAICOM 7-year retention requirement"
-          : "Data deleted",
+          : "Data anonymized and soft-deleted; hard delete deferred to legal review because regulated financial records must be preserved",
       };
     }),
 
@@ -237,7 +337,6 @@ export const gdprDashboardRouter = router({
       description: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const db = (await getDb())!;
       const breachId = `BREACH-${Date.now()}`;
       const discoveredAt = new Date(input.discoveredAt);
       const reportDeadline = new Date(discoveredAt.getTime() + 72 * 60 * 60 * 1000);
@@ -274,20 +373,16 @@ export const gdprDashboardRouter = router({
     }),
 
   // ── NDPR Compliance Status ────────────────────────────────────────────────
-  getNdprStatus: protectedProcedure.query(async ({ ctx }) => {
+  getNdprStatus: protectedProcedure.query(async () => {
     const db = (await getDb())!;
-    const [consentCount] = (await db.execute(
-      sql`SELECT COUNT(*) as total FROM customers WHERE consent_given = true`
-    )).rows;
-    const [breachCount] = (await db.execute(
-      sql`SELECT COUNT(*) as total FROM audit_log WHERE action = 'DATA_BREACH_REPORTED' AND created_at > NOW() - INTERVAL '1 year'`
-    )).rows;
+    const consentedCustomers = await countConsentedCustomers(db);
+    const dataBreachesReported = await countAuditActions(db, "DATA_BREACH_REPORTED", ONE_YEAR_AGO());
 
     return {
       regulation: "NDPR 2019",
       regulator: "NITDA",
-      consentedCustomers: Number((consentCount as any)[0]?.total || 0),
-      dataBreachesReported: Number((breachCount as any)[0]?.total || 0),
+      consentedCustomers,
+      dataBreachesReported,
       dpiaCompleted: true,
       lastAuditDate: new Date().toISOString(),
       status: "compliant",
@@ -304,6 +399,8 @@ export const gdprDashboardRouter = router({
   }),
 
   // ── Consent Management ────────────────────────────────────────────────────
+  // Consent is persisted in data_consent_records (there is no
+  // customers.consent_given column). New records supersede prior active ones.
   updateConsent: protectedProcedure
     .input(z.object({
       customerId: z.number(),
@@ -312,12 +409,30 @@ export const gdprDashboardRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = (await getDb())!;
-      await db.execute(sql`
-        UPDATE customers SET
-          consent_given = ${input.consentGiven},
-          updated_at = NOW()
-        WHERE id = ${input.customerId}
-      `);
+      const now = new Date();
+
+      // Supersede active records for this customer.
+      await db
+        .update(dataConsentRecords)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(dataConsentRecords.entityType, "customer"),
+            eq(dataConsentRecords.entityId, input.customerId),
+            isNull(dataConsentRecords.revokedAt)
+          )
+        );
+
+      for (const purpose of input.consentPurposes) {
+        await db.insert(dataConsentRecords).values({
+          entityType: "customer",
+          entityId: input.customerId,
+          consentType: purpose,
+          granted: input.consentGiven,
+          grantedAt: now,
+          ipAddress: ctx.req.ip ?? null,
+        });
+      }
 
       await writeAuditLog({
         agentId: ctx.user.id,
