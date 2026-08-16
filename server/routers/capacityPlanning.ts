@@ -42,9 +42,9 @@ export const capacityPlanningRouter = router({
       throw notImplemented();
     }),
 
-  dashboard: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
+  dashboard: protectedProcedure.query(async (): Promise<{ utilizationPercent: { cpu: number; memory: number; storage: number; network: number }; growthForecast: Record<string, number>; scalingRecommendations: Array<Record<string, unknown>> }> => {
+      throw notImplemented();
+    }),
 
   getStats: protectedProcedure.query(async () => {
     throw notImplemented();

@@ -100,15 +100,15 @@ export function validateResponse<T extends ZodSchema>(
       const error: ValidationError = {
         type: "schema",
         message: "Response validation failed",
-        details: err.errors,
+        details: err.issues,
         timestamp: new Date(),
       };
       logger.error(
         { error },
-        `[OutputValidation] Schema validation failed: ${err.errors.map(e => e.message).join(", ")}`
+        `[OutputValidation] Schema validation failed: ${err.issues.map(e => e.message).join(", ")}`
       );
       onError?.(error);
-      throw new Error(`Response validation failed: ${err.errors[0]?.message}`);
+      throw new Error(`Response validation failed: ${err.issues[0]?.message}`);
     }
     throw err;
   }
@@ -163,5 +163,4 @@ export default {
   validateResponse,
   createResponseValidator,
   ValidationSchemas,
-  ValidationError,
 };

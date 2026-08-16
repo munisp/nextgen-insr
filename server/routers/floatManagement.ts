@@ -38,7 +38,7 @@ async function getAgentDailyTopUp(db: NonNullable<Awaited<ReturnType<typeof getD
   }).from(transactions)
     .where(and(
       eq(transactions.agentId, agentId),
-      eq(transactions.type, "Float Top-Up"),
+      eq(transactions.type, "Float Transfer Received"),
       gte(transactions.createdAt, today),
       eq(transactions.status, "success")
     ));
@@ -59,7 +59,7 @@ export const floatManagementRouter = router({
         name: agents.name,
         premiumReserve: agents.premiumReserve,
         floatLocked: agents.floatLocked,
-        status: agents.status,
+        isActive: agents.isActive,
       }).from(agents).where(eq(agents.id, input.agentId)).limit(1);
 
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
@@ -137,7 +137,7 @@ export const floatManagementRouter = router({
       try {
         // Idempotency check
         const existing = await db.select().from(transactions)
-          .where(eq(transactions.reference, input.reference)).limit(1);
+          .where(eq(transactions.ref, input.reference)).limit(1);
         if (existing.length > 0) {
           return { idempotent: true, transaction: existing[0] };
         }
@@ -165,9 +165,9 @@ export const floatManagementRouter = router({
 
         // Record transaction
         const [tx] = await db.insert(transactions).values({
-          reference: input.reference,
+          ref: input.reference,
           agentId: input.agentId,
-          type: "Float Top-Up",
+          type: "Float Transfer Received",
           amount: String(input.amountNGN),
           fee: "0",
           commission: "0",
@@ -191,7 +191,7 @@ export const floatManagementRouter = router({
           metadata: {
             amountNGN: input.amountNGN,
             newBalance,
-            reference: input.reference,
+            ref: input.reference,
             tbTransferId: tbResult?.id ?? null,
           },
         }).catch(() => {});
@@ -240,7 +240,7 @@ export const floatManagementRouter = router({
       try {
         // Idempotency check
         const existing = await db.select().from(transactions)
-          .where(eq(transactions.reference, input.reference)).limit(1);
+          .where(eq(transactions.ref, input.reference)).limit(1);
         if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
 
         // TigerBeetle: float-{agentId} → sys-bank-reserve
@@ -261,9 +261,9 @@ export const floatManagementRouter = router({
           .where(eq(agents.id, input.agentId));
 
         const [tx] = await db.insert(transactions).values({
-          reference: input.reference,
+          ref: input.reference,
           agentId: input.agentId,
-          type: "Float Withdrawal",
+          type: "Float Transfer",
           amount: String(input.amountNGN),
           fee: "0",
           commission: "0",

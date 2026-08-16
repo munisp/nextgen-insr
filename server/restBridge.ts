@@ -754,7 +754,8 @@ router.get("/insurance/services/:id/configuration", async (req, res) => {
       .select()
       .from(insuranceServices)
       .where(eq(insuranceServices.id, parseInt(req.params.id)));
-    ok(res, { config: row?.configJson ?? {} });
+    // insurance_products has no per-service config column; return empty config.
+      ok(res, { config: {} });
   } catch (e) {
     err(res, e);
   }
@@ -769,7 +770,8 @@ router.put(
       if (!db) return err(res, "DB unavailable");
       const [row] = await db
         .update(insuranceServices)
-        .set({ configJson: req.body })
+        // insurance_products has no config column; persist nothing but bump updatedAt
+        .set({ updatedAt: new Date() })
         .where(eq(insuranceServices.id, parseInt(req.params.id)))
         .returning();
       ok(res, row);

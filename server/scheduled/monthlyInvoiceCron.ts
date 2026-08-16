@@ -22,8 +22,9 @@ import {
   tenantBillingConfig,
   platformBillingLedger,
   billingAuditLog,
+  agents,
 } from "../../drizzle/schema";
-import { eq, and, gte, lt, sql } from "drizzle-orm";
+import { eq, and, gte, lt, sql, inArray } from "drizzle-orm";
 import { logger } from '../_core/logger';
 
 let _stripe: Stripe | null = null;
@@ -65,6 +66,11 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
 
   try {
     const db = await getDb();
+    if (!db) {
+      logger.warn("[Monthly Invoice Cron] DB unavailable; skipping run");
+      res.status(503).json({ error: "Database unavailable" });
+      return;
+    }
 
     // Calculate previous month date range
     const now = new Date();
@@ -92,14 +98,17 @@ export async function handleMonthlyInvoiceCron(req: Request, res: Response) {
         const ledgerEntries = await db
           .select({
             totalGross: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.grossAmount} AS DECIMAL)), 0)`,
-            totalPlatformShare: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.platformShare} AS DECIMAL)), 0)`,
-            totalClientShare: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.clientShare} AS DECIMAL)), 0)`,
+            totalPlatformShare: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.platformNetFee} AS DECIMAL)), 0)`,
+            totalClientShare: sql<string>`COALESCE(SUM(CAST(${platformBillingLedger.grossAmount} AS DECIMAL) - CAST(${platformBillingLedger.platformNetFee} AS DECIMAL)), 0)`,
             transactionCount: sql<number>`COUNT(*)`,
           })
           .from(platformBillingLedger)
           .where(
             and(
-              eq(platformBillingLedger.tenantId, config.tenantId),
+              inArray(
+                platformBillingLedger.agentId,
+                db.select({ id: agents.id }).from(agents).where(eq(agents.tenantId, config.tenantId))
+              ),
               gte(platformBillingLedger.createdAt, periodStart),
               lt(platformBillingLedger.createdAt, periodEnd)
             )

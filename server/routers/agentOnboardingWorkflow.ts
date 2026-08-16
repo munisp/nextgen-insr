@@ -20,6 +20,17 @@ import { desc, eq, sql, and, count } from "drizzle-orm";
  * 
  * SLA: Full onboarding must complete within 14 business days
  */
+// DB enum (onboarding_step) uses "float"/"activated"; the API surface uses
+// "float_funding"/"go_live". Translate at the boundary.
+const DB_STEP: Record<string, "profile" | "kyc" | "training" | "float" | "terminal" | "activated"> = {
+  profile: "profile", kyc: "kyc", training: "training",
+  float_funding: "float", terminal: "terminal", go_live: "activated",
+};
+const API_STEP: Record<string, string> = {
+  profile: "profile", kyc: "kyc", training: "training",
+  float: "float_funding", terminal: "terminal", activated: "go_live",
+};
+
 export const agentOnboardingWorkflowRouter = router({
   // List all agents in onboarding pipeline
   list: protectedProcedure
@@ -35,7 +46,7 @@ export const agentOnboardingWorkflowRouter = router({
       if (!database) return { data: [], total: 0 };
 
       const conditions = [];
-      if (input.currentStep) conditions.push(eq(agentOnboardingProgress.currentStep, input.currentStep));
+      if (input.currentStep) conditions.push(eq(agentOnboardingProgress.currentStep, DB_STEP[input.currentStep]));
 
       const query = database.select().from(agentOnboardingProgress)
         .orderBy(desc(agentOnboardingProgress.id))
@@ -61,7 +72,7 @@ export const agentOnboardingWorkflowRouter = router({
       const [progress] = await database
         .select()
         .from(agentOnboardingProgress)
-        .where(eq(agentOnboardingProgress.agentId, input.agentId))
+        .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
         .limit(1);
 
       if (!progress) throw new Error(`No onboarding record for agent #${input.agentId}`);
@@ -80,7 +91,7 @@ export const agentOnboardingWorkflowRouter = router({
       z.object({
         agentId: z.number(),
         completedStep: z.enum(["profile", "kyc", "training", "float_funding", "terminal", "go_live"]),
-        evidence: z.record(z.string()).optional(),
+        evidence: z.record(z.string(), z.string()).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -90,14 +101,14 @@ export const agentOnboardingWorkflowRouter = router({
       const [progress] = await database
         .select()
         .from(agentOnboardingProgress)
-        .where(eq(agentOnboardingProgress.agentId, input.agentId))
+        .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
         .limit(1);
 
       if (!progress) throw new Error("No onboarding record found");
 
       // Validate step order
       const stepOrder = ["profile", "kyc", "training", "float_funding", "terminal", "go_live"];
-      const currentIdx = stepOrder.indexOf(progress.currentStep);
+      const currentIdx = stepOrder.indexOf(API_STEP[progress.currentStep] ?? progress.currentStep);
       const completedIdx = stepOrder.indexOf(input.completedStep);
 
       if (completedIdx !== currentIdx) {
@@ -106,8 +117,8 @@ export const agentOnboardingWorkflowRouter = router({
 
       // Determine next step and update field
       const nextStep = stepOrder[completedIdx + 1] ?? "completed";
-      const updateFields: Record<string, any> = {
-        currentStep: nextStep === "completed" ? "go_live" : nextStep,
+      const updateFields: Partial<typeof agentOnboardingProgress.$inferInsert> = {
+        currentStep: nextStep === "completed" ? "activated" : DB_STEP[nextStep],
       };
 
       // Mark the appropriate boolean field
@@ -121,7 +132,7 @@ export const agentOnboardingWorkflowRouter = router({
       await database
         .update(agentOnboardingProgress)
         .set(updateFields)
-        .where(eq(agentOnboardingProgress.agentId, input.agentId));
+        .where(eq(agentOnboardingProgress.agentId, String(input.agentId)));
 
       return {
         agentId: input.agentId,
@@ -146,7 +157,7 @@ export const agentOnboardingWorkflowRouter = router({
       const [existing] = await database
         .select()
         .from(agentOnboardingProgress)
-        .where(eq(agentOnboardingProgress.agentId, input.agentId))
+        .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
         .limit(1);
 
       if (existing) throw new Error(`Onboarding already initiated for agent ${input.agentId}`);

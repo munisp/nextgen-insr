@@ -309,7 +309,7 @@ export const tenantAdminRouter = router({
       }
       const [updated] = await db
         .update(tenants)
-        .set({ isLive: !tenant.isLive, updatedAt: new Date() })
+        .set({ status: tenant.status === "active" ? "suspended" : "active", updatedAt: new Date() })
         .where(eq(tenants.id, tenantPk))
         .returning();
       await db.insert(auditLog).values({
@@ -317,9 +317,9 @@ export const tenantAdminRouter = router({
         resource: "tenants",
         resourceId: String(tenantPk),
         status: "success",
-        metadata: { isLive: updated?.isLive },
+        metadata: { status: updated?.status },
       });
-      return { success: true, isLive: updated?.isLive };
+      return { success: true, status: updated?.status };
     }),
   // SECURITY (platform-provisioning invariant, THREAT_MODEL.md §7.1):
   // user-management is admin surface. The input schema is .strict() so a
@@ -384,7 +384,7 @@ export const tenantAdminRouter = router({
       return { success: true };
     }),
   activityLog: protectedProcedure
-    .input(z.object({ limit: z.number().default(50) }).default({}))
+    .input(z.object({ limit: z.number().default(50) }).default({ limit: 50 }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { entries: [], total: 0 };

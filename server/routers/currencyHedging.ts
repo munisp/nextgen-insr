@@ -41,7 +41,7 @@ export const currencyHedgingRouter = router({
     .query(async () => {
       throw notImplemented();
     }),
-  getStats: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
+  getStats: protectedProcedure.query(async (): Promise<Record<string, unknown>> => {
+      throw notImplemented();
+    }),
 });

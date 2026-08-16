@@ -90,23 +90,23 @@ async function buildMonthlyActivityReport(db: Awaited<ReturnType<typeof getDb>>,
     }).from(transactions).where(and(
       gte(transactions.createdAt, startDate),
       lte(transactions.createdAt, endDate),
-      eq(transactions.type, "premium"),
+      eq(transactions.type, "Insurance"),
     )),
     // Claims paid
     db.select({
-      total: sum(claims.settlementAmount),
+      total: sum(claims.paidAmount),
       count: count(),
     }).from(claims).where(and(
       gte(claims.createdAt, startDate),
       lte(claims.createdAt, endDate),
-      eq(claims.status, "settled"),
+      eq(claims.status, "paid"),
     )),
     // Active policies
     db.select({ count: count() }).from(policies)
       .where(eq(policies.status, "active")),
     // Active agents
     db.select({ count: count() }).from(agents)
-      .where(eq(agents.status, "active")),
+      .where(eq(agents.isActive, true)),
   ]);
 
   const totalPremiums = parseFloat(String(premiumData[0]?.total ?? 0));
@@ -232,10 +232,10 @@ export const naicomReportingRouter = router({
 
       await writeAuditLog({
         action: "NAICOM_REPORT_GENERATED",
-        entityType: "naicom_report",
-        entityId: String(report.id),
-        userId: ctx.user?.id ?? 0,
-        details: { reportType: "MONTHLY_ACTIVITY", period: input.period, autoSubmit: input.autoSubmit, naicomRef },
+        resource: "naicom_report",
+        resourceId: String(report.id),
+        agentId: ctx.user?.id,
+        metadata: { reportType: "MONTHLY_ACTIVITY", period: input.period, autoSubmit: input.autoSubmit, naicomRef },
       });
 
       return {
@@ -293,10 +293,10 @@ export const naicomReportingRouter = router({
 
       await writeAuditLog({
         action: "NAICOM_REPORT_SUBMITTED",
-        entityType: "naicom_report",
+        resource: "naicom_report",
         entityId: String(input.reportId),
-        userId: ctx.user?.id ?? 0,
-        details: { naicomReference: result.naicomReference, success: result.success, error: result.error },
+        agentId: ctx.user?.id,
+        metadata: { naicomReference: result.naicomReference, success: result.success, error: result.error },
       });
 
       return {
@@ -357,10 +357,10 @@ export const naicomReportingRouter = router({
 
       await writeAuditLog({
         action: "NAICOM_CLAIM_NOTIFICATION",
-        entityType: "naicom_report",
-        entityId: String(report.id),
-        userId: ctx.user?.id ?? 0,
-        details: { claimId: input.claimId, amount: input.claimAmount, naicomRef: result.naicomReference },
+        resource: "naicom_report",
+        resourceId: String(report.id),
+        agentId: ctx.user?.id,
+        metadata: { claimId: input.claimId, amount: input.claimAmount, naicomRef: result.naicomReference },
       });
 
       return {

@@ -20,9 +20,9 @@ const notImplemented = (feature: string) =>
   });
 
 export const automatedSettlementSchedulerRouter = router({
-  getStats: protectedProcedure.query(async () => {
-    throw notImplemented("Settlement scheduler stats");
-  }),
+  getStats: protectedProcedure.query(async (): Promise<Record<string, unknown>> => {
+      throw notImplemented("Settlement scheduler stats");
+    }),
 
   listSchedules: protectedProcedure.query(async () => {
     throw notImplemented("Settlement schedules");
