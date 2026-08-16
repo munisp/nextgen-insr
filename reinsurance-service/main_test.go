@@ -9,7 +9,7 @@ import (
 func TestHealthEndpoint(t *testing.T) {
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
-	handleHealth(w, req)
+	(&Server{}).handleHealth(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("health returned %d, want 200", w.Code)
 	}
@@ -22,7 +22,7 @@ func TestHealthEndpoint(t *testing.T) {
 func TestHealthContentType(t *testing.T) {
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
-	handleHealth(w, req)
+	(&Server{}).handleHealth(w, req)
 	ct := w.Header().Get("Content-Type")
 	if ct != "" && ct != "application/json" {
 		t.Errorf("unexpected content-type: %s", ct)
