@@ -18,7 +18,7 @@ jobs:
   fix:
     name: eslint --fix server/ + report
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -38,22 +38,6 @@ jobs:
         run: |
           pnpm exec eslint server/ --ext .ts,.tsx,.js,.jsx --fix -f unix > fix-output.txt 2>&1 || true
           wc -l fix-output.txt
-
-      - name: Post-fix report (JSON)
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: |
-          pnpm exec eslint server/ --ext .ts,.tsx,.js,.jsx -f json > eslint-report.json 2>&1 || true
-          node -e "const r=require('./eslint-report.json');let e=0,w=0;for(const f of r){e+=f.errorCount;w+=f.warningCount}console.log('errors',e,'warnings',w)"
-
-      - name: Upload reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: eslint-fix-reports
-          path: |
-            fix-output.txt
-            eslint-report.json
-          retention-days: 14
 
       - name: Commit auto-fixes
         run: |
@@ -77,3 +61,20 @@ jobs:
           done
           echo "could not push after retries"
           exit 1
+
+      - name: Post-fix report (JSON)
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          pnpm exec eslint server/ --ext .ts,.tsx,.js,.jsx -f json > eslint-report.json 2>&1 || true
+          node -e "const r=require('./eslint-report.json');let e=0,w=0;for(const f of r){e+=f.errorCount;w+=f.warningCount}console.log('errors',e,'warnings',w)"
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: eslint-fix-reports
+          path: |
+            fix-output.txt
+            eslint-report.json
+          retention-days: 14
+
