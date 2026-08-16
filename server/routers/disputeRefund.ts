@@ -136,7 +136,7 @@ export const disputeRefundRouter = router({
       const results = await database.select().from(disputes).where(where).orderBy(desc(disputes.id)).limit(input.limit).offset(input.offset);
       const totalRows = await database.select({ total: count() }).from(disputes).where(where);
 
-      const enriched = results.map((d: any) => {
+      const enriched = results.map((d) => {
         const tier = getRefundTier(Number(d.amount ?? 0));
         return {
           ...d,
@@ -147,7 +147,7 @@ export const disputeRefundRouter = router({
         };
       });
 
-      return { data: enriched, total: (totalRows as any)[0]?.total ?? 0, limit: input.limit, offset: input.offset };
+      return { data: enriched, total: totalRows[0]?.total ?? 0, limit: input.limit, offset: input.offset };
     }),
 
   initiateRefund: protectedProcedure
@@ -205,7 +205,7 @@ export const disputeRefundRouter = router({
       const velocityRows = await database.select({
         customerRefundCount: sql<number>`COUNT(*) FILTER (WHERE "customerId" = ${input.customerId} AND "createdAt" >= ${thirtyDaysAgo.toISOString()})`,
       }).from(refunds);
-      const customerRefundCount = (velocityRows as any)[0]?.customerRefundCount ?? 0;
+      const customerRefundCount = velocityRows[0]?.customerRefundCount ?? 0;
       if (Number(customerRefundCount) >= MAX_REFUNDS_PER_CUSTOMER_30D) {
         return {
           success: false,

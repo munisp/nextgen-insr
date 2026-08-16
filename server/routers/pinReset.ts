@@ -18,6 +18,7 @@ import { z } from "zod";
 
 import { agents, otpTokens } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
+import { logger } from "../_core/logger";
 import { getDb } from "../db";
 import { sendSms } from "../termii";
 const OTP_EXPIRY_MINUTES = 10;
@@ -111,7 +112,7 @@ export const pinResetRouter = router({
         } else {
           const maskedPhone =
             input.phone.slice(0, 4) + "****" + input.phone.slice(-3);
-          console.info(
+          logger.info(
             `[pinReset] OTP SMS sent to ${maskedPhone} — messageId: ${smsResult.messageId}`
           );
         }

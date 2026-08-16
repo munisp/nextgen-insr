@@ -55,7 +55,6 @@ import {
   sql,
   inArray,
   or,
-  ne,
 } from "drizzle-orm";
 import { z } from "zod";
 
@@ -475,7 +474,7 @@ export const agentRouter = router({
           .optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -533,7 +532,7 @@ export const agentRouter = router({
     .input(
       z.object({ id: z.number().int().positive(), reason: z.string().min(5) })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -576,7 +575,7 @@ export const agentRouter = router({
         reason: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -615,7 +614,7 @@ export const agentRouter = router({
         reason: z.string().optional(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -656,7 +655,7 @@ export const agentRouter = router({
     .input(
       z.object({ ids: z.array(z.number().int().positive()).min(1).max(100) })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -690,7 +689,7 @@ export const agentRouter = router({
         reason: z.string().min(5),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -724,7 +723,7 @@ export const agentRouter = router({
         reason: z.string().min(5),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -762,7 +761,7 @@ export const agentRouter = router({
         tier: z.enum(["Bronze", "Silver", "Gold", "Platinum"]),
       })
     )
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

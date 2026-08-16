@@ -53,7 +53,7 @@ export const agentFloatTransferRouter = router({
       reason: z.string().min(5),
       supervisorCode: z.string().optional(),
     }))
-    .mutation(async ({ input, ctx }) => {
+    .mutation(async ({ input }) => {
       if (input.senderAgentId === input.receiverAgentId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot transfer to self" });
       }

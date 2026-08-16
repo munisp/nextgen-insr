@@ -4,9 +4,9 @@
  * Uses Drizzle ORM with PostgreSQL connection pooling.
  * Production mode requires a valid database URL. Test mode allows noop fallback.
  */
-import { eq, desc, and, isNull, lt, gt, sql, type ExtractTablesWithRelations, type ColumnBaseConfig, type ColumnDataType } from "drizzle-orm";
+import { eq, desc, and, lt, sql, type ExtractTablesWithRelations, type ColumnBaseConfig, type ColumnDataType } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import type { NodePgDatabase, NodePgQueryResultHKT, NodePgTransaction } from "drizzle-orm/node-postgres";
+import type { NodePgQueryResultHKT } from "drizzle-orm/node-postgres";
 import type { PgTable, PgTransaction, TableConfig, PgColumn } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 
@@ -21,7 +21,6 @@ import {
   chatSessions,
   chatMessages,
   auditLog,
-  premiumTopUpRequests,
   type Agent,
   type InsertAgent,
   type InsertTransaction,
@@ -34,7 +33,6 @@ let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Pool | null = null;
 let _dbError: Error | null = null;
 let _dbVerified = false;
-let _poolReady = false;
 
 /**
  * DatabaseError is thrown when a required database operation fails in production.
@@ -60,7 +58,6 @@ export async function getDb(): Promise<ReturnType<typeof drizzle> | null> {
     _pool = null;
     _db = null;
     _dbVerified = false;
-    _poolReady = false;
   }
   if (_db && _dbVerified) return _db;
 
@@ -142,7 +139,6 @@ export async function getDb(): Promise<ReturnType<typeof drizzle> | null> {
       await client.query("SELECT 1");
       client.release();
       _dbVerified = true;
-      _poolReady = true;
       logger.info("[DB] Database connection verified");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -151,7 +147,6 @@ export async function getDb(): Promise<ReturnType<typeof drizzle> | null> {
       _dbError = dbErr;
       _db = null;
       _pool = null;
-      _poolReady = false;
       if (process.env.NODE_ENV === "test") return null;
       throw dbErr;
     }
@@ -201,11 +196,11 @@ export const db = {
     const pool = await getPool();
     if (!pool) return { rows: [], rowCount: 0 };
     const res = await pool.query(text, params);
-    return { rows: res.rows, rowCount: res.rowCount };
+    return { rows: res.rows as Record<string, unknown>[], rowCount: res.rowCount };
   },
 };
 
-export async function getDbStatus(): Promise<{
+export function getDbStatus(): {
   connected: boolean;
   poolSize: number;
   poolIdle: number;
@@ -454,6 +449,14 @@ export async function getFraudAlerts(status?: string) {
   const query = db
     .select()
     .from(fraudAlerts)
+    .where(
+      status
+        ? eq(
+            fraudAlerts.status,
+            status as "open" | "investigating" | "escalated" | "dismissed" | "resolved"
+          )
+        : undefined
+    )
     .orderBy(desc(fraudAlerts.createdAt))
     .limit(100);
   return query;
@@ -471,7 +474,7 @@ export async function updateFraudAlertStatus(id: number, status: string) {
   if (!db) return;
   await db
     .update(fraudAlerts)
-    .set({ status: status as any, updatedAt: new Date() })
+    .set({ status: status as "open" | "investigating" | "escalated" | "dismissed" | "resolved", updatedAt: new Date() })
     .where(eq(fraudAlerts.id, id));
 }
 

@@ -8,13 +8,12 @@
  * tenant directory are platform-admin operations only.
  */
 import { TRPCError } from "@trpc/server";
-import { eq, desc, sql, count } from "drizzle-orm";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
 
 import {
   tenants,
   tenantUsers,
-  tenantBranding,
   auditLog,
 } from "../../drizzle/schema";
 import { router, adminProcedure } from "../_core/trpc";
@@ -94,9 +93,8 @@ export const multiTenantIsolationRouter = router({
           .values({
             name: input.name,
             slug,
-            domain: input.domain,
             status: "active",
-          } as any)
+          })
           .returning();
         await db.insert(auditLog).values({
           action: "tenant_created",
@@ -104,7 +102,7 @@ export const multiTenantIsolationRouter = router({
           resourceId: String(tenant.id),
           status: "success",
           metadata: { name: input.name },
-        } as any);
+        });
         return tenant;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
