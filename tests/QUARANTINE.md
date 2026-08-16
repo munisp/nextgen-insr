@@ -60,6 +60,7 @@ Sections:
 | `server/middleware-integration.test.ts` | `expected 9 to be 10` middleware wiring drift |
 | `server/db-performance.test.ts` | PgBouncer config undelivered (CAT-A) + tenant-index scan findings |
 | `server/observability-middleware.test.ts` | docker-compose.sprint42.yml + lakehouse sidecar undelivered (CAT-A) + content checks |
+| `server/gap-fixes.test.ts` | CommissionEngine 9-tier structure undelivered (4 seeded); listDisputes shape missing customerName |
 | `server/sprint28.test.ts` (describe-level) | `mobileMoney.providers` procedure missing — see CAT-B row |
 
 ## DE-DUPLICATED EXECUTION (not quarantine)

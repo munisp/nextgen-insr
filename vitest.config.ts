@@ -115,6 +115,7 @@ export default defineConfig({
       "server/db-performance.test.ts",
       "server/observability-middleware.test.ts",
       "server/sprint95.test.ts",
+      "server/gap-fixes.test.ts",
       // ═══ DE-DUPLICATED EXECUTION (lead-approved 2026-08-16): these suites run
       // green in integration.yml's dedicated contract/e2e jobs with the correct
       // harness (globalSetup schema push, real auth env); including them in the

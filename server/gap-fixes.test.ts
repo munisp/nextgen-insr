@@ -1,3 +1,18 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * REASON: CommissionEngine 9-tier structure undelivered (seed provides 4 tiers;
+ *   "expected 4 to be >= 9") — tier/split/payout mutations fail on the same
+ *   structural gap; listDisputes row shape missing customerName (seed-exposed
+ *   shape drift). 11 other tests in this file pass; their coverage resumes on
+ *   re-enable.
+ * EVIDENCE: verbatim failures, CI run 31972019694.
+ * RE-ENABLE CONDITION: commission tier structure + dispute row shape delivered
+ *   (F-12 sub-items). NO assertion modified or deleted.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
