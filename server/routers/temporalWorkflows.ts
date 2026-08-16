@@ -182,9 +182,9 @@ export const temporalWorkflowsRouter = router({
     throw notImplemented("Temporal workflow listing");
   }),
 
-  summary: protectedProcedure.query(async () => {
-    throw notImplemented("Temporal workflow summary");
-  }),
+  summary: protectedProcedure.query(async (): Promise<{ running: number; failed: number; namespace: string }> => {
+      throw notImplemented("Temporal workflow summary");
+    }),
 
   terminate: protectedProcedure
     .input(

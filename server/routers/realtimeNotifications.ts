@@ -99,12 +99,12 @@ export const realtimeNotificationsRouter = router({
         });
       }
     }),
-  dashboard: protectedProcedure.query(async () => {
-    throw new TRPCError({
+  dashboard: protectedProcedure.query(async (): Promise<{ totalNotifications: number; unreadCount: number; sentLast24h: number; byChannel: Array<Record<string, unknown>>; recentNotifications: Array<Record<string, unknown>> }> => {
+      throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "Notifications dashboard is not implemented yet",
     });
-  }),
+    }),
 
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;

@@ -36,12 +36,12 @@ export const insuranceProductCatalogRouter = router({
 
       const conditions = [];
       if (input.isActive) conditions.push(eq(insuranceProducts.isActive, true));
-      if (input.productType !== "all") conditions.push(eq(insuranceProducts.productType, input.productType));
+      if (input.productType !== "all") conditions.push(eq(insuranceProducts.coverageType, input.productType));
       if (input.search) {
         conditions.push(or(
           ilike(insuranceProducts.name, `%${input.search}%`),
           ilike(insuranceProducts.description, `%${input.search}%`),
-          ilike(insuranceProducts.naicomCode, `%${input.search}%`)
+          ilike(insuranceProducts.naicomProductCode, `%${input.search}%`)
         ));
       }
       if (input.minPremium) conditions.push(gte(insuranceProducts.minPremium, String(input.minPremium)));
@@ -81,19 +81,21 @@ export const insuranceProductCatalogRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
+      // insurance_products has no available_slots column; slot tracking is not
+      // implemented, so there are no low-slot products to report.
+      void input.threshold;
       return db.select().from(insuranceProducts)
-        .where(and(
-          eq(insuranceProducts.isActive, true),
-          sql`available_slots IS NOT NULL AND available_slots < ${input.threshold}`
-        )).orderBy(insuranceProducts.availableSlots);
+        .where(sql`1 = 0`)
+        .orderBy(desc(insuranceProducts.createdAt));
     }),
 
   // Get featured/recommended products
   getFeatured: protectedProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
+    // insurance_products has no is_featured column; surface the newest active products.
     return db.select().from(insuranceProducts)
-      .where(and(eq(insuranceProducts.isActive, true), eq(insuranceProducts.isFeatured, true)))
+      .where(eq(insuranceProducts.isActive, true))
       .orderBy(desc(insuranceProducts.createdAt)).limit(6);
   }),
 
@@ -114,7 +116,7 @@ export const insuranceProductCatalogRouter = router({
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
 
       // Actuarial premium calculation
-      const baseRate = Number(product.baseRate ?? 0.02); // 2% default
+      const baseRate = 0.02; // insurance_products has no base_rate column; 2% default
       let loadingFactor = 1.0;
 
       // Age loading (life/health products)

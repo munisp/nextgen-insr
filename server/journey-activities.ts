@@ -1227,7 +1227,7 @@ export async function transferReinsurancePremium(input: {
   const d = await db();
   const reinsurerId = input.reinsurerId ?? input.reinsurerCode ?? "unknown";
   const cessionPremium = input.cessionPremium ?? input.cedingPremium ?? 0;
-  const cessionRef = cessionRef ?? input.treatyRef ?? `CESSION-${reinsurerId}-${Date.now().toString(36).toUpperCase()}`;
+  const cessionRef = input.cessionRef ?? input.treatyRef ?? `CESSION-${reinsurerId}-${Date.now().toString(36).toUpperCase()}`;
 
   // Idempotency
   const [existing] = await d.select().from(transactions).where(eq(transactions.ref, cessionRef)).limit(1);

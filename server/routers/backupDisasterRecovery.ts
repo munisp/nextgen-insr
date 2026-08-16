@@ -121,12 +121,12 @@ export const backupDisasterRecoveryRouter = router({
         });
       }
     }),
-  dashboard: protectedProcedure.query(async () => {
-    throw new TRPCError({
+  dashboard: protectedProcedure.query(async (): Promise<{ lastBackup: { timestamp: string } | null; drStatus: { drRegion: string; rpo: string; rto: string }; recentBackups: Array<Record<string, unknown>> }> => {
+      throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "Backup/DR dashboard is not implemented yet",
     });
-  }),
+    }),
 
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;

@@ -47,11 +47,11 @@ export const mobileMoneyRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const existing = await db.select().from(transactions).where(eq(transactions.reference, input.reference)).limit(1);
+      const existing = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
       if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-      if (agent.status !== "active" || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
+      if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
       const lockKey = `mm-cashin:${input.agentId}:${input.reference}`;
       const locked = await acquireLock(lockKey, 15_000);
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Transaction in progress" });
@@ -66,12 +66,12 @@ export const mobileMoneyRouter = router({
           ref: input.reference, txType: "Mobile Money Cash-In", agentId: agent.agentId,
         });
         const [tx] = await db.insert(transactions).values({
-          reference: input.reference, agentId: input.agentId, type: "Mobile Money Cash-In",
+          ref: input.reference, agentId: input.agentId, type: "Cash In",
           amount: String(input.amountNGN), fee: "0", commission: String(commission),
           customerPhone: input.customerPhone, customerName: input.customerName ?? null,
           // Never synchronous success: settlement is confirmed asynchronously
           // by the mobile-money provider.
-          channel: "Mobile Money", status: "pending", fraudScore: "0.00",
+          channel: "App", status: "pending", fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
           metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();
@@ -92,11 +92,11 @@ export const mobileMoneyRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const existing = await db.select().from(transactions).where(eq(transactions.reference, input.reference)).limit(1);
+      const existing = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
       if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-      if (agent.status !== "active" || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
+      if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
       const agentBalance = Number(agent.premiumReserve ?? 0);
       if (agentBalance < input.amountNGN + 5000) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Insufficient float. Available: ₦${(agentBalance - 5000).toLocaleString()}` });
       const lockKey = `mm-cashout:${input.agentId}:${input.reference}`;
@@ -113,12 +113,12 @@ export const mobileMoneyRouter = router({
           ref: input.reference, txType: "Mobile Money Cash-Out", agentId: agent.agentId,
         });
         const [tx] = await db.insert(transactions).values({
-          reference: input.reference, agentId: input.agentId, type: "Mobile Money Cash-Out",
+          ref: input.reference, agentId: input.agentId, type: "Cash Out",
           amount: String(input.amountNGN), fee: "0", commission: String(commission),
           customerPhone: input.customerPhone, customerName: input.customerName ?? null,
           // Never synchronous success: settlement is confirmed asynchronously
           // by the mobile-money provider.
-          channel: "Mobile Money", status: "pending", fraudScore: "0.00",
+          channel: "App", status: "pending", fraudScore: "0.00",
           tbSyncStatus: tbResult ? "synced" : "pending",
           metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();

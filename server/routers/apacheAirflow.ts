@@ -42,12 +42,12 @@ export const apacheAirflowRouter = router({
       throw notImplemented();
     }),
 
-  dashboard: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
-  listDags: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
+  dashboard: protectedProcedure.query(async (): Promise<{ overview: { activeDags: number; totalTaskInstances: number; avgSuccessRate: number; failedTasks24h: number }; dagsByTag: Array<Record<string, unknown>>; recentFailures: Array<Record<string, unknown>>; dags: Array<Record<string, unknown>> }> => {
+      throw notImplemented();
+    }),
+  listDags: protectedProcedure.query(async (): Promise<{ dags: Array<Record<string, unknown>> }> => {
+      throw notImplemented();
+    }),
   triggerDag: publicProcedure
     .input(z.object({ dagId: z.string() }))
     .mutation(async () => {

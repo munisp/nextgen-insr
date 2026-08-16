@@ -110,15 +110,15 @@ export const fraudRealtimeVizRouter = router({
     throw notImplemented();
   }),
 
-  liveMap: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
+  liveMap: protectedProcedure.query(async (): Promise<{ summary: { totalAlerts: number; critical: number; avgResponseTimeMs: number }; markers: Array<Record<string, unknown>> }> => {
+      throw notImplemented();
+    }),
 
-  suspiciousStream: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
+  suspiciousStream: protectedProcedure.query(async (): Promise<{ items: Array<Record<string, unknown>> }> => {
+      throw notImplemented();
+    }),
 
-  agentHeatmap: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
+  agentHeatmap: protectedProcedure.query(async (): Promise<{ zones: Array<Record<string, unknown>> }> => {
+      throw notImplemented();
+    }),
 });

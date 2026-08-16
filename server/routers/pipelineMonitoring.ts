@@ -42,17 +42,27 @@ export const pipelineMonitoringRouter = router({
       throw notImplemented();
     }),
 
-  dashboard: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
+  dashboard: protectedProcedure.query(
+    async (): Promise<{
+      healthScore: number;
+      activeAlerts: number;
+      resolvedToday: number;
+      slaBreaches: number;
+      services: Array<{ name: string; status: string; [k: string]: unknown }>;
+    }> => {
+      throw notImplemented();
+    }
+  ),
 
   getStats: protectedProcedure.query(async () => {
     throw notImplemented();
   }),
 
-  activeAlerts: protectedProcedure.query(async () => {
-    throw notImplemented();
-  }),
+  activeAlerts: protectedProcedure.query(
+    async (): Promise<{ alerts: Array<Record<string, unknown>> }> => {
+      throw notImplemented();
+    }
+  ),
 
   slaStatus: protectedProcedure.query(async () => {
     throw notImplemented();

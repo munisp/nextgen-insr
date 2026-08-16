@@ -256,4 +256,5 @@ export const ENV = {
 
   // ── Lakehouse analytics ingestion endpoint ─────────────────────────────────
   lakehouseUrl: optEnv("LAKEHOUSE_URL", "http://minio:9000"),
+  slackWebhookUrl: optEnv("SLACK_WEBHOOK_URL", ""),
 };

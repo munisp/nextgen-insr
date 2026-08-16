@@ -29,7 +29,7 @@ export interface DependencyCheck {
 
 const startTime = Date.now();
 
-export async function checkDatabase(dbPool: { query: (sql: string) => Promise<{ rows: unknown[] }> }): Promise<DependencyCheck> {
+export async function checkDatabase(dbPool?: { query: (sql: string) => Promise<{ rows: unknown[] }> }): Promise<DependencyCheck> {
   const start = Date.now();
   try {
     if (dbPool?.query) {
@@ -47,7 +47,7 @@ export async function checkDatabase(dbPool: { query: (sql: string) => Promise<{ 
   }
 }
 
-export async function checkRedis(redisClient: { ping: () => Promise<string> }): Promise<DependencyCheck> {
+export async function checkRedis(redisClient?: { ping: () => Promise<string> }): Promise<DependencyCheck> {
   const start = Date.now();
   try {
     if (redisClient?.ping) {
@@ -66,7 +66,7 @@ export async function checkRedis(redisClient: { ping: () => Promise<string> }): 
 }
 
 export async function checkTigerBeetle(
-  tbClient: { lookupAccounts: (ids: unknown[]) => Promise<unknown[]> }
+  tbClient?: { lookupAccounts: (ids: unknown[]) => Promise<unknown[]> }
 ): Promise<DependencyCheck> {
   const start = Date.now();
   try {

@@ -93,7 +93,7 @@ export default function FloatManagementPage() {
                     <Users className="h-4 w-4" /> Active Agents
                   </div>
                   <div className="text-2xl font-bold">
-                    {s.activeAgents.toLocaleString()}
+                    {(s.activeAgents ?? 0).toLocaleString()}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     of {s.totalAgents.toLocaleString()} total
@@ -106,10 +106,10 @@ export default function FloatManagementPage() {
                     <AlertTriangle className="h-4 w-4" /> Below Minimum Float
                   </div>
                   <div className="text-2xl font-bold">
-                    {s.agentsBelowMinFloat.toLocaleString()}
+                    {(s.agentsBelowMinFloat ?? 0).toLocaleString()}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    minimum {formatNaira(s.minFloatNGN)}
+                    minimum {formatNaira(s.minFloatNGN ?? 0)}
                   </div>
                 </CardContent>
               </Card>
@@ -142,16 +142,16 @@ export default function FloatManagementPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                 <div>
                   <div className="text-muted-foreground">Minimum Float</div>
-                  <div className="font-semibold">{formatNaira(s.minFloatNGN)}</div>
+                  <div className="font-semibold">{formatNaira(s.minFloatNGN ?? 0)}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">Maximum Float</div>
-                  <div className="font-semibold">{formatNaira(s.maxFloatNGN)}</div>
+                  <div className="font-semibold">{formatNaira(s.maxFloatNGN ?? 0)}</div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">Daily Top-Up Limit</div>
                   <div className="font-semibold">
-                    {formatNaira(s.dailyTopUpLimitNGN)}
+                    {formatNaira(s.dailyTopUpLimitNGN ?? 0)}
                   </div>
                 </div>
               </div>

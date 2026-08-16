@@ -3,6 +3,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
 const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
+import { useIsMobile } from "@/hooks/useMobile";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,15 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function AgentManagementDashboard() {
+  // Derive chart stats from the live agent list (no aggregate stats endpoint exists).
+  const rows = agentsQ.data ?? [];
+  const data = {
+    active: rows.filter(a => a.isActive).length,
+    suspended: rows.filter(a => !a.isActive).length,
+    pending: 0,
+    totalTransactions: 0,
+  };
+  const isMobile = useIsMobile();
   const agentsQ = trpc.agentMgmt.listAll.useQuery(undefined, { retry: false });
   const topUpQ = trpc.agentMgmt.listTopUpRequests.useQuery(
     { status: "pending" },

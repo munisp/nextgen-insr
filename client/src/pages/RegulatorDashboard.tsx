@@ -10,7 +10,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
-import { BarChart2, FileText, Scale, Shield } from "lucide-react";
+import { BarChart2, FileText, Scale, Shield, Activity, AlertTriangle, CheckCircle, DollarSign, TrendingUp } from "lucide-react";
 
 
 const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6", "#ec4899"];

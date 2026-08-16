@@ -70,7 +70,7 @@ export const splitPaymentsRouter = router({
 
       // Idempotency check
       const existing = await db.select().from(transactions)
-        .where(eq(transactions.reference, input.reference)).limit(1);
+        .where(eq(transactions.ref, input.reference)).limit(1);
       if (existing.length > 0) return { idempotent: true, splitRef: input.reference };
 
       // Load source agent
@@ -149,17 +149,18 @@ export const splitPaymentsRouter = router({
 
         // Record parent transaction
         const [parentTx] = await db.insert(transactions).values({
-          reference: input.reference,
+          ref: input.reference,
           agentId: input.sourceAgentId,
-          type: "Split Payment",
+          type: "Transfer",
           amount: String(input.totalAmountNGN),
           fee: "0",
           commission: "0",
-          channel: "internal",
+          channel: "Internal",
           status: "success",
           fraudScore: "0.00",
           tbSyncStatus: tbTransferIds.length > 0 ? "synced" : "pending",
           metadata: {
+            category: "split_payment",
             parties: legs,
             description: input.description ?? null,
             tbTransferIds,
@@ -169,17 +170,17 @@ export const splitPaymentsRouter = router({
         // Record leg transactions
         for (let i = 0; i < input.parties.length; i++) {
           await db.insert(transactions).values({
-            reference: `${input.reference}-LEG${i + 1}`,
+            ref: `${input.reference}-LEG${i + 1}`,
             agentId: input.parties[i].agentId,
-            type: "Split Payment Received",
+            type: "Float Transfer Received",
             amount: String(legs[i].amountNGN),
             fee: "0",
             commission: "0",
-            channel: "internal",
+            channel: "Internal",
             status: "success",
             fraudScore: "0.00",
             tbSyncStatus: legs[i].tbId ? "synced" : "pending",
-            metadata: { parentRef: input.reference, tbTransferId: legs[i].tbId },
+            metadata: { category: "split_payment", parentRef: input.reference, tbTransferId: legs[i].tbId },
           });
         }
 
@@ -220,7 +221,7 @@ export const splitPaymentsRouter = router({
       const results = await db.select().from(transactions)
         .where(and(
           eq(transactions.agentId, input.agentId),
-          sql`type IN ('Split Payment', 'Split Payment Received')`
+          sql`${transactions.metadata}->>'category' = 'split_payment'`
         ))
         .orderBy(desc(transactions.createdAt))
         .limit(input.limit)
@@ -229,7 +230,7 @@ export const splitPaymentsRouter = router({
       const [{ total }] = await db.select({ total: count() }).from(transactions)
         .where(and(
           eq(transactions.agentId, input.agentId),
-          sql`type IN ('Split Payment', 'Split Payment Received')`
+          sql`${transactions.metadata}->>'category' = 'split_payment'`
         ));
 
       return { data: results, total: Number(total) };
@@ -247,7 +248,7 @@ export const splitPaymentsRouter = router({
         totalAmount: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)`,
       }).from(transactions)
         .where(and(
-          eq(transactions.type, "Split Payment"),
+          sql`${transactions.metadata}->>'category' = 'split_payment'`,
           gte(transactions.createdAt, since),
           eq(transactions.status, "success")
         ));

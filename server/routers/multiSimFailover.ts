@@ -7,9 +7,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import {
-  insuranceServices,
-} from "../../drizzle/schema.additions";
+import { multiSimProfiles } from "../../drizzle/schema";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -22,33 +20,22 @@ export const multiSimFailoverRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [terminal] = await db
-          .select({
-            simIccid: insuranceServices.simIccid,
-            configJson: insuranceServices.configJson,
-          })
-          .from(insuranceServices)
-          .where(eq(insuranceServices.id, input.terminalId))
-          .limit(1);
+        const rows = await db
+          .select()
+          .from(multiSimProfiles)
+          .where(eq(multiSimProfiles.terminalId, input.terminalId))
+          .orderBy(multiSimProfiles.simSlot);
 
-        if (!terminal) throw new TRPCError({ code: "NOT_FOUND" });
-
-        const config = terminal.configJson as Record<string, unknown> | null;
-        const sims = (config?.sims as Array<{
-          slot: number;
-          iccid: string;
-          provider: string;
-          active: boolean;
-          signalStrength: number;
-        }>) ?? [
-          {
-            slot: 1,
-            iccid: terminal.simIccid ?? "unknown",
-            provider: "MTN",
-            active: true,
-            signalStrength: -65,
-          },
-        ];
+        const sims = rows.map(r => ({
+          slot: r.simSlot,
+          iccid: r.iccid ?? "unknown",
+          provider: r.carrier,
+          active: r.status === "active",
+          signalStrength: r.signalStrength ?? -65,
+        }));
+        if (sims.length === 0) {
+          sims.push({ slot: 1, iccid: "unknown", provider: "MTN", active: true, signalStrength: -65 });
+        }
 
         return {
           terminalId: input.terminalId,
@@ -128,13 +115,18 @@ export const multiSimFailoverRouter = router({
         const activeSim = input.sims.find(s => s.active);
 
         await db
-          .update(insuranceServices)
-          .set({
-            simIccid: activeSim?.iccid ?? null,
-            configJson: sql`jsonb_set(COALESCE(${insuranceServices.configJson}::jsonb, '{}'::jsonb), '{sims}', ${JSON.stringify(input.sims)}::jsonb)`,
-            updatedAt: new Date(),
-          })
-          .where(eq(insuranceServices.id, input.terminalId));
+          .delete(multiSimProfiles)
+          .where(eq(multiSimProfiles.terminalId, input.terminalId));
+        await db.insert(multiSimProfiles).values(
+          input.sims.map((sim, i) => ({
+            terminalId: input.terminalId,
+            simSlot: sim.slot,
+            carrier: sim.provider,
+            iccid: sim.iccid,
+            status: sim.active ? ("active" as const) : ("inactive" as const),
+            failoverPriority: i + 1,
+          }))
+        );
 
         await writeAuditLog({
           agentId: session.id,

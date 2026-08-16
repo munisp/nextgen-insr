@@ -67,6 +67,7 @@ export async function createJ20Schedule(
 
   try {
     const temporal = await getTemporalClient();
+    if (!temporal) throw new Error("Temporal client unavailable");
 
     // Create Temporal schedule
     await temporal.schedule.create({
@@ -133,6 +134,7 @@ export async function toggleJ20Schedule(
 ): Promise<{ success: boolean }> {
   try {
     const temporal = await getTemporalClient();
+    if (!temporal) throw new Error("Temporal client unavailable");
     const handle = temporal.schedule.getHandle(scheduleId);
 
     if (enabled) {

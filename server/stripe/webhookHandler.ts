@@ -157,6 +157,10 @@ export async function handleStripeWebhook(req: Request, res: Response) {
   }
 
   const db = await getDb();
+  if (!db) {
+    logger.error({ eventId: event.id }, "[Stripe Webhook] DB unavailable");
+    return res.status(503).json({ error: "Database unavailable" });
+  }
 
   try {
     switch (event.type) {
@@ -185,18 +189,19 @@ export async function handleStripeWebhook(req: Request, res: Response) {
           });
           await db.insert(platformBillingLedger).values({
             transactionId: deterministicLedgerId(invoice.id),
-            tenantId,
+            transactionRef: invoice.id,
             agentId: 0,
-            serviceNodeId: 0,
             transactionType: "commission",
             grossAmount: String(amount / 100),
-            platformShare: String(Math.round(amount * 0.15) / 100),
-            clientShare: String(Math.round(amount * 0.85) / 100),
-            netRevenue: String(amount / 100),
+            grossFee: "0",
+            agentCommission: "0",
+            switchFee: "0",
+            aggregatorFee: "0",
+            platformNetFee: String(Math.round(amount * 0.15) / 100),
+            clientRevenue: String(Math.round(amount * 0.85) / 100),
+            platformRevenue: String(Math.round(amount * 0.15) / 100),
             currency: (invoice.currency || "ngn").toUpperCase(),
-            status: "settled",
             billingModel: "subscription",
-            invoiceId: invoice.id,
           });
           await publishBillingEvent("billing.dunning.cleared", {
             tenantId,
