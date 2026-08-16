@@ -12,7 +12,7 @@ import { toast } from "sonner";
 
 export default function MqttBridgeDashboard() {
   // No aggregate stats endpoint exists for these charts; render empty state.
-  const data: Record<string, number | undefined> | undefined = undefined;
+  const data: Record<string, number | undefined> = {};
   const isMobile = useIsMobile();
   const configQ = trpc.mqttBridge.getConfig.useQuery(undefined, {
     retry: false,
