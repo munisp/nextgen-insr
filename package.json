@@ -17,6 +17,7 @@
     "db:seed": "node seed.mjs",
     "db:seed:integration": "node seed-integration.mjs",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:contract": "vitest run --config vitest.contract.config.ts",
     "test:client": "vitest run --config vitest.client.config.ts"
   },
   "dependencies": {
