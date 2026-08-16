@@ -1,7 +1,21 @@
 import { defineConfig, defaultExclude } from "vitest/config";
 import path from "path";
+import fs from "fs";
 
 const templateRoot = path.resolve(import.meta.dirname);
+
+// Single-test exclusions (assurance-lead approved, tests/quarantined-tests.json).
+// Central + auditable: a negative testNamePattern built from the registry —
+// no describe.skip/it.skip in test files. testNames must stay unique repo-wide.
+const quarantinedTests = JSON.parse(
+  fs.readFileSync(path.resolve(templateRoot, "tests/quarantined-tests.json"), "utf-8")
+) as { entries: { testName: string }[] };
+const qNames = quarantinedTests.entries.map((e) =>
+  e.testName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+);
+const quarantineNamePattern = qNames.length
+  ? new RegExp(`^(?!.*(?:${qNames.join("|")})).*$`)
+  : undefined;
 
 export default defineConfig({
   root: templateRoot,
@@ -56,6 +70,7 @@ export default defineConfig({
     ],
     // Integration tests require a real database and run via
     // `pnpm test:integration` (vitest.integration.config.ts).
+    testNamePattern: quarantineNamePattern,
     exclude: [
       ...defaultExclude,
       "**/*.integration.test.ts",

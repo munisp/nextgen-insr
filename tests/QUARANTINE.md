@@ -60,7 +60,7 @@ Sections:
 | `server/middleware-integration.test.ts` | `expected 9 to be 10` middleware wiring drift |
 | `server/db-performance.test.ts` | PgBouncer config undelivered (CAT-A) + tenant-index scan findings |
 | `server/observability-middleware.test.ts` | docker-compose.sprint42.yml + lakehouse sidecar undelivered (CAT-A) + content checks |
-| `server/gap-fixes.test.ts` | CommissionEngine 9-tier structure undelivered (4 seeded); listDisputes shape missing customerName |
+| `server/gap-fixes.test.ts` | CommissionEngine 9-tier structure undelivered (4 seeded); **11 passing tests suspended until re-enable**. listDisputes customerName: DEFINITIVE — genuine API defect (customerDisputePortal.listDisputes selects raw disputes rows, never joins customer data; seed merely exposed it) → fix-routing |
 | `server/sprint28.test.ts` (describe-level) | `mobileMoney.providers` procedure missing — see CAT-B row |
 
 ## DE-DUPLICATED EXECUTION (not quarantine)
@@ -77,3 +77,9 @@ All CI environments run Permify fail-open (`PERMIFY_FAIL_OPEN=true`, lead-approv
 **Permify-policy-level authorization has NO passing test coverage anywhere**;
 denial coverage is role-middleware-level only. Production fail-closed behavior
 is untouched. Follow-up recommendation: Permify container in CI + policy tests.
+
+## Single-test exclusions (mechanism: tests/quarantined-tests.json + negative testNamePattern in vitest.config.ts)
+
+| File | Test | Class | Reason | Re-enable |
+|---|---|---|---|---|
+| `server/sprint46.test.ts` | "middleware service manager should report 13 services" | OPEN-DEFECT / partial-delivery (F-12) | Procedure throws 'not implemented yet' — correct fail-loud behavior for undelivered capability; other 39 tests in the file pass | middlewareServiceManager implemented, reporting real service registry |

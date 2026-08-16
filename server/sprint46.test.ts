@@ -241,9 +241,10 @@ describe("Sprint 46: Data Integrity", () => {
     } as any);
     const stats = await caller.getStats({});
     // 2026-08-16: the router HARDCODES totalTables:78 — the expectation matches
-    // delivered behavior. Defect (F-12 sub-item): databaseVisualization must
-    // compute from information_schema (live schema = 187 pgTable definitions);
-    // update this expectation when the router is fixed.
+    // delivered behavior. HIGH-PRIORITY defect (F-12 fix-routing): silent
+    // mockware genre — databaseVisualization must compute from
+    // information_schema at query time (live schema = 187 pgTable definitions);
+    // update this expectation to the verified real count with the router fix.
     expect(stats.totalTables).toBe(78);
     expect(stats.totalRows).toBe(2450000);
     expect(stats.uptime).toBe("99.97%");
