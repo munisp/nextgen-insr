@@ -8,7 +8,7 @@ import {
 } from "recharts";
 const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
 import { trpc } from "@/_core/trpc";
-import { KpiCard } from "@/components/insurance/KpiCard";
+import { KpiCard, type KpiTrend, type KpiStatus } from "@/components/insurance/KpiCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
 import {
@@ -21,7 +21,11 @@ export default function BillingAdminDashboard() {
   const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.getBillingAdminKpi?.useQuery?.() ?? { data: null, isLoading: false };
   const kpi = data?.kpis ?? {};
 
-  const cards = [
+  const cards: Array<{
+    title: string; value: string | number; icon: React.ElementType;
+    trend?: KpiTrend; trendValue?: string; subtitle?: string;
+    status?: KpiStatus; href?: string; accent: string;
+  }> = [
     { title: "Revenue (MTD ₦M)", value: kpi.revenueMtd ?? "—", icon: TrendingUp, trend: "up", trendValue: "↑ 11%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
     { title: "Unreconciled Items", value: kpi.unreconciledItems ?? "—", icon: AlertTriangle, trend: "down", trendValue: "↓ 4", status: "good" as const, href: "#", accent: "var(--risk-low)" },
     { title: "Platform Fees (MTD ₦)", value: kpi.platformFeesMtd ?? "—", icon: DollarSign, trend: "up", trendValue: "↑ 9%", status: "neutral" as const, href: "#", accent: "var(--role-billing-admin)" },

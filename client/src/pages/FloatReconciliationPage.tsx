@@ -38,7 +38,7 @@ export default function FloatReconciliationPage() {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
-      String(tx.reference ?? "").toLowerCase().includes(q) ||
+      String(tx.ref ?? "").toLowerCase().includes(q) ||
       String(tx.type ?? "").toLowerCase().includes(q) ||
       String(tx.status ?? "").toLowerCase().includes(q)
     );
@@ -150,7 +150,7 @@ export default function FloatReconciliationPage() {
                     {rows.map(tx => (
                       <tr key={tx.id} className="border-t">
                         <td className="p-3 font-mono text-xs">
-                          {tx.reference}
+                          {tx.ref}
                         </td>
                         <td className="p-3">{tx.type}</td>
                         <td className="p-3 text-right font-mono">

@@ -31,6 +31,7 @@ export interface SwipeState {
   startY: number;
   deltaX: number;
   deltaY: number;
+  startTime?: number;
   currentDirection: SwipeDirection | null;
 }
 
@@ -120,7 +121,7 @@ export function useSwipeGestures(
 
     const { deltaX, deltaY, startX, startY } = state.current;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    const duration = Date.now() - (handleTouchMove.startTime || Date.now());
+    const duration = Date.now() - (state.current.startTime ?? Date.now());
     const velocity = distance / (duration || 1);
 
     if (distance >= mergedConfig.threshold && velocity >= mergedConfig.minVelocity) {
@@ -145,7 +146,7 @@ export function useSwipeGestures(
   const originalHandleTouchStart = handleTouchStart;
   const wrappedHandleTouchStart = useCallback(
     (e: TouchEvent) => {
-      (handleTouchMove as any).startTime = Date.now();
+      state.current.startTime = Date.now();
       originalHandleTouchStart(e);
     },
     [originalHandleTouchStart, handleTouchMove]

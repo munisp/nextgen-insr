@@ -176,7 +176,9 @@ export async function getSnapshotDownloadUrl(
   try {
     const s3 = getS3Client();
     const url = await getSignedUrl(
-      s3,
+      // @aws-sdk/client-s3 and s3-request-presigner resolve different minor
+      // versions; their Client types are structurally compatible but nominal
+      s3 as unknown as Parameters<typeof getSignedUrl>[0],
       new GetObjectCommand({ Bucket: bucket, Key: key }),
       { expiresIn: expiresInSeconds }
     );

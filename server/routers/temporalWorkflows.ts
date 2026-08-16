@@ -194,7 +194,7 @@ export const temporalWorkflowsRouter = router({
       throw notImplemented("Workflow termination");
     }),
 
-  workflowTypes: protectedProcedure.query(async () => {
-    throw notImplemented("Workflow types");
+  workflowTypes: protectedProcedure.query(async (): Promise<Array<Record<string, unknown>>> => {
+    throw notImplemented("Temporal workflow types");
   }),
 });

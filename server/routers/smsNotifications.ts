@@ -68,7 +68,6 @@ export const smsNotificationsRouter = router({
         .insert(notification_logs)
         .values({
           recipientId: input.recipientId,
-          channelId: 1, // SMS channel
         })
         .returning();
 

@@ -868,7 +868,7 @@ export const transactionsRouter = router({
         import("../kafkaClient")
           .then(({ publishEvent }) =>
             publishEvent(
-              "pos.transactions.created",
+              "54link.transactions.created",
               ref,
               {
                 transactionId: tx.id,

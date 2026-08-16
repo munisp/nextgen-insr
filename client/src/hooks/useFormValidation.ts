@@ -159,7 +159,7 @@ export function useFormValidation<T extends Record<string, any>>({
           Object.entries(allTouched)
             .filter(([, field]) => field.error && field.touched)
             .map(([key, field]) => [key, field.error!])
-        ));
+        ) as Partial<Record<keyof T, string>>);
         return;
       }
 
