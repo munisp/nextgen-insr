@@ -62,7 +62,18 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "no changes from --fix"
-          else
-            git commit -m "style(lint): eslint --fix auto-fixes over server/ (import/order, prefer-const, consistent-type-imports et al.)"
-            git push
+            exit 0
           fi
+          git commit -m "style(lint): eslint --fix auto-fixes over server/ (import/order, prefer-const, consistent-type-imports et al.)"
+          for i in 1 2 3; do
+            git fetch origin main
+            if git rebase origin/main && git push; then
+              echo "pushed auto-fixes"
+              exit 0
+            fi
+            git rebase --abort || true
+            echo "push race, retry $i"
+            sleep 5
+          done
+          echo "could not push after retries"
+          exit 1
