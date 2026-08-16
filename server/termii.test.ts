@@ -48,7 +48,9 @@ describe("sendSms — fallback mode (no TERMII_API_KEY)", () => {
       "+2348012345678",
       "Test OTP: 123456"
     );
-    expect(result.messageId).toMatch(/^CONSOLE-\d+$/);
+    // 2026-08-16 drift fix (lead-approved): server/termii.ts dev-fallback emits CONSOLE-DEV-<ts> by design
+  // ("Development-only console fallback (labelled — not a real send)").
+  expect(result.messageId).toMatch(/^CONSOLE-DEV-\d+$/);
   });
 
   it("does not call the Termii API in fallback mode", async () => {

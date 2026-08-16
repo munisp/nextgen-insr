@@ -173,6 +173,13 @@ jobs:
         env:
           POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
 
+      - name: Seed demo dataset
+        # Tests asserting data presence (e.g. sprint46 P&L) require the seed;
+        # no seeded suite covers them elsewhere (verified 2026-08-16).
+        run: node seed.mjs
+        env:
+          POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
+
       - name: Run vitest
         env:
           POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db

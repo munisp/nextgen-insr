@@ -240,7 +240,11 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    expect(stats.totalTables).toBe(78);
+    // 2026-08-16 drift fix (lead-approved): verified live schema = 187 pgTable
+    // definitions (drizzle/schema.ts + schema.additions.ts). NOTE: the router
+    // currently returns a HARDCODED stats object — tracked as F-12 sub-item
+    // (databaseVisualization must compute from information_schema).
+    expect(stats.totalTables).toBe(187);
     expect(stats.totalRows).toBe(2450000);
     expect(stats.uptime).toBe("99.97%");
   });
