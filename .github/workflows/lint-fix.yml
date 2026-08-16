@@ -49,11 +49,19 @@ jobs:
             exit 0
           fi
           git commit -m "style(lint): eslint --fix auto-fixes over server/ (import/order, prefer-const, consistent-type-imports et al.)"
-          for i in 1 2 3; do
+          for i in 1 2 3 4; do
             git fetch origin main
-            if git rebase origin/main && git push; then
-              echo "pushed auto-fixes"
-              exit 0
+            if git rebase origin/main; then
+              git push && { echo "pushed auto-fixes"; exit 0; }
+            else
+              # Conflict with concurrently-merged main: keep upstream content for
+              # conflicted hunks (this commit is purely mechanical eslint --fix
+              # output, so dropping conflicting fix hunks is safe).
+              git checkout --ours .
+              git add -A
+              if GIT_EDITOR=true git rebase --continue; then
+                git push && { echo "pushed auto-fixes (conflicts resolved keeping upstream)"; exit 0; }
+              fi
             fi
             git rebase --abort || true
             echo "push race, retry $i"
