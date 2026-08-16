@@ -88,7 +88,7 @@ jobs:
                       total += len(linenos)
           print(f"TOTAL fix sites: {total}", flush=True)
           
-          for it in range(15):
+          for it in range(30):
               mism = []
               for mod in mods:
                   out = subprocess.run(['go', 'vet', './...'], cwd=mod, capture_output=True, text=True, timeout=300)
@@ -100,9 +100,15 @@ jobs:
                   p = mod / f
                   lines = p.read_text().splitlines(keepends=True)
                   lhs = ', '.join(['_'] * arity) + ' = '
-                  lines[ln-1] = re.sub(r'^(\s*)_ = ', lambda mm: mm.group(1) + lhs, lines[ln-1], count=1)
+                  if '_ = ' not in lines[ln-1]:
+                      print(f"  UNFIXABLE {mod}/{f}:{ln}: {lines[ln-1].rstrip()}", flush=True)
+                      continue
+                  lines[ln-1] = lines[ln-1].replace('_ = ', lhs, 1)
                   p.write_text(''.join(lines))
               print(f"arity fixup iteration {it}: {len(mism)} sites", flush=True)
+              if it >= 12:
+                  for mod, f, ln, ar in mism:
+                      print(f"  stuck {mod}/{f}:{ln} arity={ar}", flush=True)
           else:
               print("arity fixup did NOT converge", flush=True); sys.exit(1)
           PYEOF
