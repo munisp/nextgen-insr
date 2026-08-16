@@ -1995,7 +1995,10 @@ export const fraudRules = pgTable(
     name: varchar("name", { length: 128 }).notNull(),
     category: fraudRuleCategoryEnum("category").notNull(),
     description: text("description"),
-    threshold: numeric("threshold", { precision: 5, scale: 4 })
+    // Thresholds are mixed-unit (counts, Naira amounts) — e.g. velocity rule
+    // 10 tx, amount rule 49000.0000 — so numeric(5,4) overflows on real
+    // Postgres (PGlite silently accepted it). Widened to match amount columns.
+    threshold: numeric("threshold", { precision: 18, scale: 4 })
       .default("0.7000")
       .notNull(),
     windowSeconds: integer("windowSeconds").default(3600),
