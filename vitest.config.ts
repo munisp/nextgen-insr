@@ -22,6 +22,10 @@ export default defineConfig({
       KEYCLOAK_URL: "https://auth.test.insureportal.io",
       KEYCLOAK_REALM: "insureportal",
       KEYCLOAK_CLIENT_ID: "insurance-portal",
+      // env.ts marks these requireEnv (throw at import). Tests must satisfy
+      // them with dummies — they do NOT enable any real gateway calls.
+      PLATFORM_API_KEY: "test-platform-api-key",
+      PLATFORM_SERVICE_TOKEN: "test-platform-service-token",
     },
     testTimeout: 30000,
     // NOTE (2026-08-12): tests/smoke/comprehensive_smoke_test.spec.ts stays in
