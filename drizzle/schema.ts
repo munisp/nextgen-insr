@@ -3522,7 +3522,8 @@ export const backupSnapshots = pgTable(
     id: serial("id").primaryKey(),
     snapshotType: text("snapshot_type").notNull(),
     status: text("status").notNull().default("in_progress"),
-    sizeBytes: integer("size_bytes"),
+    // File sizes legitimately exceed int4 (2.1GB) — e.g. seeded 2.4GB full backup.
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
     storageUrl: text("storage_url"),
     tablesIncluded: integer("tables_included"),
     rowsBackedUp: integer("rows_backed_up"),
