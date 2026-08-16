@@ -1,5 +1,6 @@
-# One-off maintenance workflow: mechanically satisfy errcheck across Go modules
-# by making deliberately-ignored error returns explicit. Remove after use.
+# One-off maintenance workflow: satisfy errcheck across Go modules (explicit
+# error discard), inject missing validate helpers, compiler-driven arity fixup.
+# Remove after use.
 name: Go errcheck bulk fix (one-off)
 on:
   workflow_dispatch: {}
@@ -8,7 +9,7 @@ permissions:
 jobs:
   fix:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -21,16 +22,43 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PYEOF'
-          import re, subprocess, pathlib
+          import re, subprocess, pathlib, sys
           root = pathlib.Path('.')
           mods = sorted({p.parent for p in root.rglob('go.mod') if 'node_modules' not in p.parts})
-          print(f"{len(mods)} go modules", flush=True)
+          print(f'{len(mods)} go modules', flush=True)
+          HELPERS = '\n// validateQueryParam returns a query parameter value, rejecting over-long input.\nfunc validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {\n\tval := r.URL.Query().Get(key)\n\tif len(val) > maxLen {\n\t\treturn "", fmt.Errorf("parameter %s exceeds max length %d", key, maxLen)\n\t}\n\treturn val, nil\n}\n\n// validateIntParam parses an optional integer query parameter.\nfunc validateIntParam(r *http.Request, key string) (int, error) {\n\tval := r.URL.Query().Get(key)\n\tif val == "" {\n\t\treturn 0, nil\n\t}\n\tn, err := strconv.Atoi(val)\n\tif err != nil {\n\t\treturn 0, fmt.Errorf("parameter %s must be an integer", key)\n\t}\n\treturn n, nil\n}\n'
+          
+          def ensure_import(src, pkg):
+              if '"%s"' % pkg in src:
+                  return src
+              if 'import (' in src:
+                  return src.replace('import (', 'import (\n\t"%s"' % pkg, 1)
+              m = re.search(r'import "([^"]+)"', src)
+              if m:
+                  return src.replace(m.group(0), 'import (\n\t"%s"\n\t"%s"\n)' % (m.group(1), pkg), 1)
+              return src
+          
+          for mod in mods:
+              tests = list(mod.glob('*_test.go'))
+              if not tests: continue
+              uses = any(('validateQueryParam' in f.read_text() or 'validateIntParam' in f.read_text()) for f in tests)
+              if not uses: continue
+              nontests = [f for f in mod.glob('*.go') if not f.name.endswith('_test.go')]
+              if any('func validateQueryParam' in f.read_text() for f in nontests): continue
+              mg = mod / 'main.go'
+              if not mg.exists():
+                  print(f"{mod}: needs helpers but no main.go", flush=True); continue
+              src = mg.read_text()
+              src = ensure_import(src, 'fmt'); src = ensure_import(src, 'strconv'); src = ensure_import(src, 'net/http')
+              mg.write_text(src.rstrip() + '\n' + HELPERS)
+              print(f"{mod}: injected validate helpers", flush=True)
+          
           total = 0
           for mod in mods:
               try:
                   proc = subprocess.run(['errcheck', './...'], cwd=mod, capture_output=True, text=True, timeout=300)
               except Exception as e:
-                  print(f"{mod}: errcheck run failed: {e}"); continue
+                  print(f"{mod}: errcheck run failed: {e}", flush=True); continue
               lines = [l for l in proc.stdout.splitlines() + proc.stderr.splitlines() if re.match(r'^[^ :]+\.go:\d+:\d+:', l)]
               byfile = {}
               for l in lines:
@@ -45,7 +73,8 @@ jobs:
                       line = src[ln-1]
                       stripped = line.lstrip()
                       indent = line[:len(line)-len(stripped)]
-                      if stripped.startswith('_ = ') or stripped.startswith('//'): continue
+                      if stripped.startswith('_ = ') or stripped.startswith('//') or ':=' in stripped.split('(', 1)[0]:
+                          continue
                       if stripped.startswith('defer '):
                           src[ln-1] = f"{indent}defer func() {{ _ = {stripped[len('defer '):].rstrip()} }}()\n"
                           changed = True
@@ -57,8 +86,25 @@ jobs:
                   if changed:
                       p.write_text(''.join(src))
                       total += len(linenos)
-                      print(f"{mod}/{f}: {len(linenos)} sites", flush=True)
-          print(f"TOTAL fixed sites: {total}", flush=True)
+          print(f"TOTAL fix sites: {total}", flush=True)
+          
+          for it in range(15):
+              mism = []
+              for mod in mods:
+                  out = subprocess.run(['go', 'build', './...'], cwd=mod, capture_output=True, text=True, timeout=300)
+                  for m in re.finditer(r'(?:\./)?([^ :\n]+\.go):(\d+):\d+: assignment mismatch: 1 variable but \S+ returns (\d+) values', out.stderr):
+                      mism.append((mod, m.group(1), int(m.group(2)), int(m.group(3))))
+              if not mism:
+                  print(f"arity fixup converged after {it} iterations", flush=True); break
+              for mod, f, ln, arity in mism:
+                  p = mod / f
+                  lines = p.read_text().splitlines(keepends=True)
+                  lhs = ', '.join(['_'] * arity) + ' = '
+                  lines[ln-1] = re.sub(r'^(\s*)_ = ', lambda mm: mm.group(1) + lhs, lines[ln-1], count=1)
+                  p.write_text(''.join(lines))
+              print(f"arity fixup iteration {it}: {len(mism)} sites", flush=True)
+          else:
+              print("arity fixup did NOT converge", flush=True); sys.exit(1)
           PYEOF
       - name: gofmt + verify (build & vet each module)
         run: |
@@ -74,11 +120,13 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if git diff --quiet; then echo "no changes"; exit 0; fi
           git add -A
-          git commit -m "fix(go): make deliberately-ignored error returns explicit (errcheck)
+          git commit -m "fix(go): explicit error-discard for errcheck + missing validate helpers
 
           Mechanical rewrite driven by errcheck output across all modules:
-          statement-level unchecked calls get '_ = ...'; deferred calls get
-          'defer func() { _ = x() }()'. Verified per-module with go build + go vet."
+          statement-level unchecked calls get '_ = ...' (with correct arity),
+          deferred calls get 'defer func() { _ = x() }()'; modules whose tests
+          referenced undefined validateQueryParam/validateIntParam get the
+          canonical helper implementations. Verified per-module: go build + go vet."
           for i in 1 2 3 4; do
             git fetch origin main
             if git rebase origin/main; then
