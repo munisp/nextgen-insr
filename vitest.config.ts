@@ -24,8 +24,10 @@ export default defineConfig({
       KEYCLOAK_CLIENT_ID: "insurance-portal",
       // env.ts marks these requireEnv (throw at import). Tests must satisfy
       // them with dummies — they do NOT enable any real gateway calls.
-      PLATFORM_API_KEY: "test-platform-api-key",
-      PLATFORM_SERVICE_TOKEN: "test-platform-service-token",
+      // random-looking CI dummies (env.ts rejects values containing
+      // change-me/dev-/test-/demo-/example-/placeholder as suspicious defaults)
+      PLATFORM_API_KEY: "ci3f9a7b2e4d6f8a0c1e3b5a7d9f2c4e6a8b0d2f4",
+      PLATFORM_SERVICE_TOKEN: "svc9f1e7d5c3b1a0987654321fedcba0987654321",
     },
     testTimeout: 30000,
     // NOTE (2026-08-12): tests/smoke/comprehensive_smoke_test.spec.ts stays in
