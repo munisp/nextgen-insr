@@ -332,9 +332,17 @@ describe("audit chain (F-08) — integration, real DB", () => {
 
   it("export is paginated in chain order, includes entryHash, and is itself audited", async () => {
     const admin = callerFor(adminUser);
+    // Page expectations are derived from the real table size so the test is
+    // exact whether run standalone or after the full suite. Note the export
+    // procedure itself appends one AUDIT_EXPORT row per call, which lands
+    // inside subsequent pages.
+    const rowsBefore = (await allRows(db)).length;
+
     const page1 = await admin.auditCompliance.export({ cursor: 0, limit: 5 });
-    expect(page1.items.length).toBe(5);
-    expect(page1.nextCursor).toBe(page1.items[4]!.id);
+    expect(page1.items.length).toBe(Math.min(5, rowsBefore));
+    expect(page1.nextCursor).toBe(
+      page1.items.length === 5 ? page1.items[4]!.id : null
+    );
     expect(page1.chainVersion).toBe("insureportal-audit-v1");
     expect(page1.tipAtExport?.entryHash).toBeTruthy();
     // Ascending id order (chain order).
@@ -346,8 +354,12 @@ describe("audit chain (F-08) — integration, real DB", () => {
       cursor: page1.nextCursor!,
       limit: 5,
     });
-    expect(page2.items.length).toBe(5);
-    expect(page2.items[0]!.id).toBeGreaterThan(page1.nextCursor!);
+    // +1: page1's own AUDIT_EXPORT event is now a row beyond the cursor.
+    const expectedPage2 = Math.min(5, Math.max(0, rowsBefore + 1 - 5));
+    expect(page2.items.length).toBe(expectedPage2);
+    if (expectedPage2 > 0) {
+      expect(page2.items[0]!.id).toBeGreaterThan(page1.nextCursor!);
+    }
 
     // Every exported row carries its hash material for offline verification.
     const exportedMine = [...page1.items, ...page2.items].filter(r =>
