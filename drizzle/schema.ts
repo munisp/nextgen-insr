@@ -29,6 +29,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
   index,
