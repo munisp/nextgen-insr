@@ -43,8 +43,11 @@ jobs:
       - name: Check for hardcoded credentials
         run: |
           echo "Checking for hardcoded credentials..."
+          # Exclude the env-validation infra itself — those files MUST name the
+          # forbidden default values in order to detect and reject them.
           if grep -rn "insureportal-.*-dev-\|insureportal.*dev_\|TLtest_\|change-me\|change_in_prod" \
-            --include="*.ts" --include="*.js" server/ | grep -v ".test." | grep -v "node_modules"; then
+            --include="*.ts" --include="*.js" server/ | grep -v ".test." | grep -v "node_modules" \
+            | grep -v "_core/env" | grep -v "envValidation" | grep -v "lib/healthCheck"; then
             echo "ERROR: Found hardcoded default credentials!"
             echo "Please use requireEnv() for sensitive values in server/_core/env.ts"
             exit 1
