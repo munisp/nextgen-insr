@@ -35,6 +35,7 @@ import {
   index,
   integer,
   json,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -863,6 +864,43 @@ export const refunds = pgTable(
 );
 
 export type Refund = typeof refunds.$inferSelect;
+
+// ─── Idempotency Records (journey/workflow steps) ────────────────────────────
+// F-02: DB-backed idempotency for journey payouts. Previously journey
+// checkIdempotency/recordIdempotency were Redis-only and fail-open — a Redis
+// loss opened a double-execution window for TigerBeetle payouts. This table is
+// the source of truth; Redis (when available) is only a write-through cache.
+//
+// Semantics:
+//   - `key` is UNIQUE and namespaced by the caller as `${journey}:${key}`.
+//   - A row is RESERVED with status "in_progress" before any side effect runs.
+//   - On success the row transitions to "completed" with the result payload.
+//   - On failure the row transitions to "failed" (safe to retry explicitly).
+//   - A stale "in_progress" row (updatedAt older than the caller's stale
+//     threshold) proves the holder crashed mid-flow and is safe to take over.
+//   - payloadHash detects key reuse with a different payload → CONFLICT.
+export const idempotencyRecords = pgTable(
+  "idempotency_records",
+  {
+    id: serial("id").primaryKey(),
+    key: varchar("key", { length: 192 }).notNull(),
+    journey: varchar("journey", { length: 32 }).notNull(),
+    payloadHash: varchar("payloadHash", { length: 64 }),
+    status: varchar("status", { length: 16 }).default("in_progress").notNull(),
+    result: jsonb("result"),
+    error: text("error"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    expiresAt: timestamp("expiresAt").notNull(),
+  },
+  t => ({
+    keyIdx: uniqueIndex("idempotency_records_key_idx").on(t.key),
+    statusIdx: index("idempotency_records_status_idx").on(t.status),
+    expiresIdx: index("idempotency_records_expires_idx").on(t.expiresAt),
+  })
+);
+
+export type IdempotencyRecord = typeof idempotencyRecords.$inferSelect;
 
 // ─── Platform Settings ────────────────────────────────────────────────────────
 export const platformSettings = pgTable(

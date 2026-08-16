@@ -82,7 +82,7 @@ export async function J21_ParametricTriggerWorkflow(input: J21Input): Promise<{
 
   // Step 1: Verify idempotency
   currentStep = "idempotency_check";
-  const existing = await act.checkIdempotency(input.idempotencyKey, "J21");
+  const existing = await act.checkIdempotency(input.idempotencyKey, "J21", input);
   if (existing) return existing as { payoutId: number; tbTransferId: string; status: string };
 
   // Step 2: Validate trigger data
@@ -148,7 +148,7 @@ export async function J21_ParametricTriggerWorkflow(input: J21Input): Promise<{
     measuredValue: input.measuredValue,
   });
 
-  await act.recordIdempotency(input.idempotencyKey, "J21", { payoutId, tbTransferId, status: "paid" });
+  await act.recordIdempotency(input.idempotencyKey, "J21", { payoutId, tbTransferId, status: "paid" }, input);
 
   currentStep = "completed";
   return { payoutId, tbTransferId, status: "paid" };
@@ -182,7 +182,7 @@ export async function J22_UBIMonthlyAdjustmentWorkflow(input: J22Input): Promise
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
-  const existing = await act.checkIdempotency(input.idempotencyKey, "J22");
+  const existing = await act.checkIdempotency(input.idempotencyKey, "J22", input);
   if (existing) return existing as { drivingScore: number; premiumAdjustmentPct: number; newPremium: number };
 
   // Step 1: Fetch telematics data
@@ -242,7 +242,7 @@ export async function J22_UBIMonthlyAdjustmentWorkflow(input: J22Input): Promise
   await act.ingestToLakehouse("ubi_adjustments", { policyId: input.policyId, drivingScore, premiumAdjustmentPct, newPremium });
 
   const result = { drivingScore, premiumAdjustmentPct, newPremium, tbTransferId };
-  await act.recordIdempotency(input.idempotencyKey, "J22", result);
+  await act.recordIdempotency(input.idempotencyKey, "J22", result, input);
   currentStep = "completed";
   return result;
 }
@@ -274,7 +274,7 @@ export async function J23_P2PPoolLifecycleWorkflow(input: J23Input): Promise<{
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
-  const existing = await act.checkIdempotency(input.idempotencyKey, "J23");
+  const existing = await act.checkIdempotency(input.idempotencyKey, "J23", input);
   if (existing) return existing as { status: string; membersProcessed: number; totalCollected: number };
 
   let membersProcessed = 0;
@@ -311,7 +311,7 @@ export async function J23_P2PPoolLifecycleWorkflow(input: J23Input): Promise<{
 
     await act.emitFluvioEvent("p2p.contributions.collected", { poolId: input.poolId, totalCollected, membersProcessed });
     const result = { status: "collected", membersProcessed, totalCollected };
-    await act.recordIdempotency(input.idempotencyKey, "J23", result);
+    await act.recordIdempotency(input.idempotencyKey, "J23", result, input);
     currentStep = "completed";
     return result;
   }
@@ -352,7 +352,7 @@ export async function J23_P2PPoolLifecycleWorkflow(input: J23Input): Promise<{
 
     await act.emitFluvioEvent("p2p.pool.settled", { poolId: input.poolId, surplus, surplusReturned });
     const result = { status: "settled", membersProcessed, totalCollected: poolData.totalContributions, surplusReturned };
-    await act.recordIdempotency(input.idempotencyKey, "J23", result);
+    await act.recordIdempotency(input.idempotencyKey, "J23", result, input);
     currentStep = "completed";
     return result;
   }
@@ -388,7 +388,7 @@ export async function J24_WellnessRewardsWorkflow(input: J24Input): Promise<{
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
-  const existing = await act.checkIdempotency(input.idempotencyKey, "J24");
+  const existing = await act.checkIdempotency(input.idempotencyKey, "J24", input);
   if (existing) return existing as { wellnessScore: number; rewardPoints: number; premiumDiscountPct: number };
 
   // Step 1: Fetch wearable readings
@@ -439,7 +439,7 @@ export async function J24_WellnessRewardsWorkflow(input: J24Input): Promise<{
   await act.emitFluvioEvent("wellness.rewards.credited", { customerId: input.customerId, wellnessScore, rewardPoints });
 
   const result = { wellnessScore, rewardPoints, premiumDiscountPct, tbTransferId };
-  await act.recordIdempotency(input.idempotencyKey, "J24", result);
+  await act.recordIdempotency(input.idempotencyKey, "J24", result, input);
   currentStep = "completed";
   return result;
 }
@@ -474,7 +474,7 @@ export async function J25_NHIAClaimsWorkflow(input: J25Input): Promise<{
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
-  const existing = await act.checkIdempotency(input.idempotencyKey, "J25");
+  const existing = await act.checkIdempotency(input.idempotencyKey, "J25", input);
   if (existing) return existing as { nhiaClaimRef: string; approvedAmount: number; status: string };
 
   // Step 1: Submit to NHIA
@@ -520,7 +520,7 @@ export async function J25_NHIAClaimsWorkflow(input: J25Input): Promise<{
   await act.emitFluvioEvent("nhia.claim.settled", { nhiaClaimRef, approvedAmount, customerId: input.customerId });
 
   const result = { nhiaClaimRef, approvedAmount, tbTransferId, status: "settled" };
-  await act.recordIdempotency(input.idempotencyKey, "J25", result);
+  await act.recordIdempotency(input.idempotencyKey, "J25", result, input);
   currentStep = "completed";
   return result;
 }
@@ -556,7 +556,7 @@ export async function J26_PredictiveRenewalWorkflow(input: J26Input): Promise<{
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
-  const existing = await act.checkIdempotency(input.idempotencyKey, "J26");
+  const existing = await act.checkIdempotency(input.idempotencyKey, "J26", input);
   if (existing) return existing as { outreachSent: boolean; offerAccepted: boolean; renewalTriggered: boolean; discountApplied: number };
 
   // Step 1: Send personalised outreach
@@ -616,7 +616,7 @@ export async function J26_PredictiveRenewalWorkflow(input: J26Input): Promise<{
   });
 
   const result = { outreachSent: true, offerAccepted: true, renewalTriggered: true, discountApplied };
-  await act.recordIdempotency(input.idempotencyKey, "J26", result);
+  await act.recordIdempotency(input.idempotencyKey, "J26", result, input);
   currentStep = "completed";
   return result;
 }
@@ -654,7 +654,7 @@ export async function J27_EmbeddedInsuranceWorkflow(input: J27Input): Promise<{
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
-  const existing = await act.checkIdempotency(input.idempotencyKey, "J27");
+  const existing = await act.checkIdempotency(input.idempotencyKey, "J27", input);
   if (existing) return existing as { policyNumber: string; certificateUrl: string; tbTransferId: string; status: string };
 
   // Step 1: Validate partner
@@ -712,7 +712,7 @@ export async function J27_EmbeddedInsuranceWorkflow(input: J27Input): Promise<{
     tbTransferId: tbResult.transferId,
     status: "issued",
   };
-  await act.recordIdempotency(input.idempotencyKey, "J27", result);
+  await act.recordIdempotency(input.idempotencyKey, "J27", result, input);
   currentStep = "completed";
   return result;
 }
@@ -745,7 +745,7 @@ export async function J28_GroupInsuranceEnrollmentWorkflow(input: J28Input): Pro
   setHandler(cancelJourneySignal, () => {});
   setHandler(currentStepQuery, () => currentStep);
 
-  const existing = await act.checkIdempotency(input.idempotencyKey, "J28");
+  const existing = await act.checkIdempotency(input.idempotencyKey, "J28", input);
   if (existing) return existing as { enrolledCount: number; failedCount: number; tbTransferId: string; status: string };
 
   let enrolledCount = 0;
@@ -809,7 +809,7 @@ export async function J28_GroupInsuranceEnrollmentWorkflow(input: J28Input): Pro
   });
 
   const result = { enrolledCount, failedCount, tbTransferId: tbResult.transferId, status: "enrolled" };
-  await act.recordIdempotency(input.idempotencyKey, "J28", result);
+  await act.recordIdempotency(input.idempotencyKey, "J28", result, input);
   currentStep = "completed";
   return result;
 }

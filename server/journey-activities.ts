@@ -18,7 +18,9 @@
  *   - Lakehouse — analytics ingestion
  *   - OpenAppSec — WAF, threat detection
  */
-import { eq, and, desc, count, sql, gte } from "drizzle-orm";
+import { createHash } from "crypto";
+
+import { eq, and, desc, count, sql, gte, lt } from "drizzle-orm";
 
 import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
@@ -31,7 +33,7 @@ import {
   kycVerifications, fraudAlerts, auditLog, notifications,
   insuranceProducts, underwritingApplications as underwritingApps,
   complianceChecks, policyRenewals, reinsuranceTreaties,
-  posTerminals,
+  posTerminals, idempotencyRecords,
 } from "../drizzle/schema";
 import { premiums, claimsPayments, commissions } from "../drizzle/schema.additions";
 import { acquireLock, releaseLock, getRedisClient } from "./lib/redisClient";
@@ -1070,7 +1072,7 @@ export async function calculateAgentCommission(input: {
     netAmount: String(commissionAmount),
     currency: "NGN",
     status: "pending",
-  }).catch(() => {});
+  });
 
   return { commissionAmount, commissionRate: rate };
 }
@@ -1083,19 +1085,25 @@ export async function creditAgentCommission(input: {
 }): Promise<{ credited: boolean; newBalance: number }> {
   const d = await db();
 
-  // Idempotency: a paid commission for this agent+policy means already credited
+  // F-02: idempotency is an ATOMIC CLAIM inside the same transaction as the
+  // balance credit, not a read-then-write. Previously two concurrent credits
+  // both passed the status check and both credited the agent (double payout);
+  // the balance was also a read-modify-write that lost concurrent updates.
   const [existing] = await d.select().from(commissions)
     .where(and(eq(commissions.agentId, input.agentId), eq(commissions.policyId, input.policyId)))
     .limit(1);
-  if (existing?.status === "paid") {
-    const [agent] = await d.select({ commissionBalance: agents.commissionBalance }).from(agents).where(eq(agents.id, input.agentId)).limit(1);
-    return { credited: true, newBalance: Number(agent?.commissionBalance ?? 0) };
-  }
+  const replayBalance = async () => {
+    const [a] = await d.select({ commissionBalance: agents.commissionBalance }).from(agents).where(eq(agents.id, input.agentId)).limit(1);
+    return { credited: true, newBalance: Number(a?.commissionBalance ?? 0) };
+  };
+  if (existing?.status === "paid") return replayBalance();
 
-  // TigerBeetle: commissions-pool → agent-commission account
   const [agent] = await d.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
   if (!agent) throw new Error(`Agent ${input.agentId} not found`);
 
+  // TigerBeetle: commissions-pool → agent-commission account. The ref is the
+  // caller-supplied commissionRef, so a retry after a crash re-submits the
+  // SAME reference and the sidecar deduplicates it.
   await tbCreateTransfer({
     debitAccountId: "commissions-pool",
     creditAccountId: `agent-commission-${agent.agentId}`,
@@ -1107,10 +1115,34 @@ export async function creditAgentCommission(input: {
     agentId: agent.agentId,
   });
 
-  const newBalance = Number(agent.commissionBalance ?? 0) + input.commissionAmount;
-  await d.update(agents).set({ commissionBalance: String(newBalance), updatedAt: new Date() }).where(eq(agents.id, input.agentId));
-  await d.update(commissions).set({ status: "paid", updatedAt: new Date() })
-    .where(and(eq(commissions.agentId, input.agentId), eq(commissions.policyId, input.policyId))).catch(() => {});
+  // Claim + credit commit or roll back as ONE unit: a crash cannot leave a
+  // "paid" commission row whose balance credit never landed (and vice versa).
+  type CreditOutcome = { replay: true } | { replay: false; newBalance: number };
+  const outcome = await d.transaction(async (tx): Promise<CreditOutcome> => {
+    if (existing) {
+      // Exactly one contender flips the accrual row to paid; the rest replay.
+      const claimed = await tx.update(commissions)
+        .set({ status: "paid", updatedAt: new Date() })
+        .where(and(
+          eq(commissions.agentId, input.agentId),
+          eq(commissions.policyId, input.policyId),
+          sql`${commissions.status} != 'paid'`,
+        ))
+        .returning({ id: commissions.id });
+      if (claimed.length === 0) return { replay: true };
+    }
+    // Atomic credit — no read-modify-write, concurrent updates cannot be lost.
+    const [creditedRow] = await tx.update(agents)
+      .set({
+        commissionBalance: sql`CAST("commissionBalance" AS NUMERIC) + ${input.commissionAmount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.id, input.agentId))
+      .returning({ balance: agents.commissionBalance });
+    return { replay: false, newBalance: Number(creditedRow?.balance ?? 0) };
+  });
+  if (outcome.replay) return replayBalance();
+  const newBalance = outcome.newBalance;
 
   await emit("commission-events", { eventType: "commission.credited", agentId: input.agentId, amount: input.commissionAmount, policyId: input.policyId });
   return { credited: true, newBalance };
@@ -1346,30 +1378,222 @@ export async function ingestToLakehouse(
 // Used by innovation journeys J21–J28
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Look up a previously recorded idempotency result for a journey step.
- * Returns the stored result payload, or null if this key has not completed.
- * Fail-open: if Redis is unavailable, returns null (workflow re-executes).
- */
-export async function checkIdempotency(key: string, journey: string): Promise<unknown> {
-  try {
-    const redis = getRedisClient();
-    const cached = await redis.get(`idem:${journey}:${key}`);
-    return cached ? JSON.parse(cached) : null;
-  } catch {
-    return null;
+// ─── F-02: DB-backed idempotency ─────────────────────────────────────────────
+// The `idempotency_records` table is the source of truth for journey-step
+// idempotency. Redis is only a write-through cache for completed records and
+// is NEVER authoritative: any Redis error falls through to the database, so a
+// Redis outage can no longer open a double-execution window for TigerBeetle
+// payouts (the old implementation failed open and returned null).
+//
+// Crash/retry semantics:
+//   - checkIdempotency RESERVES the key (status "in_progress") before the
+//     caller runs any side effect.
+//   - A fresh "in_progress" row means another worker holds the key right now →
+//     IdempotencyInProgressError (retryable; Temporal retries with backoff).
+//   - A STALE "in_progress" row (updatedAt older than IDEM_STALE_MS) proves
+//     the holder crashed mid-flow → the caller takes over the row and
+//     re-executes safely.
+//   - Key reuse with a DIFFERENT payload → IdempotencyConflictError
+//     (non-retryable client bug / replay-attack signal).
+const IDEM_TTL_MS = 24 * 3600 * 1000; // record retention (matches old Redis TTL)
+const IDEM_STALE_MS = 2 * 60 * 1000; // in_progress older than this = crashed holder
+
+/** Same idempotency key was already used with a different payload. */
+export class IdempotencyConflictError extends Error {
+  readonly code = "IDEMPOTENCY_CONFLICT" as const;
+  constructor(key: string, journey: string) {
+    super(
+      `Idempotency key '${key}' was already used with a different payload in journey ${journey}. ` +
+      "Refusing to re-execute; submit with a new idempotency key."
+    );
+    this.name = "IdempotencyConflictError";
   }
 }
 
-/** Record the final result of a journey under its idempotency key (24h TTL). */
-export async function recordIdempotency(key: string, journey: string, result: unknown): Promise<{ recorded: boolean }> {
+/** Another worker is executing this key right now — safe to retry later. */
+export class IdempotencyInProgressError extends Error {
+  readonly code = "IDEMPOTENCY_IN_PROGRESS" as const;
+  constructor(key: string, journey: string) {
+    super(`Idempotency key '${key}' in journey ${journey} is currently in progress; retry after backoff.`);
+    this.name = "IdempotencyInProgressError";
+  }
+}
+
+/** Canonical SHA-256 fingerprint of a payload (key order independent). */
+export function idempotencyPayloadHash(payload: unknown): string {
+  const canonical = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(canonical);
+    if (v !== null && typeof v === "object") {
+      return Object.fromEntries(
+        Object.entries(v as Record<string, unknown>)
+          .sort(([a], [b]) => (a < b ? -1 : 1))
+          .map(([k, val]) => [k, canonical(val)])
+      );
+    }
+    return v ?? null;
+  };
+  return createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex");
+}
+
+type IdemRow = typeof idempotencyRecords.$inferSelect;
+
+/** Stored key is namespaced by journey so keys never collide across journeys. */
+function idemDbKey(key: string, journey: string): string {
+  return `${journey}:${key}`;
+}
+
+function hashMatches(row: IdemRow, payloadHash: string | null): boolean {
+  // Rows reserved without a payload hash match anything; once a hash is
+  // stored it is enforced on every subsequent use of the key.
+  return payloadHash == null || row.payloadHash == null || row.payloadHash === payloadHash;
+}
+
+/**
+ * Look up a previously recorded idempotency result for a journey step and,
+ * if none exists, RESERVE the key for this execution.
+ *
+ * Returns the stored result payload when the key has already completed
+ * (caller must replay it without re-executing side effects); returns null
+ * when the caller owns the key and must execute.
+ *
+ * Throws IdempotencyConflictError on same-key/different-payload and
+ * IdempotencyInProgressError while another worker holds a fresh reservation.
+ * Fail-closed: a database error propagates (no silent re-execution).
+ */
+export async function checkIdempotency(key: string, journey: string, payload?: unknown): Promise<unknown> {
+  const payloadHash = payload !== undefined ? idempotencyPayloadHash(payload) : null;
+  const dbKey = idemDbKey(key, journey);
+
+  // Redis fast-path: only COMPLETED records are ever cached (written after the
+  // DB commit), so a cache hit is always backed by a durable DB row. Any Redis
+  // error falls through to the authoritative database read below.
   try {
     const redis = getRedisClient();
-    await redis.set(`idem:${journey}:${key}`, JSON.stringify(result), "EX", 86400);
-    return { recorded: true };
-  } catch {
-    return { recorded: false };
+    const cached = await redis.get(`idem:${journey}:${key}`);
+    if (cached) {
+      const parsed = JSON.parse(cached) as { payloadHash: string | null; result: unknown };
+      if (payloadHash != null && parsed.payloadHash != null && parsed.payloadHash !== payloadHash) {
+        throw new IdempotencyConflictError(key, journey);
+      }
+      return parsed.result;
+    }
+  } catch (err) {
+    if (err instanceof IdempotencyConflictError) throw err;
+    // Redis unavailable — fall through to the database (source of truth).
   }
+
+  const d = await db();
+  const now = new Date();
+  const staleCutoff = new Date(now.getTime() - IDEM_STALE_MS);
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const [row] = await d.select().from(idempotencyRecords)
+      .where(eq(idempotencyRecords.key, dbKey)).limit(1);
+
+    if (!row) {
+      // No record: reserve the key atomically. A concurrent reserver wins the
+      // unique constraint; we then loop and interpret the winning row.
+      const reserved = await d.insert(idempotencyRecords).values({
+        key: dbKey,
+        journey,
+        payloadHash,
+        status: "in_progress",
+        expiresAt: new Date(now.getTime() + IDEM_TTL_MS),
+      }).onConflictDoNothing({ target: idempotencyRecords.key }).returning();
+      if (reserved.length > 0) return null; // we own the reservation — execute
+      continue; // lost the race — re-read and interpret
+    }
+
+    if (!hashMatches(row, payloadHash)) throw new IdempotencyConflictError(key, journey);
+
+    if (row.status === "completed") return row.result;
+
+    if (row.status === "failed" || (row.status === "in_progress" && row.updatedAt < staleCutoff)) {
+      // Crashed/failed holder: take over the reservation atomically. The
+      // conditional UPDATE is the claim — concurrent contenders serialize on
+      // the row lock and re-evaluate the stale condition, so exactly one wins.
+      const claim = await d.update(idempotencyRecords)
+        .set({ status: "in_progress", updatedAt: now, payloadHash: payloadHash ?? row.payloadHash })
+        .where(and(
+          eq(idempotencyRecords.key, dbKey),
+          eq(idempotencyRecords.status, row.status),
+          row.status === "in_progress" ? lt(idempotencyRecords.updatedAt, staleCutoff) : undefined,
+        ))
+        .returning({ id: idempotencyRecords.id });
+      if (claim.length > 0) return null; // we own the takeover — execute
+      continue; // someone else claimed it concurrently — re-read
+    }
+
+    // Fresh in_progress reservation held by a live worker.
+    throw new IdempotencyInProgressError(key, journey);
+  }
+  throw new IdempotencyInProgressError(key, journey);
+}
+
+/**
+ * Record the final result of a journey step under its idempotency key
+ * (24h retention). DB write is authoritative; Redis is updated best-effort
+ * AFTER the DB commit so the cache can never hold a value the DB lacks.
+ * Same-key/different-payload → IdempotencyConflictError.
+ */
+export async function recordIdempotency(
+  key: string,
+  journey: string,
+  result: unknown,
+  payload?: unknown,
+): Promise<{ recorded: boolean }> {
+  const payloadHash = payload !== undefined ? idempotencyPayloadHash(payload) : null;
+  const dbKey = idemDbKey(key, journey);
+  const d = await db();
+  const now = new Date();
+
+  const [existing] = await d.select().from(idempotencyRecords)
+    .where(eq(idempotencyRecords.key, dbKey)).limit(1);
+
+  if (existing) {
+    if (!hashMatches(existing, payloadHash)) throw new IdempotencyConflictError(key, journey);
+    if (existing.status === "completed") return { recorded: true }; // already durable
+    await d.update(idempotencyRecords)
+      .set({
+        status: "completed",
+        result: result as Record<string, unknown>,
+        payloadHash: payloadHash ?? existing.payloadHash,
+        updatedAt: now,
+        expiresAt: new Date(now.getTime() + IDEM_TTL_MS),
+      })
+      .where(eq(idempotencyRecords.key, dbKey));
+  } else {
+    await d.insert(idempotencyRecords).values({
+      key: dbKey,
+      journey,
+      payloadHash,
+      status: "completed",
+      result: result as Record<string, unknown>,
+      expiresAt: new Date(now.getTime() + IDEM_TTL_MS),
+    }).onConflictDoNothing({ target: idempotencyRecords.key });
+  }
+
+  // Write-through cache (best-effort; DB already authoritative).
+  try {
+    const redis = getRedisClient();
+    await redis.set(
+      `idem:${journey}:${key}`,
+      JSON.stringify({ payloadHash, result }),
+      "EX",
+      Math.floor(IDEM_TTL_MS / 1000),
+    );
+  } catch { /* cache unavailable — correctness unaffected */ }
+
+  return { recorded: true };
+}
+
+/** Mark a reserved key as failed (explicit, retryable via a fresh attempt). */
+export async function failIdempotency(key: string, journey: string, error: string): Promise<{ recorded: boolean }> {
+  const d = await db();
+  await d.update(idempotencyRecords)
+    .set({ status: "failed", error, updatedAt: new Date() })
+    .where(and(eq(idempotencyRecords.key, idemDbKey(key, journey)), eq(idempotencyRecords.status, "in_progress")));
+  return { recorded: true };
 }
 
 /** AML screening wrapper keyed by customer (used by payout journeys). */
@@ -1386,7 +1610,17 @@ export async function runAmlCheck(input: {
   });
 }
 
-/** Submit a double-entry transfer to TigerBeetle; returns the transfer ID. */
+/**
+ * Submit a double-entry transfer to TigerBeetle; returns the transfer ID.
+ *
+ * F-02: FAIL-CLOSED. Previously, when the sidecar was unreachable this
+ * fabricated an `OFFLINE-<timestamp>` transfer ID and returned success — a
+ * phantom payout: the journey recorded "paid" against a ledger movement that
+ * never happened. Now an unreachable/rejecting sidecar throws, so Temporal
+ * retries the activity and the payout is never silently faked. The transfer
+ * `ref` is deterministic (no timestamp) so a retry after a timeout re-submits
+ * the SAME reference and the sidecar can deduplicate it.
+ */
 export async function createTigerBeetleTransfer(input: {
   debitAccountId: string;
   creditAccountId: string;
@@ -1394,6 +1628,7 @@ export async function createTigerBeetleTransfer(input: {
   code?: number;
   ledger?: number;
   userData?: number;
+  ref?: string;
 }): Promise<{ transferId: string }> {
   const result = await tbCreateTransfer({
     debitAccountId: input.debitAccountId,
@@ -1401,9 +1636,16 @@ export async function createTigerBeetleTransfer(input: {
     amount: input.amount,
     ledger: input.ledger ?? 3000,
     code: input.code ?? 0,
-    ref: input.userData != null ? `UD-${input.userData}-${Date.now().toString(36)}` : undefined,
+    ref: input.ref ?? (input.userData != null ? `UD-${input.userData}` : undefined),
   });
-  return { transferId: result?.id ?? `OFFLINE-${Date.now().toString(36).toUpperCase()}` };
+  if (!result) {
+    throw new Error(
+      `TigerBeetle sidecar unavailable — refusing to fabricate a transfer ID ` +
+      `(debit ${input.debitAccountId} → credit ${input.creditAccountId}, amount ${input.amount} kobo). ` +
+      "The activity must be retried against a reachable ledger."
+    );
+  }
+  return { transferId: result.id };
 }
 
 /** Persist a notification and fan it out via Dapr pub/sub. */
