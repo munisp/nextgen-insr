@@ -73,9 +73,7 @@ jobs:
                       line = src[ln-1]
                       stripped = line.lstrip()
                       indent = line[:len(line)-len(stripped)]
-                      if stripped.startswith('_ = ') or stripped.startswith('//') or ':=' in stripped.split('(', 1)[0]:
-                      if stripped.startswith('}'):  # '} else if f() {' must never be wrapped
-                          continue
+                      if stripped.startswith('_ = ') or stripped.startswith('//') or stripped.startswith('}') or ':=' in stripped.split('(', 1)[0]:  # '}' covers '} else if f() {'
                           continue
                       if stripped.startswith('defer '):
                           src[ln-1] = f"{indent}defer func() {{ _ = {stripped[len('defer '):].rstrip()} }}()\n"
