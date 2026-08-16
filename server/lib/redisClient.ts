@@ -20,6 +20,12 @@ const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 let _client: Redis | null = null;
 
 export function getRedisClient(): Redis {
+  // Recover from an externally-closed client (e.g. graceful shutdown or a
+  // test harness quit the shared client): recreate so later callers get a
+  // working client instead of "Connection is closed" forever.
+  if (_client && (_client.status === "end" || _client.status === "close")) {
+    _client = null;
+  }
   if (!_client) {
     _client = new Redis(REDIS_URL, {
       maxRetriesPerRequest: null, // Prevent MaxRetriesPerRequestError crash

@@ -7,11 +7,12 @@
  *     configured (never a fabricated success)
  *   - a failed vend MUST NOT write any transaction row, and definitely no
  *     status='success' row
- *   - getSummary MUST report honest zeros
+ *   - getSummary MUST report honest numbers (F-02: exactly the
+ *     provider-confirmed successful vends — never phantom volume)
  *   - anonymous callers write nothing
  */
 import { describe, it, beforeAll, afterAll } from "vitest";
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, count, sql, gte } from "drizzle-orm";
 import { getDb } from "../../server/db";
 import { transactions } from "../../drizzle/schema";
 import {
@@ -82,23 +83,51 @@ describe("airtimeVending router (integration, real DB)", () => {
     expect(rows.length).toBe(0);
   });
 
-  it("no airtime transaction was ever recorded as synchronous success", async () => {
+  // Refined for F-02 (order-independent): the original global-zero assertion
+  // held only because no provider could ever fulfil a vend. With provider
+  // dispatch wired (F-02), a vend CAN reach success — but ONLY after
+  // provider-confirmed fulfilment (metadata.providerStatus = 'completed',
+  // set by the status-lookup resolution path). The honesty invariant is now
+  // STRONGER: no successful Airtime transaction exists without provider
+  // confirmation — no synchronous or fabricated success anywhere.
+  it("no airtime transaction reaches success without provider-confirmed fulfilment", async () => {
     const db = (await getDb())!;
-    const [row] = await db
+    const rows = await db
       .select({ c: count() })
       .from(transactions)
       .where(
-        and(eq(transactions.type, "Airtime"), eq(transactions.status, "success"))
+        and(
+          eq(transactions.type, "Airtime"),
+          eq(transactions.status, "success"),
+          sql`(metadata->>'providerStatus') IS DISTINCT FROM 'completed'`
+        )
       );
-    expect(Number(row?.c ?? 0)).toBe(0);
+    expect(Number(rows[0]?.c ?? 0)).toBe(0);
   });
 
-  it("getSummary reports honest zeros", async () => {
+  it("getSummary counts exactly the provider-confirmed successful vends (no phantom volume)", async () => {
+    const db = (await getDb())!;
+    const since = new Date(Date.now() - 30 * 86400000);
+    const [expected] = await db
+      .select({
+        total: count(),
+        volume: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)`,
+        commission: sql<string>`COALESCE(SUM(CAST(commission AS NUMERIC)), 0)`,
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.type, "Airtime"),
+          eq(transactions.status, "success"),
+          sql`(metadata->>'providerStatus') = 'completed'`,
+          gte(transactions.createdAt, since)
+        )
+      );
     const caller = callerFor(adminUser);
     const summary = await caller.airtimeVending.getSummary({ periodDays: 30 });
-    expect(summary.total).toBe(0);
-    expect(summary.volumeNGN).toBe(0);
-    expect(summary.commissionNGN).toBe(0);
+    expect(summary.total).toBe(Number(expected?.total ?? 0));
+    expect(summary.volumeNGN).toBeCloseTo(Number(expected?.volume ?? 0), 2);
+    expect(summary.commissionNGN).toBeCloseTo(Number(expected?.commission ?? 0), 2);
   });
 
   it("anonymous caller gets UNAUTHORIZED and writes nothing", async () => {

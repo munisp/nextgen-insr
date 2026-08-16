@@ -30,6 +30,9 @@ import { pinResetRouter } from "../../../server/routers/pinReset";
 import { tenantAdminRouter } from "../../../server/routers/tenantAdmin";
 import { auditComplianceRouter } from "../../../server/routers/auditCompliance";
 import { gdprDashboardRouter } from "../../../server/routers/gdprDashboard";
+import { fxRatesRouter } from "../../../server/routers/fxRates";
+import { billPaymentsRouter } from "../../../server/routers/billPayments";
+import { mobileMoneyRouter } from "../../../server/routers/mobileMoney";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -50,6 +53,10 @@ export const integrationRouter = router({
   tenantAdmin: tenantAdminRouter,
   auditCompliance: auditComplianceRouter,
   gdprDashboard: gdprDashboardRouter,
+  // Provider-integration routers (F-02) — same mount paths as production.
+  fxRates: fxRatesRouter,
+  billPayments: billPaymentsRouter,
+  mobileMoney: mobileMoneyRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

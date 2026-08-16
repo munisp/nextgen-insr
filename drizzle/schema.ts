@@ -4220,6 +4220,11 @@ export const platformBillingLedger = pgTable(
   },
   t => ({
     txRefIdx: index("pbl_tx_ref_idx").on(t.transactionRef),
+    // F-02: webhook idempotency — one durable ledger effect per provider
+    // reference (Stripe invoice id). Deployment note: dedupe any existing
+    // duplicate transaction_ref rows BEFORE this index is applied to a
+    // populated database.
+    txRefUnique: uniqueIndex("pbl_tx_ref_unique").on(t.transactionRef),
     agentIdx: index("pbl_agent_idx").on(t.agentId),
     processedAtIdx: index("pbl_processed_at_idx").on(t.processedAt),
     billingModelIdx: index("pbl_billing_model_idx").on(t.billingModel),

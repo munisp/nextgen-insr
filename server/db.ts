@@ -51,6 +51,16 @@ export class DatabaseError extends Error {
  * In production mode, throws DatabaseError if unavailable.
  */
 export async function getDb(): Promise<ReturnType<typeof drizzle> | null> {
+  // Recover from an externally-ended pool (e.g. a shutdown path or test
+  // harness that ended the shared pool without going through closeDb()):
+  // reset the cached state so a fresh pool is created instead of failing
+  // forever with "Cannot use a pool after calling end on the pool".
+  if (_pool && (_pool as { ended?: boolean }).ended) {
+    _pool = null;
+    _db = null;
+    _dbVerified = false;
+    _poolReady = false;
+  }
   if (_db && _dbVerified) return _db;
 
   // Check if already failed (fail-fast without re-attempting)

@@ -172,6 +172,25 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         logger.info({ invoiceId: invoice.id, tenantId, amount }, "[Stripe Webhook] Invoice paid");
 
         if (tenantId > 0) {
+          // Idempotent delivery (F-02): Stripe retries webhooks on any
+          // non-2xx/timeout, so duplicate deliveries are NORMAL. The ledger
+          // row keyed by transactionRef = invoice.id is the durable dedup
+          // record: a unique index plus ON CONFLICT DO NOTHING makes the
+          // insert race-safe, and the pre-check skips side effects (audit
+          // row, events, notifications) on replays — exactly one durable
+          // effect per invoice.
+          const existingLedger = await db
+            .select({ id: platformBillingLedger.id })
+            .from(platformBillingLedger)
+            .where(eq(platformBillingLedger.transactionRef, invoice.id))
+            .limit(1);
+          if (existingLedger.length > 0) {
+            logger.info(
+              { invoiceId: invoice.id, eventId: event.id },
+              "[Stripe Webhook] Duplicate invoice.paid delivery — already recorded, skipping (idempotent)"
+            );
+            return res.json({ received: true, duplicate: true });
+          }
           await db.insert(billingAuditLog).values({
             tenantId,
             userId: 0,
@@ -202,6 +221,8 @@ export async function handleStripeWebhook(req: Request, res: Response) {
             platformRevenue: String(Math.round(amount * 0.15) / 100),
             currency: (invoice.currency || "ngn").toUpperCase(),
             billingModel: "subscription",
+          }).onConflictDoNothing({
+            target: platformBillingLedger.transactionRef,
           });
           await publishBillingEvent("billing.dunning.cleared", {
             tenantId,

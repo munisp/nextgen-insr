@@ -33,6 +33,16 @@
  */
 import { logger } from "../_core/logger";
 
+// Marker prefix for errors where the provider may have accepted the message
+// but the outcome is unknown (timeout / lost or malformed response after
+// send). The dispatcher MUST NOT fail over or retry such a message blindly —
+// that would risk duplicate delivery.
+const UNKNOWN_OUTCOME_PREFIX = "UNKNOWN_OUTCOME:";
+
+function isUnknownOutcome(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith(UNKNOWN_OUTCOME_PREFIX);
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type SmsProvider = "twilio" | "africastalking" | "termii" | "console";
@@ -52,6 +62,9 @@ export interface SmsResult {
   timestamp: Date;
   cost?: number;
   degraded?: boolean;
+  /** True when the provider may have accepted the message but the outcome
+   *  could not be determined. Callers MUST NOT blindly re-send. */
+  unknownOutcome?: boolean;
 }
 
 export interface SmsDeliveryLog {
@@ -266,6 +279,19 @@ async function sendViaAfricasTalking(
   };
 }
 
+// Termii base URL is configurable so official sandboxes (or protocol-faithful
+// test doubles in the test suite) can be targeted; production default is the
+// real Termii Nigeria endpoint. The wire shape below follows the Termii
+// Send Message API as documented (POST /api/sms/send, JSON body with
+// api_key/to/from/sms/type/channel, JSON reply carrying message_id).
+function termiiBaseUrl(): string {
+  return process.env.TERMII_BASE_URL ?? "https://api.ng.termii.com";
+}
+
+function termiiTimeoutMs(): number {
+  return Number(process.env.TERMII_TIMEOUT_MS ?? 10_000);
+}
+
 async function sendViaTermii(msg: SmsMessage): Promise<{ messageId: string }> {
   const apiKey = process.env.TERMII_API_KEY!;
   const senderId = process.env.TERMII_SENDER_ID ?? "InsurePortal";
@@ -279,19 +305,39 @@ async function sendViaTermii(msg: SmsMessage): Promise<{ messageId: string }> {
     api_key: apiKey,
   };
 
-  const res = await fetch("https://api.ng.termii.com/api/sms/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${termiiBaseUrl()}/api/sms/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(termiiTimeoutMs()),
+    });
+  } catch (err) {
+    // Timeout / network failure: the request MAY have reached Termii. Mark
+    // the outcome as unknown so the dispatcher does not blindly fail over or
+    // retry into a duplicate send (UNKNOWN_OUTCOME contract, see sendSms).
+    throw new Error(
+      `${UNKNOWN_OUTCOME_PREFIX}Termii request may have been accepted but the response was lost: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => "Unknown error");
     throw new Error(`Termii ${res.status}: ${errBody}`);
   }
 
-  const data = (await res.json()) as { message_id?: string };
-  return { messageId: data.message_id ?? `termii_${Date.now()}` };
+  const data = (await res.json().catch(() => null)) as {
+    message_id?: string;
+  } | null;
+  // Fail-closed: a malformed reply (missing message_id) is a loud failure,
+  // never a fabricated success id.
+  if (!data || typeof data.message_id !== "string" || data.message_id.length === 0) {
+    throw new Error(
+      `${UNKNOWN_OUTCOME_PREFIX}Termii returned a malformed 2xx reply (missing message_id) — delivery state unknown`
+    );
+  }
+  return { messageId: data.message_id };
 }
 
 // Development-only console fallback: logs instead of sending. Never used in
@@ -332,8 +378,32 @@ function logDelivery(entry: SmsDeliveryLog): void {
  * Send an SMS with automatic provider failover.
  * Tries providers in priority order, skipping disabled or rate-limited ones.
  */
+// Provider enablement is resolved from the environment at call time so that
+// configuration changes (and tests) do not depend on module load order.
+function refreshProviderConfig(): void {
+  for (const p of smsProviders) {
+    switch (p.name) {
+      case "twilio":
+        p.enabled = !!(
+          process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+        );
+        break;
+      case "africastalking":
+        p.enabled = !!(process.env.AT_API_KEY && process.env.AT_USERNAME);
+        break;
+      case "termii":
+        p.enabled = !!process.env.TERMII_API_KEY;
+        break;
+      case "console":
+        p.enabled = process.env.NODE_ENV !== "production";
+        break;
+    }
+  }
+}
+
 export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
   const normalizedTo = normalizePhone(msg.to);
+  refreshProviderConfig();
 
   // Check per-phone rate limit
   if (!checkPhoneRateLimit(normalizedTo)) {
@@ -426,6 +496,31 @@ export async function sendSms(msg: SmsMessage): Promise<SmsResult> {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (isUnknownOutcome(err)) {
+        // The provider may have accepted the message. Failing over or
+        // retrying blindly could deliver the SMS twice — stop here, log the
+        // attempt as "pending" (outcome unknown), and report honestly.
+        logger.error(
+          { service: "sms", provider: provider.name, error: message },
+          `[SmsService] ${provider.name} outcome UNKNOWN — NOT failing over or re-sending (duplicate-safe)`
+        );
+        logDelivery({
+          id: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          to: normalizedTo,
+          body: msg.body,
+          provider: provider.name,
+          status: "pending",
+          error: message,
+          sentAt: new Date(),
+        });
+        return {
+          success: false,
+          provider: provider.name,
+          error: `Provider outcome unknown — message NOT re-sent to avoid duplicate delivery. Resolve via provider status before retrying. (${message})`,
+          unknownOutcome: true,
+          timestamp: new Date(),
+        };
+      }
       logger.warn(
         { service: "sms", provider: provider.name, error: message },
         `[SmsService] ${provider.name} failed: ${message}, trying next`
@@ -488,6 +583,9 @@ export async function sendSmsWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     lastResult = await sendSms(msg);
     if (lastResult.success) return lastResult;
+    // Never blind-retry an unknown outcome: the provider may have accepted
+    // the message; re-sending could duplicate the delivery.
+    if (lastResult.unknownOutcome) return lastResult;
 
     if (attempt < maxRetries) {
       const delay = Math.min(1000 * Math.pow(2, attempt), 30_000);
