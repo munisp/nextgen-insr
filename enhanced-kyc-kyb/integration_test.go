@@ -13,6 +13,32 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// svcDB is the package-level handle exercised by the endpoint tests below.
+var svcDB *sql.DB
+
+// handleReady reports readiness: 200 {"status":"ready"} when the database
+// handle is live, 503 {"status":"not_ready"} otherwise.
+func handleReady(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if svcDB == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
+		return
+	}
+	if err := svcDB.Ping(); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+// handleLive reports liveness unconditionally.
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
+
 func getTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")
@@ -78,20 +104,20 @@ func TestIntegration_HealthEndpoint(t *testing.T) {
 		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
 	}
 	var err error
-	db, err = sql.Open("postgres", dbURL)
+	svcDB, err = sql.Open("postgres", dbURL)
 	if err != nil {
 		t.Skipf("Skipping: %v", err)
 	}
-	if err = db.Ping(); err != nil {
+	if err = svcDB.Ping(); err != nil {
 		t.Skipf("Skipping (DB unreachable): %v", err)
 	}
-	defer func() { db = nil }()
+	defer func() { svcDB = nil }()
 
 	// Health check via DB ping (inline handler pattern)
-	if db == nil {
+	if svcDB == nil {
 		t.Fatal("Expected db to be initialized")
 	}
-	if err := db.Ping(); err != nil {
+	if err := svcDB.Ping(); err != nil {
 		t.Fatalf("Expected DB ping to succeed, got %v", err)
 	}
 	t.Log("Health check passed: database connected")
@@ -103,14 +129,14 @@ func TestIntegration_ReadyEndpoint(t *testing.T) {
 		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
 	}
 	var err error
-	db, err = sql.Open("postgres", dbURL)
+	svcDB, err = sql.Open("postgres", dbURL)
 	if err != nil {
 		t.Skipf("Skipping: %v", err)
 	}
-	if err = db.Ping(); err != nil {
+	if err = svcDB.Ping(); err != nil {
 		t.Skipf("Skipping (DB unreachable): %v", err)
 	}
-	defer func() { db = nil }()
+	defer func() { svcDB = nil }()
 
 	req := httptest.NewRequest("GET", "/ready", nil)
 	w := httptest.NewRecorder()
@@ -153,14 +179,14 @@ func TestIntegration_APIEndpoint(t *testing.T) {
 		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
 	}
 	var err error
-	db, err = sql.Open("postgres", dbURL)
+	svcDB, err = sql.Open("postgres", dbURL)
 	if err != nil {
 		t.Skipf("Skipping: %v", err)
 	}
-	if err = db.Ping(); err != nil {
+	if err = svcDB.Ping(); err != nil {
 		t.Skipf("Skipping (DB unreachable): %v", err)
 	}
-	defer func() { db = nil }()
+	defer func() { svcDB = nil }()
 
 	body := `{"applicantId":"APP-KYC-INT-001","documentType":"national_id","documentNumber":"A12345678"}`
 	req := httptest.NewRequest("POST", "/api/v1/verify", bytes.NewBufferString(body))

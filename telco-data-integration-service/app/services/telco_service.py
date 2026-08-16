@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class TelcoService:
     """Service for fetching telco data from providers"""
-    
+
     def __init__(self):
         self.timeout = 30.0
         # In production, these would be real API endpoints and credentials
@@ -39,7 +39,7 @@ class TelcoService:
                 "enabled": True
             }
         }
-    
+
     def detect_provider(self, phone_number: str) -> TelcoProvider:
         """Detect telco provider from phone number prefix"""
         # Nigerian phone number prefixes
@@ -49,19 +49,19 @@ class TelcoService:
             TelcoProvider.GLO: ["0805", "0807", "0811", "0815", "0905", "0915"],
             TelcoProvider.NINE_MOBILE: ["0809", "0817", "0818", "0908", "0909"]
         }
-        
+
         for provider, prefix_list in prefixes.items():
             if any(phone_number.startswith(prefix) for prefix in prefix_list):
                 return provider
-        
+
         # Default to MTN if unknown
         return TelcoProvider.MTN
-    
+
     async def fetch_telco_data(self, request: TelcoDataRequest, db_session) -> TelcoData:
         """Fetch telco data from provider"""
         # Detect provider if not provided
         provider = request.provider or self.detect_provider(request.phone_number)
-        
+
         # Create telco data record
         telco_data = TelcoData(
             id=str(uuid.uuid4()),
@@ -70,11 +70,11 @@ class TelcoService:
             provider=provider,
             status=TelcoDataStatus.PENDING
         )
-        
+
         try:
             # Fetch data from telco provider
             data = await self._fetch_from_provider(provider, request.phone_number)
-            
+
             # Parse and populate telco data
             telco_data.account_age_months = data.get("account_age_months", 0)
             telco_data.account_status = data.get("account_status", "ACTIVE")
@@ -96,44 +96,44 @@ class TelcoService:
             telco_data.raw_data = data
             telco_data.status = TelcoDataStatus.SUCCESS
             telco_data.fetched_at = datetime.utcnow()
-            
+
             logger.info(f"Successfully fetched telco data for {request.phone_number} from {provider}")
-            
+
         except Exception as e:
             logger.error(f"Failed to fetch telco data: {str(e)}")
             telco_data.status = TelcoDataStatus.FAILED
             telco_data.raw_data = {"error": str(e)}
-        
+
         # Save to database
         db_session.add(telco_data)
         db_session.commit()
         db_session.refresh(telco_data)
-        
+
         return telco_data
-    
+
     async def _fetch_from_provider(self, provider: TelcoProvider, phone_number: str) -> Dict[str, Any]:
         """Fetch data from telco provider API"""
         config = self.provider_configs[provider]
-        
+
         if not config["enabled"]:
             raise Exception(f"Provider {provider} is not enabled")
-        
+
         # In production, this would make a real API call
         # For now, generate realistic mock data
         return self._generate_mock_telco_data(phone_number)
-    
+
     def _generate_mock_telco_data(self, phone_number: str) -> Dict[str, Any]:
         """Generate realistic mock telco data for testing"""
         import random
-        
+
         # Use phone number as seed for consistency
         seed = sum(ord(c) for c in phone_number)
         random.seed(seed)
-        
+
         # Generate realistic data
         account_age_months = random.randint(6, 120)  # 6 months to 10 years
         is_good_customer = random.random() > 0.3  # 70% are good customers
-        
+
         if is_good_customer:
             avg_monthly_airtime = random.uniform(2000, 10000)  # ₦2,000 - ₦10,000
             avg_monthly_data = random.uniform(1000, 5000)  # ₦1,000 - ₦5,000
@@ -146,10 +146,10 @@ class TelcoService:
             payment_consistency_score = random.uniform(30, 70)
             late_payment_count = random.randint(3, 10)
             failed_payment_count = random.randint(2, 5)
-        
+
         total_spend_6months = (avg_monthly_airtime + avg_monthly_data) * 6
         total_spend_12months = (avg_monthly_airtime + avg_monthly_data) * 12
-        
+
         return {
             "account_age_months": account_age_months,
             "account_status": "ACTIVE" if is_good_customer else random.choice(["ACTIVE", "SUSPENDED"]),
@@ -169,14 +169,14 @@ class TelcoService:
             "weekend_usage_percentage": round(random.uniform(20, 50), 2),
             "data_to_airtime_ratio": round(avg_monthly_data / avg_monthly_airtime if avg_monthly_airtime > 0 else 0, 2)
         }
-    
+
     async def get_telco_data(self, customer_id: str, db_session) -> Optional[TelcoData]:
         """Get latest telco data for customer"""
         return db_session.query(TelcoData).filter(
             TelcoData.customer_id == customer_id,
             TelcoData.status == TelcoDataStatus.SUCCESS
         ).order_by(TelcoData.fetched_at.desc()).first()
-    
+
     async def get_telco_data_by_phone(self, phone_number: str, db_session) -> Optional[TelcoData]:
         """Get latest telco data by phone number"""
         return db_session.query(TelcoData).filter(

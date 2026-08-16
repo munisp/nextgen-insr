@@ -34,12 +34,12 @@ async def fetch_telco_data(
 ):
     """
     Fetch telco data from provider
-    
+
     Requires customer consent to access telco data
     """
     if not request.consent:
         raise HTTPException(status_code=400, detail="Customer consent is required")
-    
+
     try:
         telco_data = await telco_service.fetch_telco_data(request, db)
         return telco_data

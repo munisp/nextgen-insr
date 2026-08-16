@@ -1,9 +1,11 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -37,6 +39,22 @@ func Test_Calculate(t *testing.T) {
 	}
 }
 func Test_PayoutSummary(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	testDB, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Skipf("Skipping (cannot open DB): %v", err)
+	}
+	defer testDB.Close()
+	if err := testDB.Ping(); err != nil {
+		t.Skipf("Skipping (DB unreachable): %v", err)
+	}
+	prev := db
+	db = testDB
+	defer func() { db = prev }()
+
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/payout-summary", nil)
 	w := httptest.NewRecorder()
 	handlePayoutSummary(w, req)

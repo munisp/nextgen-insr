@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"net/http"
 	"os"
 	"os/signal"
@@ -150,4 +151,28 @@ func setupRouter(service *handler.Service) http.Handler {
 	})
 
 	return r
+}
+
+// validateQueryParam returns the query parameter value for key, enforcing a
+// maximum length. An absent parameter yields an empty string and no error.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	val := r.URL.Query().Get(key)
+	if len(val) > maxLen {
+		return "", fmt.Errorf("parameter %s exceeds max length %d", key, maxLen)
+	}
+	return val, nil
+}
+
+// validateIntParam parses the query parameter for key as an integer. An absent
+// parameter yields 0 and no error; a non-integer value yields an error.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	val := r.URL.Query().Get(key)
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %s must be an integer", key)
+	}
+	return n, nil
 }

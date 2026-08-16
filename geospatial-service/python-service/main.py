@@ -22,6 +22,8 @@ from starlette.responses import Response
 import redis
 import json as _json
 from datetime import datetime
+from fastapi import Request, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Redis client
 _redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
@@ -40,7 +42,7 @@ class KafkaEventPublisher:
     def __init__(self, brokers: str, service_name: str):
         self.brokers = brokers
         self.service_name = service_name
-    
+
     def publish(self, event_type: str, key: str, payload: dict):
         """Publish event to Kafka topic. In production, use confluent-kafka or aiokafka."""
         event = {
@@ -61,7 +63,7 @@ class OpenSearchLogger:
     def __init__(self, url: str, service_name: str):
         self.url = url
         self.service_name = service_name
-    
+
     def index_log(self, level: str, message: str, fields: dict = None):
         """Index structured log to OpenSearch."""
         doc = {
@@ -99,9 +101,6 @@ async def check_permission(entity_type: str, entity_id: str, permission: str, us
         return True  # Fail open
 
 # Keycloak JWT authentication middleware
-from fastapi import Request, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
 _security = HTTPBearer(auto_error=False)
 
 async def keycloak_auth_middleware(request: Request, call_next):
@@ -109,18 +108,18 @@ async def keycloak_auth_middleware(request: Request, call_next):
     path = request.url.path
     if path in ("/health", "/ready", "/live", "/metrics", "/docs", "/openapi.json"):
         return await call_next(request)
-    
+
     # Dev bypass
     if os.environ.get("DEV_AUTH_BYPASS") == "true":
         request.state.user_id = "dev-user"
         request.state.tenant_id = "default"
         request.state.roles = ["admin", "user"]
         return await call_next(request)
-    
+
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "missing bearer token"})
-    
+
     # In production: validate JWT against Keycloak JWKS endpoint
     # For now, pass through (validation handled by APISIX gateway)
     request.state.user_id = request.headers.get("X-User-ID", "unknown")
@@ -314,14 +313,14 @@ def normalize_nigerian_address(address: Address) -> Address:
     state_code = get_state_code(state)
     if state_code:
         state = NIGERIAN_STATES[state_code]["name"]
-    
+
     # Normalize city
     city = address.city.strip().title()
-    
+
     # Normalize address lines
     address_line1 = address.address_line1.strip()
     address_line2 = address.address_line2.strip() if address.address_line2 else None
-    
+
     return Address(
         address_line1=address_line1,
         address_line2=address_line2,
@@ -336,7 +335,7 @@ async def geocode_with_google(address: str) -> Optional[GeocodingResult]:
     """Geocode address using Google Maps API"""
     if not GOOGLE_MAPS_API_KEY:
         return None
-    
+
     with geocode_latency.labels(provider="google").time():
         try:
             async with httpx.AsyncClient() as client:
@@ -351,11 +350,11 @@ async def geocode_with_google(address: str) -> Optional[GeocodingResult]:
                     timeout=10.0
                 )
                 data = response.json()
-                
+
                 if data["status"] == "OK" and data["results"]:
                     result = data["results"][0]
                     location = result["geometry"]["location"]
-                    
+
                     # Map Google accuracy types
                     accuracy_map = {
                         "ROOFTOP": "ROOFTOP",
@@ -367,15 +366,15 @@ async def geocode_with_google(address: str) -> Optional[GeocodingResult]:
                         result["geometry"].get("location_type", "APPROXIMATE"),
                         "APPROXIMATE"
                     )
-                    
+
                     # Extract address components
                     components = {}
                     for comp in result.get("address_components", []):
                         for comp_type in comp["types"]:
                             components[comp_type] = comp["long_name"]
-                    
+
                     geocode_requests.labels(provider="google", status="success").inc()
-                    
+
                     return GeocodingResult(
                         latitude=location["lat"],
                         longitude=location["lng"],
@@ -385,10 +384,10 @@ async def geocode_with_google(address: str) -> Optional[GeocodingResult]:
                         confidence=0.95 if accuracy == "ROOFTOP" else 0.8,
                         components=components
                     )
-                
+
                 geocode_requests.labels(provider="google", status="no_results").inc()
                 return None
-                
+
         except Exception as e:
             geocode_requests.labels(provider="google", status="error").inc()
             print(f"Google geocoding error: {e}")
@@ -413,10 +412,10 @@ async def geocode_with_nominatim(address: str) -> Optional[GeocodingResult]:
                     timeout=10.0
                 )
                 data = response.json()
-                
+
                 if data:
                     result = data[0]
-                    
+
                     # Determine accuracy based on OSM class/type
                     osm_type = result.get("type", "")
                     if osm_type in ["house", "building"]:
@@ -431,9 +430,9 @@ async def geocode_with_nominatim(address: str) -> Optional[GeocodingResult]:
                     else:
                         accuracy = "APPROXIMATE"
                         confidence = 0.3
-                    
+
                     geocode_requests.labels(provider="nominatim", status="success").inc()
-                    
+
                     return GeocodingResult(
                         latitude=float(result["lat"]),
                         longitude=float(result["lon"]),
@@ -443,10 +442,10 @@ async def geocode_with_nominatim(address: str) -> Optional[GeocodingResult]:
                         confidence=confidence,
                         components=result.get("address", {})
                     )
-                
+
                 geocode_requests.labels(provider="nominatim", status="no_results").inc()
                 return None
-                
+
         except Exception as e:
             geocode_requests.labels(provider="nominatim", status="error").inc()
             print(f"Nominatim geocoding error: {e}")
@@ -457,7 +456,7 @@ async def get_cached_geocode(address_hash: str) -> Optional[GeocodingResult]:
     """Get cached geocoding result from database"""
     if not db_pool:
         return None
-    
+
     try:
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -468,7 +467,7 @@ async def get_cached_geocode(address_hash: str) -> Optional[GeocodingResult]:
                 """,
                 address_hash
             )
-            
+
             if row:
                 geocode_requests.labels(provider="cache", status="hit").inc()
                 return GeocodingResult(
@@ -482,7 +481,7 @@ async def get_cached_geocode(address_hash: str) -> Optional[GeocodingResult]:
                 )
     except Exception as e:
         print(f"Cache lookup error: {e}")
-    
+
     geocode_requests.labels(provider="cache", status="miss").inc()
     return None
 
@@ -491,12 +490,12 @@ async def cache_geocode_result(address_hash: str, result: GeocodingResult):
     """Cache geocoding result in database"""
     if not db_pool:
         return
-    
+
     try:
         async with db_pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO geospatial.geocoding_cache 
+                INSERT INTO geospatial.geocoding_cache
                 (address_hash, latitude, longitude, formatted_address, accuracy, source, confidence, components, expires_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW() + INTERVAL '30 days')
                 ON CONFLICT (address_hash) DO UPDATE SET
@@ -569,25 +568,25 @@ async def geocode_address(address: Address):
     normalized = normalize_nigerian_address(address)
     address_string = format_address_string(normalized)
     address_hash = calculate_address_hash(address_string)
-    
+
     # Check cache first
     cached = await get_cached_geocode(address_hash)
     if cached:
         return cached
-    
+
     # Try Google Maps first
     result = await geocode_with_google(address_string)
-    
+
     # Fallback to Nominatim
     if not result:
         result = await geocode_with_nominatim(address_string)
-    
+
     if not result:
         raise HTTPException(status_code=404, detail="Could not geocode address")
-    
+
     # Cache the result
     await cache_geocode_result(address_hash, result)
-    
+
     return result
 
 
@@ -599,11 +598,11 @@ async def batch_geocode(request: BatchGeocodeRequest):
     """
     if len(request.addresses) > 100:
         raise HTTPException(status_code=400, detail="Maximum 100 addresses per batch")
-    
+
     results = []
     success_count = 0
     failure_count = 0
-    
+
     for address in request.addresses:
         try:
             result = await geocode_address(address)
@@ -612,7 +611,7 @@ async def batch_geocode(request: BatchGeocodeRequest):
         except HTTPException:
             results.append(None)
             failure_count += 1
-    
+
     return BatchGeocodeResult(
         results=results,
         success_count=success_count,
@@ -642,21 +641,21 @@ async def reverse_geocode(
                 timeout=10.0
             )
             data = response.json()
-            
+
             if "error" in data:
                 raise HTTPException(status_code=404, detail="Location not found")
-            
+
             address = data.get("address", {})
-            
+
             # Extract Nigerian state
             state_name = address.get("state", "")
             state_code = get_state_code(state_name) or ""
-            
+
             # Build address line
             road = address.get("road", "")
             house_number = address.get("house_number", "")
             address_line1 = f"{house_number} {road}".strip() if road else address.get("suburb", "")
-            
+
             return ReverseGeocodingResult(
                 address_line1=address_line1,
                 city=address.get("city", address.get("town", address.get("village", ""))),
@@ -667,7 +666,7 @@ async def reverse_geocode(
                 country="Nigeria",
                 formatted_address=data.get("display_name", "")
             )
-            
+
     except httpx.RequestError as e:
         raise HTTPException(status_code=503, detail=f"Geocoding service unavailable: {e}")
 
@@ -679,13 +678,13 @@ async def validate_address(address: Address):
     Returns validation status, normalized address, and any issues found.
     """
     address_validation_requests.inc()
-    
+
     issues = []
     suggestions = []
-    
+
     # Normalize the address
     normalized = normalize_nigerian_address(address)
-    
+
     # Validate state
     state_code = get_state_code(address.state)
     if not state_code:
@@ -694,20 +693,20 @@ async def validate_address(address: Address):
         for code, info in NIGERIAN_STATES.items():
             if address.state.lower() in info["name"].lower():
                 suggestions.append(f"Did you mean: {info['name']}?")
-    
+
     # Validate city is not empty
     if not address.city or len(address.city.strip()) < 2:
         issues.append("City name is required")
-    
+
     # Validate address line
     if not address.address_line1 or len(address.address_line1.strip()) < 5:
         issues.append("Address line 1 is too short")
-    
+
     # Try to geocode for additional validation
     geocoding_result = None
     try:
         geocoding_result = await geocode_address(normalized)
-        
+
         # Check if geocoded location is in Nigeria
         if geocoding_result:
             if not (4.0 <= geocoding_result.latitude <= 14.0 and 2.5 <= geocoding_result.longitude <= 15.0):
@@ -715,9 +714,9 @@ async def validate_address(address: Address):
                 geocoding_result = None
     except HTTPException:
         issues.append("Could not verify address location")
-    
+
     is_valid = len(issues) == 0 and geocoding_result is not None
-    
+
     return AddressValidationResult(
         is_valid=is_valid,
         normalized_address=normalized,
@@ -742,7 +741,7 @@ async def get_state(state_code: str):
     state_code = state_code.upper()
     if state_code not in NIGERIAN_STATES:
         raise HTTPException(status_code=404, detail="State not found")
-    
+
     return NigerianState(code=state_code, **NIGERIAN_STATES[state_code])
 
 
@@ -753,25 +752,25 @@ async def calculate_distance(request: DistanceRequest):
     Returns distance in kilometers and meters, plus bearing in degrees.
     """
     import math
-    
+
     R = 6371  # Earth's radius in kilometers
-    
+
     lat1 = math.radians(request.origin_lat)
     lat2 = math.radians(request.destination_lat)
     delta_lat = math.radians(request.destination_lat - request.origin_lat)
     delta_lon = math.radians(request.destination_lon - request.origin_lon)
-    
+
     # Haversine formula
     a = math.sin(delta_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lon / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     distance_km = R * c
-    
+
     # Calculate bearing
     y = math.sin(delta_lon) * math.cos(lat2)
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(delta_lon)
     bearing = math.degrees(math.atan2(y, x))
     bearing = (bearing + 360) % 360  # Normalize to 0-360
-    
+
     return DistanceResult(
         distance_km=round(distance_km, 2),
         distance_meters=round(distance_km * 1000, 0),
@@ -792,7 +791,7 @@ async def check_within_nigeria(
         4.0 <= latitude <= 14.0 and
         2.5 <= longitude <= 15.0
     )
-    
+
     # More precise check using PostGIS if available
     if db_pool and is_within:
         try:
@@ -812,7 +811,7 @@ async def check_within_nigeria(
                 is_within = result if result is not None else is_within
         except Exception:
             pass  # Fall back to bounding box check
-    
+
     return {
         "latitude": latitude,
         "longitude": longitude,
@@ -830,7 +829,7 @@ async def find_state_for_location(
     """
     if not db_pool:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -845,7 +844,7 @@ async def find_state_for_location(
                 """,
                 longitude, latitude
             )
-            
+
             if row:
                 return {
                     "state_id": str(row["id"]),
@@ -854,9 +853,9 @@ async def find_state_for_location(
                     "capital": row["capital"],
                     "region": row["region"]
                 }
-            
+
             raise HTTPException(status_code=404, detail="Location not within any Nigerian state")
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -874,12 +873,12 @@ async def find_nearby_lgas(
     """
     if not db_pool:
         raise HTTPException(status_code=503, detail="Database not available")
-    
+
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT 
+                SELECT
                     l.id,
                     l.name as lga_name,
                     s.name as state_name,
@@ -900,7 +899,7 @@ async def find_nearby_lgas(
                 """,
                 longitude, latitude, radius_km
             )
-            
+
             return {
                 "lgas": [
                     {
@@ -914,7 +913,7 @@ async def find_nearby_lgas(
                 ],
                 "count": len(rows)
             }
-            
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 

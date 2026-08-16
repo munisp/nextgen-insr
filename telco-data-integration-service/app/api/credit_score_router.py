@@ -38,7 +38,7 @@ async def calculate_credit_score(
 ):
     """
     Calculate credit score from telco data
-    
+
     If fetch_fresh_data=True, will fetch new telco data before scoring
     Otherwise, uses most recent telco data (if available)
     """
@@ -55,10 +55,10 @@ async def calculate_credit_score(
             telco_data = await telco_service.get_telco_data(request.customer_id, db)
             if not telco_data:
                 raise HTTPException(
-                    status_code=404, 
+                    status_code=404,
                     detail="No telco data found. Set fetch_fresh_data=true to fetch new data"
                 )
-        
+
         # Calculate credit score
         credit_score = await credit_score_service.calculate_credit_score(
             request.customer_id,
@@ -66,9 +66,9 @@ async def calculate_credit_score(
             telco_data,
             db
         )
-        
+
         return credit_score
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -84,7 +84,7 @@ async def get_customer_credit_score(
     credit_score = await credit_score_service.get_credit_score(customer_id, db)
     if not credit_score:
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail="No valid credit score found. Use POST /calculate to generate one"
         )
     return credit_score
@@ -98,10 +98,10 @@ async def get_credit_score_breakdown(
     credit_score = await credit_score_service.get_credit_score(customer_id, db)
     if not credit_score:
         raise HTTPException(status_code=404, detail="No credit score found")
-    
+
     # Get telco data for context
     telco_data = await telco_service.get_telco_data(customer_id, db)
-    
+
     breakdown = {
         "credit_score": credit_score.credit_score,
         "score_category": credit_score.score_category,
@@ -131,7 +131,7 @@ async def get_credit_score_breakdown(
             "payment_consistency": telco_data.payment_consistency_score if telco_data else None
         }
     }
-    
+
     return breakdown
 
 @router.post("/bulk", response_model=BulkCreditScoreResponse)
@@ -143,7 +143,7 @@ async def bulk_calculate_credit_scores(
     results = []
     errors = []
     successful = 0
-    
+
     for customer in request.customers:
         try:
             score_request = CreditScoreRequest(
@@ -151,7 +151,7 @@ async def bulk_calculate_credit_scores(
                 phone_number=customer["phone_number"],
                 fetch_fresh_data=request.fetch_fresh_data
             )
-            
+
             # Get or fetch telco data
             if request.fetch_fresh_data:
                 telco_request = TelcoDataRequest(
@@ -162,7 +162,7 @@ async def bulk_calculate_credit_scores(
                 telco_data = await telco_service.fetch_telco_data(telco_request, db)
             else:
                 telco_data = await telco_service.get_telco_data(customer["customer_id"], db)
-            
+
             if telco_data:
                 credit_score = await credit_score_service.calculate_credit_score(
                     customer["customer_id"],
@@ -177,13 +177,13 @@ async def bulk_calculate_credit_scores(
                     "customer_id": customer["customer_id"],
                     "error": "No telco data available"
                 })
-                
+
         except Exception as e:
             errors.append({
                 "customer_id": customer["customer_id"],
                 "error": str(e)
             })
-    
+
     return {
         "total": len(request.customers),
         "successful": successful,

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class DataCollectionService:
     """Service for collecting and managing loan outcome data"""
-    
+
     async def record_loan_application(
         self,
         customer_id: str,
@@ -33,7 +33,7 @@ class DataCollectionService:
         db_session: Session
     ) -> LoanApplication:
         """Record a new loan application with credit score"""
-        
+
         # Snapshot telco features at time of application
         telco_features_snapshot = {
             "account_age_months": telco_data.account_age_months,
@@ -50,7 +50,7 @@ class DataCollectionService:
             "account_status": telco_data.account_status,
             "provider": telco_data.provider
         }
-        
+
         # Snapshot credit score components
         credit_score_components = {
             "credit_score": credit_score_record.credit_score,
@@ -63,10 +63,10 @@ class DataCollectionService:
             "risk_level": credit_score_record.risk_level,
             "approval_probability": credit_score_record.approval_probability
         }
-        
+
         # Calculate total amount due
         total_amount_due = loan_amount * (1 + interest_rate / 100)
-        
+
         loan_app = LoanApplication(
             id=str(uuid.uuid4()),
             customer_id=customer_id,
@@ -82,14 +82,14 @@ class DataCollectionService:
             telco_features_snapshot=telco_features_snapshot,
             credit_score_components=credit_score_components
         )
-        
+
         db_session.add(loan_app)
         db_session.commit()
         db_session.refresh(loan_app)
-        
+
         logger.info(f"Recorded loan application {loan_app.id} for customer {customer_id}")
         return loan_app
-    
+
     async def update_loan_decision(
         self,
         loan_application_id: str,
@@ -101,21 +101,21 @@ class DataCollectionService:
         loan_app = db_session.query(LoanApplication).filter(
             LoanApplication.id == loan_application_id
         ).first()
-        
+
         if not loan_app:
             raise ValueError(f"Loan application {loan_application_id} not found")
-        
+
         loan_app.application_status = "APPROVED" if approved else "REJECTED"
         loan_app.approval_date = datetime.utcnow() if approved else None
         loan_app.rejection_reason = rejection_reason
         loan_app.updated_at = datetime.utcnow()
-        
+
         db_session.commit()
         db_session.refresh(loan_app)
-        
+
         logger.info(f"Updated loan application {loan_application_id}: {loan_app.application_status}")
         return loan_app
-    
+
     async def record_loan_disbursement(
         self,
         loan_application_id: str,
@@ -126,21 +126,21 @@ class DataCollectionService:
         loan_app = db_session.query(LoanApplication).filter(
             LoanApplication.id == loan_application_id
         ).first()
-        
+
         if not loan_app:
             raise ValueError(f"Loan application {loan_application_id} not found")
-        
+
         loan_app.disbursed = True
         loan_app.disbursement_date = datetime.utcnow()
         loan_app.disbursement_amount = disbursement_amount
         loan_app.updated_at = datetime.utcnow()
-        
+
         db_session.commit()
         db_session.refresh(loan_app)
-        
+
         logger.info(f"Recorded disbursement for loan {loan_application_id}: ₦{disbursement_amount:,.2f}")
         return loan_app
-    
+
     async def record_loan_payment(
         self,
         loan_application_id: str,
@@ -153,11 +153,11 @@ class DataCollectionService:
         db_session: Session
     ) -> LoanPayment:
         """Record a loan payment"""
-        
+
         # Calculate if payment is late
         days_late = max(0, (payment_date - due_date).days)
         payment_status = "LATE" if days_late > 0 else "ON_TIME"
-        
+
         payment = LoanPayment(
             id=str(uuid.uuid4()),
             loan_application_id=loan_application_id,
@@ -170,34 +170,34 @@ class DataCollectionService:
             payment_method=payment_method,
             transaction_reference=transaction_reference
         )
-        
+
         db_session.add(payment)
-        
+
         # Update loan application
         loan_app = db_session.query(LoanApplication).filter(
             LoanApplication.id == loan_application_id
         ).first()
-        
+
         if loan_app:
             loan_app.total_amount_paid += payment_amount
             loan_app.payment_count += 1
             if payment_status == "LATE":
                 loan_app.late_payment_count += 1
             loan_app.final_payment_date = payment_date
-            
+
             # Check if loan is completed
             if loan_app.total_amount_paid >= loan_app.total_amount_due:
                 loan_app.loan_status = "COMPLETED"
                 loan_app.completed_date = datetime.utcnow()
-            
+
             loan_app.updated_at = datetime.utcnow()
-        
+
         db_session.commit()
         db_session.refresh(payment)
-        
+
         logger.info(f"Recorded payment for loan {loan_application_id}: ₦{payment_amount:,.2f} ({payment_status})")
         return payment
-    
+
     async def record_missed_payment(
         self,
         loan_application_id: str,
@@ -207,7 +207,7 @@ class DataCollectionService:
         db_session: Session
     ) -> LoanPayment:
         """Record a missed payment"""
-        
+
         payment = LoanPayment(
             id=str(uuid.uuid4()),
             loan_application_id=loan_application_id,
@@ -220,29 +220,29 @@ class DataCollectionService:
             payment_method="NONE",
             transaction_reference="MISSED"
         )
-        
+
         db_session.add(payment)
-        
+
         # Update loan application
         loan_app = db_session.query(LoanApplication).filter(
             LoanApplication.id == loan_application_id
         ).first()
-        
+
         if loan_app:
             loan_app.missed_payment_count += 1
             loan_app.updated_at = datetime.utcnow()
-            
+
             # Check if loan should be marked as defaulted
             # Default criteria: 3+ missed payments or 90+ days overdue
             if loan_app.missed_payment_count >= 3 or (datetime.utcnow() - due_date).days >= 90:
                 await self.mark_loan_as_defaulted(loan_application_id, db_session)
-        
+
         db_session.commit()
         db_session.refresh(payment)
-        
+
         logger.warning(f"Recorded missed payment for loan {loan_application_id}")
         return payment
-    
+
     async def mark_loan_as_defaulted(
         self,
         loan_application_id: str,
@@ -252,34 +252,34 @@ class DataCollectionService:
         loan_app = db_session.query(LoanApplication).filter(
             LoanApplication.id == loan_application_id
         ).first()
-        
+
         if not loan_app:
             raise ValueError(f"Loan application {loan_application_id} not found")
-        
+
         loan_app.loan_status = "DEFAULTED"
         loan_app.default_occurred = True
-        
+
         if loan_app.disbursement_date:
             loan_app.days_to_default = (datetime.utcnow() - loan_app.disbursement_date).days
-        
+
         loan_app.default_amount = loan_app.total_amount_due - loan_app.total_amount_paid
         loan_app.updated_at = datetime.utcnow()
-        
+
         db_session.commit()
         db_session.refresh(loan_app)
-        
+
         logger.error(f"Marked loan {loan_application_id} as DEFAULTED (₦{loan_app.default_amount:,.2f} unpaid)")
         return loan_app
-    
+
     async def get_training_data_statistics(self, db_session: Session) -> Dict[str, Any]:
         """Get statistics on collected training data"""
-        
+
         total_applications = db_session.query(LoanApplication).count()
         approved_applications = db_session.query(LoanApplication).filter(
             LoanApplication.application_status == "APPROVED"
         ).count()
         disbursed_loans = db_session.query(LoanApplication).filter(
-            LoanApplication.disbursed == True
+            LoanApplication.disbursed.is_(True)
         ).count()
         completed_loans = db_session.query(LoanApplication).filter(
             LoanApplication.loan_status == "COMPLETED"
@@ -290,10 +290,10 @@ class DataCollectionService:
         active_loans = db_session.query(LoanApplication).filter(
             LoanApplication.loan_status == "ACTIVE"
         ).count()
-        
+
         # Calculate default rate
         default_rate = (defaulted_loans / disbursed_loans * 100) if disbursed_loans > 0 else 0
-        
+
         # Get oldest and newest loan dates
         oldest_loan = db_session.query(LoanApplication).order_by(
             LoanApplication.created_at.asc()
@@ -301,7 +301,7 @@ class DataCollectionService:
         newest_loan = db_session.query(LoanApplication).order_by(
             LoanApplication.created_at.desc()
         ).first()
-        
+
         return {
             "total_applications": total_applications,
             "approved_applications": approved_applications,
@@ -315,7 +315,7 @@ class DataCollectionService:
             "ready_for_ml_training": disbursed_loans >= 10000,  # Need 10k+ records
             "ml_training_readiness_percentage": min(100, disbursed_loans / 10000 * 100)
         }
-    
+
     async def export_training_dataset(
         self,
         dataset_name: str,
@@ -325,48 +325,48 @@ class DataCollectionService:
     ) -> ModelTrainingDataset:
         """Export loan data as training dataset for ML"""
         import pandas as pd
-        
+
         # Get all disbursed loans with outcomes (completed or defaulted)
         loans = db_session.query(LoanApplication).filter(
-            LoanApplication.disbursed == True,
+            LoanApplication.disbursed.is_(True),
             LoanApplication.loan_status.in_(["COMPLETED", "DEFAULTED"])
         ).all()
-        
+
         if len(loans) < 100:
             raise ValueError(f"Insufficient data for training: {len(loans)} records (need 100+)")
-        
+
         # Prepare training data
         training_data = []
         for loan in loans:
             # Extract features from telco snapshot
             features = loan.telco_features_snapshot.copy() if loan.telco_features_snapshot else {}
-            
+
             # Add credit score components
             if loan.credit_score_components:
                 features.update(loan.credit_score_components)
-            
+
             # Add loan details
             features['loan_amount'] = loan.loan_amount
             features['interest_rate'] = loan.interest_rate
             features['loan_term_months'] = loan.loan_term_months
-            
+
             # Add target variable
             features['default_occurred'] = 1 if loan.default_occurred else 0
             features['days_to_default'] = loan.days_to_default if loan.days_to_default else 0
-            
+
             training_data.append(features)
-        
+
         # Create DataFrame
         df = pd.DataFrame(training_data)
-        
+
         # Save to file
         df.to_csv(output_path, index=False)
         file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
-        
+
         # Record dataset metadata
         positive_class = df['default_occurred'].sum()
         negative_class = len(df) - positive_class
-        
+
         dataset = ModelTrainingDataset(
             id=str(uuid.uuid4()),
             dataset_name=dataset_name,
@@ -383,10 +383,10 @@ class DataCollectionService:
             file_size_mb=round(file_size_mb, 2),
             created_by="data_collection_service"
         )
-        
+
         db_session.add(dataset)
         db_session.commit()
         db_session.refresh(dataset)
-        
+
         logger.info(f"Exported training dataset: {len(df)} records, {len(df.columns)} features")
         return dataset

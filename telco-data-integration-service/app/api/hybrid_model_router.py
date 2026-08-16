@@ -25,13 +25,13 @@ async def calculate_hybrid_score(
 ):
     """Calculate credit score using hybrid approach (rules + ML)"""
     service = HybridModelService()
-    
+
     # Load ML model (use latest version)
     service.load_ml_model("latest", "xgboost")
-    
+
     # Convert dict to TelcoData
     telco_data = TelcoData(**request.telco_data)
-    
+
     result = await service.calculate_hybrid_credit_score(
         request.customer_id,
         request.phone_number,

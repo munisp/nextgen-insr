@@ -1,13 +1,29 @@
-import os
 """
 Telco Data Integration Service
 Integrates with Nigerian telco providers (MTN, Airtel, Glo, 9mobile) for alternative credit scoring
 """
+import os
+
 from fastapi import FastAPI, HTTPException, Depends
 
 # ── PostgreSQL Connection ──────────────────────────────────────────────────
 import psycopg2
 import psycopg2.extras
+
+import json as _json
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime
+
+import redis
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from prometheus_client import make_asgi_app
+
+from app.api import telco_router, credit_score_router
+from app.api import data_collection_router, ml_model_router, hybrid_model_router, continuous_learning_router
+from app.services.telco_service import TelcoService
 
 _pg_config = {
     "host": os.environ.get("PGHOST", "localhost"),
@@ -30,29 +46,20 @@ def get_db():
 
 def db_query(sql, params=None):
     conn = get_db()
-    if not conn: return []
+    if not conn:
+        return []
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
-            if cur.description: return cur.fetchall()
+            if cur.description:
+                return cur.fetchall()
             return []
     except Exception as e:
-        try: conn.rollback()
-        except: pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return []
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import logging
-from prometheus_client import make_asgi_app
-from app.api import telco_router, credit_score_router
-from app.services.telco_service import TelcoService
-
-
-import os
-import psycopg2
-import psycopg2.extras
-import logging
-
 logger = logging.getLogger(__name__)
 
 # ── Database Connection ──────────────────────────────────────────────────────
@@ -161,15 +168,9 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8010)
 
-# ML Enhancement Routers (Phase 1-4)
-from app.api import data_collection_router, ml_model_router, hybrid_model_router, continuous_learning_router
-
-# ── Middleware Clients ─────────────────────────────────────────────────────
-import redis
-import json as _json
-from datetime import datetime
 
 # Redis client
+# ── Middleware Clients ─────────────────────────────────────────────────────
 _redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
 _redis_client = None
 try:
@@ -209,7 +210,8 @@ class KafkaEventPublisher:
 
     def publish(self, event_type: str, key: str, payload: dict):
         """Publish event to Kafka via raw TCP. Circuit breaker on failure."""
-        import time, struct
+        import time
+        import struct
         event = {
             "event_type": event_type,
             "source": self.service_name,
@@ -270,7 +272,8 @@ class OpenSearchLogger:
         }
         idx = f"logs-{self.service_name}-{datetime.utcnow().strftime('%Y.%m.%d')}"
         try:
-            import urllib.request, ssl
+            import urllib.request
+            import ssl
             req_data = _json.dumps(doc).encode("utf-8")
             req = urllib.request.Request(
                 f"{self.url}/{idx}/_doc",
@@ -314,10 +317,8 @@ async def check_permission(entity_type: str, entity_id: str, permission: str, us
     except Exception:
         return True  # Fail open
 
-# Keycloak JWT authentication middleware
-from fastapi import Request, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+# Keycloak JWT authentication middleware
 _security = HTTPBearer(auto_error=False)
 
 async def keycloak_auth_middleware(request: Request, call_next):
@@ -325,18 +326,18 @@ async def keycloak_auth_middleware(request: Request, call_next):
     path = request.url.path
     if path in ("/health", "/ready", "/live", "/metrics", "/docs", "/openapi.json"):
         return await call_next(request)
-    
+
     # Dev bypass
     if os.environ.get("DEV_AUTH_BYPASS") == "true":
         request.state.user_id = "dev-user"
         request.state.tenant_id = "default"
         request.state.roles = ["admin", "user"]
         return await call_next(request)
-    
+
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "message": "missing bearer token"})
-    
+
     # In production: validate JWT against Keycloak JWKS endpoint
     # For now, pass through (validation handled by APISIX gateway)
     request.state.user_id = request.headers.get("X-User-ID", "unknown")

@@ -464,6 +464,11 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	dbStatus := "connected"
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "database": "disconnected"})
+		return
+	}
 	if err := db.Ping(); err != nil {
 		dbStatus = "disconnected"
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -475,6 +480,11 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if db == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
+		return
+	}
 	if err := db.Ping(); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})

@@ -1,12 +1,34 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
+func setupTestDB(t *testing.T) {
+	t.Helper()
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgresql://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
+	}
+	testDB, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Skipf("Skipping (cannot open DB): %v", err)
+	}
+	if err := testDB.Ping(); err != nil {
+		testDB.Close()
+		t.Skipf("Skipping (DB unreachable): %v", err)
+	}
+	prev := db
+	db = testDB
+	t.Cleanup(func() { db = prev; testDB.Close() })
+}
+
 func TestHealthEndpoint(t *testing.T) {
+	setupTestDB(t)
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
 	handleHealth(w, req)
@@ -20,6 +42,7 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestHealthContentType(t *testing.T) {
+	setupTestDB(t)
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
 	handleHealth(w, req)

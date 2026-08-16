@@ -354,9 +354,12 @@ async def analyze_policy_coverage_gap(
         status = r["status"] or "unknown"
         count  = int(r["count"])
         cells[h3_index]["total"] += count
-        if status == "active":   cells[h3_index]["active"]    += count
-        elif status == "lapsed": cells[h3_index]["lapsed"]    += count
-        elif status == "cancelled": cells[h3_index]["cancelled"] += count
+        if status == "active":
+            cells[h3_index]["active"] += count
+        elif status == "lapsed":
+            cells[h3_index]["lapsed"] += count
+        elif status == "cancelled":
+            cells[h3_index]["cancelled"] += count
 
     result = []
     for cell in cells.values():

@@ -18,7 +18,7 @@ class TelcoDataRequest(BaseModel):
     phone_number: str = Field(..., description="Phone number (e.g., 08012345678)")
     provider: Optional[TelcoProvider] = Field(None, description="Telco provider (auto-detected if not provided)")
     consent: bool = Field(..., description="Customer consent to fetch telco data")
-    
+
     @validator('phone_number')
     def validate_phone_number(cls, v):
         # Remove spaces and dashes
@@ -51,7 +51,7 @@ class TelcoDataResponse(BaseModel):
     avg_transaction_amount: Optional[float]
     status: str
     fetched_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -81,7 +81,7 @@ class CreditScoreResponse(BaseModel):
     approval_probability: float = Field(..., ge=0, le=1, description="Approval probability (0-1)")
     calculated_at: datetime
     expires_at: datetime
-    
+
     class Config:
         from_attributes = True
 
