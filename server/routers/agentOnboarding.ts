@@ -105,7 +105,7 @@ export const agentOnboardingRouter = router({
             currentStep: "kyc",
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .returning();
 
         await writeAuditLog({
@@ -169,7 +169,7 @@ export const agentOnboardingRouter = router({
             currentStep: "float",
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .returning();
 
         return progress;
@@ -213,7 +213,7 @@ export const agentOnboardingRouter = router({
             currentStep: "terminal",
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .returning();
 
         return progress;
@@ -258,7 +258,7 @@ export const agentOnboardingRouter = router({
             currentStep: "training",
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .returning();
 
         return progress;
@@ -301,7 +301,7 @@ export const agentOnboardingRouter = router({
             activatedAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .returning();
 
         // Send activation email
@@ -391,7 +391,7 @@ export const agentOnboardingRouter = router({
         await db
           .update(agentOnboardingProgress)
           .set({ notes: input.note, updatedAt: new Date() })
-          .where(eq(agentOnboardingProgress.agentId, input.agentId));
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)));
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -480,7 +480,7 @@ export const agentOnboardingRouter = router({
         const [progress] = await db
           .select()
           .from(agentOnboardingProgress)
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .limit(1);
         if (!progress) return null;
         const stepDefs = [
@@ -598,7 +598,7 @@ export const agentOnboardingRouter = router({
         const [updated] = await db
           .update(agentOnboardingProgress)
           .set(update)
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .returning();
         return updated;
       } catch (error) {
@@ -627,7 +627,7 @@ export const agentOnboardingRouter = router({
         const [existing] = await db
           .select()
           .from(agentOnboardingProgress)
-          .where(eq(agentOnboardingProgress.agentId, input.agentId))
+          .where(eq(agentOnboardingProgress.agentId, String(input.agentId)))
           .limit(1);
         if (existing)
           throw new TRPCError({

@@ -28,7 +28,7 @@ import logger from "../_core/logger";
 // ── Kafka: Commission Domain Events ──────────────────────────────────────
 // KafkaTopic union doesn't include commission topics yet, so we use the
 // closest existing topic as carrier and embed the real event type in payload.
-const COMMISSION_KAFKA_TOPIC: KafkaTopic = "pos.transactions.created";
+const COMMISSION_KAFKA_TOPIC: KafkaTopic = "54link.transactions.created";
 
 export async function publishCommissionEvent(params: {
   eventType:
@@ -48,7 +48,7 @@ export async function publishCommissionEvent(params: {
     // publishEvent(topic, key, payload, metadata) — positional args
     const published = await publishEvent(
       COMMISSION_KAFKA_TOPIC,
-      params.agentId,
+      String(params.agentId),
       {
         eventType: params.eventType,
         timestamp: new Date().toISOString(),
@@ -181,7 +181,7 @@ export async function tbRecordCommissionCredit(params: {
       code: params.entryType === "direct" ? 301 : 302,
       ref: params.transactionRef,
       txType: "commission_credit",
-      agentId: params.agentId,
+      agentId: String(params.agentId),
     };
     const result = await tbCreateTransfer(req);
     if (result && result.id) {

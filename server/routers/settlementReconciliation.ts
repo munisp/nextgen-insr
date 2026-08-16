@@ -123,7 +123,7 @@ export const settlementReconciliationRouter = router({
                 ),
                 eq(
                   settlementReconciliation.agentId,
-                  String(settlement.merchantId)
+                  settlement.merchantId
                 )
               )
             )
@@ -146,7 +146,7 @@ export const settlementReconciliationRouter = router({
               .insert(settlementReconciliation)
               .values({
                 settlementDate: input.settlementDate,
-                agentId: String(settlement.merchantId),
+                agentId: settlement.merchantId,
                 expectedAmount: String(txTotal),
                 actualAmount: String(settlementAmount),
                 discrepancy: String(discrepancy),

@@ -27,7 +27,7 @@ import logger from "../_core/logger";
 
 // ── Kafka: Settlement Domain Events ──────────────────────────────────────
 // publishEvent(topic: KafkaTopic, key: string, payload: T, metadata?)
-const SETTLEMENT_KAFKA_TOPIC: KafkaTopic = "pos.transactions.created";
+const SETTLEMENT_KAFKA_TOPIC: KafkaTopic = "54link.transactions.created";
 
 export async function publishSettlementEvent(params: {
   eventType:
@@ -48,7 +48,7 @@ export async function publishSettlementEvent(params: {
   try {
     const published = await publishEvent(
       SETTLEMENT_KAFKA_TOPIC,
-      params.batchId ?? params.agentId ?? "system",
+      params.batchId ?? (params.agentId != null ? String(params.agentId) : "system"),
       {
         eventType: params.eventType,
         timestamp: new Date().toISOString(),
@@ -135,7 +135,7 @@ export async function tbRecordSettlementTransfer(params: {
       code: 401,
       ref: params.batchId,
       txType: "settlement_disbursement",
-      agentId: params.agentId,
+      agentId: params.agentId != null ? String(params.agentId) : undefined,
     };
     const result = await tbCreateTransfer(req);
     if (result && result.id) {

@@ -72,8 +72,7 @@ export const mobileMoneyRouter = router({
           // Never synchronous success: settlement is confirmed asynchronously
           // by the mobile-money provider.
           channel: "App", status: "pending", fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
+          metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
         }).returning();
         logger.info(`[MobileMoney] Cash-In ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId} | status pending_provider`);
         return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
@@ -119,8 +118,7 @@ export const mobileMoneyRouter = router({
           // Never synchronous success: settlement is confirmed asynchronously
           // by the mobile-money provider.
           channel: "App", status: "pending", fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
+          metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
         }).returning();
         logger.info(`[MobileMoney] Cash-Out ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId} | status pending_provider`);
         return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };

@@ -48,11 +48,11 @@ export async function publishDisputeEvent(params: {
 }): Promise<void> {
   try {
     const topic: KafkaTopic = params.eventType.startsWith("dispute.")
-      ? "pos.disputes.opened"
-      : "pos.disputes.resolved";
+      ? "54link.disputes.opened"
+      : "54link.disputes.resolved";
     await publishEvent(
       topic,
-      params.agentId ?? params.transactionRef ?? "system",
+      (params.agentId != null ? String(params.agentId) : undefined) ?? params.transactionRef ?? "system",
       {
         eventType: params.eventType,
         timestamp: new Date().toISOString(),

@@ -22,10 +22,10 @@ export const adminDashboardRouter = router({
   getSystemStats: adminProcedure.query(async () => {
     try {
       const db = await getDb();
-      const _uc = await db!.select({ count: count() }).from(users).limit(100);
+      const _uc = await db!.select({ cnt: count() }).from(users).limit(100);
       const userCount = Array.isArray(_uc) ? _uc[0] : _uc;
       const _ac = await db!
-        .select({ count: count() })
+        .select({ cnt: count() })
         .from(users)
         .where(eq(users.role, "admin"))
         .limit(100);
@@ -108,7 +108,7 @@ export const adminDashboardRouter = router({
 
         const result = await query;
         const _total = await db
-          .select({ count: count() })
+          .select({ cnt: count() })
           .from(users)
           .limit(100);
         const totalRow = Array.isArray(_total) ? _total[0] : _total;
@@ -177,7 +177,7 @@ export const adminDashboardRouter = router({
           .offset(input.offset);
 
         const _total = await db
-          .select({ count: count() })
+          .select({ cnt: count() })
           .from(billingAuditLog)
           .limit(100);
         const totalRow = Array.isArray(_total) ? _total[0] : _total;
@@ -197,7 +197,7 @@ export const adminDashboardRouter = router({
   getBillingLedgerSummary: adminProcedure.query(async () => {
     const db = (await getDb())!;
     const [ledgerCount] = await db
-      .select({ count: count() })
+      .select({ cnt: count() })
       .from(platformBillingLedger)
       .limit(100);
 

@@ -453,7 +453,7 @@ export async function InsurancePolicyBindingWorkflow(
       stepResults.push({ step: step.name, status: "completed", details: result });
 
       // Capture policy ID and number from create_policy step
-      if (step.name === "create_policy" && result?.policyId) {
+      if (step.name === "create_policy" && result && "policyId" in result) {
         policyId = result.policyId;
         policyNumber = result.policyNumber;
       }

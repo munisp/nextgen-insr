@@ -119,10 +119,10 @@ export const apiGatewayRouter = router({
     const total = (totalRow as any)?.total ?? 0;
     const revoked = (revokedRow as any)?.total ?? 0;
     // Get uptime from platform_health_checks
-    const [healthRow] = await database.execute(sql`
+    const [healthRow] = (await database.execute(sql`
       SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'healthy') / NULLIF(COUNT(*), 0), 2) as uptime
       FROM platform_health_checks WHERE service_name = 'api-gateway' AND checked_at > NOW() - INTERVAL '24 hours'
-    `);
+    `)).rows;
     const uptime = Number((healthRow as any)?.uptime ?? 99.9);
     return {
       totalRecords: total,
@@ -153,8 +153,8 @@ export const apiGatewayRouter = router({
       // Store hashed key in audit_log
       const [record] = await database.insert(auditLog).values({
         action: "API_KEY_CREATED",
-        entityType: "api_key",
-        entityId: keyHash.slice(0, 16),
+        resource: "api_key",
+        resourceId: keyHash.slice(0, 16),
         userId: String(ctx.user?.id ?? "system"),
         metadata: {
           name: input.name,
@@ -190,8 +190,8 @@ export const apiGatewayRouter = router({
       if (!record) throw new TRPCError({ code: "NOT_FOUND", message: "API key not found" });
       await database.insert(auditLog).values({
         action: "API_KEY_REVOKED",
-        entityType: "api_key",
-        entityId: (record.metadata as any)?.keyHash?.slice(0, 16) ?? String(input.id),
+        resource: "api_key",
+        resourceId: (record.metadata as any)?.keyHash?.slice(0, 16) ?? String(input.id),
         userId: String(ctx.user?.id ?? "system"),
         metadata: { originalId: input.id, reason: input.reason ?? "manual_revocation", revokedBy: ctx.user?.id },
       });

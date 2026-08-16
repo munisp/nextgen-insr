@@ -158,8 +158,8 @@ export const splitPaymentsRouter = router({
           channel: "Internal",
           status: "success",
           fraudScore: "0.00",
-          tbSyncStatus: tbTransferIds.length > 0 ? "synced" : "pending",
           metadata: {
+            tbSyncStatus: tbTransferIds.length > 0 ? "synced" : "pending",
             category: "split_payment",
             parties: legs,
             description: input.description ?? null,
@@ -179,8 +179,7 @@ export const splitPaymentsRouter = router({
             channel: "Internal",
             status: "success",
             fraudScore: "0.00",
-            tbSyncStatus: legs[i].tbId ? "synced" : "pending",
-            metadata: { category: "split_payment", parentRef: input.reference, tbTransferId: legs[i].tbId },
+            metadata: { category: "split_payment", parentRef: input.reference, tbTransferId: legs[i].tbId, tbSyncStatus: legs[i].tbId ? "synced" : "pending" },
           });
         }
 
