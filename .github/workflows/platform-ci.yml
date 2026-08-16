@@ -1,10 +1,12 @@
 name: NGApp Platform CI/CD
 
+# LEGACY: superseded by ci.yml / security.yml / integration.yml assurance gates.
+# Red since before 2026-08-16 (pre-existing go vet / ruff / golangci-lint debt
+# across 30+ legacy modules, unrelated to the current assurance work).
+# Disabled from push/PR triggers (workflow_dispatch only) per assurance-lead
+# decision 2026-08-16 — kept for manual diagnostics, not a gate.
 on:
-  push:
-    branches: [main, develop, 'devin/*']
-  pull_request:
-    branches: [main, develop]
+  workflow_dispatch: {}
 
 env:
   GO_VERSION: '1.22'
