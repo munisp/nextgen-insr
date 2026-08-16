@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-B assembled-stack dependency — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: requires a running API server (fetch failed) — assembled-stack dependency; candidate for the real-HTTP e2e harness, NOT deletion.
+ * EVIDENCE: log: fetch failed (run 31969739386).
+ * RE-ENABLE CONDITION: Same as above.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * J02 Policy Purchase Journey — Integration Test Suite
  *
  * Tests the complete J02_PolicyPurchaseWorkflow end-to-end:

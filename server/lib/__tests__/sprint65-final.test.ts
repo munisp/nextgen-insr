@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-A undelivered-scope — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: k8s/deployment.yml, .github/workflows/ci-cd.yml, config/prometheus.yml, config/nginx.conf, security audit report were never merged.
+ * EVIDENCE: path-commit API: 0 commits for each asserted path (2026-08-16).
+ * RE-ENABLE CONDITION: Asserted files exist on main.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * Sprint 65 — Final Production Readiness Tests
  * Tests for: infrastructureCompletion, businessRulesCompletion, uiCompletion, platformHardening, chatSecurityAudit
  */

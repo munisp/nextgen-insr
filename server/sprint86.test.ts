@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-A undelivered-scope — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: pbac-engine (Go), ddos-shield (Rust), bandwidth-optimizer, Mojaloop connector, Dapr sidecar etc. were never merged.
+ * EVIDENCE: path-commit API: 0 commits (2026-08-16).
+ * RE-ENABLE CONDITION: Asserted services exist on main and are wired into CI.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * Sprint 86 — Deep Audit & Production Hardening Tests
  * Validates: orphan table CRUD, middleware services, security, resilience
  */

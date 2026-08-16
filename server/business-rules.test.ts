@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-A undelivered-scope — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: 6 failing describes assert the liveness-detection service and Helm charts — never merged. (File also contains passing KYC-rule tests; their coverage resumes on re-enable.)
+ * EVIDENCE: path-commit API: 0 commits for services/python/liveness-detection and k8s/charts (2026-08-16).
+ * RE-ENABLE CONDITION: Asserted services/charts exist on main.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * Business Rules Validation — InsurePortal Insurance Platform
  *
  * Validates core business logic, domain constraints, and workflow rules

@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-B assembled-stack dependency — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: requires a running API server (fetch failed, :3000) — assembled-stack dependency in a unit-level vitest job; candidate for future migration into the real-HTTP e2e harness (createApp pattern), NOT deletion.
+ * EVIDENCE: log: fetch failed ×14 (run 31969739386).
+ * RE-ENABLE CONDITION: Migrated into the real-HTTP e2e harness or an assembled-stack job provides the server.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * Integration Tests — NGApp Platform API
  *
  * Tests end-to-end flows across tRPC routers with a real database connection.

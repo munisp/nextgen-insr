@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress) — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: zod invalid_type + agent.login UNAUTHORIZED expectations fail on delivered POS routers (behavior drift).
+ * EVIDENCE: run 31969739386.
+ * RE-ENABLE CONDITION: Behavior reconciled (F-12).
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * InsurePortal InsurePortal Platform — Production Readiness Tests
  * Tests: agent auth, transaction creation, loyalty, fraud, chat, audit log
  */

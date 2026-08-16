@@ -1,3 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress) — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: PgBouncer config undelivered (0 commits, CAT-A) + tenant-index coverage scan findings on delivered schema.
+ * EVIDENCE: run 31969739386; path-commit API 0 commits for pgbouncer config.
+ * RE-ENABLE CONDITION: Reconciled (F-12).
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";

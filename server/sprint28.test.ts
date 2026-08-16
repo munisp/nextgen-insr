@@ -1,3 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-B assembled-stack dependency — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: ~64 failures require a live USSD gateway (assembled stack). NOTE: the mobileMoney.providers describe is a genuine OPEN DEFECT (missing procedure) — it is recorded in QUARANTINED-OPEN-DEFECT and must be re-enabled with the fix.
+ * EVIDENCE: log: "USSD gateway unavailable: All 2 attempts failed" + "No procedure found on path mobileMoney.providers" (run 31969739386).
+ * RE-ENABLE CONDITION: USSD gateway available to the job (or migrated to e2e harness) AND mobileMoney.providers procedure delivered.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";

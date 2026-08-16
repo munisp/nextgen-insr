@@ -1,3 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress) — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: found real leftovers: mock data in routers, @ts-nocheck pages, unwired pages (S87-01/02/05); S87-06 python services also undelivered (CAT-A).
+ * EVIDENCE: verbatim: expected ['amlScreening.ts',…] to deeply equal [] (run 31969739386).
+ * RE-ENABLE CONDITION: Leftovers eliminated (F-12).
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";

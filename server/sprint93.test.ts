@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress) — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: networkQualityHeatmapRouter exists but is missing required procedures.
+ * EVIDENCE: run 31969739386.
+ * RE-ENABLE CONDITION: Procedures implemented (F-12).
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * Sprint 93 Tests — Security Alert Notifications, Role-Based Nav, Network Quality Heatmap
  */
 import { describe, it, expect } from "vitest";

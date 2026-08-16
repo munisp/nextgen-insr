@@ -1,3 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-A undelivered-scope — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: services/python/liveness-detection was never merged.
+ * EVIDENCE: path-commit API: 0 commits (2026-08-16).
+ * RE-ENABLE CONDITION: Asserted service exists on main.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";

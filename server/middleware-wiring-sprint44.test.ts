@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress) — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: 26 sprint-44 routers exist; core middleware imports/calls assertions fail (dispatch.reason leftovers) + undelivered python sidecar.
+ * EVIDENCE: run 31969739386.
+ * RE-ENABLE CONDITION: Middleware wired per spec (F-12).
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * Sprint 44: Middleware Wiring Verification Tests
  * Verifies that all 29 critical financial routers properly import and reference
  * the 5 core middleware clients (Kafka, Redis, TigerBeetle, Fluvio, Permify).

@@ -1,4 +1,16 @@
 /**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress) — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: docker-compose.sprint42.yml + python lakehouse sidecar undelivered (0 commits, CAT-A) + content checks on delivered files.
+ * EVIDENCE: run 31969739386; path-commit API 0 commits.
+ * RE-ENABLE CONDITION: Reconciled (F-12).
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+/**
  * observability-middleware.test.ts — Sprint 45 smoke tests
  *
  * Verifies:

@@ -1,3 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-A undelivered-scope — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: k8s/charts/{apisix,dapr,fluvio,kafka,keycloak,lakehouse,mojaloop,opensearch,permify,pos-insureportal-umbrella,postgresql,redis,temporal,tigerbeetle} were never merged.
+ * EVIDENCE: path-commit API: 0 commits for k8s/charts (2026-08-16).
+ * RE-ENABLE CONDITION: k8s/charts exists on main with the asserted charts and is wired into CI.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";

@@ -1,3 +1,15 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * QUARANTINED — CAT-A undelivered-scope — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * REASON: services/rust/ddos-shield and services/go/pbac-engine were never merged.
+ * EVIDENCE: path-commit API: 0 commits (2026-08-16).
+ * RE-ENABLE CONDITION: Both services exist on main with asserted content and are wired into CI.
+ * NO assertion in this file has been modified or deleted — it runs as-is the
+ * day the re-enable condition is met. Excluded from the default vitest run via
+ * vitest.config.ts (config-level, auditable in one place).
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 // @ts-nocheck
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync, existsSync } from "fs";
