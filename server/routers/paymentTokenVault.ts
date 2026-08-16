@@ -150,7 +150,7 @@ export const paymentTokenVaultRouter = router({
           action: "TOKEN_DETOKENIZE_FAILED",
           resource: "payment_token",
           resourceId: input.token.slice(0, 10),
-          userId: String(ctx.user?.id ?? "unknown"),
+          agentId: String(ctx.user?.id ?? "unknown"),
           metadata: { reason: "invalid_2fa", ip: input.requestIp ?? "unknown" },
         });
         throw new TRPCError({ code: "UNAUTHORIZED", message: "2FA verification failed" });

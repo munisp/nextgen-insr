@@ -51,11 +51,11 @@ export const billPaymentsRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
-      const existing = await db.select().from(transactions).where(eq(transactions.reference, input.reference)).limit(1);
+      const existing = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
       if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-      if (agent.status !== "active") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not active" });
+      if (!agent.isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not active" });
       if (agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Float locked" });
       const agentBalance = Number(agent.premiumReserve ?? 0);
       if (agentBalance < input.amountNGN) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Insufficient float. Available: ₦${agentBalance.toLocaleString()}` });
@@ -77,14 +77,13 @@ export const billPaymentsRouter = router({
           ref: input.reference, txType: "Bill Payment", agentId: agent.agentId,
         });
         const [tx] = await db.insert(transactions).values({
-          reference: input.reference, agentId: input.agentId, type: "Bill Payment",
+          ref: input.reference, agentId: input.agentId, type: "Bill Payment",
           amount: String(input.amountNGN), fee: "0", commission: String(commission),
           customerAccount: input.customerNumber, customerName: input.customerName ?? null,
           // Never synchronous success: fulfilment is confirmed asynchronously
           // by the bill-payment provider.
-          channel: "POS", status: "pending", fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { biller: input.biller, customerNumber: input.customerNumber, meterType: input.meterType ?? null, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
+          channel: "App", status: "pending", fraudScore: "0.00",
+          metadata: { tbSyncStatus: tbResult ? "synced" : "pending", biller: input.biller, customerNumber: input.customerNumber, meterType: input.meterType ?? null, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();
         await db.insert(auditLog).values({ action: "BILL_PAYMENT", resource: "bill_payment", resourceId: input.reference, status: "success", metadata: { biller: input.biller, amountNGN: input.amountNGN, providerStatus: "pending_provider" } }).catch(() => {});
         logger.info(`[BillPayment] ₦${input.amountNGN} to ${input.biller} | agent ${agent.agentId} | status pending_provider | TB: ${tbResult?.id ?? "pending"}`);

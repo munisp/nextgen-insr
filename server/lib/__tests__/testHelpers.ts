@@ -17,6 +17,7 @@ export function makeAuthenticatedCtx(
 ): TrpcContext {
   return {
     user: MOCK_USER as any,
+    requestId: "test-request",
     req: {
       headers: { cookie: "agent_session=mock.jwt.token" },
       ip: "127.0.0.1",
@@ -35,6 +36,7 @@ export function makeUnauthenticatedCtx(
 ): TrpcContext {
   return {
     user: null,
+    requestId: "test-request",
     req: {
       headers: {},
       ip: "127.0.0.1",

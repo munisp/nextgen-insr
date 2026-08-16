@@ -306,6 +306,7 @@ export function generateCIReport(measurements: PerfMeasurement[]): string {
       Array.from({ length: durations.length }, (_, i) => ({
         endpoint,
         method,
+        metrics: {},
         durationMs: durations[i],
         timestamp: new Date(),
       }))

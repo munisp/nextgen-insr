@@ -961,7 +961,7 @@ export const parametricRouter = router({
 
             // TigerBeetle payout transfer
             const tbResult = await tbCreateTransfer({
-              debitAccountId: TB_SYSTEM_ACCOUNTS.CLAIMS_RESERVE,
+              debitAccountId: String(TB_SYSTEM_ACCOUNTS.CLAIMS_RESERVE),
               creditAccountId: String(policy.customerId),
               amount: Math.round(parseFloat(trigger.payoutAmount) * 100),
               ledger: 1,

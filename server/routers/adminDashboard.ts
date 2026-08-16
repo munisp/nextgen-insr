@@ -31,8 +31,8 @@ export const adminDashboardRouter = router({
         .limit(100);
       const adminCount = Array.isArray(_ac) ? _ac[0] : _ac;
       return {
-        totalUsers: Number(userCount?.count ?? userCount?.cnt ?? 0),
-        adminUsers: Number(adminCount?.count ?? adminCount?.cnt ?? 0),
+        totalUsers: Number(userCount?.count ?? 0),
+        adminUsers: Number(adminCount?.count ?? 0),
         recentSignups: 0,
         stripeLinkedUsers: 0,
         serverUptime: process.uptime(),
@@ -115,7 +115,7 @@ export const adminDashboardRouter = router({
 
         return {
           users: Array.isArray(result) ? result : [],
-          total: Number(totalRow?.count ?? totalRow?.cnt ?? 0),
+          total: Number(totalRow?.count ?? 0),
         };
       } catch {
         return { users: [], total: 0 };
@@ -186,7 +186,7 @@ export const adminDashboardRouter = router({
         return {
           logs: items,
           entries: items,
-          total: Number(totalRow?.count ?? totalRow?.cnt ?? 0),
+          total: Number(totalRow?.count ?? 0),
         };
       } catch {
         return { logs: [], entries: [], total: 0 };

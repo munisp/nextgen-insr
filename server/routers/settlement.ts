@@ -97,7 +97,7 @@ export const settlementRouter = router({
         const db = (await getDb())!;
         if (db) {
           await db.insert(auditLog).values({
-            agentId: ctx.agent.agentId,
+            agentId: ctx.agent.id,
             action: "settlement.runNow",
             resource: "settlement",
             ipAddress:

@@ -178,7 +178,7 @@ export const temporalWorkflowsRouter = router({
     throw notImplemented("Temporal workflow health");
   }),
 
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(async (): Promise<{ workflows: Array<Record<string, unknown>> }> => {
     throw notImplemented("Temporal workflow listing");
   }),
 
@@ -194,7 +194,7 @@ export const temporalWorkflowsRouter = router({
       throw notImplemented("Workflow termination");
     }),
 
-  workflowTypes: protectedProcedure.query(async () => {
-    throw notImplemented("Workflow types");
+  workflowTypes: protectedProcedure.query(async (): Promise<Array<Record<string, unknown>>> => {
+    throw notImplemented("Temporal workflow types");
   }),
 });

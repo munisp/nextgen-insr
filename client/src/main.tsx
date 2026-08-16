@@ -44,7 +44,7 @@ function PWAUpdateBanner() {
           New version available. Refresh to get the latest updates.
         </p>
         <button
-          onClick={updateServiceWorker}
+          onClick={() => updateServiceWorker()}
           className="flex-shrink-0 bg-primary-foreground text-primary px-3 py-1.5 rounded text-xs font-medium hover:opacity-90 transition-opacity"
         >
           Update Now
@@ -69,7 +69,7 @@ function PWAUpdateBanner() {
 
 // Hook to handle PWA updates in background
 useRegisterSW({
-  onRegisteredSW(registration) {
+  onRegisteredSW(_swUrl, registration) {
     if (process.env.NODE_ENV === "development") {
       console.info("[PWA] Service Worker registered:", registration?.scriptURL);
     }

@@ -154,8 +154,7 @@ async function runDailySettlement(): Promise<SettlementResult> {
       }
 
       await db.insert(auditLog).values({
-        agentNumericId: agent.id,
-        agentId: agent.agentId,
+        agentId: agent.id,
         action: "DAILY_SETTLEMENT_SENT",
         resource: "settlement",
         resourceId: today.toISOString().split("T")[0],

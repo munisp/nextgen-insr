@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
 export default function VoiceCommandPos() {
-  const stats = trpc.voiceCommandPos.getStats.useQuery();
+  const stats = trpc.voiceCommandPos.getSummary.useQuery();
 
   return (
     <div className="space-y-6">

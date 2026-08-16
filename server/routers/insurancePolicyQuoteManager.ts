@@ -58,7 +58,9 @@ export const insurancePolicyQuoteCartRouter = router({
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Insurance product not found" });
 
       // Calculate premium
-      const baseRate = Number(product.baseRate ?? 0.02);
+      // insurance_products has no baseRate column; derive from minPremium / maxCoverageAmount
+      const maxCov = Number(product.maxCoverageAmount ?? 0);
+      const baseRate = maxCov > 0 ? Number(product.minPremium ?? 0) / maxCov : 0.02;
       const premiumAmount = Math.round(input.sumInsured * baseRate * (input.durationMonths / 12) * 100) / 100;
       const stampDuty = Math.round(premiumAmount * 0.005 * 100) / 100;
 
@@ -67,7 +69,7 @@ export const insurancePolicyQuoteCartRouter = router({
         agentId: input.agentId ?? null,
         productId: input.productId,
         productName: product.name,
-        productType: product.productType,
+        productType: product.coverageType,
         sumInsured: String(input.sumInsured),
         premiumAmount: String(premiumAmount),
         stampDuty: String(stampDuty),

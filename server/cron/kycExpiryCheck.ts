@@ -21,18 +21,13 @@ export async function runKycExpiryCheck() {
       now.getTime() + 30 * 24 * 60 * 60 * 1000
     );
 
-    // Find agents with KYC expiring in next 30 days
-    const expiringAgents = await db
-      .select()
-      .from(agents)
-      .where(
-        and(
-          eq(agents.isActive, true),
-          isNotNull(agents.kycExpiresAt as any),
-          lt(agents.kycExpiresAt as any, thirtyDaysFromNow)
-        )
-      )
-      .limit(500);
+    // DECISION-REQUIRED: no KYC expiry column is modeled in the schema (there is no
+    // agents.kycExpiresAt and kycSessions has no expiresAt). The previous query
+    // referenced a non-existent column and would have failed at runtime. Until a
+    // column + migration is added, there is nothing to check.
+    void thirtyDaysFromNow;
+    const expiringAgents: Array<typeof agents.$inferSelect> = [];
+    logger.warn("[Cron] KYC expiry column not modeled in schema — nothing to check");
 
     let flagged = 0;
     let expired = 0;

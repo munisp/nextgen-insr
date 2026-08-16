@@ -134,7 +134,7 @@ function AnnouncementBar({
         utils.announcementReactions.getReactions.setData(
           // @ts-ignore
           { announcementId: ann.id },
-          { ...prev, reactions: updatedReactions }
+          { ...(prev && typeof prev === "object" ? prev : {}), reactions: updatedReactions }
         );
       }
       return { prev };

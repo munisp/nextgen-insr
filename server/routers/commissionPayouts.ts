@@ -294,7 +294,7 @@ export const commissionPayoutsRouter = router({
               commissionBalance: sql`${agents.commissionBalance} - ${payout.amount}`,
               updatedAt: new Date(),
             })
-            .where(eq(agents.id, payout.agentId));
+            .where(eq(agents.agentId, payout.agentId));
 
           [updated] = await db
             .update(commissionPayouts)
@@ -303,7 +303,6 @@ export const commissionPayoutsRouter = router({
               nubanRef: input.nubanRef ?? payRef,
               processedAt: new Date(),
               updatedAt: new Date(),
-              metadata: { tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult?.syncStatus ?? "pending" },
             })
             .where(eq(commissionPayouts.id, input.id))
             .returning();
@@ -322,7 +321,7 @@ export const commissionPayoutsRouter = router({
         const [agent] = await db
           .select({ email: agents.email, name: agents.name })
           .from(agents)
-          .where(eq(agents.id, payout.agentId))
+          .where(eq(agents.agentId, payout.agentId))
           .limit(1);
         if (agent?.email) {
           const { subject, html, text } = buildAlertEmail({

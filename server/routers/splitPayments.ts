@@ -93,7 +93,7 @@ export const splitPaymentsRouter = router({
       );
       for (let i = 0; i < partyAgents.length; i++) {
         if (!partyAgents[i]) throw new TRPCError({ code: "NOT_FOUND", message: `Party agent ${input.parties[i].agentId} not found` });
-        if (partyAgents[i].status !== "active") throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party agent ${input.parties[i].agentId} is not active` });
+        if (!partyAgents[i].isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party agent ${input.parties[i].agentId} is not active` });
       }
 
       // Acquire lock on source
@@ -158,8 +158,8 @@ export const splitPaymentsRouter = router({
           channel: "Internal",
           status: "success",
           fraudScore: "0.00",
-          tbSyncStatus: tbTransferIds.length > 0 ? "synced" : "pending",
           metadata: {
+            tbSyncStatus: tbTransferIds.length > 0 ? "synced" : "pending",
             category: "split_payment",
             parties: legs,
             description: input.description ?? null,
@@ -179,8 +179,7 @@ export const splitPaymentsRouter = router({
             channel: "Internal",
             status: "success",
             fraudScore: "0.00",
-            tbSyncStatus: legs[i].tbId ? "synced" : "pending",
-            metadata: { category: "split_payment", parentRef: input.reference, tbTransferId: legs[i].tbId },
+            metadata: { category: "split_payment", parentRef: input.reference, tbTransferId: legs[i].tbId, tbSyncStatus: legs[i].tbId ? "synced" : "pending" },
           });
         }
 

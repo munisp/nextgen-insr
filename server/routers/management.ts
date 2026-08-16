@@ -917,9 +917,9 @@ export const managementRouter = router({
           for (const t of terminals) {
             await db
               .update(posTerminals)
+              // pos_terminals has no lastCommand columns; bump heartbeat timestamp only
               .set({
-                lastCommand: input.command,
-                lastCommandAt: new Date(),
+                lastHeartbeat: new Date(),
                 updatedAt: new Date(),
               })
               .where(eq(posTerminals.id, t.id));

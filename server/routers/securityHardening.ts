@@ -172,7 +172,7 @@ export const securityHardeningRouter = router({
   })),
   evaluatePolicy: protectedProcedure
     .input(
-      z.object({ policyId: z.string(), context: z.record(z.any()).optional() })
+      z.object({ policyId: z.string(), context: z.record(z.string(), z.any()).optional() })
     )
     .mutation(async ({ input }) => ({
       policyId: input.policyId,

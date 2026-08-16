@@ -16,13 +16,13 @@ export default function TigerBeetleLedger() {
     retry: false,
     refetchInterval: 30000,
   });
-  const balanceQ = trpc.ledger.agentBalance.useQuery(
+  const balanceQ = trpc.ledger.getAgentBalance.useQuery(
     { agentId },
     { enabled: !!agentId, retry: false }
   );
-  const syncQ = trpc.ledger.syncStatus.useQuery(undefined, { retry: false });
-  const summaryQ = trpc.ledger.summary.useQuery(undefined, { retry: false });
-  const triggerSyncMut = trpc.ledger.triggerSync.useMutation({
+  const syncQ = trpc.ledger.getSyncStatus.useQuery(undefined, { retry: false });
+  const summaryQ = trpc.ledger.getAnalytics.useQuery({ periodDays: 30 }, { retry: false });
+  const triggerSyncMut = trpc.ledger.reconcile.useMutation({
     onSuccess: () => {
       toast.success("Sync triggered");
       syncQ.refetch();
@@ -63,13 +63,13 @@ export default function TigerBeetleLedger() {
             },
             {
               label: "Total Txns",
-              value: String(summaryQ.data?.postgres?.totalTxns ?? "—"),
+              value: String(summaryQ.data?.totalTransfers ?? "—"),
               color: "text-white",
             },
             {
               label: "Volume (NGN)",
-              value: summaryQ.data?.postgres?.totalVolumeNGN
-                ? `₦${summaryQ.data.postgres.totalVolumeNGN.toLocaleString()}`
+              value: summaryQ.data?.totalVolumeNGN
+                ? `₦${String(summaryQ.data.totalVolumeNGN).toLocaleString()}`
                 : "—",
               color: "text-white",
             },
@@ -170,7 +170,7 @@ export default function TigerBeetleLedger() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-white">Sync Status</CardTitle>
                 <Button
-                  onClick={() => triggerSyncMut.mutate({})}
+                  onClick={() => triggerSyncMut.mutate({ agentId, periodDays: 1 })}
                   disabled={triggerSyncMut.isPending}
                   size="sm"
                   className="bg-blue-600 hover:bg-blue-700"

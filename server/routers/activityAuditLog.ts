@@ -20,7 +20,7 @@ export const activityAuditLogRouter = router({
         limit: z.number().min(1).max(200).default(50),
         offset: z.number().min(0).default(0),
         action: z.string().optional(),
-        userId: z.number().optional(),
+        agentId: z.number().optional(),
         entityType: z.string().optional(),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
@@ -33,7 +33,7 @@ export const activityAuditLogRouter = router({
 
       const conditions = [];
       if (input.action) conditions.push(eq(auditLog.action, input.action));
-      if (input.userId) conditions.push(eq(auditLog.userId, input.userId));
+      if (input.agentId) conditions.push(eq(auditLog.agentId, input.agentId));
 
       const query = database.select().from(auditLog)
         .orderBy(desc(auditLog.id))
@@ -89,7 +89,7 @@ export const activityAuditLogRouter = router({
     .input(
       z.object({
         action: z.string(),
-        userId: z.number(),
+        agentId: z.number(),
         details: z.string().optional(),
         ipAddress: z.string().optional(),
       })
@@ -102,8 +102,8 @@ export const activityAuditLogRouter = router({
         .insert(auditLog)
         .values({
           action: input.action,
-          userId: input.userId,
-          details: input.details ?? null,
+          agentId: input.agentId,
+          metadata: input.details ?? null,
         })
         .returning();
 

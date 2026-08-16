@@ -30,7 +30,7 @@ export const transactionReversalWorkflowRouter = router({
       z.object({
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
-        status: z.enum(["pending", "approved", "rejected", "processing", "completed", "failed"]).optional(),
+        status: z.enum(["pending", "approved", "rejected", "processed", "completed", "failed"]).optional(),
         agentId: z.number().optional(),
       })
     )
@@ -191,7 +191,7 @@ export const transactionReversalWorkflowRouter = router({
       // Mark as processing
       await database
         .update(reversalRequests)
-        .set({ status: "processing" })
+        .set({ status: "processed" })
         .where(eq(reversalRequests.id, input.id));
 
       // Call TigerBeetle to create the counter-entry (reversal transfer)

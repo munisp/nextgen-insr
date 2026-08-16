@@ -301,9 +301,9 @@ export default function InnovationHub() {
           </div>
           <div className="bg-white/10 backdrop-blur rounded-xl p-4 border border-white/20">
             <div className="text-3xl font-bold text-red-400">
-              {sloStatus?.filter(s => s.isBreached).length ?? 0}
+              {sloStatus?.filter(s => s.enabled).length ?? 0}
             </div>
-            <div className="text-blue-300 text-sm">Active SLO Breaches</div>
+            <div className="text-blue-300 text-sm">Enabled SLOs</div>
           </div>
         </div>
 

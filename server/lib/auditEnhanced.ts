@@ -54,9 +54,8 @@ export async function writeEnhancedAuditLog(
       resource: entry.resource,
       resourceId: entry.resourceId ?? null,
       status: entry.status as "success" | "warning" | "failure",
-      metadata: changeDetails,
+      metadata: { ...changeDetails, userAgent: entry.userAgent ?? null },
       ipAddress: entry.ipAddress ?? null,
-      userAgent: entry.userAgent ?? null,
     });
   } catch (err) {
     logger.error("[AuditEnhanced] Write failed:: " + (err as Error).message);

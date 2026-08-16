@@ -233,11 +233,11 @@ function WorkflowDetailPanel({ workflowId, onClose, onCancel, onApprove }: {
       {/* Step timeline */}
       <div className="flex-1 overflow-y-auto p-4">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Step Timeline</h3>
-        <StepTimeline steps={history?.steps ?? []} />
+        <StepTimeline steps={(history?.steps ?? []).map(st => ({ ...st, recordedAt: st.recordedAt ? st.recordedAt.toISOString() : null }))} />
       </div>
 
       {/* Result snapshot */}
-      {history?.execution.resultSnapshot && (
+      {history?.execution.resultSnapshot != null && (
         <div className="p-4 border-t border-gray-200">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Result</h3>
           <pre className="text-xs bg-gray-50 rounded p-2 overflow-x-auto border border-gray-200">

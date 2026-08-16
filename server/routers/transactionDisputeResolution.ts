@@ -144,7 +144,7 @@ export const transactionDisputeResolutionRouter = router({
         await database.insert(disputeMessages).values({
           disputeId: input.id,
           senderType: "system",
-          senderId: "system",
+          senderName: "system",
           message: `Status changed to ${input.status}. ${input.note}`,
         });
       }
@@ -172,7 +172,7 @@ export const transactionDisputeResolutionRouter = router({
           disputeId: input.disputeId,
           evidenceType: input.type,
           description: input.description,
-          fileUrl: input.fileUrl ?? null,
+          fileUrl: input.fileUrl ?? "",
         })
         .returning();
 

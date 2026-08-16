@@ -248,6 +248,7 @@ const JOURNEY_DEFINITIONS = [
 
 async function startJourneyWorkflow(journeyId: string, workflowType: string, input: unknown, userId: number) {
   const temporal = await getTemporalClient();
+      if (!temporal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Temporal client unavailable" });
   const workflowId = `${journeyId}-${Date.now()}-user${userId}`;
 
   const handle = await temporal.workflow.start(workflowType, {
@@ -262,6 +263,7 @@ async function startJourneyWorkflow(journeyId: string, workflowType: string, inp
 async function getWorkflowStatus(workflowId: string) {
   try {
     const temporal = await getTemporalClient();
+      if (!temporal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Temporal client unavailable" });
     const handle = temporal.workflow.getHandle(workflowId);
     const desc = await handle.describe();
     let currentStep = "unknown";

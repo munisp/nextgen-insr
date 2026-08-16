@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function AgentManagementDashboard() {
+  const isMobile = useIsMobile();
+  const agentsQ = trpc.agentMgmt.listAll.useQuery(undefined, { retry: false });
   // Derive chart stats from the live agent list (no aggregate stats endpoint exists).
   const rows = agentsQ.data ?? [];
   const data = {
@@ -19,8 +21,6 @@ export default function AgentManagementDashboard() {
     pending: 0,
     totalTransactions: 0,
   };
-  const isMobile = useIsMobile();
-  const agentsQ = trpc.agentMgmt.listAll.useQuery(undefined, { retry: false });
   const topUpQ = trpc.agentMgmt.listTopUpRequests.useQuery(
     { status: "pending" },
     { retry: false }

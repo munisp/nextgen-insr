@@ -58,9 +58,11 @@ export const e2eTestFrameworkRouter = router({
           .where(eq(loadTestRuns.runId, input.runId)).limit(1);
         if (runs.length) {
           const run = runs[0];
-          const p95 = Number(run.p95LatencyMs ?? 180);
-          const errorRate = Number(run.errorRatePct ?? 0.1);
-          const throughput = Number(run.throughputRps ?? 150);
+          // Metrics are stored in the results jsonb column, not as top-level columns
+          const runResults = (run.results ?? {}) as Record<string, unknown>;
+          const p95 = Number(runResults.p95LatencyMs ?? 180);
+          const errorRate = Number(runResults.errorRatePct ?? 0.1);
+          const throughput = Number(runResults.throughputRps ?? 150);
           const passed = p95 < QUALITY_GATES.p95LatencyMs && errorRate < QUALITY_GATES.errorRatePct && throughput > QUALITY_GATES.throughputRps;
           const violations: string[] = [];
           if (p95 >= QUALITY_GATES.p95LatencyMs) violations.push(`P95 latency: ${p95}ms (limit: ${QUALITY_GATES.p95LatencyMs}ms)`);

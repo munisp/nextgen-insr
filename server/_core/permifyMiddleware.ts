@@ -295,7 +295,9 @@ export const adminFinancialProcedure = t.procedure.use(async ({ ctx, next, path 
  * Use for operations that must not be executed twice (transfers, payouts)
  */
 export const idempotentFinancialProcedure = financialProcedure.use(
-  async ({ ctx, next, rawInput }) => {
+  async (opts) => {
+    const { ctx, next } = opts;
+    const rawInput = "getRawInput" in opts ? await opts.getRawInput() : undefined;
     const input = rawInput as Record<string, unknown>;
     const idempotencyKey = (input?.idempotencyKey as string) ?? null;
 

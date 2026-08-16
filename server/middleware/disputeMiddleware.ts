@@ -27,7 +27,7 @@ import logger from "../_core/logger";
 
 // ── Kafka: Dispute Domain Events ─────────────────────────────────────────
 // publishEvent(topic: KafkaTopic, key: string, payload: T, metadata?)
-const DISPUTE_KAFKA_TOPIC: KafkaTopic = "pos.disputes.opened";
+const DISPUTE_KAFKA_TOPIC: KafkaTopic = "54link.disputes.opened";
 
 export async function publishDisputeEvent(params: {
   eventType:
@@ -48,11 +48,11 @@ export async function publishDisputeEvent(params: {
 }): Promise<void> {
   try {
     const topic: KafkaTopic = params.eventType.startsWith("dispute.")
-      ? "pos.disputes.opened"
-      : "pos.disputes.resolved";
+      ? "54link.disputes.opened"
+      : "54link.disputes.resolved";
     await publishEvent(
       topic,
-      params.agentId ?? params.transactionRef ?? "system",
+      (params.agentId != null ? String(params.agentId) : undefined) ?? params.transactionRef ?? "system",
       {
         eventType: params.eventType,
         timestamp: new Date().toISOString(),
@@ -63,7 +63,7 @@ export async function publishDisputeEvent(params: {
         transactionRef: params.transactionRef,
         ...params.metadata,
       },
-      { agentId: params.agentId }
+      { agentId: params.agentId != null ? String(params.agentId) : undefined }
     );
     logger.info(`[Kafka] Dispute event: ${params.eventType}`);
   } catch (e) {

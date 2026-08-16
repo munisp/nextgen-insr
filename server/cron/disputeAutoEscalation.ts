@@ -34,12 +34,8 @@ export async function runDisputeAutoEscalation() {
         (now.getTime() - new Date(dispute.createdAt).getTime()) /
         (1000 * 60 * 60);
       const amount = Number(dispute.amount ?? 0);
-      const escalationResult = shouldAutoEscalate(
-        hoursOpen,
-        amount,
-        (dispute.priority as any) ?? "medium",
-        0 // responseCount — would need to query messages
-      );
+      // shouldAutoEscalate only accepts (hoursOpen, amount)
+      const escalationResult = shouldAutoEscalate(hoursOpen, amount);
 
       if (escalationResult.shouldEscalate) {
         await db
@@ -51,7 +47,7 @@ export async function runDisputeAutoEscalation() {
           })
           .where(eq(disputes.id, dispute.id));
         escalated++;
-        logger.info({ disputeId: dispute.id, reasons: escalationResult.reasons }, "[Cron] Escalated dispute");
+        logger.info({ disputeId: dispute.id, reason: escalationResult.reason }, "[Cron] Escalated dispute");
       }
     }
 

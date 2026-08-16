@@ -19,6 +19,15 @@ import { auditLog, systemConfig } from "../../drizzle/schema";
 import { TRPCError } from "@trpc/server";
 
 export const dashboardLayoutRouter = router({
+  presets: protectedProcedure.query(async () => {
+    return {
+      items: [
+        { id: "default", name: "Default", widgets: [] },
+        { id: "financial", name: "Financial", widgets: [] },
+      ],
+    };
+  }),
+
   getLayout: protectedProcedure
     .input(z.object({ userId: z.string() }))
     .query(async ({ input }) => {
@@ -45,16 +54,6 @@ export const dashboardLayoutRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message:
             error instanceof Error ? error.message : "Internal server error",
-          // DashboardLayoutEditor component with react-grid-layout integration
-          // isDraggable, isResizable, editMode support
-          presets: protectedProcedure.query(async () => {
-            return {
-              items: [
-                { id: "default", name: "Default", widgets: [] },
-                { id: "financial", name: "Financial", widgets: [] },
-              ],
-            };
-          }),
         });
       }
     }),
@@ -82,16 +81,6 @@ export const dashboardLayoutRouter = router({
           .onConflictDoUpdate({
             target: systemConfig.key,
             set: { value: JSON.stringify(input.layout), updatedAt: new Date() },
-            // DashboardLayoutEditor component with react-grid-layout integration
-            // isDraggable, isResizable, editMode support
-            presets: protectedProcedure.query(async () => {
-              return {
-                items: [
-                  { id: "default", name: "Default", widgets: [] },
-                  { id: "financial", name: "Financial", widgets: [] },
-                ],
-              };
-            }),
           });
         return { success: true };
       } catch (error) {
@@ -100,16 +89,6 @@ export const dashboardLayoutRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message:
             error instanceof Error ? error.message : "Internal server error",
-          // DashboardLayoutEditor component with react-grid-layout integration
-          // isDraggable, isResizable, editMode support
-          presets: protectedProcedure.query(async () => {
-            return {
-              items: [
-                { id: "default", name: "Default", widgets: [] },
-                { id: "financial", name: "Financial", widgets: [] },
-              ],
-            };
-          }),
         });
       }
     }),
@@ -129,16 +108,6 @@ export const dashboardLayoutRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message:
             error instanceof Error ? error.message : "Internal server error",
-          // DashboardLayoutEditor component with react-grid-layout integration
-          // isDraggable, isResizable, editMode support
-          presets: protectedProcedure.query(async () => {
-            return {
-              items: [
-                { id: "default", name: "Default", widgets: [] },
-                { id: "financial", name: "Financial", widgets: [] },
-              ],
-            };
-          }),
         });
       }
     }),
@@ -182,16 +151,6 @@ export const dashboardLayoutRouter = router({
           ],
           columns: 4,
         },
-      ],
-    };
-  }),
-  // DashboardLayoutEditor component with react-grid-layout integration
-  // isDraggable, isResizable, editMode support
-  presets: protectedProcedure.query(async () => {
-    return {
-      items: [
-        { id: "default", name: "Default", widgets: [] },
-        { id: "financial", name: "Financial", widgets: [] },
       ],
     };
   }),

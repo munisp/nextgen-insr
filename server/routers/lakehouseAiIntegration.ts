@@ -78,7 +78,7 @@ export const lakehouseAiIntegrationRouter = router({
       tablesCount = metrics?.table_count ?? 0;
     } catch { /* lakehouse service may be offline */ }
     return {
-      totalQueries: total ?? 0,
+      totalQueries: Number(totalQueries),
       avgLatencyMs: 42, // From monitoring
       storageUsedGb,
       tablesCount,
@@ -184,9 +184,9 @@ export const lakehouseAiIntegrationRouter = router({
       if (db) {
         await db.insert(auditLog).values({
           action: "ML_MODEL_PROMOTED",
-          entityType: "ml_model",
-          entityId: input.modelId,
-          userId: String(ctx.user?.id ?? "system"),
+          resource: "ml_model",
+          resourceId: input.modelId,
+          agentId: String(ctx.user?.id ?? "system"),
           metadata: { modelId: input.modelId, targetEnv: input.targetEnv },
         });
       }
@@ -210,9 +210,9 @@ export const lakehouseAiIntegrationRouter = router({
       if (db) {
         await db.insert(auditLog).values({
           action: "LAKEHOUSE_BATCH_JOB_SUBMITTED",
-          entityType: "batch_job",
-          entityId: jobId,
-          userId: String(ctx.user?.id ?? "system"),
+          resource: "batch_job",
+          resourceId: jobId,
+          agentId: String(ctx.user?.id ?? "system"),
           metadata: { name: input.name, query: input.query.slice(0, 200), schedule: input.schedule },
         });
       }

@@ -174,8 +174,8 @@ export const floatManagementRouter = router({
           channel: ({ bank_transfer: "Internal", cash: "Cash", internal_transfer: "Internal" } as const)[input.source],
           status: "success",
           fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
           metadata: {
+            tbSyncStatus: tbResult ? "synced" : "pending",
             source: input.source,
             tbTransferId: tbResult?.id ?? null,
             supervisorApproval: input.supervisorApproval ?? null,
@@ -267,11 +267,11 @@ export const floatManagementRouter = router({
           amount: String(input.amountNGN),
           fee: "0",
           commission: "0",
-          channel: "internal",
+          channel: "Internal",
           status: "success",
           fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { reason: input.reason, tbTransferId: tbResult?.id ?? null },
+          metadata: {
+            tbSyncStatus: tbResult ? "synced" : "pending", reason: input.reason, tbTransferId: tbResult?.id ?? null },
         }).returning();
 
         await db.insert(auditLog).values({

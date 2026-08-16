@@ -258,10 +258,10 @@ export const tigerBeetleRouter = router({
 
       const [stats] = await db.select({
         total: count(),
-        synced: sql<number>`COUNT(*) FILTER (WHERE sync_status = 'synced')`,
-        pending: sql<number>`COUNT(*) FILTER (WHERE sync_status = 'pending')`,
-        failed: sql<number>`COUNT(*) FILTER (WHERE sync_status = 'failed')`,
-        totalKobo: sql<string>`COALESCE(SUM(CAST(amount_kobo AS NUMERIC)), 0)`,
+        synced: sql<number>`COUNT(*) FILTER (WHERE status = 'synced')`,
+        pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')`,
+        failed: sql<number>`COUNT(*) FILTER (WHERE status = 'failed')`,
+        totalKobo: sql<string>`COALESCE(SUM(CAST("amount" AS NUMERIC)), 0)`,
       }).from(tigerBeetleSyncLog)
         .where(gte(tigerBeetleSyncLog.createdAt, since));
 

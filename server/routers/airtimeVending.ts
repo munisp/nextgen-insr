@@ -59,12 +59,12 @@ export const airtimeVendingRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       // Idempotency
-      const existing = await db.select().from(transactions).where(eq(transactions.reference, input.reference)).limit(1);
+      const existing = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
       if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
 
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
-      if (agent.status !== "active") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not active" });
+      if (!agent.isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not active" });
       if (agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Float locked" });
 
       const agentBalance = Number(agent.premiumReserve ?? 0);
@@ -109,20 +109,19 @@ export const airtimeVendingRouter = router({
         });
 
         const [tx] = await db.insert(transactions).values({
-          reference: input.reference,
+          ref: input.reference,
           agentId: input.agentId,
           type: "Airtime",
           amount: String(input.amountNGN),
           fee: "0",
           commission: String(commission),
           customerPhone: input.phoneNumber,
-          channel: "POS",
+          channel: "App",
           // Never synchronous success: fulfilment is confirmed asynchronously
           // by the airtime provider.
           status: "pending",
           fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: {
+          metadata: { tbSyncStatus: tbResult ? "synced" : "pending",
             network: input.network,
             phoneNumber: input.phoneNumber,
             providerStatus: "pending_provider",

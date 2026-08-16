@@ -13,7 +13,7 @@ import {
   platformSettings,
 } from "../../drizzle/schema";
 import {
-  insuranceServices,
+  posTerminals,
 } from "../../drizzle/schema.additions";
 import { eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -65,13 +65,13 @@ export const terminalLeasingRouter = router({
           .values({ key, value: JSON.stringify(lease) });
 
         await db
-          .update(insuranceServices)
+          .update(posTerminals)
           .set({
             agentId: input.agentId,
             status: "active",
             updatedAt: new Date(),
           })
-          .where(eq(insuranceServices.id, input.terminalId));
+          .where(eq(posTerminals.id, input.terminalId));
 
         await writeAuditLog({
           agentId: session.id,

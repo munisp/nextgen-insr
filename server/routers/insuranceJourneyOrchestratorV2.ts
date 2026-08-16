@@ -91,6 +91,7 @@ async function startJourneyWorkflow(
   }
 
   const temporal = await getTemporalClient();
+      if (!temporal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Temporal client unavailable" });
   const workflowId = `${journeyId}-${Date.now()}-u${userId}`;
 
   const handle = await temporal.workflow.start(workflowType, {
@@ -106,6 +107,7 @@ async function startJourneyWorkflow(
 async function getWorkflowStatus(workflowId: string) {
   try {
     const temporal = await getTemporalClient();
+      if (!temporal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Temporal client unavailable" });
     const handle = temporal.workflow.getHandle(workflowId);
     const desc = await handle.describe();
     let currentStep = "unknown";
@@ -197,6 +199,7 @@ export const insuranceJourneyOrchestratorV2Router = router({
     .input(z.object({ workflowId: z.string(), reason: z.string().optional() }))
     .mutation(async ({ input, ctx }) => {
       const temporal = await getTemporalClient();
+      if (!temporal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Temporal client unavailable" });
       const handle = temporal.workflow.getHandle(input.workflowId);
       await handle.cancel();
 
@@ -216,6 +219,7 @@ export const insuranceJourneyOrchestratorV2Router = router({
     .input(z.object({ workflowId: z.string(), stepId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const temporal = await getTemporalClient();
+      if (!temporal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Temporal client unavailable" });
       const handle = temporal.workflow.getHandle(input.workflowId);
       await handle.signal("approveStep", { stepId: input.stepId, approvedBy: ctx.user.id });
       return { success: true };

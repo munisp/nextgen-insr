@@ -175,10 +175,9 @@ export async function runSarRetryCron(): Promise<{
     if (submitted > 0 || failed > 0) {
       await writeAuditLog({
         action: "SAR_RETRY_CRON",
-        entityType: "compliance",
-        entityId: "cron",
-        userId: 0,
-        details: { processed, submitted, failed, skipped, durationMs },
+        resource: "compliance",
+        resourceId: "cron",
+        metadata: { processed, submitted, failed, skipped, durationMs },
       });
 
       await publishToFluvio("aml.sar.retry.complete", {

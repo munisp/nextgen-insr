@@ -50,9 +50,9 @@ interface ChatSession {
   status: string;
   supportAgentName: string | null;
   rating: number | null;
-  createdAt: string;
-  resolvedAt: string | null;
-  updatedAt: string | null;
+  createdAt: Date;
+  resolvedAt: Date | null;
+  updatedAt: Date;
 }
 
 interface ChatMessage {
@@ -245,7 +245,6 @@ export default function AdminSupportInbox() {
   };
 
   // ── Filter sessions ─────────────────────────────────────────────────────
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const filteredSessions = (sessionsQuery.data?.sessions ?? []).filter(
     (s: ChatSession) => {
       if (!searchQuery) return true;
