@@ -902,11 +902,11 @@ async function seed() {
     await ins(client, "gl_accounts",
       ["id", "account_code", "account_name", "account_type", "currency", "balance", "is_active", "description", "created_at", "updated_at"],
       [
-        [1, "1000", "Cash & Float",          "asset",     "NGN", "42500000.00", true, "Agent float and vault cash (demo)",      daysAgo(90), now()],
-        [2, "2000", "Customer Wallet Liab.", "liability", "NGN", "31800000.00", true, "Customer wallet balances (demo)",        daysAgo(90), now()],
-        [3, "4000", "Fee Income",            "revenue",   "NGN", "910000.00",   true, "Transaction fee income (demo)",          daysAgo(90), now()],
-        [4, "4100", "Premium Income",        "revenue",   "NGN", "1520000.00",  true, "Insurance premium income (demo)",        daysAgo(90), now()],
-        [5, "5000", "Commission Expense",    "expense",   "NGN", "364000.00",   true, "Agent commission expense (demo)",        daysAgo(90), now()],
+        [1, "1000", "Cash & Float",          "asset",     "NGN", "42500000", true, "Agent float and vault cash (demo)",      daysAgo(90), now()],
+        [2, "2000", "Customer Wallet Liab.", "liability", "NGN", "31800000", true, "Customer wallet balances (demo)",        daysAgo(90), now()],
+        [3, "4000", "Fee Income",            "revenue",   "NGN", "910000",   true, "Transaction fee income (demo)",          daysAgo(90), now()],
+        [4, "4100", "Premium Income",        "revenue",   "NGN", "1520000",  true, "Insurance premium income (demo)",        daysAgo(90), now()],
+        [5, "5000", "Commission Expense",    "expense",   "NGN", "364000",   true, "Agent commission expense (demo)",        daysAgo(90), now()],
       ]);
     await ins(client, "gl_journal_entries",
       ["id", "entry_number", "description", "debit_account_id", "credit_account_id", "amount", "currency", "reference_type", "reference_id", "posted_by", "status", "posted_at", "created_at"],
