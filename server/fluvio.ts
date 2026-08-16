@@ -10,6 +10,7 @@
  *   6. Added typed convenience publishers for all key events
  */
 import { z } from "zod";
+
 import logger from "./_core/logger";
 
 const FLUVIO_HTTP_URL = process.env.FLUVIO_HTTP_URL ?? "http://localhost:9003";

@@ -9,8 +9,8 @@
  * - notifyOwner for results delivery
  */
 import { getConfig, setConfig } from "./runtimeConfig";
-import { notifyOwner } from "../_core/notification";
 import { logger } from '../_core/logger';
+import { notifyOwner } from "../_core/notification";
 
 export interface ScheduledTestConfig {
   enabled: boolean;

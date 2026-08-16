@@ -3,24 +3,24 @@
  * Matches merchant settlement batches against transaction records.
  * Status flow: pending → matched | discrepancy → resolved
  */
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
+import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
+import { z } from "zod";
+
 import {
   settlementReconciliation,
   merchantSettlements,
   transactions,
   agents,
 } from "../../drizzle/schema";
-import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
-import { writeAuditLog } from "../db";
+import { permifyCheck } from "../_core/permify";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb , writeAuditLog } from "../db";
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
+import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { permifyCheck } from "../_core/permify";
 
 export const settlementReconciliationRouter = router({
   // ── List reconciliation records ───────────────────────────────────────────

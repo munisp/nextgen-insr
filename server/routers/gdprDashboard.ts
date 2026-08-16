@@ -25,11 +25,10 @@
  *     as an OPEN GAP in COMPLIANCE_MATRIX.md), or backups.
  */
 
-import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
-import { getDb } from "../db";
 import { sql, eq, and, gte, isNull, count } from "drizzle-orm";
+import { z } from "zod";
+
 import {
   customers,
   auditLog,
@@ -39,6 +38,8 @@ import {
   dataConsentRecords,
   dataRightsRequests,
 } from "../../drizzle/schema";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { getDb } from "../db";
 import { writeAuditLog } from "../lib/auditLogger";
 
 const THIRTY_DAYS_AGO = () => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);

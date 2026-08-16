@@ -7,11 +7,12 @@
  * Exponential backoff per SAR: 100ms → 200ms → 400ms.
  * Fail-open: if NFIU is still down, SARs stay pending for next run.
  */
-import { getDb } from "./db";
-import { complianceFilings } from "../drizzle/schema";
 import { eq, and, inArray, lte } from "drizzle-orm";
-import { writeAuditLog } from "./lib/auditLogger";
+
+import { getDb } from "./db";
 import { publishToFluvio } from "./fluvio";
+import { complianceFilings } from "../drizzle/schema";
+import { writeAuditLog } from "./lib/auditLogger";
 
 const NFIU_API_URL = process.env.NFIU_API_URL ?? "https://nfiu.gov.ng/api/v1";
 const BATCH_SIZE = 50;

@@ -12,12 +12,14 @@
  *   Credit = money entering an account
  *   Every transfer must balance: sum(debits) == sum(credits)
  */
+import { TRPCError } from "@trpc/server";
+import { desc, eq, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
+
+import { tigerBeetleSyncLog, transactions, agents } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { tigerBeetleSyncLog, transactions, agents } from "../../drizzle/schema";
-import { desc, eq, count, sql, and, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 import {
   tbCreateTransfer,
   tbEnsureAgentAccount,
@@ -26,7 +28,6 @@ import {
   tbIsHealthy,
   type TBTransferRequest,
 } from "../tbClient";
-import { logger } from "../_core/logger";
 
 // Ledger codes
 const LEDGER = {

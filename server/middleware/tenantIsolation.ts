@@ -25,6 +25,7 @@
  *   })
  */
 import { TRPCError } from "@trpc/server";
+
 import type { TrpcContext } from "../_core/context";
 
 export type TenantContext = TrpcContext & { tenantId: number };

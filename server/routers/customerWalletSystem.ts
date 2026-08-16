@@ -1,16 +1,18 @@
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import { z } from "zod";
+
+import { customers, transactions, auditLog } from "../../drizzle/schema";
+import { permifyCheck } from "../_core/permify";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, and, sql, count, sum } from "drizzle-orm";
-import { customers, transactions, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
+import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { permifyCheck } from "../_core/permify";
 
 export const customerWalletSystemRouter = router({
   getBalance: protectedProcedure

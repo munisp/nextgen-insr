@@ -1,5 +1,6 @@
 // TypeScript enabled — Sprint 96 security audit
-import { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+
 import { logger } from '../_core/logger';
 
 interface ErrorLog {

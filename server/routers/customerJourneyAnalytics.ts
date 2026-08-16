@@ -2,12 +2,14 @@
  * F12: Customer Journey Analytics
  * Journey steps, funnel analysis, touchpoint tracking, conversion metrics
  */
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { customerJourneySteps } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
+import { z } from "zod";
+
+import { customerJourneySteps } from "../../drizzle/schema";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 export const customerJourneyAnalyticsRouter = router({
   listSteps: protectedProcedure

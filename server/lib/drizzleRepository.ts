@@ -21,10 +21,20 @@ import {
   sql, count, inArray, notInArray, like, ilike, between,
   type SQL, type AnyColumn,
 } from "drizzle-orm";
-import type { PgTable, PgColumn, TableConfig } from "drizzle-orm/pg-core";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { getDb } from "../db";
+import type { PgTable, PgColumn, TableConfig } from "drizzle-orm/pg-core";
+
+import {
+  policies, claims, beneficiaries, endorsements, policyRenewals,
+  coverageItems, riskAssessments, underwritingAssessments, actuarialReserves,
+  reinsuranceTreaties, reinsuranceCessions, brokers, premiumPayments,
+  naicomReports, policyWorkflowEvents, claimWorkflowEvents,
+  stakeholderProfiles, ifrs17MeasurementGroups, insuranceProducts,
+  claimDocuments, fluvioEventLog, tigerBeetleSyncLog,
+  agents, transactions, fraudAlerts, auditLog,
+} from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { getDb } from "../db";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -704,15 +714,6 @@ export function clearPreparedStatements(): void {
 // Concrete Insurance Domain Repositories
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import {
-  policies, claims, beneficiaries, endorsements, policyRenewals,
-  coverageItems, riskAssessments, underwritingAssessments, actuarialReserves,
-  reinsuranceTreaties, reinsuranceCessions, brokers, premiumPayments,
-  naicomReports, policyWorkflowEvents, claimWorkflowEvents,
-  stakeholderProfiles, ifrs17MeasurementGroups, insuranceProducts,
-  claimDocuments, fluvioEventLog, tigerBeetleSyncLog,
-  agents, transactions, fraudAlerts, auditLog,
-} from "../../drizzle/schema";
 
 export class PolicyRepository extends SoftDeleteRepository<typeof policies> {
   constructor() { super(policies, "policies"); }

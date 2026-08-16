@@ -84,9 +84,9 @@ export function getDomainForRouter(filename: string): string {
  */
 export function analyzeRouterOrganization() {
   const recommendations: string[] = [];
-  let totalRouters = 0;
-  let oversizedRouters = 0;
-  let fragmentedDomains = 0;
+  const totalRouters = 0;
+  const oversizedRouters = 0;
+  const fragmentedDomains = 0;
 
   // This would be populated by a script that analyzes actual router files
   recommendations.push(

@@ -4,8 +4,8 @@
  * Response compression, query result caching, connection pool optimization,
  * and request metrics for P99 response times
  */
-import { cacheGet, cacheSet } from "../redisClient";
 import { logger } from "../_core/logger";
+import { cacheGet, cacheSet } from "../redisClient";
 
 // ── 1. In-Memory LRU Cache for Hot Queries ────────────────────────────────────
 interface CacheEntry<T> {

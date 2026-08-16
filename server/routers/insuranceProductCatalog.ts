@@ -11,12 +11,13 @@
  *
  * All products are NAICOM-registered with valid product codes.
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql, and, gte, ilike, or } from "drizzle-orm";
 import { z } from "zod";
+
+import { insuranceProducts, insuranceProductTypes } from "../../drizzle/schema";
 import { protectedProcedure, publicProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { insuranceProducts, insuranceProductTypes } from "../../drizzle/schema";
-import { eq, desc, count, sql, and, gte, ilike, or } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 export const insuranceProductCatalogRouter = router({
   // List all available insurance products

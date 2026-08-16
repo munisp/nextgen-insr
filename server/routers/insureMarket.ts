@@ -45,11 +45,12 @@
  * pipeline store exists).
  */
 
+import { TRPCError } from "@trpc/server";
+import { sql, desc, eq, and, gte, sum, count } from "drizzle-orm";
 import { z } from "zod";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { sql, desc, eq, and, gte, sum, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 // ─── Marketplace product catalogue ───────────────────────────────────────────
 

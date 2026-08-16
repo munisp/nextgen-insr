@@ -2,13 +2,14 @@
  * InsurePortal POS — Temporal Activities
  * All activities run in the worker process with full access to DB, Redis, and external APIs.
  */
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
+
 import { getDb } from "./db";
 import {
   transactions,
   agents,
   tenants,
 } from "../drizzle/schema";
-import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { logger } from './_core/logger';
 
 async function getDbInstance() {

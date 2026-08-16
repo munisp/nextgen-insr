@@ -8,17 +8,18 @@
  * - Paginated results with relevance scoring
  * - Search result highlighting
  */
+import { TRPCError } from "@trpc/server";
+import { ilike, or, sql, desc, count } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   agents,
   transactions,
   customers,
   disputes,
 } from "../../drizzle/schema";
-import { ilike, or, sql, desc, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 const SearchInputSchema = z.object({
   query: z.string().min(2).max(200),

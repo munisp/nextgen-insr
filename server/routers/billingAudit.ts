@@ -1,5 +1,6 @@
 // @ts-check
 import { z } from "zod";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -9,9 +10,13 @@ async function db() {
   return d;
 }
 import { billingAuditLog, tenantBillingConfig } from "../../drizzle/schema";
+
 import { eq, and, desc, gte, lte, sql, like } from "drizzle-orm";
+
 import { requireBillingPermission } from "./billingRbac";
+
 import { TRPCError } from "@trpc/server";
+
 import { logger } from '../_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -113,8 +118,8 @@ async function sendBillingNotifications(
   ];
   const discrepancyActions = ["reconciliation_run"];
 
-  let shouldNotifyTenantAdmin = notifiableActions.includes(entry.action);
-  let shouldNotifyPlatformAdmin = discrepancyActions.includes(entry.action);
+  const shouldNotifyTenantAdmin = notifiableActions.includes(entry.action);
+  const shouldNotifyPlatformAdmin = discrepancyActions.includes(entry.action);
 
   if (shouldNotifyTenantAdmin || shouldNotifyPlatformAdmin) {
     try {

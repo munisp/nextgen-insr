@@ -17,13 +17,13 @@
  * 12. PostgreSQL — commission_ledger + commission_splits tables
  * 13. Open Source — Drizzle ORM, tRPC, Zod validation
  */
-import { publishEvent, type KafkaTopic } from "../kafkaClient";
-import { cacheGet, cacheSet, cacheDel } from "../redisClient";
-import { permifyCheck } from "../_core/permify";
-import { fluvioProduce } from "../lib/fluvioClient";
-import { tbCreateTransfer, type TBTransferRequest } from "../tbClient";
 import { ENV } from "../_core/env";
 import logger from "../_core/logger";
+import { permifyCheck } from "../_core/permify";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { fluvioProduce } from "../lib/fluvioClient";
+import { cacheGet, cacheSet, cacheDel } from "../redisClient";
+import { tbCreateTransfer, type TBTransferRequest } from "../tbClient";
 
 // ── Kafka: Commission Domain Events ──────────────────────────────────────
 // KafkaTopic union doesn't include commission topics yet, so we use the

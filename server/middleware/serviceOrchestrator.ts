@@ -9,6 +9,7 @@
  * - Dead letter queue handling
  * - Service mesh observability
  */
+import { checkAllServices, type PlatformHealth } from "./integrationHealth";
 import {
   kafka,
   dapr,
@@ -23,7 +24,6 @@ import {
   apisix,
   lakehouse,
 } from "./middlewareConnectors";
-import { checkAllServices, type PlatformHealth } from "./integrationHealth";
 import { logger } from '../_core/logger';
 
 // ─── Service Registry ────────────────────────────────────────────────────────

@@ -5,8 +5,10 @@
  * split-transaction fraud, phantom reversals, collusion detection,
  * credential stuffing, and enumeration attacks.
  */
-import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+
+import type { Request, Response, NextFunction } from "express";
+
 import { logger } from '../_core/logger';
 
 // ── Replay Attack Prevention (Nonce + Idempotency) ───────────────────

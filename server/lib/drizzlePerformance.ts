@@ -18,8 +18,9 @@
 
 import { sql, eq, and, inArray } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { getDb } from "../db";
+
 import { logger } from "../_core/logger";
+import { getDb } from "../db";
 import { cacheGet, cacheSet, cacheDel } from "../redisClient";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -568,7 +569,7 @@ export function getMaterializedViewStatus() {
 // 11. Outbox Relay Worker (Transactional Outbox Pattern)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { outboxMessages } from "../../drizzle/schema.enhancements";
+import { outboxMessages , idempotencyKeys } from "../../drizzle/schema.enhancements";
 
 let outboxWorkerTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -649,7 +650,6 @@ export function stopOutboxWorker(): void {
 // 12. Idempotency Middleware Helper
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { idempotencyKeys } from "../../drizzle/schema.enhancements";
 import { createHash } from "crypto";
 
 export async function checkIdempotency(

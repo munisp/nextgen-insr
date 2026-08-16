@@ -4,10 +4,11 @@
  * Sends push notifications to agents and admins via the Web Push Protocol.
  * Supports: failover alerts, fraud alerts, float top-up approvals, settlement completions.
  */
+import { eq } from "drizzle-orm";
 import webpush from "web-push";
+
 import { getDb } from "./db";
 import { agentPushSubscriptions } from "../drizzle/schema";
-import { eq } from "drizzle-orm";
 
 // VAPID keys — unified with server/_core/env.ts defaults.
 // Override via VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY environment variables in production.

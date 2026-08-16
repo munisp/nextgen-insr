@@ -5,12 +5,13 @@
  * Middleware: Kafka (sync events), Redis (dedup cache), Temporal (reconciliation workflow),
  * PostgreSQL (transaction persistence), TigerBeetle (double-entry ledger)
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { z } from "zod";
+
+import { transactions, agents } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
-import { eq, desc, and, sql, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
 const offlineTxSchema = z.object({

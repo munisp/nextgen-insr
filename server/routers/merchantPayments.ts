@@ -3,15 +3,16 @@
  * Full production: POS merchant payments with TigerBeetle atomicity.
  * Business Rules: Min ₦100, Max ₦1M, Daily ₦5M, MDR 1.5%, Settlement T+1
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
+
+import { transactions, agents, auditLog } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions, agents, auditLog } from "../../drizzle/schema";
-import { eq, desc, count, sql, and, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
-import { logger } from "../_core/logger";
+import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 
 const MIN_AMOUNT = 100, MAX_AMOUNT = 1_000_000, DAILY_LIMIT = 5_000_000;
 const MDR = 0.015; // Merchant Discount Rate

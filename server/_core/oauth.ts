@@ -1,10 +1,12 @@
 // SECURITY: Rate limiting is handled by the API gateway/reverse proxy (nginx/cloudflare) in production.
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import type { Express, Request, Response } from "express";
+
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+
 import * as db from "../db";
 import { getSessionCookieOptions } from "./cookies";
-import { sdk } from "./sdk";
 import { logger } from './logger';
+import { sdk } from "./sdk";
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];

@@ -4,14 +4,15 @@
  *
  * Middleware: Redis (mode state cache), Kafka (offline events), PostgreSQL (config persistence)
  */
+import { TRPCError } from "@trpc/server";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { agents, platformSettings } from "../../drizzle/schema";
+import { logger } from '../_core/logger';
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { agents, platformSettings } from "../../drizzle/schema";
-import { eq, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { logger } from '../_core/logger';
 
 const OFFLINE_DEFAULTS = {
   allowedTypes: ["Cash In", "Cash Out", "Transfer", "Airtime", "Bill Payment"],

@@ -7,12 +7,13 @@
  * Strategy: base delay 30s, multiplier 2x, max delay 4h, max retries 5 (configurable per record).
  * Jitter: ±20% of computed delay to prevent thundering herd.
  */
-import { getDb } from "../db";
-import { notifyOwner } from "../_core/notification";
-import { erpSyncLog, erpConfig } from "../../drizzle/schema";
 import { eq, and, lte, lt } from "drizzle-orm";
+
 import { recordMetric } from "./analyticsMetrics";
+import { erpSyncLog, erpConfig } from "../../drizzle/schema";
 import { logger } from '../_core/logger';
+import { notifyOwner } from "../_core/notification";
+import { getDb } from "../db";
 
 const BASE_DELAY_MS = 30_000; // 30 seconds
 const BACKOFF_MULTIPLIER = 2;

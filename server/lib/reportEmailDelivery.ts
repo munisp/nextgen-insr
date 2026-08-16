@@ -5,8 +5,8 @@
  * Sends comparison PDF reports via email after scheduled load tests.
  * Uses the existing emailService infrastructure.
  */
-import { notifyOwner } from "../_core/notification";
 import { logger } from '../_core/logger';
+import { notifyOwner } from "../_core/notification";
 
 export interface ReportEmailPayload {
   recipientEmail: string;

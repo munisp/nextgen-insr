@@ -22,11 +22,10 @@
  *  15. sloMonitor — new
  *  16. didIdentity — Rust service on :8106
  */
-import { z } from "zod";
-import { protectedProcedure, adminProcedure, publicProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { z } from "zod";
+
 import { customers, policies, claims, agents, auditLog } from "../../drizzle/schema";
 import {
   telematicsEvents, wearableReadings, p2pPools, p2pPoolMembers, p2pPoolClaims,
@@ -37,10 +36,12 @@ import {
   cvDamageAssessments, fraudGraphNodes, fraudGraphEdges, voiceClaimTranscripts,
   didIdentities, verifiableCredentials,
 } from "../../drizzle/schema.innovations";
+import { protectedProcedure, adminProcedure, publicProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
 import { writeAuditLog } from "../lib/auditLogger";
-import { tbCreateTransfer, TB_SYSTEM_ACCOUNTS } from "../tbClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
+import { tbCreateTransfer, TB_SYSTEM_ACCOUNTS } from "../tbClient";
 
 // ── Service URL helpers ───────────────────────────────────────────────────────
 const SVC = {

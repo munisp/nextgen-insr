@@ -1,9 +1,11 @@
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { chatSessions, chatMessages, auditLog } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, and, sql, count } from "drizzle-orm";
-import { chatSessions, chatMessages, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+
 
 export const helpDeskRouter = router({
   listTickets: protectedProcedure

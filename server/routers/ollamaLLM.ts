@@ -15,13 +15,15 @@
  *   - Compliance Q&A (NAICOM/CBN/NDPR/IFRS17/AML/KYC)
  *   - Text embeddings (nomic-embed-text)
  */
+import { TRPCError } from "@trpc/server";
+import { desc, count, eq } from "drizzle-orm";
 import { z } from "zod";
+
+import { auditLog } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
-import { desc, count, eq } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { logger } from "../_core/logger";
+
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const OLLAMA_TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS ?? "60000");

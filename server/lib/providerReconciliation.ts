@@ -15,13 +15,14 @@
  * cannot be reconciled and are reported honestly as unreconcilable.
  */
 import { and, eq, sql } from "drizzle-orm";
-import { getDb } from "../db";
-import { auditLog, transactions } from "../../drizzle/schema";
+
 import {
   lookupProviderStatus,
   type ProviderClientConfig,
 } from "./providerDispatch";
+import { auditLog, transactions } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { getDb } from "../db";
 
 export interface ReconciliationDivergence {
   ref: string;

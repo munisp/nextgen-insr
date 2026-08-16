@@ -2,11 +2,12 @@
  * networkTelemetry.ts — Network Telemetry Router
  * Real DB-backed network telemetry data. No Math.random().
  */
+import { desc, count, gte, avg, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { transactions, agents } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions, agents } from "../../drizzle/schema";
-import { desc, count, gte, avg, sql } from "drizzle-orm";
 
 const TELEMETRY_THRESHOLDS = {
   rttMs: { good: 100, warning: 200, critical: 500 },

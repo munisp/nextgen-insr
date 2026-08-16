@@ -18,15 +18,16 @@
  *   - Remittance order creation
  *   - Ollama risk narrative generation
  */
-import { getDb } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
+
+import { getDb } from "./db";
+import { fluvioProduce } from "./fluvio";
+import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
 import { agents, customers, transactions, auditLog } from "../drizzle/schema";
 import { journeyExecutions, journeyStepEvents } from "../drizzle/schema.journeys";
-import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
-import { acquireLock, releaseLock } from "./lib/redisClient";
-import { fluvioProduce } from "./fluvio";
 import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
+import { acquireLock, releaseLock } from "./lib/redisClient";
 
 // ── Service URLs ──────────────────────────────────────────────────────────────
 const FRAUD_GATE_URL = process.env.FRAUD_GATE_URL ?? "http://localhost:8090";

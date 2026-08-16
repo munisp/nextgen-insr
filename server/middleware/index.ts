@@ -5,8 +5,10 @@
  * F07: Input sanitization, XSS prevention
  * F10: CORS hardening
  */
-import { Request, Response, NextFunction, Express } from "express";
 import crypto from "crypto";
+
+import type { Request, Response, NextFunction, Express } from "express";
+
 import { logger } from '../_core/logger';
 
 // ─── Request ID Middleware ───────────────────────────────────────

@@ -2,10 +2,12 @@
  * Invite Code Router — Generate, validate, list, and revoke partner invite codes.
  * Only admins/super-admins can generate codes; public validation is allowed for onboarding.
  */
-import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { TRPCError } from "@trpc/server";
 import crypto from "crypto";
+
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+
+import { protectedProcedure, router } from "../_core/trpc";
 
 // ─── In-memory store (production: replace with DB via getDb + inviteCodes table) ──
 interface InviteCodeRecord {

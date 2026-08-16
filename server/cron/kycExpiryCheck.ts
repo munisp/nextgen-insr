@@ -1,8 +1,9 @@
 // @ts-check
-import { getDb } from "../db";
-import { agents } from "../../drizzle/schema";
 import { eq, and, lt, isNotNull } from "drizzle-orm";
+
+import type { agents } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { getDb } from "../db";
 
 /**
  * Runs daily — flags agents with expired KYC documents and notifies them.

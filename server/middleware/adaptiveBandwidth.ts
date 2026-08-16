@@ -11,8 +11,9 @@
  * - Request batching for slow connections
  */
 
-import { Request, Response, NextFunction } from "express";
 import zlib from "zlib";
+
+import type { Request, Response, NextFunction } from "express";
 
 // ─── 1. Network Quality Detection ──────────────────────────────────────────
 export type ConnectionQuality = "offline" | "2g" | "3g" | "4g" | "wifi";

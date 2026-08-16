@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
+
+import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
 async function db() {
@@ -13,7 +14,9 @@ import {
   billingAuditLog,
   tenantBillingConfig,
 } from "../../drizzle/schema";
+
 import { eq, and, desc } from "drizzle-orm";
+
 import { logger } from '../_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════

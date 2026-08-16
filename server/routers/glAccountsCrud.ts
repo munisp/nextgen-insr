@@ -1,11 +1,12 @@
 // @ts-check
 // Sprint 87: Chart of accounts hierarchy, balance validation
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { gl_accounts } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { gl_accounts } from "../../drizzle/schema";
-import { eq, desc, and, count, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const ACCOUNT_TYPES = ["asset", "liability", "equity", "revenue", "expense"];
 const NORMAL_BALANCE: Record<string, string> = {

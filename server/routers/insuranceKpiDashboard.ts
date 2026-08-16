@@ -16,9 +16,25 @@
  *                 → TigerBeetle sidecar (ledger balances)
  *                 → Redis (cached real-time counters)
  */
+import { TRPCError } from "@trpc/server";
+import {
+  sql,
+  eq,
+  and,
+  gte,
+  lte,
+  desc,
+  count,
+  sum,
+  avg,
+  ne,
+  isNull,
+  isNotNull,
+  between,
+  inArray,
+} from "drizzle-orm";
 import { z } from "zod";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   policies,
   claims,
@@ -44,24 +60,9 @@ import {
   claimsPayments,
   commissions,
 } from "../../drizzle/schema.additions";
-import {
-  sql,
-  eq,
-  and,
-  gte,
-  lte,
-  desc,
-  count,
-  sum,
-  avg,
-  ne,
-  isNull,
-  isNotNull,
-  between,
-  inArray,
-} from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 import logger from "../_core/logger";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { getDb } from "../db";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysAgo(n: number): Date {

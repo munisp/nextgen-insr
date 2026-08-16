@@ -16,12 +16,14 @@
  *  10.  RollbackManager       — safe rollback with state verification
  */
 
+import * as path from "path";
+
 import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { getDb } from "../db";
+
 import { logger } from "../_core/logger";
+import { getDb } from "../db";
 import { registerSchemaVersion } from "./drizzleAdvanced";
-import * as path from "path";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types

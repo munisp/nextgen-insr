@@ -2,12 +2,14 @@
  * receiptTemplates.ts — Receipt template management router
  * Provides CRUD for receipt templates used in POS transactions.
  */
+import { TRPCError } from "@trpc/server";
+import { eq, count, desc } from "drizzle-orm";
 import { z } from "zod";
+
+import { receiptTemplates } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, count, desc } from "drizzle-orm";
-import { receiptTemplates } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+
 
 export const receiptTemplatesRouter = router({
   list: protectedProcedure

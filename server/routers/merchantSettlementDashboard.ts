@@ -1,16 +1,17 @@
 import { TRPCError } from "@trpc/server";
+import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { merchants } from "../../drizzle/schema";
+import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { merchants } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
+import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { permifyCheck } from "../_core/permify";
 
 export const merchantSettlementDashboardRouter = router({
   list: protectedProcedure

@@ -5,13 +5,15 @@
  * Provides aggregated metrics, time-series data, and search capabilities
  * for the TransactionAnalytics dashboard.
  */
+import { TRPCError } from "@trpc/server";
+import { desc, count, sql, gte, and, eq } from "drizzle-orm";
 import { z } from "zod";
+
+import { platformBillingLedger, billingAuditLog } from "../../drizzle/schema";
+import { logger } from '../_core/logger';
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { platformBillingLedger, billingAuditLog } from "../../drizzle/schema";
-import { desc, count, sql, gte, and, eq } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { logger } from '../_core/logger';
+
 
 // OpenSearch adapter (connects to opensearch-indexer Python service)
 async function queryOpenSearch(
@@ -180,7 +182,7 @@ export const analyticsQueryRouter = router({
     const osEndpoint =
       process.env.OPENSEARCH_ENDPOINT || "http://localhost:9200";
 
-    let fluvioStatus = "unknown";
+    const fluvioStatus = "unknown";
     let opensearchStatus = "unknown";
 
     try {

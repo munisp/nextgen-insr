@@ -4,15 +4,16 @@
  * Real health checks against all platform services.
  * No Math.random() — all data comes from actual service probes.
  */
-import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-import { platform_health_checks } from "../../drizzle/schema";
 import { desc, count, gte } from "drizzle-orm";
-import { getRedisClient, pingRedis } from "../lib/redisClient";
-import { tbIsHealthy, tbGetSyncStatus } from "../tbClient";
+import { z } from "zod";
+
+import { platform_health_checks } from "../../drizzle/schema";
 import { ENV } from "../_core/env";
 import { logger } from "../_core/logger";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+import { getRedisClient, pingRedis } from "../lib/redisClient";
+import { tbIsHealthy, tbGetSyncStatus } from "../tbClient";
 
 const SLA_TARGETS = {
   apiLatencyP95Ms: 200,

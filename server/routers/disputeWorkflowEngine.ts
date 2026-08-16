@@ -3,14 +3,15 @@
  * Dispute Workflow Engine — DB-backed multi-step resolution with SLA tracking
  * Sprint 54: Full PostgreSQL + middleware integration
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { disputes, disputeMessages, sla_breaches } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { disputes, disputeMessages, sla_breaches } from "../../drizzle/schema";
-import { eq, desc, count, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
-import { logger } from "../_core/logger";
 
 export const disputeWorkflowEngineRouter = router({
   createDispute: protectedProcedure

@@ -2,16 +2,17 @@
  * Automated Settlement Scheduler — DB-backed schedule management
  * Sprint 54: Full PostgreSQL + middleware integration
  */
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
+import { reconciliationBatches } from "../../drizzle/schema";
+import logger from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { reconciliationBatches } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
 import {
   publishSettlementEvent,
   tbRecordSettlementTransfer,
 } from "../middleware/settlementMiddleware";
-import logger from "../_core/logger";
 
 const notImplemented = (feature: string) =>
   new TRPCError({

@@ -2,11 +2,12 @@
  * networkQualityHeatmap.ts — Network Quality Heatmap Router
  * Real DB-backed agent distribution data. No Math.random().
  */
+import { desc, count, sql, gte, eq } from "drizzle-orm";
 import { z } from "zod";
+
+import { agents, transactions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agents, transactions } from "../../drizzle/schema";
-import { desc, count, sql, gte, eq } from "drizzle-orm";
 
 const NIGERIAN_STATES = ["Lagos", "FCT", "Rivers", "Oyo", "Kano", "Kaduna", "Anambra", "Delta", "Edo", "Ogun", "Enugu", "Imo"];
 const ISP_LIST = ["MTN", "Glo", "Airtel", "9mobile"];

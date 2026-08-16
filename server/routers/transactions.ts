@@ -27,11 +27,29 @@
  *
  * Quick Jump: Search for "[1]", "[2]", etc. to navigate to each section
  */
+import crypto from "crypto";
+
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
+import { z } from "zod";
+
+import {
+  transactions,
+  agents,
+  velocityLimits,
+  platformSettings,
+  devices,
+  fraudAlerts,
+  agentGeofenceZones,
+  geofenceZones,
+  deviceLocations,
+  commissionRules,
+} from "../../drizzle/schema";
+import { ENV } from "../_core/env";
+import { logger } from '../_core/logger';
 import { notifyOwner } from "../_core/notification";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
+import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
+import { protectedProcedure, router } from "../_core/trpc";
 import {
   createTransaction,
   getTransactionsByAgent,
@@ -46,32 +64,16 @@ import {
   createFraudAlert,
   getDb,
 } from "../db";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getAgentFromCookie } from "../middleware/agentAuth";
-import { ENV } from "../_core/env";
-import {
-  transactions,
-  agents,
-  velocityLimits,
-  platformSettings,
-  devices,
-  fraudAlerts,
-  agentGeofenceZones,
-  geofenceZones,
-  deviceLocations,
-  commissionRules,
-} from "../../drizzle/schema";
-import { sendSms, buildConfirmationSms } from "../termii";
-import { getIO } from "../socketSingleton";
-import { floatPlatform, analyticsPlatform } from "../_core/platformClient.js";
-import crypto from "crypto";
-import { logger } from '../_core/logger';
 import {
   transactionsTotal,
   transactionErrorsTotal,
   transactionDurationMs,
   floatLocksTotal,
 } from "../metrics";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import { getIO } from "../socketSingleton";
+import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
+import { sendSms, buildConfirmationSms } from "../termii";
 // ─── Commission & loyalty rates ───────────────────────────────────────────────
 const COMMISSION_RATES: Record<string, number> = {
   "Cash In": 0.003,

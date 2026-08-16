@@ -15,10 +15,7 @@
 
 import "dotenv/config";
 import crypto from "crypto";
-import path from "path";
-import { pathToFileURL } from "url";
-import express, { type Express } from "express";
-import { loadVaultSecrets } from "../_core/vault";
+
 // NOTE: ../temporal-worker, ../tbClient and ../fluvio are imported lazily
 // inside startServer()'s listen callback. They pull in heavyweight optional
 // infra clients (protobufjs-based Temporal codecs etc.) that are only needed
@@ -27,16 +24,13 @@ import { loadVaultSecrets } from "../_core/vault";
 // those sidecar dependencies.
 import { createServer, type Server } from "http";
 import net from "net";
-import helmet from "helmet";
-import compression from "compression";
-import rateLimit from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
-import { getRedisClient } from "../lib/redisClient";
+import path from "path";
+import { pathToFileURL } from "url";
+
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerKeycloakAuthRoutes, KC_SESSION_COOKIE } from "./keycloakAuth";
-import { SignJWT } from "jose";
-import { appRouter } from "../routers";
-import { createContext } from "./context";
+import compression from "compression";
+
+
 import { serveStatic, setupVite } from "./vite";
 import { initSocketIO } from "../socket";
 import { registerSettlementCron } from "../settlementCron";
@@ -52,11 +46,21 @@ import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
 import { enforceEnvironment } from "../lib/envValidation";
 import { logger, requestLoggingMiddleware } from "./logger";
 import { sql } from "drizzle-orm";
+import express, { type Express } from "express";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import { SignJWT } from "jose";
 import cron from "node-cron";
-import { setupGracefulShutdown } from "../lib/gracefulShutdown";
-import { startPoolMonitor } from "../lib/dbPoolMonitor";
+import { RedisStore } from "rate-limit-redis";
+import { createContext } from "./context";
+import { appRouter } from "../routers";
+import { registerKeycloakAuthRoutes, KC_SESSION_COOKIE } from "./keycloakAuth";
+import { loadVaultSecrets } from "../_core/vault";
 import { runDisputeAutoEscalation } from "../cron/disputeAutoEscalation";
 import { runKycExpiryCheck } from "../cron/kycExpiryCheck";
+import { startPoolMonitor } from "../lib/dbPoolMonitor";
+import { setupGracefulShutdown } from "../lib/gracefulShutdown";
+import { getRedisClient } from "../lib/redisClient";
 import { startSarRetryCronSchedule } from "../sar-retry-cron";
 
 // ── Environment validation (must run before any service initialization) ────────

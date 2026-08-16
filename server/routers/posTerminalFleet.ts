@@ -5,9 +5,11 @@
  * Middleware: Redis (heartbeat cache), Kafka (fleet events), PostgreSQL (fleet state),
  * Dapr (service invocation), OpenSearch (fleet search)
  */
+import { TRPCError } from "@trpc/server";
+import type { SQL } from "drizzle-orm";
+import { eq, desc, and, sql, like, or } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb, writeAuditLog } from "../db";
+
 import {
   terminalGroups,
   serviceRecords,
@@ -16,8 +18,8 @@ import {
 import {
   posTerminals,
 } from "../../drizzle/schema.additions";
-import { eq, desc, and, sql, like, or, SQL } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb, writeAuditLog } from "../db";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
 export const insuranceServiceFleetRouter = router({

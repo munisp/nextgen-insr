@@ -48,9 +48,20 @@
 //                ──► Python lakehouse-service :8156 (DataFusion/Iceberg)
 //                ──► PostgreSQL (spatial fallback via haversine)
 // ─────────────────────────────────────────────────────────────────────────────
-import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { sql, gte, lte, and, eq, desc } from "drizzle-orm";
+import { z } from "zod";
+
+import {
+  transactions,
+  agents,
+  fraudAlerts,
+  deviceLocations,
+  auditLog,
+} from "../../drizzle/schema";
+import logger from "../_core/logger";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { getDb , writeAuditLog } from "../db";
 import {
   uploadTransactionSnapshot,
   uploadFraudEvents,
@@ -59,17 +70,6 @@ import {
   getSnapshotDownloadUrl,
   BUCKETS,
 } from "../lakehouse";
-import { getDb } from "../db";
-import {
-  transactions,
-  agents,
-  fraudAlerts,
-  deviceLocations,
-  auditLog,
-} from "../../drizzle/schema";
-import { writeAuditLog } from "../db";
-import { sql, gte, lte, and, eq, desc } from "drizzle-orm";
-import logger from "../_core/logger";
 
 // ── Python lakehouse-service proxy ────────────────────────────────────────────
 const LAKEHOUSE_SERVICE_URL =

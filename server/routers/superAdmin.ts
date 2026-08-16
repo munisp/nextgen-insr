@@ -8,9 +8,9 @@
  * All procedures require role === 'admin' AND a valid super-admin claim.
  */
 import { TRPCError } from "@trpc/server";
+import { eq, desc, asc, and, gte, lte, count, sql, like } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   tenants,
   agents,
@@ -22,7 +22,8 @@ import {
   complianceReports,
   devices,
 } from "../../drizzle/schema";
-import { eq, desc, asc, and, gte, lte, count, sql, like } from "drizzle-orm";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 // ── Super-admin guard ─────────────────────────────────────────────────────────
 const superAdminProcedure = protectedProcedure.use(({ ctx, next }) => {

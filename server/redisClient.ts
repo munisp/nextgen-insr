@@ -27,6 +27,7 @@ const PLATFORM_API_KEY = ENV.platformApiKey;
 // Only loaded when REDIS_URL is explicitly set to avoid pulling ioredis into
 // environments that rely solely on the platform proxy.
 import type { Redis as RedisType } from "ioredis";
+
 import { ENV } from "./_core/env";
 import { logger } from './_core/logger';
 let _directClient: RedisType | null = null;

@@ -3,12 +3,14 @@
  * F09: Agent Gamification & Achievements — Production-Grade
  * DB-backed badges, leaderboards, XP system, achievement tracking, rewards
  */
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { agentAchievements, agentBadges, agents } from "../../drizzle/schema";
 import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
+import { z } from "zod";
+
+import { agentAchievements, agentBadges, agents } from "../../drizzle/schema";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 const BADGE_DEFINITIONS = [
   {

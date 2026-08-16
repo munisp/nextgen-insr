@@ -15,17 +15,18 @@
  *     --path /api/scheduled/monthly-invoices \
  *     --description "Generate monthly invoices for all active tenants"
  */
-import { Request, Response } from "express";
+import { eq, and, gte, lt, sql, inArray } from "drizzle-orm";
+import type { Request, Response } from "express";
 import Stripe from "stripe";
-import { getDb } from "../db";
+
 import {
   tenantBillingConfig,
   platformBillingLedger,
   billingAuditLog,
   agents,
 } from "../../drizzle/schema";
-import { eq, and, gte, lt, sql, inArray } from "drizzle-orm";
 import { logger } from '../_core/logger';
+import { getDb } from "../db";
 
 let _stripe: Stripe | null = null;
 function getStripe(): Stripe {

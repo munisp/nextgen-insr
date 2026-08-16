@@ -1,6 +1,7 @@
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+
+import { router, protectedProcedure } from "../_core/trpc";
 
 const KYC_ENFORCEMENT_URL =
   process.env.KYC_ENFORCEMENT_URL || "http://localhost:8211";

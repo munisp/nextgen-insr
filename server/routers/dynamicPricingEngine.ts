@@ -1,16 +1,18 @@
+import { TRPCError } from "@trpc/server";
+import { eq, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { feeRules, feeAuditTrail, auditLog } from "../../drizzle/schema";
+import { permifyCheck } from "../_core/permify";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, sql, count } from "drizzle-orm";
-import { feeRules, feeAuditTrail, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
+import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { permifyCheck } from "../_core/permify";
 
 export const dynamicPricingEngineRouter = router({
   listRules: protectedProcedure

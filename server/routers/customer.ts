@@ -8,10 +8,12 @@
  * via OTP or Keycloak SSO. The customers table has no userId FK — we look
  * up by ctx.user.id mapped to customers.keycloakSub.
  */
+import crypto from "crypto";
+
 import { TRPCError } from "@trpc/server";
+import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   customers,
   transactions,
@@ -24,8 +26,8 @@ import {
   creditScoreHistory,
   creditApplications,
 } from "../../drizzle/schema";
-import crypto from "crypto";
-import { eq, desc, and, gte, lte, count, sql } from "drizzle-orm";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 // ── Customer-scoped procedure ─────────────────────────────────────────────────
 const customerProcedure = protectedProcedure;

@@ -3,12 +3,14 @@
  * F06: Merchant KYC & Onboarding Workflow
  * Document upload, verification workflow, compliance checks, merchant activation
  */
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { merchantKycDocs } from "../../drizzle/schema";
 import { eq, desc, and, count, sql } from "drizzle-orm";
+import { z } from "zod";
+
+import { merchantKycDocs } from "../../drizzle/schema";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 const KYC_DOC_TYPES = [
   "cac_certificate",

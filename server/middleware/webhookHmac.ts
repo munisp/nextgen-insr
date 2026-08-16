@@ -10,7 +10,9 @@
  *   app.post("/webhooks/termii",      verifyWebhookHmac("TERMII_WEBHOOK_SECRET"),      handler);
  */
 import { createHmac, timingSafeEqual } from "crypto";
+
 import type { Request, Response, NextFunction } from "express";
+
 import { logger } from '../_core/logger';
 
 /**

@@ -1,8 +1,9 @@
 // @ts-check
-import { getDb } from "../db";
-import { disputes } from "../../drizzle/schema";
 import { eq, and, lt, isNull } from "drizzle-orm";
+
+import { disputes } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { getDb } from "../db";
 import type { DisputeStatus } from "../lib/businessRulesEngine";
 
 /**

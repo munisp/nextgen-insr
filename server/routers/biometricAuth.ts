@@ -1,11 +1,13 @@
 // Sprint 90: Production biometric auth router with real microservice integration
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { kycSessions } from "../../drizzle/schema";
+import { logger } from '../_core/logger';
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { kycSessions } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { logger } from '../_core/logger';
+
 
 // ── Microservice URLs ───────────────────────────────────────────────────────
 const BIOMETRIC_SERVICE_URL =

@@ -9,12 +9,13 @@
  *
  * Uses the Fluvio client when available; falls back to static metadata.
  */
+import { TRPCError } from "@trpc/server";
+import { desc, eq, count, sql, and, lt } from "drizzle-orm";
 import { z } from "zod";
+
+import { dlqMessages } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { dlqMessages } from "../../drizzle/schema";
-import { desc, eq, count, sql, and, lt } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const KAFKA_BROKER = process.env.KAFKA_BROKER ?? "kafka:9092";
 const FLUVIO_URL = process.env.FLUVIO_ENDPOINT ?? "http://fluvio-sc:9003";

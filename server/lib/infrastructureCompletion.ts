@@ -8,8 +8,10 @@
  * - F5: API versioning header middleware
  */
 
-import type { Request, Response, NextFunction, Express } from "express";
 import crypto from "crypto";
+
+import type { Request, Response, NextFunction, Express } from "express";
+
 import { logger } from '../_core/logger';
 
 // ============================================================

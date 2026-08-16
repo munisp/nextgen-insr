@@ -7,8 +7,8 @@
  *  - Request timeout (prevents hung connections)
  *  - Structured logging and metrics
  */
-import logger from "../_core/logger";
 import { getMtlsAgent } from "./mtlsAgent";
+import logger from "../_core/logger";
 
 // ── Circuit Breaker ──────────────────────────────────────────────────────────
 type CircuitState = "closed" | "open" | "half_open";

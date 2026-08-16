@@ -5,6 +5,8 @@
  * functions scattered across the codebase. Each replacement is a drop-in
  * substitute that routes to the actual microservice or middleware connector.
  */
+import crypto from "crypto";
+
 import {
   kafka,
   dapr,
@@ -15,14 +17,13 @@ import {
   mojaloop,
   tigerbeetle,
 } from "./middlewareConnectors";
-import { publishEvent, type DomainEvent } from "./serviceOrchestrator";
-import { trackBulkOperation, appendAuditEntry } from "./ransomwareMitigation";
 import {
   authorize,
   type PBACContext,
   type Permission,
 } from "./pbacEnforcement";
-import crypto from "crypto";
+import { trackBulkOperation, appendAuditEntry } from "./ransomwareMitigation";
+import { publishEvent, type DomainEvent } from "./serviceOrchestrator";
 
 // ─── Transaction Processing (replaces mock transaction handlers) ─────────────
 export async function processTransaction(params: {

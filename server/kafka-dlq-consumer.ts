@@ -14,7 +14,9 @@
  *   - insureportal.dlq.notifications
  */
 
-import { Kafka, Consumer, EachMessagePayload, KafkaMessage } from "kafkajs";
+import type { Consumer, EachMessagePayload, KafkaMessage } from "kafkajs";
+import { Kafka } from "kafkajs";
+
 import { ENV } from "./_core/env";
 import { notifyOwner } from "./_core/notification";
 import { getDb } from "./db";

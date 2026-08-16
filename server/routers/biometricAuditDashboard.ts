@@ -1,9 +1,11 @@
-import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { biometricAuditEvents, faceEnrollments } from "../../drizzle/schema";
 import { eq, desc, sql, and, gte, lte, count } from "drizzle-orm";
+import { z } from "zod";
+
+import { biometricAuditEvents, faceEnrollments } from "../../drizzle/schema";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 /**
  * Biometric Audit Dashboard Router — Admin-only analytics and monitoring

@@ -17,17 +17,19 @@
  * and structure the code to swap in true Parquet when the native dependency is available.
  */
 
-import { getDb } from "../db";
+import { Readable, pipeline } from "stream";
+import { promisify } from "util";
+import { createGzip } from "zlib";
+
+import { lt, sql, count } from "drizzle-orm";
+
+import { getConfigNumber } from "./runtimeConfig";
 import {
   merchantSettlements,
   reconciliationBatches,
 } from "../../drizzle/schema";
-import { lt, sql, count } from "drizzle-orm";
-import { getConfigNumber } from "./runtimeConfig";
 import logger from "../_core/logger";
-import { createGzip } from "zlib";
-import { Readable, pipeline } from "stream";
-import { promisify } from "util";
+import { getDb } from "../db";
 
 const pipelineAsync = promisify(pipeline);
 

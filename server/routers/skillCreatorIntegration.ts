@@ -1,10 +1,11 @@
 // Sprint 87: Upgraded from mock data to real DB queries — skillCreatorIntegration
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { workflowInstances } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { workflowInstances } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const getSkillInfo = protectedProcedure
   .input(

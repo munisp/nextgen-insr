@@ -17,7 +17,9 @@
  *   });
  *   const validated = validateResponse(schema, response, { maxSize: 1024 });
  */
-import { z, ZodSchema, ZodError } from "zod";
+import type { ZodSchema} from "zod";
+import { z, ZodError } from "zod";
+
 import { logger } from "../_core/logger";
 
 export interface ValidationOptions {

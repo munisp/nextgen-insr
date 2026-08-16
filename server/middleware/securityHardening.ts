@@ -15,8 +15,10 @@
  * 9. Request fingerprinting & anomaly detection (Sprint 91)
  * 10. DDoS connection throttling (Sprint 91)
  */
-import type { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+
+import type { Request, Response, NextFunction } from "express";
+
 import { logger } from '../_core/logger';
 
 // ============================================================
@@ -368,7 +370,7 @@ export function bruteForceProtection(
 
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
   const now = Date.now();
-  let entry = bruteForceStore.get(ip);
+  const entry = bruteForceStore.get(ip);
 
   if (!entry) {
     bruteForceStore.set(ip, { attempts: 0, firstAttempt: now, locked: false });
@@ -448,7 +450,7 @@ export function ddosThrottling(
 ) {
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
   const now = Date.now();
-  let entry = connectionStore.get(ip);
+  const entry = connectionStore.get(ip);
 
   if (!entry || now - entry.windowStart > DDOS_WINDOW_MS) {
     connectionStore.set(ip, { count: 1, windowStart: now });

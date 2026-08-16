@@ -16,8 +16,10 @@
  * downstream services that accept Bearer tokens (e.g. API Gateway).
  */
 
+import { eq } from "drizzle-orm";
 import type { Express, Request, Response } from "express";
 import { SignJWT, jwtVerify } from "jose";
+
 import {
   buildAuthorizationUrl,
   buildLogoutUrl,
@@ -26,11 +28,10 @@ import {
   mapKeycloakRoleToPlatformRole,
   keycloakConfig,
 } from "./keycloak";
-import { getDb } from "../db";
 import { users } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
-import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
+import { getDb } from "../db";
 import { logger } from './logger';
+import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
 import { blacklistToken, isTokenBlacklisted, revokeAllUserTokens } from "../lib/redisClient";
 
 // ── Constants ─────────────────────────────────────────────────────────────────

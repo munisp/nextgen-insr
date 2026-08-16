@@ -1,10 +1,11 @@
 // Sprint 87: Upgraded from mock data to real DB queries — customerFeedbackNps
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { customerFeedbackNps as customerFeedbackNpsTable } from "../../drizzle/schema";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { customerFeedbackNps as customerFeedbackNpsTable } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const getNpsScore = protectedProcedure
   .input(

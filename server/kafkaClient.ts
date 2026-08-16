@@ -33,6 +33,7 @@ const PLATFORM_API_KEY = ENV.platformApiKey;
 
 // ── KafkaJS producer (optional direct mode) ───────────────────────────────────
 import type { Kafka as KafkaType, Producer } from "kafkajs";
+
 import { ENV } from "./_core/env";
 let _kafka: KafkaType | null = null;
 let _producer: Producer | null = null;

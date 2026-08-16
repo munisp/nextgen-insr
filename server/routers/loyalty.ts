@@ -13,7 +13,11 @@
  *   - Loyalty history with pagination
  */
 import { TRPCError } from "@trpc/server";
+import { eq, desc, asc, sql, gte, and, ilike, isNull } from "drizzle-orm";
 import { z } from "zod";
+
+import { agents, loyaltyHistory } from "../../drizzle/schema";
+import { protectedProcedure, router } from "../_core/trpc";
 import {
   getDb,
   getAgentById,
@@ -21,10 +25,7 @@ import {
   addLoyaltyHistory,
   writeAuditLog,
 } from "../db";
-import { protectedProcedure, router } from "../_core/trpc";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { agents, loyaltyHistory } from "../../drizzle/schema";
-import { eq, desc, asc, sql, gte, and, ilike, isNull } from "drizzle-orm";
 
 // ─── Tier thresholds (CBN-aligned insurance tiers) ──────────────────────
 const TIER_THRESHOLDS = {

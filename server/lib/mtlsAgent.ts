@@ -19,9 +19,10 @@
  *   APISix gateway that handles mTLS termination).
  */
 
-import https from "https";
 import fs from "fs";
+import https from "https";
 import path from "path";
+
 import { ENV } from "../_core/env";
 import { logger } from '../_core/logger';
 

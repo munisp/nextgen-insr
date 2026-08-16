@@ -1,10 +1,11 @@
 // Sprint 87: Widget computation, real-time aggregation, caching
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { analyticsDashboards } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { analyticsDashboards } from "../../drizzle/schema";
-import { eq, desc, and, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const WIDGET_TYPES = [
   "kpi_card",

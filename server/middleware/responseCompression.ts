@@ -1,6 +1,7 @@
 // TypeScript enabled — Sprint 96 security audit
-import { Request, Response, NextFunction } from "express";
 import zlib from "zlib";
+
+import type { Request, Response, NextFunction } from "express";
 
 /**
  * Response compression middleware supporting gzip and deflate.

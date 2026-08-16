@@ -13,8 +13,11 @@
  *   POST /api/sync/status  — check sync status for terminal
  */
 
-import { Router, Request, Response } from "express";
 import crypto from "crypto";
+
+import type { Request, Response } from "express";
+import { Router } from "express";
+
 
 // syncQueue is the in-memory queue for offline transactions
 // Transactions are processed by priority: critical > high > normal > low

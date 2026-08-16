@@ -45,19 +45,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
-import { z } from "zod";
-import {
-  createAgent,
-  getAgentByCode,
-  getAgentById,
-  updateAgentLastLogin,
-  writeAuditLog,
-  getDb,
-} from "../db";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
-import { agents } from "../../drizzle/schema";
-import { assertTenantOwnership } from "../middleware/tenantIsolation";
-import { getJwtSecret } from "../lib/envValidation";
 import {
   eq,
   ilike,
@@ -70,6 +57,20 @@ import {
   or,
   ne,
 } from "drizzle-orm";
+import { z } from "zod";
+
+import { agents } from "../../drizzle/schema";
+import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import {
+  createAgent,
+  getAgentByCode,
+  getAgentById,
+  updateAgentLastLogin,
+  writeAuditLog,
+  getDb,
+} from "../db";
+import { getJwtSecret } from "../lib/envValidation";
+import { assertTenantOwnership } from "../middleware/tenantIsolation";
 
 // ── CBN Insurance Limits ──────────────────────────────────────────────────
 const CBN_DAILY_TX_LIMIT = 3000000; // NGN 3M per day per agent

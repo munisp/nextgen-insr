@@ -15,15 +15,16 @@
  *   - Sender must have sufficient float (balance - amount >= MIN_FLOAT)
  *   - Supervisor approval required for transfers > ₦100,000
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
+
+import { agents, transactions, auditLog } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agents, transactions, auditLog } from "../../drizzle/schema";
-import { eq, desc, count, sql, and, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
-import { logger } from "../_core/logger";
+import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 
 const MIN_FLOAT = 5_000;
 const MIN_TRANSFER = 500;

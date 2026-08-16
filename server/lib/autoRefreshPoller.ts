@@ -34,7 +34,7 @@ export interface PollerState {
 
 export function createPoller(config: Partial<PollerConfig> = {}) {
   const cfg = { ...DEFAULT_CONFIG, ...config };
-  let state: PollerState = {
+  const state: PollerState = {
     isActive: false,
     currentIntervalMs: cfg.idleIntervalMs,
     consecutiveErrors: 0,

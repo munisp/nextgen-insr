@@ -4,12 +4,14 @@
  * KYC enforcement: advancement past kyc_submission requires a completed KYC session.
  * KYB enforcement: advancement past account_setup requires approved KYB verification (if business customer).
  */
-import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { sql, desc, eq, and } from "drizzle-orm";
+import { z } from "zod";
+
+import { users, kycSessions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { users, kycSessions } from "../../drizzle/schema";
-import { sql, desc, eq, and } from "drizzle-orm";
+
 
 const STAGES = [
   "registration",

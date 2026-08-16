@@ -1,14 +1,16 @@
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import { eq, desc, sql, count, avg, and } from "drizzle-orm";
+import { z } from "zod";
+
 import {
   platform_health_checks,
   systemConfig,
   auditLog,
   transactions,
 } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 // Service adapter imports — ../adapters/ barrel for typed Go microservice connectors
 // workflowAdapter, tigerbeetleAdapter, mdmAdapter, pbacAdapter, connectivityAdapter

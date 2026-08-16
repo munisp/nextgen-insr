@@ -4,7 +4,6 @@
  * These run inside the Temporal sandbox (no direct I/O).
  * All I/O is delegated to activities.
  */
-import * as journeyActivities from "./journey-activities";
 import {
   proxyActivities,
   defineSignal,
@@ -15,6 +14,8 @@ import {
   log,
   workflowInfo,
 } from "@temporalio/workflow";
+
+import * as journeyActivities from "./journey-activities";
 import type * as activities from "./temporal-activities";
 
 // ── Activity proxies ──────────────────────────────────────────────────────────

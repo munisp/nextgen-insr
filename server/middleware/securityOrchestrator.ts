@@ -12,7 +12,8 @@
  * This middleware communicates via HTTP to each service.
  */
 
-import { Request, Response, NextFunction, Express } from "express";
+import type { Request, Response, NextFunction, Express } from "express";
+
 import { logger } from '../_core/logger';
 
 // ── Service Configuration ────────────────────────────────────────────

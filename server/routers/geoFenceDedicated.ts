@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { protectedProcedure, router } from "../_core/trpc";
 
 export const geoFenceDedicatedRouter = router({

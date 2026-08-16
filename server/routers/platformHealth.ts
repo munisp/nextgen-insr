@@ -2,10 +2,11 @@
  * Item 17: Unified Platform Health Monitoring Dashboard
  * Aggregates health checks from all microservices into a single endpoint.
  */
-import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { logger } from "../_core/logger";
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+
+import { logger } from "../_core/logger";
+import { protectedProcedure, router } from "../_core/trpc";
 
 interface ServiceHealth {
   name: string;

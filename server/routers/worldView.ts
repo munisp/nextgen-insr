@@ -24,12 +24,14 @@
  *   worldView.getWorldViewConfig   — Full WorldView configuration for frontend
  */
 
+import { TRPCError } from "@trpc/server";
+import { sql, and, gte, lte, eq, desc } from "drizzle-orm";
 import { z } from "zod";
+
+import { claims, policies, agents, geofenceZones } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { sql, and, gte, lte, eq, desc } from "drizzle-orm";
-import { claims, policies, agents, geofenceZones } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+
 
 // ─── Service URLs ─────────────────────────────────────────────────────────────
 const GEO_GO_URL    = process.env.GEO_GO_SERVICE_URL    ?? "http://geospatial-service:8009";

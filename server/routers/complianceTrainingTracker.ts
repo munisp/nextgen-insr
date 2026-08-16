@@ -1,8 +1,9 @@
+import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { kycSessions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { kycSessions } from "../../drizzle/schema";
-import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 
 export const complianceTrainingTrackerRouter = router({
   list: protectedProcedure

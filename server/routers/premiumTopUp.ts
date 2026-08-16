@@ -2,16 +2,17 @@
  * premiumTopUp.ts — Insurance Premium Top-Up Router
  * Handles premium payment top-ups with TigerBeetle atomicity.
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+
 import { transactions, policies, auditLog } from "../../drizzle/schema";
 import { premiums } from "../../drizzle/schema.additions";
-import { eq, desc, count, sql, and, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
-import { acquireLock, releaseLock } from "../lib/redisClient";
 import { logger } from "../_core/logger";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+import { acquireLock, releaseLock } from "../lib/redisClient";
+import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 
 export const premiumTopUpRouter = router({
   topUp: protectedProcedure

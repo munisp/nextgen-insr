@@ -1,11 +1,12 @@
 // @ts-check
 // Sprint 87: Bounce handling, retry logic, deliverability scoring
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { emailDeliveryLog } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { emailDeliveryLog } from "../../drizzle/schema";
-import { eq, desc, and, count, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [60, 300, 900]; // 1min, 5min, 15min

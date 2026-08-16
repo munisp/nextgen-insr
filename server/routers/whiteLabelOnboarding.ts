@@ -1,6 +1,4 @@
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import {
   eq,
   desc,
@@ -14,8 +12,12 @@ import {
   or,
   asc,
 } from "drizzle-orm";
+import { z } from "zod";
+
 import { tenants, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 export const whiteLabelOnboardingRouter = router({
   getStats: protectedProcedure.query(async () => {

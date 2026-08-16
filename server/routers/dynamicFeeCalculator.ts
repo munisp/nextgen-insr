@@ -1,7 +1,5 @@
 // @ts-check
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import {
   eq,
   desc,
@@ -15,15 +13,19 @@ import {
   or,
   asc,
 } from "drizzle-orm";
+import { z } from "zod";
+
 import { systemConfig, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { permifyCheck } from "../_core/permify";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
+import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { permifyCheck } from "../_core/permify";
 
 export const dynamicFeeCalculatorRouter = router({
   getStats: protectedProcedure.query(async () => {

@@ -1,9 +1,13 @@
 // @ts-check
 // TypeScript enabled — Sprint 96 security audit
-import { Server as SocketIOServer } from "socket.io";
 import type { Server as HttpServer } from "http";
-import { jwtVerify } from "jose";
+
 import { eq, desc, gte } from "drizzle-orm";
+import { jwtVerify } from "jose";
+import { Server as SocketIOServer } from "socket.io";
+
+import { invokeLLM } from "./_core/llm";
+import { logger } from "./_core/logger";
 import {
   getAgentById,
   addChatMessage,
@@ -11,12 +15,10 @@ import {
   getChatSession,
   getDb,
 } from "./db";
-import { setIO } from "./socketSingleton";
 import { initRealtimeNotifications } from "./lib/realtimeNotifications";
-import { invokeLLM } from "./_core/llm";
+import { setIO } from "./socketSingleton";
 import { fraudAlerts } from "../drizzle/schema";
 import { getJwtSecret } from "./lib/envValidation";
-import { logger } from "./_core/logger";
 
 // ─── Support chat: LLM-powered auto-reply ────────────────────────────────────
 async function generateSupportReply(

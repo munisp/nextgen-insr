@@ -16,9 +16,10 @@
  *   - Fluvio: real-time streaming via Rust sidecar
  */
 import { eq } from "drizzle-orm";
+
 import { agents, commissionCascadeHistory } from "../../drizzle/schema";
-import { getDb } from "../db";
-import { updateAgentCommission, getAgentById } from "../db";
+import logger from "../_core/logger";
+import { getDb , updateAgentCommission, getAgentById } from "../db";
 import {
   publishCommissionEvent,
   getCachedHierarchyChain,
@@ -26,7 +27,6 @@ import {
   tbRecordCommissionCredit,
   streamCommissionEvent,
 } from "../middleware/commissionMiddleware";
-import logger from "../_core/logger";
 
 // ─── Default Commission Split Percentages by Hierarchy Role ──────────────────
 // These define what % of total commission each hierarchy level receives

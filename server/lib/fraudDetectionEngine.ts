@@ -7,7 +7,10 @@
  * Rules: velocity limits, geofence violations, blacklist checks, anomaly detection.
  */
 
-import { getDb } from "../db";
+import { EventEmitter } from "events";
+
+import { sql, and, eq, gte, desc } from "drizzle-orm";
+
 import {
   transactions,
   fraudAlerts,
@@ -16,9 +19,10 @@ import {
   agentGeofenceZones,
   fraudRules,
 } from "../../drizzle/schema";
-import { sql, and, eq, gte, desc } from "drizzle-orm";
 import type { InsertFraudAlert } from "../../drizzle/schema";
-import { EventEmitter } from "events";
+import { getDb } from "../db";
+
+
 
 // ── SSE Event Bus ─────────────────────────────────────────────────────────────
 export const fraudAlertBus = new EventEmitter();

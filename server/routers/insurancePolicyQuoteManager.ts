@@ -8,12 +8,13 @@
  *
  * Flow: Browse products → Add to quote cart → Compare → Proceed to underwriting → Bind
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql, and } from "drizzle-orm";
 import { z } from "zod";
+
+import { policyQuotes, insuranceProducts, customers } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { policyQuotes, insuranceProducts, customers } from "../../drizzle/schema";
-import { eq, desc, count, sql, and } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 export const insurancePolicyQuoteCartRouter = router({
   // Get active quote cart for customer/session

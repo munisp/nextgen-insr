@@ -1,8 +1,9 @@
+import { desc, eq, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { merchants, transactions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { merchants, transactions } from "../../drizzle/schema";
-import { desc, eq, sql, count } from "drizzle-orm";
 
 /**
  * Merchant Risk Scoring Router

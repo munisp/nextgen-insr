@@ -1,11 +1,11 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
-import { getAuditLog } from "../db";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getAgentFromCookie } from "../middleware/agentAuth";
-import { getDb } from "../db";
-import { auditLog } from "../../drizzle/schema";
 import { inArray, desc } from "drizzle-orm";
+import { z } from "zod";
+
+import { auditLog } from "../../drizzle/schema";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getAuditLog , getDb } from "../db";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 
 export const auditLogRouter = router({
   list: protectedProcedure

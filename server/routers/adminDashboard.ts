@@ -6,16 +6,17 @@
  * audit log viewing, and platform health monitoring.
  * Uses adminProcedure (role=admin + Permify check).
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
-import { router, adminProcedure, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   users,
   billingAuditLog,
   platformBillingLedger,
 } from "../../drizzle/schema";
-import { eq, desc, count, sql, and, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
+import { router, adminProcedure, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
 
 export const adminDashboardRouter = router({
   // ── System Stats ──────────────────────────────────────────────────────────────

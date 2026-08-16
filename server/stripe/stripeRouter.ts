@@ -4,13 +4,15 @@
  * Full Stripe integration: checkout sessions, subscription management,
  * payment history, customer creation, and user linking.
  */
-import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
-import Stripe from "stripe";
-import { AGENT_PLANS, ONE_TIME_PRODUCTS } from "./products";
-import { getDb } from "../db";
-import { users } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import Stripe from "stripe";
+import { z } from "zod";
+
+import { AGENT_PLANS, ONE_TIME_PRODUCTS } from "./products";
+import { users } from "../../drizzle/schema";
+import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 let _stripe: Stripe | null = null;
 function getStripe(): Stripe {

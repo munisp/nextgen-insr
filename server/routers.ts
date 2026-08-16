@@ -4,23 +4,8 @@
 // financialProcedure (Permify RBAC) from server/_core/permifyMiddleware.ts.
 // Unauthenticated access to any procedure results in HTTP 401 UNAUTHORIZED.
 import { KC_SESSION_COOKIE } from "./_core/keycloakAuth";
-import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
-import { insuranceJourneyOrchestratorV2Router } from "./routers/insuranceJourneyOrchestratorV2";
-import { j20SchedulerRouter } from "./routers/j20SchedulerRouter";
-import {
-  telematicsRouter, cvClaimsRouter, fraudNetworkRouter, healthWearablesRouter,
-  nhiaRouter, comparisonRouter, p2pPoolsRouter, voiceClaimsRouter,
-  parametricRouter, groupInsuranceRouter, bancassuranceRouter, openInsuranceRouter,
-  climateRiskRouter, renewalPredictionRouter, sloMonitorRouter, didIdentityRouter,
-} from "./routers/innovationRouters";
-import { insurancePolicyQuoteManagerRouter } from "./routers/insurancePolicyQuoteManager";
-import { insuranceProductCatalogRouter } from "./routers/insuranceProductCatalog";
 // Sprint 98: Missing router imports
 // Insurance policy purchase orders
-import { insuranceServiceFleetRouter } from "./routers/posTerminalFleet";
-import { remittanceRouter } from "./routers/remittance";
-import { terminalLeasingRouter } from "./routers/terminalLeasing";
-import { crossBorderRemittanceHubRouter } from "./routers/crossBorderRemittanceHub";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { agentRouter } from "./routers/agent";
@@ -494,28 +479,43 @@ import { agentTrainingGamificationRouter } from "./routers/agentTrainingGamifica
 import { activityAuditLogRouter } from "./routers/activityAuditLog";
 import { agentOnboardingWorkflowRouter } from "./routers/agentOnboardingWorkflow";
 import { auditTrailExportRouter } from "./routers/auditTrailExport";
+import { crossBorderRemittanceHubRouter } from "./routers/crossBorderRemittanceHub";
 import { dailyPnlReportRouter } from "./routers/dailyPnlReport";
 import { floatManagementRouter } from "./routers/floatManagement";
 import { fraudMlScoringEngineRouter as fraudMlScoringEngineRouterV2 } from "./routers/fraudMlScoringEngine";
-import { regulatoryComplianceChecksRouter } from "./routers/regulatoryComplianceChecks";
 import { runtimeConfigAdminRouter as runtimeConfigAdminRouterV2 } from "./routers/runtimeConfigAdmin";
 import { transactionDisputeResolutionRouter } from "./routers/transactionDisputeResolution";
 import { transactionMonitoringRouter } from "./routers/transactionMonitoring";
 import { transactionReversalWorkflowRouter } from "./routers/transactionReversalWorkflow";
 import { ussdLocalizationRouter } from "./routers/ussdLocalization";
 import { geoFenceDedicatedRouter } from "./routers/geoFenceDedicated";
-import { supplyChainRouter } from "./routers/supplyChain";
-import { marketplaceRouter } from "./routers/marketplace";
-import { promotionsRouter } from "./routers/promotions";
+import {
+  telematicsRouter, cvClaimsRouter, fraudNetworkRouter, healthWearablesRouter,
+  nhiaRouter, comparisonRouter, p2pPoolsRouter, voiceClaimsRouter,
+  parametricRouter, groupInsuranceRouter, bancassuranceRouter, openInsuranceRouter,
+  climateRiskRouter, renewalPredictionRouter, sloMonitorRouter, didIdentityRouter,
+} from "./routers/innovationRouters";
+import { insuranceJourneyOrchestratorRouter } from "./routers/insuranceJourneyOrchestrator";
+import { insuranceJourneyOrchestratorV2Router } from "./routers/insuranceJourneyOrchestratorV2";
 // ── KYC/KYB Enforcement & Compliance Services ──
 import { kycEnforcementRouter } from "./routers/kycEnforcement";
 // ── Insurance Domain Workflows (Sprint 98) ──
 import { insuranceWorkflowsRouter } from "./routers/insuranceWorkflows";
 // ── Insurance KPI Dashboards (all 16 roles) ──
 import { insuranceKpiDashboardRouter } from "./routers/insuranceKpiDashboard";
+import { insurancePolicyQuoteManagerRouter } from "./routers/insurancePolicyQuoteManager";
+import { insuranceProductCatalogRouter } from "./routers/insuranceProductCatalog";
 import { naicomReportingRouter } from "./routers/naicomReporting";
-import { worldViewRouter } from "./routers/worldView";
 import { insureMarketRouter } from "./routers/insureMarket";
+import { j20SchedulerRouter } from "./routers/j20SchedulerRouter";
+import { marketplaceRouter } from "./routers/marketplace";
+import { insuranceServiceFleetRouter } from "./routers/posTerminalFleet";
+import { promotionsRouter } from "./routers/promotions";
+import { regulatoryComplianceChecksRouter } from "./routers/regulatoryComplianceChecks";
+import { remittanceRouter } from "./routers/remittance";
+import { supplyChainRouter } from "./routers/supplyChain";
+import { terminalLeasingRouter } from "./routers/terminalLeasing";
+import { worldViewRouter } from "./routers/worldView";
 
 export const appRouter = router({
   goServices: goServiceBridgeRouter,

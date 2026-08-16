@@ -7,12 +7,13 @@
  * protectedProcedure everywhere, zod input validation, graceful empty
  * results when the database is unavailable.
  */
+import { TRPCError } from "@trpc/server";
+import { desc, eq, count, sql, gte } from "drizzle-orm";
 import { z } from "zod";
+
+import { serviceRecords } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { serviceRecords } from "../../drizzle/schema";
-import { desc, eq, count, sql, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 export const posServiceUpdateRouter = router({
   // ── Paginated list of service records ─────────────────────────────────────

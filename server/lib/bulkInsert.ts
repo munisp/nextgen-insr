@@ -13,9 +13,10 @@
  * - COPY protocol: ~250,000 rows/sec (50x improvement)
  */
 
-import { getDb } from "../db";
 import { sql } from "drizzle-orm";
+
 import logger from "../_core/logger";
+import { getDb } from "../db";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

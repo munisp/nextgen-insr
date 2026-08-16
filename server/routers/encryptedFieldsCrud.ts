@@ -1,12 +1,15 @@
 // @ts-check
 // Sprint 87: AES-256 encryption/decryption, key rotation, access audit
+import crypto from "crypto";
+
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { encryptedFields } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { encryptedFields } from "../../drizzle/schema";
-import { eq, desc, and, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import crypto from "crypto";
+
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const KEY = crypto.scryptSync(

@@ -42,20 +42,21 @@
 // 818. adminHighRiskGeo      — High-risk geos list (admin)
 // 825. adminClearGeoData     — Clear geo data (admin)
 // ─────────────────────────────────────────────────────────────────────────────
-import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
-import { getAgentFromCookie } from "../middleware/agentAuth.js";
-import { getDb } from "../db.js";
+import { eq, desc } from "drizzle-orm";
+import { z } from "zod";
+
 import { kycSessions } from "../../drizzle/schema.js";
-import { logger } from '../_core/logger';
 import {
   createLivenessChallenge,
   verifyLivenessChallenge,
   processDocument,
   storeComplianceRecord,
 } from "../_core/kycClient.js";
+import { logger } from '../_core/logger';
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc.js";
+import { getDb } from "../db.js";
+import { getAgentFromCookie } from "../middleware/agentAuth.js";
 import {
   isLockedOut,
   recordLivenessFailure,

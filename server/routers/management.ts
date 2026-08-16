@@ -3,10 +3,12 @@
  * Covers all 24 API groups consumed by the Management PWA (29 pages).
  * All procedures are protected and require supervisor or admin role.
  */
+import crypto from "crypto";
+
 import { TRPCError } from "@trpc/server";
+import { eq, desc, asc, sql, and, gte, lte, like, count } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   agents,
   terminalGroups,
@@ -32,8 +34,8 @@ import {
   serviceNodes,
   marketplaceAds,
 } from "../../drizzle/schema.additions";
-import { eq, desc, asc, sql, and, gte, lte, like, count } from "drizzle-orm";
-import crypto from "crypto";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 // =============================================================================
 // NAVIGATION GUIDE — Management Router (1,878 lines, 24 API groups)

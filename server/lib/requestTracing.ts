@@ -6,6 +6,7 @@
  * If the client sends an X-Request-ID, it is preserved; otherwise a new UUID is generated.
  */
 import { randomUUID } from "crypto";
+
 import type { Request, Response, NextFunction } from "express";
 
 export function requestTracingMiddleware(

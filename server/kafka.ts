@@ -21,7 +21,9 @@
  * degrade gracefully (log warning, return false) so the main app continues.
  */
 
-import { Kafka, Producer, Consumer, logLevel, CompressionTypes } from "kafkajs";
+import type { Producer, Consumer} from "kafkajs";
+import { Kafka, logLevel, CompressionTypes } from "kafkajs";
+
 import { logger } from './_core/logger';
 
 // ─── Configuration ────────────────────────────────────────────────────────────

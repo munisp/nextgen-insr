@@ -1,10 +1,11 @@
 // Premium fee schedule management — insurance product fee configuration
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { premiumFeeSchedules } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { premiumFeeSchedules } from "../../drizzle/schema";
-import { eq, desc, and, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const PRODUCT_TYPES = [
   "motor",

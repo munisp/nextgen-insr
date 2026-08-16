@@ -28,7 +28,7 @@ interface ScheduledDeliveryConfig {
   }>;
 }
 
-let scheduledDeliveryConfig: ScheduledDeliveryConfig = {
+const scheduledDeliveryConfig: ScheduledDeliveryConfig = {
   enabled: true,
   cronExpression: "0 8 * * 1", // Monday 08:00
   timezone: "Africa/Lagos",

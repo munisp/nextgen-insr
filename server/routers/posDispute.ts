@@ -4,12 +4,13 @@
  *
  * Middleware: Kafka (dispute events), PostgreSQL (dispute records), Redis (status cache)
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { disputes, transactions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { disputes, transactions } from "../../drizzle/schema";
-import { eq, desc, and, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
 export const posDisputeRouter = router({

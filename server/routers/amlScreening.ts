@@ -9,16 +9,6 @@
  *   - Automated SAR submission workflow with 24-hour deadline enforcement
  *   - NFIU reporting integration
  */
-import { z } from "zod";
-import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
-import { getDb } from "../db";
-import {
-  transactions,
-  customers,
-  agents,
-  complianceFilings,
-  auditLog,
-} from "../../drizzle/schema";
 import {
   desc,
   eq,
@@ -30,8 +20,19 @@ import {
   or,
   inArray,
 } from "drizzle-orm";
-import { writeAuditLog } from "../lib/auditLogger";
+import { z } from "zod";
+
+import {
+  transactions,
+  customers,
+  agents,
+  complianceFilings,
+  auditLog,
+} from "../../drizzle/schema";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { getDb } from "../db";
 import { publishToFluvio } from "../fluvio";
+import { writeAuditLog } from "../lib/auditLogger";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const NFIU_API_URL = process.env.NFIU_API_URL ?? "https://nfiu.gov.ng/api/v1";

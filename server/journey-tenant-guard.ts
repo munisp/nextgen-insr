@@ -28,6 +28,7 @@
  */
 
 import { ApplicationFailure } from "@temporalio/workflow";
+
 import logger from "./_core/logger";
 
 const PERMIFY_URL = process.env.PERMIFY_URL ?? "http://permify:3476";

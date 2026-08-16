@@ -10,11 +10,13 @@
  *   - Device heartbeat (called by mdm-agent on service node)
  */
 
-import { z } from "zod";
-import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { randomBytes } from "crypto";
+
 import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { getDb } from "../db";
+import { z } from "zod";
+
 import {
   devices,
   deviceCommands,
@@ -26,10 +28,9 @@ import {
   otaReleases,
   otaUpdateLog,
 } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
-import { randomBytes } from "crypto";
+import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
+import { getDb , writeAuditLog } from "../db";
 import { getIO } from "../socketSingleton";
-import { writeAuditLog } from "../db";
 
 // =============================================================================
 // NAVIGATION GUIDE — MDM Router (1,436 lines, 23 procedures)

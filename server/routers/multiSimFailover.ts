@@ -4,12 +4,13 @@
  *
  * Middleware: Redis (SIM state), Kafka (failover events), PostgreSQL (SIM inventory)
  */
+import { TRPCError } from "@trpc/server";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { multiSimProfiles } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
-import { multiSimProfiles } from "../../drizzle/schema";
-import { eq, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
 export const multiSimFailoverRouter = router({

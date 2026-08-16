@@ -4,7 +4,8 @@
  * Provides adaptive rate limiting, connection throttling, IP reputation,
  * circuit breaker pattern, and slowloris protection.
  */
-import { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
+
 import { logger } from '../_core/logger';
 
 // ── IP Reputation Store ──────────────────────────────────────────────

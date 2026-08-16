@@ -1,8 +1,9 @@
 // @ts-check
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+
 import { router, publicProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { TRPCError } from "@trpc/server";
 
 export const healthCheckRouter = router({
   status: publicProcedure.query(async () => {

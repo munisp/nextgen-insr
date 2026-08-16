@@ -12,13 +12,15 @@
  *
  * Or apply globally via the `observabilityPlugin` on the tRPC instance.
  */
+import { initTRPC, TRPCError } from "@trpc/server";
+
+import type { TrpcContext } from "../_core/context";
+import { logger } from '../_core/logger';
+import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { initTRPC, TRPCError } from "@trpc/server";
-import type { TrpcContext } from "../_core/context";
-import { logger } from '../_core/logger';
+
 
 // ── Observability Middleware ──────────────────────────────────────────────────
 // Wraps every procedure call with:

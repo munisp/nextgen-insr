@@ -9,15 +9,17 @@
  *   5. Agent submits the OTP + new PIN
  *   6. Server verifies OTP, hashes new PIN, updates agents table
  */
+import crypto from "crypto";
+
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
-import { eq, and, gt } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { getDb } from "../db";
+import { eq, and, gt } from "drizzle-orm";
+import { z } from "zod";
+
 import { agents, otpTokens } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 import { sendSms } from "../termii";
-import crypto from "crypto";
 const OTP_EXPIRY_MINUTES = 10;
 // SECURITY (THREAT_MODEL.md §7.6): online brute-force guard for the 6-digit
 // OTP. After MAX_OTP_ATTEMPTS failed verifications the token is locked

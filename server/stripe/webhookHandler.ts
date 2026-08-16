@@ -12,17 +12,19 @@
  * from the Stripe invoice id (SHA-256), so webhook replays map to the same
  * ledger reference.
  */
-import { Request, Response } from "express";
-import Stripe from "stripe";
 import crypto from "crypto";
-import { getDb } from "../db";
+
+import { eq } from "drizzle-orm";
+import type { Request, Response } from "express";
+import Stripe from "stripe";
+
 import {
   billingAuditLog,
   platformBillingLedger,
   users,
 } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
 import { logger } from "../_core/logger";
+import { getDb } from "../db";
 
 function getStripeKey(): string {
   const key = process.env.STRIPE_SECRET_KEY;

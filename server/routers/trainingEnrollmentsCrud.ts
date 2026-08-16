@@ -1,11 +1,12 @@
 // @ts-check
 // Sprint 87: Enrollment lifecycle, progress tracking, certification issuance
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { trainingEnrollments, trainingCourses } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { trainingEnrollments, trainingCourses } from "../../drizzle/schema";
-import { eq, desc, and, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const ENROLLMENT_STATUSES = [
   "enrolled",

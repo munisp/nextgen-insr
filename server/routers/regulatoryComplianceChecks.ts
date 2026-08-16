@@ -1,9 +1,11 @@
-import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { complianceChecks, complianceFilings, auditLog, policies, transactions, agents, claims, kycSessions } from "../../drizzle/schema";
 import { desc, eq, count, and, gte, sql } from "drizzle-orm";
+import { z } from "zod";
+
+import { complianceChecks, complianceFilings, auditLog, policies, transactions, agents, claims, kycSessions } from "../../drizzle/schema";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 /**
  * Regulatory Compliance Checks Router
@@ -34,7 +36,7 @@ export const regulatoryComplianceChecksRouter = router({
       let score = 0;
       let status = "passed";
       let details = "";
-      let findings: string[] = [];
+      const findings: string[] = [];
 
       switch (input.checkType) {
         case "capital_adequacy": {

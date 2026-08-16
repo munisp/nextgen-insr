@@ -1,8 +1,6 @@
 // @ts-check
 // Production features: rateLimit configuration, health check endpoints, monitoring
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import {
   eq,
   desc,
@@ -16,8 +14,12 @@ import {
   or,
   asc,
 } from "drizzle-orm";
+import { z } from "zod";
+
 import { auditLog, systemConfig } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 export const productionFeaturesRouter = router({
   getStats: protectedProcedure.query(async () => {

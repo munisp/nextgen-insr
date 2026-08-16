@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -14,9 +15,12 @@ import {
   billingAuditLog,
   tenants,
 } from "../../drizzle/schema";
+
 import { eq, and, desc } from "drizzle-orm";
+
 import { requireBillingPermission } from "./billingRbac";
 import { recordBillingAudit } from "./billingAudit";
+
 // Type-only import: erased at compile time. The runtime import is lazy
 // (inside getTemporalClient) because @temporalio/client's module graph can
 // fail to load in environments where the Temporal/protobufjs dependency chain
@@ -25,6 +29,7 @@ import { recordBillingAudit } from "./billingAudit";
 // local execution.
 import type { Client } from "@temporalio/client";
 import { TRPCError } from "@trpc/server";
+
 import { logger } from '../_core/logger';
 
 // Temporal client singleton for billing provisioning

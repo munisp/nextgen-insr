@@ -3,16 +3,18 @@
  * Dispute Notifications — DB-backed notification management for dispute status changes
  * Sprint 54: Full PostgreSQL + middleware integration
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { disputes, disputeMessages } from "../../drizzle/schema";
+import logger from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { disputes, disputeMessages } from "../../drizzle/schema";
-import { eq, desc, count } from "drizzle-orm";
 import { publishDisputeEvent } from "../middleware/disputeMiddleware";
-import logger from "../_core/logger";
-import { TRPCError } from "@trpc/server";
 
-let notificationLog: Array<{
+
+const notificationLog: Array<{
   id: number;
   disputeId: number;
   disputeRef: string;

@@ -3,13 +3,15 @@
  * Handles VAPID push subscription management for agents and admins.
  * Uses agentPushSubscriptions table (agentId, endpoint, p256dhKey, authKey).
  */
+import { TRPCError } from "@trpc/server";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+
+import { agentPushSubscriptions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agentPushSubscriptions } from "../../drizzle/schema";
-import { eq, and } from "drizzle-orm";
 import { sendPushToAgent } from "../push";
-import { TRPCError } from "@trpc/server";
+
 
 // ── Zod schema for PushSubscription object ────────────────────────────────────
 const PushSubscriptionSchema = z.object({

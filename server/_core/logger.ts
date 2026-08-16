@@ -6,9 +6,10 @@
  * Production output: JSON lines with service name, version, trace IDs for
  * Promtail/Loki/OpenSearch ingestion.
  */
-import pino from "pino";
-import type { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+
+import type { Request, Response, NextFunction } from "express";
+import pino from "pino";
 
 const isDev = process.env.NODE_ENV !== "production";
 const SERVICE_NAME = process.env.SERVICE_NAME ?? "insurance-portal";

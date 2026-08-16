@@ -1,7 +1,8 @@
 // Sprint 87: Full implementation of Sprint 15 features with real DB queries
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   agents,
   transactions,
@@ -9,8 +10,8 @@ import {
   auditLog,
   webhookEndpoints,
 } from "../../drizzle/schema";
-import { eq, desc, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 // =============================================================================
 // NAVIGATION GUIDE — Sprint 15 Features Router (985 lines, 4 sub-routers)

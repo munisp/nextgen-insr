@@ -1,10 +1,12 @@
-import { z } from "zod";
+import crypto from "crypto";
+
 import { TRPCError } from "@trpc/server";
+import { desc, count, eq, sql } from "drizzle-orm";
+import { z } from "zod";
+
+import { disputes, refunds, type Refund } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { disputes, refunds, type Refund } from "../../drizzle/schema";
-import { desc, count, eq, sql } from "drizzle-orm";
-import crypto from "crypto";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 
 /**
@@ -244,7 +246,7 @@ export const disputeRefundRouter = router({
           input.idempotencyKey ? { target: refunds.idempotencyKey } : undefined
         )
         .returning();
-      let inserted: Refund | undefined = insertedRows[0];
+      const inserted: Refund | undefined = insertedRows[0];
       if (!inserted && input.idempotencyKey) {
         // Lost the race: a row with this key already exists — replay it, or
         // reject explicitly if the payload differs.

@@ -27,10 +27,11 @@
  */
 
 import { TRPCError } from "@trpc/server";
-import { t } from "./trpc";
-import { permifyCheck } from "./permify";
-import { acquireLock, releaseLock, isTokenBlacklisted } from "../lib/redisClient";
+
 import logger from "./logger";
+import { permifyCheck } from "./permify";
+import { t } from "./trpc";
+import { acquireLock, releaseLock, isTokenBlacklisted } from "../lib/redisClient";
 
 // ── Role-Permission Matrix ─────────────────────────────────────────────────────
 

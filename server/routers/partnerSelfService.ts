@@ -1,15 +1,17 @@
 // @ts-check
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import { eq, desc, sql, count } from "drizzle-orm";
+import { z } from "zod";
+
 import {
   apiKeys,
   apiKeyUsage,
   commissionRules,
   auditLog,
 } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 export const partnerSelfServiceRouter = router({
   getApiKeys: protectedProcedure

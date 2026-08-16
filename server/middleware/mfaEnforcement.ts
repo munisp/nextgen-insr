@@ -16,8 +16,9 @@
  *   app.post("/api/admin/action", requireMfaExpress, handler);
  */
 import { TRPCError } from "@trpc/server";
-import type { TrpcContext } from "../_core/context";
 import type { Request, Response, NextFunction } from "express";
+
+import type { TrpcContext } from "../_core/context";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "../_core/keycloakAuth";
 import { logger } from '../_core/logger';
 

@@ -9,10 +9,12 @@
  *  - merchant.getDashboard     — summary stats (volume, count, balance)
  *  - merchant.updateProfile    — update contact details
  */
+import crypto from "crypto";
+
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { eq, desc, and, isNull } from "drizzle-orm";
-import { getDb } from "../db";
+import { z } from "zod";
+
 import {
   merchants,
   transactions,
@@ -20,7 +22,7 @@ import {
   disputes,
 } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
-import crypto from "crypto";
+import { getDb } from "../db";
 
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 

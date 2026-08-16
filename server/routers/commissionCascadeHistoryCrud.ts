@@ -1,10 +1,11 @@
 // Sprint 87: Full domain logic — cascade calculation, tier-based splits, audit trail
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count, sum } from "drizzle-orm";
 import { z } from "zod";
+
+import { commissionCascadeHistory } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { commissionCascadeHistory } from "../../drizzle/schema";
-import { eq, desc, and, sql, count, sum } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const HIERARCHY_SPLIT_RULES: Record<string, number> = {
   agent: 0.6,

@@ -1,18 +1,18 @@
 // @ts-check
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { sql, gte, eq } from "drizzle-orm";
+import { z } from "zod";
+
+import { fraudAlerts, fraudRules } from "../../drizzle/schema";
+import { logger } from '../_core/logger';
+import { protectedProcedure, router } from "../_core/trpc";
 import {
   getFraudAlerts,
   createFraudAlert,
   updateFraudAlertStatus,
   writeAuditLog,
-} from "../db";
-import { getDb } from "../db";
-import { fraudAlerts, fraudRules } from "../../drizzle/schema";
-import { protectedProcedure, router } from "../_core/trpc";
+ getDb } from "../db";
 import { getAgentFromCookie } from "../middleware/agentAuth";
-import { logger } from '../_core/logger';
 
 export const fraudRouter = router({
   // ── List alerts (admin or agent-scoped) ───────────────────────────────────

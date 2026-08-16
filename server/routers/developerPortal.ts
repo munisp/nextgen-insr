@@ -12,13 +12,15 @@
  *  - devPortal.validateKey  — validate a raw API key (public, for gateway use)
  */
 import crypto from "crypto";
+
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import { eq, and, isNull, desc, gte, count, sql } from "drizzle-orm";
-import { getDb } from "../db";
+import { z } from "zod";
+
 import { apiKeys, webhookSecrets, apiKeyUsage } from "../../drizzle/schema";
-import { router, protectedProcedure } from "../_core/trpc";
 import { logger } from '../_core/logger';
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

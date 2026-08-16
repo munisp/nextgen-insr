@@ -7,10 +7,10 @@
  * Pattern follows erpRetryWorker.ts: setInterval polling + immediate startup check.
  * Schedule: checks every 60 seconds if a scheduled archival is due.
  */
-import { getConfig, getConfigNumber, setConfig } from "./runtimeConfig";
 import { runArchivalJob } from "./parquetArchival";
-import { notifyOwner } from "../_core/notification";
+import { getConfig, getConfigNumber, setConfig } from "./runtimeConfig";
 import logger from "../_core/logger";
+import { notifyOwner } from "../_core/notification";
 
 // ── Cron Parsing ────────────────────────────────────────────────────────────
 

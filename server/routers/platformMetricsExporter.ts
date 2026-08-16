@@ -2,11 +2,12 @@
  * platformMetricsExporter.ts — Platform Metrics Exporter Router
  * Real Prometheus metrics from OpenTelemetry registry. No Math.random().
  */
+import { desc, count, sum, sql, gte } from "drizzle-orm";
 import { z } from "zod";
+
+import { analyticsMetrics, transactions, agents, fraudAlerts, claims } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { analyticsMetrics, transactions, agents, fraudAlerts, claims } from "../../drizzle/schema";
-import { desc, count, sum, sql, gte } from "drizzle-orm";
 import { registry } from "../metrics";
 
 const METRIC_DEFINITIONS = [

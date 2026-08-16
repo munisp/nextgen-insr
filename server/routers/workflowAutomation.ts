@@ -1,10 +1,11 @@
 // Sprint 87: Regenerated — workflowAutomation with real DB queries
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { workflowDefinitions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { workflowDefinitions } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const dashboard = protectedProcedure
   .input(

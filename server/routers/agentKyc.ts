@@ -1,7 +1,5 @@
 // @ts-check
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import {
   eq,
   desc,
@@ -9,8 +7,12 @@ import {
   sql,
   count,
 } from "drizzle-orm";
+import { z } from "zod";
+
 import { kycSessions, kycDocuments, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 // MOCKWARE FIX: The Sprint 78 endpoints previously returned 12 fabricated
 // KYC profiles/documents over openProcedure. They now require auth and read

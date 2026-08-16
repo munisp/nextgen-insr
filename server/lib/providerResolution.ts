@@ -15,13 +15,14 @@
  *   lookup inconclusive     -> row stays pending / unknown_outcome
  */
 import { eq } from "drizzle-orm";
-import { getDb } from "../db";
-import { transactions, type Transaction } from "../../drizzle/schema";
+
 import {
   lookupProviderStatus,
   type ProviderClientConfig,
 } from "./providerDispatch";
+import { transactions, type Transaction } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { getDb } from "../db";
 
 export type ProviderResolution =
   | "completed"

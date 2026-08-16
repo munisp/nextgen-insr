@@ -2,13 +2,17 @@
  * Referral Program Router
  * Agents earn bonus points + cash when they refer new agents who activate.
  */
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { referrals, agents, loyaltyHistory } from "../../drizzle/schema";
-import { eq, desc, and, count, sql } from "drizzle-orm";
 import crypto from "crypto";
+
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count, sql } from "drizzle-orm";
+import { z } from "zod";
+
+import { referrals, agents, loyaltyHistory } from "../../drizzle/schema";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
+
 
 // Default referral rewards
 const REFERRAL_BONUS_POINTS = 500;

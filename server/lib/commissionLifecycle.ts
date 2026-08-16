@@ -4,7 +4,8 @@
  * Handles: tier evaluation, payout approval chain, clawback processing,
  * promotional rate management, and commission reconciliation.
  */
-import { getDb } from "../db";
+import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
+
 import {
   commissionTiers,
   commissionSplits,
@@ -12,8 +13,8 @@ import {
   commissionAuditTrail,
   agents,
 } from "../../drizzle/schema";
-import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 import logger from "../_core/logger";
+import { getDb } from "../db";
 
 // ── Agent Performance Multipliers ──────────────────────────────────────────
 export const AGENT_TIER_MULTIPLIERS: Record<string, number> = {

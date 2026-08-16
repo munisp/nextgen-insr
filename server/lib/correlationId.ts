@@ -7,6 +7,7 @@
  * F20: API versioning middleware
  */
 import { randomUUID } from "crypto";
+
 import type { Request, Response, NextFunction } from "express";
 
 // ═══════════════════════════════════════════════════════════════════════════════

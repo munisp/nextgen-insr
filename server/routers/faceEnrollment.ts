@@ -1,9 +1,10 @@
+import { TRPCError } from "@trpc/server";
+import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
+
+import { faceEnrollments, biometricAuditEvents } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { faceEnrollments, biometricAuditEvents } from "../../drizzle/schema";
-import { eq, and, desc } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 /**
  * Face Enrollment Router — Manages ArcFace 512-d embedding persistence

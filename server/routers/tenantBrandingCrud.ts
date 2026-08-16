@@ -1,10 +1,11 @@
 // Sprint 87: Theme validation, asset management, preview generation
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { tenantBranding } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { tenantBranding } from "../../drizzle/schema";
-import { eq, desc, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const HEX_REGEX = /^#[0-9A-Fa-f]{6,8}$/;
 const ALLOWED_FONTS = [

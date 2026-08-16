@@ -1,10 +1,11 @@
 // Sprint 87: Channel health monitoring, failover routing, rate limiting
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { notification_channels } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { notification_channels } from "../../drizzle/schema";
-import { eq, desc, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const CHANNEL_TYPES = ["sms", "email", "push", "whatsapp", "in_app", "webhook"];
 const RATE_LIMITS: Record<string, number> = {

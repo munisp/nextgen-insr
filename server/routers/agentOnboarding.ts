@@ -3,18 +3,18 @@
  * 5-step wizard: Profile → KYC → Float → Terminal → Training → Activated
  * Tracks progress in agent_onboarding_progress table.
  */
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
+import { eq, desc, count, and } from "drizzle-orm";
+import { z } from "zod";
+
 import {
   agentOnboardingProgress,
   agents,
   kycSessions,
   premiumTopUpRequests,
 } from "../../drizzle/schema";
-import { eq, desc, count, and } from "drizzle-orm";
-import { writeAuditLog } from "../db";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb , writeAuditLog } from "../db";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 
 export const agentOnboardingRouter = router({

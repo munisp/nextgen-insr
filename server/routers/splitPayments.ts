@@ -15,15 +15,16 @@
  *   - Split reference must be unique
  *   - Partial splits not allowed — all legs must succeed
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
+
+import { transactions, agents, auditLog } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions, agents, auditLog } from "../../drizzle/schema";
-import { eq, desc, count, sql, and, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
-import { logger } from "../_core/logger";
+import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 
 const MIN_SPLIT_AMOUNT = 100;
 const MAX_PARTIES = 10;

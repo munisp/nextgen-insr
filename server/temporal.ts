@@ -17,6 +17,7 @@
 // or incompatible — that must not take down every router importing this
 // module at import time. Callers already degrade gracefully on null.
 import type { Client } from "@temporalio/client";
+
 import logger from "./_core/logger";
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";

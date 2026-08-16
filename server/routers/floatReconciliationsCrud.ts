@@ -1,11 +1,12 @@
 // @ts-check
 // Sprint 87: Full domain logic — auto-matching, variance detection, exception handling
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
 import { z } from "zod";
+
+import { floatReconciliations } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { floatReconciliations } from "../../drizzle/schema";
-import { eq, desc, and, sql, count, gte, lte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const VARIANCE_THRESHOLD_PERCENT = 5; // 5% variance triggers escalation
 const AUTO_RESOLVE_THRESHOLD = 100; // Auto-resolve discrepancies under ₦100

@@ -1,8 +1,9 @@
+import { desc, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { platformSettings } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { platformSettings } from "../../drizzle/schema";
-import { desc, count } from "drizzle-orm";
 
 /**
  * DB Schema Push Router

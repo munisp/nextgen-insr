@@ -15,15 +15,17 @@
  *  - OTEL_SERVICE_VERSION          defaults to "1.0.0"
  */
 
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import { logger } from './logger';
+import { NodeSDK } from "@opentelemetry/sdk-node";
 import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
 } from "@opentelemetry/semantic-conventions";
+
+import { logger } from './logger';
+
 
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 

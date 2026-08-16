@@ -14,7 +14,6 @@
  *  - System uptime and database health
  */
 
-import { notifyOwner } from "../_core/notification";
 import {
   checkDbHealth,
   getAverageLatency,
@@ -22,6 +21,7 @@ import {
 } from "./dbHealthCheck";
 import { getSecuritySummary } from "./securityHardening";
 import { logger } from '../_core/logger';
+import { notifyOwner } from "../_core/notification";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types

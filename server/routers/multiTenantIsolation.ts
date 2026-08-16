@@ -7,17 +7,19 @@
  * user enumerate, create and suspend tenants. Tenant CRUD and the platform
  * tenant directory are platform-admin operations only.
  */
-import { z } from "zod";
-import { router, adminProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import { eq, desc, sql, count } from "drizzle-orm";
+import { z } from "zod";
+
 import {
   tenants,
   tenantUsers,
   tenantBranding,
   auditLog,
 } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+import { router, adminProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 export const multiTenantIsolationRouter = router({
   listTenants: adminProcedure

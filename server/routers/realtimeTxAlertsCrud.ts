@@ -1,10 +1,11 @@
 // Sprint 87: Velocity rules, pattern matching, auto-block triggers
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { realtime_tx_alerts } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { realtime_tx_alerts } from "../../drizzle/schema";
-import { eq, desc, and, count, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const VELOCITY_RULES = [
   { name: "high_frequency", threshold: 10, windowMinutes: 5, action: "flag" },

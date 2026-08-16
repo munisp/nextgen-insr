@@ -5,9 +5,10 @@
  * Middleware: Temporal (billing workflow), Kafka (lease events),
  * PostgreSQL (lease records), TigerBeetle (billing ledger)
  */
+import { TRPCError } from "@trpc/server";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb, writeAuditLog } from "../db";
+
 import {
   agents,
   platformSettings,
@@ -15,8 +16,8 @@ import {
 import {
   posTerminals,
 } from "../../drizzle/schema.additions";
-import { eq, sql } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb, writeAuditLog } from "../db";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
 export const terminalLeasingRouter = router({

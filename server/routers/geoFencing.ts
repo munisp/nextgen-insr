@@ -1,9 +1,11 @@
+import { TRPCError } from "@trpc/server";
+import { eq, count, and, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { geofenceZones } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, count, and, sql } from "drizzle-orm";
-import { geofenceZones } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+
 
 export const geoFencingRouter = router({
   list: protectedProcedure

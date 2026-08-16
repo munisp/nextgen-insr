@@ -6,16 +6,17 @@
  * Middleware: Redis (leaderboard cache), Kafka (training events),
  * PostgreSQL (progress tracking), OpenSearch (training search)
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, gte } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb, writeAuditLog } from "../db";
+
 import {
   trainingCourses,
   trainingEnrollments,
   agents,
 } from "../../drizzle/schema";
-import { eq, desc, and, sql, gte } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb, writeAuditLog } from "../db";
 import { getAgentFromCookie } from "../middleware/agentAuth";
 
 const BADGES = [

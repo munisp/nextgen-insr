@@ -3,14 +3,16 @@
  * Manages InfinyOn MQTT Source Connector configuration for bridging
  * insurance service MQTT events into Fluvio topics.
  */
+import { TRPCError } from "@trpc/server";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+
+import { mqttBridgeConfig } from "../../drizzle/schema";
+import { ENV } from "../_core/env";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { mqttBridgeConfig } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
-import { ENV } from "../_core/env";
 import { fluvioProduce, type FluvioEvent } from "../lib/fluvioClient";
-import { TRPCError } from "@trpc/server";
+
 
 const TopicMappingSchema = z.object({
   mqttTopic: z.string().min(1),

@@ -12,12 +12,14 @@
  *   alert_throttle_window_minutes    = "30"
  */
 
-import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+
+import { systemConfig } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { systemConfig } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+
 
 export const systemConfigRouter = router({
   // ── Get a single config value by key ─────────────────────────────────────

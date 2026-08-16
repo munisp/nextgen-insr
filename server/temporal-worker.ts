@@ -8,16 +8,15 @@
  * Connects to Temporal server at TEMPORAL_ADDRESS (default: localhost:7233).
  */
 import path from "path";
+
 import {
   NativeConnection,
   Worker,
   Runtime,
   DefaultLogger,
 } from "@temporalio/worker";
-import * as activities from "./temporal-activities";
+
 import { logger } from './_core/logger';
-import * as journeyActivities from "./journey-activities";
-import * as extendedActivities from "./journey-activities-extended";
 import {
   J01_CustomerOnboardingWorkflow, J02_PolicyPurchaseWorkflow,
   J03_ClaimsSettlementWorkflow, J04_AgentOnboardingWorkflow,
@@ -30,6 +29,9 @@ import {
   J17_BulkPremiumPaymentWorkflow, J18_AgentFloatReconciliationWorkflow,
   J19_UnderwritingDecisionWorkflow, J20_PlatformHealthMonitoringWorkflow,
 } from "./insurance-journeys-v2";
+import * as journeyActivities from "./journey-activities";
+import * as extendedActivities from "./journey-activities-extended";
+import * as activities from "./temporal-activities";
 
 const TEMPORAL_ADDRESS = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";
 const TEMPORAL_NAMESPACE = process.env.TEMPORAL_NAMESPACE ?? "insureportal";

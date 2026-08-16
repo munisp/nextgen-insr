@@ -16,16 +16,18 @@
  *  10.  Change Data Capture (CDC) — trigger-based change streaming
  */
 
-import { sql, eq, and, desc, asc, gt, gte, isNull, count } from "drizzle-orm";
-import { getDb } from "../db";
-import { logger } from "../_core/logger";
 import { createHash, randomUUID } from "crypto";
+
+import { sql, eq, and, desc, asc, gt, gte, isNull, count } from "drizzle-orm";
+
 import {
   eventStore, outboxMessages, sagaInstances, deadLetterQueue,
   idempotencyKeys, dataLineage, entityVersions, searchIndexEntries,
   queryPerformanceLog, schemaVersions,
   type InsertEventStore, type InsertOutboxMessage, type InsertSagaInstance,
 } from "../../drizzle/schema.enhancements";
+import { logger } from "../_core/logger";
+import { getDb } from "../db";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. Event Store — Append-Only Event Log with Aggregate Replay

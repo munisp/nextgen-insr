@@ -17,9 +17,9 @@
  *  - Erasure requests are queued (status: 'pending') and processed by a background job.
  */
 import { TRPCError } from "@trpc/server";
+import { eq, and, desc , count } from "drizzle-orm";
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
-import { getDb, writeAuditLog } from "../db";
+
 import {
   agents,
   transactions,
@@ -29,11 +29,11 @@ import {
   customers,
   dataRightsRequests,
 } from "../../drizzle/schema";
-import { router, protectedProcedure } from "../_core/trpc";
-import { count } from "drizzle-orm";
-import { getAgentFromCookie } from "../middleware/agentAuth";
-import { notifyOwner } from "../_core/notification";
 import { logger } from '../_core/logger';
+import { notifyOwner } from "../_core/notification";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb, writeAuditLog } from "../db";
+import { getAgentFromCookie } from "../middleware/agentAuth";
 
 export const gdprRouter = router({
   /**

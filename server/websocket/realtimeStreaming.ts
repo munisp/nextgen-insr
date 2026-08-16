@@ -10,12 +10,13 @@
  * goServiceAdapter registry); unreachable services are reported as "down",
  * never fabricated as healthy.
  */
-import type { Server as SocketServer } from "socket.io";
-import { getDb } from "../db";
-import { transactions } from "../../drizzle/schema";
 import { desc, sql, gte } from "drizzle-orm";
+import type { Server as SocketServer } from "socket.io";
+
+import { transactions } from "../../drizzle/schema";
 import { logger } from '../_core/logger';
 import { getAllServiceConfigs } from "../adapters/goServiceAdapter";
+import { getDb } from "../db";
 
 interface TransactionEvent {
   id: string;

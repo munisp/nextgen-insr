@@ -1,8 +1,9 @@
+import { desc, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { platform_health_checks } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { platform_health_checks } from "../../drizzle/schema";
-import { desc, count } from "drizzle-orm";
 
 /**
  * Operational Runbook Router

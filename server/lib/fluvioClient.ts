@@ -24,8 +24,9 @@
  *   FLUVIO_TLS        — "true" to enable TLS verification (default: false in dev)
  */
 
-import { ENV } from "../_core/env.js";
 import axios from "axios";
+
+import { ENV } from "../_core/env.js";
 import { logger } from '../_core/logger';
 
 // ── Types ─────────────────────────────────────────────────────────────────────

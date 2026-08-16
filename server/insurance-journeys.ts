@@ -39,6 +39,7 @@ import {
   log,
   sleep,
 } from "@temporalio/workflow";
+
 import type * as journeyActivities from "./journey-activities";
 
 // ─── Activity proxy with retry policy ────────────────────────────────────────

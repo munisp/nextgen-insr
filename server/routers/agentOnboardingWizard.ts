@@ -1,7 +1,7 @@
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import { eq, desc, and, sql, count, gte } from "drizzle-orm";
+import { z } from "zod";
+
 import {
   agents,
   kycSessions,
@@ -12,7 +12,9 @@ import {
 import {
   posTerminals,
 } from "../../drizzle/schema.additions";
-import { TRPCError } from "@trpc/server";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+
 
 export const agentOnboardingWizardRouter = router({
   getProgress: protectedProcedure

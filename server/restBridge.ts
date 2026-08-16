@@ -39,7 +39,10 @@
  *   /api/v1/tenants    (super-admin portal)
  */
 
-import { Router, Request, Response, NextFunction } from "express";
+import { eq, desc, count, sql } from "drizzle-orm";
+import type { Request, Response, NextFunction } from "express";
+import { Router } from "express";
+
 import { getDb } from "./db";
 import {
   agents,
@@ -64,7 +67,6 @@ import {
   tenants,
   auditLog,
 } from "../drizzle/schema";
-import { eq, desc, count, sql } from "drizzle-orm";
 import { verifySessionJwt, KC_SESSION_COOKIE } from "./_core/keycloakAuth";
 import { logger } from './_core/logger';
 

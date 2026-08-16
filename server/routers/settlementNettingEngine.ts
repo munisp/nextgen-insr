@@ -3,18 +3,20 @@
  * Settlement Netting Engine — DB-backed netting calculations using merchantSettlements
  * Sprint 54: Full PostgreSQL + middleware integration
  */
+import { TRPCError } from "@trpc/server";
+import { eq, desc, count, sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { merchantSettlements } from "../../drizzle/schema";
+import { logger } from "../_core/logger";
+import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { merchantSettlements } from "../../drizzle/schema";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
-import { fluvioProduce } from "../fluvio";
-import { permifyCheck } from "../_core/permify";
-import { logger } from "../_core/logger";
-import { TRPCError } from "@trpc/server";
+
 
 export const settlementNettingEngineRouter = router({
   getStats: protectedProcedure.query(async () => {

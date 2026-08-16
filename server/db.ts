@@ -4,13 +4,14 @@
  * Uses Drizzle ORM with PostgreSQL connection pooling.
  * Production mode requires a valid database URL. Test mode allows noop fallback.
  */
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-import type { NodePgDatabase, NodePgQueryResultHKT, NodePgTransaction } from "drizzle-orm/node-postgres";
 import { eq, desc, and, isNull, lt, gt, sql, type ExtractTablesWithRelations, type ColumnBaseConfig, type ColumnDataType } from "drizzle-orm";
-import { AUDIT_CHAIN_LOCK_KEY, computeEntryHash } from "./lib/auditChain";
+import { drizzle } from "drizzle-orm/node-postgres";
+import type { NodePgDatabase, NodePgQueryResultHKT, NodePgTransaction } from "drizzle-orm/node-postgres";
 import type { PgTable, PgTransaction, TableConfig, PgColumn } from "drizzle-orm/pg-core";
+import { Pool } from "pg";
+
 import { logger } from "./_core/logger";
+import { AUDIT_CHAIN_LOCK_KEY, computeEntryHash } from "./lib/auditChain";
 import {
   agents,
   users,

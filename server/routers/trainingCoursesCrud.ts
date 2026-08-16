@@ -1,10 +1,11 @@
 // Sprint 87: Curriculum sequencing, prerequisite validation, completion tracking
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { trainingCourses } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { trainingCourses } from "../../drizzle/schema";
-import { eq, desc, and, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const CATEGORIES = [
   "onboarding",

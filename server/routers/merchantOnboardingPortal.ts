@@ -1,9 +1,11 @@
+import { TRPCError } from "@trpc/server";
+import { eq, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { merchants, merchantKycDocs, auditLog } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { eq, desc, sql, count } from "drizzle-orm";
-import { merchants, merchantKycDocs, auditLog } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
+
 
 export const merchantOnboardingPortalRouter = router({
   listApplications: protectedProcedure

@@ -1,11 +1,12 @@
 // @ts-check
 // Sprint 87: Full domain logic — account verification, duplicate detection, primary account management
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
+
+import { agentBankAccounts } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { agentBankAccounts } from "../../drizzle/schema";
-import { eq, desc, and, sql, count } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
 
 const NIGERIAN_BANKS = [
   "044",

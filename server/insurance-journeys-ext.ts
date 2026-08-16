@@ -15,6 +15,7 @@
  */
 
 import { proxyActivities, setHandler, defineQuery, sleep, condition, ApplicationFailure } from "@temporalio/workflow";
+
 import type * as journeyActivities from "./journey-activities";
 import { assertTenantAccess, buildTenantContext } from "./journey-tenant-guard";
 
@@ -863,7 +864,7 @@ export async function J19_UnderwritingDecisionWorkflow(input: J19_UnderwritingDe
   // Step 4: Decision
   currentStep = "make_decision";
   let decision: "approved" | "declined" | "referred";
-  let premiumAmount = uw.suggestedPremium ?? 0;
+  const premiumAmount = uw.suggestedPremium ?? 0;
 
   if (!uw.approved) {
     decision = "declined";

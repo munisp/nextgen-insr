@@ -1,13 +1,15 @@
+import crypto from "crypto";
+
+import { eq, and, sql, lte, gte } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   promotions,
   loyaltyAccounts,
   loyaltyTransactions,
 } from "../../drizzle/insurance-extended-schema";
-import { eq, and, sql, lte, gte } from "drizzle-orm";
-import crypto from "crypto";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 export const promotionsRouter = router({
   // ─── Coupon Management ───────────────────────────────────────────────────

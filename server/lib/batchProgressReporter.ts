@@ -13,8 +13,8 @@
  * - Events include: batch_id, processed, total, rate, ETA, errors
  */
 
-import logger from "../_core/logger";
 import { getConfigNumber } from "./runtimeConfig";
+import logger from "../_core/logger";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

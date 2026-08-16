@@ -60,16 +60,19 @@
 // 12. PostgreSQL — commission_tiers/splits/payouts/audit_trail
 // 13. Open Source — Drizzle ORM, tRPC, Zod
 // ─────────────────────────────────────────────────────────────────────────────
+import { TRPCError } from "@trpc/server";
+import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+
 import {
   commissionTiers,
   commissionSplits,
   commissionPayouts,
   commissionAuditTrail,
 } from "../../drizzle/schema";
-import { eq, desc, and, count, sql, gte, lte } from "drizzle-orm";
+import logger from "../_core/logger";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
 import {
   publishCommissionEvent,
   getCachedSplitRatios,
@@ -89,8 +92,7 @@ import {
   initiateIlpCommissionTransfer,
   getCommissionMiddlewareHealth,
 } from "../middleware/commissionMiddleware";
-import logger from "../_core/logger";
-import { TRPCError } from "@trpc/server";
+
 
 // ── Default seed data (used for initial DB population) ──────────────────────
 const DEFAULT_TIERS = [

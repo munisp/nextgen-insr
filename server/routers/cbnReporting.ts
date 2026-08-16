@@ -6,11 +6,12 @@
  * direct DB-based report generation for offline/fallback scenarios.
  */
 import { TRPCError } from "@trpc/server";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
+
+import { transactions, fraudAlerts } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { transactions, fraudAlerts } from "../../drizzle/schema";
-import { sql } from "drizzle-orm";
 
 const CBN_SERVICE_URL =
   process.env.CBN_REPORTING_SERVICE_URL ?? "http://localhost:8010";

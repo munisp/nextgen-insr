@@ -2,8 +2,9 @@
  * Item 24: API Documentation Generation
  * Provides OpenAPI/Swagger spec for all tRPC endpoints and microservices.
  */
-import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
+
+import { protectedProcedure, router } from "../_core/trpc";
 
 const API_SPEC = {
   openapi: "3.1.0",

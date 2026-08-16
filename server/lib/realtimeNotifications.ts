@@ -6,8 +6,9 @@
  * cross-process event distribution. Supports JWT authentication,
  * heartbeat, auto-reconnect guidance, and typed event channels.
  */
-import type { Server as SocketIOServer, Socket } from "socket.io";
 import { jwtVerify } from "jose";
+import type { Server as SocketIOServer, Socket } from "socket.io";
+
 import { getJwtSecret } from "./envValidation";
 import { logger } from '../_core/logger';
 

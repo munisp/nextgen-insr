@@ -19,7 +19,13 @@
  *   - OpenAppSec — WAF, threat detection
  */
 import { eq, and, desc, count, sql, gte } from "drizzle-orm";
+
+import { ENV } from "./_core/env";
+import { logger } from "./_core/logger";
+import { daprPublish } from "./daprClient";
 import { getDb } from "./db";
+import { fluvioProduce } from "./fluvio";
+import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
 import {
   customers, agents, policies, claims, policyQuotes, transactions,
   kycVerifications, fraudAlerts, auditLog, notifications,
@@ -28,12 +34,7 @@ import {
   posTerminals,
 } from "../drizzle/schema";
 import { premiums, claimsPayments, commissions } from "../drizzle/schema.additions";
-import { tbCreateTransfer, tbEnsureAgentAccount, tbGetAgentBalance } from "./tbClient";
 import { acquireLock, releaseLock, getRedisClient } from "./lib/redisClient";
-import { fluvioProduce } from "./fluvio";
-import { daprPublish } from "./daprClient";
-import { logger } from "./_core/logger";
-import { ENV } from "./_core/env";
 
 // ─── Helper: get DB instance ─────────────────────────────────────────────────
 async function db() {

@@ -13,14 +13,11 @@
  * so the POS UI never crashes when a sidecar is not running.
  */
 
-import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { notifyOwner } from "../_core/notification";
-import { ENV } from "../_core/env";
-import { getFluvioStatus } from "../lib/fluvioClient";
-import { redisIsHealthy } from "../redisClient";
-import { getDb } from "../db";
+import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, isNull, lt, or } from "drizzle-orm";
+import webpush from "web-push";
+import { z } from "zod";
+
 import {
   agentPushSubscriptions,
   connectivityLog,
@@ -28,9 +25,13 @@ import {
   erpSyncLog,
   mqttBridgeConfig,
 } from "../../drizzle/schema";
-import webpush from "web-push";
-import { TRPCError } from "@trpc/server";
+import { ENV } from "../_core/env";
 import { logger } from '../_core/logger';
+import { notifyOwner } from "../_core/notification";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+import { getFluvioStatus } from "../lib/fluvioClient";
+import { redisIsHealthy } from "../redisClient";
 
 // Configure VAPID keys for Web Push
 // SECURITY: Guard against empty VAPID keys (test/dev environments may not have them set)

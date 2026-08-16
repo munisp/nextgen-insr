@@ -5,10 +5,11 @@
  * Rolling 1-minute bucket analytics for MQTT throughput and ERP sync rates.
  * Each call to recordMetric() upserts a bucket for the current minute.
  */
-import { getDb } from "../db";
-import { analyticsMetrics } from "../../drizzle/schema";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
+
+import { analyticsMetrics } from "../../drizzle/schema";
 import { logger } from '../_core/logger';
+import { getDb } from "../db";
 
 // ── In-memory SSE listener registry ──────────────────────────────────────────
 type SseListener = (data: string) => void;

@@ -3,15 +3,15 @@
  * Full lifecycle: request → approve/reject → process → complete
  * Integrates with agent commissionBalance and email notifications.
  */
-import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { getDb } from "../db";
-import { commissionPayouts, agents } from "../../drizzle/schema";
 import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
+import { z } from "zod";
+
+import { commissionPayouts, agents } from "../../drizzle/schema";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb , writeAuditLog } from "../db";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 import { dispatchWebhookEvent } from "../lib/webhookDelivery";
-import { writeAuditLog } from "../db";
 
 export const commissionPayoutsRouter = router({
   // ── List payouts (admin/supervisor) ──────────────────────────────────────

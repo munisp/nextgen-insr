@@ -18,10 +18,11 @@
  * - circuit_breaker_threshold: Failure threshold for circuit breaker (default: 5)
  */
 
-import { getDb } from "../db";
-import { systemConfig } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+
+import { systemConfig } from "../../drizzle/schema";
 import logger from "../_core/logger";
+import { getDb } from "../db";
 
 // ── Default Configuration Values ─────────────────────────────────────────────
 
