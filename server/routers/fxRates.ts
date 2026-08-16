@@ -10,13 +10,18 @@ import { TRPCError } from "@trpc/server";
 // it "frankfurter/ecb"; refresh was a no-op success. Both now call the real
 // Frankfurter (ECB data) API with a timeout and fail loudly on any error.
 
-const FRANKFURTER_BASE = "https://api.frankfurter.app";
+// Base URL is configurable so official test environments (or protocol-faithful
+// test doubles in the test suite) can be targeted; production default is the
+// real Frankfurter (ECB data) API.
+function frankfurterBase(): string {
+  return process.env.FRANKFURTER_BASE_URL ?? "https://api.frankfurter.app";
+}
 const FX_TIMEOUT_MS = 8000;
 
 async function fetchFrankfurter(path: string): Promise<any> {
   let response: Response;
   try {
-    response = await fetch(`${FRANKFURTER_BASE}${path}`, {
+    response = await fetch(`${frankfurterBase()}${path}`, {
       signal: AbortSignal.timeout(FX_TIMEOUT_MS),
     });
   } catch (err) {
@@ -32,6 +37,26 @@ async function fetchFrankfurter(path: string): Promise<any> {
     });
   }
   return response.json();
+}
+
+/**
+ * Fail-closed shape validation for Frankfurter replies. A "rates" object is
+ * only accepted when it is a plain object mapping currency codes to finite,
+ * positive numbers — anything else (strings, nested junk, negative/zero
+ * rates, arrays) is a malformed provider reply and MUST fail loudly rather
+ * than poisoning stored FX rates used for money conversion.
+ */
+export function validateFrankfurterRates(
+  rates: unknown
+): rates is Record<string, number> {
+  if (!rates || typeof rates !== "object" || Array.isArray(rates)) return false;
+  for (const [code, value] of Object.entries(rates)) {
+    if (!/^[A-Z]{3}$/.test(code)) return false;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export const fxRatesRouter = router({
@@ -160,10 +185,24 @@ export const fxRatesRouter = router({
       const data = await fetchFrankfurter(
         `/${fmt(start)}..${fmt(end)}?from=${encodeURIComponent(input.base)}&to=${encodeURIComponent(input.target)}`
       );
-      const rawRates: Record<string, Record<string, number>> = data?.rates ?? {};
-      const timeseries = Object.keys(rawRates)
-        .sort()
-        .map(date => ({ date, rate: Number(rawRates[date]?.[input.target] ?? 0) }));
+      const rawRates: unknown = data?.rates;
+      if (!rawRates || typeof rawRates !== "object" || Array.isArray(rawRates)) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "FX rate provider returned a malformed time-series (no rates object)",
+        });
+      }
+      const timeseries: Array<{ date: string; rate: number }> = [];
+      for (const date of Object.keys(rawRates as Record<string, unknown>).sort()) {
+        const dayRates = (rawRates as Record<string, unknown>)[date];
+        if (!validateFrankfurterRates(dayRates)) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `FX rate provider returned malformed rates for ${date}`,
+          });
+        }
+        timeseries.push({ date, rate: Number(dayRates[input.target] ?? 0) });
+      }
       return {
         base: input.base,
         target: input.target,
@@ -186,9 +225,16 @@ export const fxRatesRouter = router({
   // persists them; it throws if the provider call fails.
   refresh: protectedProcedure.mutation(async () => {
     const data = await fetchFrankfurter(`/latest?from=EUR`);
+    // Malformed provider reply -> loud failure; never persist garbage rates.
+    if (!validateFrankfurterRates(data?.rates)) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "FX rate provider returned malformed rates (shape validation failed)",
+      });
+    }
     const rates: Record<string, number> = {
       EUR: 1,
-      ...(data?.rates ?? {}),
+      ...data.rates,
     };
     const rateCount = Object.keys(rates).length;
     if (rateCount <= 1) {

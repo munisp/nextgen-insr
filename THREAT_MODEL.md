@@ -95,3 +95,35 @@ Every claim below references code inspected in this repository. Where a control 
 - `tests/integration/pinResetOtp.integration.test.ts` — OTP attempt counter/lockout, expiry, single-use.
 - `tests/integration/webhookSecurity.integration.test.ts` — Stripe/generic webhook HMAC: mandatory verification, stale-timestamp replay rejection, production 503 without secret, labeled dev bypass.
 - Full suite: `PGLITE_PORT=54629 pnpm test:integration` → 12 files, 92 tests, all passing (includes funds-integrity and ops-governance suites from main). `tests/integration/funds-flow.integration.test.ts` is now PGlite-desync-proof (dedicated fresh harness connection after the intentional in-transaction error; 5× consecutive green runs).
+
+## 9. F-02 — Provider-integration unknown-outcome safety (protocol-faithful local evidence)
+
+**Date:** 2026-08-15 (finding F-02 engineering closure) · **Scope:** Stripe webhooks, Termii SMS, Frankfurter (ECB) FX, airtime/bill-payment/mobile-money vending dispatch, provider reconciliation.
+
+**Framework rule applied:** official provider sandboxes are preferred. None are reachable from the test environment, so every provider below is exercised through a **PROTOCOL-FAITHFUL LOCAL SIMULATOR** living in `tests/providers/` (test code only, individually labeled). These simulators reproduce the providers' *documented wire protocols* (Stripe `t,v1=HMAC-SHA256(secret, t.payload)` signatures verified by the same stripe-node `constructEvent` the handler runs; Termii Send Message API JSON shapes as encoded in `server/lib/smsService.ts`; Frankfurter `/latest` + time-series JSON shapes; VTpass-style vend/status JSON APIs). **They are NOT evidence of provider-specific behavior. Official-sandbox verification remains an OPEN EXTERNAL ITEM** (see §9.3).
+
+### 9.1 Threats and controls
+
+| Threat | Control (production code) | Evidence |
+|---|---|---|
+| Duplicate webhook delivery → double ledger effect | `invoice.paid` idempotency: durable dedup pre-check keyed on `platform_billing_ledger.transaction_ref = invoice.id`, unique index `pbl_tx_ref_unique` + `ON CONFLICT DO NOTHING` (race-safe); replays ack 200 `{duplicate:true}` with exactly one durable effect (`server/stripe/webhookHandler.ts`) | `providerStripe.integration.test.ts`, `stripeWebhook.e2e.test.ts` |
+| Webhook arrives before local record (reordering) | `checkout.session.completed` for an unknown user updates zero rows (no fabrication, no crash); `invoice.paid` for an unprovisioned tenant is keyed to the invoice, not local linkage | `providerStripe.integration.test.ts` |
+| Blind retry after provider timeout → duplicate effect | Tri-state dispatch (`server/lib/providerDispatch.ts`): accepted / rejected / **unknown**. Unknown outcomes are never re-dispatched; retries resolve via `GET /status/{reference}` (`server/lib/providerResolution.ts`). Stable identity (`transactions.ref`, unique) is persisted BEFORE the provider call | `providerVending.integration.test.ts` (airtime, bill, MoMo) |
+| Malformed provider reply → phantom success | Fail-closed parsing everywhere: Termii reply without `message_id` throws; Frankfurter rates shape-validated (finite positive numbers, 3-letter codes) else loud 500; vending 2xx without a recognized `status` is "unknown", never success | `providerSms`, `providerFx`, `providerVending` tests |
+| SMS duplicate on timeout/failover | `sendViaTermii` marks timeouts/lost replies `UNKNOWN_OUTCOME`; `sendSms`/`sendSmsWithRetry` stop failover and retries on unknown outcomes (duplicate-safe), log attempt as `pending` | `providerSms.integration.test.ts` |
+| Provider/local state divergence undetected | `server/lib/providerReconciliation.ts` — minimal reconciliation pass (scope: airtime/bill/MoMo rows still locally pending with a dispatch status): compares against provider status endpoint, FLAGS divergences in the audit log (`PROVIDER_RECONCILIATION_DIVERGENCE`), never silently moves funds; rows without a provider URL reported honestly as unreconcilable | `providerReconciliation.integration.test.ts` |
+
+### 9.2 Residual risks
+
+- `platform_billing_ledger.transaction_ref` unique index: on a populated database, dedupe existing duplicate `transaction_ref` rows BEFORE the index is applied (noted in `drizzle/schema.ts`).
+- SMS delivery log is in-memory; a Termii DLR webhook (`/webhooks/termii`) currently only logs. Durable SMS delivery tracking is out of F-02 scope.
+- The Mojaloop integration is a separate Go service (`mojaloop-integration`); TS-reachable mobile-money paths were closed as above. Go-side transfer-state semantics are outside the TS suite (see §9.3).
+- The reconciler flags but does not auto-correct; auto-correction of flagged divergences requires an operator-approval workflow (deliberate fail-closed choice).
+
+### 9.3 Open external items (sandbox-blocked)
+
+1. Stripe **test mode** end-to-end: real `invoice.paid` retry storm + `checkout.session.completed` reordering against Stripe's sandbox.
+2. Termii **sandbox**: send + DLR webhook + delivery-status lookup semantics.
+3. Frankfurter live endpoint contract test (CI job hitting `api.frankfurter.app`).
+4. Chosen vending/bill/MoMo provider **sandbox** (VTpass/Baxi/Reloadly/MTN MoMo): dispatch, idempotency-key behavior, status lookup.
+5. Mojaloop: official Mojaloop **testing toolkit / sandbox** for the Go `mojaloop-integration` service (out of local TS test scope).

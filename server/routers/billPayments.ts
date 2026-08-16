@@ -18,6 +18,11 @@ import { TRPCError } from "@trpc/server";
 import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { logger } from "../_core/logger";
+import {
+  dispatchProviderOperation,
+  type ProviderClientConfig,
+} from "../lib/providerDispatch";
+import { resolveProviderTx } from "../lib/providerResolution";
 
 const BILLER_COMMISSION: Record<string, number> = {
   EKEDC: 0.005, IKEDC: 0.005, AEDC: 0.005, PHED: 0.005, BEDC: 0.005, EEDC: 0.005, JED: 0.005, KEDCO: 0.005,
@@ -38,6 +43,18 @@ function isBillProviderConfigured(): boolean {
   );
 }
 
+// Real provider client. Only a configured base URL enables actual dispatch;
+// legacy key-only configuration keeps the payment pending_provider (honest).
+function billProviderClient(): ProviderClientConfig | null {
+  const baseUrl = process.env.BILL_PROVIDER_URL;
+  if (!baseUrl) return null;
+  return {
+    baseUrl,
+    apiKey: process.env.BILL_PROVIDER_API_KEY,
+    timeoutMs: Number(process.env.BILL_PROVIDER_TIMEOUT_MS ?? 10_000),
+  };
+}
+
 export const billPaymentsRouter = router({
   pay: protectedProcedure
     .input(z.object({
@@ -51,8 +68,23 @@ export const billPaymentsRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      // Idempotency + unknown-outcome resolution: a retry with the same
+      // reference NEVER re-dispatches; it resolves via provider status lookup.
       const existing = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
-      if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
+      if (existing.length > 0) {
+        const commissionRate = BILLER_COMMISSION[input.biller] ?? 0.01;
+        const resolved = await resolveProviderTx({
+          transaction: existing[0],
+          client: billProviderClient(),
+          commissionOnCompletion: input.amountNGN * commissionRate,
+        });
+        return {
+          idempotent: true,
+          transaction: resolved.transaction,
+          status: (resolved.transaction.metadata as any)?.providerStatus ?? resolved.transaction.status,
+          resolution: resolved.resolution,
+        };
+      }
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (!agent.isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not active" });
@@ -76,6 +108,7 @@ export const billPaymentsRouter = router({
           amount: Math.round(input.amountNGN * 100), ledger: 2000, code: 200,
           ref: input.reference, txType: "Bill Payment", agentId: agent.agentId,
         });
+        // Stable identity persisted BEFORE the provider call.
         const [tx] = await db.insert(transactions).values({
           ref: input.reference, agentId: input.agentId, type: "Bill Payment",
           amount: String(input.amountNGN), fee: "0", commission: String(commission),
@@ -85,6 +118,48 @@ export const billPaymentsRouter = router({
           channel: "App", status: "pending", fraudScore: "0.00",
           metadata: { tbSyncStatus: tbResult ? "synced" : "pending", biller: input.biller, customerNumber: input.customerNumber, meterType: input.meterType ?? null, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();
+
+        // Dispatch to the provider when a real base URL is configured.
+        const client = billProviderClient();
+        if (client) {
+          const dispatch = await dispatchProviderOperation({
+            ...client,
+            path: "/pay",
+            reference: input.reference,
+            payload: {
+              biller: input.biller,
+              customerNumber: input.customerNumber,
+              meterType: input.meterType ?? null,
+              amountNGN: input.amountNGN,
+            },
+          });
+          if (dispatch.outcome === "accepted") {
+            const [updated] = await db.update(transactions).set({
+              metadata: { ...(tx.metadata as object), providerStatus: "submitted", providerRef: dispatch.providerRef ?? null },
+              updatedAt: new Date(),
+            }).where(eq(transactions.ref, input.reference)).returning();
+            await db.insert(auditLog).values({ action: "BILL_PAYMENT", resource: "bill_payment", resourceId: input.reference, status: "success", metadata: { biller: input.biller, amountNGN: input.amountNGN, providerStatus: "submitted" } }).catch(() => {});
+            return { idempotent: false, transaction: updated ?? tx, status: "submitted", commission, tbTransferId: tbResult?.id ?? null, receiptNumber: `RCP-${input.reference}` };
+          }
+          if (dispatch.outcome === "rejected") {
+            const [updated] = await db.update(transactions).set({
+              status: "failed",
+              failureReason: dispatch.reason ?? "provider rejected payment",
+              metadata: { ...(tx.metadata as object), providerStatus: "rejected", providerError: dispatch.reason ?? null },
+              updatedAt: new Date(),
+            }).where(eq(transactions.ref, input.reference)).returning();
+            void updated;
+            logger.warn(`[BillPayment] ${input.reference} rejected by provider: ${dispatch.reason}`);
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Bill payment provider rejected the payment: ${dispatch.reason}` });
+          }
+          const [updated] = await db.update(transactions).set({
+            metadata: { ...(tx.metadata as object), providerStatus: "unknown_outcome", providerError: dispatch.reason ?? null },
+            updatedAt: new Date(),
+          }).where(eq(transactions.ref, input.reference)).returning();
+          logger.error(`[BillPayment] ${input.reference} outcome UNKNOWN (${dispatch.reason}) — held pending for status lookup, NOT re-sent`);
+          return { idempotent: false, transaction: updated ?? tx, status: "unknown_outcome", commission, tbTransferId: tbResult?.id ?? null, receiptNumber: `RCP-${input.reference}` };
+        }
+
         await db.insert(auditLog).values({ action: "BILL_PAYMENT", resource: "bill_payment", resourceId: input.reference, status: "success", metadata: { biller: input.biller, amountNGN: input.amountNGN, providerStatus: "pending_provider" } }).catch(() => {});
         logger.info(`[BillPayment] ₦${input.amountNGN} to ${input.biller} | agent ${agent.agentId} | status pending_provider | TB: ${tbResult?.id ?? "pending"}`);
         return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null, receiptNumber: `RCP-${input.reference}` };

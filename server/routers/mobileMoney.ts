@@ -18,6 +18,11 @@ import { TRPCError } from "@trpc/server";
 import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { logger } from "../_core/logger";
+import {
+  dispatchProviderOperation,
+  type ProviderClientConfig,
+} from "../lib/providerDispatch";
+import { resolveProviderTx } from "../lib/providerResolution";
 
 const PROVIDERS = ["MTN MoMo", "Airtel Money", "Glo Xtra", "9PSB"] as const;
 const MIN_AMOUNT = 100, MAX_AMOUNT = 300_000, DAILY_LIMIT = 1_000_000;
@@ -34,6 +39,59 @@ function isMobileMoneyProviderConfigured(): boolean {
   );
 }
 
+// Real provider client. Only a configured base URL enables actual dispatch;
+// key-only / Mojaloop-endpoint configuration keeps the op pending_provider.
+function mobileMoneyProviderClient(): ProviderClientConfig | null {
+  const baseUrl = process.env.MOBILE_MONEY_PROVIDER_URL;
+  if (!baseUrl) return null;
+  return {
+    baseUrl,
+    apiKey: process.env.MOBILE_MONEY_PROVIDER_API_KEY,
+    timeoutMs: Number(process.env.MOBILE_MONEY_PROVIDER_TIMEOUT_MS ?? 10_000),
+  };
+}
+
+// Dispatch a cash-in/cash-out to the configured provider and persist the
+// tri-state outcome honestly. "unknown" is NEVER surfaced as success; it is
+// resolved later via status lookup (retry path or reconciler).
+async function dispatchMobileMoneyOp(opts: {
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>;
+  tx: { ref: string; metadata: unknown };
+  kind: "cashin" | "cashout";
+  payload: Record<string, unknown>;
+}): Promise<{ status: "submitted" | "unknown_outcome"; transaction: unknown }> {
+  const client = mobileMoneyProviderClient()!;
+  const dispatch = await dispatchProviderOperation({
+    ...client,
+    path: `/${opts.kind}`,
+    reference: opts.tx.ref,
+    payload: opts.payload,
+  });
+  if (dispatch.outcome === "accepted") {
+    const [updated] = await opts.db.update(transactions).set({
+      metadata: { ...(opts.tx.metadata as object), providerStatus: "submitted", providerRef: dispatch.providerRef ?? null },
+      updatedAt: new Date(),
+    }).where(eq(transactions.ref, opts.tx.ref)).returning();
+    return { status: "submitted", transaction: updated ?? opts.tx };
+  }
+  if (dispatch.outcome === "rejected") {
+    await opts.db.update(transactions).set({
+      status: "failed",
+      failureReason: dispatch.reason ?? "provider rejected operation",
+      metadata: { ...(opts.tx.metadata as object), providerStatus: "rejected", providerError: dispatch.reason ?? null },
+      updatedAt: new Date(),
+    }).where(eq(transactions.ref, opts.tx.ref));
+    logger.warn(`[MobileMoney] ${opts.tx.ref} rejected by provider: ${dispatch.reason}`);
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Mobile money provider rejected the operation: ${dispatch.reason}` });
+  }
+  const [updated] = await opts.db.update(transactions).set({
+    metadata: { ...(opts.tx.metadata as object), providerStatus: "unknown_outcome", providerError: dispatch.reason ?? null },
+    updatedAt: new Date(),
+  }).where(eq(transactions.ref, opts.tx.ref)).returning();
+  logger.error(`[MobileMoney] ${opts.tx.ref} outcome UNKNOWN (${dispatch.reason}) — held pending for status lookup, NOT re-sent`);
+  return { status: "unknown_outcome", transaction: updated ?? opts.tx };
+}
+
 export const mobileMoneyRouter = router({
   cashIn: protectedProcedure
     .input(z.object({
@@ -47,8 +105,21 @@ export const mobileMoneyRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      // Idempotency + unknown-outcome resolution via provider status lookup.
       const existing = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
-      if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
+      if (existing.length > 0) {
+        const resolved = await resolveProviderTx({
+          transaction: existing[0],
+          client: mobileMoneyProviderClient(),
+          commissionOnCompletion: input.amountNGN * CASH_IN_COMMISSION,
+        });
+        return {
+          idempotent: true,
+          transaction: resolved.transaction,
+          status: (resolved.transaction.metadata as any)?.providerStatus ?? resolved.transaction.status,
+          resolution: resolved.resolution,
+        };
+      }
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
@@ -74,6 +145,13 @@ export const mobileMoneyRouter = router({
           channel: "App", status: "pending", fraudScore: "0.00",
           metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
         }).returning();
+        if (mobileMoneyProviderClient()) {
+          const dispatched = await dispatchMobileMoneyOp({
+            db, tx, kind: "cashin",
+            payload: { provider: input.provider, customerPhone: input.customerPhone, amountNGN: input.amountNGN },
+          });
+          return { idempotent: false, transaction: dispatched.transaction, status: dispatched.status, commission, tbTransferId: tbResult?.id ?? null };
+        }
         logger.info(`[MobileMoney] Cash-In ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId} | status pending_provider`);
         return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
       } finally { await releaseLock(lockKey); }
@@ -91,8 +169,21 @@ export const mobileMoneyRouter = router({
       }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      // Idempotency + unknown-outcome resolution via provider status lookup.
       const existing = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
-      if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
+      if (existing.length > 0) {
+        const resolved = await resolveProviderTx({
+          transaction: existing[0],
+          client: mobileMoneyProviderClient(),
+          commissionOnCompletion: input.amountNGN * CASH_OUT_COMMISSION,
+        });
+        return {
+          idempotent: true,
+          transaction: resolved.transaction,
+          status: (resolved.transaction.metadata as any)?.providerStatus ?? resolved.transaction.status,
+          resolution: resolved.resolution,
+        };
+      }
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
@@ -120,6 +211,13 @@ export const mobileMoneyRouter = router({
           channel: "App", status: "pending", fraudScore: "0.00",
           metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
         }).returning();
+        if (mobileMoneyProviderClient()) {
+          const dispatched = await dispatchMobileMoneyOp({
+            db, tx, kind: "cashout",
+            payload: { provider: input.provider, customerPhone: input.customerPhone, amountNGN: input.amountNGN },
+          });
+          return { idempotent: false, transaction: dispatched.transaction, status: dispatched.status, commission, tbTransferId: tbResult?.id ?? null };
+        }
         logger.info(`[MobileMoney] Cash-Out ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId} | status pending_provider`);
         return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
       } finally { await releaseLock(lockKey); }

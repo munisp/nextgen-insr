@@ -23,6 +23,11 @@ import { TRPCError } from "@trpc/server";
 import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { logger } from "../_core/logger";
+import {
+  dispatchProviderOperation,
+  type ProviderClientConfig,
+} from "../lib/providerDispatch";
+import { resolveProviderTx } from "../lib/providerResolution";
 
 const NETWORKS = ["MTN", "Glo", "Airtel", "9mobile"] as const;
 const MIN_AMOUNT = 50;
@@ -39,6 +44,18 @@ function isAirtimeProviderConfigured(): boolean {
     process.env.VTPASS_API_KEY ||
     process.env.RELOADLY_API_KEY
   );
+}
+
+// Real provider client. Only a configured base URL enables actual dispatch;
+// legacy key-only configuration keeps the vend pending_provider (honest).
+function airtimeProviderClient(): ProviderClientConfig | null {
+  const baseUrl = process.env.AIRTIME_PROVIDER_URL;
+  if (!baseUrl) return null;
+  return {
+    baseUrl,
+    apiKey: process.env.AIRTIME_PROVIDER_API_KEY,
+    timeoutMs: Number(process.env.AIRTIME_PROVIDER_TIMEOUT_MS ?? 10_000),
+  };
 }
 
 export const airtimeVendingRouter = router({
@@ -58,9 +75,22 @@ export const airtimeVendingRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      // Idempotency
+      // Idempotency + unknown-outcome resolution: a retry with the same
+      // reference NEVER re-dispatches; it resolves via provider status lookup.
       const existing = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
-      if (existing.length > 0) return { idempotent: true, transaction: existing[0] };
+      if (existing.length > 0) {
+        const resolved = await resolveProviderTx({
+          transaction: existing[0],
+          client: airtimeProviderClient(),
+          commissionOnCompletion: input.amountNGN * COMMISSION_RATE,
+        });
+        return {
+          idempotent: true,
+          transaction: resolved.transaction,
+          status: (resolved.transaction.metadata as any)?.providerStatus ?? resolved.transaction.status,
+          resolution: resolved.resolution,
+        };
+      }
 
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
@@ -108,6 +138,9 @@ export const airtimeVendingRouter = router({
           agentId: agent.agentId,
         });
 
+        // Stable identity persisted BEFORE the provider call: the unique
+        // `ref` row exists even if the process dies mid-dispatch, so any
+        // retry resolves against this record instead of re-creating it.
         const [tx] = await db.insert(transactions).values({
           ref: input.reference,
           agentId: input.agentId,
@@ -128,6 +161,49 @@ export const airtimeVendingRouter = router({
             tbTransferId: tbResult?.id ?? null,
           },
         }).returning();
+
+        // Dispatch to the provider when a real base URL is configured. The
+        // tri-state outcome is persisted honestly; "unknown" is NEVER
+        // surfaced as success and is resolved later via status lookup.
+        const client = airtimeProviderClient();
+        if (client) {
+          const dispatch = await dispatchProviderOperation({
+            ...client,
+            path: "/vend",
+            reference: input.reference,
+            payload: {
+              network: input.network,
+              phoneNumber: input.phoneNumber,
+              amountNGN: input.amountNGN,
+            },
+          });
+          if (dispatch.outcome === "accepted") {
+            const [updated] = await db.update(transactions).set({
+              metadata: { ...(tx.metadata as object), providerStatus: "submitted", providerRef: dispatch.providerRef ?? null },
+              updatedAt: new Date(),
+            }).where(eq(transactions.ref, input.reference)).returning();
+            logger.info(`[Airtime] ₦${input.amountNGN} ${input.network} to ${input.phoneNumber} | ref ${input.reference} submitted to provider`);
+            return { idempotent: false, transaction: updated ?? tx, status: "submitted", commission, tbTransferId: tbResult?.id ?? null };
+          }
+          if (dispatch.outcome === "rejected") {
+            const [updated] = await db.update(transactions).set({
+              status: "failed",
+              failureReason: dispatch.reason ?? "provider rejected vend",
+              metadata: { ...(tx.metadata as object), providerStatus: "rejected", providerError: dispatch.reason ?? null },
+              updatedAt: new Date(),
+            }).where(eq(transactions.ref, input.reference)).returning();
+            logger.warn(`[Airtime] vend ${input.reference} rejected by provider: ${dispatch.reason}`);
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Airtime provider rejected the vend: ${dispatch.reason}` });
+          }
+          // Unknown outcome: stays pending, resolved via status lookup on
+          // retry or by the reconciler. NO blind re-dispatch.
+          const [updated] = await db.update(transactions).set({
+            metadata: { ...(tx.metadata as object), providerStatus: "unknown_outcome", providerError: dispatch.reason ?? null },
+            updatedAt: new Date(),
+          }).where(eq(transactions.ref, input.reference)).returning();
+          logger.error(`[Airtime] vend ${input.reference} outcome UNKNOWN (${dispatch.reason}) — held pending for status lookup, NOT re-sent`);
+          return { idempotent: false, transaction: updated ?? tx, status: "unknown_outcome", commission, tbTransferId: tbResult?.id ?? null };
+        }
 
         logger.info(`[Airtime] ₦${input.amountNGN} ${input.network} to ${input.phoneNumber} | agent ${agent.agentId} | status pending_provider | TB: ${tbResult?.id ?? "pending"}`);
         return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
