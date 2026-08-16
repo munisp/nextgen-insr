@@ -664,7 +664,7 @@ router.get("/insurance/services/status/:status", async (req, res) => {
     const rows = await db
       .select()
       .from(insuranceServices)
-      .where(eq(insuranceServices.status, req.params.status as any));
+      .where(eq(insuranceServices.isActive, req.params.status !== "maintenance"));
     ok(res, rows);
   } catch (e) {
     err(res, e);
@@ -678,7 +678,7 @@ router.get("/insurance/services/maintenance", async (_req, res) => {
     const rows = await db
       .select()
       .from(insuranceServices)
-      .where(eq(insuranceServices.status, "maintenance"));
+      .where(eq(insuranceServices.isActive, false));
     ok(res, rows);
   } catch (e) {
     err(res, e);

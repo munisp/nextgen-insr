@@ -122,7 +122,7 @@ export const referralProgramRouter = router({
 
     return {
       totalReferrals: total,
-      activeReferrals: await database.select({ total: count() }).from(referrals ?? auditLog).then((r: any[]) => r[0]?.total ?? 0),
+      activeReferrals: await database.select({ total: count() }).from(referrals).then(r => r[0]?.total ?? 0),
       completedReferrals: Math.floor(total * 0.35),
       expiredReferrals: Math.floor(total * 0.25),
       conversionRate: 35.2,

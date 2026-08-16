@@ -57,7 +57,7 @@ export async function publishSettlementEvent(params: {
         amount: params.amount,
         ...params.metadata,
       },
-      { agentId: params.agentId }
+      { agentId: params.agentId != null ? String(params.agentId) : undefined }
     );
     if (!published) {
       throw new Error("Kafka publishEvent returned false");

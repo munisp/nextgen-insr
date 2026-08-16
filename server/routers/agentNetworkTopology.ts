@@ -56,7 +56,7 @@ export const agentNetworkTopologyRouter = router({
     if (!database) return { totalNodes: 0, activeNodes: 0, coveragePct: 0 };
     const totalRows = await database.select({ total: count() }).from(agents);
     const total = (totalRows as any)[0]?.total ?? 0;
-    const [activeRow] = await database.select({ total: count() }).from(agents).where(eq(agents.status, "active"));
+    const [activeRow] = await database.select({ total: count() }).from(agents).where(eq(agents.isActive, true));
       const activeNodes = Number((activeRow as any)?.total ?? 0);
       return { totalNodes: total, activeNodes, coveragePct: total > 0 ? Math.round((activeNodes / total) * 100 * 10) / 10 : 0, underservedLGAs: 162, superAgentHubs: Math.floor(activeNodes * 0.05), avgNetworkStrength: total > 0 ? 62 : 0 };
   }),

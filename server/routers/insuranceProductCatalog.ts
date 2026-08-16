@@ -24,7 +24,7 @@ export const insuranceProductCatalogRouter = router({
     .input(z.object({
       limit: z.number().min(1).max(100).default(20),
       offset: z.number().min(0).default(0),
-      productType: z.enum(["life", "health", "motor", "property", "agricultural", "micro", "all"]).default("all"),
+      productType: z.enum(["life", "health", "motor", "property", "agriculture", "micro", "all"]).default("all"),
       search: z.string().optional(),
       minPremium: z.number().optional(),
       maxPremium: z.number().optional(),

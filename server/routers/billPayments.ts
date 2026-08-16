@@ -83,8 +83,7 @@ export const billPaymentsRouter = router({
           // Never synchronous success: fulfilment is confirmed asynchronously
           // by the bill-payment provider.
           channel: "App", status: "pending", fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { biller: input.biller, customerNumber: input.customerNumber, meterType: input.meterType ?? null, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
+          metadata: { tbSyncStatus: tbResult ? "synced" : "pending", biller: input.biller, customerNumber: input.customerNumber, meterType: input.meterType ?? null, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null },
         }).returning();
         await db.insert(auditLog).values({ action: "BILL_PAYMENT", resource: "bill_payment", resourceId: input.reference, status: "success", metadata: { biller: input.biller, amountNGN: input.amountNGN, providerStatus: "pending_provider" } }).catch(() => {});
         logger.info(`[BillPayment] ₦${input.amountNGN} to ${input.biller} | agent ${agent.agentId} | status pending_provider | TB: ${tbResult?.id ?? "pending"}`);

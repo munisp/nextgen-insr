@@ -88,8 +88,7 @@ export const premiumTopUpRouter = router({
           channel: ({ cash: "Cash", bank_transfer: "Internal", mobile_money: "App", card: "Card" } as const)[input.paymentMethod],
           status: "success",
           fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: { policyId: input.policyId, premiumId: premiumRecord.id, tbTransferId: tbResult?.id ?? null },
+          metadata: { tbSyncStatus: tbResult ? "synced" : "pending", policyId: input.policyId, premiumId: premiumRecord.id, tbTransferId: tbResult?.id ?? null },
         }).returning();
 
         await db.insert(auditLog).values({

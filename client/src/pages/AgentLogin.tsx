@@ -96,7 +96,7 @@ export default function AgentLogin() {
     }
     setLoading(true);
     requestOtpMutation.mutate({
-      agentId: resetAgentCode.trim().toUpperCase(),
+      agentCode: resetAgentCode.trim().toUpperCase(),
       phone: resetPhone.trim(),
     });
   };
@@ -136,7 +136,7 @@ export default function AgentLogin() {
     }
     setLoading(true);
     resetPinMutation.mutate({
-      agentId: resetAgentCode.trim().toUpperCase(),
+      agentCode: resetAgentCode.trim().toUpperCase(),
       otp: resetOtp.trim(),
       newPin: resetNewPin,
     });

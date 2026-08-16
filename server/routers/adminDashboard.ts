@@ -22,17 +22,17 @@ export const adminDashboardRouter = router({
   getSystemStats: adminProcedure.query(async () => {
     try {
       const db = await getDb();
-      const _uc = await db!.select({ cnt: count() }).from(users).limit(100);
+      const _uc = await db!.select({ count: count() }).from(users).limit(100);
       const userCount = Array.isArray(_uc) ? _uc[0] : _uc;
       const _ac = await db!
-        .select({ cnt: count() })
+        .select({ count: count() })
         .from(users)
         .where(eq(users.role, "admin"))
         .limit(100);
       const adminCount = Array.isArray(_ac) ? _ac[0] : _ac;
       return {
-        totalUsers: Number(userCount?.count ?? userCount?.cnt ?? 0),
-        adminUsers: Number(adminCount?.count ?? adminCount?.cnt ?? 0),
+        totalUsers: Number(userCount?.count ?? 0),
+        adminUsers: Number(adminCount?.count ?? 0),
         recentSignups: 0,
         stripeLinkedUsers: 0,
         serverUptime: process.uptime(),
@@ -108,14 +108,14 @@ export const adminDashboardRouter = router({
 
         const result = await query;
         const _total = await db
-          .select({ cnt: count() })
+          .select({ count: count() })
           .from(users)
           .limit(100);
         const totalRow = Array.isArray(_total) ? _total[0] : _total;
 
         return {
           users: Array.isArray(result) ? result : [],
-          total: Number(totalRow?.count ?? totalRow?.cnt ?? 0),
+          total: Number(totalRow?.count ?? 0),
         };
       } catch {
         return { users: [], total: 0 };
@@ -177,7 +177,7 @@ export const adminDashboardRouter = router({
           .offset(input.offset);
 
         const _total = await db
-          .select({ cnt: count() })
+          .select({ count: count() })
           .from(billingAuditLog)
           .limit(100);
         const totalRow = Array.isArray(_total) ? _total[0] : _total;
@@ -186,7 +186,7 @@ export const adminDashboardRouter = router({
         return {
           logs: items,
           entries: items,
-          total: Number(totalRow?.count ?? totalRow?.cnt ?? 0),
+          total: Number(totalRow?.count ?? 0),
         };
       } catch {
         return { logs: [], entries: [], total: 0 };
@@ -197,7 +197,7 @@ export const adminDashboardRouter = router({
   getBillingLedgerSummary: adminProcedure.query(async () => {
     const db = (await getDb())!;
     const [ledgerCount] = await db
-      .select({ cnt: count() })
+      .select({ count: count() })
       .from(platformBillingLedger)
       .limit(100);
 

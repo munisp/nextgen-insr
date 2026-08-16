@@ -3,7 +3,7 @@
  * Wired to tRPC actuaryKpi procedure.
  */
 import { trpc } from "@/_core/trpc";
-import { KpiCard } from "@/components/insurance/KpiCard";
+import { KpiCard, type KpiTrend, type KpiStatus } from "@/components/insurance/KpiCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
 import {
@@ -21,7 +21,11 @@ export default function ActuaryDashboard() {
   const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.actuaryKpi?.useQuery?.({}) ?? { data: null, isLoading: false };
   const kpi = data?.kpis ?? data ?? {};
 
-  const cards = [
+  const cards: Array<{
+    title: string; value: string | number; icon: React.ElementType;
+    trend?: KpiTrend; trendValue?: string; subtitle?: string;
+    status?: KpiStatus; href: string; accent: string;
+  }> = [
     { title: "Gross Reserve (₦M)", value: kpi.reserves?.grossReserve ? (kpi.reserves.grossReserve/1e6).toFixed(1) : "—", icon: Shield, trend: "up", trendValue: "IFRS17", status: "neutral" as const, href: "/reserve-calculations", accent: "var(--role-actuary)" },
     { title: "Net Reserve (₦M)", value: kpi.reserves?.netReserve ? (kpi.reserves.netReserve/1e6).toFixed(1) : "—", icon: TrendingUp, trend: "up", trendValue: "BBA/PAA", status: "neutral" as const, href: "/ifrs17-dashboard", accent: "var(--insurance-primary)" },
     { title: "Risk Adjustment (₦M)", value: kpi.reserves?.riskAdjustment ? (kpi.reserves.riskAdjustment/1e6).toFixed(1) : "—", icon: Activity, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "/actuarial-models", accent: "var(--risk-medium)" },

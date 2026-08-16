@@ -294,7 +294,7 @@ export const naicomReportingRouter = router({
       await writeAuditLog({
         action: "NAICOM_REPORT_SUBMITTED",
         resource: "naicom_report",
-        entityId: String(input.reportId),
+        resourceId: String(input.reportId),
         agentId: ctx.user?.id,
         metadata: { naicomReference: result.naicomReference, success: result.success, error: result.error },
       });

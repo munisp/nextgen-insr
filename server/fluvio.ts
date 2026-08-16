@@ -101,7 +101,7 @@ export async function publishToFluvio(
   if (schema) {
     const validation = schema.safeParse(payload);
     if (!validation.success) {
-      logger.warn(`[Fluvio] Payload validation warning for ${topic}:`, validation.error.issues.slice(0, 3));
+      logger.warn({ issues: validation.error.issues.slice(0, 3) }, `[Fluvio] Payload validation warning for ${topic}`);
     }
   }
 
@@ -326,7 +326,7 @@ export async function ensureFluvioTopics(): Promise<void> {
   const created = results.filter(r => r.status === "fulfilled").length;
   const failed = results.filter(r => r.status === "rejected").map(r => (r as PromiseRejectedResult).reason);
   if (created > 0) logger.info(`[Fluvio] ${created}/${ALL_TOPICS.length} topics ensured`);
-  if (failed.length > 0) logger.warn("[Fluvio] Some topics unavailable:", failed.slice(0, 3));
+  if (failed.length > 0) logger.warn({ failures: failed.slice(0, 3).map(String) }, "[Fluvio] Some topics unavailable");
 }
 
 

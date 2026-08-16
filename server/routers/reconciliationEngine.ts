@@ -108,7 +108,11 @@ export const reconciliationEngineRouter = router({
       if (!database) return { data: [], total: 0 };
 
       const conditions = [];
-      if (input.status) conditions.push(eq(settlementReconciliation.status, input.status));
+      if (input.status) {
+        // settlement_reconciliation enum has no "escalated"; surface it as discrepancy
+        const st = input.status === "escalated" ? "discrepancy" : input.status;
+        conditions.push(eq(settlementReconciliation.status, st));
+      }
       if (input.agentId) conditions.push(eq(settlementReconciliation.agentId, input.agentId));
 
       const query = database
@@ -205,7 +209,9 @@ export const reconciliationEngineRouter = router({
           await database
             .update(settlementReconciliation)
             .set({
-              status: "escalated",
+              // settlement_reconciliation status enum has no "escalated"; large unresolved
+              // items are discrepancies flagged for manual review via resolutionNote
+              status: "discrepancy",
               resolutionNote: `Auto-escalated: discrepancy ₦${discrepancy.toFixed(2)} exceeds ₦10,000 threshold`,
             })
             .where(eq(settlementReconciliation.id, item.id));

@@ -44,8 +44,8 @@ export const agentOnboardingWizardRouter = router({
           .limit(100);
         const [terminal] = await db
           .select({ cnt: count() })
-          .from(serviceNodes)
-          .where(eq(serviceNodes.agentId, input.agentId))
+          .from(posTerminals)
+          .where(eq(posTerminals.agentId, input.agentId))
           .limit(100);
         const [training] = await db
           .select({ cnt: count() })

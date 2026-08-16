@@ -140,7 +140,7 @@ export const financialReconciliationDashRouter = router({
           limit: z.number().default(20),
           offset: z.number().default(0),
         })
-        .default({})
+        .default({ limit: 20, offset: 0 })
     )
     .query(async ({ input }) => {
       try {

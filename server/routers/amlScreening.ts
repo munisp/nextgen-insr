@@ -56,7 +56,7 @@ function normalizeForScreening(name: string): string {
   // Map common Cyrillic lookalikes to their Latin equivalents
   const cyrillicToLatin: Record<string, string> = {
     '\u0410':'A','\u0412':'B','\u0415':'E','\u041a':'K','\u041c':'M','\u041d':'H','\u041e':'O','\u0420':'P','\u0421':'C','\u0422':'T','\u0423':'Y','\u0425':'X',
-    '\u0430':'a','\u0435':'e','\u043e':'o','\u0440':'p','\u0441':'c','\u0445':'x','\u0443':'y','\u0456':'i','\u0430':'a',
+    '\u0430':'a','\u0435':'e','\u043e':'o','\u0440':'p','\u0441':'c','\u0445':'x','\u0443':'y','\u0456':'i',
   };
   return name
     .normalize("NFD")                                          // decompose unicode

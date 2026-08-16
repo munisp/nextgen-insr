@@ -301,6 +301,8 @@ function calculateEnsembleScore(signals: FraudSignal[], mlScore?: number): numbe
     amount: 1.0,
     device: 1.3,
     location: 1.1,
+    network: 1.0,
+    behavior: 1.0,
     ml: 1.5, // ML predictions get higher weight
   };
 
@@ -398,7 +400,7 @@ export async function detectFraud(
   let mlSidecarResult: Record<string, unknown> | undefined;
 
   if (enableML) {
-    mlSidecarResult = await predictWithML(features);
+    mlSidecarResult = (await predictWithML(features)) ?? undefined;
     if (mlSidecarResult && mlSidecarResult["risk_score"]) {
       mlScore = Number(mlSidecarResult["risk_score"]);
     }

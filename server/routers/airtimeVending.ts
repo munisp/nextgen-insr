@@ -121,8 +121,7 @@ export const airtimeVendingRouter = router({
           // by the airtime provider.
           status: "pending",
           fraudScore: "0.00",
-          tbSyncStatus: tbResult ? "synced" : "pending",
-          metadata: {
+          metadata: { tbSyncStatus: tbResult ? "synced" : "pending",
             network: input.network,
             phoneNumber: input.phoneNumber,
             providerStatus: "pending_provider",

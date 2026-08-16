@@ -92,6 +92,7 @@ export const j20SchedulerRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const temporal = await getTemporalClient();
+      if (!temporal) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Temporal client unavailable" });
       const workflowId = `J20-manual-${Date.now()}-u${ctx.user.id}`;
 
       await temporal.workflow.start("J20_PlatformHealthMonitoringWorkflow", {
