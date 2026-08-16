@@ -562,6 +562,13 @@ export const auditLog = pgTable(
     metadata: json("metadata"),
     // P0-B: Tenant isolation
     tenantId: integer("tenantId"),
+    // F-08: Tamper-evident hash chain (see server/lib/auditChain.ts).
+    // prevHash = entryHash of the immediately preceding row (NULL = segment
+    // genesis); entryHash = SHA-256 over canonical(prevHash + entry fields).
+    // NULL on rows written by paths that bypass writeAuditLog (legacy/direct
+    // inserts) — such rows are reported as "unchained" by verification.
+    prevHash: varchar("prevHash", { length: 64 }),
+    entryHash: varchar("entryHash", { length: 64 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   t => ({
@@ -571,6 +578,7 @@ export const auditLog = pgTable(
     ),
     actionIdx: index("audit_action_idx").on(t.action),
     tenantIdIdx: index("audit_tenantId_idx").on(t.tenantId),
+    entryHashIdx: index("audit_entryHash_idx").on(t.entryHash),
   })
 );
 

@@ -7,7 +7,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import type { NodePgDatabase, NodePgQueryResultHKT, NodePgTransaction } from "drizzle-orm/node-postgres";
-import { eq, desc, and, isNull, lt, gt, type ExtractTablesWithRelations, type ColumnBaseConfig, type ColumnDataType } from "drizzle-orm";
+import { eq, desc, and, isNull, lt, gt, sql, type ExtractTablesWithRelations, type ColumnBaseConfig, type ColumnDataType } from "drizzle-orm";
+import { AUDIT_CHAIN_LOCK_KEY, computeEntryHash } from "./lib/auditChain";
 import type { PgTable, PgTransaction, TableConfig, PgColumn } from "drizzle-orm/pg-core";
 import { logger } from "./_core/logger";
 import {
@@ -575,6 +576,17 @@ export async function getChatMessages(sessionId: number) {
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────
+/**
+ * Append an entry to the tamper-evident audit chain (F-08).
+ *
+ * Signature and fire-and-forget error behavior are unchanged for callers;
+ * the hash-chain columns (prevHash/entryHash) are maintained transparently.
+ * Each insert runs in a transaction holding pg_advisory_xact_lock so
+ * concurrent writers cannot fork the chain. createdAt is set by the app so
+ * the entryHash input is fully known at write time.
+ *
+ * See server/lib/auditChain.ts for the hash format and honest limits.
+ */
 export async function writeAuditLog(data: {
   agentId?: number;
   action: string;
@@ -587,14 +599,43 @@ export async function writeAuditLog(data: {
   const db = await getDb();
   if (!db) return;
   try {
-    await db.insert(auditLog).values({
-      agentId: data.agentId ?? null,
-      action: data.action,
-      resource: data.resource,
-      resourceId: data.resourceId ?? null,
-      ipAddress: data.ipAddress ?? null,
-      status: data.status ?? "success",
-      metadata: data.metadata ?? null,
+    await db.transaction(async tx => {
+      // Serialize chain writers for the duration of this transaction.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK_KEY})`
+      );
+      const [last] = await tx
+        .select({ entryHash: auditLog.entryHash })
+        .from(auditLog)
+        .orderBy(desc(auditLog.id))
+        .limit(1);
+      const prevHash = last?.entryHash ?? null;
+      const createdAt = new Date();
+      const fields = {
+        agentId: data.agentId ?? null,
+        action: data.action,
+        resource: data.resource,
+        resourceId: data.resourceId ?? null,
+        ipAddress: data.ipAddress ?? null,
+        userAgent: null,
+        status: data.status ?? ("success" as const),
+        metadata: data.metadata ?? null,
+        tenantId: null,
+        createdAt,
+      };
+      const entryHash = computeEntryHash(prevHash, fields);
+      await tx.insert(auditLog).values({
+        agentId: fields.agentId,
+        action: fields.action,
+        resource: fields.resource,
+        resourceId: fields.resourceId,
+        ipAddress: fields.ipAddress,
+        status: fields.status,
+        metadata: data.metadata ?? null,
+        prevHash,
+        entryHash,
+        createdAt,
+      });
     });
   } catch (err) {
     logger.error("[AuditLog] Failed to write:: " + String(err));
