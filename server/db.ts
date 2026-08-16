@@ -648,5 +648,7 @@ export async function withTransaction<T>(
 ): Promise<T> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.transaction(fn);
+  // NodePgDatabase.transaction expects an unknown-schema tx callback; the
+  // public signature above intentionally uses the narrower never-schema form.
+  return db.transaction(fn as unknown as (tx: PgTransaction<NodePgQueryResultHKT, Record<string, unknown>, ExtractTablesWithRelations<Record<string, unknown>>>) => Promise<T>);
 }

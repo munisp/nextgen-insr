@@ -55,7 +55,7 @@ describe("Accessibility: Focus Management", () => {
   });
 
   it("should focus first input on mount", () => {
-    const inputRef = { current: null };
+    const inputRef: { current: HTMLInputElement | null } = { current: null };
     
     render(
       <div>

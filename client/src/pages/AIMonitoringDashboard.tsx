@@ -2,7 +2,7 @@
  * AIMonitoringDashboard — Role-scoped dashboard with real tRPC data and Recharts charts.
  */
 import { trpc } from "@/_core/trpc";
-import { KpiCard } from "@/components/insurance/KpiCard";
+import { KpiCard, type KpiTrend, type KpiStatus } from "@/components/insurance/KpiCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
 import {
@@ -23,7 +23,11 @@ export default function AIMonitoringDashboard() {
   const { data: healthData } = (trpc as any).aiMonitoring?.serviceHealth?.useQuery?.() ?? { data: null };
 
   const d = dash ?? {};
-  const cards = [
+  const cards: Array<{
+    title: string; value: string | number; icon: React.ElementType;
+    trend?: KpiTrend; trendValue?: string; subtitle?: string;
+    status?: KpiStatus; href?: string; accent: string;
+  }> = [
     { title: "Total Models", value: d.modelCount ?? "—", icon: Brain, trend: "flat" as const, trendValue: "deployed", status: "neutral" as const, href: "/ml-scoring-dashboard", accent: "var(--insurance-primary)" },
     { title: "Active Models", value: d.activeModels ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: "production", status: "good" as const, href: "/ml-scoring-dashboard", accent: "var(--risk-low)" },
     { title: "Predictions (7d)", value: d.totalPredictions ?? "—", icon: Zap, trend: "up" as const, trendValue: "↑ 12%", status: "good" as const, href: "/ml-scoring-dashboard", accent: "var(--insurance-secondary)" },
@@ -71,7 +75,7 @@ export default function AIMonitoringDashboard() {
             {cards.map((c) => (
               <KpiCard key={c.title} title={c.title} value={c.value} icon={c.icon}
                 trend={c.trend} trendValue={c.trendValue} status={c.status}
-                accentColor={c.accent} loading={isLoading} onClick={() => navigate(c.href)} />
+                accentColor={c.accent} loading={isLoading} onClick={() => c.href && navigate(c.href)} />
             ))}
           </div>
         </section>

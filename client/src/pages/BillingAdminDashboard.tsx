@@ -94,7 +94,7 @@ export default function BillingAdminDashboard() {
                 status={c.status}
                 accentColor={c.accent}
                 loading={isLoading}
-                onClick={() => navigate(c.href)}
+                onClick={() => c.href && navigate(c.href)}
               />
             ))}
           </div>

@@ -155,7 +155,7 @@ export const apiGatewayRouter = router({
         action: "API_KEY_CREATED",
         resource: "api_key",
         resourceId: keyHash.slice(0, 16),
-        agentId: String(ctx.user?.id ?? "system"),
+        agentId: ctx.user?.id ?? null,
         metadata: {
           name: input.name,
           keyPrefix,
@@ -192,7 +192,7 @@ export const apiGatewayRouter = router({
         action: "API_KEY_REVOKED",
         resource: "api_key",
         resourceId: (record.metadata as any)?.keyHash?.slice(0, 16) ?? String(input.id),
-        agentId: String(ctx.user?.id ?? "system"),
+        agentId: ctx.user?.id ?? null,
         metadata: { originalId: input.id, reason: input.reason ?? "manual_revocation", revokedBy: ctx.user?.id },
       });
       return { success: true, id: input.id, status: "revoked" };

@@ -58,11 +58,11 @@ interface ChatSession {
 interface ChatMessage {
   id: number;
   sessionId: number;
-  senderType: string;
+  senderType: "system" | "agent" | "support";
   senderName: string | null;
   content: string;
   isRead: boolean | null;
-  createdAt: string;
+  createdAt: Date;
 }
 
 // ─── Canned Admin Responses ─────────────────────────────────────────────────
@@ -517,7 +517,6 @@ export default function AdminSupportInbox() {
                 {/* Messages */}
                 <ScrollArea className="flex-1 p-4">
                   <div className="space-y-3">
-                    // @ts-ignore Sprint 85
                     {(messagesQuery.data ?? []).map((msg: ChatMessage) => {
                       const isSupport = msg.senderType === "support";
                       const isSystem = msg.senderType === "system";

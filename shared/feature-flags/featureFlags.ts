@@ -3,7 +3,20 @@
  * Used by Node.js services and React/React Native frontends
  */
 
-import { UnleashClient } from 'unleash-proxy-client';
+// NOTE: unleash-proxy-client is an OPTIONAL runtime dependency (not in
+// package.json; frozen lockfile). It is loaded lazily via dynamic import.
+// Invoking feature-flag evaluation without the dependency installed fails
+// loud and explicit — see initFeatureFlags()/getUnleashClient() below.
+
+/** Minimal structural interface for the parts of UnleashClient we use. */
+export interface UnleashClientLike {
+  start(): void;
+  stop?(): void;
+  on(event: 'error' | 'ready', cb: (err?: Error) => void): void;
+  isEnabled(flag: string, context?: unknown, fallback?: boolean): boolean;
+  getVariant(flag: string): { name: string; enabled: boolean; payload?: { type: string; value: string } };
+  updateContext(ctx: Record<string, unknown>): void;
+}
 
 // ============================================================
 // Feature Flag Definitions
@@ -81,11 +94,33 @@ const UNLEASH_URL =
 const UNLEASH_CLIENT_KEY =
   process.env.UNLEASH_CLIENT_KEY || 'default:production.unleash-insecure-api-token';
 
-let _client: UnleashClient | null = null;
+let _client: UnleashClientLike | null = null;
+let _loadState: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
+let _loadError: Error | null = null;
 
-export function getUnleashClient(): UnleashClient {
-  if (!_client) {
-    _client = new UnleashClient({
+const UNLEASH_SPEC = 'unleash-proxy-client';
+
+/**
+ * Lazily loads and starts the Unleash client. The dependency is optional and
+ * loaded via dynamic import (non-literal specifier so bundlers/tsc do not
+ * require it at build time).
+ */
+export async function initFeatureFlags(): Promise<UnleashClientLike> {
+  if (_client) return _client;
+  if (_loadState === 'failed') throw _loadError;
+  if (_loadState === 'loading') {
+    // wait for the in-flight load
+    while (_loadState === 'loading') await new Promise(r => setTimeout(r, 25));
+    if (_client) return _client;
+    throw _loadError ?? new Error('[FeatureFlags] Unleash client failed to initialize');
+  }
+  _loadState = 'loading';
+  try {
+    // Dynamic import of the optional dependency; clear error when missing.
+    const dynamicImport = new Function('spec', 'return import(spec)') as (spec: string) => Promise<Record<string, unknown>>;
+    const mod = await dynamicImport(UNLEASH_SPEC);
+    const UnleashClientCtor = mod.UnleashClient as new (cfg: Record<string, unknown>) => UnleashClientLike;
+    _client = new UnleashClientCtor({
       url: UNLEASH_URL,
       clientKey: UNLEASH_CLIENT_KEY,
       appName: process.env.SERVICE_NAME || 'insurance-service',
@@ -94,8 +129,8 @@ export function getUnleashClient(): UnleashClient {
       metricsInterval: 60,
     });
 
-    _client.on('error', (err: Error) => {
-      console.warn('[Unleash] Client error:', err.message);
+    _client.on('error', (err?: Error) => {
+      console.warn('[Unleash] Client error:', err?.message);
     });
 
     _client.on('ready', () => {
@@ -103,8 +138,32 @@ export function getUnleashClient(): UnleashClient {
     });
 
     _client.start();
+    _loadState = 'ready';
+    return _client;
+  } catch (err) {
+    _loadError = new Error(
+      '[FeatureFlags] unleash-proxy-client is not installed. Feature flags are ' +
+      'unavailable: install the optional unleash-proxy-client dependency, or do ' +
+      'not invoke feature-flag evaluation. Cause: ' + (err instanceof Error ? err.message : String(err))
+    );
+    _loadState = 'failed';
+    throw _loadError;
   }
-  return _client;
+}
+
+/**
+ * Returns the initialized Unleash client. Kicks off a lazy async init if not
+ * started yet; once initialization has FAILED (dependency missing), every
+ * invocation throws a loud, explicit error.
+ */
+export function getUnleashClient(): UnleashClientLike {
+  if (_client) return _client;
+  if (_loadState === 'failed') throw _loadError;
+  if (_loadState === 'idle') {
+    // Fire-and-forget lazy init; sync callers get the fallback path until ready.
+    void initFeatureFlags().catch(err => console.warn(err instanceof Error ? err.message : String(err)));
+  }
+  throw new Error('[FeatureFlags] Unleash client not ready yet (async initialization in progress)');
 }
 
 // ============================================================
@@ -124,6 +183,7 @@ export function isEnabled(
 
     return client.isEnabled(flag, undefined, fallback);
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith('[FeatureFlags]')) throw err;
     console.warn(`[Unleash] Flag evaluation failed for ${flag}:`, err);
     return fallback;
   }
@@ -142,6 +202,7 @@ export function getVariant(
 
     return client.getVariant(flag);
   } catch (err) {
+    if (err instanceof Error && err.message.startsWith('[FeatureFlags]')) throw err;
     console.warn(`[Unleash] Variant evaluation failed for ${flag}:`, err);
     return { name: 'disabled', enabled: false };
   }

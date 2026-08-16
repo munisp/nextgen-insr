@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { disputes } from "../../drizzle/schema";
 import { eq, and, lt, isNull } from "drizzle-orm";
 import { logger } from "../_core/logger";
+import type { DisputeStatus } from "../lib/businessRulesEngine";
 
 /**
  * Runs every 15 minutes — auto-escalates disputes that have exceeded their SLA deadline.
@@ -30,12 +31,8 @@ export async function runDisputeAutoEscalation() {
 
     let escalated = 0;
     for (const dispute of overdueDisputes) {
-      const hoursOpen =
-        (now.getTime() - new Date(dispute.createdAt).getTime()) /
-        (1000 * 60 * 60);
-      const amount = Number(dispute.amount ?? 0);
-      // shouldAutoEscalate only accepts (hoursOpen, amount)
-      const escalationResult = shouldAutoEscalate(hoursOpen, amount);
+      // shouldAutoEscalate(currentStatus, lastUpdatedAt) evaluates escalation rules
+      const escalationResult = shouldAutoEscalate(dispute.status as DisputeStatus, dispute.updatedAt ?? dispute.createdAt);
 
       if (escalationResult.shouldEscalate) {
         await db

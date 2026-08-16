@@ -351,7 +351,7 @@ export default function InsureMarketPage() {
                 <div className="text-sm text-slate-400 mb-4">
                   High-priority monetization opportunities identified by the platform intelligence engine.
                 </div>
-                {dashboard.opportunities.map((opp, i) => (
+                {(dashboard.opportunities ?? []).map((opp, i) => (
                   <div key={i} className="glass-card p-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-xs font-bold text-blue-400">

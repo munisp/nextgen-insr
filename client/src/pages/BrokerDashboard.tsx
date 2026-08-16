@@ -3,7 +3,7 @@
  * Wired to tRPC brokerKpi procedure.
  */
 import { trpc } from "@/_core/trpc";
-import { KpiCard } from "@/components/insurance/KpiCard";
+import { KpiCard, type KpiTrend, type KpiStatus } from "@/components/insurance/KpiCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
 import {
@@ -21,7 +21,11 @@ export default function BrokerDashboard() {
   const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.brokerKpi?.useQuery?.({}) ?? { data: null, isLoading: false };
   const kpi = data?.kpis ?? data ?? {};
 
-  const cards = [
+  const cards: Array<{
+    title: string; value: string | number; icon: React.ElementType;
+    trend?: KpiTrend; trendValue?: string; subtitle?: string;
+    status?: KpiStatus; href?: string; accent: string;
+  }> = [
     { title: "Active Policies", value: kpi.policies?.active ?? kpi.activePolicies ?? "—", icon: FileText, trend: "up", trendValue: "+3 this week", status: "good" as const, href: "/policies", accent: "var(--role-broker)" },
     { title: "Total Clients", value: kpi.clients?.total ?? kpi.totalClients ?? "—", icon: Users, trend: "up", trendValue: "+5 MTD", status: "neutral" as const, href: "/customers", accent: "var(--insurance-primary)" },
     { title: "Premium Volume (₦M)", value: kpi.premiums?.total ? (kpi.premiums.total/1e6).toFixed(1) : kpi.premiumVolume ?? "—", icon: DollarSign, trend: "up", trendValue: "↑ 8%", status: "good" as const, href: "/premium-collection", accent: "var(--risk-low)" },
@@ -52,7 +56,7 @@ export default function BrokerDashboard() {
             {cards.map((c) => (
               <KpiCard key={c.title} title={c.title} value={c.value} icon={c.icon}
                 trend={c.trend} trendValue={c.trendValue} status={c.status}
-                accentColor={c.accent} loading={isLoading} onClick={() => navigate(c.href)} />
+                accentColor={c.accent} loading={isLoading} onClick={() => c.href && navigate(c.href)} />
             ))}
           </div>
         </section>

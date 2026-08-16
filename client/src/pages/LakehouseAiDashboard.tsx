@@ -2,7 +2,7 @@
  * LakehouseAiDashboard — Role-scoped dashboard with real tRPC data and Recharts charts.
  */
 import { trpc } from "@/_core/trpc";
-import { KpiCard } from "@/components/insurance/KpiCard";
+import { KpiCard, type KpiTrend, type KpiStatus } from "@/components/insurance/KpiCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
 import {
@@ -24,7 +24,11 @@ export default function LakehouseAiDashboard() {
   const { data: lineage } = (trpc as any).lakehouseAiIntegration?.dataLineage?.useQuery?.() ?? { data: null };
 
   const a = analytics ?? {};
-  const cards = [
+  const cards: Array<{
+    title: string; value: string | number; icon: React.ElementType;
+    trend?: KpiTrend; trendValue?: string; subtitle?: string;
+    status?: KpiStatus; href?: string; accent: string;
+  }> = [
     { title: "Total AI Queries", value: a.totalQueries ?? "—", icon: Zap, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/lakehouse-ai-dashboard", accent: "var(--insurance-primary)" },
     { title: "Avg Latency (ms)", value: a.avgLatencyMs ?? "—", icon: Activity, trend: "down" as const, trendValue: "↓ 5ms", status: "good" as const, href: "/lakehouse-ai-dashboard", accent: "var(--risk-low)" },
     { title: "Storage Used (GB)", value: a.storageUsedGb ? Number(a.storageUsedGb).toFixed(2) : "—", icon: Database, trend: "up" as const, trendValue: "growing", status: "neutral" as const, href: "/lakehouse-ai-dashboard", accent: "var(--insurance-secondary)" },
@@ -66,7 +70,7 @@ export default function LakehouseAiDashboard() {
             {cards.map((c) => (
               <KpiCard key={c.title} title={c.title} value={c.value} icon={c.icon}
                 trend={c.trend} trendValue={c.trendValue} status={c.status}
-                accentColor={c.accent} loading={isLoading} onClick={() => navigate(c.href)} />
+                accentColor={c.accent} loading={isLoading} onClick={() => c.href && navigate(c.href)} />
             ))}
           </div>
         </section>

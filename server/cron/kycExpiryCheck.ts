@@ -8,6 +8,7 @@ import { logger } from "../_core/logger";
  * Runs daily — flags agents with expired KYC documents and notifies them.
  */
 export async function runKycExpiryCheck() {
+  logger.warn("[Cron] KYC expiry tracking not configured (no schema column) — skipping");
   logger.info("[Cron] Running KYC expiry check");
   const db = await getDb();
   if (!db) {

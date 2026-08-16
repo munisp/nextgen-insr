@@ -71,7 +71,7 @@ function PWAUpdateBanner() {
 useRegisterSW({
   onRegisteredSW(_swUrl, registration) {
     if (process.env.NODE_ENV === "development") {
-      console.info("[PWA] Service Worker registered:", registration?.scriptURL);
+      console.info("[PWA] Service Worker registered:", registration?.active?.scriptURL);
     }
   },
   onRegisterError(error) {
