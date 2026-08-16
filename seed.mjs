@@ -1075,12 +1075,12 @@ async function seed() {
     await ins(client, "audit_log",
       ["id", "agentId", "action", "resource", "resourceId", "ipAddress", "status", "metadata", "tenantId", "createdAt"],
       [
-        [1, "AGT001", "login",              "agent_session", null,    "41.58.12.34",  "success", J({ source: "seed-demo" }), TENANT_ID, hoursAgo(6)],
-        [2, "AGT001", "transaction_create", "transactions",  "1",     "41.58.12.34",  "success", J({ source: "seed-demo" }), TENANT_ID, daysAgo(1)],
-        [3, "ADMIN1", "float_approve",      "float_topup",   "1",     "197.210.54.2", "success", J({ source: "seed-demo" }), TENANT_ID, daysAgo(10)],
-        [4, "AGT002", "pin_reset",          "agent_auth",    null,    "105.112.8.91", "success", J({ source: "seed-demo" }), TENANT_ID, daysAgo(4)],
-        [5, "ADMIN1", "agent_suspend",      "agents",        "8",     "197.210.54.2", "warning", J({ source: "seed-demo" }), TENANT_ID, daysAgo(12)],
-        [6, "ADMIN1", "settlement_run",     "settlement",    "1",     "197.210.54.2", "success", J({ source: "seed-demo" }), TENANT_ID, daysAgo(11)],
+        [1, 1, "login",              "agent_session", null,    "41.58.12.34",  "success", J({ source: "seed-demo" }), TENANT_ID, hoursAgo(6)],
+        [2, 1, "transaction_create", "transactions",  "1",     "41.58.12.34",  "success", J({ source: "seed-demo" }), TENANT_ID, daysAgo(1)],
+        [3, 16, "float_approve",      "float_topup",   "1",     "197.210.54.2", "success", J({ source: "seed-demo" }), TENANT_ID, daysAgo(10)],
+        [4, 2, "pin_reset",          "agent_auth",    null,    "105.112.8.91", "success", J({ source: "seed-demo" }), TENANT_ID, daysAgo(4)],
+        [5, 16, "agent_suspend",      "agents",        "8",     "197.210.54.2", "warning", J({ source: "seed-demo" }), TENANT_ID, daysAgo(12)],
+        [6, 16, "settlement_run",     "settlement",    "1",     "197.210.54.2", "success", J({ source: "seed-demo" }), TENANT_ID, daysAgo(11)],
       ]);
 
     // ── 72. Chat Sessions & Messages ──────────────────────────────────────────
