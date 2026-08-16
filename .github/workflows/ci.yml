@@ -78,11 +78,6 @@ jobs:
           echo "   into domain-organized files (max ~500 lines per file)"
           echo "   See server/lib/routerConventions.ts for guidelines"
 
-    notifications-on-failure:
-      if: failure()
-      steps:
-        - name: Notify on failure
-          run: echo "Node.js quality checks failed — check lint, type-check, and build output."
 
   # ── TypeScript Typecheck Gate (F-04) ─────────────────────────────────
   # Hard gate: tsc --noEmit must be clean. No continue-on-error.
@@ -181,11 +176,6 @@ jobs:
           path: coverage/
           retention-days: 30
 
-    notifications-on-failure:
-      if: failure()
-      steps:
-        - name: Notify on failure
-          run: echo "Node.js tests failed — check vitest output."
 
   # ── Go Build & Vet ───────────────────────────────────────────────────
   go-build:
