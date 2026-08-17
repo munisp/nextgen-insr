@@ -190,7 +190,9 @@ export const billingLedgerRouter = router({
       const where = conditions.length ? and(...conditions) : undefined;
       const aggregations = await db
         .select({
-          periodStart: sql<string>`date_trunc(${input.period}, created_at)::text`,
+          // input.period is a zod enum (hourly|daily|weekly|monthly) — safe to
+          // inline; a bound parameter makes date_trunc's type ambiguous in PG.
+          periodStart: sql<string>`date_trunc(${sql.raw(input.period)}, created_at)::text`,
           transactionCount: count(),
           grossFees: sql<string>`COALESCE(SUM(CAST(gross_fee AS NUMERIC)), 0)`,
           platformRevenue: sql<string>`COALESCE(SUM(CAST(platform_revenue AS NUMERIC)), 0)`,
@@ -198,8 +200,8 @@ export const billingLedgerRouter = router({
         })
         .from(platformBillingLedger)
         .where(where)
-        .groupBy(sql`date_trunc(${input.period}, created_at)`)
-        .orderBy(sql`date_trunc(${input.period}, created_at)`);
+        .groupBy(sql`date_trunc(${sql.raw(input.period)}, created_at)`)
+        .orderBy(sql`date_trunc(${sql.raw(input.period)}, created_at)`);
       const [totalsRow] = await db
         .select({
           totalGrossFees: sql<string>`COALESCE(SUM(CAST(gross_fee AS NUMERIC)), 0)`,
