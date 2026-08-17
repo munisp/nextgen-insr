@@ -10,7 +10,6 @@ import (
 	"github.com/tigerbeetle/tigerbeetle-go/pkg/types"
 	"insurance-platform/ledger"
 	"insurance-platform/models"
-	"insurance-platform/repository"
 )
 
 // Well-known account IDs for company accounts
@@ -30,7 +29,7 @@ type PaymentService struct {
 	ledgerID         uint32
 }
 
-// PaymentRepository is the subset of *repository.PaymentRepository used by
+// PaymentRepository is the subset of repository.PaymentRepository used by
 // PaymentService — an interface so tests can substitute a mock.
 type PaymentRepository interface {
 	Create(ctx context.Context, payment models.Payment) (int64, error)
