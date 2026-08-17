@@ -104,14 +104,14 @@ export const bulkNotifRouter = router({
 
 // Retry Queue Router
 export const retryQueueRouter = router({
+  // F-12 (wave-4b): transactions rows were presented as a notification
+  // retry queue — a wrong-domain facade (no retry-queue store exists).
+  // Fail loud.
   list: protectedProcedure.query(async () => {
-    const db = (await getDb())!;
-    const rows = await db
-      .select()
-      .from(transactions)
-      .orderBy(desc(transactions.id))
-      .limit(10);
-    return { items: rows, total: rows.length };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "retryQueue.list: no notification retry-queue store is delivered",
+    });
   }),
   // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
   // with no state change. Fail loud until a real store is delivered.
