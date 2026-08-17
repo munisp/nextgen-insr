@@ -128,13 +128,16 @@ const getStats = publicProcedure
         .from(webhookEndpoints)
         .orderBy(desc(webhookEndpoints.id))
         .limit(5);
+      // F-12 (full sweep): fixture stats (99.2%/45/125000) after real
+      // queries whose results were discarded -> REAL endpoint count from
+      // webhook_endpoints; delivery telemetry has no store -> honest 0s.
       return {
-        successRate: 99.2,
-        totalEndpoints: 45,
-        totalDelivered: 125000,
-        totalFailed: 1000,
-        avgLatency: 230,
-        retryQueue: 150,
+        successRate: 0,
+        totalEndpoints: Number(total),
+        totalDelivered: 0,
+        totalFailed: 0,
+        avgLatency: 0,
+        retryQueue: 0,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

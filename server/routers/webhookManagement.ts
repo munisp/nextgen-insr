@@ -1,11 +1,11 @@
 // @ts-check
 import crypto from "crypto";
 
-import { TRPCError } from "@trpc/server";
 /**
  * F17: Webhook Management — Production-Grade
  * DB-backed subscriptions, delivery tracking, retry logic, payload signing
  */
+import { TRPCError } from "@trpc/server";
 import { eq, desc, and, gte, count, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -94,7 +94,23 @@ export const webhookManagementRouter = router({
       totalWebhooks: subs.total || 0,
       activeWebhooks: active.total || 0,
       totalDeliveries24h: del24h.total || 0,
-      successRate: 98.7,
+      // F-12 (full sweep): successRate was hardcoded 98.7 -> REAL 24h
+      // delivered/total rate from webhook_deliveries.
+      successRate: await (async () => {
+        const [delivered] = await db
+          .select({ total: count() })
+          .from(webhookDeliveries)
+          .where(
+            and(
+              gte(webhookDeliveries.createdAt, since24h),
+              eq(webhookDeliveries.status, "delivered")
+            )
+          )
+          .limit(100);
+        return (del24h?.total ?? 0) > 0
+          ? Math.round((Number(delivered.total) / Number(del24h.total)) * 1000) / 10
+          : 0;
+      })(),
       recentDeliveries: recent.map(d => ({
         id: `WD-${d.id}`,
         webhookId: `WH-${d.subscriptionId ?? d.endpointId}`,
