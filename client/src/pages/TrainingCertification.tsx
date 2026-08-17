@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { GraduationCap } from "lucide-react";
@@ -7,9 +6,7 @@ import { GraduationCap } from "lucide-react";
 // Sprint 42: Final Production Features
 
 export default function TrainingCertification() {
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data: liveData, isLoading, isError, error } =
-    // @ts-ignore Sprint 85
     trpc.trainingCertification.list.useQuery(undefined, { retry: 1 });
   const rows: any[] = Array.isArray(liveData) ? liveData : [];
   const [search, setSearch] = useState("");
@@ -20,7 +17,6 @@ export default function TrainingCertification() {
   const columns = ["Course", "Agent", "Progress", "Score", "Badge"];
 
   const filtered = rows.filter(
-    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     r =>
       String(r.col1 ?? "").toLowerCase().includes(search.toLowerCase()) ||
       String(r.col2 ?? "").toLowerCase().includes(search.toLowerCase())

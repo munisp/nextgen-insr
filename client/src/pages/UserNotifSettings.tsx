@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * UserNotifSettings — End-user page to customize per-category notification delivery channels
  */

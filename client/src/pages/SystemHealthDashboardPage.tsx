@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import KpiCard from "@/components/KpiCard";
@@ -6,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function SystemHealthDashboardPage() {
-  const { data, isLoading } = trpc.systemHealth.status.useQuery(undefined, { refetchInterval: 15000 });
+  const { data, isLoading } = trpc.systemHealthDashboard.getStatus.useQuery(undefined, { refetchInterval: 15000 });
   const services = (data?.services as any[]) || [];
 
   return (
