@@ -113,9 +113,12 @@ export default function PBACManagement() {
   };
   type AssignmentRow = {
     id: string;
+    userId?: string;
     role?: string;
-    userName?: string;
-    email?: string;
+    assignedAt?: string;
+    // F-12: expiresAt is never stored by assignRole — assignments do not
+    // expire on this platform.
+    expiresAt?: string;
   };
   const roles: RoleRow[] = rolesQuery.data?.data ?? [];
   const roleDetailRow: RoleRow | undefined = roleDetail.data?.data?.[0];
@@ -231,26 +234,17 @@ export default function PBACManagement() {
                   <div className="flex-1 text-left min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-sm">
-                        {role.displayName}
+                        {role.name ?? role.id}
                       </span>
-                      <Badge variant="outline" className="text-xs">
-                        Level {role.level}
-                      </Badge>
-                      {role.isSystem && (
-                        <Lock className="h-3 w-3 text-muted-foreground" />
-                      )}
                     </div>
                     <p className="text-xs text-muted-foreground truncate mt-0.5">
                       {role.description}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="flex items-center gap-1 text-sm">
-                      <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="font-semibold">{role.userCount}</span>
-                    </div>
+                    {/* F-12: no per-role user-count source is delivered */}
                     <span className="text-xs text-muted-foreground">
-                      {role.permissions.length} perms
+                      {role.permissions?.length ?? 0} perms
                     </span>
                   </div>
                 </button>
@@ -314,15 +308,13 @@ export default function PBACManagement() {
                         </div>
                       </td>
                       <td className="p-3">
-                        <Badge
-                          variant="outline"
-                          className={`${roleColors[user.roleId] ?? ""} gap-1`}
-                        >
-                          {roleIcons[user.roleId]} {user.roleName}
+                        <Badge variant="outline" className="gap-1">
+                          {user.role ?? "—"}
                         </Badge>
                       </td>
                       <td className="p-3 text-muted-foreground">
-                        {user.assignedBy}
+                        {/* F-12: the assignment blob stores no assignedBy */}
+                        —
                       </td>
                       <td className="p-3 text-muted-foreground text-xs">
                         {new Date(user.assignedAt).toLocaleDateString()}
@@ -347,13 +339,13 @@ export default function PBACManagement() {
                             className="h-7 text-xs"
                             onClick={() => {
                               setAssignUserId(user.id.toString());
-                              setAssignRoleId(user.roleId);
+                              setAssignRoleId(user.role ?? "");
                               setAssignDialog(true);
                             }}
                           >
                             <UserCog className="h-3 w-3 mr-1" /> Change
                           </Button>
-                          {user.roleId !== "viewer" && (
+                          {user.role !== "viewer" && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -581,7 +573,7 @@ export default function PBACManagement() {
                   <SelectValue placeholder="Select role..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {rolesQuery.data?.map((role: any) => (
+                  {rolesQuery.data?.data?.map((role: any) => (
                     <SelectItem key={role.id} value={role.id}>
                       <div className="flex items-center gap-2">
                         {roleIcons[role.id]}

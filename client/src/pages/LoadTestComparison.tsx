@@ -594,7 +594,7 @@ export default function LoadTestComparison() {
                 <SelectContent>
                   {runs.map(r => (
                     <SelectItem key={r.id} value={r.runId}>
-                      {r.name?.slice(0, 50) ?? r.id} —{" "}
+                      {r.runId} —{" "}
                       {new Date(r.startedAt).toLocaleDateString()}
                     </SelectItem>
                   ))}
@@ -630,7 +630,7 @@ export default function LoadTestComparison() {
                 <SelectContent>
                   {runs.map(r => (
                     <SelectItem key={r.id} value={r.runId}>
-                      {r.name?.slice(0, 50) ?? r.id} —{" "}
+                      {r.runId} —{" "}
                       {new Date(r.startedAt).toLocaleDateString()}
                     </SelectItem>
                   ))}

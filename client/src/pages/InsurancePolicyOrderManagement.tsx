@@ -18,7 +18,16 @@ export default function InsuranceOrderManagement() {
       customerName?: string; createdAt?: string | Date;
     }>;
     total?: number;
-  } | undefined = undefined;
+  } | undefined = undefined as
+    | {
+        orders?: Array<{
+          id: number; orderNumber?: string; status?: string; currency?: string;
+          total?: number; items?: Array<Record<string, unknown>>;
+          customerName?: string; createdAt?: string | Date;
+        }>;
+        total?: number;
+      }
+    | undefined;
   const refetch = () => {};
 
   const orderDetail:
@@ -28,7 +37,14 @@ export default function InsuranceOrderManagement() {
         items?: Array<{ id: number; name?: string; quantity?: number; total?: number }>;
         customerName?: string; createdAt?: string | Date;
       }
-    | undefined = undefined;
+    | undefined = undefined as
+      | {
+          orderNumber?: string; status?: string; currency?: string;
+          total?: number;
+          items?: Array<{ id: number; name?: string; quantity?: number; total?: number }>;
+          customerName?: string; createdAt?: string | Date;
+        }
+      | undefined;
 
   const updateStatus = {
     mutate: () => toast.error("Order status updates are not available on this deployment"),

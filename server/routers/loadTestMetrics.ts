@@ -14,19 +14,22 @@ import { getConfig, getConfigNumber, setConfig } from "../lib/runtimeConfig";
 
 // -- Helper functions ---------------------------------------------------------
 
+// F-12 (wave-4b): the client consumes valueA/valueB/improved — the
+// compare payload now emits that shape (lower-is-better for latency).
 function delta(a: number, b: number) {
   return {
-    a,
-    b,
+    valueA: a,
+    valueB: b,
     diff: b - a,
     pctChange: a !== 0 ? Math.round(((b - a) / a) * 10000) / 100 : 0,
+    improved: b < a,
   };
 }
 
 function deltaHigherBetter(a: number, b: number) {
   return {
-    a,
-    b,
+    valueA: a,
+    valueB: b,
     diff: b - a,
     pctChange: a !== 0 ? Math.round(((b - a) / a) * 10000) / 100 : 0,
     improved: b > a,
