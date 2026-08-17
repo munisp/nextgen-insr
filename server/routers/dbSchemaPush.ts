@@ -78,12 +78,10 @@ export const dbSchemaPushRouter = router({
       const [{ total }] = await database.select({ total: count() }).from(platformSettings);
       trackedSettings = Number(total ?? 0);
     }
-    return {
-      currentVersion: "2026.05.28.001",
-      totalMigrations: 47,
-      pendingMigrations: 0,
-      migrationRules: MIGRATION_RULES.length,
-      trackedSettings,
-    };
+    // F-12: only real sources — the migration-history list/getSummary above are
+    // delivered hardcoded fixtures (reported as mockware), so they are NOT a
+    // data source; stats expose only the platformSettings rows this router
+    // genuinely manages.
+    return { trackedSettings };
   }),
 });

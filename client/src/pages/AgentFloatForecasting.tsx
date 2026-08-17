@@ -188,7 +188,7 @@ export default function AgentFloatForecasting() {
                 {stats.isLoading
                   ? "…"
                   : model.predictedDemand7d != null
-                    ? `₦${Number(stats.data.predictedDemand7d).toLocaleString()}`
+                    ? `₦${Number(model.predictedDemand7d).toLocaleString()}`
                     : "—"}
               </div>
             </CardContent>
@@ -204,7 +204,7 @@ export default function AgentFloatForecasting() {
                 {stats.isLoading
                   ? "…"
                   : model.avgAccuracy != null
-                    ? `${stats.data.avgAccuracy}%`
+                    ? `${model.avgAccuracy}%`
                     : "—"}
               </div>
               <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
@@ -402,7 +402,7 @@ export default function AgentFloatForecasting() {
             </CardHeader>
             <CardContent className="space-y-3">
               {(Array.isArray(model.replenishmentHistory)
-                ? stats.data.replenishmentHistory
+                ? model.replenishmentHistory
                 : []
               ).length === 0 ? (
                 <div className="py-4 text-center text-sm text-muted-foreground">

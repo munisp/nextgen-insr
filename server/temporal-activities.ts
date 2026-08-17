@@ -398,23 +398,23 @@ export async function assignBillingRoles(input: {
 export function configureReconciliation(input: {
   tenantId: number;
   region?: string;
-}): {
+}): Promise<{
   schedule: string;
   reconciliationTime: string;
   threshold: number;
   autoResolveBelow: number;
-} {
+}> {
   // The platform's delivered reconciliation defaults (same values the local
   // orchestrator in routers/tenantBillingOnboarding.ts records per step).
   // tenant_billing_config has no reconciliation column by design — the
   // effective config is returned to the orchestrator, which persists it in
   // billing_provisioning_history.details.
-  return {
+  return Promise.resolve({
     schedule: "daily",
     reconciliationTime: `02:00 ${input.region ?? "WAT"}`,
     threshold: 0.01, // 1% variance triggers alert
     autoResolveBelow: 100, // NGN auto-resolve discrepancies below 100
-  };
+  });
 }
 
 export async function activateBilling(input: {
