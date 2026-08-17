@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Network Status Dashboard — Sprint 75
  * Real-time connectivity charts per carrier and region
