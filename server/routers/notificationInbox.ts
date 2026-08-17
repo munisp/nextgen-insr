@@ -85,18 +85,20 @@ export const notificationInboxRouter = router({
   list: protectedProcedure
     .input(
       z.object({
-        userId: z.string(),
+        // F-12 (wave-4b): userId optional — defaults to the session user so
+        // callers cannot read other users' inboxes by default.
+        userId: z.string().optional(),
         status: z.string().optional(),
         limit: z.number().default(20),
         offset: z.number().default(0),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const db = await getDb();
         if (!db) return { notifications: [], total: 0 };
         const conditions: any[] = [
-          eq(notification_logs.recipientId, input.userId),
+          eq(notification_logs.recipientId, input.userId ?? String(ctx.user.id)),
         ];
         if (input.status)
           conditions.push(eq(notification_logs.status, input.status));
