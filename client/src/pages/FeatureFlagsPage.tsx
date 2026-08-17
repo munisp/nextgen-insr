@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { ToggleLeft, ToggleRight, FlaskConical } from "lucide-react";
 
 export default function FeatureFlagsPage() {
-  // @ts-ignore Sprint 85
   const { data } = trpc.featureFlags.dashboard.useQuery();
   const toggleMut = trpc.featureFlags.toggleFlag.useMutation();
   const utils = trpc.useUtils();
@@ -78,11 +76,9 @@ export default function FeatureFlagsPage() {
                     variant="outline"
                     onClick={() => {
                       toggleMut.mutate(
-                        // @ts-ignore Sprint 85
                         { flagId: f.id, enabled: f.status !== "enabled" },
                         {
                           onSuccess: () =>
-                            // @ts-ignore Sprint 85
                             utils.featureFlags.dashboard.invalidate(),
                         }
                       );
