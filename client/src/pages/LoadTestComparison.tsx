@@ -486,20 +486,22 @@ export default function LoadTestComparison() {
   const runs = runsQuery.data ?? [];
 
   // Auto-select first two runs if available
-  const effectiveA = runIdA ?? runs[0]?.id ?? null;
-  const effectiveB = runIdB ?? runs[1]?.id ?? null;
+  // F-12 (wave-4b): compareRuns keys on the runId string, not the row PK;
+  // its return shape is flat (no .comparison wrapper).
+  const effectiveA = runIdA ?? runs[0]?.runId ?? null;
+  const effectiveB = runIdB ?? runs[1]?.runId ?? null;
   const comparisonQuery = trpc.loadTestMetrics.compareRuns.useQuery(
-    { runIdA: effectiveA!, runIdB: effectiveB! },
+    { runIdA: effectiveA ?? "", runIdB: effectiveB ?? "" },
     { enabled: !!effectiveA && !!effectiveB && effectiveA !== effectiveB }
   );
 
   const data = comparisonQuery.data;
-  const cmp = data?.comparison;
+  const cmp = data;
 
   const zipfData = useMemo(
     () =>
       (cmp?.zipfComparison ?? []).map(d => ({
-        label: `#${d.rank}`,
+        label: `#${d.merchantId}`,
         reqA: d.requestsA,
         reqB: d.requestsB,
       })),
@@ -590,8 +592,8 @@ export default function LoadTestComparison() {
                   <SelectValue placeholder="Select baseline run" />
                 </SelectTrigger>
                 <SelectContent>
-                  {runs.map((r: any) => (
-                    <SelectItem key={r.id} value={r.id}>
+                  {runs.map(r => (
+                    <SelectItem key={r.id} value={r.runId}>
                       {r.name?.slice(0, 50) ?? r.id} —{" "}
                       {new Date(r.startedAt).toLocaleDateString()}
                     </SelectItem>
@@ -601,8 +603,8 @@ export default function LoadTestComparison() {
               {data?.runA && (
                 <div className="mt-2 text-xs text-muted-foreground space-y-1">
                   <div>
-                    Config: {data.runA.config.targetRps} RPS,{" "}
-                    {data.runA.config.duration}s, {data.runA.config.concurrency}{" "}
+                    Config: {data.runA.targetRps} RPS,{" "}
+                    {data.runA.durationSeconds}s, {data.runA.concurrency}{" "}
                     concurrent
                   </div>
                   <div>
@@ -626,8 +628,8 @@ export default function LoadTestComparison() {
                   <SelectValue placeholder="Select candidate run" />
                 </SelectTrigger>
                 <SelectContent>
-                  {runs.map((r: any) => (
-                    <SelectItem key={r.id} value={r.id}>
+                  {runs.map(r => (
+                    <SelectItem key={r.id} value={r.runId}>
                       {r.name?.slice(0, 50) ?? r.id} —{" "}
                       {new Date(r.startedAt).toLocaleDateString()}
                     </SelectItem>
@@ -637,8 +639,8 @@ export default function LoadTestComparison() {
               {data?.runB && (
                 <div className="mt-2 text-xs text-muted-foreground space-y-1">
                   <div>
-                    Config: {data.runB.config.targetRps} RPS,{" "}
-                    {data.runB.config.duration}s, {data.runB.config.concurrency}{" "}
+                    Config: {data.runB.targetRps} RPS,{" "}
+                    {data.runB.durationSeconds}s, {data.runB.concurrency}{" "}
                     concurrent
                   </div>
                   <div>
