@@ -1,8 +1,14 @@
 import { trpc } from "@/lib/trpc";
 
 export default function HelpDeskPage() {
-  const { data, isLoading } = trpc.helpDesk.dashboard.useQuery();
-  const { data: kb } = trpc.helpDesk.knowledgeBase.useQuery({});
+  // F-12 (wave-4b): dashboard/knowledgeBase are fail-loud (no help-desk
+  // backend beyond chat-session stats) — the page binds the REAL getStats
+  // counts; everything else renders honest unavailable states.
+  const { data, isLoading } = trpc.helpDesk.getStats.useQuery();
+  const { isError: kbUnavailable } = trpc.helpDesk.knowledgeBase.useQuery(
+    undefined,
+    { retry: false }
+  );
 
   if (isLoading)
     return <div className="p-8 text-center">Loading help desk...</div>;
@@ -18,51 +24,30 @@ export default function HelpDeskPage() {
               <p className="text-2xl font-bold">{data.openTickets}</p>
             </div>
             <div className="border rounded p-4">
-              <p className="text-sm text-muted-foreground">Resolved Today</p>
-              <p className="text-2xl font-bold">{data.resolvedToday}</p>
+              <p className="text-sm text-muted-foreground">Resolved Tickets</p>
+              <p className="text-2xl font-bold">{data.resolvedTickets}</p>
             </div>
+            {/* F-12: no resolution-time or SLA telemetry is delivered */}
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Avg Resolution</p>
-              <p className="text-2xl font-bold">{data.avgResolutionTime}</p>
+              <p className="text-2xl font-bold">—</p>
             </div>
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">SLA Compliance</p>
-              <p className="text-2xl font-bold">{data.slaCompliance}%</p>
+              <p className="text-2xl font-bold">—</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <h2 className="text-lg font-semibold mb-3">By Category</h2>
-              <div className="border rounded p-4 space-y-2">
-                {data.byCategory.map((c: any) => (
-                  <div
-                    key={c.category}
-                    className="flex justify-between items-center border-b pb-2"
-                  >
-                    <span className="text-sm">{c.category}</span>
-                    <span className="text-sm font-bold">
-                      {c.count} tickets • {c.avgResolution}
-                    </span>
-                  </div>
-                ))}
+              <div className="border rounded p-4 text-sm text-muted-foreground">
+                — category breakdowns are not delivered on this platform
               </div>
             </div>
             <div>
               <h2 className="text-lg font-semibold mb-3">By Priority</h2>
-              <div className="border rounded p-4 space-y-2">
-                {Object.entries(data.byPriority).map(([k, v]) => (
-                  <div
-                    key={k}
-                    className="flex justify-between items-center border-b pb-2"
-                  >
-                    <span
-                      className={`text-sm capitalize ${k === "critical" ? "text-red-500" : k === "high" ? "text-orange-500" : ""}`}
-                    >
-                      {k}
-                    </span>
-                    <span className="text-sm font-bold">{v}</span>
-                  </div>
-                ))}
+              <div className="border rounded p-4 text-sm text-muted-foreground">
+                — priority breakdowns are not delivered on this platform
               </div>
             </div>
           </div>
@@ -80,44 +65,30 @@ export default function HelpDeskPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.recentTickets.map((t: any) => (
-                    <tr key={t.id} className="border-b">
-                      <td className="p-2">{t.id}</td>
-                      <td className="p-2">{t.subject}</td>
-                      <td className="p-2 capitalize">{t.priority}</td>
-                      <td className="p-2 capitalize">{t.status}</td>
-                      <td className="p-2">{t.assignee}</td>
-                    </tr>
-                  ))}
+                  {/* F-12: no ticket-list proc is delivered */}
+                  <tr>
+                    <td colSpan={5} className="p-6 text-center text-sm text-muted-foreground">
+                      — ticket listing is not delivered on this platform
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
           </div>
         </>
       )}
-      {kb && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Knowledge Base</h2>
-          <div className="border rounded p-4 space-y-2">
-            {kb.articles.map((a: any) => (
-              <div
-                key={a.id}
-                className="flex justify-between items-center border-b pb-2"
-              >
-                <div>
-                  <p className="font-medium text-sm">{a.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {a.category} • {a.views} views
-                  </p>
-                </div>
-                <span className="text-xs text-green-600">
-                  {a.helpful}% helpful
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* F-12 (wave-4b): knowledgeBase is fail-loud — no KB store. */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Knowledge Base</h2>
+        <div className="border rounded p-4 text-sm text-muted-foreground">
+          — the knowledge base is not delivered on this platform
+          {kbUnavailable && (
+            <span className="block mt-1 text-xs">
+              (backend reports the knowledge base as not implemented)
+            </span>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
