@@ -1,4 +1,5 @@
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { transactions } from "../../drizzle/schema";
@@ -137,34 +138,57 @@ export const billingProductionRouter = router({
     .input(z.object({ invoiceId: z.string(), reason: z.string() }))
     .mutation(async () => ({ success: true, disputeId: "DSP-001" })),
   getDisputes: protectedProcedure.query(async () => ({ disputes: [] })),
-  getRevenueForecast: protectedProcedure.query(async () => ({
-    forecast: [],
-    period: "monthly",
-  })),
+  // F-12 (wave-4b): zero-payloads / facades / a fabricated 15% tax rate —
+  // no forecast, cohort, plan-migration, PDF, or credit store is delivered.
+  // All fail loud.
+  getRevenueForecast: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getRevenueForecast: no revenue-forecast pipeline is delivered",
+    });
+  }),
   calculateTax: protectedProcedure
     .input(z.object({ amount: z.number(), region: z.string() }))
-    .query(async ({ input }) => ({
-      taxAmount: input.amount * 0.15,
-      rate: 0.15,
-    })),
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "calculateTax: no tax engine is delivered (the previous 15% rate was fabricated)",
+      });
+    }),
   migratePlan: protectedProcedure
     .input(z.object({ fromPlan: z.string(), toPlan: z.string() }))
-    .mutation(async () => ({
-      success: true,
-      effectiveDate: new Date().toISOString(),
-    })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "migratePlan: plan migration is not delivered",
+      });
+    }),
   generateInvoicePdf: protectedProcedure
     .input(z.object({ invoiceId: z.string() }))
-    .mutation(async () => ({ url: "", generated: true })),
-  getCohortAnalytics: protectedProcedure.query(async () => ({
-    cohorts: [],
-    period: "monthly",
-  })),
-  getCreditBalance: protectedProcedure.query(async () => ({
-    balance: 0,
-    currency: "USD",
-  })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "generateInvoicePdf: PDF generation is not delivered",
+      });
+    }),
+  getCohortAnalytics: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getCohortAnalytics: no cohort-analytics pipeline is delivered",
+    });
+  }),
+  getCreditBalance: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getCreditBalance: no credit store is delivered",
+    });
+  }),
   topUpCredits: protectedProcedure
     .input(z.object({ amount: z.number() }))
-    .mutation(async () => ({ success: true, newBalance: 0 })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "topUpCredits: no credit store is delivered",
+      });
+    }),
 });

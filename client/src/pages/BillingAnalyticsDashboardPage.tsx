@@ -76,32 +76,27 @@ export default function BillingAnalyticsDashboardPage() {
   }> = dashboardData.data ?? {};
   const isLoading = dashboardData.isLoading;
 
-  const revenueByMonth: any[] = Array.isArray(data?.revenueByMonth)
+  const revenueByMonth: Array<Record<string, unknown>> = Array.isArray(data?.revenueByMonth)
     ? data.revenueByMonth
     : [];
-  const mrrGrowth: any[] = Array.isArray(data?.mrrGrowth) ? data.mrrGrowth : [];
-  const churnTrend: any[] = Array.isArray(data?.churnTrend)
-    ? data.churnTrend
-    : [];
-  const ltvByCohort: any[] = Array.isArray(data?.ltvByCohort)
-    ? data.ltvByCohort
-    : [];
-  const cohortRetention: any[] = Array.isArray(cohortData.data)
-    ? (cohortData.data as any[])
-    : Array.isArray(data?.cohortRetention)
-      ? data.cohortRetention
-      : [];
-  const forecast: any = forecastData.data ?? null;
+  const mrrGrowth: Array<Record<string, unknown>> = Array.isArray(data?.mrrGrowth) ? data.mrrGrowth : [];
+  // No churn-trend source is delivered.
+  const churnTrend: Array<Record<string, unknown>> = [];
+  // No LTV-by-cohort or cohort-retention source is delivered.
+  const ltvByCohort: Array<Record<string, unknown>> = [];
+  const cohortRetention: Array<Record<string, unknown>> = [];
+  // forecastData is fail-loud — data never arrives; keep the honest local.
+  const forecast: { labels?: string[]; actual?: number[]; projected?: number[] } | null = null;
   const forecastLabels: string[] = Array.isArray(forecast?.labels)
     ? forecast.labels
     : [];
-  const revenueTrend: any[] = Array.isArray(data?.revenueTrend)
+  const revenueTrend: Array<Record<string, unknown>> = Array.isArray(data?.revenueTrend)
     ? data.revenueTrend
     : [];
 
   useEffect(() => {
     // Destroy existing charts
-    Object.values(chartsRef.current).forEach((chart: any) => chart.destroy());
+    Object.values(chartsRef.current).forEach(chart => chart.destroy());
     chartsRef.current = {};
 
     // Revenue by Tenant Chart (real per-month values only)
@@ -109,18 +104,18 @@ export default function BillingAnalyticsDashboardPage() {
       chartsRef.current.revenue = new Chart(revenueChartRef.current, {
         type: "bar",
         data: {
-          labels: revenueByMonth.map((r: any) => r.month),
+          labels: revenueByMonth.map(r => String(r.month ?? "")),
           datasets: [
             {
               label: "Platform Revenue (₦M)",
-              data: revenueByMonth.map((r: any) => Number(r.platform ?? 0)),
+              data: revenueByMonth.map(r => Number(r.platform ?? 0)),
               backgroundColor: "rgba(59, 130, 246, 0.7)",
               borderColor: "rgb(59, 130, 246)",
               borderWidth: 1,
             },
             {
               label: "Tenant Revenue (₦M)",
-              data: revenueByMonth.map((r: any) => Number(r.tenant ?? 0)),
+              data: revenueByMonth.map(r => Number(r.tenant ?? 0)),
               backgroundColor: "rgba(16, 185, 129, 0.7)",
               borderColor: "rgb(16, 185, 129)",
               borderWidth: 1,
@@ -144,11 +139,11 @@ export default function BillingAnalyticsDashboardPage() {
       chartsRef.current.mrr = new Chart(mrrChartRef.current, {
         type: "line",
         data: {
-          labels: mrrGrowth.map((r: any) => r.month),
+          labels: mrrGrowth.map(r => String(r.month ?? "")),
           datasets: [
             {
               label: "MRR (₦M)",
-              data: mrrGrowth.map((r: any) => Number(r.mrr ?? r.value ?? 0)),
+              data: mrrGrowth.map(r => Number(r.mrr ?? r.value ?? 0)),
               borderColor: "rgb(139, 92, 246)",
               backgroundColor: "rgba(139, 92, 246, 0.1)",
               fill: true,
@@ -172,11 +167,11 @@ export default function BillingAnalyticsDashboardPage() {
       chartsRef.current.churn = new Chart(churnChartRef.current, {
         type: "line",
         data: {
-          labels: churnTrend.map((r: any) => r.month),
+          labels: churnTrend.map(r => String(r.month ?? "")),
           datasets: [
             {
               label: "Revenue Churn %",
-              data: churnTrend.map((r: any) => Number(r.revenueChurn ?? 0)),
+              data: churnTrend.map(r => Number(r.revenueChurn ?? 0)),
               borderColor: "rgb(239, 68, 68)",
               backgroundColor: "rgba(239, 68, 68, 0.1)",
               fill: true,
@@ -184,7 +179,7 @@ export default function BillingAnalyticsDashboardPage() {
             },
             {
               label: "Logo Churn %",
-              data: churnTrend.map((r: any) => Number(r.logoChurn ?? 0)),
+              data: churnTrend.map(r => Number(r.logoChurn ?? 0)),
               borderColor: "rgb(245, 158, 11)",
               backgroundColor: "rgba(245, 158, 11, 0.1)",
               fill: true,
@@ -209,13 +204,13 @@ export default function BillingAnalyticsDashboardPage() {
       chartsRef.current.ltv = new Chart(ltvChartRef.current, {
         type: "bar",
         data: {
-          labels: ltvByCohort.map((r: any) => r.cohort),
+          labels: ltvByCohort.map(r => String(r.cohort ?? "")),
           datasets: [
             {
               label: "Avg LTV (₦K)",
-              data: ltvByCohort.map((r: any) => Number(r.ltv ?? 0)),
+              data: ltvByCohort.map(r => Number(r.ltv ?? 0)),
               backgroundColor: ltvByCohort.map(
-                (_: any, i: number) => COLORS[i % COLORS.length] + "b3"
+                (_: unknown, i: number) => COLORS[i % COLORS.length] + "b3"
               ),
               borderWidth: 1,
             },
@@ -238,11 +233,11 @@ export default function BillingAnalyticsDashboardPage() {
       chartsRef.current.cohort = new Chart(cohortChartRef.current, {
         type: "bar",
         data: {
-          labels: cohortRetention.map((r: any) => r.label ?? r.month),
+          labels: cohortRetention.map(r => String(r.label ?? r.month ?? "")),
           datasets: [
             {
               label: "Retention %",
-              data: cohortRetention.map((r: any) =>
+              data: cohortRetention.map(r =>
                 Number(r.retention ?? r.value ?? 0)
               ),
               backgroundColor: "rgba(59, 130, 246, 0.7)",
@@ -327,7 +322,7 @@ export default function BillingAnalyticsDashboardPage() {
     }
 
     return () => {
-      Object.values(chartsRef.current).forEach((chart: any) => chart.destroy());
+      Object.values(chartsRef.current).forEach(chart => chart.destroy());
     };
   }, [period, tenantFilter, data, cohortData.data, forecastData.data]);
 
@@ -549,7 +544,7 @@ export default function BillingAnalyticsDashboardPage() {
             <EmptyChart height={200} />
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <PieChart><Pie data={revCats} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({name,value})=>`${name}: ₦${Number(value).toFixed(1)}M`}>{revCats.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={(v:any)=>`₦${Number(v).toFixed(2)}M`}/></PieChart>
+              <PieChart><Pie data={revCats} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({name,value})=>`${name}: ₦${Number(value).toFixed(1)}M`}>{revCats.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Pie><Tooltip formatter={(v: unknown)=>`₦${Number(v).toFixed(2)}M`}/></PieChart>
             </ResponsiveContainer>
           )}
         </div>
@@ -559,7 +554,7 @@ export default function BillingAnalyticsDashboardPage() {
             <EmptyChart height={200} />
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={revenueTrend}><CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)"/><XAxis dataKey="month" tick={{fontSize:11,fill:"var(--text-secondary)"}}/><YAxis tick={{fontSize:11,fill:"var(--text-secondary)"}}/><Tooltip formatter={(v:any)=>`₦${Number(v).toFixed(2)}M`}/><Area type="monotone" dataKey="revenue" stroke="#6366f1" fill="#6366f120" strokeWidth={2} name="Revenue (₦M)"/></AreaChart>
+              <AreaChart data={revenueTrend}><CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)"/><XAxis dataKey="month" tick={{fontSize:11,fill:"var(--text-secondary)"}}/><YAxis tick={{fontSize:11,fill:"var(--text-secondary)"}}/><Tooltip formatter={(v: unknown)=>`₦${Number(v).toFixed(2)}M`}/><Area type="monotone" dataKey="revenue" stroke="#6366f1" fill="#6366f120" strokeWidth={2} name="Revenue (₦M)"/></AreaChart>
             </ResponsiveContainer>
           )}
         </div>
