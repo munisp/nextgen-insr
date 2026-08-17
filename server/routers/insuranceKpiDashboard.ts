@@ -762,12 +762,16 @@ export const insuranceKpiDashboardRouter = router({
       if (!db) return null;
       const since = daysAgo(input.periodDays);
 
+      // F-12 (wave-3): the previous revision aggregated platform_share /
+      // tenant_share / client_share — columns that DO NOT EXIST on
+      // platform_billing_ledger (runtime error against real PG). Real columns:
+      // platform_revenue and client_revenue. No tenant-share column exists,
+      // so tenantShare is no longer reported (no fabricated substitute).
       const [ledgerStats] = await db
         .select({
           total: count(),
-          totalRevenue: sql<string>`COALESCE(SUM(CAST(platform_share AS NUMERIC)), 0)`,
-          totalTenantShare: sql<string>`COALESCE(SUM(CAST(tenant_share AS NUMERIC) FILTER (WHERE tenant_share IS NOT NULL)), 0)`,
-          totalClientShare: sql<string>`COALESCE(SUM(CAST(client_share AS NUMERIC) FILTER (WHERE client_share IS NOT NULL)), 0)`,
+          totalRevenue: sql<string>`COALESCE(SUM(CAST(platform_revenue AS NUMERIC)), 0)`,
+          totalClientShare: sql<string>`COALESCE(SUM(CAST(client_revenue AS NUMERIC)), 0)`,
         })
         .from(platformBillingLedger)
         .where(gte(platformBillingLedger.createdAt, since));
@@ -794,7 +798,6 @@ export const insuranceKpiDashboardRouter = router({
         billing: {
           entries: Number(ledgerStats?.total ?? 0),
           platformRevenue: Number(ledgerStats?.totalRevenue ?? 0),
-          tenantShare: Number(ledgerStats?.totalTenantShare ?? 0),
           clientShare: Number(ledgerStats?.totalClientShare ?? 0),
         },
         gl: {

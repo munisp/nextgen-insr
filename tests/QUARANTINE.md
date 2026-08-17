@@ -23,7 +23,7 @@ Sections:
 | `server/lib/__tests__/sprint62-production.test.ts` | docker-compose.production-final.yml, scripts/seed-production-final.mjs, scripts/smoke-test.mjs, prometheus config | Files exist on main |
 | `server/lib/__tests__/sprint65-final.test.ts` | k8s/deployment.yml, .github/workflows/ci-cd.yml, config/prometheus.yml, config/nginx.conf, security audit report | Files exist on main |
 | `server/sprint71-security.test.ts` | services/rust/ddos-shield, services/go/pbac-engine | Services exist on main |
-| `server/sprint79.test.ts` | billing microservices (services/go + services/python billing-*) | Services exist on main |
+| `server/sprint79.test.ts` | billing microservices (services/go + services/python billing-*); ALSO its `billingLedger` assertions encode the F-12 wave-3 REMOVED facade (recordSplit echoing `syncedToTigerBeetle: true` without persisting; fixture `query`) — replaced by `tests/integration/billingLedger.integration.test.ts` (real PG). Needs rewrite against the real ledger contract before re-enabling. | Services exist on main |
 | `server/sprint80.test.ts` | k8s/sprint80-billing-services.yaml | Manifest exists on main |
 | `server/sprint81.test.ts` | billing-analytics-pipeline, billing-sla-monitor, billing-webhook-dispatcher, billing-event-processor | Services exist on main |
 | `server/sprint83.test.ts` | services/python/invoice-generator, fraud-ml-service etc. | Services exist on main |
