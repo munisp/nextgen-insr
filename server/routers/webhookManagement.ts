@@ -271,7 +271,7 @@ export const webhookManagementRouter = router({
           timestamp: new Date().toISOString(),
         });
         const started = Date.now();
-        let status = "failed";
+        let status: "delivered" | "failed" = "failed";
         let responseCode: number | null = null;
         try {
           const res = await fetch(endpoint.url, {

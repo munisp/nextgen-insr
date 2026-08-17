@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { desc, eq, count, gte, and } from "drizzle-orm";
+import { desc, eq, count, gte, and, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { platform_health_checks } from "../../drizzle/schema";
