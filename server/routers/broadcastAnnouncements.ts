@@ -23,7 +23,7 @@ export const broadcastAnnouncementsRouter = router({
         search: z.string().optional(),
       })
     )
-    .query(async () => {
+    .query(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "list: no broadcast store is delivered",
@@ -57,7 +57,7 @@ export const broadcastAnnouncementsRouter = router({
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "create: no broadcast store is delivered",

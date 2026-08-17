@@ -49,7 +49,7 @@ const suspend = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async () => {
+  .mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "suspend: no suspension workflow store",
@@ -65,7 +65,7 @@ const lift = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async () => {
+  .mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "lift: no suspension workflow store",
@@ -81,7 +81,7 @@ const escalate = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async () => {
+  .mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "escalate: no escalation store",

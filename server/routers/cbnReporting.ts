@@ -126,7 +126,7 @@ export const cbnReportingRouter = router({
   // ── Generate Monthly Activity Report ──────────────────────────────────────
   // F-12 (wave-4b): zero-payload generateMonthlyReport — the CBN reporting pipeline
   // for this proc is not delivered. Fail loud.
-  generateMonthlyReport: protectedProcedure.mutation(async () => {
+  generateMonthlyReport: protectedProcedure.mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "generateMonthlyReport: the CBN reporting pipeline is not delivered",
@@ -136,7 +136,7 @@ export const cbnReportingRouter = router({
   // ── Generate Quarterly Fraud Report ───────────────────────────────────────
   // F-12 (wave-4b): zero-payload generateQuarterlyFraudReport — the CBN reporting pipeline
   // for this proc is not delivered. Fail loud.
-  generateQuarterlyFraudReport: protectedProcedure.mutation(async () => {
+  generateQuarterlyFraudReport: protectedProcedure.mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "generateQuarterlyFraudReport: the CBN reporting pipeline is not delivered",
@@ -146,7 +146,7 @@ export const cbnReportingRouter = router({
   // ── File SAR ──────────────────────────────────────────────────────────────
   // F-12 (wave-4b): zero-payload fileSar — the CBN reporting pipeline
   // for this proc is not delivered. Fail loud.
-  fileSar: protectedProcedure.mutation(async () => {
+  fileSar: protectedProcedure.mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "fileSar: the CBN reporting pipeline is not delivered",
@@ -159,7 +159,7 @@ export const cbnReportingRouter = router({
   // procedure returns null (honest) rather than fixture counts.
   // F-12 (wave-4b): zero-payload summary — the CBN reporting pipeline
   // for this proc is not delivered. Fail loud.
-  summary: protectedProcedure.query(async () => {
+  summary: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "summary: the CBN reporting pipeline is not delivered",
@@ -168,7 +168,7 @@ export const cbnReportingRouter = router({
 
   // F-12 (wave-4b): zero-payload getPendingSubmissions — the CBN reporting pipeline
   // for this proc is not delivered. Fail loud.
-  getPendingSubmissions: protectedProcedure.query(async () => {
+  getPendingSubmissions: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "getPendingSubmissions: the CBN reporting pipeline is not delivered",
@@ -178,7 +178,7 @@ export const cbnReportingRouter = router({
   // ── Mark report as submitted ───────────────────────────────────────────────
   // F-12 (wave-4b): zero-payload markSubmitted — the CBN reporting pipeline
   // for this proc is not delivered. Fail loud.
-  markSubmitted: protectedProcedure.mutation(async () => {
+  markSubmitted: protectedProcedure.mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "markSubmitted: the CBN reporting pipeline is not delivered",
@@ -188,7 +188,7 @@ export const cbnReportingRouter = router({
   // ── Health check ──────────────────────────────────────────────────────────
   // F-12 (wave-4b): zero-payload health — the CBN reporting pipeline
   // for this proc is not delivered. Fail loud.
-  health: protectedProcedure.query(async () => {
+  health: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "health: the CBN reporting pipeline is not delivered",

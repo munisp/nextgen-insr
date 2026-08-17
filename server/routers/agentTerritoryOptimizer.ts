@@ -97,7 +97,7 @@ export const agentTerritoryOptimizerRouter = router({
 
   // F-12 (wave-4b): zero-payload getStats (fake health check then
   // unconditional zeros) — no territory store is delivered. Fail loud.
-  getStats: protectedProcedure.query(async () => {
+  getStats: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "getStats: no territory store is delivered",

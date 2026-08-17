@@ -126,7 +126,7 @@ export const featureFlagsRouter = router({
   }),
   // F-12 (wave-4b): zero-payload dashboard + environments fixture — no
   // feature-flag dashboard store is delivered. Fail loud.
-  dashboard: protectedProcedure.query(async () => {
+  dashboard: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "dashboard: no feature-flag dashboard store is delivered",

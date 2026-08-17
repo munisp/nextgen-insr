@@ -86,25 +86,25 @@ export default function AgentKycDocVault() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">OCR Confidence</p>
                 <p className="text-xl font-bold text-purple-400">
-                  {String(stats?.avgOcrConfidence ?? "—")}
+                  "—"
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Doc Types</p>
                 <p className="text-xl font-bold text-cyan-400">
-                  {String(stats?.documentTypes ?? "—")}
+                  "—"
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Compliance %</p>
                 <p className="text-xl font-bold text-indigo-400">
-                  {String(stats?.complianceRate ?? "—")}
+                  "—"
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Expiring Soon</p>
                 <p className="text-xl font-bold text-orange-400">
-                  {String(stats?.expiringIn30Days ?? "—")}
+                  "—"
                 </p>
               </div>
             </div>

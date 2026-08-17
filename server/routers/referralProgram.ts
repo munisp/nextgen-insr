@@ -96,7 +96,7 @@ export const referralProgramRouter = router({
   // loud until real referral counts/revenue exist.
   calculateRewards: protectedProcedure
     .input(z.object({ agentId: z.number(), month: z.string().optional() }))
-    .query(async () => {
+    .query(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "calculateRewards: no referral rewards pipeline is delivered",

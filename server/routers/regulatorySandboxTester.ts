@@ -44,7 +44,7 @@ export const regulatorySandboxTesterRouter = router({
     }),
 
   // F-12 (wave-4b): zero-payload getStats — no sandbox-tester store is delivered. Fail loud.
-  getStats: protectedProcedure.query(async () => {
+  getStats: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "getStats: no sandbox-tester store is delivered",
@@ -52,7 +52,7 @@ export const regulatorySandboxTesterRouter = router({
   }),
 
   // F-12 (wave-4b): zero-payload listSandboxes — no sandbox-tester store is delivered. Fail loud.
-  listSandboxes: protectedProcedure.query(async () => {
+  listSandboxes: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "listSandboxes: no sandbox-tester store is delivered",

@@ -544,15 +544,12 @@ function SectionFeedback({
 
   const handleSubmit = () => {
     if (!rating) return;
-    // F-12 (wave-4b): submitFeedback is the real generic mutation —
-    // the section payload travels in its data record.
+    // F-12 (wave-4b): real typed feedback input — the section travels
+    // as guideId; subsectionId has no field and is folded into the id.
     submitMutation.mutate({
-      data: {
-        sectionId,
-        subsectionId,
-        rating,
-        comment,
-      },
+      guideId: subsectionId ? `${sectionId}/${subsectionId}` : sectionId,
+      rating: rating === "up" ? 1 : 0,
+      comment,
     });
   };
 

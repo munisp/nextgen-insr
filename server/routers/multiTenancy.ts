@@ -44,7 +44,7 @@ export const multiTenancyRouter = router({
     }),
 
   // F-12 (wave-4b): zero-payload dashboard — no multi-tenancy store is delivered. Fail loud.
-  dashboard: protectedProcedure.query(async () => {
+  dashboard: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "dashboard: no multi-tenancy store is delivered",

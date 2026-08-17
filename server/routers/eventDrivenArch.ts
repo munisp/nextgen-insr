@@ -97,7 +97,7 @@ export const eventDrivenArchRouter = router({
   // F-12 (wave-4b): zero-payload dashboard — no event-driven-architecture store is delivered. Fail loud.
   dashboard: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
-    .query(async () => {
+    .query(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "dashboard: no event-driven-architecture store is delivered",
@@ -111,7 +111,7 @@ export const eventDrivenArchRouter = router({
   // F-12 (wave-4b): zero-payload getDeadLetterQueue — no dead-letter store is delivered. Fail loud.
   getDeadLetterQueue: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
-    .query(async () => {
+    .query(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "getDeadLetterQueue: no dead-letter store is delivered",

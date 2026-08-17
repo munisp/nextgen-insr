@@ -105,7 +105,7 @@ export const transactionGraphAnalyzerRouter = router({
     }),
 
   // F-12 (wave-4b): zero-payload analyzeTransaction — no transaction-graph store is delivered. Fail loud.
-  analyzeTransaction: protectedProcedure.query(async () => {
+  analyzeTransaction: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "analyzeTransaction: no transaction-graph store is delivered",
@@ -113,7 +113,7 @@ export const transactionGraphAnalyzerRouter = router({
   }),
 
   // F-12 (wave-4b): zero-payload getStats — no transaction-graph store is delivered. Fail loud.
-  getStats: protectedProcedure.query(async () => {
+  getStats: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "getStats: no transaction-graph store is delivered",

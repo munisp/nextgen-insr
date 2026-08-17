@@ -166,7 +166,7 @@ export const reportTemplateDesignerRouter = router({
 
   // F-12 (wave-4b): zero-payload create — no report-template store is
   // delivered. Fail loud.
-  create: protectedProcedure.mutation(async () => {
+  create: protectedProcedure.mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "create: no report-template store is delivered",
@@ -175,7 +175,7 @@ export const reportTemplateDesignerRouter = router({
 
   // F-12 (wave-4b): zero-payload delete — no report-template store is
   // delivered. Fail loud.
-  delete: protectedProcedure.mutation(async () => {
+  delete: protectedProcedure.mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "delete: no report-template store is delivered",
@@ -184,7 +184,7 @@ export const reportTemplateDesignerRouter = router({
 
   // F-12 (wave-4b): zero-payload list — no report-template store is
   // delivered. Fail loud.
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "list: no report-template store is delivered",
@@ -193,7 +193,7 @@ export const reportTemplateDesignerRouter = router({
 
   // F-12 (wave-4b): zero-payload setDefault — no report-template store is
   // delivered. Fail loud.
-  setDefault: protectedProcedure.mutation(async () => {
+  setDefault: protectedProcedure.mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "setDefault: no report-template store is delivered",
@@ -202,7 +202,7 @@ export const reportTemplateDesignerRouter = router({
 
   // F-12 (wave-4b): zero-payload widgetCatalog — no report-template store is
   // delivered. Fail loud.
-  widgetCatalog: protectedProcedure.query(async () => {
+  widgetCatalog: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "widgetCatalog: no report-template store is delivered",

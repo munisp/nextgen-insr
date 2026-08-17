@@ -40,7 +40,7 @@ export const geoFenceDedicatedRouter = router({
   }),
   // F-12 (full sweep): hardcoded analytics fixture — no delivered store
   // for this domain. Fail loud.
-  analytics: protectedProcedure.query(async () => {
+  analytics: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "analytics: no analytics store is delivered for this domain",

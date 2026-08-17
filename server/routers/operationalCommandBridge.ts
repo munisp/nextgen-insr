@@ -45,7 +45,7 @@ export const operationalCommandBridgeRouter = router({
 
   // F-12 (wave-4b): zero-payload createIncident — no command-bridge store is
   // delivered. Fail loud.
-  createIncident: protectedProcedure.mutation(async () => {
+  createIncident: protectedProcedure.mutation(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "createIncident: no command-bridge store is delivered",
@@ -54,7 +54,7 @@ export const operationalCommandBridgeRouter = router({
 
   // F-12 (wave-4b): zero-payload getStats — no command-bridge store is
   // delivered. Fail loud.
-  getStats: protectedProcedure.query(async () => {
+  getStats: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "getStats: no command-bridge store is delivered",
@@ -63,7 +63,7 @@ export const operationalCommandBridgeRouter = router({
 
   // F-12 (wave-4b): zero-payload listIncidents — no command-bridge store is
   // delivered. Fail loud.
-  listIncidents: protectedProcedure.query(async () => {
+  listIncidents: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "listIncidents: no command-bridge store is delivered",

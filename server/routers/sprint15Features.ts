@@ -107,7 +107,7 @@ export const retryQueueRouter = router({
   // F-12 (wave-4b): transactions rows were presented as a notification
   // retry queue — a wrong-domain facade (no retry-queue store exists).
   // Fail loud.
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "retryQueue.list: no notification retry-queue store is delivered",
@@ -117,7 +117,7 @@ export const retryQueueRouter = router({
   // with no state change. Fail loud until a real store is delivered.
   retry: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "retry: no retry-queue backend is delivered",
@@ -150,7 +150,7 @@ export const digestRouter = router({
 export const rateLimitDashboardRouter = router({
   // F-12 (wave-4b, audit FAIL-3 sweep): fixture rate-limit status — no
   // rate-limit telemetry is delivered. Fail loud.
-  getStatus: protectedProcedure.query(async () => {
+  getStatus: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "rateLimitDashboard.getStatus: no rate-limit telemetry is delivered",
@@ -160,7 +160,7 @@ export const rateLimitDashboardRouter = router({
   // with no state change. Fail loud until a real store is delivered.
   updateLimit: protectedProcedure
     .input(z.object({ endpoint: z.string(), limit: z.number() }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "updateLimit: no rate-limit store is delivered",
@@ -182,7 +182,7 @@ export const sysConfigRouter = router({
   // with no state change. Fail loud until a real store is delivered.
   update: protectedProcedure
     .input(z.object({ key: z.string(), value: z.string() }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "update: no system-config store is delivered",
@@ -194,7 +194,7 @@ export const sysConfigRouter = router({
 export const sessionMgmtRouter = router({
   // F-12 (wave-4b): zero-payload listActive — no session store is
   // delivered. Fail loud.
-  listActive: protectedProcedure.query(async () => {
+  listActive: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "listActive: no session store is delivered",
@@ -204,7 +204,7 @@ export const sessionMgmtRouter = router({
   // with no state change. Fail loud until a real store is delivered.
   revoke: protectedProcedure
     .input(z.object({ sessionId: z.string() }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "revoke: no session store is delivered",
@@ -214,41 +214,22 @@ export const sessionMgmtRouter = router({
 
 // Data Export Router
 export const dataExportRouter = router({
-  requestExport: protectedProcedure
-    .input(
-      z.object({ format: z.enum(["csv", "json", "xlsx"]), entity: z.string() })
-    )
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          jobId: `export-${Date.now()}`,
-          format: input.format,
-          entity: input.entity,
-          status: "queued",
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
-  getStatus: protectedProcedure
-    .input(z.object({ jobId: z.string() }))
-    .query(async ({ input }) => {
-      try {
-        return { jobId: input.jobId, status: "completed", downloadUrl: null };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+  // F-12 (wave-4b): zero-payload requestExport — the export pipeline is
+  // not delivered. Fail loud.
+  requestExport: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "requestExport: the data export pipeline is not delivered",
+    });
+  }),
+  // F-12 (wave-4b): zero-payload getStatus — the export pipeline is
+  // not delivered. Fail loud.
+  getStatus: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getStatus: the data export pipeline is not delivered",
+    });
+  }),
 });
 
 // Changelog Router
@@ -297,7 +278,7 @@ export const webhookRetryRouter = router({
   // with no state change. Fail loud until a real store is delivered.
   retryWebhook: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "retryWebhook: no webhook-retry backend is delivered",
@@ -325,7 +306,7 @@ export const eventBusRouter = router({
     .input(
       z.object({ topic: z.string(), payload: z.record(z.string(), z.any()) })
     )
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "publish: no event-bus backend is delivered",
@@ -375,7 +356,7 @@ export const serviceHealthRouter = router({
 export const cacheRouter = router({
   // F-12 (wave-4b): was a hardcoded fixture (hitRate 0.95) — no cache
   // telemetry source is delivered. Fail loud.
-  getStats: protectedProcedure.query(async () => {
+  getStats: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "cache.getStats: no cache telemetry source is delivered",
@@ -385,7 +366,7 @@ export const cacheRouter = router({
   // admin surface is delivered. Fail loud.
   flush: protectedProcedure
     .input(z.object({ pattern: z.string().optional() }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "cache.flush: no cache admin surface is delivered",
@@ -398,7 +379,7 @@ export const notificationAnalyticsRouter = router({
   // F-12 (wave-4b, audit FAIL-3 sweep): zero counts + a fabricated 100%
   // delivery rate — no notification-analytics pipeline is delivered. Fail
   // loud.
-  getStats: protectedProcedure.query(async () => {
+  getStats: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "notificationAnalytics.getStats: no notification-analytics pipeline is delivered",
@@ -410,7 +391,7 @@ export const notificationAnalyticsRouter = router({
     .input(
       z.object({ period: z.enum(["day", "week", "month"]).default("week") })
     )
-    .query(async () => {
+    .query(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "notificationAnalytics.getChannelBreakdown: no notification-analytics pipeline is delivered",
@@ -422,7 +403,7 @@ export const notificationAnalyticsRouter = router({
 export const userQuietHoursRouter = router({
   // F-12 (wave-4b, audit FAIL-3 sweep): fixture quiet-hours — no store is
   // delivered. Fail loud.
-  get: protectedProcedure.query(async () => {
+  get: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "quietHours.get: no quiet-hours store is delivered",
@@ -438,7 +419,7 @@ export const userQuietHoursRouter = router({
         endHour: z.number().min(0).max(23),
       })
     )
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "quietHours.update: no quiet-hours store is delivered",
@@ -451,7 +432,7 @@ export const notifTemplateRouter = router({
   // F-12 (wave-4b): no notification_templates store exists in the schema —
   // list was a zero-payload and create/update/delete were facades returning
   // fake success. All fail loud until a template store is delivered.
-  list: protectedProcedure.query(async () => {
+  list: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "notifTemplates.list: no notification-template store is delivered",
@@ -466,7 +447,7 @@ export const notifTemplateRouter = router({
         subject: z.string().optional(),
       })
     )
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "notifTemplates.create: no notification-template store is delivered",
@@ -480,7 +461,7 @@ export const notifTemplateRouter = router({
         body: z.string().optional(),
       })
     )
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "notifTemplates.update: no notification-template store is delivered",
@@ -488,7 +469,7 @@ export const notifTemplateRouter = router({
     }),
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "notifTemplates.delete: no notification-template store is delivered",

@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+
+import { trpc } from "@/lib/trpc";
 
 export default function InsuranceCheckout() {
   const customerId = 1; // From auth context

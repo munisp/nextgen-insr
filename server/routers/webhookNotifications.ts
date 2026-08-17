@@ -261,7 +261,7 @@ export const webhookNotificationsRouter = router({
         payload: z.record(z.string(), z.any()).optional(),
       })
     )
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "ingest: inbound webhook ingestion is not delivered on this platform",

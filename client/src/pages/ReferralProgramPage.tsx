@@ -56,7 +56,7 @@ export default function ReferralProgramPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalBonusPaid ?? 0).toLocaleString()}
+                NGN {(summary.data?.totalPaidOut ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>

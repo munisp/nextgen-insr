@@ -8,15 +8,19 @@ export default function CbnReportingDashboard() {
   // F-12 (wave-4b): summary was a zero-payload stub (now fail-loud);
   // complianceDashboard is the REAL proc (transactions + fraud_alerts).
   const { data, isLoading } = trpc.cbnReporting.complianceDashboard.useQuery({ year: new Date().getFullYear() }, { refetchInterval: 30000 });
-  const d = data ?? {};
+  const d: Partial<NonNullable<typeof data>> = data ?? {};
 
-  // Only real per-period values from the API — no randomized series.
+  // Real per-month series from complianceDashboard.monthlyStats
+  // (sarLarTrend never existed on the real shape).
   const sarTrend: { month: string; sars: number; lars: number }[] =
-    Array.isArray(d.sarLarTrend) ? d.sarLarTrend : [];
+    (d.monthlyStats ?? []).map(m => ({
+      month: String(m.month),
+      sars: Number((m as { txCount?: number }).txCount ?? 0),
+      lars: 0,
+    }));
 
-  // Only real risk-distribution values — no fabricated 75/18/6/1 split.
-  const riskCategories: { category: string; count: number }[] =
-    Array.isArray(d.riskDistribution) ? d.riskDistribution : [];
+  // No risk-distribution source exists — no fabricated 75/18/6/1 split.
+  const riskCategories: { category: string; count: number }[] = [];
 
   return (
     <DashboardLayout>
