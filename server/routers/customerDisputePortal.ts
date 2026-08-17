@@ -18,7 +18,6 @@ export const customerDisputePortalRouter = router({
   listMyDisputes: protectedProcedure
     .input(
       z.object({
-        customerId: z.number(),
         limit: z.number().default(20),
         status: z.string().optional(),
       })
@@ -32,7 +31,9 @@ export const customerDisputePortalRouter = router({
               .from(disputes)
               .where(
                 and(
-                  eq(disputes.agentId, input.customerId),
+                  // F-12 (wave-4b): session-scoped — was client-supplied
+                  // customerId (any caller could read any agent's disputes).
+                  eq(disputes.agentId, ctx.user.id),
                   eq(disputes.status, input.status)
                 )
               )
@@ -41,7 +42,7 @@ export const customerDisputePortalRouter = router({
           : await db
               .select()
               .from(disputes)
-              .where(eq(disputes.agentId, input.customerId))
+              .where(eq(disputes.agentId, ctx.user.id))
               .orderBy(desc(disputes.createdAt))
               .limit(input.limit);
         return { disputes: rows, total: rows.length };
@@ -89,7 +90,6 @@ export const customerDisputePortalRouter = router({
   fileDispute: protectedProcedure
     .input(
       z.object({
-        customerId: z.number(),
         transactionId: z.number(),
         reason: z.string(),
         description: z.string(),
@@ -102,7 +102,8 @@ export const customerDisputePortalRouter = router({
         const [dispute] = await db
           .insert(disputes)
           .values({
-            customerId: input.customerId,
+            // F-12 (wave-4b): session-scoped — was client-supplied.
+            customerId: ctx.user.id,
             transactionId: input.transactionId,
             reason: input.reason,
             description: input.description,
@@ -117,7 +118,8 @@ export const customerDisputePortalRouter = router({
           resourceId: String(dispute.id),
           status: "success",
           metadata: {
-            customerId: input.customerId,
+            // F-12 (wave-4b): session-scoped — was client-supplied.
+            customerId: ctx.user.id,
             transactionId: input.transactionId,
           },
         } as any);

@@ -43,109 +43,9 @@ function getTier(points: number): Tier {
   return "Bronze";
 }
 
-// ─── In-memory reward catalog (seeded from DB in production) ─────────────────
-const REWARD_CATALOG = [
-  {
-    id: "RWD-001",
-    name: "Airtime ₦500",
-    category: "airtime",
-    pointsCost: 500,
-    description: "₦500 airtime credit on any network",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-002",
-    name: "Airtime ₦1000",
-    category: "airtime",
-    pointsCost: 950,
-    description: "₦1,000 airtime credit on any network",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-003",
-    name: "Data Bundle 1GB",
-    category: "data",
-    pointsCost: 800,
-    description: "1GB data bundle valid for 30 days",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-004",
-    name: "Data Bundle 5GB",
-    category: "data",
-    pointsCost: 3500,
-    description: "5GB data bundle valid for 30 days",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-005",
-    name: "Commission Boost 2%",
-    category: "commission",
-    pointsCost: 2000,
-    description: "2% commission rate boost for 7 days",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-006",
-    name: "Float Fee Waiver",
-    category: "float",
-    pointsCost: 1500,
-    description: "Waive float top-up fee once",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-007",
-    name: "Insurance Service Upgrade",
-    category: "hardware",
-    pointsCost: 25000,
-    description: "Upgrade to PAX A920 MAX terminal",
-    available: true,
-    stock: 10,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-008",
-    name: "Training Certificate",
-    category: "education",
-    pointsCost: 3000,
-    description: "InsurePortal certified agent training course",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-009",
-    name: "Cash Equivalent ₦2000",
-    category: "cash",
-    pointsCost: 2500,
-    description: "₦2,000 cash equivalent credit",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-  {
-    id: "RWD-010",
-    name: "Gold Tier Fast-Track",
-    category: "tier",
-    pointsCost: 8000,
-    description: "Instant Gold tier upgrade (30 days)",
-    available: true,
-    stock: -1,
-    imageUrl: null,
-  },
-];
+// F-12 (verifier round 3): the in-memory REWARD_CATALOG (RWD-001/002) was
+// presented as "seeded from DB in production" — it was never seeded. No
+// reward-catalog store is delivered; catalog-backed procs fail loud.
 
 export const loyaltyRouter = router({
   // ── Get loyalty profile ───────────────────────────────────────────────────
@@ -486,35 +386,13 @@ export const loyaltyRouter = router({
         limit: z.number().int().min(1).max(50).default(20),
       })
     )
-    .query(async ({ input }) => {
-      try {
-        let catalog = REWARD_CATALOG.filter(r => r.available);
-        if (input.category)
-          catalog = catalog.filter(r => r.category === input.category);
-        if (input.search) {
-          const q = input.search.toLowerCase();
-          catalog = catalog.filter(
-            r =>
-              r.name.toLowerCase().includes(q) ||
-              r.description.toLowerCase().includes(q)
-          );
-        }
-        const total = catalog.length;
-        const offset = (input.page - 1) * input.limit;
-        return {
-          rewards: catalog.slice(offset, offset + input.limit),
-          total,
-          page: input.page,
-          limit: input.limit,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .query(async () => {
+      // F-12: no reward-catalog store is delivered (the in-memory catalog
+      // with its false seeding cover-story was removed).
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "rewardCatalog: no reward-catalog store is delivered",
+      });
     }),
 
   // ── Claim challenge reward ────────────────────────────────────────────────
@@ -581,74 +459,13 @@ export const loyaltyRouter = router({
         rewardName: z.string(),
       })
     )
-    .mutation(async ({ input, ctx }) => {
-      try {
-        const session = await getAgentFromCookie(ctx.req);
-        if (!session)
-          throw new TRPCError({
-            code: "UNAUTHORIZED",
-            message: "Agent session required",
-          });
-        const agent = await getAgentById(session.id);
-        if (!agent)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Agent not found",
-          });
-        if (agent.loyaltyPoints < input.pointsCost)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Insufficient loyalty points. You have ${agent.loyaltyPoints} but need ${input.pointsCost}`,
-          });
-        // Validate reward exists in catalog
-        const reward = REWARD_CATALOG.find(r => r.id === input.rewardId);
-        if (!reward)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Reward not found in catalog",
-          });
-        if (!reward.available)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Reward is currently unavailable",
-          });
-        if (reward.stock !== -1 && reward.stock <= 0)
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Reward is out of stock",
-          });
-        await addLoyaltyHistory(
-          session.id,
-          "redeemed",
-          -input.pointsCost,
-          `Redeemed: ${input.rewardName}`
-        );
-        await writeAuditLog({
-          agentId: session.id,
-          action: "LOYALTY_REWARD_REDEEMED",
-          resource: "loyalty",
-          resourceId: input.rewardId,
-          status: "success",
-          metadata: {
-            agentCode: session.agentId,
-            rewardName: input.rewardName,
-            pointsCost: input.pointsCost,
-          },
-        });
-        return {
-          success: true,
-          pointsDeducted: input.pointsCost,
-          remainingPoints: agent.loyaltyPoints - input.pointsCost,
-          redemptionRef: `RDM-${Date.now()}`,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      // F-12: redemptions validated against the removed in-memory catalog —
+      // no reward store is delivered, so no redemption can be honoured.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "redeemReward: no reward store is delivered",
+      });
     }),
 
   // ── Admin: Get all agents' loyalty summary ────────────────────────────────

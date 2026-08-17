@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { auditLog, systemConfig } from "../../drizzle/schema";
+import { auditLog, insuranceProducts, policies, systemConfig } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -172,30 +172,44 @@ export const insuranceProductsRouter = router({
     }),
 
   products: protectedProcedure.query(async () => {
+    // F-12 (verifier round 3): IP-001 fixture -> REAL insurance_products rows.
+    const db = await getDb();
+    if (!db) return { products: [] };
+    const rows = await db
+      .select()
+      .from(insuranceProducts)
+      .orderBy(desc(insuranceProducts.id))
+      .limit(100);
     return {
-      products: [
-        {
-          id: "IP-001",
-          name: "Agent Protection Plan",
-          premium: 5000,
-          coverage: 1000000,
-          type: "life",
-        },
-      ],
+      products: rows.map(r => ({
+        id: String(r.id),
+        name: r.name,
+        premium: Number(r.minPremium ?? 0),
+        coverage: Number(r.maxCoverageAmount ?? 0),
+        type: r.coverageType,
+      })),
     };
   }),
-  policies: protectedProcedure.query(async () => {
+  policies: protectedProcedure.query(async ({ ctx }) => {
+    // F-12 (verifier round 3): POL-001 fixture -> REAL session-scoped
+    // policies rows.
+    const db = await getDb();
+    if (!db) return { policies: [], total: 0 };
+    const rows = await db
+      .select()
+      .from(policies)
+      .where(eq(policies.agentId, ctx.user.id))
+      .orderBy(desc(policies.id))
+      .limit(100);
     return {
-      policies: [
-        {
-          id: "POL-001",
-          productId: "IP-001",
-          agentId: "AGT-001",
-          status: "active",
-          startDate: "2024-01-01",
-        },
-      ],
-      total: 1,
+      policies: rows.map(r => ({
+        id: String(r.id),
+        productId: r.productId != null ? String(r.productId) : null,
+        agentId: String(r.agentId),
+        status: r.status,
+        startDate: r.startDate,
+      })),
+      total: rows.length,
     };
   }),
   analytics: protectedProcedure.query(async () => {

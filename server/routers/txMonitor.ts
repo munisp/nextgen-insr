@@ -169,19 +169,13 @@ export const txMonitorRouter = router({
 
   // ── Sprint 78 domain-specific procedures ──────────────────────────────────
   getRules: protectedProcedure.query(async () => {
-    // Static catalog of supported alert rule definitions (documentation of
-    // available detectors, not fabricated runtime state).
-    const rules = [
-      { id: "RULE-001", name: "High Value Transaction", condition: "amount > 1000000", severity: "critical", enabled: true, action: "alert" },
-      { id: "RULE-002", name: "Rapid Transactions", condition: "tx_count > 10 in 5min", severity: "high", enabled: true, action: "alert" },
-      { id: "RULE-003", name: "Cross-border Transfer", condition: "country != origin", severity: "medium", enabled: true, action: "flag" },
-      { id: "RULE-004", name: "New Agent High Volume", condition: "agent_age < 30d && amount > 500000", severity: "high", enabled: true, action: "alert" },
-      { id: "RULE-005", name: "Unusual Hours", condition: "hour < 6 || hour > 23", severity: "low", enabled: true, action: "log" },
-      { id: "RULE-006", name: "Round Amount Pattern", condition: "amount % 100000 == 0 && count > 3", severity: "medium", enabled: true, action: "flag" },
-      { id: "RULE-007", name: "Structuring Detection", condition: "sum_24h > 5000000 && avg_tx < 500000", severity: "critical", enabled: true, action: "block" },
-      { id: "RULE-008", name: "Dormant Account Reactivation", condition: "last_tx > 90d && amount > 200000", severity: "high", enabled: true, action: "alert" },
-    ];
-    return { rules, activeCount: rules.filter(r => r.enabled).length };
+    // F-12 (verifier round 3): the "static catalog" of RULE-001..008
+    // presented detectors that do not exist (no detection engine is
+    // delivered — nothing inserts txMonitoringAlerts). Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getRules: no transaction-monitoring rule engine is delivered",
+    });
   }),
 
   getAlerts: protectedProcedure

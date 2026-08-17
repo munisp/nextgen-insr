@@ -58,6 +58,7 @@ export default function CustomerDisputePortal() {
   const [fileOpen, setFileOpen] = useState(false);
   const [fileForm, setFileForm] = useState({
     transactionId: "",
+    amount: "",
     reason: "",
     description: "",
   });
@@ -65,7 +66,7 @@ export default function CustomerDisputePortal() {
   // ── Live tRPC queries ──────────────────────────────────────────────
   const stats = trpc.customerDisputePortal.getStats.useQuery();
   const disputes = trpc.customerDisputePortal.listDisputes.useQuery(
-    statusFilter === "all" ? undefined : { status: statusFilter }
+    statusFilter === "all" ? {} : { status: statusFilter }
   );
   const utils = trpc.useUtils();
 
@@ -164,6 +165,21 @@ export default function CustomerDisputePortal() {
                   </div>
                   <div>
                     <label className="text-sm text-muted-foreground mb-1 block">
+                      Amount (₦)
+                    </label>
+                    <Input
+                      placeholder="0.00"
+                      value={fileForm.amount}
+                      onChange={e =>
+                        setFileForm(p => ({
+                          ...p,
+                          amount: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground mb-1 block">
                       Reason
                     </label>
                     <Select
@@ -222,7 +238,14 @@ export default function CustomerDisputePortal() {
                       !fileForm.description ||
                       fileMutation.isPending
                     }
-                    onClick={() => fileMutation.mutate(fileForm)}
+                    onClick={() =>
+                    fileMutation.mutate({
+                      transactionId: Number(fileForm.transactionId),
+                      amount: Number(fileForm.amount),
+                      reason: fileForm.reason,
+                      description: fileForm.description,
+                    })
+                  }
                   >
                     {fileMutation.isPending ? "Filing..." : "Submit Dispute"}
                   </Button>
@@ -381,11 +404,11 @@ export default function CustomerDisputePortal() {
               disputes={filteredDisputes}
               isLoading={isLoading}
               onUpdate={(id, status) =>
-                updateMutation.mutate({ disputeId: id, status })
+                updateMutation.mutate({ disputeId: Number(id), status })
               }
               onEscalate={id =>
                 escalateMutation.mutate({
-                  disputeId: id,
+                  disputeId: Number(id),
                   reason: "Requires senior review",
                 })
               }
@@ -402,11 +425,11 @@ export default function CustomerDisputePortal() {
               )}
               isLoading={isLoading}
               onUpdate={(id, status) =>
-                updateMutation.mutate({ disputeId: id, status })
+                updateMutation.mutate({ disputeId: Number(id), status })
               }
               onEscalate={id =>
                 escalateMutation.mutate({
-                  disputeId: id,
+                  disputeId: Number(id),
                   reason: "Requires senior review",
                 })
               }
@@ -423,11 +446,11 @@ export default function CustomerDisputePortal() {
               )}
               isLoading={isLoading}
               onUpdate={(id, status) =>
-                updateMutation.mutate({ disputeId: id, status })
+                updateMutation.mutate({ disputeId: Number(id), status })
               }
               onEscalate={id =>
                 escalateMutation.mutate({
-                  disputeId: id,
+                  disputeId: Number(id),
                   reason: "Requires senior review",
                 })
               }
