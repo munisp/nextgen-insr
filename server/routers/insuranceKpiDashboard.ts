@@ -776,12 +776,14 @@ export const insuranceKpiDashboardRouter = router({
         .from(platformBillingLedger)
         .where(gte(platformBillingLedger.createdAt, since));
 
+      // F-12 (wave-3): real gl_entries columns are amount/entry_type/posted_by
+      // (debit_amount/credit_amount/posted do not exist — phantom SQL).
       const [glStats] = await db
         .select({
           total: count(),
-          totalDebit: sql<string>`COALESCE(SUM(CAST(debit_amount AS NUMERIC) FILTER (WHERE debit_amount IS NOT NULL)), 0)`,
-          totalCredit: sql<string>`COALESCE(SUM(CAST(credit_amount AS NUMERIC) FILTER (WHERE credit_amount IS NOT NULL)), 0)`,
-          unposted: sql<number>`COUNT(*) FILTER (WHERE posted = false)`,
+          totalDebit: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE entry_type = 'debit'), 0)`,
+          totalCredit: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE entry_type = 'credit'), 0)`,
+          unposted: sql<number>`COUNT(*) FILTER (WHERE posted_by IS NULL)`,
         })
         .from(glEntries)
         .where(gte(glEntries.createdAt, since));
