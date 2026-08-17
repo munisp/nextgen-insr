@@ -20,17 +20,17 @@ export default function ApiGatewayPage() {
         {[
           {
             label: "Requests (24h)",
-            value: (data?.overview?.totalRequests24h ?? 0).toLocaleString(),
+            value: "—",
           },
           {
             label: "Success Rate",
-            value: `${data?.overview?.successRate ?? 0}%`,
+            value: "—",
           },
           {
             label: "Avg Latency",
-            value: `${data?.overview?.avgLatencyMs ?? 0}ms`,
+            value: "—",
           },
-          { label: "Active Keys", value: data?.overview?.activeApiKeys ?? 0 },
+          { label: "Active Keys", value: data?.activeKeys ?? 0 },
         ].map((s, i) => (
           <Card key={i}>
             <CardContent className="pt-4">
@@ -56,7 +56,7 @@ export default function ApiGatewayPage() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.rateLimits ?? []).map((r: any, i: number) => (
+                {([] as Array<{ endpoint: string; limit: number; window: string }>).map((r, i) => (
                   <tr key={i} className="border-b">
                     <td className="p-2">
                       <Badge>{r.tier}</Badge>
@@ -76,7 +76,7 @@ export default function ApiGatewayPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {(keys?.keys ?? []).map((k: any, i: number) => (
+              {(keys?.data ?? []).map((k: any, i: number) => (
                 <div
                   key={i}
                   className="flex items-center justify-between p-2 rounded bg-muted/50"

@@ -11,8 +11,8 @@ export default function RealTimeDashboard() {
   // F-12 (wave-4b): realtimeDashboardWidgets.dashboard/getStats are
   // fail-loud (no widget store) — the page binds the REAL transaction
   // telemetry from systemHealthMonitor.transactionVolume instead.
-  const { data: txData, isLoading } = trpc.systemHealthMonitor.transactionVolume.useQuery(
-    { period: "hourly" },
+  const { data: txData, isLoading } = trpc.healthMonitor.transactionVolume.useQuery(
+    undefined,
     { enabled: !!user, refetchInterval: 10000 }
   );
   const pendingCount =

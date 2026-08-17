@@ -61,49 +61,49 @@ export default function AgentFloatInsuranceClaims() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Total Claims</p>
                 <p className="text-xl font-bold text-blue-400">
-                  {String(stats?.totalClaims ?? "—")}
+                  {String(stats?.total ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Approved</p>
                 <p className="text-xl font-bold text-emerald-400">
-                  {String(stats?.approvedClaims ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Pending</p>
                 <p className="text-xl font-bold text-amber-400">
-                  {String(stats?.pendingClaims ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Rejected</p>
                 <p className="text-xl font-bold text-rose-400">
-                  {String(stats?.rejectedClaims ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Claimed Amount</p>
                 <p className="text-xl font-bold text-purple-400">
-                  {String(stats?.totalClaimedAmount ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Paid Amount</p>
                 <p className="text-xl font-bold text-cyan-400">
-                  {String(stats?.totalAmount ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Avg Processing</p>
                 <p className="text-xl font-bold text-indigo-400">
-                  {String(stats?.avgProcessingTime ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Approval %</p>
                 <p className="text-xl font-bold text-orange-400">
-                  {String(stats?.claimApprovalRate ?? "—")}
+                  —
                 </p>
               </div>
             </div>

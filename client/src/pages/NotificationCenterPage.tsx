@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 
 export default function NotificationCenterPage() {
-  const { data, isLoading } = trpc.notificationCenter.dashboard.useQuery();
+  const { data, isLoading } = trpc.notificationCenter.dashboard.useQuery({});
 
   if (isLoading)
     return <div className="p-8 text-center">Loading notifications...</div>;
@@ -14,21 +14,23 @@ export default function NotificationCenterPage() {
           <div className="grid grid-cols-3 gap-4">
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Unread</p>
-              <p className="text-2xl font-bold">{data.unreadCount}</p>
+              <p className="text-2xl font-bold">{data.totalRecords}</p>
             </div>
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Sent (24h)</p>
               <p className="text-2xl font-bold">
-                {data.totalSent24h.toLocaleString()}
+                —
               </p>
             </div>
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Delivery Rate</p>
-              <p className="text-2xl font-bold">{data.deliveryRate}%</p>
+              <p className="text-2xl font-bold">—</p>
             </div>
           </div>
           <div>
             <h2 className="text-lg font-semibold mb-3">Channel Performance</h2>
+            {/* F-12 (wave-4b): no per-channel delivery metrics are
+                delivered — the dashboard serves only generic counts. */}
             <div className="border rounded p-4 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -40,7 +42,7 @@ export default function NotificationCenterPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.channels.map((c: any) => (
+                  {([] as Array<{name:string;sent:number;delivered:number}>).map((c) => (
                     <tr key={c.name} className="border-b">
                       <td className="p-2">{c.name}</td>
                       <td className="p-2 text-right">
@@ -59,7 +61,7 @@ export default function NotificationCenterPage() {
           <div>
             <h2 className="text-lg font-semibold mb-3">Recent Notifications</h2>
             <div className="border rounded p-4 space-y-2">
-              {data.recentNotifications.map((n: any) => (
+              {(data.recentItems as Array<{ id?: unknown; title?: string; channel?: string; recipient?: string }>).map((n) => (
                 <div
                   key={n.id}
                   className="flex justify-between items-center border-b pb-2"

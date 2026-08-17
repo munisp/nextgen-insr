@@ -75,6 +75,9 @@ export default function BillingAnalyticsDashboardPage() {
     revenueByMonth: Array<Record<string, unknown>>;
     mrrGrowth: Array<Record<string, unknown>>;
     revenueTrend: Array<Record<string, unknown>>;
+    platformFees: number;
+    commission: number;
+    premium: number;
   }> = dashboardData.data ?? {};
   const isLoading = dashboardData.isLoading;
 
@@ -92,6 +95,9 @@ export default function BillingAnalyticsDashboardPage() {
     labels?: string[];
     actual?: number[];
     projected?: number[];
+    forecast?: number[];
+    upper?: number[];
+    lower?: number[];
   } | null;
   const forecastLabels: string[] = Array.isArray(forecast?.labels)
     ? forecast.labels

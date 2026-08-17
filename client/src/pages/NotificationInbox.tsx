@@ -332,7 +332,7 @@ export default function NotificationInbox() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => markAllRead.mutate({})}
+              onClick={() => markAllRead.mutate()}
               disabled={(stats?.unread ?? 0) === 0}
             >
               <CheckIcon className="w-4 h-4 mr-1" />
@@ -360,7 +360,7 @@ export default function NotificationInbox() {
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold text-amber-500">
-                {stats?.last24h ?? 0}
+                —
               </div>
               <div className="text-xs text-muted-foreground">Last 24h</div>
             </CardContent>

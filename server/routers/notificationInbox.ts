@@ -46,23 +46,23 @@ export function createNotification(params: {
 }
 
 export const notificationInboxRouter = router({
-  getStats: protectedProcedure
-    .input(z.object({ userId: z.string() }))
-    .query(async ({ input }) => {
+  // F-12 (wave-4b): userId was client-supplied — any caller could read
+  // any user's stats. Session-scoped to the caller.
+  getStats: protectedProcedure.query(async ({ ctx }) => {
       try {
         const db = await getDb();
         if (!db) return { total: 0, unread: 0, archived: 0 };
         const [total] = await db
           .select({ value: count() })
           .from(notification_logs)
-          .where(eq(notification_logs.recipientId, input.userId))
+          .where(eq(notification_logs.recipientId, String(ctx.user.id)))
           .limit(100);
         const [unread] = await db
           .select({ value: count() })
           .from(notification_logs)
           .where(
             and(
-              eq(notification_logs.recipientId, input.userId),
+              eq(notification_logs.recipientId, String(ctx.user.id)),
               eq(notification_logs.status, "pending")
             )
           )
@@ -85,8 +85,8 @@ export const notificationInboxRouter = router({
     .input(
       z.object({
         // F-12 (wave-4b): userId optional — defaults to the session user so
-        // callers cannot read other users' inboxes by default.
-        userId: z.string().optional(),
+        // F-12 (wave-4b): optional client userId still allowed cross-user
+        // reads — removed; always the caller.
         status: z.string().optional(),
         limit: z.number().default(20),
         offset: z.number().default(0),
@@ -97,7 +97,7 @@ export const notificationInboxRouter = router({
         const db = await getDb();
         if (!db) return { notifications: [], total: 0 };
         const conditions: any[] = [
-          eq(notification_logs.recipientId, input.userId ?? String(ctx.user.id)),
+          eq(notification_logs.recipientId, String(ctx.user.id)),
         ];
         if (input.status)
           conditions.push(eq(notification_logs.status, input.status));
@@ -140,9 +140,9 @@ export const notificationInboxRouter = router({
         });
       }
     }),
-  markAllRead: protectedProcedure
-    .input(z.object({ userId: z.string() }))
-    .mutation(async ({ input }) => {
+  // F-12 (wave-4b): userId was client-supplied — any caller could mark
+  // any user's notifications read. Session-scoped to the caller.
+  markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -151,7 +151,7 @@ export const notificationInboxRouter = router({
           .set({ status: "read" })
           .where(
             and(
-              eq(notification_logs.recipientId, input.userId),
+              eq(notification_logs.recipientId, String(ctx.user.id)),
               eq(notification_logs.status, "pending")
             )
           );
