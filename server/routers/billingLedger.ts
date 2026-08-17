@@ -188,11 +188,12 @@ export const billingLedgerRouter = router({
       if (input.dateTo)
         conditions.push(lte(platformBillingLedger.createdAt, new Date(input.dateTo)));
       const where = conditions.length ? and(...conditions) : undefined;
+      // zod enum (hourly|daily|weekly|monthly) mapped to PG date_trunc units
+      // (hour|day|week|month) — quoted literal, enum-constrained, no injection.
+      const pgUnit = { hourly: "hour", daily: "day", weekly: "week", monthly: "month" }[input.period];
       const aggregations = await db
         .select({
-          // input.period is a zod enum (hourly|daily|weekly|monthly) — safe to
-          // inline; a bound parameter makes date_trunc's type ambiguous in PG.
-          periodStart: sql<string>`date_trunc(${sql.raw(`'${input.period}'`)}, created_at)::text`,
+          periodStart: sql<string>`date_trunc(${sql.raw(`'${pgUnit}'`)}, created_at)::text`,
           transactionCount: count(),
           grossFees: sql<string>`COALESCE(SUM(CAST(gross_fee AS NUMERIC)), 0)`,
           platformRevenue: sql<string>`COALESCE(SUM(CAST(platform_revenue AS NUMERIC)), 0)`,
@@ -200,8 +201,8 @@ export const billingLedgerRouter = router({
         })
         .from(platformBillingLedger)
         .where(where)
-        .groupBy(sql`date_trunc(${sql.raw(`'${input.period}'`)}, created_at)`)
-        .orderBy(sql`date_trunc(${sql.raw(`'${input.period}'`)}, created_at)`);
+        .groupBy(sql`date_trunc(${sql.raw(`'${pgUnit}'`)}, created_at)`)
+        .orderBy(sql`date_trunc(${sql.raw(`'${pgUnit}'`)}, created_at)`);
       const [totalsRow] = await db
         .select({
           totalGrossFees: sql<string>`COALESCE(SUM(CAST(gross_fee AS NUMERIC)), 0)`,

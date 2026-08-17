@@ -31,18 +31,11 @@ export default function SecurityAuditDashboard() {
     { title: "Chain Integrity", value: d.chainValid == null ? "—" : d.chainValid ? "Valid" : "BROKEN", icon: Lock, trend: "flat" as const, trendValue: "tamper-proof", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
   ];
 
-  const eventsByType = [
-    { name: "Login", count: Math.floor(Number(d.totalEvents ?? 100) * 0.40) },
-    { name: "Policy Change", count: Math.floor(Number(d.totalEvents ?? 100) * 0.25) },
-    { name: "Data Access", count: Math.floor(Number(d.totalEvents ?? 100) * 0.20) },
-    { name: "Admin Action", count: Math.floor(Number(d.totalEvents ?? 100) * 0.10) },
-    { name: "Alert", count: Math.floor(Number(d.totalEvents ?? 100) * 0.05) },
-  ];
-
-  const auditTrend = Array.from({ length: 7 }, (_, i) => {
-    const d2 = new Date(Date.now() - (6 - i) * 86400000);
-    return { day: d2.toLocaleDateString("en-NG", { weekday: "short" }), events: Number(d.totalEvents ?? 0) };
-  });
+  // F-12 (wave-3): verifyAuditChain returns chain-integrity counts only — no
+  // per-event-type breakdown or daily series exists, so these charts render
+  // honest empty states (the previous splits/flat trend were fabrications).
+  const eventsByType: Array<{ name: string; count: number }> = [];
+  const auditTrend: Array<{ day: string; events: number }> = [];
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page-bg)", paddingBottom: isMobile ? "calc(4rem + var(--safe-area-bottom))" : "2rem" }}>
