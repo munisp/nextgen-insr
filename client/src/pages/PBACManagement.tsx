@@ -80,12 +80,6 @@ const roleColors: Record<string, string> = {
   viewer: "bg-gray-500/10 border-gray-500/30 text-gray-700",
 };
 
-const riskColors: Record<string, string> = {
-  critical: "bg-red-500/10 text-red-600 border-red-500/20",
-  high: "bg-orange-500/10 text-orange-600 border-orange-500/20",
-  medium: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
-  low: "bg-green-500/10 text-green-600 border-green-500/20",
-};
 
 export default function PBACManagement() {
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
@@ -101,18 +95,41 @@ export default function PBACManagement() {
 
   // Queries
   const rolesQuery = trpc.pbacManagement.listRoles.useQuery();
-  const permissionsQuery = trpc.pbacManagement.listPermissions.useQuery({
-    riskLevel: "all",
-  });
-  const usersQuery = trpc.pbacManagement.listUserAssignments.useQuery({
-    roleId: selectedRole ?? undefined,
-    search: userSearch || undefined,
-  });
-  const auditQuery = trpc.pbacManagement.getAuditLog.useQuery({ pageSize: 20 });
+  const permissionsQuery = trpc.pbacManagement.listPermissions.useQuery();
+  const usersQuery = trpc.pbacManagement.listUserAssignments.useQuery();
+  const auditQuery = trpc.pbacManagement.getAuditLog.useQuery();
   const roleDetail = trpc.pbacManagement.getRoleDetail.useQuery(
-    { roleId: selectedRole! },
+    { roleId: selectedRole ?? "" },
     { enabled: !!selectedRole }
   );
+
+  // F-12 (wave-4b): honest typed bindings to the real {data, total} shapes.
+  type RoleRow = {
+    id: string;
+    name?: string;
+    description?: string;
+    permissions?: string[];
+    inheritsFrom?: string;
+  };
+  type AssignmentRow = {
+    id: string;
+    role?: string;
+    userName?: string;
+    email?: string;
+  };
+  const roles: RoleRow[] = rolesQuery.data?.data ?? [];
+  const roleDetailRow: RoleRow | undefined = roleDetail.data?.data?.[0];
+  const assignmentsAll: AssignmentRow[] = usersQuery.data?.data ?? [];
+  const assignments = userSearch
+    ? assignmentsAll.filter(
+        a =>
+          a.id.toLowerCase().includes(userSearch.toLowerCase()) ||
+          (a.userName ?? "").toLowerCase().includes(userSearch.toLowerCase()) ||
+          (a.role ?? "").toLowerCase().includes(userSearch.toLowerCase())
+      )
+    : assignmentsAll;
+  const auditRows = auditQuery.data?.data ?? [];
+  const permStrings: string[] = permissionsQuery.data?.data ?? [];
 
   // Mutations
   const assignMut = trpc.pbacManagement.assignRole.useMutation({
@@ -130,16 +147,14 @@ export default function PBACManagement() {
     },
   });
 
-  const modifyPermsMut = trpc.pbacManagement.modifyPermissions.useMutation({
-    onSuccess: () => {
-      toast.success(
-        "Permissions updated: Role permissions have been modified."
-      );
-      rolesQuery.refetch();
-      roleDetail.refetch();
-      auditQuery.refetch();
-    },
-  });
+  // F-12 (wave-4b): the real modifyPermissions proc operates on stored
+  // policies ({policyId, actions}) — the page's per-role add/remove toggle
+  // semantics are not delivered; fail loud on interaction.
+  const modifyPermsMut = {
+    mutate: (_input?: unknown) =>
+      toast.error("Per-role permission toggling is not delivered on this deployment"),
+    isPending: false,
+  };
 
   const removeMut = trpc.pbacManagement.removeAssignment.useMutation({
     onSuccess: () => {
@@ -160,9 +175,8 @@ export default function PBACManagement() {
   };
 
   const currentRolePerms = useMemo(() => {
-    if (!roleDetail.data?.role) return new Set<string>();
-    return new Set(roleDetail.data.role.permissions);
-  }, [roleDetail.data]);
+    return new Set(roleDetailRow?.permissions ?? []);
+  }, [roleDetailRow]);
 
   return (
     <div className="space-y-6">
@@ -193,7 +207,7 @@ export default function PBACManagement() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center gap-1">
-            {rolesQuery.data?.map((role: any, idx: number) => (
+            {roles.map((role, idx: number) => (
               <div
                 key={role.id}
                 className="flex flex-col items-center w-full max-w-md"
@@ -251,10 +265,10 @@ export default function PBACManagement() {
         <Tabs defaultValue="users" className="space-y-4">
           <TabsList>
             <TabsTrigger value="users">
-              Users ({roleDetail.data?.users?.length ?? 0})
+              Users ({assignments.length})
             </TabsTrigger>
             <TabsTrigger value="permissions">
-              Permissions ({roleDetail.data?.role?.permissions.length ?? 0})
+              Permissions ({roleDetailRow?.permissions?.length ?? 0})
             </TabsTrigger>
             <TabsTrigger value="audit">Audit Log</TabsTrigger>
           </TabsList>
@@ -286,16 +300,16 @@ export default function PBACManagement() {
                   </tr>
                 </thead>
                 <tbody>
-                  {usersQuery.data?.items.map((user: any) => (
+                  {assignments.map(user => (
                     <tr
-                      key={user.userId}
+                      key={user.id}
                       className="border-t hover:bg-muted/30"
                     >
                       <td className="p-3">
                         <div>
-                          <span className="font-medium">{user.userName}</span>
+                          <span className="font-medium">{user.userName ?? user.id}</span>
                           <p className="text-xs text-muted-foreground">
-                            {user.email}
+                            {user.email ?? "—"}
                           </p>
                         </div>
                       </td>
@@ -332,7 +346,7 @@ export default function PBACManagement() {
                             size="sm"
                             className="h-7 text-xs"
                             onClick={() => {
-                              setAssignUserId(user.userId.toString());
+                              setAssignUserId(user.id.toString());
                               setAssignRoleId(user.roleId);
                               setAssignDialog(true);
                             }}
@@ -345,7 +359,7 @@ export default function PBACManagement() {
                               size="sm"
                               className="h-7 text-xs text-red-600 hover:text-red-700"
                               onClick={() =>
-                                removeMut.mutate({ userId: user.userId })
+                                removeMut.mutate({ userId: user.id })
                               }
                             >
                               <Minus className="h-3 w-3 mr-1" /> Demote
@@ -355,8 +369,7 @@ export default function PBACManagement() {
                       </td>
                     </tr>
                   ))}
-                  {(!usersQuery.data?.items ||
-                    usersQuery.data.items.length === 0) && (
+                  {assignments.length === 0 && (
                     <tr>
                       <td
                         colSpan={6}
@@ -383,7 +396,7 @@ export default function PBACManagement() {
                   className="pl-9"
                 />
               </div>
-              {roleDetail.data?.role?.permissions.includes("*") && (
+              {roleDetailRow?.permissions?.includes("*") && (
                 <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/20">
                   <Crown className="h-3 w-3 mr-1" /> Wildcard Access (all
                   permissions)
@@ -391,107 +404,89 @@ export default function PBACManagement() {
               )}
             </div>
 
-            {permissionsQuery.data?.grouped &&
-              Object.entries(permissionsQuery.data.grouped).map(
-                ([category, perms]: [string, any]) => {
-                  const filteredPerms = permSearch
-                    ? perms.filter(
-                        (p: any) =>
-                          p.id
-                            .toLowerCase()
-                            .includes(permSearch.toLowerCase()) ||
-                          p.description
-                            .toLowerCase()
-                            .includes(permSearch.toLowerCase())
-                      )
-                    : perms;
-                  if (filteredPerms.length === 0) return null;
-
-                  const isExpanded = expandedCategories.has(category);
-                  const grantedCount = filteredPerms.filter(
-                    (p: any) =>
-                      currentRolePerms.has(p.id) || currentRolePerms.has("*")
-                  ).length;
-
-                  return (
-                    <Card key={category}>
-                      <button
-                        className="w-full flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
-                        onClick={() => toggleCategory(category)}
-                      >
-                        <div className="flex items-center gap-2">
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                          <span className="font-semibold text-sm">
-                            {category}
-                          </span>
-                          <Badge variant="outline" className="text-xs">
-                            {grantedCount}/{filteredPerms.length} granted
-                          </Badge>
-                        </div>
-                      </button>
-                      {isExpanded && (
-                        <CardContent className="pt-0 pb-3">
-                          <div className="space-y-2">
-                            {filteredPerms.map((perm: any) => {
-                              const hasPermission =
-                                currentRolePerms.has(perm.id) ||
-                                currentRolePerms.has("*");
-                              return (
-                                <div
-                                  key={perm.id}
-                                  className="flex items-center gap-3 p-2 rounded hover:bg-muted/30"
-                                >
-                                  <Checkbox
-                                    checked={hasPermission}
-                                    disabled={currentRolePerms.has("*")}
-                                    onCheckedChange={checked => {
-                                      if (currentRolePerms.has("*")) return;
-                                      modifyPermsMut.mutate({
-                                        roleId: selectedRole!,
-                                        addPermissions: checked
-                                          ? [perm.id]
-                                          : [],
-                                        removePermissions: !checked
-                                          ? [perm.id]
-                                          : [],
-                                      });
-                                    }}
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
-                                        {perm.id}
-                                      </code>
-                                      <Badge
-                                        variant="outline"
-                                        className={`text-xs ${riskColors[perm.riskLevel] ?? ""}`}
-                                      >
-                                        {perm.riskLevel}
-                                      </Badge>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground mt-0.5">
-                                      {perm.description}
-                                    </p>
-                                  </div>
-                                  {hasPermission ? (
-                                    <Unlock className="h-4 w-4 text-green-500 shrink-0" />
-                                  ) : (
-                                    <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </CardContent>
+            {/* F-12 (wave-4b): real permissions are flat "resource:action"
+                strings — grouped client-side by resource; risk/descriptions
+                have no delivered source and are omitted. */}
+            {Object.entries(
+              permStrings
+                .filter(p =>
+                  permSearch
+                    ? p.toLowerCase().includes(permSearch.toLowerCase())
+                    : true
+                )
+                .reduce<Record<string, string[]>>((acc, p) => {
+                  const res = p.split(":")[0] ?? "other";
+                  (acc[res] ??= []).push(p);
+                  return acc;
+                }, {})
+            ).map(([category, perms]) => {
+              if (perms.length === 0) return null;
+              const isExpanded = expandedCategories.has(category);
+              const grantedCount = perms.filter(
+                p => currentRolePerms.has(p) || currentRolePerms.has("*")
+              ).length;
+              return (
+                <Card key={category}>
+                  <button
+                    className="w-full flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
+                    onClick={() => toggleCategory(category)}
+                  >
+                    <div className="flex items-center gap-2">
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
                       )}
-                    </Card>
-                  );
-                }
-              )}
+                      <span className="font-semibold text-sm">{category}</span>
+                      <Badge variant="outline" className="text-xs">
+                        {grantedCount}/{perms.length} granted
+                      </Badge>
+                    </div>
+                  </button>
+                  {isExpanded && (
+                    <CardContent className="pt-0 pb-3">
+                      <div className="space-y-2">
+                        {perms.map(perm => {
+                          const hasPermission =
+                            currentRolePerms.has(perm) ||
+                            currentRolePerms.has("*");
+                          return (
+                            <div
+                              key={perm}
+                              className="flex items-center gap-3 p-2 rounded hover:bg-muted/30"
+                            >
+                              <Checkbox
+                                checked={hasPermission}
+                                disabled={currentRolePerms.has("*")}
+                                onCheckedChange={checked => {
+                                  if (currentRolePerms.has("*")) return;
+                                  if (!selectedRole) return;
+                                  modifyPermsMut.mutate({
+                                    roleId: selectedRole,
+                                    addPermissions: checked ? [perm] : [],
+                                    removePermissions: !checked ? [perm] : [],
+                                  });
+                                }}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">
+                                  {perm}
+                                </code>
+                              </div>
+                              {hasPermission ? (
+                                <Unlock className="h-4 w-4 text-green-500 shrink-0" />
+                              ) : (
+                                <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })}
           </TabsContent>
 
           {/* Audit Log Tab */}
@@ -508,32 +503,26 @@ export default function PBACManagement() {
                   </tr>
                 </thead>
                 <tbody>
-                  {auditQuery.data?.items.map((entry: any) => (
+                  {auditRows.map(entry => (
                     <tr key={entry.id} className="border-t hover:bg-muted/30">
                       <td className="p-3">
                         <Badge variant="outline" className="text-xs capitalize">
                           {entry.action.replace(/_/g, " ")}
                         </Badge>
                       </td>
-                      <td className="p-3 font-medium">{entry.performedBy}</td>
+                      <td className="p-3 font-medium">{entry.agentId ?? "—"}</td>
                       <td className="p-3 text-muted-foreground">
-                        {entry.targetUser && <span>{entry.targetUser}</span>}
-                        {entry.targetRole && (
-                          <Badge variant="outline" className="text-xs ml-1">
-                            {entry.targetRole}
-                          </Badge>
-                        )}
+                        {entry.resourceId ?? "—"}
                       </td>
                       <td className="p-3 text-xs text-muted-foreground max-w-[300px] truncate">
-                        {entry.details}
+                        {entry.metadata != null ? JSON.stringify(entry.metadata) : "—"}
                       </td>
                       <td className="p-3 text-xs text-muted-foreground">
-                        {new Date(entry.timestamp).toLocaleString()}
+                        {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}
                       </td>
                     </tr>
                   ))}
-                  {(!auditQuery.data?.items ||
-                    auditQuery.data.items.length === 0) && (
+                  {auditRows.length === 0 && (
                     <tr>
                       <td
                         colSpan={5}
@@ -616,7 +605,7 @@ export default function PBACManagement() {
                 if (!assignUserId || !assignRoleId) return;
                 assignMut.mutate({
                   userId: parseInt(assignUserId),
-                  roleId: assignRoleId,
+                  role: assignRoleId,
                 });
               }}
               disabled={!assignUserId || !assignRoleId || assignMut.isPending}
