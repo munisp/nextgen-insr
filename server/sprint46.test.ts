@@ -382,7 +382,8 @@ describe("Sprint 46: Data Integrity", () => {
     expect(stats.npsScore).toBeGreaterThanOrEqual(-100);
     expect(stats.npsScore).toBeLessThanOrEqual(100);
     expect(stats.avgRating).toBeGreaterThanOrEqual(0);
-    expect(stats.avgRating).toBeLessThanOrEqual(5);
+    // NPS scores live on the 0-10 scale (promoters >= 9), not 1-5.
+    expect(stats.avgRating).toBeLessThanOrEqual(10);
     expect(
       stats.promoters + stats.passives + stats.detractors
     ).toBe(stats.totalResponses);
