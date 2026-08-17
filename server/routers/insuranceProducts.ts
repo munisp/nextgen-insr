@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { auditLog, insuranceProducts, policies, systemConfig } from "../../drizzle/schema";
+import { auditLog, claims, insuranceProducts, policies, systemConfig } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -212,12 +212,34 @@ export const insuranceProductsRouter = router({
       total: rows.length,
     };
   }),
+  // F-12 (full sweep): hardcoded analytics fixture -> REAL aggregates
+  // from policies + claims.
   analytics: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db)
+      return {
+        totalPolicies: 0,
+        activePolicies: 0,
+        totalPremiumCollected: 0,
+        claimsRate: 0,
+      };
+    const [tot] = await db.select({ value: count() }).from(policies).limit(100);
+    const [act] = await db
+      .select({ value: count() })
+      .from(policies)
+      .where(eq(policies.status, "active"))
+      .limit(100);
+    const [prem] = await db
+      .select({ v: sql<number>`COALESCE(SUM(${policies.annualPremium}), 0)` })
+      .from(policies)
+      .limit(100);
+    const [clm] = await db.select({ value: count() }).from(claims).limit(100);
+    const total = Number(tot.value);
     return {
-      totalPolicies: 500,
-      activePolicies: 450,
-      totalPremiumCollected: 2500000,
-      claimsRate: 5,
+      totalPolicies: total,
+      activePolicies: Number(act.value),
+      totalPremiumCollected: Number(prem?.v ?? 0),
+      claimsRate: total > 0 ? Math.round((Number(clm.value) / total) * 1000) / 10 : 0,
     };
   }),
 });

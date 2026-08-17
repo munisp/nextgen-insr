@@ -68,12 +68,12 @@ export const cardRequestRouter = router({
       message: "list: no card-request store is delivered",
     });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      total: 300,
-      byStatus: { delivered: 250, pending: 30, rejected: 20 },
-      byType: { debit: 200, prepaid: 100 },
-      avgDeliveryDays: 7,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

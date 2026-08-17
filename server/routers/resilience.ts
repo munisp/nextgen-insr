@@ -804,7 +804,8 @@ export const resilienceRouter = router({
     .query(async ({ input }) => {
       try {
         const db = (await getDb())!;
-        if (!db) return { rows: [], uptimePct: 100, avgLatencyMs: 0 };
+        // F-12 (full sweep): uptimePct was a cosmetic 100 on no data.
+        if (!db) return { rows: [], uptimePct: null, avgLatencyMs: 0 };
         const since = new Date(Date.now() - input.hours * 3_600_000);
         const rows = await db
           .select()
@@ -820,7 +821,7 @@ export const resilienceRouter = router({
 
         const total = rows.length;
         const online = rows.filter(r => r.quality !== "Offline").length;
-        const uptimePct = total > 0 ? Math.round((online / total) * 100) : 100;
+        const uptimePct = total > 0 ? Math.round((online / total) * 100) : null; // F-12: cosmetic 100 removed
         const latencyRows = rows.filter(r => r.latencyMs !== null);
         const avgLatencyMs =
           latencyRows.length > 0
