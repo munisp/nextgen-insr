@@ -208,8 +208,7 @@ export default function MLScoringDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-<div className="py-6 text-center text-muted-foreground">
+                <div className="py-6 text-center text-muted-foreground">
                     — feature-importance telemetry is not delivered on this platform
                   </div>
               </CardContent>

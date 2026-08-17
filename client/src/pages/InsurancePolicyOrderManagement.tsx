@@ -101,11 +101,11 @@ export default function InsuranceOrderManagement() {
                 </td>
                 <td className="px-4 py-3 text-sm">#{order.customerId}</td>
                 <td className="px-4 py-3 text-sm font-medium">
-                  {order.currency} {Number(order.total).toLocaleString()}
+                  {order.currency} {order.total != null ? Number(order.total).toLocaleString() : "—"}
                 </td>
                 <td className="px-4 py-3">
                   <span
-                    className={`text-xs px-2 py-1 rounded ${statusColors[order.status] || ""}`}
+                    className={`text-xs px-2 py-1 rounded ${statusColors[order.status ?? ""] || ""}`}
                   >
                     {order.status}
                   </span>
@@ -167,110 +167,73 @@ export default function InsuranceOrderManagement() {
             className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
-            <h2 className="text-xl font-bold mb-4">
-              Order #{orderDetail.orderNumber}
+            <h2 className="text-lg font-semibold mb-4">
+              Order {orderDetail.orderNumber ?? "—"}
             </h2>
-            <div className="space-y-3">
+            <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Status:</span>
+                <span className="text-gray-500">Status</span>
                 <span
                   className={`text-xs px-2 py-1 rounded ${statusColors[orderDetail.status ?? ""] || ""}`}
                 >
-                  {orderDetail.status}
+                  {orderDetail.status ?? "—"}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Total:</span>
-                <span className="font-medium">
-                  {orderDetail.currency}{" "}
-                  {orderDetail.total != null ? Number(orderDetail.total).toLocaleString() : "—"}
+                <span className="text-gray-500">Customer</span>
+                <span>{orderDetail.customerName ?? "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Total</span>
+                <span>
+                  {orderDetail.currency ?? ""}{" "}
+                  {orderDetail.total != null
+                    ? Number(orderDetail.total).toLocaleString()
+                    : "—"}
                 </span>
               </div>
-              <hr />
-              <h3 className="font-medium">Items:</h3>
-              {orderDetail.items?.map(item => (
-                <div key={item.id} className="flex justify-between text-sm">
-                  <span>
-                    {item.name} × {item.quantity}
-                  </span>
-                  <span>₦{item.total != null ? Number(item.total).toLocaleString() : "—"}</span>
-                </div>
-              ))}
-              <hr />
-              {/* Status Actions */}
-              {orderDetail.status !== "delivered" &&
-                orderDetail.status !== "cancelled" && (
-                  <div className="flex gap-2 mt-4">
-                    {orderDetail.status === "pending" && (
-                      <button
-                        onClick={() =>
-                          updateStatus.mutate({
-                            id: selectedOrder,
-                            status: "confirmed",
-                          })
-                        }
-                        className="px-3 py-2 bg-blue-600 text-white rounded text-sm"
-                      >
-                        Confirm
-                      </button>
-                    )}
-                    {orderDetail.status === "confirmed" && (
-                      <button
-                        onClick={() =>
-                          updateStatus.mutate({
-                            id: selectedOrder,
-                            status: "processing",
-                          })
-                        }
-                        className="px-3 py-2 bg-purple-600 text-white rounded text-sm"
-                      >
-                        Process
-                      </button>
-                    )}
-                    {orderDetail.status === "processing" && (
-                      <button
-                        onClick={() =>
-                          updateStatus.mutate({
-                            id: selectedOrder,
-                            status: "shipped",
-                          })
-                        }
-                        className="px-3 py-2 bg-indigo-600 text-white rounded text-sm"
-                      >
-                        Ship
-                      </button>
-                    )}
-                    {orderDetail.status === "shipped" && (
-                      <button
-                        onClick={() =>
-                          updateStatus.mutate({
-                            id: selectedOrder,
-                            status: "delivered",
-                          })
-                        }
-                        className="px-3 py-2 bg-green-600 text-white rounded text-sm"
-                      >
-                        Deliver
-                      </button>
-                    )}
-                    <button
-                      onClick={() =>
-                        updateStatus.mutate({
-                          id: selectedOrder,
-                          status: "cancelled",
-                        })
-                      }
-                      className="px-3 py-2 bg-red-600 text-white rounded text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">Created</span>
+                <span>
+                  {orderDetail.createdAt
+                    ? new Date(orderDetail.createdAt).toLocaleString()
+                    : "—"}
+                </span>
+              </div>
             </div>
+            {(orderDetail.items?.length ?? 0) > 0 && (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium mb-2">Items</h3>
+                <div className="space-y-1">
+                  {orderDetail.items?.map(item => (
+                    <div
+                      key={item.id}
+                      className="flex justify-between text-sm border-b pb-1"
+                    >
+                      <span>{item.name ?? "—"}</span>
+                      <span className="text-gray-500">
+                        ×{item.quantity ?? "—"}
+                      </span>
+                      <span>
+                        ₦
+                        {item.total != null
+                          ? Number(item.total).toLocaleString()
+                          : "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <button
               onClick={() => setSelectedOrder(null)}
               className="mt-4 w-full py-2 border rounded-lg"
             >
               Close
             </button>
-          
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
