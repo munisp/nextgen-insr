@@ -26,6 +26,7 @@ paths = [
   '''^customer-portal-full/\.env\.example$''',     # example file, empty values
   '''^COMPREHENSIVE_ANALYSIS_REPORT\.md$''',        # documented dev vapid key
   '''^vitest\.config\.ts$''',                       # CI dummy values for requireEnv (non-production)
+  '''^customer-portal-full/ci-init\.sql$''',          # seed rows labelled 'Test Sandbox Key' (sandbox creds, June 2026, reviewed — not production)
 ]
 
 
