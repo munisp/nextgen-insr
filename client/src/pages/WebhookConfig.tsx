@@ -27,11 +27,10 @@ export default function WebhookConfig() {
       configsQuery.refetch();
     },
   });
+  // F-12 (wave-4b): ingest is fail-loud NOT_IMPLEMENTED — surface the loud
+  // backend error on test.
   const testMut = trpc.webhookNotif.ingest.useMutation({
-    onSuccess: d =>
-      d.success
-        ? toast.success(`Test delivered: ${d.deliveryId}`)
-        : toast.error(d.error),
+    onError: e => toast.error(e.message),
   });
 
   const stats = statsQuery.data;
@@ -62,30 +61,32 @@ export default function WebhookConfig() {
 
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {/* F-12 (wave-4b): real getStats fields only — processing-time
+                and outcome breakdowns have no delivered source ("—"). */}
             {[
               {
-                label: "Total Deliveries",
-                value: stats.total,
+                label: "Endpoints",
+                value: stats.totalEndpoints,
                 icon: <Activity className="w-4 h-4" />,
               },
               {
+                label: "Total Deliveries",
+                value: stats.totalDeliveries,
+                icon: <CheckCircle2 className="w-4 h-4 text-green-500" />,
+              },
+              {
                 label: "Processed",
-                value: stats.processed,
+                value: "—",
                 icon: <CheckCircle2 className="w-4 h-4 text-green-500" />,
               },
               {
                 label: "Rejected",
-                value: stats.rejected,
+                value: "—",
                 icon: <XCircle className="w-4 h-4 text-red-500" />,
               },
               {
-                label: "Errors",
-                value: stats.errors,
-                icon: <XCircle className="w-4 h-4 text-orange-500" />,
-              },
-              {
                 label: "Avg Time",
-                value: `${stats.avgProcessingTime}ms`,
+                value: "—",
                 icon: <Clock className="w-4 h-4" />,
               },
             ].map(s => (
@@ -118,14 +119,14 @@ export default function WebhookConfig() {
               </div>
             ) : (
               <div className="space-y-3">
-                {configsQuery.data?.map(wh => (
+                {configsQuery.data?.configs?.map(wh => (
                   <div
                     key={wh.id}
                     className="flex items-center justify-between p-3 rounded-lg border"
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        className={`w-2 h-2 rounded-full ${wh.active ? "bg-green-500" : "bg-gray-400"}`}
+                        className={`w-2 h-2 rounded-full ${wh.isActive ? "bg-green-500" : "bg-gray-400"}`}
                       />
                       <div>
                         <div className="font-medium text-sm">{wh.name}</div>
@@ -156,9 +157,8 @@ export default function WebhookConfig() {
                         size="sm"
                         onClick={() =>
                           testMut.mutate({
-                            webhookId: wh.id,
-                            secret: "test_will_fail",
-                            event: wh.events[0],
+                            source: "dashboard-test",
+                            event: wh.events[0] ?? "transaction.completed",
                             payload: { test: true },
                           })
                         }
@@ -166,9 +166,9 @@ export default function WebhookConfig() {
                         Test
                       </Button>
                       <Switch
-                        checked={wh.active}
+                        checked={wh.isActive}
                         onCheckedChange={() =>
-                          toggleMut.mutate({ webhookId: wh.id })
+                          toggleMut.mutate({ id: wh.id })
                         }
                       />
                     </div>
@@ -183,28 +183,21 @@ export default function WebhookConfig() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Supported Events ({eventsQuery.data?.length ?? 0})
+                Supported Events ({eventsQuery.data?.events?.length ?? 0})
               </CardTitle>
             </CardHeader>
             <CardContent className="max-h-[300px] overflow-y-auto">
               <div className="space-y-2">
                 {eventsQuery.data?.map(ev => (
                   <div
-                    key={ev.event}
+                    key={ev.name}
                     className="flex items-center justify-between py-1.5 border-b last:border-0"
                   >
-                    <span className="text-sm font-mono">{ev.event}</span>
-                    <Badge
-                      variant={
-                        ev.priority === "critical"
-                          ? "destructive"
-                          : ev.priority === "high"
-                            ? "default"
-                            : "secondary"
-                      }
-                      className="text-[10px]"
-                    >
-                      {ev.priority}
+                    <span className="text-sm font-mono">{ev.name}</span>
+                    {/* F-12 (wave-4b): category is the honest grouping (derived
+                        from the event name); priority has no source. */}
+                    <Badge variant="outline" className="text-[10px]">
+                      {ev.category}
                     </Badge>
                   </div>
                 ))}
@@ -217,21 +210,21 @@ export default function WebhookConfig() {
               <CardTitle className="text-base">Recent Deliveries</CardTitle>
             </CardHeader>
             <CardContent className="max-h-[300px] overflow-y-auto">
-              {deliveryQuery.data?.length === 0 ? (
+              {(deliveryQuery.data?.deliveries?.length ?? 0) === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
                   No deliveries yet. Send a test webhook to see results.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {deliveryQuery.data?.map(d => (
+                  {deliveryQuery.data?.deliveries?.map(d => (
                     <div
                       key={d.id}
                       className="flex items-center justify-between py-1.5 border-b last:border-0"
                     >
                       <div>
-                        <span className="text-sm font-mono">{d.event}</span>
+                        <span className="text-sm font-mono">{d.eventType}</span>
                         <span className="text-xs text-muted-foreground ml-2">
-                          {d.processingTimeMs}ms
+                          {d.responseTime}ms
                         </span>
                       </div>
                       <Badge
