@@ -143,7 +143,8 @@ export const webhookManagementRouter = router({
         secret: s.secret,
         createdAt: s.createdAt,
         lastDelivery: null,
-        successRate: 98,
+        // F-12 (full sweep): per-row successRate was hardcoded 98.
+        successRate: null,
       })),
       total: items.length,
     };
@@ -253,26 +254,53 @@ export const webhookManagementRouter = router({
       try {
         const id = parseInt(input.webhookId.replace("WH-", ""), 10);
         const db = (await getDb())!;
-        if (db && id) {
-          await db.insert(webhookDeliveries).values({
-            endpointId: id,
-            subscriptionId: id,
-            eventType: "webhook.test",
-            payload: JSON.stringify({
-              event: "webhook.test",
-              timestamp: new Date().toISOString(),
-            }),
-            status: "delivered",
-            responseCode: 200,
-            responseTime: 120,
-            deliveredAt: new Date(),
+        if (!db || !id)
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+        // F-12 (full sweep): the test previously recorded a fabricated
+        // delivery (delivered/200/120ms) with no HTTP call. Now: REAL POST
+        // to the endpoint URL with the ACTUAL outcome recorded.
+        const [endpoint] = await db
+          .select()
+          .from(webhookEndpoints)
+          .where(eq(webhookEndpoints.id, id))
+          .limit(1);
+        if (!endpoint)
+          throw new TRPCError({ code: "NOT_FOUND", message: "webhook not found" });
+        const payload = JSON.stringify({
+          event: "webhook.test",
+          timestamp: new Date().toISOString(),
+        });
+        const started = Date.now();
+        let status = "failed";
+        let responseCode: number | null = null;
+        try {
+          const res = await fetch(endpoint.url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: payload,
+            signal: AbortSignal.timeout(10_000),
           });
+          responseCode = res.status;
+          status = res.ok ? "delivered" : "failed";
+        } catch {
+          status = "failed";
         }
+        const responseTime = Date.now() - started;
+        await db.insert(webhookDeliveries).values({
+          endpointId: id,
+          subscriptionId: id,
+          eventType: "webhook.test",
+          payload,
+          status,
+          responseCode,
+          responseTime,
+          deliveredAt: status === "delivered" ? new Date() : null,
+        });
         return {
-          success: true,
+          success: status === "delivered",
           webhookId: input.webhookId,
-          responseCode: 200,
-          latencyMs: 120,
+          responseCode,
+          latencyMs: responseTime,
           testEvent: "webhook.test",
         };
       } catch (error) {
