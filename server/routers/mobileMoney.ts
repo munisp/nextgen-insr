@@ -173,7 +173,7 @@ export const mobileMoneyRouter = router({
           logger.warn(`[MobileMoney] post-commit eventing degraded (tx is durable): ${e instanceof Error ? e.message : String(e)}`);
         }
         if (mobileMoneyProviderClient()) {
-          let dispatched;
+          let dispatched: Awaited<ReturnType<typeof dispatchMobileMoneyOp>>;
           try {
             dispatched = await dispatchMobileMoneyOp({
               db, tx, kind: "cashin",
@@ -272,7 +272,7 @@ export const mobileMoneyRouter = router({
           logger.warn(`[MobileMoney] post-commit eventing degraded (tx is durable): ${e instanceof Error ? e.message : String(e)}`);
         }
         if (mobileMoneyProviderClient()) {
-          let dispatched;
+          let dispatched: Awaited<ReturnType<typeof dispatchMobileMoneyOp>>;
           try {
             dispatched = await dispatchMobileMoneyOp({
               db, tx, kind: "cashout",
