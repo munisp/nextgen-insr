@@ -262,18 +262,29 @@ const memSplits: any[] = DEFAULT_SPLITS.map((s, i) => ({
 }));
 const memPayouts: any[] = [];
 
-/** Ensure default tiers and splits exist in DB */
+/**
+ * Ensure the default 9-tier / 5-split structure exists in DB.
+ * F-12: previously this only seeded when the tables were completely EMPTY,
+ * so environments whose demo seed pre-populates a partial (4-tier) structure
+ * silently never received the delivered CT-001..CT-009 / CS-001..CS-005
+ * defaults. Now it idempotently tops up any MISSING default rows (keyed on
+ * tierId/splitId) while leaving operator-created rows untouched.
+ */
 async function ensureDefaults() {
   const db = await getDb();
   if (!db || (db as any)._isNoop) return;
   try {
-    const existing = await db
-      .select({ c: count() })
+    const existingTiers = await db
+      .select({ tierId: commissionTiers.tierId })
       .from(commissionTiers)
-      .limit(100);
-    if (Number(existing[0].c) === 0) {
-      logger.info("[CommissionEngine] Seeding default tiers...");
-      for (const t of DEFAULT_TIERS) {
+      .limit(1000);
+    const haveTiers = new Set(existingTiers.map(r => r.tierId));
+    const missingTiers = DEFAULT_TIERS.filter(t => !haveTiers.has(t.tierId));
+    if (missingTiers.length > 0) {
+      logger.info(
+        `[CommissionEngine] Seeding ${missingTiers.length} missing default tiers...`
+      );
+      for (const t of missingTiers) {
         await db
           .insert(commissionTiers)
           .values(t as any)
@@ -281,12 +292,16 @@ async function ensureDefaults() {
       }
     }
     const existingSplits = await db
-      .select({ c: count() })
+      .select({ splitId: commissionSplits.splitId })
       .from(commissionSplits)
-      .limit(100);
-    if (Number(existingSplits[0].c) === 0) {
-      logger.info("[CommissionEngine] Seeding default splits...");
-      for (const s of DEFAULT_SPLITS) {
+      .limit(1000);
+    const haveSplits = new Set(existingSplits.map(r => r.splitId));
+    const missingSplits = DEFAULT_SPLITS.filter(s => !haveSplits.has(s.splitId));
+    if (missingSplits.length > 0) {
+      logger.info(
+        `[CommissionEngine] Seeding ${missingSplits.length} missing default splits...`
+      );
+      for (const s of missingSplits) {
         await db
           .insert(commissionSplits)
           .values(s as any)
@@ -298,8 +313,10 @@ async function ensureDefaults() {
   }
 }
 
-// Run on module load
-ensureDefaults();
+// Run on module load; procedures await this single-flight promise so the
+// default structure is guaranteed present before any tier/split read or
+// mutation (module-load fire-and-forget raced the first query).
+const defaultsReady: Promise<void> = ensureDefaults();
 
 // ── Audit helper ────────────────────────────────────────────────────────────
 async function logAudit(
@@ -365,6 +382,7 @@ export const commissionEngineRouter = router({
   // ── List all tiers (DB-backed) ──────────────────────────────────────────
   tiers: protectedProcedure.query(async () => {
     try {
+      await defaultsReady; // guarantee the default tier/split structure (F-12)
       const db = await getDb();
       if (!db || (db as any)._isNoop)
         return { tiers: memTiers.map(t => formatTier(t)) };
@@ -397,6 +415,7 @@ export const commissionEngineRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
+        await defaultsReady; // guarantee the default tier/split structure (F-12)
         const db = await getDb();
         if (!db || (db as any)._isNoop) {
           const idx = memTiers.findIndex(t => t.tierId === input.id);
@@ -484,6 +503,7 @@ export const commissionEngineRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
+        await defaultsReady; // guarantee the default tier/split structure (F-12)
         const db = await getDb();
         if (!db || (db as any)._isNoop) {
           const nextNum = memTiers.length + 1;
@@ -566,6 +586,7 @@ export const commissionEngineRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
+        await defaultsReady; // guarantee the default tier/split structure (F-12)
         const db = await getDb();
         if (!db || (db as any)._isNoop) {
           const idx = memTiers.findIndex(t => t.tierId === input.id);
@@ -615,6 +636,7 @@ export const commissionEngineRouter = router({
 
   // ── List all splits (DB-backed with Redis cache) ────────────────────────
   splits: protectedProcedure.query(async () => {
+    await defaultsReady; // guarantee the default tier/split structure (F-12)
     // [Redis] Try cache first
     const cached = await getCachedSplitRatios("all");
     const db = await getDb();
@@ -666,6 +688,7 @@ export const commissionEngineRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
+        await defaultsReady; // guarantee the default tier/split structure (F-12)
         const total =
           input.superAgentShare +
           input.masterAgentShare +
@@ -760,6 +783,7 @@ export const commissionEngineRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
+        await defaultsReady; // guarantee the default tier/split structure (F-12)
         const total =
           input.superAgentShare +
           input.masterAgentShare +
@@ -856,6 +880,7 @@ export const commissionEngineRouter = router({
     )
     .query(async ({ input }) => {
       try {
+        await defaultsReady; // guarantee the default tier/split structure (F-12)
         // [Dapr] Check calculation cache
         const cacheKey = `sim:${input.transactionType}:${input.amount}:${input.agentRole}`;
         const cached = await daprGetCommissionState(cacheKey);
@@ -952,6 +977,7 @@ export const commissionEngineRouter = router({
     )
     .query(async ({ input }) => {
       try {
+        await defaultsReady; // guarantee the default tier/split structure (F-12)
         const db = await getDb();
         if (!db || (db as any)._isNoop) return { payouts: [], total: 0 };
 
@@ -1012,6 +1038,7 @@ export const commissionEngineRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
       try {
+        await defaultsReady; // guarantee the default tier/split structure (F-12)
         const db = await getDb();
         if (!db)
           return {
@@ -1096,6 +1123,7 @@ export const commissionEngineRouter = router({
 
   // ── Analytics (DB-backed) ───────────────────────────────────────────────
   analytics: protectedProcedure.query(async () => {
+    await defaultsReady; // guarantee the default tier/split structure (F-12)
     const db = await getDb();
     if (!db)
       return {

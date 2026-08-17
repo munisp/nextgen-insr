@@ -128,8 +128,18 @@ const getStats = publicProcedure
         .from(deviceLocations)
         .orderBy(desc(deviceLocations.id))
         .limit(5);
+      // F-12: compute the real table count from information_schema at query
+      // time (was a hardcoded silent-mockware constant). Counts base tables in
+      // the runtime schema, so it tracks the live Drizzle schema exactly.
+      const tableCountRows = await db.execute<{ tableCount: number }>(
+        sql`SELECT count(*)::int AS "tableCount" FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'`
+      );
+      const totalTables = Number(
+        (tableCountRows.rows?.[0] as { tableCount?: number } | undefined)
+          ?.tableCount ?? 0
+      );
       return {
-        totalTables: 78,
+        totalTables,
         totalRows: 2450000,
         uptime: "99.97%",
         avgQueryTime: "12ms",

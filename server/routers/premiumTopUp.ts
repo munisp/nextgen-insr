@@ -9,9 +9,13 @@ import { z } from "zod";
 import { transactions, policies, auditLog } from "../../drizzle/schema";
 import { premiums } from "../../drizzle/schema.additions";
 import { logger } from "../_core/logger";
+import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { fluvioProduce } from "../fluvio";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
+import { cacheSet } from "../redisClient";
 import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 
 export const premiumTopUpRouter = router({
@@ -52,6 +56,15 @@ export const premiumTopUpRouter = router({
       if (!["active", "bound", "lapsed"].includes(policy.status ?? "")) {
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Policy status '${policy.status}' does not allow premium payment` });
       }
+
+      // Sprint 44 wiring (F-12): domain-level authz before any funds move
+      // (fail-closed unless the insecure PERMIFY_FAIL_OPEN opt-in is set).
+      const allowed = await permifyCheck({
+        subjectType: "user", subjectId: ctx.user?.id != null ? String(ctx.user.id) : "system",
+        entityType: "premiumTopUp", entityId: String(input.policyId),
+        permission: "execute",
+      });
+      if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to post premium payments" });
 
       const txAgentId = input.agentId ?? policy.agentId;
       if (txAgentId == null) {
@@ -146,6 +159,21 @@ export const premiumTopUpRouter = router({
           metadata: { amountNGN: input.amountNGN, reference: input.reference },
         }).catch(() => {});
 
+        // Sprint 44 wiring (F-12): event fan-out + status cache. Best-effort
+        // AFTER the premium effect is durable (single PG transaction + TB).
+        try {
+        await publishEvent("pos.premiumtopup" as KafkaTopic, "system", {
+          event: "premium.topup.completed", reference: input.reference,
+          policyId: input.policyId, amountNGN: input.amountNGN,
+          premiumId: outcome.premium.id,
+        });
+        await fluvioProduce("pos.premiumtopup", {
+          value: JSON.stringify({ event: "premium.topup.completed", reference: input.reference, policyId: input.policyId, amountNGN: input.amountNGN }),
+        });
+        await cacheSet(`tx:status:${input.reference}`, "success", 300);
+        } catch (e) {
+          logger.warn(`[PremiumTopUp] post-commit eventing degraded (tx is durable): ${e instanceof Error ? e.message : String(e)}`);
+        }
         logger.info(`[PremiumTopUp] ₦${input.amountNGN} for policy ${input.policyId} | TB: ${tbResult?.id ?? "pending"}`);
         return { idempotent: false, transaction: outcome.tx, premium: outcome.premium, tbTransferId: tbResult?.id ?? null };
       } finally {

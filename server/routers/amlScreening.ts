@@ -9,6 +9,8 @@
  *   - Automated SAR submission workflow with 24-hour deadline enforcement
  *   - NFIU reporting integration
  */
+import { randomUUID } from "crypto";
+
 import {
   desc,
   eq,
@@ -287,7 +289,7 @@ export const amlScreeningRouter = router({
 
       const requiresSar = level === "critical" || (level === "high" && score >= 70);
       const requiresCtr = (input.amount ?? 0) >= CTR_THRESHOLD;
-      const referenceNumber = `AML-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const referenceNumber = `AML-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
 
       // Record the screening result
       const [filing] = await db.insert(complianceFilings).values({
@@ -320,7 +322,7 @@ export const amlScreeningRouter = router({
       // Auto-file CTR if above threshold
       let ctrReference: string | undefined;
       if (requiresCtr) {
-        const ctrRef = `CTR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+        const ctrRef = `CTR-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
         const ctrResult = await submitCtrToCbn({
           referenceNumber: ctrRef,
           entityName: input.entityName,
@@ -408,7 +410,7 @@ export const amlScreeningRouter = router({
         riskScore?: number;
         flags?: string[];
       };
-      const sarRef = `SAR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const sarRef = `SAR-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
 
       // Submit to NFIU
       const nfiuResult = await submitSarToNfiu({

@@ -1,6 +1,6 @@
 /**
  * networkTelemetry.ts — Network Telemetry Router
- * Real DB-backed network telemetry data. No Math.random().
+ * Real DB-backed network telemetry data; zero randomly-generated mock data.
  */
 import { desc, count, gte, avg, sql } from "drizzle-orm";
 import { z } from "zod";

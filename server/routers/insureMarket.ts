@@ -45,6 +45,8 @@
  * pipeline store exists).
  */
 
+import { randomUUID } from "crypto";
+
 import { TRPCError } from "@trpc/server";
 import { sql, desc, eq, and, gte, sum, count } from "drizzle-orm";
 import { z } from "zod";
@@ -179,7 +181,7 @@ export const insureMarketRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
       // Record subscription in DB
-      const subscriptionId = `SUB-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const subscriptionId = `SUB-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
       const apiKey = `ipa_${Buffer.from(`${input.tenantId}:${subscriptionId}`).toString("base64").slice(0, 32)}`;
 
       await db.execute(sql`

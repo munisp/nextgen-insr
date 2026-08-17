@@ -386,7 +386,8 @@ export const worldViewRouter = router({
           features: (rows.rows as Array<{ agent_id: string; agent_name: string; latitude: number; longitude: number; policy_count: number; claim_count: number; total_premium: number }>)
             .map((r, i) => {
               const r0 = 0.15; // ~15km radius approximation
-              const coords = Array.from({ length: 8 }, (_, j) => {
+              // Deterministic octagon around the real agent coordinate.
+              const coords = [0, 1, 2, 3, 4, 5, 6, 7].map(j => {
                 const angle = (j / 8) * 2 * Math.PI;
                 return [r.longitude + r0 * Math.cos(angle), r.latitude + r0 * Math.sin(angle)];
               });

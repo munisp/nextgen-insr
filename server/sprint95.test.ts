@@ -56,7 +56,12 @@ describe("Sprint 95: Router Implementation", () => {
       const content = fs.readFileSync(path.join(routerDir, file), "utf-8");
       if (
         !content.includes("protectedProcedure") &&
-        !content.includes("publicProcedure")
+        !content.includes("publicProcedure") &&
+        // F-12 DRIFT-verified: adminProcedure is a real procedure type
+        // (JWT + role=admin + Permify, server/_core/trpc.ts). auditCompliance.ts
+        // is fully implemented with 3 adminProcedure endpoints and was
+        // false-flagged by the substring-only detection.
+        !content.includes("adminProcedure")
       ) {
         routersWithoutProcedures.push(file);
       }

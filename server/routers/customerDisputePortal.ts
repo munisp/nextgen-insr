@@ -192,13 +192,28 @@ export const customerDisputePortalRouter = router({
       try {
         const db = (await getDb())!;
         if ((db as any)._isNoop) return { disputes: [], items: [], total: 0 };
+        // F-12: join the originating transaction so each dispute row carries
+        // the real customerName (was a raw disputes select — the portal's
+        // row shape contract includes customerName; null when the dispute
+        // has no linked transaction).
         const rows = await db
-          .select()
+          .select({
+            dispute: disputes,
+            customerName: transactions.customerName,
+          })
           .from(disputes)
+          .leftJoin(
+            transactions,
+            eq(disputes.transactionId, transactions.id)
+          )
           .orderBy(desc(disputes.createdAt))
           .limit(input.limit)
           .offset(input.offset);
-        return { disputes: rows, items: rows, total: rows.length };
+        const shaped = rows.map(r => ({
+          ...r.dispute,
+          customerName: r.customerName ?? null,
+        }));
+        return { disputes: shaped, items: shaped, total: shaped.length };
       } catch {
         return { disputes: [], items: [], total: 0 };
       }

@@ -1,4 +1,9 @@
 /**
+ * RE-ENABLED 2026-08-17 (F-12 remediation) — findings resolved; see
+ * tests/QUARANTINE.md (QUARANTINED-OPEN-DEFECT section) for the verdicts.
+ * Original quarantine header retained below for audit history.
+ */
+/**
  * ═══════════════════════════════════════════════════════════════════════════
  * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress) — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
  * ═══════════════════════════════════════════════════════════════════════════
@@ -333,7 +338,12 @@ describe("A07 — Authentication Failures", () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("A08 — Software Integrity", () => {
   it("should have CI/CD pipeline with security checks", () => {
-    const cicd = readFile(".github/workflows/ci-cd.yml");
+    // F-12 DRIFT-verified (2026-08-17): .github/workflows/ci-cd.yml has ZERO
+    // commits in git history (GitHub commits API, path-scoped) — it never
+    // existed. The delivered CI/CD pipeline is ci.yml (full lint/typecheck/
+    // test pipeline). Assertion intent (a real pipeline running tests) is
+    // unchanged; only the filename drift is corrected.
+    const cicd = readFile(".github/workflows/ci.yml");
     expect(cicd.length).toBeGreaterThan(0);
     expect(cicd).toContain("test");
   });
@@ -478,7 +488,9 @@ describe("Security Score Summary", () => {
       deductions.push(".env not in .gitignore (-10)");
     }
 
-    const cicd = readFile(".github/workflows/ci-cd.yml");
+    // F-12 DRIFT-verified: ci-cd.yml never existed (0 commits, API-verified);
+    // the delivered pipeline is ci.yml — same drift correction as A08 above.
+    const cicd = readFile(".github/workflows/ci.yml");
     if (!cicd) {
       score -= 5;
       deductions.push("No CI/CD pipeline (-5)");

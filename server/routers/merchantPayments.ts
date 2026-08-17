@@ -9,9 +9,13 @@ import { z } from "zod";
 
 import { transactions, agents, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { fluvioProduce } from "../fluvio";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import { acquireLock, releaseLock } from "../lib/redisClient";
+import { cacheSet } from "../redisClient";
 import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 
 const MIN_AMOUNT = 100, MAX_AMOUNT = 1_000_000, DAILY_LIMIT = 5_000_000;
@@ -33,6 +37,15 @@ export const merchantPaymentsRouter = router({
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
+      // Sprint 44 wiring (F-12): domain-level authz before any funds move.
+      // permifyCheck is fail-closed (deny on unavailable) unless the insecure
+      // PERMIFY_FAIL_OPEN opt-in is set.
+      const allowed = await permifyCheck({
+        subjectType: "user", subjectId: agent.agentId,
+        entityType: "merchantPayments", entityId: input.merchantId,
+        permission: "execute",
+      });
+      if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: "Agent is not authorized for merchant payments" });
       const agentBalance = Number(agent.premiumReserve ?? 0);
       if (agentBalance < input.amountNGN) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Insufficient float. Available: ₦${agentBalance.toLocaleString()}` });
       const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -62,6 +75,21 @@ export const merchantPaymentsRouter = router({
           metadata: { tbSyncStatus: tbResult ? "synced" : "pending", category: "merchant_payment", merchantRef: input.reference, merchantId: input.merchantId, mdrFee, merchantAmount, description: input.description ?? null, tbTransferId: tbResult?.id ?? null },
         }).returning();
         await db.insert(auditLog).values({ action: "MERCHANT_PAYMENT", resource: "merchant_payment", resourceId: input.reference, status: "success", metadata: { merchantId: input.merchantId, amountNGN: input.amountNGN } }).catch(() => {});
+        // Sprint 44 wiring (F-12): event fan-out + status cache. Best-effort
+        // AFTER the funds effect is durable (TB transfer + Postgres row).
+        try {
+        await publishEvent("pos.merchantpayments" as KafkaTopic, "system", {
+          event: "merchant_payment.completed", reference: input.reference,
+          merchantId: input.merchantId, amountNGN: input.amountNGN,
+          agentId: agent.agentId, mdrFee,
+        });
+        await fluvioProduce("pos.merchantpayments", {
+          value: JSON.stringify({ event: "merchant_payment.completed", reference: input.reference, amountNGN: input.amountNGN }),
+        });
+        await cacheSet(`tx:status:${input.reference}`, "success", 300);
+        } catch (e) {
+          logger.warn(`[MerchantPayment] post-commit eventing degraded (tx is durable): ${e instanceof Error ? e.message : String(e)}`);
+        }
         logger.info(`[MerchantPayment] ₦${input.amountNGN} to merchant ${input.merchantId} | agent ${agent.agentId} | TB: ${tbResult?.id ?? "pending"}`);
         return { idempotent: false, transaction: tx, mdrFee, merchantAmount, newBalanceNGN: newBalance, tbTransferId: tbResult?.id ?? null };
       } finally { await releaseLock(lockKey); }

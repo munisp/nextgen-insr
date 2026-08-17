@@ -117,8 +117,10 @@ export async function initFeatureFlags(): Promise<UnleashClientLike> {
   _loadState = 'loading';
   try {
     // Dynamic import of the optional dependency; clear error when missing.
-    const dynamicImport = new Function('spec', 'return import(spec)') as (spec: string) => Promise<Record<string, unknown>>;
-    const mod = await dynamicImport(UNLEASH_SPEC);
+    // F-12 security remediation: a variable specifier already defeats static
+    // bundler resolution, so the former dynamic-code trampoline is unnecessary
+    // — and it trips eval-class security scanners (CWE-95).
+    const mod = (await import(/* @vite-ignore */ UNLEASH_SPEC)) as Record<string, unknown>;
     const UnleashClientCtor = mod.UnleashClient as new (cfg: Record<string, unknown>) => UnleashClientLike;
     _client = new UnleashClientCtor({
       url: UNLEASH_URL,
