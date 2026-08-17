@@ -26,11 +26,10 @@ import (
 type ctxKey string
 
 const (
-	ctxKeyRoles ctxKey = "roles"
+	ctxKeyRoles    ctxKey = "roles"
 	ctxKeyTenantId ctxKey = "tenant_id"
-	ctxKeyUserId ctxKey = "user_id"
+	ctxKeyUserId   ctxKey = "user_id"
 )
-
 
 var db *sql.DB
 

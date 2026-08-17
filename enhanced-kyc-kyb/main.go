@@ -33,7 +33,6 @@ const (
 	ctxKeyRequestid ctxKey = "requestID"
 )
 
-
 // --- Response Helpers ---
 
 func jsonResponse(w http.ResponseWriter, status int, v interface{}) {
