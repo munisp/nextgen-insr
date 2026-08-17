@@ -18,7 +18,6 @@ import { notification_logs, auditLog } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
-
 export function createNotification(params: {
   channel: string;
   category: string;

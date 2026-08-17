@@ -1,7 +1,7 @@
-import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { trpc } from "@/lib/trpc";
 export default function Customer360Page() {
   const { data, isLoading } = trpc.customer360.dashboard.useQuery();
   // F-12 (wave-4b): no fabricated default customer — a profile loads only

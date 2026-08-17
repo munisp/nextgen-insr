@@ -1,10 +1,3 @@
-import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
-import { trpc } from "@/lib/trpc";
 import {
   Webhook,
   Activity,
@@ -13,7 +6,14 @@ import {
   Clock,
   RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 
+import DashboardLayout from "@/components/DashboardLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { trpc } from "@/lib/trpc";
 export default function WebhookConfig() {
   const configsQuery = trpc.webhookNotif.listConfigs.useQuery();
   const statsQuery = trpc.webhookNotif.getStats.useQuery();

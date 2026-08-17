@@ -1,11 +1,3 @@
-import { useState } from "react";
-import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
-import { trpc } from "@/lib/trpc";
 import {
   BarChart3,
   Clock,
@@ -17,7 +9,15 @@ import {
   Shield,
   DollarSign,
 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
+import DashboardLayout from "@/components/DashboardLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { trpc } from "@/lib/trpc";
 export default function DisputeAnalyticsDashboard() {
   const [activeTab, setActiveTab] = useState("resolution");
 

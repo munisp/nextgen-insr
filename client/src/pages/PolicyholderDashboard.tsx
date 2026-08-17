@@ -1,10 +1,10 @@
-import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
+import { ClipboardList, CreditCard, FileText, Shield } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+
+import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import KpiCard from "@/components/KpiCard";
-import { ClipboardList, CreditCard, FileText, Shield } from "lucide-react";
-
+import { trpc } from "@/lib/trpc";
 export default function PolicyholderDashboard() {
   const { user } = useAuth();
   const { data: kpiData, isLoading } = trpc.insuranceKpiDashboard.policyholderKpi.useQuery(undefined, { enabled: !!user });

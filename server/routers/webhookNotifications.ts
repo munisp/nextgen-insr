@@ -10,7 +10,6 @@ import {
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
-
 export const webhookNotificationsRouter = router({
   listEndpoints: protectedProcedure
     .input(z.object({ limit: z.number().default(50) }).optional())
