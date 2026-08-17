@@ -8,14 +8,15 @@ import { Ban, Search, UserX, UserCheck, AlertTriangle } from "lucide-react";
 
 export default function AgentSuspensionWorkflowPage() {
   const [search, setSearch] = useState("");
-  const { data, isLoading } = trpc.agentSuspensionWorkflow.list.useQuery();
+  const { data, isLoading } = trpc.agentSuspensionWorkflow.list.useQuery({});
   const suspendMut = trpc.agentSuspensionWorkflow.suspend.useMutation({
     onSuccess: () => toast.success("Agent suspended"),
   });
   const reinstateMut = trpc.agentSuspensionWorkflow.lift.useMutation({
     onSuccess: () => toast.success("Agent reinstated"),
   });
-  const agents = (data?.agents || []).filter(
+  // F-12 (wave-4b): list returns {items, total, page, limit}.
+  const agents = (data?.items || []).filter(
     (a: any) => !search || a.name?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -32,14 +33,14 @@ export default function AgentSuspensionWorkflowPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{data?.summary?.total || 0}</p>
+            <p className="text-2xl font-bold">{data?.total || 0}</p>
             <p className="text-sm text-muted-foreground">Total Agents</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {data?.summary?.active || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Active</p>
           </CardContent>
@@ -47,7 +48,7 @@ export default function AgentSuspensionWorkflowPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-red-600">
-              {data?.summary?.suspended || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Suspended</p>
           </CardContent>
@@ -55,7 +56,7 @@ export default function AgentSuspensionWorkflowPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-yellow-600">
-              {data?.summary?.underReview || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Under Review</p>
           </CardContent>

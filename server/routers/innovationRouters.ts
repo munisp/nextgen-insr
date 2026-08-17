@@ -618,18 +618,15 @@ export const comparisonRouter = router({
       try {
         const result = await callService(SVC.comparison, "/api/v1/quotes", input, 10000) as { quotes: unknown[] };
         quotes = result.quotes;
-      } catch {
-        // Fallback: return platform's own products
-        quotes = [
-          {
-            insurer: "InsurePortal Direct",
-            product: `${input.productType} Standard`,
-            premium: 50000,
-            cover: 5000000,
-            rating: "A",
-            features: ["24/7 claims", "Digital certificate", "Agent support"],
-          },
-        ];
+      } catch (err) {
+        // F-12 (verifier round 5): the fallback fabricated a platform quote
+        // ("InsurePortal Direct", premium 50000, rating "A") AND PERSISTED
+        // it into comparison_quotes — a fabricated product quote stored as
+        // real. Fail loud; NOTHING is persisted on service failure.
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `comparison service unreachable: ${err instanceof Error ? err.message : "unknown error"}`,
+        });
       }
 
       const { randomBytes } = await import('crypto');

@@ -5,6 +5,7 @@
  */
 
 import DashboardLayout from "@/components/DashboardLayout";
+import { Card, CardContent } from "@/components/ui/card";
 
 const COLORS = {
   bg: "#0a0e1a",

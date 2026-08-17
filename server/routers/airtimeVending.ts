@@ -214,15 +214,18 @@ export const airtimeVendingRouter = router({
     }),
 
   getHistory: protectedProcedure
-    .input(z.object({ agentId: z.number(), limit: z.number().default(20), offset: z.number().default(0) }))
-    .query(async ({ input }) => {
+    // F-12 (wave-4b): agentId was client-supplied — any caller could read
+    // any agent's history. Session-scoped to the caller.
+    .input(z.object({ type: z.string().default("Airtime"), limit: z.number().default(20), offset: z.number().default(0) }))
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { data: [], total: 0 };
+      const txnType = input.type === "data" ? "Data" : "Airtime";
       const results = await db.select().from(transactions)
-        .where(and(eq(transactions.agentId, input.agentId), eq(transactions.type, "Airtime")))
+        .where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, txnType)))
         .orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
       const [{ total }] = await db.select({ total: count() }).from(transactions)
-        .where(and(eq(transactions.agentId, input.agentId), eq(transactions.type, "Airtime")));
+        .where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, txnType)));
       return { data: results, total: Number(total) };
     }),
 

@@ -89,38 +89,18 @@ export const lakehouseAiIntegrationRouter = router({
   }),
 
   // Real data lineage from lakehouse service
+  // Real data lineage from lakehouse service
   dataLineage: protectedProcedure.query(async () => {
+    // F-12 (verifier round 5): the fetch-failure path fabricated a
+    // pg-/bronze-/silver-/gold- node graph — fail loud, no fallbacks.
     try {
       const lineage = await lakehouseFetch("/api/v1/lakehouse/lineage") as any;
       return { nodes: lineage?.nodes ?? [], edges: lineage?.edges ?? [] };
-    } catch {
-      // Fallback: build lineage from known datasets
-      return {
-        nodes: [
-          { id: "pg-transactions", name: "PostgreSQL: transactions", type: "source" },
-          { id: "pg-claims", name: "PostgreSQL: claims", type: "source" },
-          { id: "pg-agents", name: "PostgreSQL: agents", type: "source" },
-          { id: "pg-policies", name: "PostgreSQL: policies", type: "source" },
-          { id: "bronze-transactions", name: "Bronze: transactions", type: "bronze" },
-          { id: "bronze-claims", name: "Bronze: claims", type: "bronze" },
-          { id: "silver-fraud-features", name: "Silver: fraud_features", type: "silver" },
-          { id: "silver-claims-features", name: "Silver: claims_features", type: "silver" },
-          { id: "gold-daily-summary", name: "Gold: daily_agent_summary", type: "gold" },
-          { id: "gold-fraud-model", name: "Gold: fraud_model_training", type: "gold" },
-          { id: "ml-fraud-scoring", name: "ML: fraud_scoring_model", type: "model" },
-          { id: "ml-claims-adjudication", name: "ML: claims_adjudication_model", type: "model" },
-        ],
-        edges: [
-          { source: "pg-transactions", target: "bronze-transactions" },
-          { source: "pg-claims", target: "bronze-claims" },
-          { source: "bronze-transactions", target: "silver-fraud-features" },
-          { source: "bronze-claims", target: "silver-claims-features" },
-          { source: "silver-fraud-features", target: "gold-fraud-model" },
-          { source: "silver-claims-features", target: "gold-daily-summary" },
-          { source: "gold-fraud-model", target: "ml-fraud-scoring" },
-          { source: "gold-daily-summary", target: "ml-claims-adjudication" },
-        ],
-      };
+    } catch (err) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `lakehouse lineage unreachable: ${err instanceof Error ? err.message : "unknown error"}`,
+      });
     }
   }),
 
@@ -136,21 +116,18 @@ export const lakehouseAiIntegrationRouter = router({
   }),
 
   // Real batch jobs from lakehouse service
+  // Real batch jobs from lakehouse service
   listBatchJobs: protectedProcedure.query(async () => {
+    // F-12 (verifier round 5): the fetch-failure path fabricated cron-*
+    // jobs with progress:100 and invented startedAt — fail loud.
     try {
       const jobs = await lakehouseFetch("/api/v1/lakehouse/pipelines") as any;
       return { jobs: jobs?.pipelines ?? [], total: jobs?.total ?? 0 };
-    } catch {
-      // Fallback: return known cron jobs
-      return {
-        jobs: [
-          { id: "cron-transactions", name: "Daily Transaction Snapshot", status: "scheduled", progress: 100, startedAt: new Date(Date.now() - 86400000).toISOString() },
-          { id: "cron-fraud", name: "Daily Fraud Events Snapshot", status: "scheduled", progress: 100, startedAt: new Date(Date.now() - 86400000).toISOString() },
-          { id: "cron-agents", name: "Daily Agent Metrics Snapshot", status: "scheduled", progress: 100, startedAt: new Date(Date.now() - 86400000).toISOString() },
-          { id: "cron-settlement", name: "Daily Settlement Summary", status: "scheduled", progress: 100, startedAt: new Date(Date.now() - 86400000).toISOString() },
-        ],
-        total: 4,
-      };
+    } catch (err) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `lakehouse pipelines unreachable: ${err instanceof Error ? err.message : "unknown error"}`,
+      });
     }
   }),
 

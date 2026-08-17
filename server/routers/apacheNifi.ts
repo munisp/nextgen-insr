@@ -43,8 +43,13 @@ export const apacheNifiRouter = router({
       throw notImplemented();
     }),
 
+  // F-12 (wave-4b): zero-payload dashboard (fake health check then
+  // unconditional zeros) — no NiFi integration is delivered. Fail loud.
   dashboard: protectedProcedure.query(async () => {
-    throw notImplemented();
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dashboard: no NiFi integration is delivered",
+    });
   }),
   listProcessGroups: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))

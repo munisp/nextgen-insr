@@ -134,38 +134,12 @@ export const merchantSettlementDashboardRouter = router({
       }
     }),
 
+  // F-12 (wave-4b): zero-payload getStats (fake health check then
+  // unconditional zeros) — no merchant-settlement store is delivered. Fail loud.
   getStats: protectedProcedure.query(async () => {
-    try {
-      const database = await getDb();
-      if (!database)
-        return {
-          total: 0,
-          active: 0,
-          recent: 0,
-          lastUpdated: new Date().toISOString(),
-        };
-      try {
-        await database.execute(sql`SELECT 1 as ok`);
-        return {
-          total: 0,
-          active: 0,
-          recent: 0,
-          lastUpdated: new Date().toISOString(),
-        };
-      } catch {
-        return {
-          total: 0,
-          active: 0,
-          recent: 0,
-          lastUpdated: new Date().toISOString(),
-        };
-      }
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getStats: no merchant-settlement store is delivered",
+    });
   }),
 });

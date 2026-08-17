@@ -567,6 +567,228 @@ export const _quietHoursStore = [
   },
 ];
 
+// F-12 (round 52): static fixture exports restored — they are
+// bound by server/sprint15.test.ts dynamic imports (registered genre:
+// procs fail loud; test-bound static exports stay).
+export const _templates = [
+  {
+    id: "tpl_001",
+    name: "Welcome SMS",
+    channel: "sms" as const,
+    subject: "",
+    body: "Welcome to our platform, {{name}}! Your account is ready.",
+    variables: ["name"],
+    createdAt: "2024-01-01",
+  },
+  {
+    id: "tpl_002",
+    name: "Transaction Alert",
+    channel: "push" as const,
+    subject: "",
+    body: "Transaction of {{amount}} {{currency}} processed for {{ref}}.",
+    variables: ["amount", "currency", "ref"],
+    createdAt: "2024-01-02",
+  },
+  {
+    id: "tpl_003",
+    name: "KYC Reminder",
+    channel: "email" as const,
+    subject: "Complete your {{name}} KYC at {{link}}",
+    body: "Dear {{name}}, please complete your KYC verification at {{link}}.",
+    variables: ["name", "link"],
+    createdAt: "2024-01-03",
+  },
+  {
+    id: "tpl_004",
+    name: "Commission Credit",
+    channel: "sms" as const,
+    subject: "",
+    body: "Commission of {{amount}} NGN credited to your wallet.",
+    variables: ["amount"],
+    createdAt: "2024-01-04",
+  },
+  {
+    id: "tpl_005",
+    name: "System Maintenance",
+    channel: "email" as const,
+    subject: "Maintenance on {{date}} from {{start}} to {{end}}",
+    body: "Scheduled maintenance on {{date}} from {{start}} to {{end}}.",
+    variables: ["date", "start", "end"],
+    createdAt: "2024-01-05",
+  },
+];
+export const _campaigns = [
+  {
+    id: "camp_001",
+    name: "Q1 Onboarding Push",
+    channel: "push",
+    templateId: "tpl_001",
+    status: "completed" as const,
+    recipientCount: 500,
+    sentCount: 480,
+    failedCount: 20,
+    deliveredCount: 470,
+    progress: 100,
+    scheduledAt: "2024-01-15T09:00:00Z",
+    completedAt: "2024-01-15T09:05:00Z",
+    segments: ["new_agents"],
+  },
+  {
+    id: "camp_002",
+    name: "KYC Drive",
+    channel: "email",
+    templateId: "tpl_003",
+    status: "sending" as const,
+    recipientCount: 1000,
+    sentCount: 800,
+    failedCount: 20,
+    deliveredCount: 780,
+    progress: 80,
+    scheduledAt: "2024-02-01T08:00:00Z",
+    completedAt: null,
+    segments: ["pending_kyc"],
+  },
+  {
+    id: "camp_003",
+    name: "Holiday Promo",
+    channel: "sms",
+    templateId: "tpl_002",
+    status: "draft" as const,
+    recipientCount: 2000,
+    sentCount: 0,
+    failedCount: 0,
+    deliveredCount: 0,
+    progress: 0,
+    scheduledAt: "2024-03-25T10:00:00Z",
+    completedAt: null,
+    segments: ["active_agents", "high_volume"],
+  },
+];
+export const _retryQueue = [
+  {
+    id: "retry_001",
+    channel: "sms",
+    recipient: "+2341111111111",
+    attempt: 2,
+    maxAttempts: 5,
+    status: "pending" as const,
+    nextRetryAt: new Date(Date.now() + 60000).toISOString(),
+    error: "Carrier timeout",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "retry_002",
+    channel: "email",
+    recipient: "user@example.com",
+    attempt: 3,
+    maxAttempts: 3,
+    status: "dead_letter" as const,
+    nextRetryAt: null,
+    error: "Mailbox full",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "retry_003",
+    channel: "webhook",
+    recipient: "https://hooks.example.com/notify",
+    attempt: 1,
+    maxAttempts: 5,
+    status: "pending" as const,
+    nextRetryAt: new Date(Date.now() + 30000).toISOString(),
+    error: "Connection refused",
+    createdAt: new Date().toISOString(),
+  },
+];
+export const _systemConfig = {
+  maintenanceMode: false,
+  defaultCurrency: "NGN",
+  maxTransactionAmount: 5000000,
+  minTransactionAmount: 100,
+  sessionTimeoutMinutes: 30,
+  maxLoginAttempts: 5,
+  featureFlags: [
+    {
+      key: "kyc_biometric",
+      label: "KYC Biometric Verification",
+      enabled: true,
+      category: "kyc",
+    },
+    {
+      key: "offline_mode",
+      label: "Offline Transaction Mode",
+      enabled: true,
+      category: "pos",
+    },
+    {
+      key: "bulk_disbursement",
+      label: "Bulk Disbursement",
+      enabled: true,
+      category: "payments",
+    },
+    {
+      key: "ai_fraud_detection",
+      label: "AI Fraud Detection",
+      enabled: true,
+      category: "security",
+    },
+    {
+      key: "multi_currency",
+      label: "Multi-Currency Support",
+      enabled: false,
+      category: "payments",
+    },
+    {
+      key: "agent_gamification",
+      label: "Agent Gamification",
+      enabled: true,
+      category: "agents",
+    },
+    {
+      key: "real_time_analytics",
+      label: "Real-Time Analytics",
+      enabled: true,
+      category: "analytics",
+    },
+    {
+      key: "webhook_notifications",
+      label: "Webhook Notifications",
+      enabled: true,
+      category: "notifications",
+    },
+    {
+      key: "two_factor_auth",
+      label: "Two-Factor Authentication",
+      enabled: true,
+      category: "security",
+    },
+    {
+      key: "smart_routing",
+      label: "Smart Transaction Routing",
+      enabled: false,
+      category: "payments",
+    },
+    {
+      key: "commission_tiers",
+      label: "Commission Tier System",
+      enabled: true,
+      category: "agents",
+    },
+    {
+      key: "settlement_auto",
+      label: "Auto Settlement",
+      enabled: true,
+      category: "settlement",
+    },
+    {
+      key: "escalation_chains",
+      label: "Escalation Chains",
+      enabled: true,
+      category: "alerting",
+    },
+  ],
+};
+
+
 export function isInQuietHours(config: Record<string, unknown>): boolean {
   if (!config.enabled) return false;
   const startTime = config.startTime as string | undefined;
@@ -580,13 +802,10 @@ export function isInQuietHours(config: Record<string, unknown>): boolean {
   return currentHour >= sH && currentHour < eH;
 }
 
-// F-12 (full sweep): dead static fixture export _templates removed — no proc serves it.
 
 
-// F-12 (full sweep): dead static fixture export _campaigns removed — no proc serves it.
 
 
-// F-12 (full sweep): dead static fixture export _retryQueue removed — no proc serves it.
 
 
 export function calculateBackoff(
@@ -604,7 +823,6 @@ export function calculateBackoff(
   return backoff + jitter;
 }
 
-// F-12 (full sweep): dead static fixture export _systemConfig removed — no proc serves it.
 
 
 // F-12 (full sweep): dead static fixture export _serviceHealthData removed — no proc serves it.

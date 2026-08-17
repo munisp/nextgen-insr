@@ -62,49 +62,49 @@ export default function TransactionReversalManager() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Total Reversals</p>
                 <p className="text-xl font-bold text-blue-400">
-                  {String(stats?.totalReversals ?? "—")}
+                  {String(stats?.total ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Completed</p>
                 <p className="text-xl font-bold text-emerald-400">
-                  {String(stats?.completedReversals ?? "—")}
+                  {String(stats?.recent ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Pending</p>
                 <p className="text-xl font-bold text-amber-400">
-                  {String(stats?.pendingReversals ?? "—")}
+                  {String(stats?.active ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Reversed Amount</p>
                 <p className="text-xl font-bold text-rose-400">
-                  {String(stats?.totalReversedAmount ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Auto</p>
                 <p className="text-xl font-bold text-purple-400">
-                  {String(stats?.autoReversals ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Manual</p>
                 <p className="text-xl font-bold text-cyan-400">
-                  {String(stats?.manualReversals ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Avg Time</p>
                 <p className="text-xl font-bold text-indigo-400">
-                  {String(stats?.avgProcessingTime ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Rejection %</p>
                 <p className="text-xl font-bold text-orange-400">
-                  {String(stats?.rejectionRate ?? "—")}
+                  —
                 </p>
               </div>
             </div>

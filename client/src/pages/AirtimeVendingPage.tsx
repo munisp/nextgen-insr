@@ -19,7 +19,7 @@ export default function AirtimeVendingPage() {
   // F-12 (S87-02): airtimeVending.dataBundles is not delivered — the bundle
   // catalog renders an honest empty state.
   const bundles: { data?: Array<Record<string, unknown>>; isLoading: boolean } = { data: undefined, isLoading: false };
-  const analytics = trpc.airtimeVending.getSummary.useQuery();
+  const analytics = trpc.airtimeVending.getSummary.useQuery({});
 
   const networks = ["MTN", "Airtel", "Glo", "9mobile"];
 
@@ -42,7 +42,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalVolume ?? 0).toLocaleString()}
+                NGN {(analytics.data?.volumeNGN ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -54,7 +54,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {(analytics.data?.totalTransactions ?? 0).toLocaleString()}
+                {(analytics.data?.total ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -66,7 +66,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalCommission ?? 0).toLocaleString()}
+                NGN {(analytics.data?.commissionNGN ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -78,7 +78,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.successRate ?? 0}%
+                —%
               </p>
             </CardContent>
           </Card>
