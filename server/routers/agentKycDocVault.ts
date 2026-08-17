@@ -27,11 +27,23 @@ export const agentKycDocVaultRouter = router({
       .select({ value: count() })
       .from(kycDocuments)
       .limit(100);
+    // F-12 (wave-4b): verified 0 / pending total / rejected 0 were
+    // hardcoded — real status-grouped aggregates now.
+    const byStatus = await db
+      .select({ status: kycDocuments.status, value: count() })
+      .from(kycDocuments)
+      .groupBy(kycDocuments.status);
+    const countOf = (st: string) =>
+      Number(
+        (byStatus as Array<{ status: string; value: number | string }>).find(
+          r => r.status === st
+        )?.value ?? 0
+      );
     return {
       totalDocuments: Number(total.value),
-      verified: 0,
-      pending: Number(total.value),
-      rejected: 0,
+      verified: countOf("verified") + countOf("approved"),
+      pending: countOf("pending") + countOf("submitted"),
+      rejected: countOf("rejected"),
     };
   }),
   listDocuments: protectedProcedure

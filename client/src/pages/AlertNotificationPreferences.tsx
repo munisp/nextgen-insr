@@ -98,7 +98,7 @@ export default function AlertNotificationPreferences() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetchPrefs()}
+            onClick={() => refetchHistory()}
             className="border-gray-700 text-gray-300"
           >
             <RefreshCw className="w-4 h-4 mr-2" />
@@ -241,10 +241,10 @@ export default function AlertNotificationPreferences() {
                 </Button>
               </CardHeader>
               <CardContent>
-                {deliveryHistory?.records &&
-                deliveryHistory.records.length > 0 ? (
+                {deliveryHistory?.alerts &&
+                deliveryHistory.alerts.length > 0 ? (
                   <div className="space-y-2">
-                    {deliveryHistory.records.map((record: any) => {
+                    {deliveryHistory.alerts.map((record: any) => {
                       const Icon = channelIcons[record.channel] || Bell;
                       return (
                         <div

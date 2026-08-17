@@ -5,7 +5,9 @@ import DashboardLayout from "@/components/DashboardLayout";
 import KpiCard from "@/components/KpiCard";
 
 export default function CbnReportingDashboard() {
-  const { data, isLoading } = trpc.cbnReporting.summary.useQuery(undefined, { refetchInterval: 30000 });
+  // F-12 (wave-4b): summary was a zero-payload stub (now fail-loud);
+  // complianceDashboard is the REAL proc (transactions + fraud_alerts).
+  const { data, isLoading } = trpc.cbnReporting.complianceDashboard.useQuery({ year: new Date().getFullYear() }, { refetchInterval: 30000 });
   const d = data ?? {};
 
   // Only real per-period values from the API — no randomized series.
@@ -25,10 +27,10 @@ export default function CbnReportingDashboard() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KpiCard title="SARs Filed (YTD)" value={isLoading ? "…" : String(d.sarsFiled ?? 0)} icon="🚨" />
-          <KpiCard title="LARs Filed (YTD)" value={isLoading ? "…" : String(d.larsFiled ?? 0)} icon="💰" />
-          <KpiCard title="CTRs Filed" value={isLoading ? "…" : String(d.ctrsFiled ?? 0)} icon="📋" />
-          <KpiCard title="Compliance Score" value={isLoading ? "…" : `${d.complianceScore ?? 0}%`} icon="✅" trend="up" trendValue="—" />
+          <KpiCard title="SARs Filed (YTD)" value={isLoading ? "…" : String(d.totalSars ?? 0)} icon="🚨" />
+          <KpiCard title="LARs Filed (YTD)" value={isLoading ? "…" : "—"} icon="💰" />
+          <KpiCard title="CTRs Filed" value={isLoading ? "…" : String(d.pendingSubmissions ?? 0)} icon="📋" />
+          <KpiCard title="Compliance Score" value={isLoading ? "…" : "—"} icon="✅" trend="up" trendValue="—" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

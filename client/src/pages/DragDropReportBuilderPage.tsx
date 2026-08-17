@@ -45,7 +45,7 @@ export default function DragDropReportBuilderPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-green-500">
-              {d.templatesAvailable}
+              —
             </div>
             <p className="text-sm text-muted-foreground">Data Sources</p>
           </CardContent>
@@ -53,7 +53,7 @@ export default function DragDropReportBuilderPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-purple-500">
-              {d.reportsRunToday}
+              —
             </div>
             <p className="text-sm text-muted-foreground">Widget Types</p>
           </CardContent>
@@ -98,7 +98,7 @@ export default function DragDropReportBuilderPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-4 gap-3">
-            {d.popularTemplates.map((w: any) => (
+            {([] as Array<{ id?: unknown; name?: string }>).map((w: any) => (
               <div
                 key={w.type}
                 className="p-4 border rounded-lg text-center cursor-move hover:border-primary transition-colors"
@@ -127,7 +127,7 @@ export default function DragDropReportBuilderPage() {
               </tr>
             </thead>
             <tbody>
-              {d.recentReports.map((r: any) => (
+              {([] as Array<{ id?: unknown; name?: string; createdAt?: string }>).map((r: any) => (
                 <tr key={r.id} className="border-b">
                   <td className="p-2 font-medium">{r.name}</td>
                   <td className="p-2">{r.type}</td>
