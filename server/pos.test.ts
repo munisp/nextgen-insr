@@ -1,4 +1,9 @@
 /**
+ * RE-ENABLED 2026-08-17 (F-12 remediation) — findings resolved; see
+ * tests/QUARANTINE.md (QUARANTINED-OPEN-DEFECT section) for the verdicts.
+ * Original quarantine header retained below for audit history.
+ */
+/**
  * ═══════════════════════════════════════════════════════════════════════════
  * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress) — 2026-08-16 (assurance-lead approved; see tests/QUARANTINE.md)
  * ═══════════════════════════════════════════════════════════════════════════
@@ -112,7 +117,7 @@ function makeCtx(
 
 const MOCK_AGENT = {
   id: 1,
-  agentCode: "AGT001",
+  agentId: "AGT001",
   name: "Emeka Obi",
   phone: "08012345678",
   email: null,
@@ -121,7 +126,7 @@ const MOCK_AGENT = {
   terminalSerial: "SNAGT0012026",
   tier: "Gold" as const,
   pinHash: "$2b$10$hashedpin",
-  floatBalance: "850000.00",
+  premiumReserve: "850000.00",
   floatLimit: "1000000.00",
   commissionBalance: "24500.00",
   loyaltyPoints: 18750,
@@ -145,12 +150,12 @@ describe("agent.login", () => {
     const ctx = makeCtx("");
     const caller = appRouter.createCaller(ctx);
     const result = await caller.agent.login({
-      agentCode: "AGT001",
+      agentId: "AGT001",
       pin: "1234",
     });
 
     expect(result.success).toBe(true);
-    expect(result.agent.agentCode).toBe("AGT001");
+    expect(result.agent.agentId).toBe("AGT001");
     expect(result.agent.name).toBe("Emeka Obi");
     expect(result.agent.tier).toBe("Gold");
   });
@@ -165,7 +170,7 @@ describe("agent.login", () => {
     const ctx = makeCtx("");
     const caller = appRouter.createCaller(ctx);
     await expect(
-      caller.agent.login({ agentCode: "AGT001", pin: "1234" })
+      caller.agent.login({ agentId: "AGT001", pin: "1234" })
     ).rejects.toThrow("Agent account is suspended");
   });
 
@@ -176,8 +181,8 @@ describe("agent.login", () => {
     const ctx = makeCtx("");
     const caller = appRouter.createCaller(ctx);
     await expect(
-      caller.agent.login({ agentCode: "UNKNOWN", pin: "0000" })
-    ).rejects.toThrow("Invalid agent code or PIN");
+      caller.agent.login({ agentId: "UNKNOWN", pin: "0000" })
+    ).rejects.toThrow("Invalid agent ID or PIN");
   });
 
   it("clears cookie on logout", async () => {
@@ -194,6 +199,13 @@ describe("agent.login", () => {
 // ─── Transaction Tests ────────────────────────────────────────────────────────
 describe("transactions.create", () => {
   it("creates a Cash In transaction and returns ref", async () => {
+    // F-12 DRIFT-verified: auth hardening added a FAIL-CLOSED velocity gate
+    // (transactions.ts Gate 4): when the velocity store is unreachable the
+    // router rejects with TOO_MANY_REQUESTS + fraud alert — the control was
+    // verified working in this env. The router's documented loud opt-out
+    // VELOCITY_FAIL_OPEN is set here so the happy-path creation flow itself
+    // stays under test.
+    process.env.VELOCITY_FAIL_OPEN = "true";
     const {
       getAgentById,
       createTransaction,
@@ -230,14 +242,14 @@ describe("transactions.create", () => {
     const { getAgentById } = await import("./db");
     vi.mocked(getAgentById).mockResolvedValue({
       ...MOCK_AGENT,
-      floatBalance: "1000.00",
+      premiumReserve: "1000.00",
     });
 
     const ctx = makeCtx();
     const caller = appRouter.createCaller(ctx);
     await expect(
       caller.transactions.create({ type: "Cash Out", amount: 500000 })
-    ).rejects.toThrow("Insufficient float balance");
+    ).rejects.toThrow("Insufficient premium reserve");
   });
 
   it("returns empty list when no transactions exist", async () => {

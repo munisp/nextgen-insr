@@ -1,4 +1,9 @@
 /**
+ * RE-ENABLED 2026-08-17 (F-12 remediation) — findings resolved; see
+ * tests/QUARANTINE.md (QUARANTINED-OPEN-DEFECT section) for the verdicts.
+ * Original quarantine header retained below for audit history.
+ */
+/**
  * ═══════════════════════════════════════════════════════════════════════════
  * QUARANTINED-OPEN-DEFECT — genuine defect / partial delivery (fix routing in progress)
  * ═══════════════════════════════════════════════════════════════════════════
@@ -15,6 +20,14 @@
  */
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
+
+// F-12: commission mutations are FAIL-CLOSED on the Kafka/Fluvio audit trail
+// (verified: they refuse with "audit trail unavailable" when the event
+// infrastructure is down). Unit CI has no event infrastructure, so the
+// router's documented loud opt-out (COMMISSION_AUDIT_FAIL_OPEN, INSECURE,
+// default off) is enabled for this suite only — mutation persistence is what
+// Gap 3 is under test for.
+process.env.COMMISSION_AUDIT_FAIL_OPEN = "true";
 import type { TrpcContext } from "./_core/context";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;

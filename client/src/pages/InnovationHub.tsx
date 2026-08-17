@@ -14,7 +14,7 @@ interface Innovation {
   category: string;
   route: string;
   icon: string;
-  status: "live" | "beta" | "coming_soon";
+  status: "live" | "beta";
   services: string[];
   businessImpact: string;
 }
@@ -247,7 +247,6 @@ const CATEGORIES = ["All", "Product Innovation", "Claims Innovation", "Risk & Fr
 const statusColors = {
   live: { bg: "#dcfce7", text: "#16a34a", label: "Live" },
   beta: { bg: "#fef3c7", text: "#d97706", label: "Beta" },
-  coming_soon: { bg: "#f3f4f6", text: "#6b7280", label: "Coming Soon" },
 };
 
 export default function InnovationHub() {

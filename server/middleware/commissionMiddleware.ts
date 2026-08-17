@@ -69,6 +69,17 @@ export async function publishCommissionEvent(params: {
       `[Kafka] Commission event published: ${params.eventType} for agent ${params.agentId}`
     );
   } catch (e) {
+    // Fail-closed by default: commission mutations refuse to proceed without
+    // the audit event log. COMMISSION_AUDIT_FAIL_OPEN=true is an explicit,
+    // loudly-logged INSECURE opt-out for environments with no event
+    // infrastructure (unit-test/CI) — same convention as VELOCITY_FAIL_OPEN
+    // and PERMIFY_FAIL_OPEN.
+    if (process.env.COMMISSION_AUDIT_FAIL_OPEN === "true") {
+      logger.warn(
+        `[Kafka] COMMISSION_AUDIT_FAIL_OPEN=true — proceeding without commission audit event (INSECURE): ${(e as Error).message}`
+      );
+      return;
+    }
     logger.error(
       `[Kafka] Commission event publish failed (fail-closed): ${(e as Error).message}`
     );
@@ -298,6 +309,14 @@ export async function streamCommissionEvent(params: {
     });
   } catch (e) {
     if (isCritical) {
+      // Same COMMISSION_AUDIT_FAIL_OPEN opt-out as publishCommissionEvent
+      // (loudly-logged, INSECURE, unit-test/CI only). Default stays fail-closed.
+      if (process.env.COMMISSION_AUDIT_FAIL_OPEN === "true") {
+        logger.warn(
+          `[Fluvio] COMMISSION_AUDIT_FAIL_OPEN=true — proceeding without critical commission stream (INSECURE): ${(e as Error).message}`
+        );
+        return;
+      }
       logger.error(
         `[Fluvio] Critical commission stream failed (fail-closed): ${(e as Error).message}`
       );

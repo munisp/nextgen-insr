@@ -240,12 +240,13 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    // 2026-08-16: the router HARDCODES totalTables:78 — the expectation matches
-    // delivered behavior. HIGH-PRIORITY defect (F-12 fix-routing): silent
-    // mockware genre — databaseVisualization must compute from
-    // information_schema at query time (live schema = 187 pgTable definitions);
-    // update this expectation to the verified real count with the router fix.
-    expect(stats.totalTables).toBe(78);
+    // 2026-08-17 (F-12 FIXED): the router now computes the count at query time
+    // from information_schema.tables (BASE TABLE, current schema). Verified
+    // real count = 188, measured against PGlite after `drizzle-kit push` of
+    // the full runtime schema (168 tables in drizzle/schema.ts + 20 re-exported
+    // from drizzle/schema.additions.ts). Count-gate intent preserved; only the
+    // number was corrected from the mockware-era 78.
+    expect(stats.totalTables).toBe(188);
     expect(stats.totalRows).toBe(2450000);
     expect(stats.uptime).toBe("99.97%");
   });
@@ -264,9 +265,13 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
+    // 2026-08-17 (DRIFT, lead-approved): the 12/1 split came from the pre-#112
+    // mock. getStats now reports the REAL serviceOrchestrator registry: 13
+    // services, all registered "active" at bootstrap (registry semantics, not
+    // live probes — no services listen in the unit-test env).
     expect(stats.total).toBe(13);
-    expect(stats.connected).toBe(12);
-    expect(stats.disconnected).toBe(1);
+    expect(stats.connected).toBe(13);
+    expect(stats.disconnected).toBe(0);
   });
 
   it("financial reporting suite should have valid P&L data", async () => {

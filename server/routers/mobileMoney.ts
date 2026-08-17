@@ -15,14 +15,18 @@ import { z } from "zod";
 
 import { transactions, agents, customers, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { fluvioProduce } from "../fluvio";
+import { publishEvent, type KafkaTopic } from "../kafkaClient";
 import {
   dispatchProviderOperation,
   type ProviderClientConfig,
 } from "../lib/providerDispatch";
 import { resolveProviderTx } from "../lib/providerResolution";
 import { acquireLock, releaseLock } from "../lib/redisClient";
+import { cacheSet } from "../redisClient";
 import { tbCreateTransfer, tbEnsureAgentAccount } from "../tbClient";
 
 const PROVIDERS = ["MTN MoMo", "Airtel Money", "Glo Xtra", "9PSB"] as const;
@@ -124,6 +128,14 @@ export const mobileMoneyRouter = router({
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
+      // Sprint 44 wiring (F-12): domain-level authz before any funds move
+      // (fail-closed unless the insecure PERMIFY_FAIL_OPEN opt-in is set).
+      const allowed = await permifyCheck({
+        subjectType: "user", subjectId: agent.agentId,
+        entityType: "mobileMoney", entityId: input.provider,
+        permission: "execute",
+      });
+      if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: "Agent is not authorized for mobile money operations" });
       const lockKey = `mm-cashin:${input.agentId}:${input.reference}`;
       const locked = await acquireLock(lockKey, 15_000);
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Transaction in progress" });
@@ -146,12 +158,34 @@ export const mobileMoneyRouter = router({
           channel: "App", status: "pending", fraudScore: "0.00",
           metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
         }).returning();
+        // Sprint 44 wiring (F-12): event fan-out + status cache, best-effort
+        // AFTER the pending transaction row is durable.
+        try {
+        await publishEvent("pos.mobilemoney" as KafkaTopic, "system", {
+          event: "mobilemoney.cashin.initiated", reference: input.reference,
+          provider: input.provider, amountNGN: input.amountNGN, agentId: agent.agentId,
+        });
+        await fluvioProduce("pos.mobilemoney", {
+          value: JSON.stringify({ event: "mobilemoney.cashin.initiated", reference: input.reference, provider: input.provider, amountNGN: input.amountNGN }),
+        });
+        await cacheSet(`tx:status:${input.reference}`, "pending_provider", 300);
+        } catch (e) {
+          logger.warn(`[MobileMoney] post-commit eventing degraded (tx is durable): ${e instanceof Error ? e.message : String(e)}`);
+        }
         if (mobileMoneyProviderClient()) {
-          const dispatched = await dispatchMobileMoneyOp({
-            db, tx, kind: "cashin",
+          let dispatched;
+          try {
+            dispatched = await dispatchMobileMoneyOp({
+              db, tx, kind: "cashin",
             payload: { provider: input.provider, customerPhone: input.customerPhone, amountNGN: input.amountNGN },
           });
           return { idempotent: false, transaction: dispatched.transaction, status: dispatched.status, commission, tbTransferId: tbResult?.id ?? null };
+          } catch (e) {
+            // Fail-loud: the pending tx row is durable; retry with the same
+            // reference resolves via the provider status lookup (idempotent).
+            logger.error(`[MobileMoney] Cash-In provider dispatch failed (fail-closed): ${e instanceof Error ? e.message : String(e)}`);
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Mobile money dispatch failed: ${e instanceof Error ? e.message : "unknown error"}` });
+          }
         }
         logger.info(`[MobileMoney] Cash-In ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId} | status pending_provider`);
         return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
@@ -190,6 +224,13 @@ export const mobileMoneyRouter = router({
       if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
       const agentBalance = Number(agent.premiumReserve ?? 0);
       if (agentBalance < input.amountNGN + 5000) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Insufficient float. Available: ₦${(agentBalance - 5000).toLocaleString()}` });
+      // Sprint 44 wiring (F-12): domain-level authz before any funds move.
+      const allowed = await permifyCheck({
+        subjectType: "user", subjectId: agent.agentId,
+        entityType: "mobileMoney", entityId: input.provider,
+        permission: "execute",
+      });
+      if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: "Agent is not authorized for mobile money operations" });
       const lockKey = `mm-cashout:${input.agentId}:${input.reference}`;
       const locked = await acquireLock(lockKey, 15_000);
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Transaction in progress" });
@@ -212,12 +253,34 @@ export const mobileMoneyRouter = router({
           channel: "App", status: "pending", fraudScore: "0.00",
           metadata: { provider: input.provider, providerStatus: "pending_provider", tbTransferId: tbResult?.id ?? null, tbSyncStatus: tbResult ? "synced" : "pending" },
         }).returning();
+        // Sprint 44 wiring (F-12): event fan-out + status cache, best-effort
+        // AFTER the pending transaction row is durable.
+        try {
+        await publishEvent("pos.mobilemoney" as KafkaTopic, "system", {
+          event: "mobilemoney.cashout.initiated", reference: input.reference,
+          provider: input.provider, amountNGN: input.amountNGN, agentId: agent.agentId,
+        });
+        await fluvioProduce("pos.mobilemoney", {
+          value: JSON.stringify({ event: "mobilemoney.cashout.initiated", reference: input.reference, provider: input.provider, amountNGN: input.amountNGN }),
+        });
+        await cacheSet(`tx:status:${input.reference}`, "pending_provider", 300);
+        } catch (e) {
+          logger.warn(`[MobileMoney] post-commit eventing degraded (tx is durable): ${e instanceof Error ? e.message : String(e)}`);
+        }
         if (mobileMoneyProviderClient()) {
-          const dispatched = await dispatchMobileMoneyOp({
-            db, tx, kind: "cashout",
+          let dispatched;
+          try {
+            dispatched = await dispatchMobileMoneyOp({
+              db, tx, kind: "cashout",
             payload: { provider: input.provider, customerPhone: input.customerPhone, amountNGN: input.amountNGN },
           });
           return { idempotent: false, transaction: dispatched.transaction, status: dispatched.status, commission, tbTransferId: tbResult?.id ?? null };
+          } catch (e) {
+            // Fail-loud: the pending tx row is durable; retry with the same
+            // reference resolves via the provider status lookup (idempotent).
+            logger.error(`[MobileMoney] Cash-Out provider dispatch failed (fail-closed): ${e instanceof Error ? e.message : String(e)}`);
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Mobile money dispatch failed: ${e instanceof Error ? e.message : "unknown error"}` });
+          }
         }
         logger.info(`[MobileMoney] Cash-Out ₦${input.amountNGN} via ${input.provider} | agent ${agent.agentId} | status pending_provider`);
         return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
@@ -229,14 +292,157 @@ export const mobileMoneyRouter = router({
     limits: { minAmountNGN: MIN_AMOUNT, maxAmountNGN: MAX_AMOUNT, dailyLimitNGN: DAILY_LIMIT },
   })),
 
+  // F-12: the delivered client (MobileMoneyPage) calls providers/wallets/
+  // transactions/analytics — these procedures were missing (genuine API
+  // defect). All four are backed by real delivered data: the PROVIDERS
+  // registry + provider configuration state, the customers wallet table,
+  // and mobile-money transactions (metadata.provider discriminator).
+  providers: protectedProcedure.query(() => ({
+    providers: PROVIDERS.map((p, i) => ({
+      id: `mm-provider-${i + 1}`,
+      name: p,
+      type: "mobile_money",
+      currency: "NGN",
+      // Honest status: a provider can only fulfil operations when the
+      // provider integration is configured (see cashIn/cashOut fail-loud).
+      status: isMobileMoneyProviderConfigured() ? "active" : "inactive",
+      cashInCommission: CASH_IN_COMMISSION,
+      cashOutCommission: CASH_OUT_COMMISSION,
+    })),
+    limits: { minAmountNGN: MIN_AMOUNT, maxAmountNGN: MAX_AMOUNT, dailyLimitNGN: DAILY_LIMIT },
+  })),
+
+  wallets: protectedProcedure
+    .input(
+      z
+        .object({
+          search: z.string().optional(),
+          limit: z.number().min(1).max(100).default(20),
+          offset: z.number().min(0).default(0),
+        })
+        .default({})
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { wallets: [], total: 0 };
+      const conditions = [];
+      if (input.search) {
+        const like = `%${input.search}%`;
+        conditions.push(
+          sql`(${customers.phone} ILIKE ${like} OR ${customers.firstName} ILIKE ${like} OR ${customers.lastName} ILIKE ${like})`
+        );
+      }
+      const where = conditions.length ? and(...conditions) : undefined;
+      const rows = await db
+        .select()
+        .from(customers)
+        .where(where)
+        .orderBy(desc(customers.updatedAt))
+        .limit(input.limit)
+        .offset(input.offset);
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(customers)
+        .where(where);
+      // Provider attribution from real usage: the most recent mobile-money
+      // provider each phone transacted with (null when never used).
+      const recentMm = await db
+        .select({
+          customerPhone: transactions.customerPhone,
+          provider: sql<string>`${transactions.metadata}->>'provider'`,
+        })
+        .from(transactions)
+        .where(sql`${transactions.metadata}->>'provider' IS NOT NULL`)
+        .orderBy(desc(transactions.createdAt))
+        .limit(500);
+      const providerByPhone = new Map<string, string>();
+      for (const r of recentMm) {
+        if (r.customerPhone && !providerByPhone.has(r.customerPhone)) {
+          providerByPhone.set(r.customerPhone, r.provider);
+        }
+      }
+      const wallets = rows.map(c => ({
+        id: `WLT-${c.id}`,
+        provider: providerByPhone.get(c.phone) ?? null,
+        phone: c.phone,
+        holderName: `${c.firstName} ${c.lastName}`,
+        balance: Number(c.walletBalance),
+        status: c.status,
+      }));
+      return { wallets, total: Number(total) };
+    }),
+
+  transactions: protectedProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().min(1).max(100).default(20),
+          offset: z.number().min(0).default(0),
+        })
+        .default({})
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { transactions: [], total: 0 };
+      const mmFilter = sql`${transactions.metadata}->>'provider' IS NOT NULL`;
+      const rows = await db
+        .select()
+        .from(transactions)
+        .where(mmFilter)
+        .orderBy(desc(transactions.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(transactions)
+        .where(mmFilter);
+      return {
+        transactions: rows.map(t => ({
+          id: t.ref,
+          type: t.type,
+          amount: Number(t.amount),
+          provider:
+            (t.metadata as { provider?: string } | null)?.provider ?? null,
+          status: t.status,
+          customerPhone: t.customerPhone ?? null,
+          createdAt: t.createdAt,
+        })),
+        total: Number(total),
+      };
+    }),
+
+  analytics: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db)
+      return { totalTransactions: 0, totalVolume: 0, activeWallets: 0, totalFees: 0 };
+    const [mmStats] = await db
+      .select({
+        total: count(),
+        volume: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)`,
+        fees: sql<string>`COALESCE(SUM(CAST(fee AS NUMERIC)), 0)`,
+      })
+      .from(transactions)
+      .where(sql`${transactions.metadata}->>'provider' IS NOT NULL`);
+    const [{ walletCount }] = await db
+      .select({ walletCount: count() })
+      .from(customers)
+      .where(sql`CAST(${customers.walletBalance} AS NUMERIC) > 0`);
+    return {
+      totalTransactions: Number(mmStats?.total ?? 0),
+      totalVolume: Number(mmStats?.volume ?? 0),
+      totalFees: Number(mmStats?.fees ?? 0),
+      activeWallets: Number(walletCount ?? 0),
+    };
+  }),
+
   list: protectedProcedure
     .input(z.object({ limit: z.number().min(1).max(100).default(20), offset: z.number().min(0).default(0) }))
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { data: [], total: 0 };
       const results = await db.select().from(transactions)
-        .where(sql`type LIKE 'Mobile Money%'`).orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
-      const [{ total }] = await db.select({ total: count() }).from(transactions).where(sql`type LIKE 'Mobile Money%'`);
+        .where(sql`${transactions.metadata}->>'provider' IS NOT NULL`).orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
+      const [{ total }] = await db.select({ total: count() }).from(transactions).where(sql`${transactions.metadata}->>'provider' IS NOT NULL`);
       return { data: results, total: Number(total) };
     }),
 
@@ -247,7 +453,7 @@ export const mobileMoneyRouter = router({
       if (!db) return { total: 0, volumeNGN: 0 };
       const since = new Date(Date.now() - input.periodDays * 86400000);
       const [stats] = await db.select({ total: count(), volume: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)` })
-        .from(transactions).where(and(sql`type LIKE 'Mobile Money%'`, gte(transactions.createdAt, since), eq(transactions.status, "success")));
+        .from(transactions).where(and(sql`${transactions.metadata}->>'provider' IS NOT NULL`, gte(transactions.createdAt, since), eq(transactions.status, "success")));
       return { periodDays: input.periodDays, total: Number(stats?.total ?? 0), volumeNGN: Number(stats?.volume ?? 0) };
     }),
 });

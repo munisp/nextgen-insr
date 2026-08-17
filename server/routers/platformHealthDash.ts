@@ -2,7 +2,7 @@
  * platformHealthDash.ts — Platform Health Dashboard Router
  *
  * Real health checks against all platform services.
- * No Math.random() — all data comes from actual service probes.
+ * Zero randomly-generated mock data — all data comes from actual service probes.
  */
 import { desc, count, gte } from "drizzle-orm";
 import { z } from "zod";

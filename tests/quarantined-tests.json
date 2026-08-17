@@ -1,14 +1,4 @@
 {
   "$comment": "Single-test exclusions (assurance-lead approved 2026-08-16). File-level quarantine lives in vitest.config.ts exclude + tests/QUARANTINE.md; THIS file is for individual tests inside otherwise-passing files where file-level exclusion would bury valuable coverage. Mechanism: vitest.config.ts builds a negative testNamePattern from these entries (name-based — testNames must remain unique repo-wide). Every entry is mirrored in tests/QUARANTINE.md and ci-evidence.md. No entry without per-test assurance-lead approval.",
-  "entries": [
-    {
-      "file": "server/sprint46.test.ts",
-      "testName": "middleware service manager should report 13 services",
-      "class": "OPEN-DEFECT / partial-delivery",
-      "reason": "middlewareServiceManager procedure throws 'Middleware service manager is not implemented yet' — correct fail-loud behavior for an undelivered capability (NOT a bad test). The other 39 tests in the file pass.",
-      "evidence": "CI run 31972019694 verbatim TRPCError",
-      "reEnableCondition": "middlewareServiceManager procedure implemented and reporting the real service registry",
-      "routing": "F-12 sub-item (fix-routing, implementation required)"
-    }
-  ]
+  "entries": []
 }

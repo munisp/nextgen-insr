@@ -49,19 +49,19 @@ Sections:
 | `server/sprint37.test.ts` | 9 delivered routers lack asserted `getStats` procedure |
 | `server/sprint39.test.ts` / `sprint40` / `sprint41` | delivered routers lack asserted procedures |
 | `server/sprint82.test.ts` | server/temporal-activities.ts missing 8 asserted exports |
-| `server/sprint93.test.ts` | networkQualityHeatmapRouter missing required procedures |
-| `server/sprint87.test.ts` | real leftovers found: mock data in routers, @ts-nocheck pages, unwired pages (`expected ['amlScreening.ts',…] to deeply equal []`) |
-| `server/middleware-wiring-sprint44.test.ts` | 26 routers missing core middleware imports/calls (`dispatch.reason ?? null` leftovers) |
-| `server/security-audit.test.ts` | eval()/Function() scan finding; CI/CD security-checks assertion |
-| `server/pos.test.ts` | zod invalid_type + agent.login UNAUTHORIZED drift on delivered POS routers |
-| `server/sprint95.test.ts` | 'Coming Soon' placeholders, auditCompliance leftover (router count fixed to verified 465 in-file) |
+| ~~`server/sprint93.test.ts`~~ **RE-ENABLED 2026-08-17 (F-12)** | networkQualityHeatmapRouter missing required procedures → getRegionMetrics/getEvents/getRegionDetail implemented on real data (tx fail-rate/queue aggregates + delivered NCC-baseline model); getSummary extended with the client page's KPI fields |
+| `server/sprint87.test.ts` | S87-01 FIXED 2026-08-17 (crypto-grade ref ids in amlScreening/insureMarket; substring-scan false-positive comments reworded; worldView octagon literal-map). S87-02 @ts-nocheck pages + S87-05 unwired pages remain; file stays excluded for S87-06/08 CAT-A undelivered services regardless |
+| `server/middleware-wiring-sprint44.test.ts` | 18 wiring failures FIXED 2026-08-17 (premiumTopUp/merchantPayments/mobileMoney: fail-closed permifyCheck gates + publishEvent/fluvioProduce/cacheSet after durability); file stays excluded ONLY for CAT-A `lakehouse-mojaloop/main.py` sidecar (undelivered scope) |
+| ~~`server/security-audit.test.ts`~~ **RE-ENABLED 2026-08-17 (F-12)** | eval()/Function() finding FIXED (`new Function('return import()')` → safe variable dynamic import in shared/feature-flags/featureFlags.ts); CI/CD assertion was filename DRIFT — ci-cd.yml has 0 commits in git history (API-verified), delivered pipeline is ci.yml |
+| ~~`server/pos.test.ts`~~ **RE-ENABLED 2026-08-17 (F-12)** | DRIFT-verified: delivered agent.login contract is `agentId` (agents table column + delivered AgentLogin client); PIN/suspension/UNAUTHORIZED controls re-verified unchanged; float-gate message is the hardened "Insufficient premium reserve" |
+| `server/sprint95.test.ts` | OPEN-DEFECT findings FIXED 2026-08-17 (auditCompliance adminProcedure substring-scan false-positive — router is fully implemented; InnovationHub dead `coming_soon` status label removed); file stays excluded ONLY for CAT-A services/go/connectivity-resilience (undelivered scope) |
 | `server/sprint12/13/16/20/24/25/26/27/31-production/69-production/78/84/85-phase2/88/88-integration.test.ts`, `server/websocket-analytics.test.ts`, `server/lib/__tests__/sprint59-features.test.ts` | content/procedure/count drift assertions on delivered files (verbatim per triage.md) |
 | `tests/integration/all_28_journeys_tb_consistency.test.ts` | `expected 5 to be >= 20` innovation routes in App.tsx; docker-compose innovation services |
 | `server/middleware-integration.test.ts` | `expected 9 to be 10` middleware wiring drift |
 | `server/db-performance.test.ts` | PgBouncer config undelivered (CAT-A) + tenant-index scan findings |
 | `server/observability-middleware.test.ts` | docker-compose.sprint42.yml + lakehouse sidecar undelivered (CAT-A) + content checks |
-| `server/gap-fixes.test.ts` | CommissionEngine 9-tier structure undelivered (4 seeded); **11 passing tests suspended until re-enable**. listDisputes customerName: DEFINITIVE — genuine API defect (customerDisputePortal.listDisputes selects raw disputes rows, never joins customer data; seed merely exposed it) → fix-routing |
-| `server/sprint28.test.ts` (describe-level) | `mobileMoney.providers` procedure missing — see CAT-B row |
+| ~~`server/gap-fixes.test.ts`~~ **RE-ENABLED 2026-08-17 (F-12)** | listDisputes customerName FIXED — listDisputes now left-joins transactions for the real customerName. CommissionEngine 9-tier structure FIXED — the delivered CT-001..CT-009/CS-001..CS-005 defaults now top up idempotently (ensureDefaults previously seeded only into a completely empty table, so the 4-row demo seed masked them); module-load race closed (procedures await the single-flight defaults promise) |
+| `server/sprint28.test.ts` (describe-level) | `mobileMoney.providers` DELIVERED 2026-08-17 (+ wallets/transactions/analytics the delivered MobileMoneyPage client calls — all on real data; dead `type LIKE 'Mobile Money%'` discriminator repaired to metadata.provider). File stays CAT-B excluded for the live USSD gateway |
 
 ## DE-DUPLICATED EXECUTION (not quarantine)
 
@@ -82,4 +82,4 @@ is untouched. Follow-up recommendation: Permify container in CI + policy tests.
 
 | File | Test | Class | Reason | Re-enable |
 |---|---|---|---|---|
-| `server/sprint46.test.ts` | "middleware service manager should report 13 services" | OPEN-DEFECT / partial-delivery (F-12) | Procedure throws 'not implemented yet' — correct fail-loud behavior for undelivered capability; other 39 tests in the file pass | middlewareServiceManager implemented, reporting real service registry |
+| ~~`server/sprint46.test.ts`~~ | ~~"middleware service manager should report 13 services"~~ **RE-ENABLED 2026-08-17 (F-12)** | FIXED + DRIFT-approved | middlewareServiceManager now reports the REAL serviceOrchestrator registry (13 services). The mock-era 12/1 split was lead-approved drift → verified registry bootstrap state 13 connected / 0 disconnected | done — entry removed from quarantined-tests.json |

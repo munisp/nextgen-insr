@@ -103,11 +103,18 @@ export default defineConfig({
       "server/sprint40.test.ts",
       "server/sprint41.test.ts",
       "server/sprint82.test.ts",
-      "server/sprint93.test.ts",
+      // RE-ENABLED 2026-08-17 (F-12): sprint93 — networkQualityHeatmap
+      // getRegionMetrics/getEvents/getRegionDetail implemented (real data).
       "server/sprint87.test.ts",
+      // middleware-wiring-sprint44: 18 wiring failures FIXED (premiumTopUp/
+      // merchantPayments/mobileMoney genuinely wired) — still excluded ONLY
+      // for the CAT-A lakehouse-mojaloop python sidecar (undelivered scope).
       "server/middleware-wiring-sprint44.test.ts",
-      "server/security-audit.test.ts",
-      "server/pos.test.ts",
+      // RE-ENABLED 2026-08-17 (F-12): security-audit — eval()/Function()
+      // finding fixed in shared/feature-flags/featureFlags.ts (safe dynamic
+      // import); ci.yml filename drift corrected (ci-cd.yml = 0 commits).
+      // RE-ENABLED 2026-08-17 (F-12): pos — verified drift updates to the
+      // hardened agentId login contract (controls re-verified).
       "server/sprint12.test.ts",
       "server/sprint13.test.ts",
       "server/sprint16.test.ts",
@@ -129,8 +136,14 @@ export default defineConfig({
       "server/middleware-integration.test.ts",
       "server/db-performance.test.ts",
       "server/observability-middleware.test.ts",
+      // sprint95: OPEN-DEFECT findings FIXED 2026-08-17 (auditCompliance
+      // adminProcedure false-positive, InnovationHub dead coming_soon label) —
+      // still excluded ONLY for the CAT-A services/go/connectivity-resilience
+      // service (undelivered scope).
       "server/sprint95.test.ts",
-      "server/gap-fixes.test.ts",
+      // RE-ENABLED 2026-08-17 (F-12): gap-fixes — listDisputes now joins
+      // transactions for real customerName; CommissionEngine 9-tier default
+      // structure (CT-001..CT-009/CS-001..CS-005) tops up idempotently.
       // ═══ DE-DUPLICATED EXECUTION (lead-approved 2026-08-16): these suites run
       // green in integration.yml's dedicated contract/e2e jobs with the correct
       // harness (globalSetup schema push, real auth env); including them in the

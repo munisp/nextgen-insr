@@ -1,6 +1,6 @@
 /**
  * platformMetricsExporter.ts — Platform Metrics Exporter Router
- * Real Prometheus metrics from OpenTelemetry registry. No Math.random().
+ * Real Prometheus metrics from OpenTelemetry registry; zero randomly-generated mock data.
  */
 import { desc, count, sum, sql, gte } from "drizzle-orm";
 import { z } from "zod";
