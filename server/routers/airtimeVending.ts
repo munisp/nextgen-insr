@@ -220,7 +220,15 @@ export const airtimeVendingRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { data: [], total: 0 };
-      const txnType = input.type === "data" ? "Data" : "Airtime";
+      // F-12 (wave-4b): tx_type has no "Data" value — data vending is not
+      // representable. Airtime queries are real; data fails loud.
+      if (input.type === "data") {
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message: "data vending is not delivered (no data tx type)",
+        });
+      }
+      const txnType: "Airtime" = "Airtime";
       const results = await db.select().from(transactions)
         .where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, txnType)))
         .orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
@@ -231,7 +239,7 @@ export const airtimeVendingRouter = router({
 
   getSummary: protectedProcedure
     .input(z.object({ periodDays: z.number().default(30) }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { total: 0, volumeNGN: 0, commissionNGN: 0 };
       const since = new Date(Date.now() - input.periodDays * 86400000);
@@ -239,7 +247,7 @@ export const airtimeVendingRouter = router({
         total: count(),
         volume: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)`,
         commission: sql<string>`COALESCE(SUM(CAST(commission AS NUMERIC)), 0)`,
-      }).from(transactions).where(and(eq(transactions.type, "Airtime"), gte(transactions.createdAt, since), eq(transactions.status, "success")));
+      }).from(transactions).where(and(eq(transactions.type, "Airtime"), eq(transactions.agentId, ctx.user.id), gte(transactions.createdAt, since), eq(transactions.status, "success")));
       return { periodDays: input.periodDays, total: Number(stats?.total ?? 0), volumeNGN: Number(stats?.volume ?? 0), commissionNGN: Number(stats?.commission ?? 0) };
     }),
 });

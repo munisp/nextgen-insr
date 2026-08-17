@@ -71,3 +71,11 @@ const lift = protectedProcedure
       message: "lift: no suspension workflow store",
     });
   });
+
+export const agentSuspensionWorkflowRouter = router({
+  list,
+  suspend,
+  lift,
+  escalate,
+  getStats,
+});
