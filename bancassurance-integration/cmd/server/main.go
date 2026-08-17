@@ -66,10 +66,6 @@ func main() {
 	if port == "" {
 		port = "8091"
 	}
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "bancassurance.db"
-	}
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {

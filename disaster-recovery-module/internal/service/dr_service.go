@@ -65,7 +65,7 @@ func (s *DRService) CheckServiceHealthiness(ctx context.Context) error {
 
 	for _, svc := range services {
 		stale := time.Since(svc.UpdatedAt) > 2*s.cfg.ReadTimeout
-		status := "unknown"
+		var status string
 		if stale {
 			status = "down"
 		} else {

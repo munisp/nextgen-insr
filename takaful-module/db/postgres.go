@@ -318,7 +318,6 @@ func (p *PostgreSQL) ListProducts(ctx context.Context, category string, isActive
 			query += fmt.Sprintf(" WHERE is_active=$%d", pos)
 		}
 		args = append(args, isActive)
-		pos++
 	}
 	query += " ORDER BY created_at DESC"
 	rows, err := p.db.QueryContext(ctx, query, args...)
@@ -635,7 +634,6 @@ func (p *PostgreSQL) GetZakatRecords(ctx context.Context, participantID string, 
 	if year > 0 {
 		query += fmt.Sprintf(" AND year=$%d", pos)
 		args = append(args, year)
-		pos++
 	}
 	query += " ORDER BY year DESC"
 	rows, err := p.db.QueryContext(ctx, query, args...)

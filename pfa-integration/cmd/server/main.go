@@ -67,10 +67,6 @@ func main() {
 	if port == "" {
 		port = "8092"
 	}
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "pfa.db"
-	}
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {

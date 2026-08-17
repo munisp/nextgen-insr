@@ -323,7 +323,7 @@ func calculateAge(dob time.Time) int {
 }
 
 func getGroupLifeRate(age int, gender, industry string) float64 {
-	baseRate := 2.5 // per mille
+	var baseRate float64 // per mille
 	if age < 30 {
 		baseRate = 1.5
 	} else if age < 40 {

@@ -333,7 +333,8 @@ func (p *PostgreSQL) GetDashboard(ctx context.Context) (*models.DRDashboard, err
 		dash.LastFailover = nil
 	} else {
 		dash.LastFailover = &models.FailoverEvent{}
-		err = p.db.QueryRowContext(ctx,
+		// error intentionally not propagated here (dashboard degrades gracefully); err assignment removed (ineffassign)
+		_ = p.db.QueryRowContext(ctx,
 			`SELECT id, event_number, type, from_dc, to_dc, status, started_at,
 			 actual_rto_secs, naicom_notified FROM failover_events ORDER BY started_at DESC LIMIT 1`,
 			&dash.LastFailover.ID, &dash.LastFailover.EventNumber, &dash.LastFailover.Type,

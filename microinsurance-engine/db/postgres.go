@@ -646,11 +646,12 @@ func (p *Postgres) GetPremiumSchedule(ctx context.Context, from time.Time, days 
 	if status != "" {
 		query += fmt.Sprintf(" AND status = $%d", argCount)
 		args = append(args, status)
-		argCount++
 	}
 	query += " ORDER BY next_payment_due ASC"
 
-	rows, err := p.Pool.Query(ctx, query, from, to)
+	// pass the collected args (from, to are $1/$2) — previously dropped, which
+	// would fail at runtime whenever status was set (arg-count mismatch)
+	rows, err := p.Pool.Query(ctx, query, append([]interface{}{from, to}, args...)...)
 	if err != nil {
 		return nil, err
 	}

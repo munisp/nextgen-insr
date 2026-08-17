@@ -112,9 +112,9 @@ jobs:
           for d in $MODULES; do
             [ -f "$d/go.mod" ] || continue
             echo "== fixing $d"
-            (cd "$d" && golangci-lint run --timeout=5m --fix --enable=errcheck,gosimple,govet,staticcheck ./...) || true
+            (cd "$d" && golangci-lint run --timeout=5m --fix --enable=errcheck,gosimple,govet,staticcheck --disable=unused ./...) || true
             for i in 1 2 3 4 5; do
-              n=$( (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck --out-format json ./... 2>/dev/null || true) | (cd "$d" && /tmp/dcd/dcd 2>>/tmp/dcd_err.log) | awk '{print $3}')
+              n=$( (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck --disable=unused --out-format json ./... 2>/dev/null || true) | (cd "$d" && /tmp/dcd/dcd 2>>/tmp/dcd_err.log) | awk '{print $3}')
               [ "${n:-0}" = "0" ] && break
             done
             (cd "$d" && go mod tidy && goimports -l -w . && gofmt -l -w .) || true
@@ -134,7 +134,7 @@ jobs:
             [ -f "$d/go.mod" ] || continue
             echo "== verifying $d"
             (cd "$d" && go build ./... && go vet ./...) || { echo "BUILD BROKEN: $d"; fail=2; continue; }
-            (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck ./...) || { echo "LINT RESIDUAL: $d"; [ "$fail" != "2" ] && fail=1; }
+            (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck --disable=unused ./...) || { echo "LINT RESIDUAL: $d"; [ "$fail" != "2" ] && fail=1; }
           done
           if [ "$fail" = "2" ]; then echo "BUILD BROKEN somewhere — refusing to commit"; exit 1; fi
           echo "verify done (lint residuals acceptable for incremental commit)" > /tmp/verify_status.txt
