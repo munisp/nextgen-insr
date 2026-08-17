@@ -25,8 +25,6 @@ import {
 } from "recharts";
 import {
   ArrowUpDown,
-  TrendingUp,
-  TrendingDown,
   RefreshCw,
   Search,
   Calculator,
@@ -35,36 +33,9 @@ import {
   Clock,
   Zap,
   ArrowRight,
-  Minus,
   History,
 } from "lucide-react";
 
-// ── Sparkline Mini Component ─────────────────────────────────────────────────
-
-function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const points = data
-    .map(
-      (v, i) =>
-        `${(i / (data.length - 1)) * 60},${30 - ((v - min) / range) * 28}`
-    )
-    .join(" ");
-
-  return (
-    <svg width="60" height="30" viewBox="0 0 60 30" className="inline-block">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={positive ? "#22c55e" : "#ef4444"}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 // ── Conversion History Item ──────────────────────────────────────────────────
 
@@ -81,7 +52,6 @@ interface ConversionRecord {
 export default function MultiCurrency() {
   // ── State ──────────────────────────────────────────────────────────────────
   const [baseCurrency, setBaseCurrency] = useState("NGN");
-  const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("rates");
 
@@ -316,17 +286,8 @@ export default function MultiCurrency() {
             {/* Category Filters + Search */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="flex flex-wrap gap-1.5">
-                {ratesQuery.data?.categories?.map((cat: any) => (
-                  <Button
-                    key={cat.id}
-                    variant={activeCategory === cat.id ? "default" : "outline"}
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => setActiveCategory(cat.id)}
-                  >
-                    {cat.label}
-                  </Button>
-                ))}
+                {/* F-12 (wave-4b): category filters have no delivered
+                    source in getRates — removed. */}
               </div>
               <div className="relative flex-1 max-w-xs">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -389,7 +350,6 @@ export default function MultiCurrency() {
                           >
                             <td className="p-3">
                               <div className="flex items-center gap-2">
-                                <span className="text-lg">{rate.flag}</span>
                                 <div>
                                   <div className="font-medium text-sm">
                                     {rate.code}
@@ -397,46 +357,20 @@ export default function MultiCurrency() {
                                   <div className="text-xs text-muted-foreground">
                                     —
                                   </div>
-                                </div>
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] hidden lg:inline-flex"
-                                >
-                                  {rate.category}
-                                </Badge>
-                              </div>
+                                </div>                              </div>
                             </td>
                             <td className="p-3 text-right font-mono text-sm">
                               {formatRate(rate.rate)}
                             </td>
                             <td className="p-3 text-right hidden sm:table-cell">
-                              <span
-                                className={`inline-flex items-center gap-1 text-xs font-medium ${
-                                  rate.change24h > 0
-                                    ? "text-green-500"
-                                    : rate.change24h < 0
-                                      ? "text-red-500"
-                                      : "text-muted-foreground"
-                                }`}
-                              >
-                                {rate.change24h > 0 ? (
-                                  <TrendingUp className="h-3 w-3" />
-                                ) : rate.change24h < 0 ? (
-                                  <TrendingDown className="h-3 w-3" />
-                                ) : (
-                                  <Minus className="h-3 w-3" />
-                                )}
-                                {rate.change24h > 0 ? "+" : ""}
-                                {rate.change24h.toFixed(2)}%
-                              </span>
+                              {/* F-12 (wave-4b): 24h change telemetry is not
+                                  delivered for the bulk rates view — "—". */}
+                              <span className="text-xs text-muted-foreground">—</span>
                             </td>
                             <td className="p-3 text-center hidden md:table-cell">
-                              {rate.sparkline && (
-                                <Sparkline
-                                  data={rate.sparkline}
-                                  positive={rate.change24h >= 0}
-                                />
-                              )}
+                              {/* F-12 (wave-4b): sparkline series are not
+                                  delivered for the bulk rates view — "—". */}
+                              <span className="text-xs text-muted-foreground">—</span>
                             </td>
                             <td className="p-3 text-center">
                               <Button
