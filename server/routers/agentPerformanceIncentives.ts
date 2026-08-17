@@ -130,30 +130,12 @@ export const agentPerformanceIncentivesRouter = router({
       }
     }),
 
+  // F-12 (wave-4b): zero-payload getStats (fake health check then
+  // unconditional zeros) — no incentives store is delivered. Fail loud.
   getStats: protectedProcedure.query(async () => {
-    const database = await getDb();
-    if (!database)
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    try {
-      await database.execute(sql`SELECT 1 as ok`);
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    } catch {
-      return {
-        total: 0,
-        active: 0,
-        recent: 0,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getStats: no incentives store is delivered",
+    });
   }),
 });

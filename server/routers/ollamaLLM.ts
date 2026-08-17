@@ -63,25 +63,22 @@ async function ollamaListModels() {
 }
 
 export const ollamaLLMRouter = router({
+  // F-12 (wave-4b): zero-payload health — no Ollama health/model
+  // source is delivered. Fail loud.
   health: protectedProcedure.query(async () => {
-    const models = await ollamaListModels();
-    return {
-      healthy: models !== null,
-      baseUrl: OLLAMA_BASE_URL,
-      defaultModel: DEFAULT_MODEL,
-      modelsLoaded: models.length,
-      installedModels: models.map(m => ({ name: m.name, sizeBytes: m.size, details: m.details })),
-      supportedModels: SUPPORTED_MODELS,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "health: no Ollama integration is delivered",
+    });
   }),
 
+  // F-12 (wave-4b): zero-payload listModels — no Ollama health/model
+  // source is delivered. Fail loud.
   listModels: protectedProcedure.query(async () => {
-    const installed = await ollamaListModels();
-    return {
-      installed: installed.map(m => ({ name: m.name, sizeBytes: m.size, modifiedAt: m.modified_at, details: m.details })),
-      supported: SUPPORTED_MODELS,
-      defaultModel: DEFAULT_MODEL,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "listModels: no Ollama integration is delivered",
+    });
   }),
 
   generate: protectedProcedure
