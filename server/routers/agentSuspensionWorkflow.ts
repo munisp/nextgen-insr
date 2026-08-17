@@ -40,6 +40,8 @@ const list = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const suspend = protectedProcedure
   .input(
     z.object({
@@ -47,40 +49,11 @@ const suspend = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(agentSuspensionLog)
-          .where(eq(agentSuspensionLog.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "suspend: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "suspend completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "suspend completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "suspend: no suspension workflow store",
+    });
   });
 const lift = protectedProcedure
   .input(
@@ -115,6 +88,8 @@ const lift = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const escalate = protectedProcedure
   .input(
     z.object({
@@ -122,40 +97,11 @@ const escalate = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(agentSuspensionLog)
-          .where(eq(agentSuspensionLog.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "escalate: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "escalate completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "escalate completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "escalate: no escalation store",
+    });
   });
 const getStats = protectedProcedure
   .input(

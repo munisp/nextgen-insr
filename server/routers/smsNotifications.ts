@@ -97,12 +97,34 @@ export const smsNotificationsRouter = router({
 
       const [total] = await database.select({ total: count() }).from(notification_logs);
 
+      // F-12 (verifier site 3): deliveryRate/latency/failureRate/cost were
+      // fixtures — real aggregates from notification_logs; costPerSms has no
+      // cost source and is honestly null.
+      const [deliveredRow] = await database
+        .select({ value: count() })
+        .from(notification_logs)
+        .where(eq(notification_logs.status, "delivered"));
+      const [failedRow] = await database
+        .select({ value: count() })
+        .from(notification_logs)
+        .where(eq(notification_logs.status, "failed"));
+      const [latencyRow] = await database
+        .select({
+          v: sql<number>`AVG(EXTRACT(EPOCH FROM (${notification_logs.deliveredAt} - ${notification_logs.sentAt})) * 1000)`,
+        })
+        .from(notification_logs)
+        .where(sql`${notification_logs.deliveredAt} IS NOT NULL AND ${notification_logs.sentAt} IS NOT NULL`);
+      const totalNum = Number(total?.total ?? 0);
+      const deliveredNum = Number(deliveredRow?.value ?? 0);
+      const failedNum = Number(failedRow?.value ?? 0);
       return {
-        totalSent: total?.total ?? 0,
-        deliveryRate: "96.2%",
-        averageLatencyMs: 2800,
-        failureRate: "3.8%",
-        costPerSms: "₦4.00",
+        totalSent: totalNum,
+        deliveryRate:
+          totalNum > 0 ? `${((deliveredNum / totalNum) * 100).toFixed(1)}%` : "0%",
+        averageLatencyMs: Math.round(Number(latencyRow?.v ?? 0)),
+        failureRate:
+          totalNum > 0 ? `${((failedNum / totalNum) * 100).toFixed(1)}%` : "0%",
+        costPerSms: null,
         period: `${input.days} days`,
         lastUpdated: new Date().toISOString(),
       };

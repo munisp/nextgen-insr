@@ -198,19 +198,13 @@ export const accountOpeningRouter = router({
       }
     }),
 
+  // F-12 (expanded sweep): fixture application rows (AO-001) — no
+  // account-applications store is delivered. Fail loud.
   list: protectedProcedure.query(async () => {
-    return {
-      applications: [
-        {
-          id: "AO-001",
-          customerName: "Fatima Ibrahim",
-          accountType: "savings",
-          status: "approved",
-          createdAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "accountOpening.list: no account-applications store is delivered",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
     return {

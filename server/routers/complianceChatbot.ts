@@ -40,6 +40,8 @@ const startSession = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const sendMessage = protectedProcedure
   .input(
     z.object({
@@ -47,40 +49,11 @@ const sendMessage = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(complianceReports)
-          .where(eq(complianceReports.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "sendMessage: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "sendMessage completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "sendMessage completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "sendMessage: no chatbot backend",
+    });
   });
 const getHistory = protectedProcedure
   .input(

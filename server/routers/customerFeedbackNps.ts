@@ -128,14 +128,32 @@ const getStats = publicProcedure
         .from(customerFeedbackNpsTable)
         .orderBy(desc(customerFeedbackNpsTable.id))
         .limit(5);
+      // F-12 (expanded sweep): fixture NPS numbers — real aggregates from
+      // customer_feedback_nps (score 9-10 promoters, 7-8 passives, 0-6
+      // detractors). responseRate has no invite store — honest null.
+      const [agg] = await db
+        .select({
+          promoters: sql<number>`SUM(CASE WHEN ${customerFeedbackNpsTable.score} >= 9 THEN 1 ELSE 0 END)`,
+          passives: sql<number>`SUM(CASE WHEN ${customerFeedbackNpsTable.score} >= 7 AND ${customerFeedbackNpsTable.score} <= 8 THEN 1 ELSE 0 END)`,
+          detractors: sql<number>`SUM(CASE WHEN ${customerFeedbackNpsTable.score} <= 6 THEN 1 ELSE 0 END)`,
+          avg: sql<number>`AVG(${customerFeedbackNpsTable.score})`,
+        })
+        .from(customerFeedbackNpsTable)
+        .limit(100);
+      const totalNum = Number(total);
+      const promoters = Number(agg?.promoters ?? 0);
+      const detractors = Number(agg?.detractors ?? 0);
       return {
-        npsScore: 72,
-        avgRating: 4.3,
-        totalResponses: 12500,
-        promoters: 8750,
-        passives: 2500,
-        detractors: 1250,
-        responseRate: 34.5,
+        npsScore:
+          totalNum > 0
+            ? Math.round(((promoters - detractors) / totalNum) * 100)
+            : 0,
+        avgRating: Math.round(Number(agg?.avg ?? 0) * 10) / 10,
+        totalResponses: totalNum,
+        promoters,
+        passives: Number(agg?.passives ?? 0),
+        detractors,
+        responseRate: null,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

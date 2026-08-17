@@ -148,7 +148,9 @@ export const aiMonitoringRouter = router({
       const start = Date.now();
       try {
         const res = await fetch(s.url, { signal: AbortSignal.timeout(3000) });
-        return { name: s.name, status: res.ok ? "healthy" : "degraded", latencyMs: Date.now() - start, uptime: 99.9 };
+        // F-12 (expanded sweep): uptime was hardcoded 99.9 — no uptime
+        // telemetry is delivered; honest null.
+        return { name: s.name, status: res.ok ? "healthy" : "degraded", latencyMs: Date.now() - start, uptime: null };
       } catch {
         return { name: s.name, status: "offline", latencyMs: Date.now() - start, uptime: 0 };
       }

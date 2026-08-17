@@ -82,12 +82,13 @@ export default function RateAlerts() {
 
   const utils = trpc.useUtils();
 
+  // F-12 (verifier): real list input is {limit, offset, search}; the return
+  // is {data, total} — the pageSize/.items drift is repaired below.
   const { data: alertsData, isLoading } = trpc.rateAlerts.list.useQuery({
-    // status: filter,
-    pageSize: 50,
+    limit: 50,
   });
 
-  const { data: stats } = trpc.rateAlerts.getStats.useQuery({});
+  const { data: stats } = trpc.rateAlerts.getStats.useQuery();
 
   const createAlert = trpc.rateAlerts.create.useMutation({
     onSuccess: () => {
@@ -140,10 +141,10 @@ export default function RateAlerts() {
   });
 
   const alerts = useMemo(() => {
-    if (!alertsData?.items) return [];
-    if (!search) return alertsData.items;
+    if (!alertsData?.data) return [];
+    if (!search) return alertsData.data;
     const q = search.toLowerCase();
-    return alertsData.items.filter(
+    return alertsData.data.filter(
       (a: any) =>
         a.baseCurrency.toLowerCase().includes(q) ||
         a.targetCurrency.toLowerCase().includes(q) ||

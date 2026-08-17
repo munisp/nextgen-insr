@@ -241,14 +241,31 @@ export const customerDisputePortalRouter = router({
         return { items: [], total: 0 };
       }
     }),
+  // F-12 (expanded sweep): both were echo facades — now REAL mutations on
+  // the disputes table.
   escalateDispute: protectedProcedure
     .input(z.object({ disputeId: z.number(), reason: z.string() }))
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        disputeId: input.disputeId,
-        escalatedAt: new Date().toISOString(),
-      };
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+      }
+      const [row] = await db
+        .select()
+        .from(disputes)
+        .where(eq(disputes.id, input.disputeId))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "dispute not found" });
+      await db
+        .update(disputes)
+        .set({
+          priority: "high",
+          description: `${row.description ?? ""}
+[escalated] ${input.reason}`.trim(),
+          updatedAt: new Date(),
+        })
+        .where(eq(disputes.id, row.id));
+      return { success: true as const, disputeId: row.id, escalatedAt: new Date().toISOString() };
     }),
   updateDispute: protectedProcedure
     .input(
@@ -259,10 +276,21 @@ export const customerDisputePortalRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      return {
-        success: true,
-        disputeId: input.disputeId,
-        updatedAt: new Date().toISOString(),
-      };
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+      }
+      const [row] = await db
+        .select()
+        .from(disputes)
+        .where(eq(disputes.id, input.disputeId))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "dispute not found" });
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (input.status) updates.status = input.status;
+      if (input.notes) updates.resolution = input.notes;
+      if (input.status === "resolved") updates.resolvedAt = new Date();
+      await db.update(disputes).set(updates).where(eq(disputes.id, row.id));
+      return { success: true as const, disputeId: row.id, updatedAt: new Date().toISOString() };
     }),
 });

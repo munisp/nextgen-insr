@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -72,50 +73,66 @@ export const agentHierarchyRouter = router({
         .optional()
     )
     .query(async () => {
-      const data = [
-        {
-          id: "AGT-001",
-          name: "Adebayo Okonkwo",
-          role: "super_agent",
-          territory: "Lagos",
-          status: "active",
-          subAgents: 12,
-        },
-      ];
-      return { agents: data, items: data, total: 1 };
+      // F-12 (expanded sweep): was an AGT-001 fixture — real agents rows.
+      // subAgents has no hierarchy store and is honestly 0.
+      const db = await getDb();
+      if (!db) return { agents: [], items: [], total: 0 };
+      const rows = await db.select().from(agents).orderBy(desc(agents.id)).limit(100);
+      const data = rows.map(r => ({
+        id: String(r.id),
+        name: r.name,
+        role: r.role,
+        territory: r.location,
+        status: r.isActive ? "active" : "inactive",
+        subAgents: 0,
+      }));
+      return { agents: data, items: data, total: data.length };
     }),
   getTree: protectedProcedure.query(async () => {
-    return {
-      tree: {
-        id: "AGT-001",
-        name: "Adebayo",
-        role: "super_agent",
-        children: [
-          { id: "AGT-002", name: "Fatima", role: "agent", children: [] },
-        ],
-      },
-    };
+    // F-12 (expanded sweep): the tree was hardcoded — no parent/hierarchy
+    // column exists on agents. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getTree: no agent-hierarchy store is delivered",
+    });
   }),
   territories: protectedProcedure.query(async () => {
-    return {
-      territories: [
-        { id: "T-001", name: "Lagos", agentCount: 45, status: "active" },
-        { id: "T-002", name: "Abuja", agentCount: 30, status: "active" },
-      ],
-    };
+    // F-12 (expanded sweep): territory rows were hardcoded — no territory
+    // store is delivered. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getTerritories: no territory store is delivered",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalAgents: 150,
-      byRole: { super_agent: 10, agent: 80, sub_agent: 60 },
-      byTerritory: { Lagos: 45, Abuja: 30, Kano: 25 },
-    };
+    // F-12 (expanded sweep): was a hardcoded fixture — real aggregates.
+    const db = await getDb();
+    if (!db) return { totalAgents: 0, byRole: {}, byTerritory: {} };
+    const [total] = await db.select({ value: count() }).from(agents);
+    const roleRows = await db
+      .select({ role: agents.role, cnt: count() })
+      .from(agents)
+      .groupBy(agents.role)
+      .limit(20);
+    const locRows = await db
+      .select({ location: agents.location, cnt: count() })
+      .from(agents)
+      .groupBy(agents.location)
+      .limit(50);
+    const byRole: Record<string, number> = {};
+    for (const r of roleRows) byRole[r.role ?? "unknown"] = Number(r.cnt);
+    const byTerritory: Record<string, number> = {};
+    for (const r of locRows) byTerritory[r.location ?? "unknown"] = Number(r.cnt);
+    return { totalAgents: Number(total.value), byRole, byTerritory };
   }),
+  // F-12 (expanded sweep): echo facade — and the agents table has no
+  // parent/hierarchy column. Fail loud until a hierarchy store exists.
   reassignParent: protectedProcedure
     .input(z.object({ agentId: z.number(), newParentId: z.number() }))
-    .mutation(async ({ input }) => ({
-      agentId: input.agentId,
-      newParentId: input.newParentId,
-      success: true,
-    })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "reassignParent: no agent-hierarchy store is delivered",
+      });
+    }),
 });

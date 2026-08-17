@@ -289,12 +289,44 @@ export const disputeAnalyticsRouter = router({
         Number(total.value) > 0
           ? Number(withinSla.value) / Number(total.value)
           : 0, // F-12 (audit FAIL-2): was cosmetic 1
-      byPriority: [
-        { priority: "high", compliance: 0.95 },
-        { priority: "medium", compliance: 0.9 },
-        { priority: "low", compliance: 0.88 },
-      ],
-      trend: [{ date: "2024-01-01", compliance: 0.9 }],
+      // F-12 (verifier site 1): byPriority/trend were hardcoded literals —
+      // now real aggregates (per-priority and per-day within-SLA rates).
+      byPriority: await (async () => {
+        const rows = await db
+          .select({
+            priority: disputes.priority,
+            tot: count(),
+            ok: sql<number>`SUM(CASE WHEN ${disputes.resolvedAt} IS NOT NULL AND ${disputes.resolvedAt} <= ${disputes.slaDeadlineAt} THEN 1 ELSE 0 END)`,
+          })
+          .from(disputes)
+          .groupBy(disputes.priority);
+        return rows.map(r => ({
+          priority: r.priority,
+          compliance:
+            Number(r.tot) > 0
+              ? Math.round((Number(r.ok) / Number(r.tot)) * 1000) / 1000
+              : 0,
+        }));
+      })(),
+      trend: await (async () => {
+        const rows = await db
+          .select({
+            date: sql<string>`DATE(${disputes.createdAt})`,
+            tot: count(),
+            ok: sql<number>`SUM(CASE WHEN ${disputes.resolvedAt} IS NOT NULL AND ${disputes.resolvedAt} <= ${disputes.slaDeadlineAt} THEN 1 ELSE 0 END)`,
+          })
+          .from(disputes)
+          .groupBy(sql`DATE(${disputes.createdAt})`)
+          .orderBy(sql`DATE(${disputes.createdAt})`)
+          .limit(90);
+        return rows.map(r => ({
+          date: r.date,
+          compliance:
+            Number(r.tot) > 0
+              ? Math.round((Number(r.ok) / Number(r.tot)) * 1000) / 1000
+              : 0,
+        }));
+      })(),
     };
   }),
 });

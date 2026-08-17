@@ -147,24 +147,13 @@ export const reportTemplateDesignerRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        await db.insert(auditLog).values({
-          action: "report_generated",
-          resource: "report_templates",
-          resourceId: input.templateId,
-          status: "success",
-          metadata: {
-            dateFrom: input.dateFrom,
-            dateTo: input.dateTo,
-            filters: input.filters,
-          },
+        // F-12 (verifier site 6): the audit insert recorded a successful
+        // generation that never happened — removed with the facade.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "generateReport: no report-generation engine is delivered (the previous random reportId referred to no persisted artifact)",
         });
-        return {
-          success: true,
-          reportId: "RPT-" + crypto.randomUUID().toUpperCase(),
-          status: "generating",
-        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
