@@ -72,13 +72,16 @@ export const fxRatesRouter = router({
           .from(systemConfig)
           .where(eq(systemConfig.key, "fx_rates"))
           .limit(1);
-        const rates = config
+        // F-12 (wave-4b): removed the hardcoded fixture fallback rates — when
+        // no stored rates exist the honest answer is an empty map + null
+        // timestamp, never fabricated financial data.
+        const rates: Record<string, number> = config
           ? JSON.parse(String(config.value))
-          : { USD: 1550.0, EUR: 1680.0, GBP: 1950.0, GHS: 95.0, KES: 12.0 };
+          : {};
         return {
           baseCurrency: input?.baseCurrency ?? "NGN",
           rates,
-          lastUpdated: config?.updatedAt ?? new Date(),
+          lastUpdated: config?.updatedAt ?? null,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -105,9 +108,16 @@ export const fxRatesRouter = router({
           .from(systemConfig)
           .where(eq(systemConfig.key, "fx_rates"))
           .limit(1);
-        const rates: Record<string, number> = config
+        const rates: Record<string, number> | null = config
           ? JSON.parse(String(config.value))
-          : { USD: 1550.0, EUR: 1680.0, GBP: 1950.0 };
+          : null;
+        if (!rates) {
+          // F-12 (wave-4b): no stored rates — fail loud, never fixture rates.
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "convert: no FX rates are stored; refresh rates first",
+          });
+        }
         const fromRate = input.from === "NGN" ? 1 : (rates[input.from] ?? 1);
         const toRate = input.to === "NGN" ? 1 : (rates[input.to] ?? 1);
         const converted = (input.amount * fromRate) / toRate;
@@ -212,14 +222,23 @@ export const fxRatesRouter = router({
         source: "frankfurter/ecb",
       };
     }),
+  // F-12 (wave-4b): was a zero-payload stub — derive the real currency list
+  // from the stored fx_rates config (code + rate only; display names/symbols
+  // have no delivered source).
   currencies: protectedProcedure.query(async () => {
+    const db = await getDb();
+    const empty = { currencies: [] as Array<{ code: string; rate: number }>, baseCurrency: "NGN" };
+    if (!db) return empty;
+    const [config] = await db
+      .select()
+      .from(systemConfig)
+      .where(eq(systemConfig.key, "fx_rates"))
+      .limit(1);
+    const rates: Record<string, number> = config
+      ? JSON.parse(String(config.value))
+      : {};
     return {
-      currencies: [] as Array<{
-        code: string;
-        name: string;
-        symbol: string;
-        rate: number;
-      }>,
+      currencies: Object.entries(rates).map(([code, rate]) => ({ code, rate })),
       baseCurrency: "NGN",
     };
   }),
