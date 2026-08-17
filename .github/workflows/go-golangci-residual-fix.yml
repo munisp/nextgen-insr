@@ -113,11 +113,12 @@ jobs:
             echo "== fixing $d"
             (cd "$d" && golangci-lint run --timeout=5m --fix --enable=errcheck,gosimple,govet,staticcheck ./...) || true
             for i in 1 2 3 4 5; do
-              n=$( (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck --out-format json ./... 2>/dev/null || echo '{}') | /tmp/dcd/dcd | awk '{print $3}')
+              n=$( (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck --out-format json ./... 2>/dev/null || true) | /tmp/dcd/dcd 2>>/tmp/dcd_err.log | awk '{print $3}')
               [ "${n:-0}" = "0" ] && break
             done
             (cd "$d" && go mod tidy && gofmt -l -w .) || true
           done
+          echo "--- dcd stderr (if any):"; tail -5 /tmp/dcd_err.log 2>/dev/null || true
       - name: Verify all matrix modules (gate-exact command)
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
