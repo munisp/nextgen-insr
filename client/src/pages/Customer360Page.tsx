@@ -1,14 +1,21 @@
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
+import { toast } from "sonner";
 
 export default function Customer360Page() {
   const { data, isLoading } = trpc.customer360.dashboard.useQuery();
-  const [selectedId, setSelectedId] = useState("");
+  // F-12 (wave-4b): no fabricated default customer — a profile loads only
+  // after a real customer id is entered.
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [idInput, setIdInput] = useState("");
   const { data: profile } = trpc.customer360.getProfile.useQuery(
-    { customerId: selectedId || "cust-1001" },
-    { enabled: true }
+    { id: selectedId ?? 0 },
+    { enabled: selectedId != null }
   );
-  const sentiment = trpc.customer360.analyzeSentiment.useMutation();
+  // analyzeSentiment is fail-loud NOT_IMPLEMENTED (no LLM provider) — the
+  // button surfaces that honestly.
+  const analyzeSentiment = () =>
+    toast.error("Sentiment analysis is not configured on this deployment");
 
   if (isLoading)
     return <div className="p-8 text-center">Loading customer 360...</div>;
@@ -22,130 +29,92 @@ export default function Customer360Page() {
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Total Customers</p>
               <p className="text-2xl font-bold">
-                {data.totalCustomers.toLocaleString()}
+                {data.totalRecords.toLocaleString()}
               </p>
             </div>
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Active</p>
               <p className="text-2xl font-bold">
-                {data.activeCustomers.toLocaleString()}
+                {data.activeRecords.toLocaleString()}
               </p>
             </div>
+            {/* F-12: no LTV model or churn analytics are delivered — "—". */}
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">
                 Avg Lifetime Value
               </p>
-              <p className="text-2xl font-bold">
-                ₦{(data.avgLifetimeValue / 1000).toFixed(0)}K
-              </p>
+              <p className="text-2xl font-bold text-muted-foreground">—</p>
             </div>
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Churn Rate</p>
-              <p className="text-2xl font-bold">{data.churnRate}%</p>
+              <p className="text-2xl font-bold text-muted-foreground">—</p>
             </div>
           </div>
           <div>
             <h2 className="text-lg font-semibold mb-3">Segments</h2>
-            <div className="border rounded p-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-2">Segment</th>
-                    <th className="text-right p-2">Count</th>
-                    <th className="text-right p-2">Avg Txn Value</th>
-                    <th className="text-right p-2">Monthly Txns</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.segments.map((s: any) => (
-                    <tr key={s.name} className="border-b">
-                      <td className="p-2 font-medium">{s.name}</td>
-                      <td className="p-2 text-right">
-                        {s.count.toLocaleString()}
-                      </td>
-                      <td className="p-2 text-right">
-                        ₦{s.avgTxnValue.toLocaleString()}
-                      </td>
-                      <td className="p-2 text-right">{s.avgMonthlyTxns}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="border rounded p-4 text-center text-sm text-muted-foreground">
+              — no segmentation engine is delivered on this platform
             </div>
           </div>
         </>
       )}
-      {profile && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">
-            Customer Profile: {profile.name}
-          </h2>
+
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Customer Profile</h2>
+        <div className="flex gap-2 mb-4">
+          <input
+            className="border rounded px-3 py-2 text-sm"
+            placeholder="Enter customer ID"
+            value={idInput}
+            onChange={e => setIdInput(e.target.value)}
+          />
+          <button
+            className="border rounded px-4 py-2 text-sm bg-primary text-primary-foreground"
+            onClick={() => {
+              const n = Number(idInput);
+              if (Number.isInteger(n) && n > 0) setSelectedId(n);
+              else toast.error("Enter a numeric customer ID");
+            }}
+          >
+            Load
+          </button>
+        </div>
+        {profile && (
           <div className="grid grid-cols-3 gap-4">
             <div className="border rounded p-4 col-span-1">
               <p className="text-sm">
-                <strong>Phone:</strong> {profile.phone}
+                <strong>ID:</strong> {profile.id}
               </p>
               <p className="text-sm">
-                <strong>BVN:</strong> {profile.bvn}
+                <strong>Name:</strong> {profile.name}
+              </p>
+              {/* F-12: phone/BVN/segment/KYC/risk fields are not in the
+                  delivered profile shape — "—". */}
+              <p className="text-sm">
+                <strong>Phone:</strong> —
               </p>
               <p className="text-sm">
-                <strong>Segment:</strong> {profile.segment}
+                <strong>KYC:</strong> —
               </p>
-              <p className="text-sm">
-                <strong>KYC:</strong> {profile.kycStatus}
+            </div>
+            <div className="border rounded p-4">
+              <p className="text-sm text-muted-foreground">Lifetime Value</p>
+              <p className="text-2xl font-bold text-muted-foreground">—</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                no LTV model attached
               </p>
-              <p className="text-sm">
-                <strong>Risk Score:</strong> {profile.riskScore}
-              </p>
-              <p className="text-sm">
-                <strong>Account Age:</strong> {profile.accountAge}
-              </p>
-              <p className="text-sm">
-                <strong>Lifetime Value:</strong> ₦
-                {profile.lifetimeValue.toLocaleString()}
-              </p>
+            </div>
+            <div className="border rounded p-4">
               <button
-                className="mt-3 px-3 py-1 bg-blue-600 text-white rounded text-xs"
-                onClick={() => sentiment.mutate({ customerId: profile.id })}
+                className="border rounded px-4 py-2 text-sm"
+                onClick={analyzeSentiment}
               >
                 Analyze Sentiment
               </button>
-              {sentiment.data && (
-                <div className="mt-2 text-xs">
-                  <p>
-                    Sentiment: <strong>{sentiment.data.sentiment}</strong> (
-                    {(sentiment.data.score * 100).toFixed(0)}%)
-                  </p>
-                  <p>Keywords: {sentiment.data.keywords.join(", ")}</p>
-                </div>
-              )}
-            </div>
-            <div className="border rounded p-4 col-span-2">
-              <h3 className="font-semibold text-sm mb-2">
-                Recent Interactions
-              </h3>
-              <div className="space-y-2">
-                {profile.interactions.map((i, idx) => (
-                  <div
-                    key={idx}
-                    className="flex justify-between items-center border-b pb-2"
-                  >
-                    <div>
-                      <p className="text-sm">{i.description}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {i.channel}
-                      </p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(i.date).toLocaleDateString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
