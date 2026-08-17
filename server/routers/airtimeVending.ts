@@ -228,7 +228,7 @@ export const airtimeVendingRouter = router({
           message: "data vending is not delivered (no data tx type)",
         });
       }
-      const txnType: "Airtime" = "Airtime";
+      const txnType = "Airtime" as const;
       const results = await db.select().from(transactions)
         .where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, txnType)))
         .orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);

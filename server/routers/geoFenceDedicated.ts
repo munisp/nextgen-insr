@@ -3,8 +3,8 @@ import { desc } from "drizzle-orm";
 import { z } from "zod";
 
 import { geofenceZones } from "../../drizzle/schema";
-import { getDb } from "../db";
 import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
 
 export const geoFenceDedicatedRouter = router({
   zones: protectedProcedure.query(async () => {
