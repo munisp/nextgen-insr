@@ -95,7 +95,7 @@ export default function CrossBorderRemittanceHub() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(list.data?.insurance_regions ?? [])
+                  {(list.data?.data ?? [])
                     .filter(
                       (item: any) =>
                         !search ||

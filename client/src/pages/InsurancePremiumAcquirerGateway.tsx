@@ -95,7 +95,7 @@ export default function MerchantAcquirerGateway() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(list.data?.merchants ?? [])
+                  {(list.data?.data ?? [])
                     .filter(
                       (item: any) =>
                         !search ||

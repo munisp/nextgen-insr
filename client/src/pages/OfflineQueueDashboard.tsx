@@ -7,7 +7,7 @@ export default function OfflineQueueDashboard() {
   // does not exist at all. Honest unavailable state; the status query stays
   // wired so a loud backend error surfaces if the queue is ever delivered.
   const { isError } = trpc.offlineQueue.getQueueStatus.useQuery(
-    {},
+    undefined,
     { retry: false }
   );
 

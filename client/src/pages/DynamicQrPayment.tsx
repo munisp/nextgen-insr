@@ -95,7 +95,7 @@ export default function DynamicQrPayment() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(list.data?.payments ?? [])
+                  {(list.data?.data ?? [])
                     .filter(
                       (item: any) =>
                         !search ||

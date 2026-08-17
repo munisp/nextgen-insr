@@ -353,7 +353,7 @@ export default function GeofenceZoneEditor() {
                         className="h-6 w-6 text-red-400"
                         onClick={() => {
                           if (confirm(`Delete zone "${z.name}"?`))
-                            deleteZone.mutate({ id: z.id });
+                            deleteZone.mutate({ zoneId: String(z.id) });
                         }}
                       >
                         <Trash2 className="w-3 h-3" />

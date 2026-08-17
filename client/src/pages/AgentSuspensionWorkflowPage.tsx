@@ -110,7 +110,7 @@ export default function AgentSuspensionWorkflowPage() {
                       onClick={() =>
                         suspendMut.mutate({
                           id: a.id,
-                          reason: "Compliance review",
+                          data: { reason: "Compliance review" },
                         })
                       }
                     >

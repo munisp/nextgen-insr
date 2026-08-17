@@ -127,7 +127,7 @@ export default function PBACManagement() {
     ? assignmentsAll.filter(
         a =>
           a.id.toLowerCase().includes(userSearch.toLowerCase()) ||
-          (a.userName ?? "").toLowerCase().includes(userSearch.toLowerCase()) ||
+          (a.userId ?? "").toLowerCase().includes(userSearch.toLowerCase()) ||
           (a.role ?? "").toLowerCase().includes(userSearch.toLowerCase())
       )
     : assignmentsAll;

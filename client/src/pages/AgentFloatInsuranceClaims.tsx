@@ -61,7 +61,7 @@ export default function AgentFloatInsuranceClaims() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Total Claims</p>
                 <p className="text-xl font-bold text-blue-400">
-                  {String(stats?.total ?? "—")}
+                  {String(stats?.totalClaims ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">

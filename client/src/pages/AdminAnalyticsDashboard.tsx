@@ -91,7 +91,7 @@ function TransactionVolumeChart() {
   // F-12 (wave-4b): analyticsDashboard.transactionVolume is fail-loud NOT_IMPLEMENTED —
   // the query stays wired (a loud error surfaces if the surface is ever
   // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.transactionVolume.useQuery();
+  const { isError } = trpc.analyticsDashboard.transactionVolume.useQuery({});
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">

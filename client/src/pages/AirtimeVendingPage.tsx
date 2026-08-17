@@ -132,7 +132,7 @@ export default function AirtimeVendingPage() {
                     {(tab === "airtime"
                       ? airtimeTxns
                       : dataTxns
-                    ).data?.transactions?.map((t: any) => (
+                    ).data?.data?.map((t: any) => (
                       <tr key={t.id} className="border-b">
                         <td className="p-2 font-mono text-xs">{t.reference}</td>
                         <td className="p-2">

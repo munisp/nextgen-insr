@@ -124,7 +124,7 @@ export default function BillPaymentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {payments.data?.payments?.map((p: any) => (
+                  {payments.data?.data?.map((p: any) => (
                     <tr key={p.id} className="border-b">
                       <td className="p-2 font-mono text-xs">{p.reference}</td>
                       <td className="p-2">{p.billerName}</td>

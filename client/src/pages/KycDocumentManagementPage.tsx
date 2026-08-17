@@ -110,7 +110,7 @@ export default function KycDocumentManagementPage() {
                         size="sm"
                         variant="destructive"
                         onClick={() =>
-                          rejectMut.mutate({ id: d.id, reason: "Incomplete" })
+                          rejectMut.mutate({ id: d.id, data: { reason: "Incomplete" } })
                         }
                       >
                         Reject

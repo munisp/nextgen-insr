@@ -95,7 +95,7 @@ export default function SmartContractPayment() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(list.data?.contracts ?? [])
+                  {(list.data?.data ?? [])
                     .filter(
                       (item: any) =>
                         !search ||

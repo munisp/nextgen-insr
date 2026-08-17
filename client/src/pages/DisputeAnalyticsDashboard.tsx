@@ -455,7 +455,7 @@ export default function DisputeAnalyticsDashboard() {
                 <CardContent className="pt-4 text-center">
                   <p className="text-xs text-muted-foreground">Trend</p>
                   <p className="text-2xl font-bold flex items-center justify-center gap-1">
-                    {trends.data?.trendDirection === "improving" ? (
+                    {trends.data?.trendDirection === "down" ? (
                       <>
                         <TrendingDown className="h-5 w-5 text-green-500" />{" "}
                         Improving

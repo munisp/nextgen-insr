@@ -48,7 +48,7 @@ export default function ComplianceAutomationPage() {
                   className="flex justify-between items-center border-b pb-2"
                 >
                   <p className="font-medium text-sm">
-                    {r.name ?? `Record #${r.id}`}
+                    {`Record #${r.id}`}
                   </p>
                 </div>
               ))}

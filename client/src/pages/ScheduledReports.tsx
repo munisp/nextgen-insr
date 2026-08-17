@@ -56,7 +56,7 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
   const [recipients, setRecipients] = useState("admin@insureportal.com");
   const [hour, setHour] = useState(18);
   const [minute, setMinute] = useState(0);
-  const [format, setFormat] = useState<"html" | "pdf">("html");
+  const [format, setFormat] = useState<"pdf" | "csv" | "xlsx">("pdf");
 
   const { data: templates } = trpc.scheduledReports.templates.useQuery(undefined, { retry: false });
   const createMutation = trpc.scheduledReports.createSchedule.useMutation({
@@ -168,7 +168,8 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="html">HTML</SelectItem>
+                  <SelectItem value="csv">CSV</SelectItem>
+                  <SelectItem value="xlsx">XLSX</SelectItem>
                   <SelectItem value="pdf">PDF</SelectItem>
                 </SelectContent>
               </Select>

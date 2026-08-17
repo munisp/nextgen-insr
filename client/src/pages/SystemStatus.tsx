@@ -199,7 +199,7 @@ export default function SystemStatus() {
                     <Clock className="h-3 w-3" />
                     {check.latency}ms
                   </div>
-                  <Badge className={statusColors[check.status]}>
+                  <Badge className={statusColors[check.status as keyof typeof statusColors] ?? ""}>
                     {check.status}
                   </Badge>
                 </div>

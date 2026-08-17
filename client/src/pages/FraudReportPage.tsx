@@ -23,7 +23,7 @@ export default function FraudReportPage() {
   const [tab, setTab] = useState("generate");
 
   const listReports = trpc.fraudReport.listReports.useQuery();
-  const quickStats = trpc.fraudReport.quickStats.useQuery({ year, month });
+  const quickStats = trpc.fraudReport.quickStats.useQuery();
   const reportDetail = trpc.fraudReport.getReport.useQuery(
     { reportId: selectedReport ?? "" },
     { enabled: !!selectedReport }
