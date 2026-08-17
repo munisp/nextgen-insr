@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useRef, useState } from "react";
 import {
   PieChart, Pie, Cell, AreaChart, Area,
@@ -49,19 +48,15 @@ export default function BillingAnalyticsDashboardPage() {
   const chartsRef = useRef<Record<string, Chart>>({});
 
   // Fetch analytics data
-  // @ts-ignore Sprint 85
   const cohortData = trpc.billingProduction.getCohortAnalytics.useQuery(
-    // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
     { period: period === "12m" ? 12 : period === "6m" ? 6 : 3 },
     { enabled: !!user }
   );
-  // @ts-ignore Sprint 85
   const forecastData = trpc.billingProduction.getRevenueForecast.useQuery(
     { months: period === "12m" ? 12 : period === "6m" ? 6 : 3 },
     { enabled: !!user }
   );
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const dashboardData = trpc.liveBillingDashboard.getMetrics.useQuery(
+  const dashboardData = trpc.liveBillingDashboard.getSummary.useQuery(
     undefined,
     { enabled: !!user }
   );
@@ -163,7 +158,6 @@ export default function BillingAnalyticsDashboardPage() {
 
     // Churn Rate Chart (real series only)
     if (churnChartRef.current && churnTrend.length > 0) {
-      // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
       chartsRef.current.churn = new Chart(churnChartRef.current, {
         type: "line",
         data: {

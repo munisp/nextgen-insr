@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,27 +11,28 @@ export default function BulkNotifSender() {
   const [channel, setChannel] = useState<"email" | "sms" | "push">("email");
   const [recipientCount, setRecipientCount] = useState(100);
 
-  const campaignsQ = trpc.bulkNotif.listCampaigns.useQuery();
+  // F-12 (S87-02): bulkNotif delivers only sendBulk — campaign listing and
+  // lifecycle mutations (createCampaign/startCampaign/pauseCampaign) are NOT
+  // delivered. The campaigns list renders an honest empty state and the
+  // lifecycle actions fail loud at runtime instead of calling phantoms.
+  const campaignsQ: {
+    data?: {
+      total?: number;
+      campaigns?: Array<{
+        id: number; name: string; status: string; channel?: string;
+        progress?: number; recipientCount?: number; sentCount?: number;
+        failedCount?: number; createdAt?: string | Date;
+      }>;
+    };
+    isLoading: boolean;
+    refetch: () => void;
+  } = { data: undefined, isLoading: false, refetch: () => {} };
   const templatesQ = trpc.notifTemplates.list.useQuery({ channel });
-  const createCampaign = trpc.bulkNotif.createCampaign.useMutation({
-    onSuccess: () => {
-      campaignsQ.refetch();
-      toast.success("Campaign created");
-      setName("");
-    },
-  });
-  const startCampaign = trpc.bulkNotif.startCampaign.useMutation({
-    onSuccess: () => {
-      campaignsQ.refetch();
-      toast.success("Campaign started");
-    },
-  });
-  const pauseCampaign = trpc.bulkNotif.pauseCampaign.useMutation({
-    onSuccess: () => {
-      campaignsQ.refetch();
-      toast.success("Campaign paused");
-    },
-  });
+  const loud = (action: string) => () =>
+    toast.error(`Campaign ${action} is not available on this deployment`);
+  const createCampaign = { mutate: loud("creation"), isPending: false };
+  const startCampaign = { mutate: loud("start"), isPending: false };
+  const pauseCampaign = { mutate: loud("pause"), isPending: false };
 
   const statusColor: Record<string, string> = {
     draft: "bg-gray-500",
@@ -116,7 +116,7 @@ export default function BulkNotifSender() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {campaignsQ.data?.campaigns.map(camp => (
+              {campaignsQ.data?.campaigns?.map(camp => (
                 <div key={camp.id} className="bg-gray-800 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">

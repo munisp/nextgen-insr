@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -13,14 +12,17 @@ export default function BulkOperationsPage() {
     type: filter || undefined,
     limit: 20,
   });
-  const analytics = trpc.bulkOps.analytics.useQuery();
+  // F-12 (S87-02): bulkOps.analytics is not delivered — stats render "—".
+  const analytics: { data?: Record<string, number> } = { data: undefined };
   const utils = trpc.useUtils();
-  const cancelJob = trpc.bulkOps.cancel.useMutation({
+  const cancelJob = trpc.bulkOps.cancelBatch.useMutation({
     onSuccess: () => utils.bulkOps.list.invalidate(),
   });
-  const retryJob = trpc.bulkOps.retry.useMutation({
-    onSuccess: () => utils.bulkOps.list.invalidate(),
-  });
+  // F-12 (S87-02): bulkOps.retry is not delivered — the action fails loud.
+  const retryJob = {
+    mutate: () => toast.error("Batch retry is not available on this deployment"),
+    isPending: false,
+  };
 
   const statusColors: Record<
     string,

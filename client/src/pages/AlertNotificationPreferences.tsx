@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -73,47 +72,30 @@ export default function AlertNotificationPreferences() {
     data: preferences,
     isLoading: loadingPrefs,
     refetch: refetchPrefs,
-    // @ts-ignore Sprint 85
   } = trpc.alertNotifications.listPreferences.useQuery();
   const { data: deliveryStats, isLoading: loadingStats } =
-    // @ts-ignore Sprint 85
-    trpc.alertNotifications.getDeliveryStats.useQuery();
+    trpc.alertNotifications.getStats.useQuery();
   const { data: escalationRules } =
-    // @ts-ignore Sprint 85
     trpc.alertNotifications.listEscalationRules.useQuery();
   const { data: deliveryHistory, refetch: refetchHistory } =
-    // @ts-ignore Sprint 85
-    trpc.alertNotifications.getDeliveryHistory.useQuery({ limit: 20 });
-
-  // @ts-ignore Sprint 85
+    trpc.alertNotifications.list.useQuery({ limit: 20 });
   const updatePref = trpc.alertNotifications.updatePreference.useMutation({
     onSuccess: () => {
       toast("Preferences updated successfully");
       refetchPrefs();
     },
-    // @ts-ignore Sprint 85
     onError: err => toast.error(`Failed to update: ${err.message}`),
   });
-
-  // @ts-ignore Sprint 85
   const updateRule = trpc.alertNotifications.updateEscalationRule.useMutation({
     onSuccess: () => toast("Escalation rule updated"),
   });
 
-  // @ts-ignore Sprint 85
-  const sendTest = trpc.alertNotifications.sendTestAlert.useMutation({
-    // @ts-ignore Sprint 85
-    onSuccess: data => {
-      if (data.success) {
-        toast.success(`Test alert sent! ${data.deliveryCount} deliveries`);
-      } else {
-        toast.error("Test alert failed to deliver");
-      }
-      refetchHistory();
-    },
-    // @ts-ignore Sprint 85
-    onError: err => toast.error(`Test failed: ${err.message}`),
-  });
+  // F-12 (S87-02): alertNotifications.sendTestAlert is not delivered — the
+  // action fails loud at runtime instead of calling a phantom procedure.
+  const sendTest = {
+    mutate: () => toast.error("Test-alert delivery is not available on this deployment"),
+    isPending: false,
+  };
 
   const currentPref =
     preferences?.find((p: any) => p.adminId === selectedAdmin) ??

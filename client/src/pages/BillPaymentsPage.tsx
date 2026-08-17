@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -9,12 +8,12 @@ import { Zap, Tv, Droplets, Receipt } from "lucide-react";
 
 export default function BillPaymentsPage() {
   const [category, setCategory] = useState<string>("");
-  const payments = trpc.billPayments.history.useQuery({
+  const payments = trpc.billPayments.getHistory.useQuery({
     category: category || undefined,
     limit: 20,
   });
-  const billers = trpc.billPayments.billers.useQuery();
-  const analytics = trpc.billPayments.analytics.useQuery();
+  const billers = trpc.billPayments.getBillers.useQuery();
+  const analytics = trpc.billPayments.getSummary.useQuery();
 
   const categories = [
     { key: "electricity", label: "Electricity", icon: Zap },

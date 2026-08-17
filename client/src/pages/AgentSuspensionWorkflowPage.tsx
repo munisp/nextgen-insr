@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,16 +8,13 @@ import { Ban, Search, UserX, UserCheck, AlertTriangle } from "lucide-react";
 
 export default function AgentSuspensionWorkflowPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data, isLoading } = trpc.agentSuspensionWorkflow.list.useQuery();
   const suspendMut = trpc.agentSuspensionWorkflow.suspend.useMutation({
     onSuccess: () => toast.success("Agent suspended"),
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const reinstateMut = trpc.agentSuspensionWorkflow.reinstate.useMutation({
+  const reinstateMut = trpc.agentSuspensionWorkflow.lift.useMutation({
     onSuccess: () => toast.success("Agent reinstated"),
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const agents = (data?.agents || []).filter(
     (a: any) => !search || a.name?.toLowerCase().includes(search.toLowerCase())
   );
