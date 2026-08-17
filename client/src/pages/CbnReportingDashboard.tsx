@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { AlertTriangle, DollarSign, FileText, CheckCircle } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import KpiCard from "@/components/KpiCard";
 
@@ -31,10 +32,10 @@ export default function CbnReportingDashboard() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KpiCard title="SARs Filed (YTD)" value={isLoading ? "…" : String(d.totalSars ?? 0)} icon="🚨" />
-          <KpiCard title="LARs Filed (YTD)" value={isLoading ? "…" : "—"} icon="💰" />
-          <KpiCard title="CTRs Filed" value={isLoading ? "…" : String(d.pendingSubmissions ?? 0)} icon="📋" />
-          <KpiCard title="Compliance Score" value={isLoading ? "…" : "—"} icon="✅" trend="up" trendValue="—" />
+          <KpiCard title="SARs Filed (YTD)" value={isLoading ? "…" : String(d.totalSars ?? 0)} icon={AlertTriangle} />
+          <KpiCard title="LARs Filed (YTD)" value={isLoading ? "…" : "—"} icon={DollarSign} />
+          <KpiCard title="CTRs Filed" value={isLoading ? "…" : String(d.pendingSubmissions ?? 0)} icon={FileText} />
+          <KpiCard title="Compliance Score" value={isLoading ? "…" : "—"} icon={CheckCircle} trend="up" trendValue="—" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
