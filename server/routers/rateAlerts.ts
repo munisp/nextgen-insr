@@ -200,6 +200,34 @@ export const rateAlertsRouter = router({
       await database.update(rateAlerts).set({ status: next }).where(eq(rateAlerts.id, row.id));
       return { success: true, status: next };
     }),
+  // F-12 (wave-4b, audit FAIL-1): rearm was called by the client + asserted
+  // by tests but never implemented — real session-scoped rearm: reset a
+  // triggered alert back to active.
+  rearm: protectedProcedure
+    .input(z.object({ id: z.union([z.number(), z.string()]) }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+      }
+      const [row] = await database
+        .select()
+        .from(rateAlerts)
+        .where(and(eq(rateAlerts.id, Number(input.id)), eq(rateAlerts.agentId, ctx.user.id)))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "rate alert not found" });
+      if (row.status !== "triggered") {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "only a triggered alert can be rearmed",
+        });
+      }
+      await database
+        .update(rateAlerts)
+        .set({ status: "active", triggeredAt: null })
+        .where(eq(rateAlerts.id, row.id));
+      return { success: true, status: "active" };
+    }),
   // Rate alert subscriptions with threshold logic
   subscribe: protectedProcedure
     .input(

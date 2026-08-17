@@ -112,14 +112,15 @@ export const advancedBiReportingRouter = router({
       message: "reportBuilder: no BI reporting backend is delivered on this platform",
     });
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): facade — fabricated a reportId and
+  // a "generating" status with no report engine. Fail loud.
   generateReport: publicProcedure
     .input(z.object({ templateId: z.string().optional() }).optional())
     .mutation(async () => {
-      return {
-        reportId: "RPT-" + Date.now(),
-        status: "generating",
-        estimatedTime: 30,
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "generateReport: no BI reporting backend is delivered on this platform",
+      });
     }),
 
   // F-12 (wave-4b): was a hardcoded fixture (plausible-looking report/KPI

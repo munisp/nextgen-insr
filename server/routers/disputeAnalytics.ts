@@ -53,8 +53,26 @@ export const disputeAnalyticsRouter = router({
           .where(sql`${disputes.resolvedAt} IS NOT NULL`);
         return Math.round(Number(r?.v ?? 0));
       })(),
-      refundRate: 0.15,
-      slaCompliance: 0.95,
+      // F-12 (wave-4b, audit FAIL-2): refundRate/slaCompliance were fixtures
+      // (0.15/0.95) — now real aggregates; honest 0 when the denominator is
+      // empty (a zero rate, not a cosmetic 100).
+      refundRate: await (async () => {
+        const [r] = await db.select({ value: count() }).from(refunds);
+        return Number(total.value) > 0
+          ? Math.round((Number(r.value) / Number(total.value)) * 1000) / 1000
+          : 0;
+      })(),
+      slaCompliance: await (async () => {
+        const [w] = await db
+          .select({ value: count() })
+          .from(disputes)
+          .where(
+            sql`${disputes.resolvedAt} IS NOT NULL AND ${disputes.resolvedAt} <= ${disputes.slaDeadlineAt}`
+          );
+        return Number(resolved.value) > 0
+          ? Math.round((Number(w.value) / Number(resolved.value)) * 100) / 100
+          : 0;
+      })(),
     };
   }),
   getTrendData: protectedProcedure
@@ -240,7 +258,7 @@ export const disputeAnalyticsRouter = router({
       slaCompliance:
         Number(resolved.value) > 0
           ? Math.round((Number(withinSla.value) / Number(resolved.value)) * 100)
-          : 100,
+          : 0, // F-12 (audit FAIL-2): was cosmetic 100
       byCategory: catRows.map(r => ({
         category: r.category,
         count: Number(r.cnt),
@@ -265,12 +283,12 @@ export const disputeAnalyticsRouter = router({
       complianceRate:
         Number(total.value) > 0
           ? Math.round((Number(withinSla.value) / Number(total.value)) * 100)
-          : 100,
+          : 0, // F-12 (audit FAIL-2): was cosmetic 100
       // F-12 (wave-4b): was fixture 0.92 — now the real computed rate.
       overallCompliance:
         Number(total.value) > 0
           ? Number(withinSla.value) / Number(total.value)
-          : 1,
+          : 0, // F-12 (audit FAIL-2): was cosmetic 1
       byPriority: [
         { priority: "high", compliance: 0.95 },
         { priority: "medium", compliance: 0.9 },

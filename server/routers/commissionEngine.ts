@@ -384,8 +384,9 @@ export const commissionEngineRouter = router({
     try {
       await defaultsReady; // guarantee the default tier/split structure (F-12)
       const db = await getDb();
-      if (!db || (db as any)._isNoop)
-        return { tiers: memTiers.map(t => formatTier(t)) };
+      // F-12 (wave-4b, audit FAIL-3 sweep): the noop-db and empty-result
+      // fallbacks served SEED tiers as if live — honest empty instead.
+      if (!db || (db as any)._isNoop) return { tiers: [] };
       const rows = await db
         .select()
         .from(commissionTiers)
@@ -394,11 +395,15 @@ export const commissionEngineRouter = router({
       const formatted = Array.isArray(rows)
         ? rows.filter((r: any) => r.tierId || r.name).map(formatTier)
         : [];
-      if (formatted.length === 0)
-        return { tiers: memTiers.map(t => formatTier(t)) };
       return { tiers: formatted };
-    } catch {
-      return { tiers: memTiers.map(t => formatTier(t)) };
+    } catch (error) {
+      // F-12 (audit FAIL-3 sweep): error fallback served seed tiers as if
+      // live — rethrow loud instead.
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "failed to list tiers",
+      });
     }
   }),
 

@@ -113,23 +113,15 @@ export const retryQueueRouter = router({
       .limit(10);
     return { items: rows, total: rows.length };
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   retry: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          retriedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "retry: no retry-queue backend is delivered",
+      });
     }),
 });
 
@@ -156,32 +148,23 @@ export const digestRouter = router({
 
 // Rate Limit Dashboard Router
 export const rateLimitDashboardRouter = router({
+  // F-12 (wave-4b, audit FAIL-3 sweep): fixture rate-limit status — no
+  // rate-limit telemetry is delivered. Fail loud.
   getStatus: protectedProcedure.query(async () => {
-    return {
-      endpoints: [],
-      globalLimit: 1000,
-      currentUsage: 0,
-      windowMs: 60000,
-      resetAt: new Date(Date.now() + 60000).toISOString(),
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "rateLimitDashboard.getStatus: no rate-limit telemetry is delivered",
+    });
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   updateLimit: protectedProcedure
     .input(z.object({ endpoint: z.string(), limit: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          endpoint: input.endpoint,
-          newLimit: input.limit,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "updateLimit: no rate-limit store is delivered",
+      });
     }),
 });
 
@@ -195,23 +178,15 @@ export const sysConfigRouter = router({
       .limit(100);
     return { configs: [], tenantCount: total };
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   update: protectedProcedure
     .input(z.object({ key: z.string(), value: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          key: input.key,
-          updatedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "update: no system-config store is delivered",
+      });
     }),
 });
 
@@ -220,23 +195,15 @@ export const sessionMgmtRouter = router({
   listActive: protectedProcedure.query(async () => {
     return { sessions: [], total: 0 };
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   revoke: protectedProcedure
     .input(z.object({ sessionId: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          sessionId: input.sessionId,
-          revokedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "revoke: no session store is delivered",
+      });
     }),
 });
 
@@ -321,23 +288,15 @@ export const webhookRetryRouter = router({
     const rows = await db.select().from(webhookEndpoints).limit(10);
     return { items: rows, total: rows.length };
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   retryWebhook: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          retriedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "retryWebhook: no webhook-retry backend is delivered",
+      });
     }),
 });
 
@@ -355,25 +314,17 @@ export const eventBusRouter = router({
       activeSubscribers: 0,
     };
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   publish: protectedProcedure
     .input(
       z.object({ topic: z.string(), payload: z.record(z.string(), z.any()) })
     )
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          topic: input.topic,
-          publishedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "publish: no event-bus backend is delivered",
+      });
     }),
 });
 
@@ -439,14 +390,14 @@ export const cacheRouter = router({
 
 // Notification Analytics Router
 export const notificationAnalyticsRouter = router({
+  // F-12 (wave-4b, audit FAIL-3 sweep): zero counts + a fabricated 100%
+  // delivery rate — no notification-analytics pipeline is delivered. Fail
+  // loud.
   getStats: protectedProcedure.query(async () => {
-    return {
-      totalSent: 0,
-      totalDelivered: 0,
-      totalFailed: 0,
-      deliveryRate: 1.0,
-      channels: { sms: 0, email: 0, push: 0 },
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "notificationAnalytics.getStats: no notification-analytics pipeline is delivered",
+    });
   }),
   getChannelBreakdown: protectedProcedure
     .input(
@@ -468,15 +419,16 @@ export const notificationAnalyticsRouter = router({
 
 // User Quiet Hours Router
 export const userQuietHoursRouter = router({
+  // F-12 (wave-4b, audit FAIL-3 sweep): fixture quiet-hours — no store is
+  // delivered. Fail loud.
   get: protectedProcedure.query(async () => {
-    return {
-      enabled: false,
-      startHour: 22,
-      endHour: 7,
-      timezone: "UTC",
-      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "quietHours.get: no quiet-hours store is delivered",
+    });
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a quiet-hours store is delivered.
   update: protectedProcedure
     .input(
       z.object({
@@ -485,17 +437,11 @@ export const userQuietHoursRouter = router({
         endHour: z.number().min(0).max(23),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        return { success: true, ...input };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "quietHours.update: no quiet-hours store is delivered",
+      });
     }),
 });
 
