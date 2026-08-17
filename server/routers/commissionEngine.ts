@@ -884,7 +884,29 @@ export const commissionEngineRouter = router({
         // [Dapr] Check calculation cache
         const cacheKey = `sim:${input.transactionType}:${input.amount}:${input.agentRole}`;
         const cached = await daprGetCommissionState(cacheKey);
-        if (cached) return cached;
+        // F-12 (wave-4b): cached state is unknown — narrow to the simulation
+        // result shape so the procedure's output type stays honest.
+        if (
+          cached &&
+          typeof cached === "object" &&
+          "commission" in cached &&
+          "total" in cached
+        ) {
+          const c = cached as {
+            commission: number;
+            bonus?: number;
+            total: number;
+            tier?: string;
+            breakdown?: Record<string, number>;
+          };
+          return {
+            commission: c.commission,
+            bonus: c.bonus ?? 0,
+            total: c.total,
+            tier: c.tier ?? "N/A",
+            breakdown: c.breakdown ?? {},
+          };
+        }
 
         const db = await getDb();
         let tiers: any[] = [];
@@ -1125,14 +1147,16 @@ export const commissionEngineRouter = router({
   analytics: protectedProcedure.query(async () => {
     await defaultsReady; // guarantee the default tier/split structure (F-12)
     const db = await getDb();
+    // F-12 (wave-4b): db-null fallback returned fixtures (tiers: 9,
+    // avgRate: 0.0078) — honest zeros instead.
     if (!db)
       return {
         totalPayouts: 0,
         totalPaid: 0,
         totalPending: 0,
-        tiers: 9,
-        splits: 5,
-        avgRate: 0.0078,
+        tiers: 0,
+        splits: 0,
+        avgRate: 0,
       };
 
     const [tierCount] = await db
