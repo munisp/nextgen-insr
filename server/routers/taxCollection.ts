@@ -149,16 +149,12 @@ export const taxCollectionRouter = router({
       message: "history: no delivered store on this platform",
     });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalPayments: 15000,
-      totalVolume: 15000000,
-      totalCommission: 750000,
-      totalCollected: 15000000,
-      totalRemitted: 14500000,
-      pending: 500000,
-      byType: { VAT: 10000000, WHT: 5000000 },
-      successRate: 97.5,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

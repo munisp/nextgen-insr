@@ -184,15 +184,12 @@ export const savingsProductsRouter = router({
       message: "list: no delivered store on this platform",
     });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalAccounts: 200,
-      activeAccounts: 180,
-      totalBalance: 50000000,
-      avgBalance: 250000,
-      interestPaid: 4000000,
-      totalDeposits: 750000000,
-      totalInterestPaid: 4000000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

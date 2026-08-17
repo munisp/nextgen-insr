@@ -149,15 +149,12 @@ export const pensionCollectionRouter = router({
       message: "history: no delivered store on this platform",
     });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalContributions: 5000,
-      totalVolume: 25000000,
-      totalCommission: 1250000,
-      totalCollected: 25000000,
-      totalRemitted: 24000000,
-      activePfas: 12,
-      avgContribution: 45000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

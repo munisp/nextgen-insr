@@ -357,7 +357,12 @@ export const offlineSyncRouter = router({
       message: "queue: no delivered store on this platform",
     });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return { total: 25, queued: 3, synced: 20, conflicts: 2, avgSyncTime: 5.2 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

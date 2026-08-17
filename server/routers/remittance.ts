@@ -149,19 +149,12 @@ export const remittanceRouter = router({
       message: "history: no remittance-history store is delivered",
     });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalTransactions: 2000,
-      totalRemittances: 2000,
-      totalVolume: 500000000,
-      totalFees: 5000000,
-      totalCommission: 2500000,
-      avgAmount: 250000,
-      topInsuranceRegions: [{ insurance_region: "UK-NG", volume: 200000000 }],
-      byPartner: [
-        { partner: "WorldRemit", volume: 300000000, count: 1200 },
-        { partner: "Flutterwave", volume: 200000000, count: 800 },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

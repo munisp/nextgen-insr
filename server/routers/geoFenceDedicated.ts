@@ -38,13 +38,12 @@ export const geoFenceDedicatedRouter = router({
       message: "agentLocations: no agent location-telemetry store is delivered",
     });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalZones: 15,
-      activeZones: 12,
-      totalAgentsTracked: 150,
-      complianceRate: 92,
-      onlineAgents: 130,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });
