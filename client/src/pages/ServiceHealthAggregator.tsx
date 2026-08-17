@@ -107,9 +107,9 @@ export default function ServiceHealthAggregator() {
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-gray-400">
-                        {svc.latencyMs}ms
+                        —
                       </div>
-                      <div className="text-xs text-gray-500">{svc.uptime}</div>
+                      <div className="text-xs text-gray-500">—</div>
                     </div>
                   </div>
                 ))}

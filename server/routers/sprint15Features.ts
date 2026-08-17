@@ -9,6 +9,7 @@ import {
   tenants,
   auditLog,
   webhookEndpoints,
+  platform_health_checks,
 } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -378,44 +379,61 @@ export const eventBusRouter = router({
 
 // Service Health Router
 export const serviceHealthRouter = router({
+  // F-12 (wave-4b): was a hardcoded all-healthy fixture — now derived from
+  // the real platform_health_checks table (same source as
+  // systemHealthDashboard.getStatus). Latency/uptime have no delivered
+  // source and are not fabricated.
   getAll: protectedProcedure.query(async () => {
-    return {
-      services: [
-        { name: "database", status: "healthy", latencyMs: 5 },
-        { name: "cache", status: "healthy", latencyMs: 1 },
-        { name: "queue", status: "healthy", latencyMs: 3 },
-        { name: "storage", status: "healthy", latencyMs: 10 },
-      ],
-      overallStatus: "healthy",
-      checkedAt: new Date().toISOString(),
-    };
+    const db = await getDb();
+    if (!db) {
+      return {
+        services: [] as Array<{ name: string; status: string; lastChecked: number }>,
+        overallStatus: "unknown",
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    const checks = await db
+      .select()
+      .from(platform_health_checks)
+      .orderBy(desc(platform_health_checks.id))
+      .limit(50);
+    const serviceMap = new Map<string, typeof checks[number]>();
+    for (const check of checks) {
+      if (!serviceMap.has(check.serviceName)) {
+        serviceMap.set(check.serviceName, check);
+      }
+    }
+    const services = Array.from(serviceMap.values()).map(s => ({
+      name: s.serviceName,
+      status: s.checkType,
+      lastChecked: s.id,
+    }));
+    const unhealthy = services.filter(s => s.status === "error").length;
+    const overallStatus =
+      unhealthy === 0 ? "healthy" : unhealthy <= 2 ? "degraded" : "critical";
+    return { services, overallStatus, checkedAt: new Date().toISOString() };
   }),
 });
 
 // Cache Router
 export const cacheRouter = router({
+  // F-12 (wave-4b): was a hardcoded fixture (hitRate 0.95) — no cache
+  // telemetry source is delivered. Fail loud.
   getStats: protectedProcedure.query(async () => {
-    return {
-      hitRate: 0.95,
-      missRate: 0.05,
-      totalKeys: 0,
-      memoryUsageMb: 0,
-      evictions: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "cache.getStats: no cache telemetry source is delivered",
+    });
   }),
+  // F-12 (wave-4b): facade (returned success flushing nothing) — no cache
+  // admin surface is delivered. Fail loud.
   flush: protectedProcedure
     .input(z.object({ pattern: z.string().optional() }))
-    .mutation(async ({ input }) => {
-      try {
-        return { success: true, flushedKeys: 0, pattern: input.pattern ?? "*" };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "cache.flush: no cache admin surface is delivered",
+      });
     }),
 });
 
