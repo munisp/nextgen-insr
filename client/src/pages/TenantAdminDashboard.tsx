@@ -16,9 +16,9 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function TenantAdminDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: stats, isLoading } = (trpc as any).tenantAdmin?.getStats?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: tenants } = (trpc as any).tenantAdmin?.listTenants?.useQuery?.({ limit: 5 }) ?? { data: null };
-  const { data: dash } = (trpc as any).tenantAdmin?.dashboard?.useQuery?.() ?? { data: null };
+  const { data: stats, isLoading } = trpc.tenantAdmin.getStats.useQuery();
+  const { data: tenants } = trpc.tenantAdmin.listTenants.useQuery({ limit: 5 });
+  const { data: dash } = trpc.tenantAdmin.dashboard.useQuery();
 
   const s = stats ?? {};
   const d = dash ?? {};

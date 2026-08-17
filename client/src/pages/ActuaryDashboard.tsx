@@ -18,7 +18,7 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function ActuaryDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.actuaryKpi?.useQuery?.({}) ?? { data: null, isLoading: false };
+  const { data, isLoading } = trpc.insuranceKpiDashboard.actuaryKpi.useQuery({ periodDays: 90 });
   const kpi = data?.kpis ?? data ?? {};
 
   const cards: Array<{

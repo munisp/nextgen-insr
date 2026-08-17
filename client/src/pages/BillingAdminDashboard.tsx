@@ -18,7 +18,7 @@ import {
 export default function BillingAdminDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.getBillingAdminKpi?.useQuery?.() ?? { data: null, isLoading: false };
+  const { data, isLoading } = trpc.insuranceKpiDashboard.billingAdminKpi.useQuery({ periodDays: 30 });
   const kpi = data?.kpis ?? {};
 
   const cards: Array<{

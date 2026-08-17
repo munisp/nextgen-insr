@@ -16,9 +16,9 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function SecurityAuditDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).securityAudit?.getAuditChain?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: policies } = (trpc as any).securityAudit?.getPolicies?.useQuery?.() ?? { data: null };
-  const { data: mitigations } = (trpc as any).securityAudit?.getMitigations?.useQuery?.() ?? { data: null };
+  const { data, isLoading } = trpc.securityAudit.getAuditChain.useQuery({});
+  const { data: policies } = trpc.securityAudit.getPolicies.useQuery({});
+  const { data: mitigations } = trpc.securityAudit.getMitigations.useQuery({});
 
   const d = data ?? {};
   const cards = [

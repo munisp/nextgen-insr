@@ -16,9 +16,9 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function InfrastructureDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).platformHealthDash?.getHealth?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: metrics } = (trpc as any).platformMetricsExporter?.getMetrics?.useQuery?.() ?? { data: null };
-  const { data: network } = (trpc as any).networkTelemetry?.getNetworkStats?.useQuery?.() ?? { data: null };
+  const { data, isLoading } = trpc.platformHealthDash.getSummary.useQuery();
+  const { data: metrics } = trpc.platformMetricsExporter.list.useQuery({ limit: 100, offset: 0 });
+  const { data: network } = trpc.networkTelemetry.getSummary.useQuery();
 
   const h = data ?? {};
   const m = metrics ?? {};

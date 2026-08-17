@@ -16,8 +16,8 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function CarrierSlaDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: stats, isLoading } = (trpc as any).carrierSla?.getStats?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: carriers } = (trpc as any).carrierSla?.listCarriers?.useQuery?.({ limit: 10 }) ?? { data: null };
+  const { data: stats, isLoading } = trpc.carrierSla.getStats.useQuery();
+  const { data: carriers } = trpc.carrierSla.listCarriers.useQuery({ limit: 10 });
 
   const s = stats ?? {};
 

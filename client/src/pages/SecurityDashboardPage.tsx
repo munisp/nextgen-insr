@@ -16,10 +16,14 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function SecurityDashboardPage() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: scan, isLoading } = (trpc as any).securityAudit?.runSecurityScan?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: ddos } = (trpc as any).securityAudit?.getDDoSStatus?.useQuery?.() ?? { data: null };
-  const { data: backup } = (trpc as any).securityAudit?.getBackupStatus?.useQuery?.() ?? { data: null };
-  const { data: integrity } = (trpc as any).securityAudit?.getFileIntegrity?.useQuery?.() ?? { data: null };
+  // runSecurityScan is a MUTATION (it executes a real scan) — wired to the
+  // header "Run scan" button instead of auto-firing on page load.
+  const scanMutation = trpc.securityAudit.runSecurityScan.useMutation();
+  const scan = scanMutation.data;
+  const isLoading = scanMutation.isPending;
+  const { data: ddos } = trpc.securityAudit.getDDoSStatus.useQuery({});
+  const { data: backup } = trpc.securityAudit.getBackupStatus.useQuery({});
+  const { data: integrity } = trpc.securityAudit.getFileIntegrity.useQuery({});
 
   const s = scan ?? {};
   const cards = [
@@ -59,6 +63,14 @@ export default function SecurityDashboardPage() {
             <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Vulnerabilities · DDoS · Backups · Integrity</p>
           </div>
         </div>
+        <button
+          onClick={() => scanMutation.mutate({})}
+          disabled={scanMutation.isPending}
+          className="text-xs px-3 py-1.5 rounded-lg font-medium"
+          style={{ background: "var(--insurance-primary)", color: "#fff", opacity: scanMutation.isPending ? 0.6 : 1 }}
+        >
+          {scanMutation.isPending ? "Scanning…" : "Run scan"}
+        </button>
       </div>
       <div className="px-4 pt-4 space-y-6">
         <section>

@@ -13,7 +13,7 @@ import {
 export default function Ifrs17Dashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.getIfrs17Dashboard?.useQuery?.() ?? { data: null, isLoading: false };
+  const { data, isLoading } = trpc.insuranceKpiDashboard.ifrs17Dashboard.useQuery({ periodDays: 90 });
   const kpi = data?.kpis ?? {};
 
   const cards: Array<{

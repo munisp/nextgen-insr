@@ -16,9 +16,9 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function RansomwareAlertDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).ransomwareAlerts?.getStats?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: alerts } = (trpc as any).ransomwareAlerts?.getAlerts?.useQuery?.() ?? { data: null };
-  const { data: recent } = (trpc as any).ransomwareAlerts?.getRecent?.useQuery?.({ limit: 5 }) ?? { data: null };
+  const { data, isLoading } = trpc.ransomwareAlerts.getStats.useQuery();
+  const { data: alerts } = trpc.ransomwareAlerts.getAlerts.useQuery();
+  const { data: recent } = trpc.ransomwareAlerts.getRecent.useQuery({ limit: 5 });
 
   const s = data ?? {};
   const cards = [

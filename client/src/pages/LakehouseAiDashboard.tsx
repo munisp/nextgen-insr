@@ -16,12 +16,12 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function LakehouseAiDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: analytics, isLoading } = (trpc as any).lakehouseAiIntegration?.analytics?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: models } = (trpc as any).lakehouseAiIntegration?.listModels?.useQuery?.() ?? { data: null };
-  const { data: datasets } = (trpc as any).lakehouseAiIntegration?.listDatasets?.useQuery?.() ?? { data: null };
-  const { data: jobs } = (trpc as any).lakehouseAiIntegration?.listBatchJobs?.useQuery?.() ?? { data: null };
-  const { data: health } = (trpc as any).lakehouseAiIntegration?.health?.useQuery?.() ?? { data: null };
-  const { data: lineage } = (trpc as any).lakehouseAiIntegration?.dataLineage?.useQuery?.() ?? { data: null };
+  const { data: analytics, isLoading } = trpc.lakehouseAi.analytics.useQuery();
+  const { data: models } = trpc.lakehouseAi.listModels.useQuery();
+  const { data: datasets } = trpc.lakehouseAi.listDatasets.useQuery();
+  const { data: jobs } = trpc.lakehouseAi.listBatchJobs.useQuery();
+  const { data: health } = trpc.lakehouseAi.health.useQuery();
+  const { data: lineage } = trpc.lakehouseAi.dataLineage.useQuery();
 
   const a = analytics ?? {};
   const cards: Array<{

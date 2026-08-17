@@ -16,8 +16,8 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function RateLimitDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: rules, isLoading } = (trpc as any).rateLimitEngine?.listRules?.useQuery?.({ limit: 20 }) ?? { data: null, isLoading: false };
-  const { data: dashData } = (trpc as any).apiRateLimiterDash?.getDashboard?.useQuery?.() ?? { data: null };
+  const { data: rules, isLoading } = trpc.rateLimitEngine.listRules.useQuery({ page: 1, limit: 20 });
+  const { data: dashData } = trpc.apiRateLimiterDash.getSummary.useQuery();
 
   const d = dashData ?? {};
   const ruleList = (rules?.data ?? rules ?? []) as any[];

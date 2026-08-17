@@ -856,7 +856,9 @@ const ComplianceTrainingTracker = lazy(() => import("./pages/ComplianceTrainingT
 const ComponentShowcase = lazy(() => import("./pages/ComponentShowcase"));
 const CrossBorderRemittanceHub = lazy(() => import("./pages/CrossBorderRemittanceHub"));
 const InsurancePolicyCheckout = lazy(() => import("./pages/InsurancePolicyCheckout"));
-const InsuranceInsuranceAgentMerchantPortal = lazy(() => import("./pages/InsuranceInsuranceAgentMerchantPortal"));
+// F-12 (S87-05): the InsuranceInsuranceAgentMerchantPortal.tsx module was a pure
+// re-export alias; the lazy import now resolves the real page directly.
+const InsuranceInsuranceAgentMerchantPortal = lazy(() => import("./pages/InsuranceAgentMerchantPortal"));
 const InsurancePolicyOrderManagement = lazy(() => import("./pages/InsurancePolicyOrderManagement"));
 const InsuranceProductCatalog = lazy(() => import("./pages/InsuranceProductCatalog"));
 const Home = lazy(() => import("./pages/Home"));

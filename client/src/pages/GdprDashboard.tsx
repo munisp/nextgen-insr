@@ -16,10 +16,12 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function GdprDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).gdpr?.getDataRightsRequests?.useQuery?.({ limit: 20 }) ?? { data: null, isLoading: false };
-  const { data: summary } = (trpc as any).gdpr?.getDataRightsSummary?.useQuery?.() ?? { data: null };
+  const { data, isLoading } = trpc.gdpr.listDataRightsRequests.useQuery({ limit: 20, offset: 0 });
+  // F-12 (S87-05): no delivered GDPR summary procedure exists (the gdpr router
+  // exposes listDataRightsRequests/list only) — KPI summary fields degrade to
+  // their honest empty state instead of a phantom API.
+  const s: Record<string, number | string | undefined> = {};
 
-  const s = summary ?? {};
   const cards = [
     { title: "Data Requests (MTD)", value: s.total ?? (data?.total ?? "—"), icon: FileText, trend: "up" as const, trendValue: "NDPR", status: "neutral" as const, href: "/gdpr-dashboard", accent: "var(--insurance-primary)" },
     { title: "Erasure Requests", value: s.erasure ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "pending", status: "warning" as const, href: "/gdpr-dashboard", accent: "var(--risk-medium)" },
@@ -38,7 +40,7 @@ export default function GdprDashboard() {
 
   const monthlyTrend = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(); d.setMonth(d.getMonth() - 5 + i);
-    return { month: d.toLocaleDateString("en-NG", { month: "short" }), requests: Math.max(0, Number(s.total ?? 0) * (0.5 + Math.random() * 0.8)) };
+    return { month: d.toLocaleDateString("en-NG", { month: "short" }), requests: Number(data?.total ?? 0) };
   });
 
   return (

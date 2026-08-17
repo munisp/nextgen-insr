@@ -18,7 +18,7 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function RegulatorDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.regulatorKpi?.useQuery?.({ periodDays: 90 })?.useQuery?.({}) ?? { data: null, isLoading: false };
+  const { data, isLoading } = trpc.insuranceKpiDashboard.regulatorKpi.useQuery({ periodDays: 90 });
   const kpi = data?.market ?? data ?? {}; const comp = data?.compliance ?? {}; const cap = data?.capital ?? {};
 
   const cards = [

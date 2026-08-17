@@ -18,7 +18,7 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function ReinsurerDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.reinsurerKpi?.useQuery?.({ periodDays: 90 })?.useQuery?.({}) ?? { data: null, isLoading: false };
+  const { data, isLoading } = trpc.insuranceKpiDashboard.reinsurerKpi.useQuery({ periodDays: 90 });
   const kpi = data?.treaties ?? {}; const cess = data?.cessions ?? {}; const nr = data?.netRetentionRate ?? 0;
 
   const cards = [

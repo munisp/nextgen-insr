@@ -18,7 +18,7 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function ComplianceDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.complianceKpi?.useQuery?.({ periodDays: 30 })?.useQuery?.({}) ?? { data: null, isLoading: false };
+  const { data, isLoading } = trpc.insuranceKpiDashboard.complianceKpi.useQuery({ periodDays: 30 });
   const kpi = data?.checks ?? data ?? {}; const sar = data?.sar ?? {}; const kyc = data?.kyc ?? {};
 
   const cards = [

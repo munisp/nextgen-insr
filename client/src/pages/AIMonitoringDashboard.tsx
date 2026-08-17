@@ -16,11 +16,11 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function AIMonitoringDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: dash, isLoading } = (trpc as any).aiMonitoring?.dashboard?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: driftData } = (trpc as any).aiMonitoring?.driftAnalysis?.useQuery?.() ?? { data: null };
-  const { data: throughput } = (trpc as any).aiMonitoring?.throughputTimeSeries?.useQuery?.() ?? { data: null };
-  const { data: alertsData } = (trpc as any).aiMonitoring?.alerts?.useQuery?.() ?? { data: null };
-  const { data: healthData } = (trpc as any).aiMonitoring?.serviceHealth?.useQuery?.() ?? { data: null };
+  const { data: dash, isLoading } = trpc.aiMonitoring.dashboard.useQuery();
+  const { data: driftData } = trpc.aiMonitoring.driftAnalysis.useQuery();
+  const { data: throughput } = trpc.aiMonitoring.throughputTimeSeries.useQuery();
+  const { data: alertsData } = trpc.aiMonitoring.alerts.useQuery();
+  const { data: healthData } = trpc.aiMonitoring.serviceHealth.useQuery();
 
   const d = dash ?? {};
   const cards: Array<{

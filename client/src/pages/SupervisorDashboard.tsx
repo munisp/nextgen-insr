@@ -18,7 +18,7 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function SupervisorDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.supervisorKpi?.useQuery?.({ periodDays: 7 })?.useQuery?.({}) ?? { data: null, isLoading: false };
+  const { data, isLoading } = trpc.insuranceKpiDashboard.supervisorKpi.useQuery({ periodDays: 7 });
   const kpi = data?.agents ?? data ?? {}; const tx = data?.transactions ?? {};
 
   const cards = [

@@ -16,10 +16,14 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function BillingDashboardPage() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: ledger, isLoading } = (trpc as any).billingLedger?.aggregateRevenue?.useQuery?.({ periodDays: 30 }) ?? { data: null, isLoading: false };
-  const { data: metrics } = (trpc as any).billingLedger?.getLiveSplitMetrics?.useQuery?.() ?? { data: null };
-  const { data: invoices } = (trpc as any).billingInvoice?.list?.useQuery?.({ limit: 5 }) ?? { data: null };
-  const { data: kpi } = (trpc as any).insuranceKpiDashboard?.billingAdminKpi?.useQuery?.({ periodDays: 30 }) ?? { data: null };
+  const { data: ledger, isLoading } = trpc.billingLedger.aggregateRevenue.useQuery({ periodDays: 30 });
+  const { data: metrics } = trpc.billingLedger.getLiveSplitMetrics.useQuery();
+  // F-12 (S87-05): billingInvoice.list was a phantom API — the delivered
+  // listInvoices procedure is TENANT-scoped (requires tenantId) and this is a
+  // platform-level dashboard, so the recent-invoices section renders its
+  // honest empty state until a platform-level invoices feed is delivered.
+  const invoices = undefined as { data?: Array<Record<string, unknown>> } | undefined;
+  const { data: kpi } = trpc.insuranceKpiDashboard.billingAdminKpi.useQuery({ periodDays: 30 });
 
   const r = ledger ?? {};
   const m = metrics ?? {};
