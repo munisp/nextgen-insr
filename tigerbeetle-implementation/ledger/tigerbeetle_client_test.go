@@ -85,7 +85,7 @@ func TestCreateAccounts_Batch(t *testing.T) {
 
 	// All accounts should be created successfully
 	for _, result := range results {
-		assert.Equal(t, types.AccountEventResultOk, result.Result)
+		assert.Equal(t, types.AccountOK, result.Result)
 	}
 }
 
@@ -325,12 +325,12 @@ func TestTransferError(t *testing.T) {
 		Amount:          types.ToUint128(100),
 	}
 
-	err := NewTransferError(types.TransferEventResultExceedsCredits, transfer)
+	err := NewTransferError(types.TransferExceedsCredits, transfer)
 	assert.True(t, err.IsInsufficientFunds())
 	assert.False(t, err.IsDuplicate())
 	assert.Contains(t, err.Error(), "insufficient funds")
 
-	err = NewTransferError(types.TransferEventResultExists, transfer)
+	err = NewTransferError(types.TransferExists, transfer)
 	assert.False(t, err.IsInsufficientFunds())
 	assert.True(t, err.IsDuplicate())
 	assert.Contains(t, err.Error(), "duplicate")

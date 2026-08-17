@@ -181,7 +181,7 @@ func TestProcessPremiumPayment_InsufficientFunds(t *testing.T) {
 
 	// Mock insufficient funds error
 	transfer := types.Transfer{ID: types.ToUint128(1)}
-	insufficientFundsErr := ledger.NewTransferError(types.TransferEventResultExceedsCredits, transfer)
+	insufficientFundsErr := ledger.NewTransferError(types.TransferExceedsCredits, transfer)
 	mockLedger.On("CreateTransfer", ctx, mock.AnythingOfType("types.Transfer")).
 		Return(insufficientFundsErr)
 
@@ -221,7 +221,7 @@ func TestProcessPremiumPayment_DuplicateTransfer(t *testing.T) {
 
 	// Mock duplicate transfer error
 	transfer := types.Transfer{ID: types.ToUint128(1)}
-	duplicateErr := ledger.NewTransferError(types.TransferEventResultExists, transfer)
+	duplicateErr := ledger.NewTransferError(types.TransferExists, transfer)
 	mockLedger.On("CreateTransfer", ctx, mock.AnythingOfType("types.Transfer")).
 		Return(duplicateErr)
 
