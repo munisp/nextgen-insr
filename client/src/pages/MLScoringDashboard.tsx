@@ -35,7 +35,6 @@ export default function MLScoringDashboard() {
   const batchMut = trpc.mlScoring.batchScore.useMutation();
   const explainMut = trpc.mlScoring.explainScore.useMutation();
 
-  const stats = analytics.data;
 
   const handleScore = () => {
     const parsed = parseFloat(amount);
@@ -72,20 +71,6 @@ export default function MLScoringDashboard() {
     batchMut.mutate({ transactions: txns });
   };
 
-  const riskColor = (level: string) => {
-    switch (level) {
-      case "low":
-        return "text-green-500";
-      case "medium":
-        return "text-yellow-500";
-      case "high":
-        return "text-orange-500";
-      case "critical":
-        return "text-red-500";
-      default:
-        return "";
-    }
-  };
 
   return (
     <DashboardLayout>
@@ -104,48 +89,13 @@ export default function MLScoringDashboard() {
           </Badge>
         </div>
 
-        {/* Stats Overview */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <Card>
-              <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold">{stats.totalScored}</p>
-                <p className="text-xs text-muted-foreground">Total Scored</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold">{stats.avgLatencyMs}ms</p>
-                <p className="text-xs text-muted-foreground">Avg Latency</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold">
-                  {(stats.avgRiskScore * 100).toFixed(1)}%
-                </p>
-                <p className="text-xs text-muted-foreground">Avg Risk Score</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold">
-                  {(stats.avgConfidence * 100).toFixed(0)}%
-                </p>
-                <p className="text-xs text-muted-foreground">Avg Confidence</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 text-center">
-                <p className="text-2xl font-bold text-red-500">
-                  {stats.riskDistribution.high +
-                    stats.riskDistribution.critical}
-                </p>
-                <p className="text-xs text-muted-foreground">Flagged</p>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+        {/* Stats Overview — F-12 (wave-4b): mlScoring.analytics is fail-loud
+            NOT_IMPLEMENTED (no delivered ML model/store) — honest state */}
+        <Card>
+          <CardContent className="py-6 text-center text-muted-foreground">
+            — ML scoring analytics are not delivered on this platform
+          </CardContent>
+        </Card>
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
@@ -187,99 +137,7 @@ export default function MLScoringDashboard() {
               </CardContent>
             </Card>
 
-            {scoreMut.data && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    {scoreMut.data.result.riskLevel === "low" ? (
-                      <CheckCircle className="text-green-500" />
-                    ) : scoreMut.data.result.riskLevel === "medium" ? (
-                      <AlertTriangle className="text-yellow-500" />
-                    ) : (
-                      <Shield className="text-red-500" />
-                    )}
-                    Score Result: {scoreMut.data.result.riskLevel.toUpperCase()}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-3 bg-muted rounded">
-                      <p className="text-xs text-muted-foreground">XGBoost</p>
-                      <p className="text-lg font-bold">
-                        {(
-                          scoreMut.data.result.modelScores.xgboost * 100
-                        ).toFixed(1)}
-                        %
-                      </p>
-                    </div>
-                    <div className="text-center p-3 bg-muted rounded">
-                      <p className="text-xs text-muted-foreground">
-                        Autoencoder
-                      </p>
-                      <p className="text-lg font-bold">
-                        {(
-                          scoreMut.data.result.modelScores.autoencoder * 100
-                        ).toFixed(1)}
-                        %
-                      </p>
-                    </div>
-                    <div className="text-center p-3 bg-muted rounded">
-                      <p className="text-xs text-muted-foreground">GNN</p>
-                      <p className="text-lg font-bold">
-                        {(scoreMut.data.result.modelScores.gnn * 100).toFixed(
-                          1
-                        )}
-                        %
-                      </p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">
-                      Final Score:{" "}
-                      <span
-                        className={riskColor(scoreMut.data.result.riskLevel)}
-                      >
-                        {(scoreMut.data.result.finalScore * 100).toFixed(1)}%
-                      </span>
-                    </p>
-                    <p className="text-sm">
-                      Confidence:{" "}
-                      {(scoreMut.data.result.confidence * 100).toFixed(0)}% ·
-                      Recommendation:{" "}
-                      <Badge variant="outline">
-                        {scoreMut.data.result.recommendation}
-                      </Badge>
-                    </p>
-                  </div>
-                  {scoreMut.data.result.topRiskFactors.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium mb-1">Risk Factors:</p>
-                      <ul className="text-sm text-muted-foreground space-y-1">
-                        {scoreMut.data.result.topRiskFactors.map((f, i) => (
-                          <li key={i}>• {f}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      explainMut.mutate({ scoreId: scoreMut.data!.id })
-                    }
-                    disabled={explainMut.isPending}
-                  >
-                    <MessageSquare className="h-3 w-3 mr-1" />{" "}
-                    {explainMut.isPending ? "Generating..." : "LLM Explain"}
-                  </Button>
-                  {explainMut.data && (
-                    <div className="p-3 bg-muted rounded text-sm">
-                      {explainMut.data.explanation}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+
           </TabsContent>
 
           {/* Batch Tab */}
@@ -311,46 +169,7 @@ export default function MLScoringDashboard() {
                 </Button>
               </CardContent>
             </Card>
-            {batchMut.data && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Batch Results</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-4 gap-4 mb-4">
-                    <div className="text-center p-2 bg-green-500/10 rounded">
-                      <p className="text-lg font-bold text-green-500">
-                        {batchMut.data.riskDistribution.low}
-                      </p>
-                      <p className="text-xs">Low Risk</p>
-                    </div>
-                    <div className="text-center p-2 bg-yellow-500/10 rounded">
-                      <p className="text-lg font-bold text-yellow-500">
-                        {batchMut.data.riskDistribution.medium}
-                      </p>
-                      <p className="text-xs">Medium</p>
-                    </div>
-                    <div className="text-center p-2 bg-orange-500/10 rounded">
-                      <p className="text-lg font-bold text-orange-500">
-                        {batchMut.data.riskDistribution.high}
-                      </p>
-                      <p className="text-xs">High</p>
-                    </div>
-                    <div className="text-center p-2 bg-red-500/10 rounded">
-                      <p className="text-lg font-bold text-red-500">
-                        {batchMut.data.riskDistribution.critical}
-                      </p>
-                      <p className="text-xs">Critical</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Scored {batchMut.data.totalScored} transactions · Avg{" "}
-                    {batchMut.data.avgLatencyMs}ms · {batchMut.data.flagged}{" "}
-                    flagged
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+            
           </TabsContent>
 
           {/* History Tab */}
@@ -369,41 +188,11 @@ export default function MLScoringDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.data?.records.map(r => (
-                    <tr key={r.id} className="border-b">
-                      <td className="p-2 font-mono text-xs">{r.id}</td>
-                      <td className="p-2 text-xs">{r.transactionId}</td>
-                      <td className="p-2 font-bold">
-                        {(r.result.finalScore * 100).toFixed(1)}%
-                      </td>
-                      <td className="p-2">
-                        <Badge
-                          variant={
-                            r.result.riskLevel === "low"
-                              ? "default"
-                              : r.result.riskLevel === "critical"
-                                ? "destructive"
-                                : "secondary"
-                          }
-                        >
-                          {r.result.riskLevel}
-                        </Badge>
-                      </td>
-                      <td className="p-2 text-xs">
-                        {(r.result.modelScores.xgboost * 100).toFixed(0)}% /{" "}
-                        {(r.result.modelScores.autoencoder * 100).toFixed(0)}% /{" "}
-                        {(r.result.modelScores.gnn * 100).toFixed(0)}%
-                      </td>
-                      <td className="p-2">
-                        {(r.result.confidence * 100).toFixed(0)}%
-                      </td>
-                      <td className="p-2">
-                        <Badge variant="outline">
-                          {r.result.recommendation}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
+                  <tr>
+                    <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                      — scoring history is not delivered on this platform
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -420,34 +209,9 @@ export default function MLScoringDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {stats?.featureImportance.map(f => (
-                    <div key={f.feature} className="flex items-center gap-3">
-                      <span className="w-48 text-sm truncate">{f.feature}</span>
-                      <div className="flex-1 h-4 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${f.direction === "risk" ? "bg-red-500" : "bg-green-500"}`}
-                          style={{ width: `${Math.abs(f.weight) * 500}%` }}
-                        />
-                      </div>
-                      <span className="text-xs w-16 text-right">
-                        {f.weight > 0 ? "+" : ""}
-                        {f.weight}
-                      </span>
-                      <Badge
-                        variant={
-                          f.direction === "risk" ? "destructive" : "default"
-                        }
-                        className="text-xs"
-                      >
-                        {f.direction}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 p-3 bg-muted rounded text-xs text-muted-foreground">
-                  <p className="font-medium mb-1">Ensemble Weights:</p>
-                  <p>XGBoost: 45% · Autoencoder: 30% · GNN: 25%</p>
-                </div>
+<div className="py-6 text-center text-muted-foreground">
+                    — feature-importance telemetry is not delivered on this platform
+                  </div>
               </CardContent>
             </Card>
           </TabsContent>

@@ -30,13 +30,17 @@ export default function FraudReportPage() {
   );
   const generateMut = trpc.fraudReport.generateReport.useMutation({
     onSuccess: data => {
-      setSelectedReport(data.id);
+      setSelectedReport(data.reportId);
       setTab("view");
       listReports.refetch();
     },
   });
 
-  const report = reportDetail.data;
+  // F-12 (wave-4b): reports are generated on demand and NOT persisted
+  // (getReport fail-loud NOT_FOUND by design) — the view tab renders the
+  // real generateReport result {reportId, data:{period,totalAlerts,
+  // bySeverity,byStatus,alerts}}.
+  const report = generateMut.data;
 
   return (
     <DashboardLayout>
@@ -106,7 +110,12 @@ export default function FraudReportPage() {
                     </select>
                   </div>
                   <Button
-                    onClick={() => generateMut.mutate({ year, month })}
+                    onClick={() => {
+                      const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+                      const end = new Date(year, month, 0).getDate();
+                      const endDate = `${year}-${String(month).padStart(2, "0")}-${end}`;
+                      generateMut.mutate({ startDate, endDate });
+                    }}
                     disabled={generateMut.isPending}
                   >
                     {generateMut.isPending ? (
@@ -125,50 +134,44 @@ export default function FraudReportPage() {
               </CardContent>
             </Card>
 
-            {/* Quick Stats Preview */}
+            {/* Quick Stats Preview — F-12 (wave-4b): real quickStats fields
+                (case-management aggregates); the phantom fraudMetrics nesting
+                (transaction volumes/detection rate) has no source → "—" */}
             {quickStats.data && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <p className="text-2xl font-bold">
-                      {quickStats.data.fraudMetrics.totalTransactions.toLocaleString()}
+                      {quickStats.data.totalCases.toLocaleString()}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      Total Transactions
-                    </p>
+                    <p className="text-xs text-muted-foreground">Total Cases</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <p className="text-2xl font-bold text-red-500">
-                      {quickStats.data.fraudMetrics.confirmedFraud.toLocaleString()}
+                      {quickStats.data.openCases.toLocaleString()}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      Confirmed Fraud
-                    </p>
+                    <p className="text-xs text-muted-foreground">Open Cases</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <p className="text-2xl font-bold">
-                      ₦
-                      {(
-                        quickStats.data.fraudMetrics.totalFraudAmount / 1000000
-                      ).toFixed(1)}
-                      M
+                      ₦{(quickStats.data.totalLossPrevented / 1000000).toFixed(1)}M
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Total Fraud Amount
+                      Loss Prevented
                     </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4 text-center">
                     <p className="text-2xl font-bold text-green-500">
-                      {quickStats.data.fraudMetrics.detectionRate}%
+                      {quickStats.data.resolvedToday.toLocaleString()}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Detection Rate
+                      Resolved Today
                     </p>
                   </CardContent>
                 </Card>
@@ -183,270 +186,92 @@ export default function FraudReportPage() {
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="flex items-center gap-2">
-                        <Shield className="h-5 w-5" /> Executive Summary —{" "}
-                        {report.period}
+                        <Shield className="h-5 w-5" /> Fraud Alert Report —{" "}
+                        {report.data.period.startDate} → {report.data.period.endDate}
                       </CardTitle>
-                      <Badge
-                        variant={
-                          report.riskAssessment.overallRiskLevel === "low"
-                            ? "default"
-                            : report.riskAssessment.overallRiskLevel ===
-                                "medium"
-                              ? "secondary"
-                              : "destructive"
-                        }
-                      >
-                        Risk: {report.riskAssessment.overallRiskLevel}
+                      <Badge variant="outline">
+                        {report.data.totalAlerts.toLocaleString()} alerts
                       </Badge>
                     </div>
                   </CardHeader>
-                  <CardContent>
-                    <p className="text-sm whitespace-pre-wrap">
-                      {report.executiveSummary}
-                    </p>
-                  </CardContent>
-                </Card>
-
-                {/* Fraud Metrics */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <Card>
-                    <CardContent className="pt-4 text-center">
-                      <p className="text-xl font-bold">
-                        {report.fraudMetrics.totalTransactions.toLocaleString()}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Total Transactions
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-4 text-center">
-                      <p className="text-xl font-bold text-red-500">
-                        {report.fraudMetrics.confirmedFraud.toLocaleString()}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Confirmed Fraud
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-4 text-center">
-                      <p className="text-xl font-bold">
-                        ₦
-                        {(
-                          report.fraudMetrics.totalFraudAmount / 1000000
-                        ).toFixed(1)}
-                        M
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Fraud Amount
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-4 text-center">
-                      <p className="text-xl font-bold text-green-500">
-                        {report.fraudMetrics.detectionRate}%
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Detection Rate
-                      </p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Top Fraud Categories */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <BarChart3 className="h-4 w-4" /> Top Fraud Categories
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left">
-                          <th className="p-2">Category</th>
-                          <th className="p-2">Count</th>
-                          <th className="p-2">Amount</th>
-                          <th className="p-2">Trend</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {report.trendAnalysis.topFraudCategories.map(c => (
-                          <tr key={c.category} className="border-b">
-                            <td className="p-2 font-medium">{c.category}</td>
-                            <td className="p-2">{c.count.toLocaleString()}</td>
-                            <td className="p-2">
-                              ₦{(c.amount / 1000000).toFixed(1)}M
-                            </td>
-                            <td className="p-2">
-                              <Badge
-                                variant={
-                                  c.trend === "up"
-                                    ? "destructive"
-                                    : c.trend === "down"
-                                      ? "default"
-                                      : "outline"
-                                }
-                              >
-                                {c.trend === "up"
-                                  ? "↑"
-                                  : c.trend === "down"
-                                    ? "↓"
-                                    : "→"}{" "}
-                                {c.trend}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-
-                {/* Model Performance */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4" /> Model Performance
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-left">
-                          <th className="p-2">Model</th>
-                          <th className="p-2">Accuracy</th>
-                          <th className="p-2">Precision</th>
-                          <th className="p-2">Recall</th>
-                          <th className="p-2">F1</th>
-                          <th className="p-2">AUC</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {report.modelPerformance.map(m => (
-                          <tr key={m.modelName} className="border-b">
-                            <td className="p-2 font-medium">{m.modelName}</td>
-                            <td className="p-2">
-                              {(m.accuracy * 100).toFixed(1)}%
-                            </td>
-                            <td className="p-2">
-                              {(m.precision * 100).toFixed(1)}%
-                            </td>
-                            <td className="p-2">
-                              {(m.recall * 100).toFixed(1)}%
-                            </td>
-                            <td className="p-2">
-                              {(m.f1Score * 100).toFixed(1)}%
-                            </td>
-                            <td className="p-2 font-bold">
-                              {(m.auc * 100).toFixed(1)}%
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-
-                {/* Risk Assessment */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4" /> Key Risks &
-                      Mitigations
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {report.riskAssessment.keyRisks.map((r, i) => (
-                      <div
-                        key={i}
-                        className="flex items-start gap-3 p-3 rounded border"
-                      >
-                        <Badge
-                          variant={
-                            r.severity === "high"
-                              ? "destructive"
-                              : r.severity === "medium"
-                                ? "secondary"
-                                : "outline"
-                          }
-                        >
-                          {r.severity}
-                        </Badge>
-                        <div>
-                          <p className="text-sm font-medium">{r.risk}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Mitigation: {r.mitigation}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-
-                {/* Recommendations */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">
-                      AI Recommendations
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-2">
-                      {report.recommendations.map((r, i) => (
-                        <li key={i} className="text-sm flex items-start gap-2">
-                          <span className="text-primary font-bold">
-                            {i + 1}.
-                          </span>{" "}
-                          {r}
-                        </li>
+                  <CardContent className="space-y-4">
+                    {/* Real aggregates: alerts by severity + status */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {Object.entries(report.data.bySeverity).map(([sev, n]) => (
+                        <Card key={sev}>
+                          <CardContent className="pt-4 text-center">
+                            <p className="text-xl font-bold">{n}</p>
+                            <p className="text-xs text-muted-foreground capitalize">
+                              {sev} severity
+                            </p>
+                          </CardContent>
+                        </Card>
                       ))}
-                    </ul>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(report.data.byStatus).map(([st, n]) => (
+                        <Badge key={st} variant="secondary" className="capitalize">
+                          {st}: {n}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Real alert rows */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Alerts in period</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {report.data.alerts.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-8">
+                        No fraud alerts in this period
+                      </p>
+                    ) : (
+                      <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                        {report.data.alerts.map(a => (
+                          <div
+                            key={a.id}
+                            className="flex items-center justify-between p-2 rounded bg-muted/40 text-sm"
+                          >
+                            <span className="font-medium">{a.type}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {a.severity} · {a.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </>
             )}
+            {!report && (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Generate a report to view it here — generated reports are not
+                  persisted.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="history" className="space-y-4">
+            {/* F-12 (wave-4b): reports are not persisted — listReports is
+                honest-empty by design; rows show the real fields only. */}
             {listReports.data?.reports.map(r => (
-              <Card
-                key={r.id}
-                className="cursor-pointer hover:border-primary/50"
-                onClick={() => {
-                  setSelectedReport(r.id);
-                  setTab("view");
-                }}
-              >
+              <Card key={r.id}>
                 <CardContent className="pt-4 flex items-center justify-between">
                   <div>
                     <p className="font-medium flex items-center gap-2">
-                      <Calendar className="h-4 w-4" /> {r.period}
+                      <Calendar className="h-4 w-4" /> {r.name}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {r.totalTransactions.toLocaleString()} txns ·{" "}
-                      {r.confirmedFraud.toLocaleString()} fraud · ₦
-                      {(r.totalFraudAmount / 1000000).toFixed(1)}M
+                      {r.id} · {r.createdAt}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        r.overallRiskLevel === "low"
-                          ? "default"
-                          : r.overallRiskLevel === "medium"
-                            ? "secondary"
-                            : "destructive"
-                      }
-                    >
-                      {r.overallRiskLevel}
-                    </Badge>
-                    <Button size="sm" variant="outline">
-                      <Download className="h-3 w-3" />
-                    </Button>
-                  </div>
+                  <Badge variant="outline">{r.status}</Badge>
                 </CardContent>
               </Card>
             ))}
