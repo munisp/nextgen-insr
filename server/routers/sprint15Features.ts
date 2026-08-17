@@ -483,8 +483,14 @@ export const userQuietHoursRouter = router({
 
 // Notification Template Router
 export const notifTemplateRouter = router({
+  // F-12 (wave-4b): no notification_templates store exists in the schema —
+  // list was a zero-payload and create/update/delete were facades returning
+  // fake success. All fail loud until a template store is delivered.
   list: protectedProcedure.query(async () => {
-    return { templates: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "notifTemplates.list: no notification-template store is delivered",
+    });
   }),
   create: protectedProcedure
     .input(
@@ -495,17 +501,11 @@ export const notifTemplateRouter = router({
         subject: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        return { success: true, id: `tpl-${Date.now()}`, ...input };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "notifTemplates.create: no notification-template store is delivered",
+      });
     }),
   update: protectedProcedure
     .input(
@@ -515,39 +515,19 @@ export const notifTemplateRouter = router({
         body: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          updatedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "notifTemplates.update: no notification-template store is delivered",
+      });
     }),
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          deletedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "notifTemplates.delete: no notification-template store is delivered",
+      });
     }),
 });
 
