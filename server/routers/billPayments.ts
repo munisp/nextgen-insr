@@ -94,7 +94,7 @@ export const billPaymentsRouter = router({
       if (agentBalance < input.amountNGN) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Insufficient float. Available: ₦${agentBalance.toLocaleString()}` });
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const [{ dailyTotal }] = await db.select({ dailyTotal: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)` })
-        .from(transactions).where(and(eq(transactions.agentId, input.agentId), eq(transactions.type, "BillPayment"), gte(transactions.createdAt, today), eq(transactions.status, "success")));
+        .from(transactions).where(and(eq(transactions.agentId, input.agentId), eq(transactions.type, "Bill Payment"), gte(transactions.createdAt, today), eq(transactions.status, "success")));
       if (Number(dailyTotal ?? 0) + input.amountNGN > DAILY_LIMIT) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Daily limit ₦${DAILY_LIMIT.toLocaleString()} exceeded` });
       const lockKey = `bill-payment:${input.agentId}:${input.reference}`;
       const locked = await acquireLock(lockKey, 15_000);
@@ -192,9 +192,9 @@ export const billPaymentsRouter = router({
       const db = await getDb();
       if (!db) return { data: [], total: 0 };
       const results = await db.select().from(transactions)
-        .where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, "BillPayment")))
+        .where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, "Bill Payment")))
         .orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
-      const [{ total }] = await db.select({ total: count() }).from(transactions).where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, "BillPayment")));
+      const [{ total }] = await db.select({ total: count() }).from(transactions).where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, "Bill Payment")));
       return { data: results, total: Number(total) };
     }),
 
@@ -203,8 +203,8 @@ export const billPaymentsRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { data: [], total: 0 };
-      const results = await db.select().from(transactions).where(eq(transactions.type, "BillPayment")).orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
-      const [{ total }] = await db.select({ total: count() }).from(transactions).where(eq(transactions.type, "BillPayment"));
+      const results = await db.select().from(transactions).where(eq(transactions.type, "Bill Payment")).orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
+      const [{ total }] = await db.select({ total: count() }).from(transactions).where(eq(transactions.type, "Bill Payment"));
       return { data: results, total: Number(total) };
     }),
 
@@ -216,7 +216,7 @@ export const billPaymentsRouter = router({
       const since = new Date(Date.now() - input.periodDays * 86400000);
       const [stats] = await db.select({
         total: count(), volume: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)`, commission: sql<string>`COALESCE(SUM(CAST(commission AS NUMERIC)), 0)`,
-      }).from(transactions).where(and(eq(transactions.type, "BillPayment"), eq(transactions.agentId, ctx.user.id), gte(transactions.createdAt, since), eq(transactions.status, "success")));
+      }).from(transactions).where(and(eq(transactions.type, "Bill Payment"), eq(transactions.agentId, ctx.user.id), gte(transactions.createdAt, since), eq(transactions.status, "success")));
       return { periodDays: input.periodDays, total: Number(stats?.total ?? 0), volumeNGN: Number(stats?.volume ?? 0), commissionNGN: Number(stats?.commission ?? 0) };
     }),
 });
