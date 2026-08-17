@@ -33,7 +33,7 @@ export default function ComplianceChatbotPage() {
   // generic list/getById/getSummary over compliance report rows — the chatbot
   // backend (sessions/messages/knowledge-base/compliance-checks) is NOT
   // delivered. All actions fail loud; sections render honest states.
-  const loud = (action: string) => () =>
+  const loud = (action: string) => (_args?: unknown) =>
     toast.error(`Compliance chatbot ${action} is not delivered on this deployment`);
   const startSession = { mutate: loud("sessions"), isPending: false };
   const sendMsg = { mutate: loud("messaging"), isPending: false };
@@ -234,12 +234,12 @@ export default function ComplianceChatbotPage() {
                         <div className="flex items-center gap-2">
                           <Badge variant="outline">{r.category}</Badge>
                           <Badge variant="secondary">
-                            {(r.relevance * 100).toFixed(0)}% match
+                            {r.score != null ? `${(r.score * 100).toFixed(0)}% match` : "—"}
                           </Badge>
                         </div>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {r.content}
+                        {r.excerpt ?? "—"}
                       </p>
                     </CardContent>
                   </Card>

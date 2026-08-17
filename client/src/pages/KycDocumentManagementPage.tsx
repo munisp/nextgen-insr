@@ -8,14 +8,14 @@ import { FileText, Search, CheckCircle, XCircle, Clock } from "lucide-react";
 
 export default function KycDocumentManagementPage() {
   const [search, setSearch] = useState("");
-  const { data, isLoading } = trpc.kycDocumentManagement.list.useQuery();
+  const { data, isLoading } = trpc.kycDocumentManagement.list.useQuery({});
   const approveMut = trpc.kycDocumentManagement.approve.useMutation({
     onSuccess: () => toast.success("KYC approved"),
   });
   const rejectMut = trpc.kycDocumentManagement.reject.useMutation({
     onSuccess: () => toast.success("KYC rejected"),
   });
-  const docs = (data?.documents || []).filter(
+  const docs = (data?.items || []).filter(
     (d: any) =>
       !search || d.agentName?.toLowerCase().includes(search.toLowerCase())
   );
@@ -33,14 +33,14 @@ export default function KycDocumentManagementPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{data?.summary?.total || 0}</p>
+            <p className="text-2xl font-bold">{data?.total || 0}</p>
             <p className="text-sm text-muted-foreground">Total</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-yellow-600">
-              {data?.summary?.pending || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Pending</p>
           </CardContent>
@@ -48,7 +48,7 @@ export default function KycDocumentManagementPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {data?.summary?.approved || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Approved</p>
           </CardContent>
@@ -56,7 +56,7 @@ export default function KycDocumentManagementPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-red-600">
-              {data?.summary?.rejected || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Rejected</p>
           </CardContent>
