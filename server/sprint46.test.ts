@@ -219,11 +219,21 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    expect(stats.totalSent).toBe(45892);
-    expect(stats.deliveryRate).toBe(96.14);
-    expect(stats.channels).toBeDefined();
-    expect(stats.channels.email).toBe(12340);
-    expect(stats.channels.sms).toBe(18560);
+    // F-12 (round 74): the 45892/96.14/12340/18560 numbers were removed
+    // mockware. The proc is REAL (notification_dispatch_log aggregates), so
+    // assert the honest derived contract instead of fixture values:
+    // non-negative count, rate bounded [0,100], and the channel breakdown
+    // must partition the total exactly (SQL groupBy invariant, any data).
+    expect(Number.isInteger(stats.totalSent)).toBe(true);
+    expect(stats.totalSent).toBeGreaterThanOrEqual(0);
+    expect(stats.deliveryRate).toBeGreaterThanOrEqual(0);
+    expect(stats.deliveryRate).toBeLessThanOrEqual(100);
+    const channelSum = Object.values(
+      stats.channels as Record<string, number>
+    ).reduce((a, b) => a + b, 0);
+    expect(channelSum).toBe(stats.totalSent);
+    expect(stats.failedDeliveries).toBeGreaterThanOrEqual(0);
+    expect(stats.retryQueue).toBeGreaterThanOrEqual(0);
   });
 
   it("database visualization stats should report 78 tables", async () => {
@@ -247,8 +257,12 @@ describe("Sprint 46: Data Integrity", () => {
     // from drizzle/schema.additions.ts). Count-gate intent preserved; only the
     // number was corrected from the mockware-era 78.
     expect(stats.totalTables).toBe(188);
-    expect(stats.totalRows).toBe(2450000);
-    expect(stats.uptime).toBe("99.97%");
+    // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
+    // no DB-telemetry store is delivered, so the proc returns honest nulls.
+    expect(stats.totalRows).toBeNull();
+    expect(stats.uptime).toBeNull();
+    expect(stats.avgQueryTime).toBeNull();
+    expect(stats.activeConnections).toBeNull();
   });
 
   it("middleware service manager should report 13 services", async () => {
@@ -288,10 +302,16 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    expect(stats.totalRevenue).toBe(4560000000);
-    expect(stats.netProfit).toBe(1670000000);
-    expect(stats.profitMargin).toBe(36.6);
-    expect(stats.totalRevenue - stats.totalExpenses).toBe(stats.netProfit);
+    // F-12 (round 74): 4.56B/1.67B/36.6% were fixtures. The proc now sums
+    // revenue for real from pnl_reports; expenses/margin have no delivered
+    // source and are honest 0s. Assert the honest shape; the accounting
+    // identity revenue-expenses=netProfit is dropped because netProfit is
+    // an honest 0 by design, not a computed figure.
+    expect(stats.totalRevenue).toBeGreaterThanOrEqual(0);
+    expect(stats.totalExpenses).toBe(0);
+    expect(stats.netProfit).toBe(0);
+    expect(stats.profitMargin).toBe(0);
+    expect(stats.reportCount).toBeGreaterThanOrEqual(0);
   });
 
   it("multi-currency exchange should support 15 currencies", async () => {
@@ -328,15 +348,17 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    expect(stats.complianceScore).toBe(94.5);
-    expect(stats.totalReports).toBe(456);
-    expect(
-      stats.cbnReports +
-        stats.ndprReports +
-        stats.pciDssReports +
-        stats.amlReports +
-        stats.cftReports
-    ).toBe(stats.totalReports);
+    // F-12 (round 74): 94.5/456/framework splits were fixtures. totalReports
+    // is the real pnl_reports count; score + framework breakdowns have no
+    // delivered source and are honest 0s. The breakdown-sum identity is
+    // dropped (0s cannot sum to a real total by design).
+    expect(stats.complianceScore).toBe(0);
+    expect(stats.totalReports).toBeGreaterThanOrEqual(0);
+    expect(stats.cbnReports).toBe(0);
+    expect(stats.ndprReports).toBe(0);
+    expect(stats.pciDssReports).toBe(0);
+    expect(stats.amlReports).toBe(0);
+    expect(stats.cftReports).toBe(0);
   });
 
   it("customer feedback NPS should be within valid range", async () => {
@@ -353,10 +375,18 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
+    // F-12 (round 74): avgRating >= 1 assumed fixture responses. The proc is
+    // REAL (customer_feedback_nps); on an empty test DB avgRating is the
+    // honest 0. NPS bounds stay a real invariant; the promoters+passives+
+    // detractors partition of totalResponses holds for any data.
     expect(stats.npsScore).toBeGreaterThanOrEqual(-100);
     expect(stats.npsScore).toBeLessThanOrEqual(100);
-    expect(stats.avgRating).toBeGreaterThanOrEqual(1);
+    expect(stats.avgRating).toBeGreaterThanOrEqual(0);
     expect(stats.avgRating).toBeLessThanOrEqual(5);
+    expect(
+      stats.promoters + stats.passives + stats.detractors
+    ).toBe(stats.totalResponses);
+    expect(stats.responseRate).toBeNull();
   });
 
   it("dispute workflow should have valid SLA compliance", async () => {
@@ -393,8 +423,13 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    expect(stats.overallHealth).toBeGreaterThan(98);
-    expect(stats.uptime30d).toBeGreaterThan(99.9);
+    // F-12 (round 74): >98% health / >99.9% uptime were fixtures — no health
+    // store is delivered, so the proc returns honest nulls/zeros.
+    expect(stats.overallHealth).toBeNull();
+    expect(stats.uptime30d).toBeNull();
+    expect(stats.services).toBe(0);
+    expect(stats.healthy).toBe(0);
+    expect(stats.avgResponseTime).toBeNull();
   });
 
   it("bulk payment processor should have valid batch stats", async () => {
@@ -430,11 +465,15 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    expect(stats.totalAgents).toBe(
+    // F-12 (round 74): 156 territories / 6 regions were fixtures — no
+    // territory store is delivered (honest 0s). The role split is real but
+    // only a subset invariant: agents may hold roles outside the three
+    // tracked ones, so exact-sum is weakened to <=.
+    expect(
       stats.superAgents + stats.masterAgents + stats.subAgents
-    );
-    expect(stats.territories).toBe(156);
-    expect(stats.regions).toBe(6);
+    ).toBeLessThanOrEqual(stats.totalAgents);
+    expect(stats.territories).toBe(0);
+    expect(stats.regions).toBe(0);
   });
 
   it("webhook delivery should have >98% success rate", async () => {
@@ -451,8 +490,14 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    expect(stats.successRate).toBeGreaterThan(98);
-    expect(stats.totalEndpoints).toBe(45);
+    // F-12 (round 74): >98% / 45 endpoints were fixtures. The proc is REAL
+    // (webhook_endpoints count); delivery telemetry has no store (honest 0s).
+    expect(stats.successRate).toBe(0);
+    expect(stats.totalEndpoints).toBeGreaterThanOrEqual(0);
+    expect(stats.totalDelivered).toBe(0);
+    expect(stats.totalFailed).toBe(0);
+    expect(stats.avgLatency).toBe(0);
+    expect(stats.retryQueue).toBe(0);
   });
 
   it("API key management should track key lifecycle", async () => {
@@ -469,8 +514,16 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
-    expect(stats.totalKeys).toBe(stats.activeKeys + stats.revokedKeys);
-    expect(stats.totalRequests24h).toBeGreaterThan(0);
+    // F-12 (round 74): >0 requests was a fixture. The proc is REAL
+    // (api_keys status aggregates); request telemetry has no store. The
+    // exact-sum identity is weakened to a subset inequality — keys may hold
+    // statuses outside active/revoked.
+    expect(
+      stats.activeKeys + stats.revokedKeys
+    ).toBeLessThanOrEqual(stats.totalKeys);
+    expect(stats.totalRequests24h).toBe(0);
+    expect(stats.avgRequestsPerKey).toBe(0);
+    expect(stats.suspiciousActivity).toBe(0);
   });
 
   it("platform config center should manage feature flags", async () => {
@@ -487,8 +540,14 @@ describe("Sprint 46: Data Integrity", () => {
       },
     } as any);
     const stats = await caller.getStats({});
+    // F-12 (round 74): 3 active A/B tests was a fixture — no feature-flag
+    // or A/B store is delivered; the proc returns honest 0s/empties. The
+    // enabled+disabled partition identity is a real invariant, kept.
     expect(stats.totalFlags).toBe(stats.enabledFlags + stats.disabledFlags);
-    expect(stats.activeAbTests).toBe(3);
+    expect(stats.totalFlags).toBe(0);
+    expect(stats.activeAbTests).toBe(0);
+    expect(stats.environments).toEqual([]);
+    expect(stats.lastDeployed).toBeNull();
   });
 });
 
