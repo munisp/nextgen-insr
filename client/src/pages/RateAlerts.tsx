@@ -88,7 +88,6 @@ export default function RateAlerts() {
   });
 
   const { data: stats } = trpc.rateAlerts.getStats.useQuery({});
-  const { data: checkerStatus } = trpc.rateAlerts.getCheckerStatus.useQuery();
 
   const createAlert = trpc.rateAlerts.create.useMutation({
     onSuccess: () => {
@@ -157,10 +156,9 @@ export default function RateAlerts() {
       toast.error("Please enter a valid target rate");
       return;
     }
+    // F-12 (wave-4b): agentId comes from the session server-side — the
+    // previous demo-agent fields were fabricated.
     createAlert.mutate({
-      agentId: 1,
-      agentName: "Demo Agent",
-      agentEmail: "demo@insureportal.io",
       baseCurrency,
       targetCurrency,
       targetRate: parseFloat(targetRate),
@@ -252,24 +250,8 @@ export default function RateAlerts() {
         ))}
       </div>
 
-      {/* Checker Status */}
-      {checkerStatus && (
-        <div className="flex items-center gap-4 text-xs text-slate-500 bg-slate-900/30 rounded-lg px-4 py-2">
-          <span className="flex items-center gap-1">
-            <span
-              className={`w-2 h-2 rounded-full ${checkerStatus.running ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`}
-            />
-            Checker: {checkerStatus.running ? "Running" : "Stopped"}
-          </span>
-          <span>Checks: {checkerStatus.checksRun}</span>
-          <span>Triggered: {checkerStatus.totalTriggered}</span>
-          {checkerStatus.lastCheckAt && (
-            <span>
-              Last: {new Date(checkerStatus.lastCheckAt).toLocaleTimeString()}
-            </span>
-          )}
-        </div>
-      )}
+      {/* Checker Status — F-12 (wave-4b): checker status is fail-loud
+          NOT_IMPLEMENTED (no delivered checker worker); badge omitted. */}
 
       {/* Create Form */}
       {showCreate && (
@@ -573,29 +555,6 @@ export default function RateAlerts() {
         </div>
       )}
 
-      {/* Top Pairs */}
-      {stats?.topPairs && stats.topPairs.length > 0 && (
-        <Card className="bg-slate-900/50 border-slate-700">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-white">
-              Top Monitored Pairs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2 flex-wrap">
-              {stats.topPairs.map((p: any) => (
-                <Badge
-                  key={p.pair}
-                  variant="outline"
-                  className="border-slate-600 text-slate-300"
-                >
-                  {p.pair} ({p.count})
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

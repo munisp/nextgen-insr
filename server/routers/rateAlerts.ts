@@ -105,33 +105,74 @@ export const rateAlertsRouter = router({
       return results;
     }),
 
+  // F-12 (wave-4b): real INSERT on the delivered rate_alerts table
+  // (agentId from the session, never from client-supplied demo fields).
   create: protectedProcedure
-    .input(z.object({ data: z.record(z.string(), z.any()).optional() }))
-    .mutation(async () => {
-      throw notImplemented("Rate alert creation");
+    .input(
+      z.object({
+        baseCurrency: z.string(),
+        targetCurrency: z.string(),
+        targetRate: z.number(),
+        direction: z.enum(["above", "below"]),
+        note: z.string().optional(),
+        expiresAt: z.date().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+      }
+      await database.insert(rateAlerts).values({
+        agentId: ctx.user.id,
+        baseCurrency: input.baseCurrency,
+        targetCurrency: input.targetCurrency,
+        targetRate: String(input.targetRate),
+        direction: input.direction,
+        note: input.note ?? null,
+        expiresAt: input.expiresAt ?? null,
+        status: "active",
+      });
+      return { success: true };
     }),
 
+  // F-12 (wave-4b): real scoped DELETE (own alerts only).
   delete: protectedProcedure
     .input(z.object({ id: z.union([z.number(), z.string()]) }))
-    .mutation(async () => {
-      throw notImplemented("Rate alert deletion");
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+      }
+      await database
+        .delete(rateAlerts)
+        .where(and(eq(rateAlerts.id, Number(input.id)), eq(rateAlerts.agentId, ctx.user.id)));
+      return { success: true };
     }),
 
   getCheckerStatus: protectedProcedure.query(async () => {
     throw notImplemented("Rate alert checker status");
   }),
 
+  // F-12 (wave-4b): real aggregate counts from rate_alerts.
   getStats: protectedProcedure.query(async () => {
-    throw notImplemented("Rate alert stats");
+    const empty = { total: 0, active: 0, paused: 0, triggered: 0, expired: 0 };
+    const database = await getDb();
+    if (!database) return empty;
+    const rows = await database
+      .select({ status: rateAlerts.status, total: count() })
+      .from(rateAlerts)
+      .groupBy(rateAlerts.status);
+    const out = { ...empty };
+    for (const r of rows) {
+      out.total += Number(r.total);
+      if (r.status === "active") out.active = Number(r.total);
+      else if (r.status === "paused") out.paused = Number(r.total);
+      else if (r.status === "triggered") out.triggered = Number(r.total);
+      else if (r.status === "expired") out.expired = Number(r.total);
+    }
+    return out;
   }),
-
-  rearm: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented("Rate alert rearm");
-    }),
 
   runCheck: protectedProcedure
     .input(
@@ -141,12 +182,23 @@ export const rateAlertsRouter = router({
       throw notImplemented("Rate alert check");
     }),
 
+  // F-12 (wave-4b): real pause/resume (own alerts only).
   toggle: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented("Rate alert toggle");
+    .input(z.object({ id: z.union([z.number(), z.string()]) }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+      }
+      const [row] = await database
+        .select()
+        .from(rateAlerts)
+        .where(and(eq(rateAlerts.id, Number(input.id)), eq(rateAlerts.agentId, ctx.user.id)))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "rate alert not found" });
+      const next = row.status === "active" ? "paused" : "active";
+      await database.update(rateAlerts).set({ status: next }).where(eq(rateAlerts.id, row.id));
+      return { success: true, status: next };
     }),
   // Rate alert subscriptions with threshold logic
   subscribe: protectedProcedure
