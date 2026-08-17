@@ -42,8 +42,9 @@ jobs:
               for it in range(8):
                   out = subprocess.run(['errcheck', './...'], cwd=d, capture_output=True, text=True)
                   byfile = {}
-                  for m in re.finditer(r'^(?:\./)?([^ :\n]+\.go):(\d+):', out.stdout):
-                      byfile.setdefault(m.group(1), []).append(int(m.group(2)))
+                  for m in re.finditer(r'^(?:\./)?([^ :\n]+\.go):(\d+):\d+:[ \t]*(\S.*)$', out.stdout, re.M):
+                      call = re.search(r'([\w\.]+)\s*\(', m.group(3))
+                      byfile.setdefault(m.group(1), []).append((int(m.group(2)), call.group(1) if call else None))
                   if not byfile:
                       break
                   for f, linenos in byfile.items():
@@ -53,10 +54,12 @@ jobs:
                       except Exception:
                           continue
                       changed = False
-                      for ln in sorted(set(linenos), reverse=True):
+                      for ln, callname in sorted(set(linenos), reverse=True):
                           if ln < 1 or ln > len(src):
                               continue
                           line = src[ln-1]
+                          if callname and callname.split('.')[-1] not in line:
+                              continue  # errcheck line misattribution (broken packages) — never wrap blind
                           stripped = line.lstrip()
                           indent = line[:len(line)-len(stripped)]
                           pre = stripped.split('(', 1)[0]
@@ -73,6 +76,32 @@ jobs:
                       if changed:
                           p.write_text(''.join(src))
               print(f"{mod}: errcheck pass done", flush=True)
+              for it in range(200):
+                  out = subprocess.run(['go', 'vet', './...'], cwd=d, capture_output=True, text=True, timeout=300)
+                  mism = [(m.group(1), int(m.group(2)), int(m.group(3)))
+                          for m in re.finditer(r'(?:\./)?([^ :\n]+\.go):(\d+):\d+: assignment mismatch: 1 variable but \S+ returns (\d+) values', out.stderr)]
+                  if not mism:
+                      break
+                  for f, ln, ar in mism:
+                      p = d / f
+                      lines = p.read_text().splitlines(keepends=True)
+                      lhs = ', '.join(['_'] * ar) + ' = '
+                      if '_ = ' not in lines[ln-1]:
+                          continue
+                      lines[ln-1] = lines[ln-1].replace('_ = ', lhs, 1)
+                      p.write_text(''.join(lines))
+              # no-value un-wrap (misattributed wraps of no-return calls)
+              for it in range(60):
+                  out = subprocess.run(['go', 'vet', './...'], cwd=d, capture_output=True, text=True, timeout=300)
+                  novals = [(m.group(1), int(m.group(2)))
+                            for m in re.finditer(r'(?:\./)?([^ :\n]+\.go):(\d+):\d+: [^\n]*\(no value\) used as value', out.stderr)]
+                  if not novals:
+                      break
+                  for f, ln in novals:
+                      p = d / f
+                      lines = p.read_text().splitlines(keepends=True)
+                      lines[ln-1] = re.sub(r'^(\s*)(?:_, )*_ = ', r'\1', lines[ln-1], count=1)
+                      p.write_text(''.join(lines))
           print(f"TOTAL errcheck wraps: {total}", flush=True)
           PYEOF
       - name: golangci --fix + dead-code delete loop
