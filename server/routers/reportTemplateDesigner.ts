@@ -164,36 +164,49 @@ export const reportTemplateDesignerRouter = router({
       }
     }),
 
-  create: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented();
-    }),
-
-  delete: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented();
-    }),
-
-  list: protectedProcedure.query(async () => {
-    throw notImplemented();
+  // F-12 (wave-4b): zero-payload create — no report-template store is
+  // delivered. Fail loud.
+  create: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "create: no report-template store is delivered",
+    });
   }),
 
-  setDefault: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented();
-    }),
+  // F-12 (wave-4b): zero-payload delete — no report-template store is
+  // delivered. Fail loud.
+  delete: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "delete: no report-template store is delivered",
+    });
+  }),
 
+  // F-12 (wave-4b): zero-payload list — no report-template store is
+  // delivered. Fail loud.
+  list: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "list: no report-template store is delivered",
+    });
+  }),
+
+  // F-12 (wave-4b): zero-payload setDefault — no report-template store is
+  // delivered. Fail loud.
+  setDefault: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "setDefault: no report-template store is delivered",
+    });
+  }),
+
+  // F-12 (wave-4b): zero-payload widgetCatalog — no report-template store is
+  // delivered. Fail loud.
   widgetCatalog: protectedProcedure.query(async () => {
-    throw notImplemented();
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "widgetCatalog: no report-template store is delivered",
+    });
   }),
   update: protectedProcedure
     .input(z.object({ id: z.string(), name: z.string().optional() }))

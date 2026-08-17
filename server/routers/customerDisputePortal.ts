@@ -187,6 +187,7 @@ export const customerDisputePortalRouter = router({
         .object({
           limit: z.number().default(20),
           offset: z.number().default(0),
+          status: z.string().optional(),
         })
         .default({ limit: 20, offset: 0 })
     )
@@ -208,6 +209,7 @@ export const customerDisputePortalRouter = router({
             transactions,
             eq(disputes.transactionId, transactions.id)
           )
+          .where(input.status ? eq(disputes.status, input.status) : undefined)
           .orderBy(desc(disputes.createdAt))
           .limit(input.limit)
           .offset(input.offset);
@@ -226,6 +228,7 @@ export const customerDisputePortalRouter = router({
         .object({
           limit: z.number().default(20),
           offset: z.number().default(0),
+          status: z.string().optional(),
         })
         .default({ limit: 20, offset: 0 })
     )

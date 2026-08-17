@@ -188,7 +188,7 @@ export default function WebhookConfig() {
             </CardHeader>
             <CardContent className="max-h-[300px] overflow-y-auto">
               <div className="space-y-2">
-                {eventsQuery.data?.map(ev => (
+                {eventsQuery.data?.events.map(ev => (
                   <div
                     key={ev.name}
                     className="flex items-center justify-between py-1.5 border-b last:border-0"
@@ -229,7 +229,7 @@ export default function WebhookConfig() {
                       </div>
                       <Badge
                         variant={
-                          d.status === "processed" ? "default" : "destructive"
+                          d.status === "delivered" ? "default" : "destructive"
                         }
                         className="text-[10px]"
                       >

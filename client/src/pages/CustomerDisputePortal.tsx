@@ -75,7 +75,7 @@ export default function CustomerDisputePortal() {
     onSuccess: data => {
       toast.success(`Dispute ${data.id} filed successfully`);
       setFileOpen(false);
-      setFileForm({ transactionId: "", reason: "", description: "" });
+      setFileForm({ transactionId: "", amount: "", reason: "", description: "" });
       utils.customerDisputePortal.listDisputes.invalidate();
       utils.customerDisputePortal.getStats.invalidate();
     },
@@ -83,8 +83,8 @@ export default function CustomerDisputePortal() {
   });
 
   const updateMutation = trpc.customerDisputePortal.updateDispute.useMutation({
-    onSuccess: data => {
-      toast.success(`Dispute ${data.disputeId} updated to ${data.status}`);
+    onSuccess: (data, vars) => {
+      toast.success(`Dispute ${data.disputeId} updated to ${vars.status}`);
       utils.customerDisputePortal.listDisputes.invalidate();
       utils.customerDisputePortal.getStats.invalidate();
     },
