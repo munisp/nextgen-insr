@@ -138,13 +138,16 @@ const getStats = publicProcedure
         (tableCountRows.rows?.[0] as { tableCount?: number } | undefined)
           ?.tableCount ?? 0
       );
+      // F-12 (full sweep): totalRows/uptime/queryTime/connections were
+      // fixtures appended to the real table count — no DB telemetry store
+      // is delivered. Honest nulls.
       return {
         totalTables,
-        totalRows: 2450000,
-        uptime: "99.97%",
-        avgQueryTime: "12ms",
-        activeConnections: 45,
-        maxConnections: 200,
+        totalRows: null,
+        uptime: null,
+        avgQueryTime: null,
+        activeConnections: null,
+        maxConnections: null,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

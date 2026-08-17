@@ -296,7 +296,9 @@ export const managementRouter = router({
               txCount: 0,
               volume: "0",
               commission: "0",
-              successRate: 100,
+              // F-12 (full sweep): successRate was a cosmetic 100 — no
+              // success-rate source is delivered.
+              successRate: null,
             };
           const [agent] = await db
             .select()
@@ -326,7 +328,9 @@ export const managementRouter = router({
           return {
             ...stats,
             commission: agent.commissionBalance,
-            successRate: 98.5,
+            // F-12 (full sweep): successRate was a hardcoded 98.5 — no
+            // success-rate source is delivered.
+            successRate: null,
           };
         } catch (error) {
           if (error instanceof TRPCError) throw error;

@@ -252,14 +252,44 @@ export const disputeWorkflowEngineRouter = router({
     }),
 
   getStats: protectedProcedure.query(async () => {
+    // F-12 (full sweep): fixture stats (96.8/1250/850) -> REAL aggregates
+    // from disputes. avgResolutionTime derived from resolved rows.
+    const db = await getDb();
+    if (!db)
+      return {
+        slaCompliance: 0, totalDisputes: 0, open: 0, inProgress: 0,
+        resolved: 0, escalated: 0, avgResolutionTime: null,
+      };
+    const [tot] = await db.select({ value: count() }).from(disputes).limit(100);
+    const statusRows = await db
+      .select({ status: disputes.status, cnt: count() })
+      .from(disputes)
+      .groupBy(disputes.status)
+      .limit(20);
+    const byStatus: Record<string, number> = {};
+    for (const r of statusRows) byStatus[r.status ?? "unknown"] = Number(r.cnt);
+    const [sla] = await db
+      .select({
+        resolved: sql<number>`SUM(CASE WHEN ${disputes.resolvedAt} IS NOT NULL THEN 1 ELSE 0 END)`,
+        within: sql<number>`SUM(CASE WHEN ${disputes.resolvedAt} IS NOT NULL AND ${disputes.resolvedAt} <= ${disputes.slaDeadlineAt} THEN 1 ELSE 0 END)`,
+        avgDays: sql<number>`AVG(CASE WHEN ${disputes.resolvedAt} IS NOT NULL THEN EXTRACT(EPOCH FROM (${disputes.resolvedAt} - ${disputes.createdAt})) / 86400 END)`,
+      })
+      .from(disputes)
+      .limit(100);
+    const resolvedNum = Number(sla?.resolved ?? 0);
+    const avgDays = sla?.avgDays != null ? Number(sla.avgDays) : null;
     return {
-      slaCompliance: 96.8,
-      totalDisputes: 1250,
-      open: 150,
-      inProgress: 200,
-      resolved: 850,
-      escalated: 50,
-      avgResolutionTime: "3.2 days",
+      slaCompliance:
+        resolvedNum > 0
+          ? Math.round((Number(sla?.within ?? 0) / resolvedNum) * 1000) / 10
+          : 0,
+      totalDisputes: Number(tot.value),
+      open: byStatus["open"] ?? 0,
+      inProgress: byStatus["in_progress"] ?? 0,
+      resolved: byStatus["resolved"] ?? 0,
+      escalated: byStatus["escalated"] ?? 0,
+      avgResolutionTime:
+        avgDays != null ? `${Math.round(avgDays * 10) / 10} days` : null,
     };
   }),
 

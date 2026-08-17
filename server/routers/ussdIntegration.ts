@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -54,6 +55,11 @@ export const ussdIntegrationRouter = router({
       };
     }),
   getAnalytics: protectedProcedure.query(async () => {
-    return { totalSessions: 15420, completionRate: "72.5%", avgDuration: "45s", topMenus: ["Buy Insurance", "Check Balance"] };
+    // F-12 (full sweep): fixture analytics (15420 sessions / 72.5%) — no
+    // USSD session-telemetry store is delivered. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getAnalytics: no USSD session-telemetry store is delivered",
+    });
   }),
 });

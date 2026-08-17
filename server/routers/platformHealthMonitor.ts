@@ -134,14 +134,17 @@ const getStats = publicProcedure
         .from(platformSettings)
         .orderBy(desc(platformSettings.id))
         .limit(5);
+      // F-12 (full sweep): health/uptime/latency numbers were fixtures
+      // appended to a discarded real query — no health-telemetry store is
+      // delivered here. Honest nulls/0s.
       return {
-        overallHealth: 99.2,
-        uptime30d: 99.95,
-        services: 45,
-        healthy: 43,
-        degraded: 2,
+        overallHealth: null,
+        uptime30d: null,
+        services: 0,
+        healthy: 0,
+        degraded: 0,
         down: 0,
-        avgResponseTime: 120,
+        avgResponseTime: null,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
