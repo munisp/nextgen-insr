@@ -62,7 +62,7 @@ jobs:
                           pre = stripped.split('(', 1)[0]
                           if (stripped.startswith(('_ = ', '//', '}')) or ':=' in pre or ' = ' in pre
                                   or re.match(r'^(?:' + '|'.join(SKIP_START) + r')\b', stripped)
-                                  or not stripped.rstrip().endswith((')', '('))):
+                                  or not stripped.rstrip().endswith((')', '(', '{'))):
                               continue
                           if stripped.startswith('defer '):
                               src[ln-1] = f"{indent}defer func() {{ _ = {stripped[len('defer '):].rstrip()} }}()\n"
@@ -98,7 +98,7 @@ jobs:
             [ -f "$d/go.mod" ] || continue
             echo "== verifying $d"
             (cd "$d" && go build ./... && go vet ./...) || { echo "BUILD BROKEN: $d"; fail=2; continue; }
-            (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck ./...) || { echo "LINT RESIDUAL: $d"; fail=1; }
+            (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck ./...) || { echo "LINT RESIDUAL: $d"; [ "$fail" != "2" ] && fail=1; }
           done
           if [ "$fail" = "2" ]; then echo "BUILD BROKEN somewhere — refusing to commit"; exit 1; fi
           echo "verify done (lint residuals acceptable for incremental commit)" > /tmp/verify_status.txt
