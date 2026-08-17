@@ -303,7 +303,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		results = []map[string]interface{}{}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
 		"total": total,
 		"page":  page,
@@ -491,7 +491,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM blockchain_records").Scan(&count)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":       "blockchain-transparency",
 		"table":         "blockchain_records",
 		"total_records": count,
@@ -566,7 +566,7 @@ func handleVerifyCertificate(w http.ResponseWriter, r *http.Request) {
 	}
 	verified := storedHash != "" && storedHash == req.Hash
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"policy_number": req.PolicyNumber, "verified": verified,
 		"stored_hash": storedHash != "", "timestamp": time.Now().Format(time.RFC3339),
 	})
@@ -707,7 +707,7 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
 	for _, k := range keys {
-		r.respCmd("DEL", k)
+		_, _ = r.respCmd("DEL", k)
 	}
 }
 

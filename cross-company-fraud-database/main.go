@@ -303,7 +303,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		results = []map[string]interface{}{}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
 		"total": total,
 		"page":  page,
@@ -491,7 +491,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM fraud_reports").Scan(&count)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":       "cross-company-fraud-database",
 		"table":         "fraud_reports",
 		"total_records": count,
@@ -636,7 +636,7 @@ func handleFraudRingAnalysis(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"fraud_rings": clusters,
 		"ring_count":  len(clusters),
 		"risk_level": func() string {

@@ -304,7 +304,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		results = []map[string]interface{}{}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
 		"total": total,
 		"page":  page,
@@ -492,7 +492,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM ab_experiments").Scan(&count)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":       "ab-testing-framework",
 		"table":         "ab_experiments",
 		"total_records": count,
@@ -579,7 +579,7 @@ func handleEvaluateExperiment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"control_rate": math.Round(controlRate*10000) / 10000,
 		"test_rate":    math.Round(testRate*10000) / 10000,
 		"p_value":      math.Round(pValue*10000) / 10000,
@@ -692,7 +692,7 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
 	for _, k := range keys {
-		r.respCmd("DEL", k)
+		_, _ = r.respCmd("DEL", k)
 	}
 }
 

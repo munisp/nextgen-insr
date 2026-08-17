@@ -303,7 +303,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		results = []map[string]interface{}{}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
 		"total": total,
 		"page":  page,
@@ -491,7 +491,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM customer_profiles").Scan(&count)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":       "customer-360-view",
 		"table":         "customer_profiles",
 		"total_records": count,
@@ -606,7 +606,7 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
 	for _, k := range keys {
-		r.respCmd("DEL", k)
+		_, _ = r.respCmd("DEL", k)
 	}
 }
 

@@ -22,7 +22,7 @@ func NewHandlers(svc *service.MDMService) *Handlers {
 
 // Health & Readiness
 func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "enterprise-mdm",
 		"timestamp": time.Now().Format(time.RFC3339),
@@ -31,7 +31,7 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "ready",
 		"service":   "enterprise-mdm",
 		"timestamp": time.Now().Format(time.RFC3339),
@@ -55,7 +55,7 @@ func (h *Handlers) CreateGoldenRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"record":  gr,
 	})
@@ -90,7 +90,7 @@ func (h *Handlers) ListGoldenRecords(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"records": records,
 		"count":   len(records),
 	})
@@ -109,7 +109,7 @@ func (h *Handlers) LinkRecordSource(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"source":  rs,
 	})
@@ -126,7 +126,7 @@ func (h *Handlers) GetRecordSources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"sources": sources,
 		"count":   len(sources),
 	})
@@ -149,7 +149,7 @@ func (h *Handlers) FindDuplicates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"duplicates_found":   len(candidates),
 		"merge_candidates":   len(candidates),
 		"review_required":    0,
@@ -176,7 +176,7 @@ func (h *Handlers) ApproveMerge(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
 		"candidate_id": body.CandidateID,
 		"message":      "Merge candidate approved for processing",
@@ -202,7 +202,7 @@ func (h *Handlers) AssessQuality(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":        true,
 		"quality_metric": qm,
 		"overall_score":  qm.OverallScore,
@@ -227,7 +227,7 @@ func (h *Handlers) CreateDataIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"issue":   di,
 	})
@@ -241,7 +241,7 @@ func (h *Handlers) GetOpenIssues(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"issues":   issues,
 		"count":    len(issues),
 		"open":     len(issues),
@@ -266,7 +266,7 @@ func (h *Handlers) ResolveIssue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":  true,
 		"issue_id": body.IssueID,
 		"message":  "Issue resolved",
@@ -290,7 +290,7 @@ func (h *Handlers) StartSync(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"sync_id": sync.SyncID,
 		"sync":    sync,
@@ -309,7 +309,7 @@ func (h *Handlers) GetRecentSyncs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"syncs": syncs,
 		"count": len(syncs),
 	})
@@ -342,7 +342,7 @@ func (h *Handlers) CreateAgentRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"agent":   ar,
 	})
@@ -375,7 +375,7 @@ func (h *Handlers) ListAgentRecords(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"agents": agents,
 		"count":  len(agents),
 	})
@@ -398,7 +398,7 @@ func (h *Handlers) CreateProductRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"product": pr,
 	})
@@ -425,7 +425,7 @@ func (h *Handlers) ListProductRecords(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"products": products,
 		"count":    len(products),
 	})
@@ -444,7 +444,7 @@ func (h *Handlers) GetDataQualityScore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"overall_score": qm.OverallScore,
 		"completeness":  qm.Completeness,
 		"accuracy":      qm.Accuracy,

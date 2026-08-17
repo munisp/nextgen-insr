@@ -21,7 +21,7 @@ func NewHandlers(svc *service.TakafulService) *Handlers {
 
 // Health & Readiness
 func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "takaful-module",
 		"timestamp": time.Now().Format(time.RFC3339),
@@ -30,7 +30,7 @@ func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "ready",
 		"service":   "takaful-module",
 		"timestamp": time.Now().Format(time.RFC3339),
@@ -51,7 +51,7 @@ func (h *Handlers) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"product": prod,
 	})
@@ -78,7 +78,7 @@ func (h *Handlers) ListProducts(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"products": products,
 		"count":    len(products),
 	})
@@ -97,7 +97,7 @@ func (h *Handlers) RegisterParticipant(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":     true,
 		"participant": ptc,
 		"message":     "Participant registered successfully",
@@ -133,7 +133,7 @@ func (h *Handlers) ListParticipants(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"participants": participants,
 		"count":        len(participants),
 	})
@@ -156,7 +156,7 @@ func (h *Handlers) VerifyKYC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":        true,
 		"participant_id": body.ParticipantID,
 		"kyc_status":     body.Status,
@@ -211,7 +211,7 @@ func (h *Handlers) MakeContribution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":            true,
 		"contribution_id":    contrib.ID,
 		"transaction_id":     contrib.TransactionID,
@@ -247,7 +247,7 @@ func (h *Handlers) ListPools(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"pools": pools,
 		"count": len(pools),
 	})
@@ -283,7 +283,7 @@ func (h *Handlers) CreateClaim(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"claim":   claim,
 		"message": "Claim filed successfully",
@@ -308,7 +308,7 @@ func (h *Handlers) UpdateClaimStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":  true,
 		"claim_id": body.ClaimID,
 		"status":   body.Status,
@@ -340,7 +340,7 @@ func (h *Handlers) GetClaimsByParticipant(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"claims": claims,
 		"count":  len(claims),
 	})
@@ -362,7 +362,7 @@ func (h *Handlers) CalculateSurplus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
 		"distribution": sd,
 		"ratio":        "70/30",
@@ -392,7 +392,7 @@ func (h *Handlers) CalculateZakat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
 		"zakat_record": record,
 		"rate":         record.ZakatRate,
@@ -413,7 +413,7 @@ func (h *Handlers) CreateRetakafulEntry(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"entry":   entry,
 	})
@@ -432,7 +432,7 @@ func (h *Handlers) CreatePoolSnapshot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Pool snapshot created",
 	})

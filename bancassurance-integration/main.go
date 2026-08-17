@@ -398,7 +398,7 @@ func (s *BancassuranceService) HandleHealth(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "bancassurance-integration",
 		"timestamp": time.Now(),
@@ -919,7 +919,7 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
 	for _, k := range keys {
-		r.respCmd("DEL", k)
+		_, _ = r.respCmd("DEL", k)
 	}
 }
 

@@ -304,7 +304,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		results = []map[string]interface{}{}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
 		"total": total,
 		"page":  page,
@@ -492,7 +492,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM innovation_projects").Scan(&count)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":       "insurance-tech-innovations",
 		"table":         "innovation_projects",
 		"total_records": count,

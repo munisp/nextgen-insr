@@ -76,7 +76,7 @@ func handleCalculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	commission := calculateCommission(req.Premium, req.Product, req.Tier)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"agent_id": req.AgentID, "premium": req.Premium, "product": req.Product,
 		"tier": req.Tier, "commission": commission, "rate": commission / req.Premium,
 		"payment_date": time.Now().AddDate(0, 0, 15).Format("2006-01-02"),
@@ -115,7 +115,7 @@ func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"period":           period,
 		"total_payable":    totalPayable,
 		"agents_due":       agentsDue,

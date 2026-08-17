@@ -350,7 +350,7 @@ func (s *PFAService) HandleValidateRSA(w http.ResponseWriter, r *http.Request) {
 	valid, holder := s.ValidateRSAPIN(req.RSAPIN)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"valid":  valid,
 		"holder": holder,
 	})
@@ -383,7 +383,7 @@ func (s *PFAService) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "healthy",
 		"service":   "pfa-integration",
 		"timestamp": time.Now(),
@@ -913,7 +913,7 @@ func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
 	for _, k := range keys {
-		r.respCmd("DEL", k)
+		_, _ = r.respCmd("DEL", k)
 	}
 }
 

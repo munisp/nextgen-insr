@@ -162,7 +162,7 @@ func buildRouter(cfg *config.Config, pg *db.Postgres, redis *db.RedisCache, logg
 func healthHandler(logger *zap.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":    "healthy",
 			"service":   "microinsurance-engine",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -188,7 +188,7 @@ func readinessHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger)
 			}
 		}
 
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":    "ready",
 			"service":   "microinsurance-engine",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -476,7 +476,7 @@ func listEnrollmentsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.L
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"enrollments": enrollments,
 			"total":       total,
 			"limit":       limit,
@@ -576,7 +576,7 @@ func enrollHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) ht
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"enrollment":       enrollment,
 			"policy_number":    enrollmentID,
 			"premium_amount":   product.Premium,
@@ -632,7 +632,7 @@ func cancelEnrollmentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.
 			_ = redis.InvalidateEnrollment(r.Context(), id)
 		}
 
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"enrollment":   enrollment,
 			"message":      "policy cancelled successfully",
 			"cancellation": time.Now().UTC().Format(time.RFC3339),
@@ -661,7 +661,7 @@ func listClaimsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"claims": claims,
 			"total":  total,
 			"limit":  limit,
@@ -753,7 +753,7 @@ func createClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"claim":         claim,
 			"auto_approved": autoApproved,
 			"message":       "claim filed successfully",
@@ -880,7 +880,7 @@ func listGroupsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"groups": groups,
 			"total":  total,
 			"limit":  limit,
@@ -1006,7 +1006,7 @@ func premiumScheduleHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.L
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"schedule":     schedule,
 			"days":         days,
 			"generated_at": time.Now().UTC().Format(time.RFC3339),
@@ -1092,7 +1092,7 @@ func recordPaymentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"payment":    payment,
 			"receipt_no": paymentID,
 			"status":     "payment_recorded",
@@ -1120,7 +1120,7 @@ func listTriggersHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logg
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"triggers": triggers,
 			"total":    total,
 			"limit":    limit,
@@ -1194,7 +1194,7 @@ func metricsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) h
 			return
 		}
 
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"enrollment_stats": stats.EnrollmentStats,
 			"claim_stats":      stats.ClaimStats,
 			"revenue_stats":    stats.RevenueStats,
@@ -1208,7 +1208,7 @@ func metricsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) h
 func writeError(w http.ResponseWriter, code int, message string, logger *zap.Logger) {
 	logger.Warn("Error response", zap.Int("status", code), zap.String("message", message))
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error": message,
 	})
 }

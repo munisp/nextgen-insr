@@ -983,7 +983,7 @@ func handleReady(e *Engine) http.HandlerFunc {
 
 		if ready {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status":  "ready",
 				"checks":  map[string]string{"database": "connected"},
 				"version": "1.0.0",
@@ -991,7 +991,7 @@ func handleReady(e *Engine) http.HandlerFunc {
 		} else {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "not_ready",
 				"checks": map[string]string{"database": "disconnected"},
 			})
@@ -1107,7 +1107,7 @@ func handleCreateClaim(e *Engine) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"claim":   claim,
 			"result":  result,
 			"message": "Claim submitted and adjudicated successfully",
@@ -1230,7 +1230,7 @@ func handleUpdateClaimStatus(e *Engine) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"claim_id": claimID,
 			"status":   string(newStatus),
 			"message":  "Claim status updated",
@@ -1260,7 +1260,7 @@ func handleApproveClaim(e *Engine) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"claim_id": claimID,
 			"decision": "approved",
 			"message":  "Claim approved successfully",
@@ -1290,7 +1290,7 @@ func handleDenyClaim(e *Engine) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"claim_id": claimID,
 			"decision": "denied",
 			"message":  "Claim denied successfully",
@@ -1323,7 +1323,7 @@ func handleEscalateClaim(e *Engine) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"claim_id": claimID,
 			"status":   "escalated",
 			"message":  "Claim escalated to executive review",
@@ -1353,7 +1353,7 @@ func handleGetQueueClaims(e *Engine) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"queue":  queueName,
 			"claims": claims,
 			"count":  len(claims),

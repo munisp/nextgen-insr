@@ -31,7 +31,7 @@ func NewHandlers(dr *service.DRService) *Handlers {
 
 // HealthCheck returns service health status
 func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":     "healthy",
 		"service":    "disaster-recovery-module",
 		"timestamp":  time.Now().Format(time.RFC3339),
@@ -53,7 +53,7 @@ func (h *Handlers) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if dbStatus != "ok" {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":    "unhealthy",
 			"service":   "disaster-recovery-module",
 			"database":  dbStatus,
@@ -62,7 +62,7 @@ func (h *Handlers) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "ready",
 		"service":   "disaster-recovery-module",
 		"database":  dbStatus,
@@ -75,7 +75,7 @@ func (h *Handlers) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	dashboard, err := h.dr.GetDashboard(r.Context())
 	if err != nil {
 		h.log.Error("Failed to get dashboard", zap.Error(err))
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":   "failed_to_fetch_dashboard",
 			"details": err.Error(),
 		})
@@ -92,7 +92,7 @@ func (h *Handlers) GetDRStatus(w http.ResponseWriter, r *http.Request) {
 	services, err := h.dr.GetFailoverEvents(r.Context(), "", 1, 0)
 	if err != nil {
 		h.log.Error("Failed to get failover events", zap.Error(err))
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":   "failed_to_fetch_status",
 			"details": err.Error(),
 		})
@@ -101,7 +101,7 @@ func (h *Handlers) GetDRStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"primary_dc":          "Lagos-1",
 		"secondary_dc":        "Abuja-1",
 		"last_failover_event": services,
@@ -128,7 +128,7 @@ func (h *Handlers) TriggerFailover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":   "invalid_request_body",
 			"details": err.Error(),
 		})
@@ -149,7 +149,7 @@ func (h *Handlers) TriggerFailover(w http.ResponseWriter, r *http.Request) {
 	fe, err := h.dr.TriggerFailover(r.Context(), body.Type, body.TriggeredBy, body.TriggerReason, body.ServicesAffected)
 	if err != nil {
 		h.log.Error("Failed to trigger failover", zap.Error(err))
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":   "failover_trigger_failed",
 			"details": err.Error(),
 		})
@@ -158,7 +158,7 @@ func (h *Handlers) TriggerFailover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":         true,
 		"failover_id":     fe.EventNumber,
 		"status":          "initiated",
@@ -204,7 +204,7 @@ func (h *Handlers) CompleteFailover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
 		"event_number": body.EventNumber,
 		"status":       "completed",
@@ -231,7 +231,7 @@ func (h *Handlers) GetFailoverHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"events": events,
 		"count":  len(events),
 		"limit":  limit,
@@ -290,7 +290,7 @@ func (h *Handlers) CreateDRDrill(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"drill":   drill,
 		"message": "DR drill scheduled successfully",
@@ -317,7 +317,7 @@ func (h *Handlers) CompleteDRDrill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
 		"drill_number": body.DrillNumber,
 		"status":       body.Status,
@@ -341,7 +341,7 @@ func (h *Handlers) GetDRDrillHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"drills": drills,
 		"count":  len(drills),
 	})
@@ -381,7 +381,7 @@ func (h *Handlers) CreateBackupStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"backup":  backup,
 	})
@@ -403,7 +403,7 @@ func (h *Handlers) GetBackupStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"backups": backups,
 		"count":   len(backups),
 	})
@@ -417,7 +417,7 @@ func (h *Handlers) GetLatestBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"backup": backup[0],
 	})
 }
@@ -472,7 +472,7 @@ func (h *Handlers) RegisterService(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Service registered for DR protection",
 		"service": reg,
@@ -507,7 +507,7 @@ func (h *Handlers) UpdateHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":   true,
 		"message":   "Heartbeat recorded",
 		"service":   body.ServiceName,
@@ -524,7 +524,7 @@ func (h *Handlers) GetProtectedServices(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"services": services,
 		"count":    len(services),
 	})
@@ -540,7 +540,7 @@ func (h *Handlers) GetRTOCompliance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"metrics":    trackers,
 		"rto_target": "4 hours",
 		"rpo_target": "1 hour",
@@ -577,7 +577,7 @@ func (h *Handlers) RecordRTOMetric(w http.ResponseWriter, r *http.Request) {
 		// For now, just return success
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":   true,
 		"tracker":   tracker,
 		"compliant": body.Compliant,
@@ -621,7 +621,7 @@ func (h *Handlers) SendNAICOMNotification(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":        true,
 		"notification":   notif,
 		"message":        "NAICOM notification recorded successfully",
@@ -644,7 +644,7 @@ func (h *Handlers) GetNAICOMNotifications(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"notifications": notifs,
 		"count":         len(notifs),
 	})
@@ -659,7 +659,7 @@ func (h *Handlers) SyncHealthSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":   true,
 		"message":   "Health sync completed",
 		"timestamp": time.Now().Format(time.RFC3339),

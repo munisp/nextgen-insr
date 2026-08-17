@@ -304,7 +304,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		results = []map[string]interface{}{}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"data":  results,
 		"total": total,
 		"page":  page,
@@ -501,7 +501,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var count int
 	_ = db.QueryRow("SELECT COUNT(*) FROM naicom_filings").Scan(&count)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":       "naicom-compliance-module",
 		"table":         "naicom_filings",
 		"total_records": count,
@@ -711,7 +711,7 @@ func handleCalculateSCR(w http.ResponseWriter, r *http.Request) {
 func handleStatutoryReturns(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	returns := getStatutoryReturnsDue(time.Now())
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"returns_due":  returns,
 		"generated_at": time.Now().Format(time.RFC3339),
 	})
@@ -772,7 +772,7 @@ func handleSubmitReturn(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"submission_ref": submissionRef, "status": "submitted",
 		"return_type": req.ReturnType, "reporting_period": req.ReportingPeriod,
 	})
@@ -793,7 +793,7 @@ func handleNAICOMDashboard(w http.ResponseWriter, r *http.Request) {
 		InvestmentAssets:       1000000000,
 		ReinsuranceRecoverable: 50000000,
 	})
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"compliance_score":         scrResult.SolvencyRatio * 100,
 		"solvency_ratio":           scrResult.SolvencyRatio,
 		"scr_amount":               scrResult.NetSCR,

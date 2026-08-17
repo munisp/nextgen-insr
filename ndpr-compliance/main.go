@@ -152,7 +152,7 @@ func buildRouter(cfg *config.Config, pg *db.Postgres, redis *db.RedisCache, logg
 func healthHandler(logger *zap.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":    "healthy",
 			"service":   "ndpr-compliance",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -171,7 +171,7 @@ func readinessHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger)
 		if redis != nil && redis.Client.Ping(r.Context()).Err() != nil {
 			logger.Warn("Redis not available at readiness", zap.Error(redis.Client.Ping(r.Context()).Err()))
 		}
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status":    "ready",
 			"service":   "ndpr-compliance",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -255,7 +255,7 @@ func getConsentsBySubjectHandler(pg *db.Postgres, redis *db.RedisCache, logger *
 			data, _ := json.Marshal(consents)
 			_ = redis.CacheConsents(r.Context(), subjectID, data, db.TCacheMedium)
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"subject_id": subjectID,
 			"consents":   consents,
 			"total":      len(consents),
@@ -312,7 +312,7 @@ func withdrawConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.L
 		if redis != nil {
 			_ = redis.InvalidateConsents(r.Context(), consent.SubjectID)
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"consent":      consent,
 			"withdrawn":    true,
 			"withdrawn_at": now.Format(time.RFC3339),
@@ -373,7 +373,7 @@ func submitDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			_ = redis.InvalidateDSAR(r.Context(), dsar.DSARID)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"dsar":     dsar,
 			"sla_days": slaDays,
 			"deadline": dsar.Deadline.Format("2006-01-02"),
@@ -405,7 +405,7 @@ func getDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) h
 			data, _ := json.Marshal(dsar)
 			_ = redis.CacheDSAR(r.Context(), id, data, db.TCacheShort)
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"dsar":          dsar,
 			"sla_days":      dsar.SLADays,
 			"sla_usage_pct": fmt.Sprintf("%.1f", slaUsage),
@@ -557,7 +557,7 @@ func reportBreachHandler(logger *zap.Logger) http.HandlerFunc {
 			}
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"breach":                      breach,
 			"nitda_notification_deadline": breach.NITDADeadline.Format(time.RFC3339),
 			"hours_to_notify":             nitdaHrs,
@@ -584,7 +584,7 @@ func getBreachHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger)
 			data, _ := json.Marshal(breach)
 			_ = redis.CacheBreach(r.Context(), id, data, db.TCacheShort)
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"breach":               breach,
 			"nitda_deadline":       breach.NITDADeadline.Format(time.RFC3339),
 			"hours_until_deadline": max(0, int(time.Until(breach.NITDADeadline).Hours())),
@@ -618,7 +618,7 @@ func markNITDANotifiedHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap
 		if redis != nil {
 			_ = redis.InvalidateBreach(r.Context(), breachID)
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"breach_id":       breachID,
 			"nitda_notified":  true,
 			"notified_at":     now.Format(time.RFC3339),
@@ -873,7 +873,7 @@ func auditReportHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		if err := pkgPg.CreateAuditReport(r.Context(), report); err != nil {
 			logger.Warn("Failed to persist audit report", zap.Error(err))
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"report":           report,
 			"overall_status":   report.OverallStatus,
 			"compliance_score": report.OverallStatus,
