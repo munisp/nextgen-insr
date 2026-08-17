@@ -42,7 +42,7 @@ export default function NotificationCenterPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {([] as Array<{name:string;sent:number;delivered:number}>).map((c) => (
+                  {([] as Array<{name:string;sent:number;delivered:number;rate:number}>).map((c) => (
                     <tr key={c.name} className="border-b">
                       <td className="p-2">{c.name}</td>
                       <td className="p-2 text-right">
@@ -61,7 +61,7 @@ export default function NotificationCenterPage() {
           <div>
             <h2 className="text-lg font-semibold mb-3">Recent Notifications</h2>
             <div className="border rounded p-4 space-y-2">
-              {(data.recentItems as Array<{ id?: unknown; title?: string; channel?: string; recipient?: string }>).map((n) => (
+              {(data.recentItems as Array<{ id?: string | number; title?: string; channel?: string; recipient?: string; status?: string }>).map((n) => (
                 <div
                   key={n.id}
                   className="flex justify-between items-center border-b pb-2"

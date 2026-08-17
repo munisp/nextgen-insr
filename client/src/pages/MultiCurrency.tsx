@@ -500,7 +500,7 @@ export default function MultiCurrency() {
                         </span>
                         <span className="font-mono">
                           1 {calcFrom} ={" "}
-                          {formatRate(convertQuery.data.effectiveRate)} {calcTo}
+                          {formatRate(convertQuery.data.rate)} {calcTo}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
@@ -509,23 +509,21 @@ export default function MultiCurrency() {
                         </span>
                         <span className="font-mono">
                           1 {calcTo} ={" "}
-                          {formatRate(convertQuery.data.inverseRate)} {calcFrom}
+                          {convertQuery.data.rate !== 0 ? formatRate(1 / convertQuery.data.rate) : "—"} {calcFrom}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm border-t pt-2 mt-2">
                         <span className="text-muted-foreground">
-                          Spread ({convertQuery.data.spread}%)
+                          Spread (—)
                         </span>
-                        <span className="font-mono text-yellow-500">
-                          {convertQuery.data.fee.toLocaleString()} {calcTo}
-                        </span>
+                        {/* F-12 (wave-4b): convert returns no fee — honest em-dash */}
+                        <span className="font-mono text-yellow-500">—</span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         
-                        {new Date(
-                          convertQuery.data.timestamp
-                        ).toLocaleTimeString()}
+                        {/* F-12 (wave-4b): convert returns no timestamp */}
+                        —
                       </div>
                     </div>
                   )}

@@ -192,8 +192,13 @@ export const sysConfigRouter = router({
 
 // Session Management Router
 export const sessionMgmtRouter = router({
+  // F-12 (wave-4b): zero-payload listActive — no session store is
+  // delivered. Fail loud.
   listActive: protectedProcedure.query(async () => {
-    return { sessions: [], total: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "listActive: no session store is delivered",
+    });
   }),
   // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
   // with no state change. Fail loud until a real store is delivered.
