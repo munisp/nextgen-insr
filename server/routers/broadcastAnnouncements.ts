@@ -13,6 +13,8 @@ const notImplemented = () =>
 // Targets: "all", "agents", "admins", "merchants"
 // Channels: "banner", "inbox", "push", "email", "sms"
 export const broadcastAnnouncementsRouter = router({
+  // F-12 (wave-4b): no broadcast store is delivered. Fail loud (original
+  // input shape preserved).
   list: protectedProcedure
     .input(
       z.object({
@@ -22,7 +24,10 @@ export const broadcastAnnouncementsRouter = router({
       })
     )
     .query(async () => {
-      throw notImplemented();
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "list: no broadcast store is delivered",
+      });
     }),
 
   getById: protectedProcedure
@@ -46,12 +51,17 @@ export const broadcastAnnouncementsRouter = router({
       throw notImplemented();
     }),
 
+  // F-12 (wave-4b): no broadcast store is delivered. Fail loud (mutation
+  // preserved — the page calls useMutation).
   create: protectedProcedure
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
     .mutation(async () => {
-      throw notImplemented();
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "create: no broadcast store is delivered",
+      });
     }),
 
   delete: protectedProcedure

@@ -43,8 +43,12 @@ export const dataQualityRouter = router({
       throw notImplemented();
     }),
 
+  // F-12 (wave-4b): zero-payload dashboard — no data-quality store is delivered. Fail loud.
   dashboard: protectedProcedure.query(async () => {
-    throw notImplemented();
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dashboard: no data-quality store is delivered",
+    });
   }),
 
   getValidationRules: protectedProcedure.query(async () => {

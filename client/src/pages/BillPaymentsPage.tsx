@@ -13,7 +13,7 @@ export default function BillPaymentsPage() {
     limit: 20,
   });
   const billers = trpc.billPayments.getBillers.useQuery();
-  const analytics = trpc.billPayments.getSummary.useQuery();
+  const analytics = trpc.billPayments.getSummary.useQuery({});
 
   const categories = [
     { key: "electricity", label: "Electricity", icon: Zap },
@@ -42,7 +42,7 @@ export default function BillPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalVolume ?? 0).toLocaleString()}
+                NGN {(analytics.data?.volumeNGN ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -54,7 +54,7 @@ export default function BillPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {(analytics.data?.totalPayments ?? 0).toLocaleString()}
+                {(analytics.data?.total ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -78,7 +78,7 @@ export default function BillPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.successRate ?? 0}%
+                —%
               </p>
             </CardContent>
           </Card>

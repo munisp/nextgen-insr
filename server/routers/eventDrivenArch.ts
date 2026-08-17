@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -93,20 +94,28 @@ export const eventDrivenArchRouter = router({
 
       return results;
     }),
+  // F-12 (wave-4b): zero-payload dashboard — no event-driven-architecture store is delivered. Fail loud.
   dashboard: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "dashboard: no event-driven-architecture store is delivered",
+      });
     }),
   listTopics: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
       return { items: [], total: 0, status: "ok" };
     }),
+  // F-12 (wave-4b): zero-payload getDeadLetterQueue — no dead-letter store is delivered. Fail loud.
   getDeadLetterQueue: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))
     .query(async () => {
-      return { items: [], total: 0, status: "ok" };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "getDeadLetterQueue: no dead-letter store is delivered",
+      });
     }),
   retryDeadLetter: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))

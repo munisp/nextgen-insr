@@ -43,8 +43,12 @@ export const incidentManagementRouter = router({
       throw notImplemented();
     }),
 
+  // F-12 (wave-4b): zero-payload dashboard — no incident store is delivered. Fail loud.
   dashboard: protectedProcedure.query(async () => {
-    throw notImplemented();
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dashboard: no incident store is delivered",
+    });
   }),
 
   getStats: protectedProcedure.query(async () => {

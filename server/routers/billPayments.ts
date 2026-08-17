@@ -185,14 +185,16 @@ export const billPaymentsRouter = router({
   })),
 
   getHistory: protectedProcedure
-    .input(z.object({ agentId: z.number(), limit: z.number().default(20), offset: z.number().default(0) }))
-    .query(async ({ input }) => {
+    // F-12 (wave-4b): agentId was client-supplied — any caller could read
+    // any agent's history. Session-scoped to the caller.
+    .input(z.object({ category: z.string().optional(), limit: z.number().default(20), offset: z.number().default(0) }))
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { data: [], total: 0 };
       const results = await db.select().from(transactions)
-        .where(and(eq(transactions.agentId, input.agentId), eq(transactions.type, "Bill Payment")))
+        .where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, "Bill Payment")))
         .orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
-      const [{ total }] = await db.select({ total: count() }).from(transactions).where(and(eq(transactions.agentId, input.agentId), eq(transactions.type, "Bill Payment")));
+      const [{ total }] = await db.select({ total: count() }).from(transactions).where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, "Bill Payment")));
       return { data: results, total: Number(total) };
     }),
 

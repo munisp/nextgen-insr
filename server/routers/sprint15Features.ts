@@ -399,21 +399,17 @@ export const notificationAnalyticsRouter = router({
       message: "notificationAnalytics.getStats: no notification-analytics pipeline is delivered",
     });
   }),
+  // F-12 (wave-4b): zero-payload breakdown — no notification-analytics
+  // pipeline is delivered. Fail loud.
   getChannelBreakdown: protectedProcedure
     .input(
       z.object({ period: z.enum(["day", "week", "month"]).default("week") })
     )
-    .query(async ({ input }) => {
-      try {
-        return { period: input.period, breakdown: [] };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "notificationAnalytics.getChannelBreakdown: no notification-analytics pipeline is delivered",
+      });
     }),
 });
 
