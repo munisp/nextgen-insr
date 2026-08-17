@@ -34,7 +34,7 @@ export default function PlatformChangelog() {
         <div className="relative">
           <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-800" />
           <div className="space-y-6">
-            {changelogQ.data?.entries.map(entry => (
+            {changelogQ.data?.data.map((entry: { id: number | string; version?: string; title?: string; description?: string; highlights?: string[]; date?: string; type?: string }) => (
               <div key={entry.id} className="relative pl-14">
                 <div className="absolute left-4 top-4 w-4 h-4 rounded-full bg-gray-800 border-2 border-gray-600 z-10" />
                 <Card className="bg-gray-900 border-gray-800">
@@ -64,7 +64,7 @@ export default function PlatformChangelog() {
                       {entry.description}
                     </p>
                     <div className="space-y-1">
-                      {entry.highlights.map((h, i) => (
+                      {(entry.highlights ?? []).map((h, i) => (
                         <div
                           key={i}
                           className="flex items-start gap-2 text-sm text-gray-400"

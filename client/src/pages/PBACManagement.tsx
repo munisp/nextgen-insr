@@ -301,10 +301,8 @@ export default function PBACManagement() {
                     >
                       <td className="p-3">
                         <div>
-                          <span className="font-medium">{user.userName ?? user.id}</span>
-                          <p className="text-xs text-muted-foreground">
-                            {user.email ?? "—"}
-                          </p>
+                          <span className="font-medium">{user.userId ?? user.id}</span>
+
                         </div>
                       </td>
                       <td className="p-3">
@@ -317,7 +315,7 @@ export default function PBACManagement() {
                         —
                       </td>
                       <td className="p-3 text-muted-foreground text-xs">
-                        {new Date(user.assignedAt).toLocaleDateString()}
+                        {user.assignedAt ? new Date(user.assignedAt).toLocaleDateString() : "—"}
                       </td>
                       <td className="p-3">
                         {user.expiresAt ? (

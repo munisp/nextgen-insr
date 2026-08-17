@@ -30,14 +30,14 @@ export default function DragDropReportBuilderPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{d.totalReports}</div>
+            <div className="text-2xl font-bold">{d.stats?.totalReports ?? 0}</div>
             <p className="text-sm text-muted-foreground">Total Reports</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-blue-500">
-              {d.scheduledReports}
+              —
             </div>
             <p className="text-sm text-muted-foreground">Scheduled</p>
           </CardContent>

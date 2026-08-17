@@ -296,8 +296,8 @@ export default function ComplianceChatbotPage() {
                             }
                           >
                             {complianceCheck.data.status
-                              .replace(/_/g, " ")
-                              .toUpperCase()}
+                              ?.replace(/_/g, " ")
+                              .toUpperCase() ?? "—"}
                           </Badge>
                         </div>
                       </div>
@@ -309,13 +309,13 @@ export default function ComplianceChatbotPage() {
                           Requirements:
                         </p>
                         <ul className="space-y-1">
-                          {complianceCheck.data.requirements.map((r, i) => (
+                          {complianceCheck.data.requirements?.map((r, i) => (
                             <li
                               key={i}
                               className="text-xs text-muted-foreground flex items-center gap-2"
                             >
                               <CheckCircle className="h-3 w-3 text-green-500" />{" "}
-                              {r}
+                              {r.name}
                             </li>
                           ))}
                         </ul>
@@ -353,7 +353,7 @@ export default function ComplianceChatbotPage() {
                 </CardContent>
               </Card>
             ))}
-            {(!sessions.data || sessions.data.total === 0) && (
+            {(!sessions.data || (sessions.data as { total?: number }).total === 0) && (
               <p className="text-center text-muted-foreground py-8">
                 No chat sessions yet. Start a new chat above.
               </p>

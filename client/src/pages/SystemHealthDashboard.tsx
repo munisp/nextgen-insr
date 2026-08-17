@@ -145,20 +145,16 @@ export default function SystemHealthDashboard() {
   const overviewQ = trpc.healthMonitor.overview.useQuery(undefined, {
     refetchInterval: 30_000,
   });
-  const txVolumeQ = trpc.healthMonitor.transactionVolume.useQuery(
-    { hours: timeRange },
+  const txVolumeQ = trpc.healthMonitor.transactionVolume.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
-  const userActivityQ = trpc.healthMonitor.userActivity.useQuery(
-    { hours: timeRange },
+  const userActivityQ = trpc.healthMonitor.userActivity.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
-  const latencyQ = trpc.healthMonitor.apiLatency.useQuery(
-    { hours: timeRange },
+  const latencyQ = trpc.healthMonitor.apiLatency.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
-  const errorsQ = trpc.healthMonitor.errorTracking.useQuery(
-    { hours: timeRange },
+  const errorsQ = trpc.healthMonitor.errorTracking.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
   const securityQ = trpc.healthMonitor.securityEvents.useQuery(undefined, {

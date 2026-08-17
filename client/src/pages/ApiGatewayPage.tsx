@@ -56,7 +56,7 @@ export default function ApiGatewayPage() {
                 </tr>
               </thead>
               <tbody>
-                {([] as Array<{ endpoint: string; limit: number; window: string }>).map((r, i) => (
+                {([] as Array<{ endpoint?: string; limit?: number; window?: string; tier?: string; requestsPerMin?: number; burstLimit?: number; activeKeys?: number }>).map((r, i) => (
                   <tr key={i} className="border-b">
                     <td className="p-2">
                       <Badge>{r.tier}</Badge>
