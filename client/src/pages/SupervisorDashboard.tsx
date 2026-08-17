@@ -18,24 +18,24 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function SupervisorDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.supervisorKpi?.useQuery?.({ periodDays: 7 })?.useQuery?.({}) ?? { data: null, isLoading: false };
-  const kpi = data?.agents ?? data ?? {}; const tx = data?.transactions ?? {};
+  const { data, isLoading } = trpc.insuranceKpiDashboard.supervisorKpi.useQuery({ periodDays: 7 });
+  const kpi: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
+  const tx: Record<string, number> = {};
 
   const cards = [
-    { title: "Active Agents", value: kpi.active ?? kpi.activeAgents ?? "—", icon: Users, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/agent-management", accent: "var(--role-supervisor)" },
-    { title: "Transactions Today", value: tx.today ?? kpi.transactionsToday ?? "—", icon: ArrowRightLeft, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/transactions", accent: "var(--risk-low)" },
-    { title: "Float Utilization", value: kpi.floatUtilization ?? "—", icon: Wallet, trend: "up" as const, trendValue: "↑ 3%", status: "neutral" as const, href: "/float-management", accent: "var(--insurance-primary)" },
-    { title: "SLA Breaches", value: kpi.slaBreaches ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 1", status: "good" as const, href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
-    { title: "Pending Approvals", value: kpi.pendingApprovals ?? "—", icon: Clock, trend: "up" as const, trendValue: "+6", status: "warning" as const, href: "/agent-management", accent: "var(--risk-medium)" },
-    { title: "Revenue Today (₦)", value: kpi.revenueToday ?? "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 12%", status: "good" as const, href: "/settlement-engine", accent: "var(--risk-low)" },
-    { title: "Escalations Open", value: kpi.escalationsOpen ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: "warning" as const, href: "/agent-management", accent: "var(--risk-medium)" },
-    { title: "Agent Performance", value: kpi.agentPerformance ?? "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 2.1%", status: "good" as const, href: "/agent-benchmarking", accent: "var(--risk-low)" },
+    { title: "Active Agents", value: kpi.agents?.active ?? "—", icon: Users, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/agent-management", accent: "var(--role-supervisor)" },
+    { title: "Transactions Today", value: tx.today ?? kpi.transactions?.total ?? "—", icon: ArrowRightLeft, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/transactions", accent: "var(--risk-low)" },
+    { title: "Float Utilization", value: "—", icon: Wallet, trend: "up" as const, trendValue: "↑ 3%", status: "neutral" as const, href: "/float-management", accent: "var(--insurance-primary)" },
+    { title: "SLA Breaches", value: kpi.sla?.breaches ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 1", status: "good" as const, href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
+    { title: "Pending Approvals", value: "—", icon: Clock, trend: "up" as const, trendValue: "+6", status: "warning" as const, href: "/agent-management", accent: "var(--risk-medium)" },
+    { title: "Revenue Today (₦)", value: kpi.transactions?.totalVolume ?? "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 12%", status: "good" as const, href: "/settlement-engine", accent: "var(--risk-low)" },
+    { title: "Escalations Open", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: "warning" as const, href: "/agent-management", accent: "var(--risk-medium)" },
+    { title: "Agent Performance", value: kpi.agents?.avgPerformanceScore ?? "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 2.1%", status: "good" as const, href: "/agent-benchmarking", accent: "var(--risk-low)" },
   ];
 
   const agentStatus = [
-    { name: "Active", value: Number(kpi.active ?? kpi.activeAgents ?? 0) },
-    { name: "Suspended", value: Number(kpi.suspended ?? 0) },
-    { name: "Pending", value: Number(kpi.pending ?? 0) },
+    { name: "Active", value: Number(kpi.agents?.active ?? 0) },
+    { name: "Suspended", value: Number(kpi.agents?.suspended ?? 0) },
   ].filter(d => d.value > 0);
   const txTrend = Array.from({length:7},(_,i)=>{
     const d = new Date(Date.now()-(6-i)*86400000);

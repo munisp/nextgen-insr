@@ -16,11 +16,16 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function RansomwareAlertDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).ransomwareAlerts?.getStats?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: alerts } = (trpc as any).ransomwareAlerts?.getAlerts?.useQuery?.() ?? { data: null };
-  const { data: recent } = (trpc as any).ransomwareAlerts?.getRecent?.useQuery?.({ limit: 5 }) ?? { data: null };
+  const { data, isLoading } = trpc.ransomwareAlerts.getStats.useQuery();
+  const { data: alerts } = trpc.ransomwareAlerts.getAlerts.useQuery();
+  const { data: recent } = trpc.ransomwareAlerts.getRecent.useQuery({ limit: 5 });
 
-  const s = data ?? {};
+  // F-12: the ransomwareAlerts router is deliberately fail-loud (every
+  // procedure throws NOT_IMPLEMENTED) — stats render honest "—" until delivered.
+  const s: Partial<{
+    alertsToday: number; activeThreats: number; resolvedMtd: number;
+    quarantined: number; detectionRate: number; lastBackupAge: number;
+  }> = {};
   const cards = [
     { title: "Active Threats", value: s.activeThreats ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "monitored", status: (Number(s.activeThreats ?? 0) > 0 ? "critical" : "good") as "critical" | "good", href: "/ransomware-alert-dashboard", accent: "var(--risk-critical)" },
     { title: "Quarantined Files", value: s.quarantined ?? "—", icon: Shield, trend: "flat" as const, trendValue: "isolated", status: "warning" as const, href: "/ransomware-alert-dashboard", accent: "var(--risk-medium)" },
@@ -39,7 +44,7 @@ export default function RansomwareAlertDashboard() {
 
   const alertTrend = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(Date.now() - (6 - i) * 86400000);
-    return { day: d.toLocaleDateString("en-NG", { weekday: "short" }), alerts: Math.max(0, Number(s.alertsToday ?? 0) * (0.5 + Math.random())) };
+    return { day: d.toLocaleDateString("en-NG", { weekday: "short" }), alerts: Number(s.alertsToday ?? 0) };
   });
 
   return (

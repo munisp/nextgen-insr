@@ -503,3 +503,95 @@ export async function InsurancePolicyBindingWorkflow(
     duration: `${Date.now() - startTime}ms`,
   };
 }
+
+// ── Billing Provisioning Workflow (Sprint 82) ────────────────────────────────
+const {
+  validateTenantForBilling,
+  createBillingConfig,
+  createTigerBeetleAccounts,
+  provisionKafkaTopics,
+  assignBillingRoles,
+  configureReconciliation,
+  activateBilling,
+  rollbackBillingStep,
+} = proxyActivities<typeof activities>({
+  startToCloseTimeout: "2 minutes",
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: "1s",
+    backoffCoefficient: 2,
+    maximumInterval: "30s",
+  },
+});
+
+/**
+ * Durable tenant billing provisioning: runs the seven real provisioning steps
+ * and compensates completed steps in reverse order on failure.
+ */
+export async function BillingProvisioningWorkflow(input: {
+  tenantId: number;
+  billingModel: "revenue_share" | "subscription" | "hybrid";
+  customConfig?: {
+    revenueShareConfig?: unknown;
+    subscriptionConfig?: unknown;
+    hybridConfig?: unknown;
+    currency?: string;
+  };
+  provisionedBy: number;
+  region?: string;
+}): Promise<{ success: boolean; configId: number }> {
+  const completedSteps: string[] = [];
+  let configId = 0;
+  try {
+    await validateTenantForBilling({ tenantId: input.tenantId });
+    completedSteps.push("validate_tenant");
+
+    const config = await createBillingConfig({
+      tenantId: input.tenantId,
+      billingModel: input.billingModel,
+      revenueShareConfig: input.customConfig?.revenueShareConfig,
+      subscriptionConfig: input.customConfig?.subscriptionConfig,
+      hybridConfig: input.customConfig?.hybridConfig,
+      currency: input.customConfig?.currency,
+      provisionedBy: input.provisionedBy,
+    });
+    configId = config.configId;
+    completedSteps.push("create_billing_config");
+
+    await createTigerBeetleAccounts({ tenantId: input.tenantId });
+    completedSteps.push("create_tigerbeetle_accounts");
+
+    await provisionKafkaTopics({ tenantId: input.tenantId });
+    completedSteps.push("provision_kafka_topics");
+
+    await assignBillingRoles({
+      tenantId: input.tenantId,
+      userId: input.provisionedBy,
+    });
+    completedSteps.push("assign_billing_roles");
+
+    await configureReconciliation({
+      tenantId: input.tenantId,
+      region: input.region,
+    });
+    completedSteps.push("configure_reconciliation");
+
+    await activateBilling({
+      tenantId: input.tenantId,
+      activatedBy: input.provisionedBy,
+    });
+    completedSteps.push("activate_billing");
+
+    return { success: true, configId };
+  } catch (err) {
+    // Compensate completed steps in reverse order (durable rollback).
+    for (const step of [...completedSteps].reverse()) {
+      await rollbackBillingStep({
+        tenantId: input.tenantId,
+        step,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+    throw err;
+  }
+}

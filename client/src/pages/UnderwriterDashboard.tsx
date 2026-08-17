@@ -18,8 +18,9 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function UnderwriterDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.underwriterKpi?.useQuery?.({ periodDays: 30 })?.useQuery?.({}) ?? { data: null, isLoading: false };
-  const kpi = data?.applications ?? {}; const pol = data?.policies ?? {};
+  const { data, isLoading } = trpc.insuranceKpiDashboard.underwriterKpi.useQuery({ periodDays: 30 });
+  const kpi: Partial<Exclude<typeof data, null | undefined>>["applications"] | Record<string, number> = data?.applications ?? {};
+  const pol: Record<string, number> = {};
 
   const cards = [
     { title: "Pending Applications", value: kpi.pending ?? "—", icon: Clock, trend: "up" as const, trendValue: "+4 today", status: "warning" as const, href: "/underwriting-queue", accent: "var(--risk-medium)" },

@@ -16,18 +16,29 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function SecurityDashboardPage() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: scan, isLoading } = (trpc as any).securityAudit?.runSecurityScan?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: ddos } = (trpc as any).securityAudit?.getDDoSStatus?.useQuery?.() ?? { data: null };
-  const { data: backup } = (trpc as any).securityAudit?.getBackupStatus?.useQuery?.() ?? { data: null };
-  const { data: integrity } = (trpc as any).securityAudit?.getFileIntegrity?.useQuery?.() ?? { data: null };
+  // runSecurityScan is a MUTATION (it executes a real scan) — wired to the
+  // header "Run scan" button instead of auto-firing on page load.
+  const scanMutation = trpc.securityAudit.runSecurityScan.useMutation();
+  const scan = scanMutation.data;
+  const isLoading = scanMutation.isPending;
+  // NOTE: getDDoSStatus/getBackupStatus/getFileIntegrity were removed — the
+  // delivered procedures return agent-registry rows (stub payloads), not real
+  // security status, so the cards below render honest empty states.
 
-  const s = scan ?? {};
+  // F-12: runSecurityScan returns an ack {success,id,message,timestamp}; the
+  // vulnerability metrics below have no delivered data source and render "—".
+  const s: Partial<{
+    overallScore: number; openVulnerabilities: number; lastScanAt: string;
+    critical: number; high: number; medium: number; low: number;
+    authScore: number; encryptionScore: number;
+    networkScore: number; dataScore: number; accessScore: number;
+  }> = {};
   const cards = [
     { title: "Security Score", value: s.overallScore ? s.overallScore + "%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 3%", status: (Number(s.overallScore ?? 0) >= 90 ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
     { title: "Open Vulnerabilities", value: s.openVulnerabilities ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 2", status: (Number(s.openVulnerabilities ?? 0) > 0 ? "critical" : "good") as "critical" | "good", href: "/security-audit-dashboard", accent: "var(--risk-critical)" },
-    { title: "DDoS Status", value: ddos?.status ?? "—", icon: Zap, trend: "flat" as const, trendValue: "monitoring", status: (ddos?.status === "clean" ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Backup Status", value: backup?.status ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: backup?.lastBackup ? "recent" : "check", status: (backup?.status === "healthy" ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
-    { title: "File Integrity", value: integrity?.status ?? "—", icon: Lock, trend: "flat" as const, trendValue: "monitored", status: (integrity?.status === "clean" ? "good" : "critical") as "good" | "critical", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "DDoS Status", value: "—", icon: Zap, trend: "flat" as const, trendValue: "monitoring", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Backup Status", value: "—", icon: CheckCircle, trend: "flat" as const, trendValue: "check", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "File Integrity", value: "—", icon: Lock, trend: "flat" as const, trendValue: "monitored", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
     { title: "Last Scan", value: s.lastScanAt ? new Date(s.lastScanAt).toLocaleDateString() : "—", icon: Clock, trend: "flat" as const, trendValue: "automated", status: "neutral" as const, href: "/security-audit-dashboard", accent: "var(--insurance-secondary)" },
   ];
 
@@ -40,10 +51,10 @@ export default function SecurityDashboardPage() {
 
   const securityScores = [
     { category: "Authentication", score: Number(s.authScore ?? 95) },
-    { category: "Encryption", score: Number(s.encryptionScore ?? 98) },
-    { category: "Network", score: Number(s.networkScore ?? 88) },
-    { category: "Data", score: Number(s.dataScore ?? 92) },
-    { category: "Access", score: Number(s.accessScore ?? 90) },
+    { category: "Encryption", score: Number(s.encryptionScore ?? 0) },
+    { category: "Network", score: Number(s.networkScore ?? 0) },
+    { category: "Data", score: Number(s.dataScore ?? 0) },
+    { category: "Access", score: Number(s.accessScore ?? 0) },
   ];
 
   return (
@@ -59,6 +70,14 @@ export default function SecurityDashboardPage() {
             <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Vulnerabilities · DDoS · Backups · Integrity</p>
           </div>
         </div>
+        <button
+          onClick={() => scanMutation.mutate({})}
+          disabled={scanMutation.isPending}
+          className="text-xs px-3 py-1.5 rounded-lg font-medium"
+          style={{ background: "var(--insurance-primary)", color: "#fff", opacity: scanMutation.isPending ? 0.6 : 1 }}
+        >
+          {scanMutation.isPending ? "Scanning…" : "Run scan"}
+        </button>
       </div>
       <div className="px-4 pt-4 space-y-6">
         <section>

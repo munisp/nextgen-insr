@@ -16,19 +16,19 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function RateLimitDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: rules, isLoading } = (trpc as any).rateLimitEngine?.listRules?.useQuery?.({ limit: 20 }) ?? { data: null, isLoading: false };
-  const { data: dashData } = (trpc as any).apiRateLimiterDash?.getDashboard?.useQuery?.() ?? { data: null };
+  const { data: rules, isLoading } = trpc.rateLimitEngine.listRules.useQuery({ page: 1, limit: 20 });
+  const { data: dashData } = trpc.apiRateLimiterDash.getSummary.useQuery();
 
-  const d = dashData ?? {};
-  const ruleList = (rules?.data ?? rules ?? []) as any[];
+  const d: Partial<Exclude<typeof dashData, null | undefined>> = dashData ?? {};
+  const ruleList = (rules?.items ?? rules ?? []) as any[];
 
   const cards = [
-    { title: "Active Rules", value: ruleList.filter((r: any) => r.enabled !== false).length || d.activeRules || "—", icon: Shield, trend: "flat" as const, trendValue: "enforced", status: "good" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Requests (1h)", value: d.requestsLastHour ?? "—", icon: Zap, trend: "up" as const, trendValue: "live", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-secondary)" },
-    { title: "Throttled (1h)", value: d.throttledLastHour ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "blocked", status: (Number(d.throttledLastHour ?? 0) > 100 ? "warning" : "good") as "warning" | "good", href: "/rate-limit-dashboard", accent: "var(--risk-medium)" },
-    { title: "Throttle Rate (%)", value: d.throttleRate ? d.throttleRate.toFixed(2)+"%" : "—", icon: Activity, trend: "down" as const, trendValue: "↓ 0.1%", status: (Number(d.throttleRate ?? 0) > 5 ? "warning" : "good") as "warning" | "good", href: "/rate-limit-dashboard", accent: "var(--risk-low)" },
-    { title: "Unique IPs (1h)", value: d.uniqueIps ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: "monitored", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Top Blocked Route", value: d.topBlockedRoute ?? "—", icon: TrendingUp, trend: "flat" as const, trendValue: "most blocked", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-secondary)" },
+    { title: "Active Rules", value: ruleList.filter((r: any) => r.enabled !== false).length || d.totalRules || "—", icon: Shield, trend: "flat" as const, trendValue: "enforced", status: "good" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Requests (1h)", value: "—", icon: Zap, trend: "up" as const, trendValue: "live", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-secondary)" },
+    { title: "Throttled (1h)", value: d.activeBlocks ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "blocked", status: (Number(d.activeBlocks ?? 0) > 100 ? "warning" : "good") as "warning" | "good", href: "/rate-limit-dashboard", accent: "var(--risk-medium)" },
+    { title: "Throttle Rate (%)", value: "—", icon: Activity, trend: "down" as const, trendValue: "↓ 0.1%", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--risk-low)" },
+    { title: "Unique IPs (1h)", value: "—", icon: CheckCircle, trend: "flat" as const, trendValue: "monitored", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Top Blocked Route", value: "—", icon: TrendingUp, trend: "flat" as const, trendValue: "most blocked", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-secondary)" },
   ];
 
   const rulesByType = [
@@ -40,8 +40,8 @@ export default function RateLimitDashboard() {
 
   const requestTrend = Array.from({ length: 12 }, (_, i) => ({
     time: `${i * 5}m`,
-    requests: Math.max(0, Number(d.requestsLastHour ?? 100) * (0.5 + Math.random())),
-    throttled: Math.max(0, Number(d.throttledLastHour ?? 5) * (0.3 + Math.random())),
+    requests: 0,
+    throttled: Number(d.activeBlocks ?? 0),
   }));
 
   return (

@@ -69,4 +69,19 @@ export const dbSchemaPushRouter = router({
     currentVersion: "2026.05.28.001", totalMigrations: 47, pendingMigrations: 0, lastMigration: new Date(Date.now() - 86400000).toISOString(),
     rollbackAvailable: true, rollbackDeadline: new Date(Date.now() + 23 * 3600000).toISOString(), rules: MIGRATION_RULES,
   })),
+  // Sprint 37 contract (F-12): stats from the delivered migration config and
+  // the platformSettings table this router manages.
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    let trackedSettings = 0;
+    if (database) {
+      const [{ total }] = await database.select({ total: count() }).from(platformSettings);
+      trackedSettings = Number(total ?? 0);
+    }
+    // F-12: only real sources — the migration-history list/getSummary above are
+    // delivered hardcoded fixtures (reported as mockware), so they are NOT a
+    // data source; stats expose only the platformSettings rows this router
+    // genuinely manages.
+    return { trackedSettings };
+  }),
 });

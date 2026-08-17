@@ -118,4 +118,12 @@ export const platformMetricsExporterRouter = router({
       lastExport: new Date().toISOString(),
     };
   }),
+  // Sprint 37 contract (F-12): stats from the delivered metric definitions and
+  // the analyticsMetrics table this router exports from.
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { definedMetrics: METRIC_DEFINITIONS.length, storedMetrics: 0 };
+    const [{ total }] = await database.select({ total: count() }).from(analyticsMetrics);
+    return { definedMetrics: METRIC_DEFINITIONS.length, storedMetrics: Number(total ?? 0) };
+  }),
 });

@@ -16,15 +16,17 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function SecurityAuditDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).securityAudit?.getAuditChain?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: policies } = (trpc as any).securityAudit?.getPolicies?.useQuery?.() ?? { data: null };
-  const { data: mitigations } = (trpc as any).securityAudit?.getMitigations?.useQuery?.() ?? { data: null };
+  const { data, isLoading } = trpc.securityAudit.getAuditChain.useQuery({});
+  const { data: policies } = trpc.securityAudit.getPolicies.useQuery({});
+  const { data: mitigations } = trpc.securityAudit.getMitigations.useQuery({});
 
-  const d = data ?? {};
+  // F-12: getAuditChain/getPolicies/listMitigations return agent-registry rows
+  // (delivered stubs) — no audit telemetry; cards render honest empty states.
+  const d: Partial<{ totalEvents: number; chainValid: boolean }> = {};
   const cards = [
     { title: "Audit Events (24h)", value: d.totalEvents ?? "—", icon: Activity, trend: "up" as const, trendValue: "logged", status: "neutral" as const, href: "/audit-log", accent: "var(--insurance-primary)" },
-    { title: "Security Policies", value: (policies as any[])?.length ?? "—", icon: Shield, trend: "flat" as const, trendValue: "active", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
-    { title: "Open Mitigations", value: (mitigations as any[])?.filter((m: any) => m.status === "open").length ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 1", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-medium)" },
+    { title: "Security Policies", value: Array.isArray(policies) ? (policies as any[]).length : "—", icon: Shield, trend: "flat" as const, trendValue: "active", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "Open Mitigations", value: Array.isArray(mitigations) ? (mitigations as any[]).filter((m: any) => m.status === "open").length : "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 1", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-medium)" },
     { title: "Chain Integrity", value: d.chainValid ? "Valid" : "—", icon: Lock, trend: "flat" as const, trendValue: "tamper-proof", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
   ];
 
@@ -38,7 +40,7 @@ export default function SecurityAuditDashboard() {
 
   const auditTrend = Array.from({ length: 7 }, (_, i) => {
     const d2 = new Date(Date.now() - (6 - i) * 86400000);
-    return { day: d2.toLocaleDateString("en-NG", { weekday: "short" }), events: Math.max(0, Number(d.totalEvents ?? 50) * (0.7 + Math.random() * 0.6)) };
+    return { day: d2.toLocaleDateString("en-NG", { weekday: "short" }), events: Number(d.totalEvents ?? 0) };
   });
 
   return (

@@ -18,30 +18,33 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function ComplianceDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.complianceKpi?.useQuery?.({ periodDays: 30 })?.useQuery?.({}) ?? { data: null, isLoading: false };
-  const kpi = data?.checks ?? data ?? {}; const sar = data?.sar ?? {}; const kyc = data?.kyc ?? {};
+  const { data, isLoading } = trpc.insuranceKpiDashboard.complianceKpi.useQuery({ periodDays: 30 });
+  const kpi: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
+  // F-12: no separate sar/kyc aggregates in the delivered return — the
+  // complianceKpi response already embeds flags under checks/fraud.
+  const sar: Record<string, number> = {}; const kyc: Record<string, number> = {};
 
   const cards = [
-    { title: "Compliance Score", value: kpi.overallScore ? kpi.overallScore+"%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 2%", status: (Number(kpi.overallScore??0)>=90?"good":"warning") as "good" | "warning", href: "/compliance-dashboard", accent: "var(--risk-low)" },
-    { title: "Checks Passed", value: kpi.passed ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "MTD", status: "good" as const, href: "/regulatory-compliance-checks", accent: "var(--risk-low)" },
-    { title: "Checks Failed", value: kpi.failed ?? "—", icon: XCircle, trend: "flat" as const, trendValue: "stable", status: "critical" as const, href: "/regulatory-compliance-checks", accent: "var(--risk-critical)" },
-    { title: "SARs Filed", value: sar.filed ?? kpi.sarsFiled ?? "—", icon: FileText, trend: "flat" as const, trendValue: "CBN", status: "neutral" as const, href: "/cbn-reporting-dashboard", accent: "var(--insurance-primary)" },
-    { title: "AML Alerts", value: kpi.amlAlerts ?? "—", icon: AlertTriangle, trend: "up" as const, trendValue: "+3", status: "warning" as const, href: "/aml-monitoring", accent: "var(--risk-medium)" },
-    { title: "KYC Pending", value: kyc.pending ?? kpi.kycPending ?? "—", icon: Clock, trend: "up" as const, trendValue: "review", status: "warning" as const, href: "/kyc-management", accent: "var(--risk-medium)" },
-    { title: "Overdue Filings", value: kpi.overdueFilings ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: (Number(kpi.overdueFilings??0)>0?"critical":"good") as "critical" | "good", href: "/compliance-cert-manager", accent: "var(--risk-critical)" },
-    { title: "Risk Level", value: kpi.riskLevel ?? "—", icon: Activity, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/compliance-dashboard", accent: "var(--insurance-secondary)" },
+    { title: "Compliance Score", value: kpi.checks?.complianceRate ? kpi.checks?.complianceRate+"%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 2%", status: (Number(kpi.checks?.complianceRate??0)>=90?"good":"warning") as "good" | "warning", href: "/compliance-dashboard", accent: "var(--risk-low)" },
+    { title: "Checks Passed", value: kpi.checks?.passed ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "MTD", status: "good" as const, href: "/regulatory-compliance-checks", accent: "var(--risk-low)" },
+    { title: "Checks Failed", value: kpi.checks?.failed ?? "—", icon: XCircle, trend: "flat" as const, trendValue: "stable", status: "critical" as const, href: "/regulatory-compliance-checks", accent: "var(--risk-critical)" },
+    { title: "SARs Filed", value: sar.filed ?? "—", icon: FileText, trend: "flat" as const, trendValue: "CBN", status: "neutral" as const, href: "/cbn-reporting-dashboard", accent: "var(--insurance-primary)" },
+    { title: "AML Alerts", value: "—", icon: AlertTriangle, trend: "up" as const, trendValue: "+3", status: "warning" as const, href: "/aml-monitoring", accent: "var(--risk-medium)" },
+    { title: "KYC Pending", value: kyc.pending ?? "—", icon: Clock, trend: "up" as const, trendValue: "review", status: "warning" as const, href: "/kyc-management", accent: "var(--risk-medium)" },
+    { title: "Overdue Filings", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: (Number(0)>0?"critical":"good") as "critical" | "good", href: "/compliance-cert-manager", accent: "var(--risk-critical)" },
+    { title: "Risk Level", value: "—", icon: Activity, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/compliance-dashboard", accent: "var(--insurance-secondary)" },
   ];
 
   const complianceBreakdown = [
-    { name: "Passed", value: Number(kpi.passed??0) },
-    { name: "Failed", value: Number(kpi.failed??0) },
-    { name: "Warnings", value: Number(kpi.warnings??0) },
+    { name: "Passed", value: Number(kpi.checks?.passed??0) },
+    { name: "Failed", value: Number(kpi.checks?.failed??0) },
+    { name: "Warnings", value: Number(0) },
   ].filter(d=>d.value>0);
   const amlDist = [
-    { category: "Low Risk", count: Math.floor(Number(kpi.totalChecked??100)*0.70) },
-    { category: "Medium", count: Math.floor(Number(kpi.totalChecked??100)*0.20) },
-    { category: "High", count: Math.floor(Number(kpi.totalChecked??100)*0.08) },
-    { category: "Critical", count: Math.floor(Number(kpi.totalChecked??100)*0.02) },
+    { category: "Low Risk", count: Math.floor(Number(kpi.checks?.total??100)*0.70) },
+    { category: "Medium", count: Math.floor(Number(kpi.checks?.total??100)*0.20) },
+    { category: "High", count: Math.floor(Number(kpi.checks?.total??100)*0.08) },
+    { category: "Critical", count: Math.floor(Number(kpi.checks?.total??100)*0.02) },
   ];
 
   return (

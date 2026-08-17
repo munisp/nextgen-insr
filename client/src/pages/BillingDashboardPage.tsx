@@ -16,20 +16,32 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function BillingDashboardPage() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: ledger, isLoading } = (trpc as any).billingLedger?.aggregateRevenue?.useQuery?.({ periodDays: 30 }) ?? { data: null, isLoading: false };
-  const { data: metrics } = (trpc as any).billingLedger?.getLiveSplitMetrics?.useQuery?.() ?? { data: null };
-  const { data: invoices } = (trpc as any).billingInvoice?.list?.useQuery?.({ limit: 5 }) ?? { data: null };
-  const { data: kpi } = (trpc as any).insuranceKpiDashboard?.billingAdminKpi?.useQuery?.({ periodDays: 30 }) ?? { data: null };
+  // F-12: billingLedger.aggregateRevenue + getLiveSplitMetrics are HARDCODED
+  // fabrications in the delivered router (literal 150/22500/6300 values, no DB
+  // query) — reported as undelivered-scope, NOT wired. Only the genuine
+  // billingAdminKpi feed is displayed; fabrication-fed sections render "—".
+  const isLoading = false;
+  const r: Partial<{
+    totalRevenue: number; platformFees: number; transactionCount: number;
+    avgTransactionValue: number; commissionRevenue: number;
+    premiumRevenue: number; otherRevenue: number;
+  }> = {};
+  const metrics: Partial<{ activeSplits: number; splitsToday: number; volumeToday: number; avgSplitMs: number }> = {};
+  // F-12 (S87-05): billingInvoice.list was a phantom API — the delivered
+  // listInvoices procedure is TENANT-scoped (requires tenantId) and this is a
+  // platform-level dashboard, so the recent-invoices section renders its
+  // honest empty state until a platform-level invoices feed is delivered.
+  const invoices = undefined as { data?: Array<Record<string, unknown>> } | undefined;
+  const { data: kpi } = trpc.insuranceKpiDashboard.billingAdminKpi.useQuery({ periodDays: 30 });
 
-  const r = ledger ?? {};
-  const m = metrics ?? {};
-  const k = kpi ?? {};
+  const m: Partial<Exclude<typeof metrics, null | undefined>> = metrics ?? {};
+  const k: Partial<Exclude<typeof kpi, null | undefined>["billing"]> = kpi?.billing ?? {};
 
   const cards = [
-    { title: "Revenue (MTD ₦M)", value: r.totalRevenue ? (r.totalRevenue/1e6).toFixed(2) : k.totalRevenueMtd ?? "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/billing-analytics-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Platform Fees (₦M)", value: r.platformFees ? (r.platformFees/1e6).toFixed(2) : "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 5%", status: "good" as const, href: "/billing-analytics-dashboard", accent: "var(--risk-low)" },
-    { title: "Active Tenants", value: k.activeTenants ?? "—", icon: Activity, trend: "flat" as const, trendValue: "subscribed", status: "neutral" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-secondary)" },
-    { title: "Overdue Invoices", value: k.overdueInvoices ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "pending", status: (Number(k.overdueInvoices ?? 0) > 0 ? "critical" : "good") as "critical" | "good", href: "/billing-admin-dashboard", accent: "var(--risk-critical)" },
+    { title: "Revenue (MTD ₦M)", value: r.totalRevenue ? (r.totalRevenue/1e6).toFixed(2) : "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/billing-analytics-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Platform Fees (₦M)", value: k.platformRevenue != null ? (Number(k.platformRevenue)/1e6).toFixed(2) : "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 5%", status: "good" as const, href: "/billing-analytics-dashboard", accent: "var(--risk-low)" },
+    { title: "Active Tenants", value: "—", icon: Activity, trend: "flat" as const, trendValue: "subscribed", status: "neutral" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-secondary)" },
+    { title: "Overdue Invoices", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "pending", status: ("good") as "critical" | "good", href: "/billing-admin-dashboard", accent: "var(--risk-critical)" },
     { title: "Transactions (MTD)", value: r.transactionCount ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "processed", status: "good" as const, href: "/transactions", accent: "var(--risk-low)" },
     { title: "Avg Txn Value (₦)", value: r.avgTransactionValue ? Number(r.avgTransactionValue).toLocaleString() : "—", icon: BarChart2, trend: "flat" as const, trendValue: "per txn", status: "neutral" as const, href: "/billing-analytics-dashboard", accent: "var(--insurance-primary)" },
   ];
@@ -41,10 +53,14 @@ export default function BillingDashboardPage() {
     { name: "Other", value: (r.otherRevenue ?? 0)/1e6 },
   ].filter(d => d.value > 0);
 
-  const monthlyRevenue = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(); d.setMonth(d.getMonth() - 5 + i);
-    return { month: d.toLocaleDateString("en-NG", { month: "short" }), revenue: (r.totalRevenue ?? 0) / 1e6 * (0.6 + Math.random() * 0.8) };
-  });
+  // F-12: historical monthly series has no delivered source — show the REAL
+  // current-month platform revenue only (no fabricated trend).
+  const monthlyRevenue = [
+    {
+      month: new Date().toLocaleDateString("en-NG", { month: "short" }),
+      revenue: k.platformRevenue != null ? Number(k.platformRevenue) / 1e6 : 0,
+    },
+  ];
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page-bg)", paddingBottom: isMobile ? "calc(4rem + var(--safe-area-bottom))" : "2rem" }}>
@@ -117,7 +133,7 @@ export default function BillingDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(invoices.data as any[]).slice(0, 5).map((inv: any) => (
+                  {((invoices?.data ?? []) as any[]).slice(0, 5).map((inv: any) => (
                     <tr key={inv.id} style={{ borderBottom: "1px solid var(--card-border)" }}>
                       <td className="px-3 py-2 font-mono" style={{ color: "var(--text-primary)" }}>{inv.invoiceNumber ?? `INV-${inv.id}`}</td>
                       <td className="px-3 py-2" style={{ color: "var(--text-secondary)" }}>{inv.tenantId ?? "—"}</td>

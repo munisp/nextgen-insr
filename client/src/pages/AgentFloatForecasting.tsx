@@ -61,6 +61,19 @@ export default function AgentFloatForecasting() {
 
   // @ts-ignore Sprint 85
   const stats = trpc.agentFloatForecasting.getStats.useQuery();
+  // F-12 (S87-02): getStats delivers real aggregates (totalFloat, stockoutRisk,
+  // agentsMonitored from agents.premiumReserve). No forecasting-model telemetry
+  // tables exist yet, so model/prediction fields render their honest empty
+  // state instead of a phantom shape.
+  const model: Partial<{
+    predictedDemand7d: number;
+    avgAccuracy: number;
+    trainingDataPoints: number;
+    modelType: string;
+    lastRetrained: string;
+    nextRetrain: string;
+    replenishmentHistory: Array<{ date: string; amount: number }>;
+  }> = {};
   // @ts-ignore Sprint 85
   const forecast = trpc.agentFloatForecasting.getForecast.useQuery({
     days: parseInt(selectedPeriod) || 7,
@@ -174,8 +187,8 @@ export default function AgentFloatForecasting() {
               <div className="text-2xl font-bold text-amber-500">
                 {stats.isLoading
                   ? "…"
-                  : stats.data?.predictedDemand7d != null
-                    ? `₦${Number(stats.data.predictedDemand7d).toLocaleString()}`
+                  : model.predictedDemand7d != null
+                    ? `₦${Number(model.predictedDemand7d).toLocaleString()}`
                     : "—"}
               </div>
             </CardContent>
@@ -190,8 +203,8 @@ export default function AgentFloatForecasting() {
               <div className="text-2xl font-bold text-green-500">
                 {stats.isLoading
                   ? "…"
-                  : stats.data?.avgAccuracy != null
-                    ? `${stats.data.avgAccuracy}%`
+                  : model.avgAccuracy != null
+                    ? `${model.avgAccuracy}%`
                     : "—"}
               </div>
               <p className="text-xs text-muted-foreground">Last 30-day MAPE</p>
@@ -354,7 +367,7 @@ export default function AgentFloatForecasting() {
               <div className="flex justify-between items-center py-2 border-b">
                 <span className="text-sm">Training Data Points</span>
                 <span className="font-medium">
-                  {stats.data?.trainingDataPoints ?? "—"}
+                  {model.trainingDataPoints ?? "—"}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b">
@@ -366,19 +379,19 @@ export default function AgentFloatForecasting() {
               <div className="flex justify-between items-center py-2 border-b">
                 <span className="text-sm">Model Type</span>
                 <span className="font-medium">
-                  {stats.data?.modelType ?? "—"}
+                  {model.modelType ?? "—"}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b">
                 <span className="text-sm">Last Retrained</span>
                 <span className="font-medium">
-                  {stats.data?.lastRetrained ?? "—"}
+                  {model.lastRetrained ?? "—"}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2">
                 <span className="text-sm">Next Retrain</span>
                 <span className="font-medium">
-                  {stats.data?.nextRetrain ?? "—"}
+                  {model.nextRetrain ?? "—"}
                 </span>
               </div>
             </CardContent>
@@ -388,15 +401,15 @@ export default function AgentFloatForecasting() {
               <CardTitle className="text-lg">Replenishment History</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {(Array.isArray(stats.data?.replenishmentHistory)
-                ? stats.data.replenishmentHistory
+              {(Array.isArray(model.replenishmentHistory)
+                ? model.replenishmentHistory
                 : []
               ).length === 0 ? (
                 <div className="py-4 text-center text-sm text-muted-foreground">
                   No replenishment history available yet
                 </div>
               ) : (
-                (stats.data.replenishmentHistory as any[]).map((item, i) => (
+                ((model.replenishmentHistory ?? []) as any[]).map((item, i) => (
                 <div
                   key={i}
                   className="flex justify-between items-center py-2 border-b last:border-0"

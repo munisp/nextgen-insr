@@ -98,10 +98,12 @@ export default defineConfig({
       "server/sprint28.test.ts",
       // QUARANTINED-OPEN-DEFECT (genuine defects / partial deliveries — MUST
       // be re-enabled as fixes land; tracked as F-12 sub-items):
-      "server/sprint37.test.ts",
-      "server/sprint39.test.ts",
-      "server/sprint40.test.ts",
-      "server/sprint41.test.ts",
+      // RE-ENABLED 2026-08-17 (F-12 wave 2): sprint37/39/40/41 — getStats
+      // implemented on real data for all 15 gap routers (verified 258/258).
+      // sprint82: 8 billing provisioning activities + BillingProvisioningWorkflow
+      // implemented against the real billing tables (verified 24/25) — still
+      // excluded ONLY for the CAT-A services/go/billing-provisioning-workflow
+      // sidecar (undelivered scope).
       "server/sprint82.test.ts",
       // RE-ENABLED 2026-08-17 (F-12): sprint93 — networkQualityHeatmap
       // getRegionMetrics/getEvents/getRegionDetail implemented (real data).

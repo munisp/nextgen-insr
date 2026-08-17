@@ -18,24 +18,24 @@ const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"
 export default function BeneficiaryDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).insuranceKpiDashboard?.policyholderKpi?.useQuery?.()?.useQuery?.({}) ?? { data: null, isLoading: false };
-  const kpi = data?.claims ?? data ?? {}; const pol = data?.policies ?? {};
+  const { data, isLoading } = trpc.insuranceKpiDashboard.policyholderKpi.useQuery();
+  const kpi: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
+  const pol: Partial<Exclude<typeof data, null | undefined>["policies"]> = data?.policies ?? {};
 
   const cards = [
-    { title: "Pending Claims", value: kpi.open ?? "—", icon: Clock, trend: "flat" as const, trendValue: "in review", status: "warning" as const, href: "/my-claims", accent: "var(--risk-medium)" },
-    { title: "Settled Claims", value: kpi.settled ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "paid", status: "good" as const, href: "/my-claims", accent: "var(--risk-low)" },
-    { title: "Total Benefits Received (₦)", value: kpi.totalReceived ? Number(kpi.totalReceived).toLocaleString() : "—", icon: DollarSign, trend: "up" as const, trendValue: "lifetime", status: "good" as const, href: "/my-claims", accent: "var(--risk-low)" },
+    { title: "Pending Claims", value: kpi.claims?.open ?? "—", icon: Clock, trend: "flat" as const, trendValue: "in review", status: "warning" as const, href: "/my-claims", accent: "var(--risk-medium)" },
+    { title: "Settled Claims", value: kpi.claims?.settled ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "paid", status: "good" as const, href: "/my-claims", accent: "var(--risk-low)" },
+    { title: "Total Benefits Received (₦)", value: kpi.claims?.totalSettled ? Number(kpi.claims?.totalSettled).toLocaleString() : "—", icon: DollarSign, trend: "up" as const, trendValue: "lifetime", status: "good" as const, href: "/my-claims", accent: "var(--risk-low)" },
     { title: "Active Policies", value: pol.active ?? "—", icon: Shield, trend: "flat" as const, trendValue: "in-force", status: "good" as const, href: "/my-policies", accent: "var(--insurance-primary)" },
   ];
 
   const claimStatus = [
-    { name: "Open", value: Number(kpi.open??0) },
-    { name: "Settled", value: Number(kpi.settled??0) },
-    { name: "Disputed", value: Number(kpi.disputed??0) },
+    { name: "Open", value: Number(kpi.claims?.open??0) },
+    { name: "Settled", value: Number(kpi.claims?.settled??0) },
   ].filter(d=>d.value>0);
   const benefitHistory = Array.from({length:6},(_,i)=>{
     const d = new Date(); d.setMonth(d.getMonth()-5+i);
-    return { month: d.toLocaleDateString("en-NG",{month:"short"}), amount: i===5?Number(kpi.totalReceived??0):0 };
+    return { month: d.toLocaleDateString("en-NG",{month:"short"}), amount: i===5?Number(kpi.claims?.totalSettled??0):0 };
   });
 
   return (

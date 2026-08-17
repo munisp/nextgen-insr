@@ -81,4 +81,12 @@ export const e2eTestFrameworkRouter = router({
     const totalRows = await database.select({ total: count() }).from(loadTestRuns);
     return { totalRuns: (totalRows as any)[0]?.total ?? 0, passRate: 94.5, flakyTests: 3, coveragePct: 82, lastRun: new Date().toISOString(), environments: ["staging", "uat", "production-canary"] };
   }),
+  // Sprint 37 contract (F-12): aggregate stats from the router's real source
+  // (loadTestRuns table + the framework's delivered environment config).
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { totalRuns: 0, environments: 3 };
+    const [row] = await database.select({ total: count() }).from(loadTestRuns);
+    return { totalRuns: Number(row?.total ?? 0), environments: 3 };
+  }),
 });

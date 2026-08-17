@@ -16,40 +16,41 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function InfrastructureDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).platformHealthDash?.getHealth?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: metrics } = (trpc as any).platformMetricsExporter?.getMetrics?.useQuery?.() ?? { data: null };
-  const { data: network } = (trpc as any).networkTelemetry?.getNetworkStats?.useQuery?.() ?? { data: null };
+  const { data, isLoading } = trpc.platformHealthDash.getSummary.useQuery();
+  const { data: metrics } = trpc.platformMetricsExporter.list.useQuery({ limit: 100, offset: 0 });
+  const { data: network } = trpc.networkTelemetry.getSummary.useQuery();
 
-  const h = data ?? {};
-  const m = metrics ?? {};
-  const n = network ?? {};
+  const h: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
+  const m: Partial<Exclude<typeof metrics, null | undefined>> = metrics ?? {};
+  const n: Partial<Exclude<typeof network, null | undefined>> = network ?? {};
 
   const cards = [
-    { title: "Platform Health", value: h.overallStatus ?? "—", icon: Shield, trend: "flat" as const, trendValue: "all services", status: (h.overallStatus === "healthy" ? "good" : "warning") as "good" | "warning", href: "/system-health-dashboard", accent: "var(--risk-low)" },
-    { title: "CPU Usage (%)", value: m.cpuPercent ? Number(m.cpuPercent).toFixed(1) + "%" : "—", icon: Zap, trend: "flat" as const, trendValue: "avg", status: (Number(m.cpuPercent ?? 0) > 80 ? "critical" : "good") as "critical" | "good", href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Memory Usage (%)", value: m.memPercent ? Number(m.memPercent).toFixed(1) + "%" : "—", icon: Database, trend: "flat" as const, trendValue: "used", status: (Number(m.memPercent ?? 0) > 85 ? "critical" : "good") as "critical" | "good", href: "/system-health-dashboard", accent: "var(--insurance-secondary)" },
-    { title: "DB Connections", value: m.dbConnections ?? "—", icon: Server, trend: "flat" as const, trendValue: "active", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Network Latency (ms)", value: n.avgLatencyMs ?? "—", icon: Activity, trend: "down" as const, trendValue: "↓ 2ms", status: "good" as const, href: "/network-status-dashboard", accent: "var(--risk-low)" },
-    { title: "Uptime (%)", value: h.uptime ? Number(h.uptime).toFixed(3) + "%" : "—", icon: TrendingUp, trend: "flat" as const, trendValue: "SLA", status: "good" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
-    { title: "Services Healthy", value: h.healthyCount ? `${h.healthyCount}/${h.totalServices ?? h.healthyCount}` : "—", icon: CheckCircle, trend: "flat" as const, trendValue: "online", status: "good" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
-    { title: "Alerts Open", value: h.openAlerts ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "active", status: (Number(h.openAlerts ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/system-health-dashboard", accent: "var(--risk-medium)" },
+    { title: "Platform Health", value: "—", icon: Shield, trend: "flat" as const, trendValue: "all services", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
+    { title: "CPU Usage (%)", value: "—", icon: Zap, trend: "flat" as const, trendValue: "avg", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Memory Usage (%)", value: "—", icon: Database, trend: "flat" as const, trendValue: "used", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--insurance-secondary)" },
+    { title: "DB Connections", value: "—", icon: Server, trend: "flat" as const, trendValue: "active", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Network Latency (ms)", value: n.avgRtt ?? "—", icon: Activity, trend: "down" as const, trendValue: "↓ 2ms", status: "good" as const, href: "/network-status-dashboard", accent: "var(--risk-low)" },
+    { title: "Uptime (%)", value: "—", icon: TrendingUp, trend: "flat" as const, trendValue: "SLA", status: "good" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
+    { title: "Services Healthy", value: h.healthyPct != null ? `${h.healthyPct}%` : "—", icon: CheckCircle, trend: "flat" as const, trendValue: "online", status: "good" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
+    { title: "Alerts Open", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "active", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--risk-medium)" },
   ];
 
   const resourceUsage = [
-    { name: "CPU", usage: Number(m.cpuPercent ?? 0), capacity: 100 },
-    { name: "Memory", usage: Number(m.memPercent ?? 0), capacity: 100 },
-    { name: "Disk", usage: Number(m.diskPercent ?? 0), capacity: 100 },
-    { name: "DB Conn", usage: Number(m.dbConnections ?? 0), capacity: Number(m.dbMaxConnections ?? 100) },
+    { name: "CPU", usage: 0, capacity: 100 },
+    { name: "Memory", usage: 0, capacity: 100 },
+    { name: "Disk", usage: 0, capacity: 100 },
+    { name: "DB Conn", usage: 0, capacity: 100 },
   ];
 
-  const serviceHealth = (h.services ?? [
+  // F-12: per-service health rows have no delivered source — honest unknowns.
+  const serviceHealth = [
     { name: "PostgreSQL", status: "unknown" },
     { name: "Redis", status: "unknown" },
     { name: "TigerBeetle", status: "unknown" },
     { name: "Temporal", status: "unknown" },
     { name: "Keycloak", status: "unknown" },
     { name: "APISIX", status: "unknown" },
-  ]).slice(0, 8);
+  ].slice(0, 8);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page-bg)", paddingBottom: isMobile ? "calc(4rem + var(--safe-area-bottom))" : "2rem" }}>

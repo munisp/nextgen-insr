@@ -16,30 +16,28 @@ const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6","#ec
 export default function CarrierSlaDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data: stats, isLoading } = (trpc as any).carrierSla?.getStats?.useQuery?.() ?? { data: null, isLoading: false };
-  const { data: carriers } = (trpc as any).carrierSla?.listCarriers?.useQuery?.({ limit: 10 }) ?? { data: null };
+  const { data: stats, isLoading } = trpc.carrierSla.getStats.useQuery();
+  const { data: carriers } = trpc.carrierSla.listCarriers.useQuery({ limit: 10 });
 
-  const s = stats ?? {};
+  const s: Partial<Exclude<typeof stats, null | undefined>> = stats ?? {};
 
   const cards = [
     { title: "Total Carriers", value: s.totalCarriers ?? "—", icon: Shield, trend: "flat" as const, trendValue: "registered", status: "neutral" as const, href: "/carrier-sla-dashboard", accent: "var(--insurance-primary)" },
     { title: "Meeting SLA", value: s.meetingSla ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "↑ 2", status: "good" as const, href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
     { title: "SLA Breaches (MTD)", value: s.breachesMtd ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 3", status: (Number(s.breachesMtd ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/carrier-sla-dashboard", accent: "var(--risk-medium)" },
     { title: "Avg Response (hrs)", value: s.avgResponseHours ? Number(s.avgResponseHours).toFixed(1) : "—", icon: Clock, trend: "down" as const, trendValue: "↓ 0.5h", status: "good" as const, href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
-    { title: "Claims SLA (%)", value: s.claimsSlaRate ? s.claimsSlaRate.toFixed(1)+"%" : "—", icon: Activity, trend: "up" as const, trendValue: "↑ 1.2%", status: (Number(s.claimsSlaRate ?? 0) >= 95 ? "good" : "warning") as "good" | "warning", href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
-    { title: "Premium SLA (%)", value: s.premiumSlaRate ? s.premiumSlaRate.toFixed(1)+"%" : "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 0.8%", status: (Number(s.premiumSlaRate ?? 0) >= 95 ? "good" : "warning") as "good" | "warning", href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
+    { title: "Claims SLA (%)", value: "—", icon: Activity, trend: "up" as const, trendValue: "↑ 1.2%", status: (Number(s.claimsSlaRate ?? 0) >= 95 ? "good" : "warning") as "good" | "warning", href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
+    { title: "Premium SLA (%)", value: "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 0.8%", status: (Number(s.premiumSlaRate ?? 0) >= 95 ? "good" : "warning") as "good" | "warning", href: "/carrier-sla-dashboard", accent: "var(--risk-low)" },
   ];
 
-  const slaByCarrier = (carriers?.data ?? []).slice(0, 6).map((c: any) => ({
+  const slaByCarrier = (carriers?.carriers ?? []).slice(0, 6).map((c: any) => ({
     name: c.name?.slice(0, 10) ?? `Carrier-${c.id}`,
     sla: Number(c.slaScore ?? 95),
     breaches: Number(c.breachCount ?? 0),
   }));
 
   const slaCategories = [
-    { category: "Claims Processing", rate: Number(s.claimsSlaRate ?? 90) },
-    { category: "Premium Collection", rate: Number(s.premiumSlaRate ?? 92) },
-    { category: "Policy Issuance", rate: Number(s.policyIssuanceSlaRate ?? 88) },
+            { category: "Policy Issuance", rate: Number(s.policyIssuanceSlaRate ?? 88) },
     { category: "Customer Response", rate: Number(s.customerResponseSlaRate ?? 95) },
     { category: "Document Delivery", rate: Number(s.documentSlaRate ?? 97) },
   ];

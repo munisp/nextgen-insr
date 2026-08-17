@@ -32,4 +32,39 @@ export const agentFloatForecastingRouter = router({
     const [{ total }] = await db.select({ total: count() }).from(transactions);
     return { total: Number(total), lastUpdated: new Date().toISOString() };
   }),
+  // Sprint 37 contract (F-12): stats from the agents/transactions tables this
+  // router forecasts against.
+  getStats: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db)
+      return {
+        totalAgents: 0,
+        agentsMonitored: 0,
+        totalFloat: 0,
+        stockoutRisk: 0,
+        totalTransactions: 0,
+      };
+    const [{ total: a }] = await db.select({ total: count() }).from(agents);
+    const [{ total: t }] = await db
+      .select({ total: count() })
+      .from(transactions);
+    // F-12: real float aggregates from agents.premiumReserve — the ledger-backed
+    // float balance this router forecasts against.
+    const [floatRow] = await db
+      .select({
+        totalFloat: sum(agents.premiumReserve),
+        atRisk: sql<number>`count(*) filter (where cast(${agents.premiumReserve} as numeric) <= 0)::int`,
+      })
+      .from(agents);
+    const totalAgents = Number(a ?? 0);
+    const atRisk = Number(floatRow?.atRisk ?? 0);
+    return {
+      totalAgents,
+      agentsMonitored: totalAgents,
+      totalFloat: Number(floatRow?.totalFloat ?? 0),
+      stockoutRisk:
+        totalAgents > 0 ? Math.round((atRisk / totalAgents) * 100) : 0,
+      totalTransactions: Number(t ?? 0),
+    };
+  }),
 });
