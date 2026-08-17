@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,12 +19,28 @@ export default function OllamaLLMPage() {
   const [chatInput, setChatInput] = useState("");
   const [txDesc, setTxDesc] = useState("");
   const health = trpc.ollamaLLM.health.useQuery();
-  const analytics = trpc.ollamaLLM.analytics.useQuery();
+  // F-12 (wave-4b): ollamaLLM delivers health + listModels only —
+  // analytics/listSessions/chat/explainFraud/classifyTransaction have no
+  // delivered procedure. Sections render honest unavailable states and the
+  // actions fail loud.
+  const analytics: { data?: Record<string, never> } = {};
   const models = trpc.ollamaLLM.listModels.useQuery();
-  const sessions = trpc.ollamaLLM.listSessions.useQuery();
-  const chatMut = trpc.ollamaLLM.chat.useMutation();
-  const fraudMut = trpc.ollamaLLM.explainFraud.useMutation();
-  const classifyMut = trpc.ollamaLLM.classifyTransaction.useMutation();
+  const sessions: { data?: Array<Record<string, unknown>> } = {};
+  const chatMut = {
+    mutate: (_input?: unknown) => toast.error("Ollama chat is not delivered on this deployment"),
+    isPending: false,
+    data: undefined,
+  };
+  const fraudMut = {
+    mutate: (_input?: unknown) => toast.error("Ollama explainFraud is not delivered on this deployment"),
+    isPending: false,
+    data: undefined,
+  };
+  const classifyMut = {
+    mutate: (_input?: unknown) => toast.error("Ollama classifyTransaction is not delivered on this deployment"),
+    isPending: false,
+    data: undefined,
+  };
 
   return (
     <div className="space-y-6">
@@ -55,7 +72,7 @@ export default function OllamaLLMPage() {
           </CardHeader>
           <CardContent>
             <div className="text-lg font-bold">
-              {analytics.data?.ollamaStatus ?? "checking..."}
+              {health.data?.status ?? "checking..."}
             </div>
           </CardContent>
         </Card>
@@ -67,7 +84,7 @@ export default function OllamaLLMPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {analytics.data?.installedModels ?? 0}
+              {models.data?.installed.length ?? 0}
             </div>
           </CardContent>
         </Card>
@@ -79,7 +96,7 @@ export default function OllamaLLMPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {analytics.data?.totalSessions ?? 0}
+              —
             </div>
           </CardContent>
         </Card>
@@ -91,7 +108,7 @@ export default function OllamaLLMPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {analytics.data?.avgLatencyMs ?? 0}ms
+              —
             </div>
           </CardContent>
         </Card>
@@ -280,7 +297,7 @@ export default function OllamaLLMPage() {
               <div className="space-y-4">
                 <div>
                   <p className="font-medium mb-2">
-                    Installed ({models.data?.totalInstalled ?? 0})
+                    Installed ({models.data?.installed.length ?? 0})
                   </p>
                   {models.data?.installed?.map((m: any, i: number) => (
                     <div

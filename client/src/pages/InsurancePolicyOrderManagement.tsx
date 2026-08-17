@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
 export default function InsuranceOrderManagement() {
@@ -10,10 +11,24 @@ export default function InsuranceOrderManagement() {
   // F-12 (S87-02): policyOrders (listOrders/getOrder/updateStatus) has NO
   // delivered backend — the orders list renders an honest empty state and
   // status changes fail loud.
-  const orders: { orders?: Array<Record<string, unknown>>; total?: number } | undefined = undefined;
+  const orders: {
+    orders?: Array<{
+      id: number; orderNumber?: string; status?: string; currency?: string;
+      total?: number; items?: Array<Record<string, unknown>>;
+      customerName?: string; createdAt?: string | Date;
+    }>;
+    total?: number;
+  } | undefined = undefined;
   const refetch = () => {};
 
-  const orderDetail: Record<string, unknown> | undefined = undefined;
+  const orderDetail:
+    | {
+        orderNumber?: string; status?: string; currency?: string;
+        total?: number;
+        items?: Array<{ id: number; name?: string; quantity?: number; total?: number }>;
+        customerName?: string; createdAt?: string | Date;
+      }
+    | undefined = undefined;
 
   const updateStatus = {
     mutate: () => toast.error("Order status updates are not available on this deployment"),
@@ -79,7 +94,7 @@ export default function InsuranceOrderManagement() {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {orders?.orders.map(order => (
+            {orders?.orders?.map(order => (
               <tr key={order.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm font-mono">
                   {order.orderNumber}
@@ -159,7 +174,7 @@ export default function InsuranceOrderManagement() {
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Status:</span>
                 <span
-                  className={`text-xs px-2 py-1 rounded ${statusColors[orderDetail.status] || ""}`}
+                  className={`text-xs px-2 py-1 rounded ${statusColors[orderDetail.status ?? ""] || ""}`}
                 >
                   {orderDetail.status}
                 </span>
@@ -168,7 +183,7 @@ export default function InsuranceOrderManagement() {
                 <span className="text-sm text-gray-500">Total:</span>
                 <span className="font-medium">
                   {orderDetail.currency}{" "}
-                  {Number(orderDetail.total).toLocaleString()}
+                  {orderDetail.total != null ? Number(orderDetail.total).toLocaleString() : "—"}
                 </span>
               </div>
               <hr />
@@ -178,7 +193,7 @@ export default function InsuranceOrderManagement() {
                   <span>
                     {item.name} × {item.quantity}
                   </span>
-                  <span>₦{Number(item.total).toLocaleString()}</span>
+                  <span>₦{item.total != null ? Number(item.total).toLocaleString() : "—"}</span>
                 </div>
               ))}
               <hr />
@@ -258,9 +273,4 @@ export default function InsuranceOrderManagement() {
             >
               Close
             </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+          
