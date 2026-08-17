@@ -416,14 +416,18 @@ export const managementRouter = router({
       }),
     stats: mgmtProcedure.query(async () => {
       const db = (await getDb())!;
-      if (!db) return { total: 0, volume: "0", successRate: 100 };
+      // F-12 (verifier round 4): successRate was cosmetic 100 — no
+      // success-rate source is delivered.
+      if (!db) return { total: 0, volume: "0", successRate: null };
       const [stats] = await db
         .select({
           total: count(),
           volume: sql<string>`COALESCE(SUM(amount::numeric),0)`,
         })
         .from(transactions);
-      return { ...stats, successRate: 98.5 };
+      // F-12 (verifier round 4): successRate was hardcoded 98.5 — no
+      // success-rate source is delivered.
+      return { ...stats, successRate: null };
     }),
     reverse: adminProcedure
       .input(

@@ -22,7 +22,7 @@ export const customerDisputePortalRouter = router({
         status: z.string().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const db = (await getDb())!;
         const rows = input.status
@@ -96,7 +96,7 @@ export const customerDisputePortalRouter = router({
         amount: z.number().positive(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       try {
         const db = (await getDb())!;
         const [dispute] = await db

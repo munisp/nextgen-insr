@@ -88,8 +88,10 @@ export const e2eTestFrameworkRouter = router({
       .groupBy(loadTestRuns.status)
       .limit(20);
     const totalRuns = (totalRows as any)[0]?.total ?? 0;
+    // F-12 (verifier round 4): the enum is running/completed/failed/cancelled
+    // — "passed" does not exist (dead branch); pass = completed.
     const passed = statusRows
-      .filter(r => r.status === "completed" || r.status === "passed")
+      .filter(r => r.status === "completed")
       .reduce((a, r) => a + Number(r.cnt), 0);
     return {
       totalRuns,

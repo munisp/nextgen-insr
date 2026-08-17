@@ -174,7 +174,9 @@ export const aiMonitoringRouter = router({
       data: rows.map(r => ({
         timestamp: r.hour,
         requests: Number(r.requests),
-        latencyMs: 42,
+        // F-12 (verifier round 4): latencyMs was hardcoded 42 on every row —
+        // audit_log carries no latency. Honest null.
+        latencyMs: null,
       })),
     };
   }),

@@ -165,18 +165,20 @@ export const lakehouseAiIntegrationRouter = router({
         const data = await res.json() as any;
         return { models: data.models ?? [], total: data.total ?? 0 };
       }
-    } catch { /* ML service may be offline */ }
-    // Fallback: known models
-    return {
-      models: [
-        { id: "fraud-rf-v3", name: "Fraud Detection (RF+GB)", version: "3.0", status: "production", accuracy: 0.953 },
-        { id: "claims-adj-v2", name: "Claims Adjudication", version: "2.1", status: "production", accuracy: 0.891 },
-        { id: "churn-pred-v1", name: "Customer Churn Prediction", version: "1.2", status: "staging", accuracy: 0.847 },
-        { id: "credit-score-v2", name: "Agent Credit Scoring", version: "2.0", status: "production", accuracy: 0.912 },
-        { id: "anomaly-det-v1", name: "Transaction Anomaly Detection", version: "1.0", status: "production", accuracy: 0.934 },
-      ],
-      total: 5,
-    };
+    } catch (err) {
+      // F-12 (verifier round 4): the fetch-failure path returned a
+      // fabricated 5-model registry with invented accuracies labelled
+      // "production" — fail loud instead.
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `ML service unreachable: ${err instanceof Error ? err.message : "unknown error"}`,
+      });
+    }
+    // Non-OK response: also loud (was the fabricated fallback).
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "ML service returned a non-OK response",
+    });
   }),
 
   // Promote model via ML service

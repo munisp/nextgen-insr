@@ -169,12 +169,19 @@ export const dragDropReportBuilderRouter = router({
           message: "database unavailable",
         });
       }
+      // F-12 (verifier round 4): reportType/dataSource are NOT NULL and
+      // createdBy is integer — the earlier insert violated all three.
       const [row] = await db
         .insert(biReportDefinitions)
         .values({
           name: input.name,
+          reportType: "custom",
+          dataSource:
+            typeof input.config.dataSource === "string"
+              ? input.config.dataSource
+              : "custom",
           query: JSON.stringify(input.config),
-          createdBy: ctx.user?.id != null ? String(ctx.user.id) : null,
+          createdBy: ctx.user?.id ?? null,
         })
         .returning({ id: biReportDefinitions.id, name: biReportDefinitions.name });
       return { id: String(row.id), name: row.name, saved: true as const };
