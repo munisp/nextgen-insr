@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
@@ -8,8 +7,10 @@ import KpiCard from "@/components/KpiCard";
 
 export default function PolicyholderDashboard() {
   const { user } = useAuth();
-  const { data: kpiData, isLoading } = trpc.policyholder.kpi.useQuery(undefined, { enabled: !!user });
-  const { data: premData } = trpc.policyholder.premiums.useQuery(undefined, { enabled: !!user });
+  const { data: kpiData, isLoading } = trpc.insuranceKpiDashboard.policyholderKpi.useQuery(undefined, { enabled: !!user });
+  // F-12 (S87-02): no separate policyholder.premiums router is delivered —
+  // premium figures come from the delivered policyholderKpi.premiums sub-object.
+  const premData = kpiData?.premiums;
 
   const kpi = kpiData ?? {};
   const prem = premData ?? {};
