@@ -22,7 +22,7 @@ export default function AIMonitoringDashboard() {
   const { data: alertsData } = trpc.aiMonitoring.alerts.useQuery();
   const { data: healthData } = trpc.aiMonitoring.serviceHealth.useQuery();
 
-  const d: Partial<Exclude<typeof dash, undefined>> = dash ?? {};
+  const d: Partial<Exclude<typeof dash, null | undefined>> = dash ?? {};
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
     trend?: KpiTrend; trendValue?: string; subtitle?: string;
@@ -32,7 +32,7 @@ export default function AIMonitoringDashboard() {
     { title: "Active Models", value: d.activeModels ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: "production", status: "good" as const, href: "/ml-scoring-dashboard", accent: "var(--risk-low)" },
     { title: "Predictions (7d)", value: d.totalPredictions ?? "—", icon: Zap, trend: "up" as const, trendValue: "↑ 12%", status: "good" as const, href: "/ml-scoring-dashboard", accent: "var(--insurance-secondary)" },
     { title: "Avg Latency (ms)", value: d.avgLatencyMs ?? "—", icon: Clock, trend: "down" as const, trendValue: "↓ 3ms", status: "good" as const, href: "/ml-scoring-dashboard", accent: "var(--risk-low)" },
-    { title: "Drift Alerts", value: d.driftAlerts ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: d.driftAlerts > 0 ? "warning" : "good" as const, href: "/ml-scoring-dashboard", accent: "var(--risk-medium)" },
+    { title: "Drift Alerts", value: d.driftAlerts ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: (d.driftAlerts ?? 0) > 0 ? "warning" : "good" as const, href: "/ml-scoring-dashboard", accent: "var(--risk-medium)" },
     { title: "Fraud Detected (7d)", value: d.fraudDetected ?? "—", icon: Shield, trend: "up" as const, trendValue: "flagged", status: "warning" as const, href: "/fraud-dashboard", accent: "var(--risk-critical)" },
   ];
 

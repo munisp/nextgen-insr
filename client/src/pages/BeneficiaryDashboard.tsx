@@ -19,8 +19,8 @@ export default function BeneficiaryDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.policyholderKpi.useQuery();
-  const kpi: Partial<Exclude<typeof data, undefined>> = data ?? {};
-  const pol: Partial<Exclude<typeof data, undefined>["policies"]> = data?.policies ?? {};
+  const kpi: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
+  const pol: Partial<Exclude<typeof data, null | undefined>["policies"]> = data?.policies ?? {};
 
   const cards = [
     { title: "Pending Claims", value: kpi.claims?.open ?? "—", icon: Clock, trend: "flat" as const, trendValue: "in review", status: "warning" as const, href: "/my-claims", accent: "var(--risk-medium)" },
@@ -32,7 +32,6 @@ export default function BeneficiaryDashboard() {
   const claimStatus = [
     { name: "Open", value: Number(kpi.claims?.open??0) },
     { name: "Settled", value: Number(kpi.claims?.settled??0) },
-    { name: "Disputed", value: Number(kpi.disputed??0) },
   ].filter(d=>d.value>0);
   const benefitHistory = Array.from({length:6},(_,i)=>{
     const d = new Date(); d.setMonth(d.getMonth()-5+i);

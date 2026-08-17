@@ -20,11 +20,16 @@ export default function RealtimePnlDashboard() {
   const { data: stats } = trpc.realtimePnlDashboard.getStats.useQuery();
   const { data: pnlList } = trpc.realtimePnlDashboard.list.useQuery({ limit: 10 });
 
-  const d: Partial<Exclude<typeof data, undefined>> = data ?? {};
-  const s: Partial<Exclude<typeof stats, undefined>> = stats ?? {};
+  // F-12: realtimePnlDashboard.dashboard returns {totalItems, active, lastUpdated}
+  // only — no premium/claims/P&L fields are delivered; cards render honest "—".
+  const d: Partial<{
+    grossPremium: number; netPremium: number; claimsPaid: number; netPnl: number;
+    combinedRatio: number; expenseRatio: number; riCeded: number; expenses: number;
+  }> = {};
+  const s: Partial<Exclude<typeof stats, null | undefined>> = stats ?? {};
 
   const cards = [
-    { title: "Gross Premium (₦M)", value: d.grossPremium ? (d.grossPremium/1e6).toFixed(2) : s.grossPremium ?? "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/financial-reporting-suite", accent: "var(--risk-low)" },
+    { title: "Gross Premium (₦M)", value: d.grossPremium ? (d.grossPremium/1e6).toFixed(2) : "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/financial-reporting-suite", accent: "var(--risk-low)" },
     { title: "Net Premium (₦M)", value: d.netPremium ? (d.netPremium/1e6).toFixed(2) : "—", icon: TrendingUp, trend: "up" as const, trendValue: "after RI", status: "good" as const, href: "/financial-reporting-suite", accent: "var(--insurance-primary)" },
     { title: "Claims Paid (₦M)", value: d.claimsPaid ? (d.claimsPaid/1e6).toFixed(2) : "—", icon: TrendingDown, trend: "up" as const, trendValue: "MTD", status: "neutral" as const, href: "/settlement-engine", accent: "var(--risk-medium)" },
     { title: "Net P&L (₦M)", value: d.netPnl ? (d.netPnl/1e6).toFixed(2) : "—", icon: Activity, trend: (Number(d.netPnl ?? 0) >= 0 ? "up" : "down") as "up" | "down", trendValue: Number(d.netPnl ?? 0) >= 0 ? "profit" : "loss", status: (Number(d.netPnl ?? 0) >= 0 ? "good" : "critical") as "good" | "critical", href: "/financial-reporting-suite", accent: Number(d.netPnl ?? 0) >= 0 ? "var(--risk-low)" : "var(--risk-critical)" },

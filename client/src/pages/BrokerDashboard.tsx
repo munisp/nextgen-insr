@@ -19,7 +19,7 @@ export default function BrokerDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.brokerKpi.useQuery({ periodDays: 30 });
-  const kpi: Partial<Exclude<typeof data, undefined>> = data ?? {};
+  const kpi: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
 
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
@@ -68,7 +68,7 @@ export default function BrokerDashboard() {
               <PieChart>
                 <Pie data={[
                   { name: "Policies", value: kpi.portfolio?.totalPolicies ?? 0 },
-                                                                        { name: "Other", value: Math.max(1, Math.floor((kpi.policies?.active ?? 10) * 0.08)) },
+
                 ]} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`}>
                   {COLORS.map((c, i) => <Cell key={i} fill={c} />)}
                 </Pie>
@@ -80,10 +80,10 @@ export default function BrokerDashboard() {
             <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Commission vs Premium (₦M)</h3>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={[
-                { name: "Q1", premium: (kpi.premiums?.total ?? 0)/4e6, commission: (kpi.commissions?.total ?? 0)/4e6 },
-                { name: "Q2", premium: (kpi.premiums?.total ?? 0)/3.5e6, commission: (kpi.commissions?.total ?? 0)/3.5e6 },
-                { name: "Q3", premium: (kpi.premiums?.total ?? 0)/3e6, commission: (kpi.commissions?.total ?? 0)/3e6 },
-                { name: "Q4", premium: (kpi.premiums?.total ?? 0)/1e6, commission: (kpi.commissions?.total ?? 0)/1e6 },
+      { name: "Current", premium: kpi.portfolio?.totalPremiumInForce != null ? Number(kpi.portfolio.totalPremiumInForce) / 1e6 : 0, commission: kpi.commissions?.totalEarned != null ? Number(kpi.commissions.totalEarned) / 1e3 : 0 },
+
+
+
               ]}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)" />
                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--text-secondary)" }} />

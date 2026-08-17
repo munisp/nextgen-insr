@@ -19,7 +19,7 @@ export default function ComplianceDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.complianceKpi.useQuery({ periodDays: 30 });
-  const kpi: Partial<Exclude<typeof data, undefined>> = data ?? {};
+  const kpi: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
   // F-12: no separate sar/kyc aggregates in the delivered return — the
   // complianceKpi response already embeds flags under checks/fraud.
   const sar: Record<string, number> = {}; const kyc: Record<string, number> = {};
@@ -29,9 +29,9 @@ export default function ComplianceDashboard() {
     { title: "Checks Passed", value: kpi.checks?.passed ?? "—", icon: CheckCircle, trend: "up" as const, trendValue: "MTD", status: "good" as const, href: "/regulatory-compliance-checks", accent: "var(--risk-low)" },
     { title: "Checks Failed", value: kpi.checks?.failed ?? "—", icon: XCircle, trend: "flat" as const, trendValue: "stable", status: "critical" as const, href: "/regulatory-compliance-checks", accent: "var(--risk-critical)" },
     { title: "SARs Filed", value: sar.filed ?? "—", icon: FileText, trend: "flat" as const, trendValue: "CBN", status: "neutral" as const, href: "/cbn-reporting-dashboard", accent: "var(--insurance-primary)" },
-    { title: "AML Alerts", value: kpi.amlFlags ?? "—", icon: AlertTriangle, trend: "up" as const, trendValue: "+3", status: "warning" as const, href: "/aml-monitoring", accent: "var(--risk-medium)" },
+    { title: "AML Alerts", value: "—", icon: AlertTriangle, trend: "up" as const, trendValue: "+3", status: "warning" as const, href: "/aml-monitoring", accent: "var(--risk-medium)" },
     { title: "KYC Pending", value: kyc.pending ?? "—", icon: Clock, trend: "up" as const, trendValue: "review", status: "warning" as const, href: "/kyc-management", accent: "var(--risk-medium)" },
-    { title: "Overdue Filings", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: (Number(kpi.overdueFilings??0)>0?"critical":"good") as "critical" | "good", href: "/compliance-cert-manager", accent: "var(--risk-critical)" },
+    { title: "Overdue Filings", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "stable", status: (Number(0)>0?"critical":"good") as "critical" | "good", href: "/compliance-cert-manager", accent: "var(--risk-critical)" },
     { title: "Risk Level", value: "—", icon: Activity, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/compliance-dashboard", accent: "var(--insurance-secondary)" },
   ];
 

@@ -19,14 +19,14 @@ export default function RegulatorDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.regulatorKpi.useQuery({ periodDays: 90 });
-  const kpi: Partial<Exclude<typeof data, undefined>> = data ?? {};
+  const kpi: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
   const comp: Record<string, number> = {}; const cap: Record<string, number> = {};
 
   const cards = [
     { title: "Licensed Insurers", value: "—", icon: Shield, trend: "flat" as const, trendValue: "NAICOM", status: "neutral" as const, href: "/regulatory-compliance-checks", accent: "var(--role-regulator)" },
     { title: "Total Policies In-Force", value: kpi.marketOverview?.totalPolicies ?? "—", icon: FileText, trend: "up" as const, trendValue: "↑ 3%", status: "good" as const, href: "/policies", accent: "var(--insurance-primary)" },
     { title: "Industry Premium (₦B)", value: kpi.marketOverview?.totalPremiumInForce ? (kpi.marketOverview?.totalPremiumInForce/1e9).toFixed(2) : "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/financial-reporting-suite", accent: "var(--risk-low)" },
-    { title: "Claims Ratio (%)", value: kpi.claimsRatio ? kpi.claimsRatio.toFixed(1)+"%" : "—", icon: Activity, trend: "down" as const, trendValue: "↓ 2%", status: (Number(kpi.claimsRatio??0)>80?"critical":"good") as "critical" | "good", href: "/claims", accent: "var(--risk-low)" },
+    { title: "Claims Ratio (%)", value: "—", icon: Activity, trend: "down" as const, trendValue: "↓ 2%", status: "neutral" as const, href: "/claims", accent: "var(--risk-low)" },
     { title: "Capital Adequacy (%)", value: cap.ratio ? cap.ratio.toFixed(1)+"%" : "—", icon: TrendingUp, trend: "up" as const, trendValue: "NAICOM min 15%", status: (Number(cap.ratio??0)>=15?"good":"critical") as "good" | "critical", href: "/regulatory-compliance-checks", accent: "var(--risk-low)" },
     { title: "Compliance Score", value: comp.overallScore ? comp.overallScore+"%" : "—", icon: CheckCircle, trend: "up" as const, trendValue: "↑ 1.5%", status: (Number(comp.overallScore??0)>=90?"good":"warning") as "good" | "warning", href: "/compliance-dashboard", accent: "var(--risk-low)" },
     { title: "SARs Filed (MTD)", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "CBN", status: "neutral" as const, href: "/cbn-reporting-dashboard", accent: "var(--insurance-secondary)" },
@@ -36,7 +36,6 @@ export default function RegulatorDashboard() {
   const marketChart = [
     { name: "Premium", value: (kpi.marketOverview?.totalPremiumInForce??0)/1e9 },
     { name: "Claims Paid", value: (kpi.claims?.totalPaid??0)/1e9 },
-    { name: "Reserves", value: (kpi.reserves??0)/1e9 },
     { name: "Capital", value: (cap.total??0)/1e9 },
   ];
   const compCategories = [

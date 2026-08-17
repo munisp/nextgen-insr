@@ -20,11 +20,13 @@ export default function SecurityAuditDashboard() {
   const { data: policies } = trpc.securityAudit.getPolicies.useQuery({});
   const { data: mitigations } = trpc.securityAudit.getMitigations.useQuery({});
 
-  const d: Partial<Exclude<typeof data, undefined>> = data ?? {};
+  // F-12: getAuditChain/getPolicies/listMitigations return agent-registry rows
+  // (delivered stubs) — no audit telemetry; cards render honest empty states.
+  const d: Partial<{ totalEvents: number; chainValid: boolean }> = {};
   const cards = [
     { title: "Audit Events (24h)", value: d.totalEvents ?? "—", icon: Activity, trend: "up" as const, trendValue: "logged", status: "neutral" as const, href: "/audit-log", accent: "var(--insurance-primary)" },
-    { title: "Security Policies", value: (policies as any[])?.length ?? "—", icon: Shield, trend: "flat" as const, trendValue: "active", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
-    { title: "Open Mitigations", value: (mitigations as any[])?.filter((m: any) => m.status === "open").length ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 1", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-medium)" },
+    { title: "Security Policies", value: Array.isArray(policies) ? (policies as any[]).length : "—", icon: Shield, trend: "flat" as const, trendValue: "active", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "Open Mitigations", value: Array.isArray(mitigations) ? (mitigations as any[]).filter((m: any) => m.status === "open").length : "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 1", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-medium)" },
     { title: "Chain Integrity", value: d.chainValid ? "Valid" : "—", icon: Lock, trend: "flat" as const, trendValue: "tamper-proof", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
   ];
 

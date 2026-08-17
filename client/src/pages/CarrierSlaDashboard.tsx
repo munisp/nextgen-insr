@@ -19,7 +19,7 @@ export default function CarrierSlaDashboard() {
   const { data: stats, isLoading } = trpc.carrierSla.getStats.useQuery();
   const { data: carriers } = trpc.carrierSla.listCarriers.useQuery({ limit: 10 });
 
-  const s: Partial<Exclude<typeof stats, undefined>> = stats ?? {};
+  const s: Partial<Exclude<typeof stats, null | undefined>> = stats ?? {};
 
   const cards = [
     { title: "Total Carriers", value: s.totalCarriers ?? "—", icon: Shield, trend: "flat" as const, trendValue: "registered", status: "neutral" as const, href: "/carrier-sla-dashboard", accent: "var(--insurance-primary)" },

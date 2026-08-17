@@ -23,7 +23,7 @@ export default function LakehouseAiDashboard() {
   const { data: health } = trpc.lakehouseAi.health.useQuery();
   const { data: lineage } = trpc.lakehouseAi.dataLineage.useQuery();
 
-  const a: Partial<Exclude<typeof analytics, undefined>> = analytics ?? {};
+  const a: Partial<Exclude<typeof analytics, null | undefined>> = analytics ?? {};
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
     trend?: KpiTrend; trendValue?: string; subtitle?: string;

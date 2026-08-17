@@ -14,8 +14,8 @@ export default function Ifrs17Dashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.ifrs17Dashboard.useQuery({ periodDays: 90 });
-  const kpi: Partial<Exclude<typeof data, undefined>["kpis"]> = data?.kpis ?? {};
-  const ifrs: Partial<Exclude<typeof data, undefined>["ifrs17"]> = data?.ifrs17 ?? {};
+  const kpi: Partial<Exclude<typeof data, null | undefined>["kpis"]> = data?.kpis ?? {};
+  const ifrs: Partial<Exclude<typeof data, null | undefined>["ifrs17"]> = data?.ifrs17 ?? {};
 
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;

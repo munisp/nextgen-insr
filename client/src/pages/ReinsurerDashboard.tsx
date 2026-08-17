@@ -19,8 +19,8 @@ export default function ReinsurerDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.reinsurerKpi.useQuery({ periodDays: 90 });
-  const kpi: Partial<Exclude<typeof data, undefined>>["treaties"] | Record<string, number> = data?.treaties ?? {};
-  const cess: Partial<Exclude<typeof data, undefined>>["cessions"] | Record<string, number> = data?.cessions ?? {};
+  const kpi: Partial<Exclude<typeof data, null | undefined>>["treaties"] | Record<string, number> = data?.treaties ?? {};
+  const cess: Partial<Exclude<typeof data, null | undefined>>["cessions"] | Record<string, number> = data?.cessions ?? {};
   const nr = 0;
 
   const cards = [
@@ -31,7 +31,7 @@ export default function ReinsurerDashboard() {
     { title: "Total Ceded (₦M)", value: cess.totalCeded ? (cess.totalCeded/1e6).toFixed(1) : "—", icon: TrendingUp, trend: "up" as const, trendValue: "↑ 4%", status: "good" as const, href: "/reinsurance-management", accent: "var(--risk-low)" },
     { title: "Recovered (₦M)", value: cess.totalRecovered ? (cess.totalRecovered/1e6).toFixed(1) : "—", icon: CheckCircle, trend: "up" as const, trendValue: "↑ 3%", status: "good" as const, href: "/reinsurance-management", accent: "var(--risk-low)" },
     { title: "Pending Recovery (₦M)", value: cess.pendingRecovery ? (cess.pendingRecovery/1e6).toFixed(1) : "—", icon: Clock, trend: "flat" as const, trendValue: "stable", status: "warning" as const, href: "/reinsurance-management", accent: "var(--risk-medium)" },
-    { title: "Net Retention Rate", value: nr ? nr.toFixed(1)+"%" : "—", icon: Activity, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/reinsurance-management", accent: "var(--insurance-primary)" },
+    { title: "Net Retention Rate", value: "—", icon: Activity, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/reinsurance-management", accent: "var(--insurance-primary)" },
   ];
 
   const cessionChart = [

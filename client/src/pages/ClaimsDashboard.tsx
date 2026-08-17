@@ -27,7 +27,7 @@ export default function ClaimsDashboard() {
   // fraudData declaration was dead code and is removed.
   const recentClaims = undefined as { data?: Array<Record<string, unknown>> } | undefined;
 
-  const kpi: Partial<Exclude<typeof data, undefined>["kpis"]> = data?.kpis ?? {};
+  const kpi: Partial<Exclude<typeof data, null | undefined>["kpis"]> = data?.kpis ?? {};
 
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;

@@ -20,28 +20,28 @@ export default function TenantAdminDashboard() {
   const { data: tenants } = trpc.tenantAdmin.listTenants.useQuery({ limit: 5 });
   const { data: dash } = trpc.tenantAdmin.dashboard.useQuery();
 
-  const s: Partial<Exclude<typeof stats, undefined>> = stats ?? {};
-  const d: Partial<Exclude<typeof dash, undefined>> = dash ?? {};
+  const s: Partial<Exclude<typeof stats, null | undefined>> = stats ?? {};
+  const d: Partial<Exclude<typeof dash, null | undefined>> = dash ?? {};
 
   const cards = [
-    { title: "Total Tenants", value: s.total ?? "—", icon: Users, trend: "up" as const, trendValue: "↑ 2 MTD", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Active Tenants", value: s.active ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: "subscribed", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--risk-low)" },
-    { title: "Suspended", value: s.suspended ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "review", status: (Number(s.suspended ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/tenant-admin-dashboard", accent: "var(--risk-medium)" },
-    { title: "Trial Tenants", value: s.trial ?? "—", icon: Clock, trend: "up" as const, trendValue: "converting", status: "neutral" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-secondary)" },
-    { title: "Total Users", value: d.totalUsers ?? "—", icon: Users, trend: "up" as const, trendValue: "↑ 5%", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Total Tenants", value: s.totalTenants ?? "—", icon: Users, trend: "up" as const, trendValue: "↑ 2 MTD", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Active Tenants", value: s.activeTenants ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: "subscribed", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--risk-low)" },
+    { title: "Suspended", value: s.suspendedTenants ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "review", status: (Number(s.suspendedTenants ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/tenant-admin-dashboard", accent: "var(--risk-medium)" },
+    { title: "Trial Tenants", value: "—", icon: Clock, trend: "up" as const, trendValue: "converting", status: "neutral" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-secondary)" },
+    { title: "Total Users", value: "—", icon: Users, trend: "up" as const, trendValue: "↑ 5%", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-primary)" },
     { title: "Revenue (MTD ₦M)", value: d.revenueMtd ? (d.revenueMtd/1e6).toFixed(2) : "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/billing-dashboard", accent: "var(--risk-low)" },
   ];
 
   const tenantsByPlan = [
-    { name: "Enterprise", count: Math.floor(Number(s.active ?? 0) * 0.20) },
-    { name: "Business", count: Math.floor(Number(s.active ?? 0) * 0.45) },
-    { name: "Starter", count: Math.floor(Number(s.active ?? 0) * 0.25) },
+    { name: "Enterprise", count: Math.floor(Number(s.activeTenants ?? 0) * 0.20) },
+    { name: "Business", count: Math.floor(Number(s.activeTenants ?? 0) * 0.45) },
+    { name: "Starter", count: Math.floor(Number(s.activeTenants ?? 0) * 0.25) },
     { name: "Trial", count: Number(s.trial ?? 0) },
   ].filter(d => d.count > 0);
 
   const tenantGrowth = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(); d.setMonth(d.getMonth() - 5 + i);
-    return { month: d.toLocaleDateString("en-NG", { month: "short" }), tenants: Math.max(1, Number(s.total ?? 0) - (5 - i) * 2) };
+    return { month: d.toLocaleDateString("en-NG", { month: "short" }), tenants: Math.max(1, Number(s.totalTenants ?? 0) - (5 - i) * 2) };
   });
 
   return (

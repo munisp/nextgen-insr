@@ -34,9 +34,8 @@ export default function BillingDashboardPage() {
   const invoices = undefined as { data?: Array<Record<string, unknown>> } | undefined;
   const { data: kpi } = trpc.insuranceKpiDashboard.billingAdminKpi.useQuery({ periodDays: 30 });
 
-  const r = ledger ?? {};
-  const m: Partial<Exclude<typeof metrics, undefined>> = metrics ?? {};
-  const k: Partial<Exclude<typeof kpi, undefined>["billing"]> = kpi?.billing ?? {};
+  const m: Partial<Exclude<typeof metrics, null | undefined>> = metrics ?? {};
+  const k: Partial<Exclude<typeof kpi, null | undefined>["billing"]> = kpi?.billing ?? {};
 
   const cards = [
     { title: "Revenue (MTD ₦M)", value: r.totalRevenue ? (r.totalRevenue/1e6).toFixed(2) : "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/billing-analytics-dashboard", accent: "var(--insurance-primary)" },
