@@ -25,14 +25,14 @@ export default function InfrastructureDashboard() {
   const n: Partial<Exclude<typeof network, null | undefined>> = network ?? {};
 
   const cards = [
-    { title: "Platform Health", value: "—", icon: Shield, trend: "flat" as const, trendValue: "all services", status: (h.overallStatus === "healthy" ? "good" : "warning") as "good" | "warning", href: "/system-health-dashboard", accent: "var(--risk-low)" },
+    { title: "Platform Health", value: "—", icon: Shield, trend: "flat" as const, trendValue: "all services", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
     { title: "CPU Usage (%)", value: "—", icon: Zap, trend: "flat" as const, trendValue: "avg", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
     { title: "Memory Usage (%)", value: "—", icon: Database, trend: "flat" as const, trendValue: "used", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--insurance-secondary)" },
     { title: "DB Connections", value: "—", icon: Server, trend: "flat" as const, trendValue: "active", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--insurance-primary)" },
     { title: "Network Latency (ms)", value: n.avgRtt ?? "—", icon: Activity, trend: "down" as const, trendValue: "↓ 2ms", status: "good" as const, href: "/network-status-dashboard", accent: "var(--risk-low)" },
     { title: "Uptime (%)", value: "—", icon: TrendingUp, trend: "flat" as const, trendValue: "SLA", status: "good" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
     { title: "Services Healthy", value: h.healthyPct != null ? `${h.healthyPct}%` : "—", icon: CheckCircle, trend: "flat" as const, trendValue: "online", status: "good" as const, href: "/system-health-dashboard", accent: "var(--risk-low)" },
-    { title: "Alerts Open", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "active", status: (Number(h.openAlerts ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/system-health-dashboard", accent: "var(--risk-medium)" },
+    { title: "Alerts Open", value: "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "active", status: "neutral" as const, href: "/system-health-dashboard", accent: "var(--risk-medium)" },
   ];
 
   const resourceUsage = [

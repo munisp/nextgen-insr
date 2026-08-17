@@ -31,6 +31,7 @@ export default function SecurityDashboardPage() {
     overallScore: number; openVulnerabilities: number; lastScanAt: string;
     critical: number; high: number; medium: number; low: number;
     authScore: number; encryptionScore: number;
+    networkScore: number; dataScore: number; accessScore: number;
   }> = {};
   const cards = [
     { title: "Security Score", value: s.overallScore ? s.overallScore + "%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 3%", status: (Number(s.overallScore ?? 0) >= 90 ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
@@ -50,10 +51,10 @@ export default function SecurityDashboardPage() {
 
   const securityScores = [
     { category: "Authentication", score: Number(s.authScore ?? 95) },
-    { category: "Encryption", score: Number(s.encryptionScore ?? 98) },
-    { category: "Network", score: Number(s.networkScore ?? 88) },
-    { category: "Data", score: Number(s.dataScore ?? 92) },
-    { category: "Access", score: Number(s.accessScore ?? 90) },
+    { category: "Encryption", score: Number(s.encryptionScore ?? 0) },
+    { category: "Network", score: Number(s.networkScore ?? 0) },
+    { category: "Data", score: Number(s.dataScore ?? 0) },
+    { category: "Access", score: Number(s.accessScore ?? 0) },
   ];
 
   return (

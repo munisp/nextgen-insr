@@ -29,14 +29,14 @@ export default function TenantAdminDashboard() {
     { title: "Suspended", value: s.suspendedTenants ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "review", status: (Number(s.suspendedTenants ?? 0) > 0 ? "warning" : "good") as "warning" | "good", href: "/tenant-admin-dashboard", accent: "var(--risk-medium)" },
     { title: "Trial Tenants", value: "—", icon: Clock, trend: "up" as const, trendValue: "converting", status: "neutral" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-secondary)" },
     { title: "Total Users", value: "—", icon: Users, trend: "up" as const, trendValue: "↑ 5%", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Revenue (MTD ₦M)", value: d.revenueMtd ? (d.revenueMtd/1e6).toFixed(2) : "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/billing-dashboard", accent: "var(--risk-low)" },
+    { title: "Revenue (MTD ₦M)", value: "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/billing-dashboard", accent: "var(--risk-low)" },
   ];
 
   const tenantsByPlan = [
     { name: "Enterprise", count: Math.floor(Number(s.activeTenants ?? 0) * 0.20) },
     { name: "Business", count: Math.floor(Number(s.activeTenants ?? 0) * 0.45) },
     { name: "Starter", count: Math.floor(Number(s.activeTenants ?? 0) * 0.25) },
-    { name: "Trial", count: Number(s.trial ?? 0) },
+    { name: "Trial", count: 0 },
   ].filter(d => d.count > 0);
 
   const tenantGrowth = Array.from({ length: 6 }, (_, i) => {
