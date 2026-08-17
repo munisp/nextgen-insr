@@ -1,4 +1,5 @@
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { transactions } from "../../drizzle/schema";
@@ -96,19 +97,21 @@ export const advancedBiReportingRouter = router({
       return results;
     }),
 
+  // F-12 (wave-4b): was a hardcoded fixture (plausible-looking report/KPI
+  // numbers) — no BI report store or KPI pipeline is delivered. Fail loud.
   dashboard: protectedProcedure.query(async () => {
-    return {
-      reports: 25,
-      scheduledReports: 5,
-      lastGenerated: new Date().toISOString(),
-      dataPoints: 50000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dashboard: no BI reporting backend is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a hardcoded fixture (plausible-looking report/KPI
+  // numbers) — no BI report store or KPI pipeline is delivered. Fail loud.
   reportBuilder: protectedProcedure.query(async () => {
-    return {
-      templates: [{ id: "T-001", name: "Monthly Revenue", type: "financial" }],
-      dataSources: ["postgres", "opensearch"],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "reportBuilder: no BI reporting backend is delivered on this platform",
+    });
   }),
   generateReport: publicProcedure
     .input(z.object({ templateId: z.string().optional() }).optional())
@@ -120,7 +123,12 @@ export const advancedBiReportingRouter = router({
       };
     }),
 
+  // F-12 (wave-4b): was a hardcoded fixture (plausible-looking report/KPI
+  // numbers) — no BI report store or KPI pipeline is delivered. Fail loud.
   executiveKpis: protectedProcedure.query(async () => {
-    return { revenue: 0, growth: 0, churn: 0, arpu: 0, kpis: [] };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "executiveKpis: no BI reporting backend is delivered on this platform",
+    });
   }),
 });
