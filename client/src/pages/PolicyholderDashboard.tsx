@@ -33,7 +33,7 @@ export default function PolicyholderDashboard() {
           <KpiCard title="Active Policies" value={isLoading ? "…" : String(pol?.active ?? 0)} icon={FileText} />
           <KpiCard title="Premium in Force" value={isLoading ? "…" : `₦${((pol?.totalPremiumInForce ?? 0) / 1e6).toFixed(1)}M`} icon={Shield} />
           <KpiCard title="Open Claims" value={isLoading ? "…" : String(claims?.open ?? 0)} icon={ClipboardList} />
-          <KpiCard title="Outstanding Premium" value={isLoading ? "…" : (prem.outstanding != null ? `₦${Number(prem.outstanding).toLocaleString()}` : "—")} icon={CreditCard} />
+          <KpiCard title="Outstanding Premium" value={isLoading ? "…" : "—"} icon={CreditCard} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>

@@ -10,9 +10,14 @@ export default function NotificationTemplateManager() {
   // F-12 (wave-4b): notifTemplates CRUD is fail-loud NOT_IMPLEMENTED (no
   // template store delivered); preview has no procedure at all. The page
   // renders an honest unavailable state and actions fail loud.
-  const templatesQ = trpc.notifTemplates.list.useQuery(
-    channelFilter ? { channel: channelFilter } : {}
-  );
+  // F-12 (wave-4b): notifTemplates.list is fail-loud no-input — the
+  // channel filter arg never typechecked.
+  const templatesQ = trpc.notifTemplates.list.useQuery(undefined, {
+    retry: false,
+  });
+  // channelIcon was referenced but never declared (self-break) — plain
+  // channel labels are honest.
+  const channelIcon: Record<string, string> = {};
 
 
   return (

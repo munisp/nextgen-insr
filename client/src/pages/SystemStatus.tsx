@@ -110,10 +110,8 @@ export default function SystemStatus() {
     runHealthChecks();
     const interval = setInterval(runHealthChecks, 30000);
     // Sprint 87: Wired to serviceHealth router
-    const { data, isLoading } = trpc.serviceHealth.getAll.useQuery({
-      page: 1,
-      limit: 10,
-    });
+    // F-12 (wave-4b): getAll takes no input.
+    const { data, isLoading } = trpc.serviceHealth.getAll.useQuery();
 
     return () => clearInterval(interval);
   }, []);
