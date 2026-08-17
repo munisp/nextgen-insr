@@ -192,10 +192,10 @@ export const paymentTokenVaultRouter = router({
     const [activeRow] = await database.select({ total: count() }).from(paymentTokens).where(and(eq(paymentTokens.used, false), gt(paymentTokens.expiresAt, now)));
     const [expiringRow] = await database.select({ total: count() }).from(paymentTokens).where(and(eq(paymentTokens.used, false), gt(paymentTokens.expiresAt, now), lt(paymentTokens.expiresAt, in30d)));
     const [usedRow] = await database.select({ total: count() }).from(paymentTokens).where(eq(paymentTokens.used, true));
-    const total = (totalRow as any)?.total ?? 0;
-    const active = (activeRow as any)?.total ?? 0;
-    const expiring = (expiringRow as any)?.total ?? 0;
-    const used = (usedRow as any)?.total ?? 0;
+    const total = totalRow?.total ?? 0;
+    const active = activeRow?.total ?? 0;
+    const expiring = expiringRow?.total ?? 0;
+    const used = usedRow?.total ?? 0;
     return {
       totalTokens: total,
       activeTokens: active,
@@ -204,6 +204,24 @@ export const paymentTokenVaultRouter = router({
       expiringIn30d: expiring,
       pciAuditStatus: "compliant",
       lastRotation: new Date(Date.now() - 86400000).toISOString(),
+    };
+  }),
+  // Sprint 40 contract (F-12): stats from the paymentTokens table this vault
+  // manages (same real aggregates as getSummary).
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { totalTokens: 0, activeTokens: 0, usedTokens: 0, expiringIn30d: 0 };
+    const now = new Date();
+    const in30d = new Date(now.getTime() + 30 * 24 * 3600000);
+    const [totalRow] = await database.select({ total: count() }).from(paymentTokens);
+    const [activeRow] = await database.select({ total: count() }).from(paymentTokens).where(and(eq(paymentTokens.used, false), gt(paymentTokens.expiresAt, now)));
+    const [expiringRow] = await database.select({ total: count() }).from(paymentTokens).where(and(eq(paymentTokens.used, false), gt(paymentTokens.expiresAt, now), lt(paymentTokens.expiresAt, in30d)));
+    const [usedRow] = await database.select({ total: count() }).from(paymentTokens).where(eq(paymentTokens.used, true));
+    return {
+      totalTokens: totalRow?.total ?? 0,
+      activeTokens: activeRow?.total ?? 0,
+      usedTokens: usedRow?.total ?? 0,
+      expiringIn30d: expiringRow?.total ?? 0,
     };
   }),
 });

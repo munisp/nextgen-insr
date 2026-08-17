@@ -62,4 +62,14 @@ export const cardBinLookupRouter = router({
     internationalRouting: "international_switch",
     lastUpdated: new Date().toISOString(),
   })),
+  // Sprint 37 contract (F-12): stats from the delivered NIGERIAN_BINS registry.
+  getStats: protectedProcedure.query(() => {
+    const bins = Object.values(NIGERIAN_BINS);
+    return {
+      totalBins: bins.length,
+      banks: [...new Set(bins.map(b => b.bank))].length,
+      networks: [...new Set(bins.map(b => b.network))].length,
+      prepaidBins: bins.filter(b => b.prepaid).length,
+    };
+  }),
 });

@@ -130,4 +130,18 @@ export const transactionVelocityMonitorRouter = router({
       lastUpdated: new Date().toISOString(),
     };
   }),
+  // Sprint 37 contract (F-12): stats from the real velocityLimits/transactions
+  // tables and the delivered VELOCITY_LIMITS tier config.
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database)
+      return { totalMonitored: 0, configuredLimits: 0, tiers: Object.keys(VELOCITY_LIMITS).length };
+    const [{ total: monitored }] = await database.select({ total: count() }).from(transactions);
+    const [{ total: limits }] = await database.select({ total: count() }).from(velocityLimits);
+    return {
+      totalMonitored: Number(monitored ?? 0),
+      configuredLimits: Number(limits ?? 0),
+      tiers: Object.keys(VELOCITY_LIMITS).length,
+    };
+  }),
 });

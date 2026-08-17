@@ -112,4 +112,13 @@ export const merchantRiskScoringRouter = router({
       lastFullScan: new Date().toISOString(),
     };
   }),
+  // Sprint 37 contract (F-12): stats from the merchants/transactions tables
+  // this router scores against.
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database) return { totalMerchants: 0, totalTransactions: 0 };
+    const [{ total: m }] = await database.select({ total: count() }).from(merchants);
+    const [{ total: t }] = await database.select({ total: count() }).from(transactions);
+    return { totalMerchants: Number(m ?? 0), totalTransactions: Number(t ?? 0) };
+  }),
 });

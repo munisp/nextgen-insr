@@ -32,4 +32,13 @@ export const agentFloatForecastingRouter = router({
     const [{ total }] = await db.select({ total: count() }).from(transactions);
     return { total: Number(total), lastUpdated: new Date().toISOString() };
   }),
+  // Sprint 37 contract (F-12): stats from the agents/transactions tables this
+  // router forecasts against.
+  getStats: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { totalAgents: 0, totalTransactions: 0 };
+    const [{ total: a }] = await db.select({ total: count() }).from(agents);
+    const [{ total: t }] = await db.select({ total: count() }).from(transactions);
+    return { totalAgents: Number(a ?? 0), totalTransactions: Number(t ?? 0) };
+  }),
 });

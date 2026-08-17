@@ -62,4 +62,20 @@ export const operationalRunbookRouter = router({
     lastDrill: new Date(Date.now() - 15 * 86400000).toISOString(), nextDrill: new Date(Date.now() + 15 * 86400000).toISOString(),
     severityConfig: SEVERITY_CONFIG,
   })),
+  // Sprint 37 contract (F-12): stats from the delivered RUNBOOKS registry and
+  // the platform_health_checks table this router reads.
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    let recordedHealthChecks = 0;
+    if (database) {
+      const [{ total }] = await database.select({ total: count() }).from(platform_health_checks);
+      recordedHealthChecks = Number(total ?? 0);
+    }
+    return {
+      totalRunbooks: RUNBOOKS.length,
+      autoRemediable: RUNBOOKS.filter(r => r.autoRemediation).length,
+      severityLevels: Object.keys(SEVERITY_CONFIG).length,
+      recordedHealthChecks,
+    };
+  }),
 });

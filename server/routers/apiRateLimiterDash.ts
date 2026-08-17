@@ -83,4 +83,19 @@ export const apiRateLimiterDashRouter = router({
     const totalRows = await database.select({ total: count() }).from(rateLimitRules);
     return { totalRules: (totalRows as any)[0]?.total ?? 0, activeBlocks: 1, throttledClients: 3, rejectionRate: 0.27, ddosDetections: 0, lastUpdated: new Date().toISOString() };
   }),
+  // Sprint 37 contract (F-12): stats from the rateLimitRules table, the
+  // delivered DEFAULT_LIMITS tier config, and the real users count.
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    let configuredRules = 0;
+    let activeUsers = 0;
+    if (database) {
+      const [{ total: rules }] = await database.select({ total: count() }).from(rateLimitRules);
+      configuredRules = Number(rules ?? 0);
+      const { users } = await import("../../drizzle/schema");
+      const [{ total: u }] = await database.select({ total: count() }).from(users);
+      activeUsers = Number(u ?? 0);
+    }
+    return { configuredRules, tiers: Object.keys(DEFAULT_LIMITS).length, activeUsers };
+  }),
 });

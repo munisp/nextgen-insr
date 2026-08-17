@@ -177,4 +177,29 @@ export const executiveCommandCenterRouter = router({
 
     return alerts;
   }),
+  // Sprint 41 contract (F-12): stats from the same real aggregates as getKPIs
+  // (transactions/agents/fraudAlerts/disputes tables).
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    if (!database)
+      return { totalTransactions: 0, totalVolume: 0, totalAgents: 0, totalFraudAlerts: 0, openFraudAlerts: 0, totalDisputes: 0 };
+    const [txStats] = await database
+      .select({ totalCount: count(), totalVolume: sum(transactions.amount) })
+      .from(transactions);
+    const [agentStats] = await database.select({ total: count() }).from(agents);
+    const [fraudStats] = await database.select({ total: count() }).from(fraudAlerts);
+    const [openFraud] = await database
+      .select({ total: count() })
+      .from(fraudAlerts)
+      .where(eq(fraudAlerts.status, "open"));
+    const [disputeStats] = await database.select({ total: count() }).from(disputes);
+    return {
+      totalTransactions: Number(txStats?.totalCount ?? 0),
+      totalVolume: Number(txStats?.totalVolume ?? 0),
+      totalAgents: Number(agentStats?.total ?? 0),
+      totalFraudAlerts: Number(fraudStats?.total ?? 0),
+      openFraudAlerts: Number(openFraud?.total ?? 0),
+      totalDisputes: Number(disputeStats?.total ?? 0),
+    };
+  }),
 });

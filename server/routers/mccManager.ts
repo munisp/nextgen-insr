@@ -65,4 +65,13 @@ export const mccManagerRouter = router({
     const totalRows = await database.select({ total: count() }).from(merchants);
     return { totalCodes: Object.keys(MCC_DATABASE).length, merchantsAssigned: (totalRows as any)[0]?.total ?? 0, highRiskMerchants: 5, restrictedAttempts: 0, lastReview: new Date().toISOString() };
   }),
+  // Sprint 37 contract (F-12): stats from the real MCC registry and the
+  // merchants table this router manages.
+  getStats: protectedProcedure.query(async () => {
+    const database = await getDb();
+    const totalCodes = Object.keys(MCC_DATABASE).length;
+    if (!database) return { totalCodes, merchantsAssigned: 0 };
+    const [{ total }] = await database.select({ total: count() }).from(merchants);
+    return { totalCodes, merchantsAssigned: Number(total ?? 0) };
+  }),
 });

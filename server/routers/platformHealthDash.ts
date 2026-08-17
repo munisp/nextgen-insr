@@ -179,4 +179,34 @@ export const platformHealthDashRouter = router({
       lastUpdated: new Date().toISOString(),
     };
   }),
+  // Sprint 37 contract (F-12): stats from the router's 9 REAL dependency
+  // health probes plus the recorded platform_health_checks history.
+  getStats: protectedProcedure.query(async () => {
+    const [pg, redis, keycloak, tb, temporal, permify, apisix, fluvio, minio] = await Promise.all([
+      checkPostgres(),
+      checkRedis(),
+      checkKeycloak(),
+      checkTigerBeetle(),
+      checkTemporal(),
+      checkPermify(),
+      checkAPISIX(),
+      checkFluvio(),
+      checkMinio(),
+    ]);
+    const checks = [pg, redis, keycloak, tb, temporal, permify, apisix, fluvio, minio];
+    const database = await getDb();
+    let recordedChecks = 0;
+    if (database) {
+      const [{ total }] = await database.select({ total: count() }).from(platform_health_checks);
+      recordedChecks = Number(total ?? 0);
+    }
+    return {
+      totalChecks: checks.length,
+      healthy: checks.filter(c => c.status === "healthy").length,
+      degraded: checks.filter(c => c.status === "degraded").length,
+      offline: checks.filter(c => c.status === "offline").length,
+      recordedChecks,
+      lastFullCheck: new Date().toISOString(),
+    };
+  }),
 });
