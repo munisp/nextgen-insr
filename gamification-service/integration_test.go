@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/lib/pq"
+	"go.uber.org/zap"
+
+	"github.com/insureportal/gamification_service/db"
 )
 
 // testConn holds the package-level connection used by the legacy integration tests below.
@@ -115,9 +120,17 @@ func TestIntegration_ReadyEndpoint(t *testing.T) {
 	}
 	defer func() { testConn = nil }()
 
+	// readinessHandler pings postgres via pgxpool — build one from the same DSN
+	// (the test's *sql.DB only gates whether the DB is reachable at all).
+	pool, err := pgxpool.New(context.Background(), dbURL)
+	if err != nil {
+		t.Skipf("Skipping (pool build failed): %v", err)
+	}
+	defer pool.Close()
+
 	req := httptest.NewRequest("GET", "/ready", nil)
 	w := httptest.NewRecorder()
-	handleReady(w, req)
+	readinessHandler(&db.Postgres{Pool: pool}, nil, zap.L()).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
@@ -135,7 +148,7 @@ func TestIntegration_ReadyEndpoint(t *testing.T) {
 func TestIntegration_LiveEndpoint(t *testing.T) {
 	req := httptest.NewRequest("GET", "/live", nil)
 	w := httptest.NewRecorder()
-	handleLive(w, req)
+	livenessHandler(zap.L()).ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)

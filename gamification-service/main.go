@@ -125,6 +125,7 @@ func buildRouter(cfg *config.Config, pg *db.Postgres, redis *db.RedisCache, logg
 
 	r.Get("/health", healthHandler(logger))
 	r.Get("/ready", readinessHandler(pg, redis, logger))
+	r.Get("/live", livenessHandler(logger))
 
 	r.Group(func(r chi.Router) {
 		// Points
@@ -170,6 +171,18 @@ func healthHandler(logger *zap.Logger) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"status":    "healthy",
+			"service":   "gamification-service",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+}
+
+// livenessHandler reports the process is alive (k8s liveness convention).
+func livenessHandler(logger *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":    "alive",
 			"service":   "gamification-service",
 			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		})

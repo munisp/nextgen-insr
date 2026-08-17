@@ -24,10 +24,18 @@ const (
 
 // PaymentService handles all payment-related business logic.
 type PaymentService struct {
-	ledgerClient     *ledger.TigerBeetleClient
+	ledgerClient     LedgerClient
 	paymentRepo      *repository.PaymentRepository
 	kafkaProducer    KafkaProducer
 	ledgerID         uint32
+}
+
+// LedgerClient is the subset of *ledger.TigerBeetleClient used by
+// PaymentService — an interface so tests can substitute a mock.
+type LedgerClient interface {
+	CreateAccount(ctx context.Context, account types.Account) error
+	CreateTransfer(ctx context.Context, transfer types.Transfer) error
+	LookupAccounts(ctx context.Context, accountIDs []types.Uint128) ([]types.Account, error)
 }
 
 // KafkaProducer is an interface for publishing events to Kafka.
@@ -37,7 +45,7 @@ type KafkaProducer interface {
 
 // NewPaymentService creates a new instance of PaymentService.
 func NewPaymentService(
-	ledgerClient *ledger.TigerBeetleClient,
+	ledgerClient LedgerClient,
 	paymentRepo *repository.PaymentRepository,
 	kafkaProducer KafkaProducer,
 ) *PaymentService {
