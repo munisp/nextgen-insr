@@ -118,7 +118,7 @@ export const disputesRouter = router({
       ) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "admin or supervisor role required",
+          message: "FORBIDDEN: admin or supervisor role required",
         });
       }
       const database = await getDb();

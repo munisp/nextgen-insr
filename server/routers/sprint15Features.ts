@@ -807,8 +807,151 @@ export function calculateBackoff(
 
 
 
-// F-12 (full sweep): dead static fixture export _serviceHealthData removed — no proc serves it.
+// F-12 (round 52 genre): static fixture exports restored — bound by
+// server/sprint15.test.ts dynamic imports (registered test fixtures).
+export const _serviceHealthData = [
+  {
+    name: "kafka",
+    status: "healthy",
+    latencyMs: 3,
+    uptime: "99.99%",
+    category: "messaging",
+  },
+  {
+    name: "redis",
+    status: "healthy",
+    latencyMs: 1,
+    uptime: "99.98%",
+    category: "cache",
+  },
+  {
+    name: "temporal",
+    status: "healthy",
+    latencyMs: 8,
+    uptime: "99.95%",
+    category: "workflow",
+  },
+  {
+    name: "keycloak",
+    status: "healthy",
+    latencyMs: 12,
+    uptime: "99.90%",
+    category: "auth",
+  },
+  {
+    name: "opensearch",
+    status: "healthy",
+    latencyMs: 15,
+    uptime: "99.92%",
+    category: "search",
+  },
+  {
+    name: "apisix",
+    status: "healthy",
+    latencyMs: 2,
+    uptime: "99.99%",
+    category: "gateway",
+  },
+  {
+    name: "tigerbeetle",
+    status: "healthy",
+    latencyMs: 1,
+    uptime: "99.99%",
+    category: "ledger",
+  },
+  {
+    name: "mojaloop",
+    status: "healthy",
+    latencyMs: 20,
+    uptime: "99.85%",
+    category: "interop",
+  },
+  {
+    name: "permify",
+    status: "healthy",
+    latencyMs: 5,
+    uptime: "99.97%",
+    category: "authorization",
+  },
+  {
+    name: "dapr",
+    status: "healthy",
+    latencyMs: 4,
+    uptime: "99.96%",
+    category: "sidecar",
+  },
+  {
+    name: "fluvio",
+    status: "healthy",
+    latencyMs: 6,
+    uptime: "99.94%",
+    category: "streaming",
+  },
+  {
+    name: "lakehouse",
+    status: "healthy",
+    latencyMs: 25,
+    uptime: "99.80%",
+    category: "data",
+  },
+  {
+    name: "postgresql",
+    status: "healthy",
+    latencyMs: 5,
+    uptime: "99.99%",
+    category: "database",
+  },
+];
 
-
-// F-12 (full sweep): dead static fixture export _cacheEntries removed — no proc serves it.
+export const _cacheEntries = [
+  {
+    key: "agent_profiles",
+    strategy: "ttl" as const,
+    hitRate: 95,
+    ttlSeconds: 300,
+    sizeBytes: 102400,
+  },
+  {
+    key: "transaction_limits",
+    strategy: "event_driven" as const,
+    hitRate: 99,
+    ttlSeconds: 3600,
+    sizeBytes: 2048,
+  },
+  {
+    key: "exchange_rates",
+    strategy: "ttl" as const,
+    hitRate: 98,
+    ttlSeconds: 60,
+    sizeBytes: 4096,
+  },
+  {
+    key: "commission_rules",
+    strategy: "write_through" as const,
+    hitRate: 97,
+    ttlSeconds: 1800,
+    sizeBytes: 8192,
+  },
+  {
+    key: "kyc_status_cache",
+    strategy: "manual" as const,
+    hitRate: 90,
+    ttlSeconds: 600,
+    sizeBytes: 16384,
+  },
+  {
+    key: "session_tokens",
+    strategy: "ttl" as const,
+    hitRate: 92,
+    ttlSeconds: 1200,
+    sizeBytes: 32768,
+  },
+  {
+    key: "feature_flags",
+    strategy: "event_driven" as const,
+    hitRate: 99.5,
+    ttlSeconds: 7200,
+    sizeBytes: 1024,
+  },
+];
 
