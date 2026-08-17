@@ -211,6 +211,29 @@ const getStats = protectedProcedure
   });
 
 export const customerDatabaseRouter = router({
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "delete: database unavailable",
+        });
+      const [existing] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.id, input.id))
+        .limit(1);
+      if (!existing)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "delete: record not found",
+        });
+      await db.delete(agents).where(eq(agents.id, input.id));
+      return { success: true, id: input.id };
+    }),
+
   list,
   getById,
   create,

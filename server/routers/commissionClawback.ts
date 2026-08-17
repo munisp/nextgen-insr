@@ -3,7 +3,7 @@
  * Sprint 54: Full PostgreSQL + middleware integration
  */
 import { TRPCError } from "@trpc/server";
-import { eq, desc, count, sql } from "drizzle-orm";
+import { and, eq, desc, count, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -20,6 +20,94 @@ import {
 } from "../middleware/commissionMiddleware";
 
 export const commissionClawbackRouter = router({
+  // F-12 (S87-02): the page's review workflow against the REAL
+  // commission_clawbacks table (the regenerated revision exposed only getStats).
+  list: protectedProcedure
+    .input(
+      z.object({
+        status: z.string().optional(),
+        page: z.number().default(1),
+        limit: z.number().default(20),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "list: database unavailable",
+        });
+      const conditions = [];
+      if (input.status)
+        conditions.push(eq(commissionClawbacks.status, input.status));
+      const where = conditions.length ? and(...conditions) : undefined;
+      const [items, [{ total }]] = await Promise.all([
+        db
+          .select()
+          .from(commissionClawbacks)
+          .where(where)
+          .orderBy(desc(commissionClawbacks.createdAt))
+          .limit(input.limit)
+          .offset((input.page - 1) * input.limit),
+        db.select({ total: count() }).from(commissionClawbacks).where(where),
+      ]);
+      return { items, total: Number(total ?? 0), page: input.page, limit: input.limit };
+    }),
+
+  approve: protectedProcedure
+    .input(z.object({ id: z.number(), note: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "approve: database unavailable",
+        });
+      const [row] = await db
+        .update(commissionClawbacks)
+        .set({ status: "applied" })
+        .where(
+          and(
+            eq(commissionClawbacks.id, input.id),
+            eq(commissionClawbacks.status, "pending")
+          )
+        )
+        .returning({ id: commissionClawbacks.id });
+      if (!row)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "approve: no pending clawback with that id",
+        });
+      return { success: true, id: row.id, status: "applied" as const };
+    }),
+
+  reject: protectedProcedure
+    .input(z.object({ id: z.number(), reason: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "reject: database unavailable",
+        });
+      const [row] = await db
+        .update(commissionClawbacks)
+        .set({ status: "rejected" })
+        .where(
+          and(
+            eq(commissionClawbacks.id, input.id),
+            eq(commissionClawbacks.status, "pending")
+          )
+        )
+        .returning({ id: commissionClawbacks.id });
+      if (!row)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "reject: no pending clawback with that id",
+        });
+      return { success: true, id: row.id, status: "rejected" as const };
+    }),
+
   getStats: protectedProcedure.query(async () => {
     const db = (await getDb())!;
     const [total] = await db

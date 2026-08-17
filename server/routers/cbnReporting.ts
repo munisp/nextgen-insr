@@ -253,6 +253,16 @@ export const cbnReportingRouter = router({
     }),
 
   // ── Get pending submissions ────────────────────────────────────────────────
+  // F-12 (S87-02): the dashboard's aggregate filing counts. Real source is the
+  // CBN reporting service (CAT-A Go service); when it is not reachable the
+  // procedure returns null (honest) rather than fixture counts.
+  summary: protectedProcedure.query(async () => {
+    const svc = (await callCbnService("/api/v1/cbn-reports/summary")) as
+      | Record<string, unknown>
+      | null;
+    return svc ?? null;
+  }),
+
   getPendingSubmissions: protectedProcedure.query(async () => {
     const svc = await callCbnService("/api/v1/cbn-reports/pending");
     return { reports: svc ?? [], source: svc ? "service" : "fallback" };

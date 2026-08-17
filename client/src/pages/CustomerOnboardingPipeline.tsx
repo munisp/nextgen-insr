@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -10,7 +9,6 @@ export default function CustomerOnboardingPipeline() {
     data: stats,
     isLoading,
     refetch,
-    // @ts-ignore Sprint 85
   } = trpc.customerOnboardingPipeline.getStats.useQuery();
   const [searchTerm, setSearchTerm] = useState("");
 
