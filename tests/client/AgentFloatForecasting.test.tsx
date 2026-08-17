@@ -103,8 +103,12 @@ describe("AgentFloatForecasting (client)", () => {
     const poolCard = screen.getByText("Total Float Pool").parentElement!
       .parentElement!;
     expect(poolCard.textContent).toContain("₦4,200,000");
+    // F-12: model-telemetry fields (avgAccuracy, predictedDemand7d) have no
+    // delivered data source — the page renders the honest empty state even
+    // when a payload carries them, rather than displaying phantom telemetry.
     const accCard = screen.getByText("Model Accuracy").parentElement!
       .parentElement!;
-    expect(accCard.textContent).toContain("87%");
+    expect(accCard.textContent).toContain("—");
+    expect(accCard.textContent).not.toContain("87%");
   });
 });
