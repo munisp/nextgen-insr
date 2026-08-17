@@ -269,7 +269,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, name, category, status, kpi_target, kpi_actual, owner, target_date FROM strategic_initiatives ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query("SELECT id, name, category, status, kpi_target, kpi_actual, owner, target_date FROM strategic_initiatives ORDER BY id DESC LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
@@ -329,7 +329,7 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, name, category, status, kpi_target, kpi_actual, owner, target_date FROM strategic_initiatives WHERE id = $1"), id)
+	rows, err := db.Query("SELECT id, name, category, status, kpi_target, kpi_actual, owner, target_date FROM strategic_initiatives WHERE id = $1", id)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)

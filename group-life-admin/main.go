@@ -306,7 +306,7 @@ func (s *GroupLifeService) ProcessMemberMovement(movement *MemberMovement, schem
 	}
 
 	// Pro-rate based on remaining policy period
-	daysRemaining := scheme.RenewalDate.Sub(time.Now()).Hours() / 24
+	daysRemaining := time.Until(scheme.RenewalDate).Hours() / 24
 	proRataFactor := daysRemaining / 365
 
 	return math.Round(premiumImpact*proRataFactor*100) / 100
@@ -643,7 +643,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, company_name, member_count, total_premium, status, created_at FROM group_life_schemes ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query("SELECT id, company_name, member_count, total_premium, status, created_at FROM group_life_schemes ORDER BY id DESC LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return

@@ -269,7 +269,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, customer_id, full_name, total_policies, total_claims, lifetime_premium, risk_segment, nps_score FROM customer_profiles ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query("SELECT id, customer_id, full_name, total_policies, total_claims, lifetime_premium, risk_segment, nps_score FROM customer_profiles ORDER BY id DESC LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
@@ -329,7 +329,7 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, customer_id, full_name, total_policies, total_claims, lifetime_premium, risk_segment, nps_score FROM customer_profiles WHERE id = $1"), id)
+	rows, err := db.Query("SELECT id, customer_id, full_name, total_policies, total_claims, lifetime_premium, risk_segment, nps_score FROM customer_profiles WHERE id = $1", id)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)

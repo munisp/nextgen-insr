@@ -500,7 +500,7 @@ func (app *Application) renderAgentFloatConfirm(sess *models.SessionData) models
 	balanceBefore := sess.Data["claim_balance_before"].(float64)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("FLOAT CLAIM SUMMARY\n\n"))
+	sb.WriteString("FLOAT CLAIM SUMMARY\n\n")
 	sb.WriteString(fmt.Sprintf("Current balance: ₦%s\n", formatCurrency(balanceBefore)))
 	sb.WriteString(fmt.Sprintf("Claim amount:  ₦%s\n", formatCurrency(amount)))
 	sb.WriteString(fmt.Sprintf("New balance:   ₦%s\n\n", formatCurrency(balanceBefore-amount)))

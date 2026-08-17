@@ -190,5 +190,5 @@ func TestIntegration_APIEndpoint(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected 200, got %d", w.Code)
 	}
-	_ = fmt.Sprintf("Integration test completed for agent-commission-management")
+	_ = "Integration test completed for agent-commission-management"
 }

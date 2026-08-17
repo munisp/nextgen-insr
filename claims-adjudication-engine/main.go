@@ -177,7 +177,7 @@ func (e *Engine) adjudicateClaim(claim *models.Claim) *models.AdjudicationResult
 
 	// Update claim in database and cache
 	if e.db != nil {
-		claim.Status = models.ClaimStatus(fmt.Sprintf("%s", result.Decision))
+		claim.Status = models.ClaimStatus(string(result.Decision))
 		claim.Decision = result.Decision
 		claim.Confidence = result.Confidence
 		claim.AssignedTo = result.AssignedTo
@@ -251,7 +251,7 @@ func (e *Engine) validateClaim(claim *models.Claim) error {
 	}
 
 	if len(errs) > 0 {
-		return errors.New(fmt.Sprintf("validation failed: %s", errs[0]))
+		return fmt.Errorf("validation failed: %s", errs[0])
 	}
 
 	return nil

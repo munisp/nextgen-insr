@@ -614,7 +614,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, reinsurer_name, contract_type, limit_amount, retention, status, created_at FROM reinsurance_contracts ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query("SELECT id, reinsurer_name, contract_type, limit_amount, retention, status, created_at FROM reinsurance_contracts ORDER BY id DESC LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return

@@ -270,7 +270,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, filing_type, period, status, submitted_at, filed_by, created_at FROM naicom_filings ORDER BY id DESC LIMIT $1 OFFSET $2"), limit, offset)
+	rows, err := db.Query("SELECT id, filing_type, period, status, submitted_at, filed_by, created_at FROM naicom_filings ORDER BY id DESC LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
@@ -330,7 +330,7 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := db.Query(fmt.Sprintf("SELECT id, filing_type, period, status, submitted_at, filed_by, created_at FROM naicom_filings WHERE id = $1"), id)
+	rows, err := db.Query("SELECT id, filing_type, period, status, submitted_at, filed_by, created_at FROM naicom_filings WHERE id = $1", id)
 	if err != nil {
 		atomic.AddInt64(&errCount, 1)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
