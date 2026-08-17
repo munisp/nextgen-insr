@@ -1,4 +1,4 @@
-import { desc, count } from "drizzle-orm";
+import { desc, count, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { platformSettings } from "../../drizzle/schema";
@@ -55,20 +55,69 @@ export const dbSchemaPushRouter = router({
 
   getHistory: protectedProcedure
     .input(z.object({ limit: z.number().default(10) }))
-    .query(({ input }) => ({
-      migrations: [
-        { id: "MIG-001", version: "2026.05.28.001", description: "Add agent_performance_scores table", status: "applied", appliedAt: new Date(Date.now() - 86400000).toISOString(), duration: "1.2s", approvedBy: "dba@insureportal.ng" },
-        { id: "MIG-002", version: "2026.05.27.001", description: "Add index on transactions(agent_id, created_at)", status: "applied", appliedAt: new Date(Date.now() - 172800000).toISOString(), duration: "3.5s", approvedBy: "auto" },
-        { id: "MIG-003", version: "2026.05.26.001", description: "Create float_reconciliations table", status: "applied", appliedAt: new Date(Date.now() - 259200000).toISOString(), duration: "0.8s", approvedBy: "auto" },
-      ].slice(0, input.limit),
-      currentVersion: "2026.05.28.001",
-      pendingMigrations: 0,
-    })),
+    .query(async ({ input }) => {
+      // F-12 (wave-3): real migration tracking from drizzle's own journal
+      // table (same source as server/lib/drizzleMigrations.ts). The previous
+      // revision returned fabricated MIG-001..003 fixture rows with invented
+      // versions, durations, approvers and dates. Fields without a real
+      // source (duration, approver) are omitted, not fabricated.
+      const database = await getDb();
+      if (!database) return { migrations: [], currentVersion: null, pendingMigrations: 0 };
+      let rows: Array<{ tag: string; created_at: string | number }> = [];
+      try {
+        const result = await database.execute(
+          sql`SELECT tag, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT ${input.limit}`
+        );
+        rows = (result.rows ?? []) as Array<{ tag: string; created_at: string | number }>;
+      } catch {
+        // Journal table absent (schema never pushed via drizzle-kit) — honest empty.
+        rows = [];
+      }
+      const migrations = rows.map((r, i) => ({
+        id: `MIG-${String(i + 1).padStart(3, "0")}`,
+        version: String(r.tag),
+        description: String(r.tag).replace(/_/g, " "),
+        status: "applied" as const,
+        appliedAt: new Date(Number(r.created_at)).toISOString(),
+      }));
+      return {
+        migrations,
+        currentVersion: migrations[0]?.version ?? null,
+        pendingMigrations: 0,
+      };
+    }),
 
-  getSummary: protectedProcedure.query(() => ({
-    currentVersion: "2026.05.28.001", totalMigrations: 47, pendingMigrations: 0, lastMigration: new Date(Date.now() - 86400000).toISOString(),
-    rollbackAvailable: true, rollbackDeadline: new Date(Date.now() + 23 * 3600000).toISOString(), rules: MIGRATION_RULES,
-  })),
+  getSummary: protectedProcedure.query(async () => {
+    // F-12 (wave-3): real counts from drizzle.__drizzle_migrations (was
+    // hardcoded totalMigrations: 47 with fabricated dates/rollback window).
+    const database = await getDb();
+    let totalMigrations = 0;
+    let currentVersion: string | null = null;
+    let lastMigration: string | null = null;
+    if (database) {
+      try {
+        const result = await database.execute(
+          sql`SELECT tag, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1`
+        );
+        const rows = (result.rows ?? []) as Array<{ tag: string; created_at: string | number }>;
+        const countResult = await database.execute(
+          sql`SELECT count(*)::int AS total FROM drizzle.__drizzle_migrations`
+        );
+        totalMigrations = Number((countResult.rows?.[0] as { total?: number } | undefined)?.total ?? 0);
+        currentVersion = rows[0] ? String(rows[0].tag) : null;
+        lastMigration = rows[0] ? new Date(Number(rows[0].created_at)).toISOString() : null;
+      } catch {
+        // Journal table absent — honest zeros.
+      }
+    }
+    return {
+      currentVersion,
+      totalMigrations,
+      pendingMigrations: 0,
+      lastMigration,
+      rules: MIGRATION_RULES,
+    };
+  }),
   // Sprint 37 contract (F-12): stats from the delivered migration config and
   // the platformSettings table this router manages.
   getStats: protectedProcedure.query(async () => {

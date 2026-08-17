@@ -762,22 +762,28 @@ export const insuranceKpiDashboardRouter = router({
       if (!db) return null;
       const since = daysAgo(input.periodDays);
 
+      // F-12 (wave-3): the previous revision aggregated platform_share /
+      // tenant_share / client_share — columns that DO NOT EXIST on
+      // platform_billing_ledger (runtime error against real PG). Real columns:
+      // platform_revenue and client_revenue. No tenant-share column exists,
+      // so tenantShare is no longer reported (no fabricated substitute).
       const [ledgerStats] = await db
         .select({
           total: count(),
-          totalRevenue: sql<string>`COALESCE(SUM(CAST(platform_share AS NUMERIC)), 0)`,
-          totalTenantShare: sql<string>`COALESCE(SUM(CAST(tenant_share AS NUMERIC) FILTER (WHERE tenant_share IS NOT NULL)), 0)`,
-          totalClientShare: sql<string>`COALESCE(SUM(CAST(client_share AS NUMERIC) FILTER (WHERE client_share IS NOT NULL)), 0)`,
+          totalRevenue: sql<string>`COALESCE(SUM(CAST(platform_revenue AS NUMERIC)), 0)`,
+          totalClientShare: sql<string>`COALESCE(SUM(CAST(client_revenue AS NUMERIC)), 0)`,
         })
         .from(platformBillingLedger)
         .where(gte(platformBillingLedger.createdAt, since));
 
+      // F-12 (wave-3): real gl_entries columns are amount/entry_type/posted_by
+      // (debit_amount/credit_amount/posted do not exist — phantom SQL).
       const [glStats] = await db
         .select({
           total: count(),
-          totalDebit: sql<string>`COALESCE(SUM(CAST(debit_amount AS NUMERIC) FILTER (WHERE debit_amount IS NOT NULL)), 0)`,
-          totalCredit: sql<string>`COALESCE(SUM(CAST(credit_amount AS NUMERIC) FILTER (WHERE credit_amount IS NOT NULL)), 0)`,
-          unposted: sql<number>`COUNT(*) FILTER (WHERE posted = false)`,
+          totalDebit: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE entry_type = 'debit'), 0)`,
+          totalCredit: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE entry_type = 'credit'), 0)`,
+          unposted: sql<number>`COUNT(*) FILTER (WHERE posted_by IS NULL)`,
         })
         .from(glEntries)
         .where(gte(glEntries.createdAt, since));
@@ -794,7 +800,6 @@ export const insuranceKpiDashboardRouter = router({
         billing: {
           entries: Number(ledgerStats?.total ?? 0),
           platformRevenue: Number(ledgerStats?.totalRevenue ?? 0),
-          tenantShare: Number(ledgerStats?.totalTenantShare ?? 0),
           clientShare: Number(ledgerStats?.totalClientShare ?? 0),
         },
         gl: {

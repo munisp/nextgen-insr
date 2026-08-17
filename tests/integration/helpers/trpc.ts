@@ -35,6 +35,9 @@ import { gdprDashboardRouter } from "../../../server/routers/gdprDashboard";
 import { fxRatesRouter } from "../../../server/routers/fxRates";
 import { billPaymentsRouter } from "../../../server/routers/billPayments";
 import { mobileMoneyRouter } from "../../../server/routers/mobileMoney";
+import { billingLedgerRouter } from "../../../server/routers/billingLedger";
+import { dbSchemaPushRouter } from "../../../server/routers/dbSchemaPush";
+import { securityAuditRouter } from "../../../server/routers/securityAudit";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -62,6 +65,11 @@ export const integrationRouter = router({
   fxRates: fxRatesRouter,
   billPayments: billPaymentsRouter,
   mobileMoney: mobileMoneyRouter,
+  // F-12 (wave-3): rewired-from-mockware routers under test — same mount paths
+  // as production.
+  billingLedger: billingLedgerRouter,
+  dbSchemaPush: dbSchemaPushRouter,
+  securityAudit: securityAuditRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

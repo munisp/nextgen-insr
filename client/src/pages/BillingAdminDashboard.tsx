@@ -29,7 +29,7 @@ export default function BillingAdminDashboard() {
     { title: "Revenue (MTD ₦M)", value: "—", icon: TrendingUp, trend: "up", trendValue: "↑ 11%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
     { title: "Unreconciled Items", value: "—", icon: AlertTriangle, trend: "down", trendValue: "↓ 4", status: "good" as const, href: "#", accent: "var(--risk-low)" },
     { title: "Platform Fees (MTD ₦)", value: kpi.billing?.platformRevenue != null ? Number(kpi.billing.platformRevenue).toLocaleString() : "—", icon: DollarSign, trend: "up", trendValue: "↑ 9%", status: "neutral" as const, href: "#", accent: "var(--role-billing-admin)" },
-    { title: "Tenant Payouts (₦M)", value: kpi.billing?.tenantShare != null ? (Number(kpi.billing.tenantShare) / 1e6).toFixed(1) : "—", icon: Receipt, trend: "up", trendValue: "↑ 13%", status: "neutral" as const, href: "#", accent: "var(--insurance-primary)" },
+    { title: "Tenant Payouts (₦M)", value: "—" /* F-12 (wave-3): tenant_share column does not exist on platform_billing_ledger — no real source */, icon: Receipt, trend: "up", trendValue: "↑ 13%", status: "neutral" as const, href: "#", accent: "var(--insurance-primary)" },
     { title: "Failed Transactions", value: "—", icon: XCircle, trend: "down", trendValue: "↓ 2", status: "good" as const, href: "#", accent: "var(--risk-low)" },
     { title: "Disputes Open", value: "—", icon: Scale, trend: "flat", trendValue: "stable", status: "warning" as const, href: "#", accent: "var(--risk-medium)" },
     { title: "Chargeback Rate%", value: "—", icon: Activity, trend: "down", trendValue: "↓ 0.2%", status: "good" as const, href: "#", accent: "var(--risk-low)" },

@@ -20,28 +20,22 @@ export default function SecurityAuditDashboard() {
   const { data: policies } = trpc.securityAudit.getPolicies.useQuery({});
   const { data: mitigations } = trpc.securityAudit.getMitigations.useQuery({});
 
-  // F-12: getAuditChain/getPolicies/listMitigations return agent-registry rows
-  // (delivered stubs) — no audit telemetry; cards render honest empty states.
-  const d: Partial<{ totalEvents: number; chainValid: boolean }> = {};
+  // F-12 (wave-3): getAuditChain is REAL — it verifies the F-08 tamper-evident
+  // audit_log hash chain. getPolicies/getMitigations are fail-loud
+  // NOT_IMPLEMENTED (no delivered stores) and their cards stay empty.
+  const d: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
   const cards = [
-    { title: "Audit Events (24h)", value: d.totalEvents ?? "—", icon: Activity, trend: "up" as const, trendValue: "logged", status: "neutral" as const, href: "/audit-log", accent: "var(--insurance-primary)" },
+    { title: "Audit Events", value: d.totalRows ?? "—", icon: Activity, trend: "up" as const, trendValue: "logged", status: "neutral" as const, href: "/audit-log", accent: "var(--insurance-primary)" },
     { title: "Security Policies", value: Array.isArray(policies) ? (policies as any[]).length : "—", icon: Shield, trend: "flat" as const, trendValue: "active", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
     { title: "Open Mitigations", value: Array.isArray(mitigations) ? (mitigations as any[]).filter((m: any) => m.status === "open").length : "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 1", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-medium)" },
-    { title: "Chain Integrity", value: d.chainValid ? "Valid" : "—", icon: Lock, trend: "flat" as const, trendValue: "tamper-proof", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "Chain Integrity", value: d.chainValid == null ? "—" : d.chainValid ? "Valid" : "BROKEN", icon: Lock, trend: "flat" as const, trendValue: "tamper-proof", status: "good" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
   ];
 
-  const eventsByType = [
-    { name: "Login", count: Math.floor(Number(d.totalEvents ?? 100) * 0.40) },
-    { name: "Policy Change", count: Math.floor(Number(d.totalEvents ?? 100) * 0.25) },
-    { name: "Data Access", count: Math.floor(Number(d.totalEvents ?? 100) * 0.20) },
-    { name: "Admin Action", count: Math.floor(Number(d.totalEvents ?? 100) * 0.10) },
-    { name: "Alert", count: Math.floor(Number(d.totalEvents ?? 100) * 0.05) },
-  ];
-
-  const auditTrend = Array.from({ length: 7 }, (_, i) => {
-    const d2 = new Date(Date.now() - (6 - i) * 86400000);
-    return { day: d2.toLocaleDateString("en-NG", { weekday: "short" }), events: Number(d.totalEvents ?? 0) };
-  });
+  // F-12 (wave-3): verifyAuditChain returns chain-integrity counts only — no
+  // per-event-type breakdown or daily series exists, so these charts render
+  // honest empty states (the previous splits/flat trend were fabrications).
+  const eventsByType: Array<{ name: string; count: number }> = [];
+  const auditTrend: Array<{ day: string; events: number }> = [];
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page-bg)", paddingBottom: isMobile ? "calc(4rem + var(--safe-area-bottom))" : "2rem" }}>
