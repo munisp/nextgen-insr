@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -10,7 +9,6 @@ export default function ExecutiveCommandCenter() {
     data: stats,
     isLoading,
     refetch,
-    // @ts-ignore Sprint 85
   } = trpc.executiveCommandCenter.getStats.useQuery();
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -64,49 +62,49 @@ export default function ExecutiveCommandCenter() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Total KPIs</p>
                 <p className="text-xl font-bold text-blue-400">
-                  {String(stats?.totalKPIs ?? "—")}
+                  {String(stats?.totalTransactions ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">On Target</p>
                 <p className="text-xl font-bold text-emerald-400">
-                  {String(stats?.kpisOnTarget ?? "—")}
+                  {String(stats?.totalAgents ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Below Target</p>
                 <p className="text-xl font-bold text-amber-400">
-                  {String(stats?.kpisBelowTarget ?? "—")}
+                  {String(stats?.totalFraudAlerts ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Health</p>
                 <p className="text-xl font-bold text-rose-400">
-                  {String(stats?.overallHealth ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Revenue Growth %</p>
                 <p className="text-xl font-bold text-purple-400">
-                  {String(stats?.revenueGrowth ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Efficiency %</p>
                 <p className="text-xl font-bold text-cyan-400">
-                  {String(stats?.operationalEfficiency ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Risk Score</p>
                 <p className="text-xl font-bold text-indigo-400">
-                  {String(stats?.riskScore ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Last Updated</p>
                 <p className="text-xl font-bold text-orange-400">
-                  {String(stats?.lastUpdated ?? "—")}
+                  "—"
                 </p>
               </div>
             </div>

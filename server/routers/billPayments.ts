@@ -185,14 +185,16 @@ export const billPaymentsRouter = router({
   })),
 
   getHistory: protectedProcedure
-    .input(z.object({ agentId: z.number(), limit: z.number().default(20), offset: z.number().default(0) }))
-    .query(async ({ input }) => {
+    // F-12 (wave-4b): agentId was client-supplied — any caller could read
+    // any agent's history. Session-scoped to the caller.
+    .input(z.object({ category: z.string().optional(), limit: z.number().default(20), offset: z.number().default(0) }))
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { data: [], total: 0 };
       const results = await db.select().from(transactions)
-        .where(and(eq(transactions.agentId, input.agentId), eq(transactions.type, "Bill Payment")))
+        .where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, "Bill Payment")))
         .orderBy(desc(transactions.createdAt)).limit(input.limit).offset(input.offset);
-      const [{ total }] = await db.select({ total: count() }).from(transactions).where(and(eq(transactions.agentId, input.agentId), eq(transactions.type, "Bill Payment")));
+      const [{ total }] = await db.select({ total: count() }).from(transactions).where(and(eq(transactions.agentId, ctx.user.id), eq(transactions.type, "Bill Payment")));
       return { data: results, total: Number(total) };
     }),
 
@@ -208,13 +210,13 @@ export const billPaymentsRouter = router({
 
   getSummary: protectedProcedure
     .input(z.object({ periodDays: z.number().default(30) }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return { total: 0, volumeNGN: 0, commissionNGN: 0 };
       const since = new Date(Date.now() - input.periodDays * 86400000);
       const [stats] = await db.select({
         total: count(), volume: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)`, commission: sql<string>`COALESCE(SUM(CAST(commission AS NUMERIC)), 0)`,
-      }).from(transactions).where(and(eq(transactions.type, "Bill Payment"), gte(transactions.createdAt, since), eq(transactions.status, "success")));
+      }).from(transactions).where(and(eq(transactions.type, "Bill Payment"), eq(transactions.agentId, ctx.user.id), gte(transactions.createdAt, since), eq(transactions.status, "success")));
       return { periodDays: input.periodDays, total: Number(stats?.total ?? 0), volumeNGN: Number(stats?.volume ?? 0), commissionNGN: Number(stats?.commission ?? 0) };
     }),
 });

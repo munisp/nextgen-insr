@@ -1,10 +1,27 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function ServiceHealthAggregator() {
   const healthQ = trpc.serviceHealth.getAll.useQuery();
+
+  // F-12 (wave-4b): the real getAll returns {services, overallStatus,
+  // checkedAt} — the summary block is derived client-side from the real
+  // rows (no fabricated counts).
+  const summary = healthQ.data
+    ? {
+        overallStatus: healthQ.data.overallStatus,
+        total: healthQ.data.services.length,
+        healthy: healthQ.data.services.filter(
+          x => x.status === "healthy" || x.status === "up" || x.status === "ok"
+        ).length,
+        degraded: healthQ.data.services.filter(x => x.status === "degraded")
+          .length,
+        down: healthQ.data.services.filter(
+          x => x.status === "error" || x.status === "down"
+        ).length,
+      }
+    : undefined;
 
   const statusColor: Record<string, string> = {
     healthy: "bg-green-500",
@@ -45,35 +62,35 @@ export default function ServiceHealthAggregator() {
         </div>
 
         {/* Overall Status */}
-        {healthQ.data?.summary && (
+        {summary && (
           <Card
-            className={`border ${healthQ.data.summary.overallStatus === "healthy" ? "bg-green-950 border-green-800" : healthQ.data.summary.overallStatus === "degraded" ? "bg-yellow-950 border-yellow-800" : "bg-red-950 border-red-800"}`}
+            className={`border ${summary.overallStatus === "healthy" ? "bg-green-950 border-green-800" : summary.overallStatus === "degraded" ? "bg-yellow-950 border-yellow-800" : "bg-red-950 border-red-800"}`}
           >
             <CardContent className="pt-4 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div
-                  className={`w-6 h-6 rounded-full ${statusColor[healthQ.data.summary.overallStatus]} flex items-center justify-center text-white text-sm font-bold`}
+                  className={`w-6 h-6 rounded-full ${statusColor[summary.overallStatus]} flex items-center justify-center text-white text-sm font-bold`}
                 >
-                  {statusIcon[healthQ.data.summary.overallStatus]}
+                  {statusIcon[summary.overallStatus]}
                 </div>
                 <div>
                   <div className="text-lg font-bold text-white capitalize">
-                    System {healthQ.data.summary.overallStatus}
+                    System {summary.overallStatus}
                   </div>
                   <div className="text-sm text-gray-400">
-                    {healthQ.data.summary.total} services monitored
+                    {summary.total} services monitored
                   </div>
                 </div>
               </div>
               <div className="flex gap-6 text-sm">
                 <span className="text-green-400">
-                  {healthQ.data.summary.healthy} healthy
+                  {summary.healthy} healthy
                 </span>
                 <span className="text-yellow-400">
-                  {healthQ.data.summary.degraded} degraded
+                  {summary.degraded} degraded
                 </span>
                 <span className="text-red-400">
-                  {healthQ.data.summary.down} down
+                  {summary.down} down
                 </span>
               </div>
             </CardContent>
@@ -88,14 +105,14 @@ export default function ServiceHealthAggregator() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
-                {services.map(svc => (
+                {(services as Array<{ name: string; status?: string; latencyMs?: number; details?: string }>).map(svc => (
                   <div
                     key={svc.name}
                     className="flex items-center justify-between bg-gray-800 rounded-lg p-3"
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        className={`w-3 h-3 rounded-full ${statusColor[svc.status]}`}
+                        className={`w-3 h-3 rounded-full ${statusColor[svc.status ?? "unknown"] ?? ""}`}
                       />
                       <div>
                         <div className="text-sm font-medium text-white">
@@ -108,9 +125,9 @@ export default function ServiceHealthAggregator() {
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-gray-400">
-                        {svc.latencyMs}ms
+                        —
                       </div>
-                      <div className="text-xs text-gray-500">{svc.uptime}</div>
+                      <div className="text-xs text-gray-500">—</div>
                     </div>
                   </div>
                 ))}

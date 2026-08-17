@@ -95,13 +95,15 @@ const getStats = publicProcedure
         .from(platform_incidents)
         .orderBy(desc(platform_incidents.id))
         .limit(5);
+      // F-12 (full sweep): fixture flag stats (85/62/23/3) — no feature-flag
+      // or A/B store is delivered. Honest 0s/empties.
       return {
-        totalFlags: 85,
-        enabledFlags: 62,
-        disabledFlags: 23,
-        activeAbTests: 3,
-        lastDeployed: new Date().toISOString(),
-        environments: ["production", "staging", "development"],
+        totalFlags: 0,
+        enabledFlags: 0,
+        disabledFlags: 0,
+        activeAbTests: 0,
+        lastDeployed: null,
+        environments: [],
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

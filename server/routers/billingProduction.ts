@@ -1,7 +1,8 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
-import { transactions } from "../../drizzle/schema";
+import { disputes, transactions } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -95,36 +96,76 @@ export const billingProductionRouter = router({
 
       return results;
     }),
-  generateMonthlyInvoices: protectedProcedure.mutation(async () => ({
-    generated: 0,
-    period: new Date().toISOString(),
-  })),
-  getPaymentMethods: protectedProcedure.query(async () => ({ methods: [] })),
+  // F-12 (wave-4b, audit FAIL-3): every proc below was a success-echo
+  // facade or zero-payload. Undelivered stores (payment methods, billing
+  // alerts, dunning, grace periods, reconciliation, rate limits, invoice
+  // generation) fail loud; disputes are real against the disputes table.
+  generateMonthlyInvoices: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "generateMonthlyInvoices: no invoice-generation engine is delivered",
+    });
+  }),
+  getPaymentMethods: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getPaymentMethods: no payment-method store is delivered",
+    });
+  }),
   addPaymentMethod: protectedProcedure
     .input(z.object({ type: z.string(), token: z.string() }))
-    .mutation(async ({ input }) => ({ success: true, type: input.type })),
-  getBillingAlerts: protectedProcedure.query(async () => ({ alerts: [] })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "addPaymentMethod: no payment-method store is delivered",
+      });
+    }),
+  getBillingAlerts: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getBillingAlerts: no billing-alert store is delivered",
+    });
+  }),
   configureBillingAlerts: protectedProcedure
     .input(z.object({ threshold: z.number(), enabled: z.boolean() }))
-    .mutation(async () => ({ success: true })),
-  getDunningStatus: protectedProcedure.query(async () => ({
-    status: "healthy",
-    overdue: 0,
-  })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "configureBillingAlerts: no billing-alert store is delivered",
+      });
+    }),
+  getDunningStatus: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getDunningStatus: no dunning pipeline is delivered",
+    });
+  }),
   applyGracePeriod: protectedProcedure
     .input(z.object({ invoiceId: z.string(), days: z.number() }))
-    .mutation(async () => ({ success: true })),
-  getReconciliationSchedule: protectedProcedure.query(async () => ({
-    schedule: "daily",
-    lastRun: new Date().toISOString(),
-  })),
-  triggerReconciliation: protectedProcedure.mutation(async () => ({
-    triggered: true,
-    timestamp: new Date().toISOString(),
-  })),
-  getRateLimits: protectedProcedure.query(async () => ({
-    limits: { perMinute: 60, perHour: 1000 },
-  })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "applyGracePeriod: no grace-period store is delivered",
+      });
+    }),
+  getReconciliationSchedule: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getReconciliationSchedule: no reconciliation engine is delivered",
+    });
+  }),
+  triggerReconciliation: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "triggerReconciliation: no reconciliation engine is delivered",
+    });
+  }),
+  getRateLimits: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getRateLimits: no rate-limit store is delivered",
+    });
+  }),
   updateRateLimits: protectedProcedure
     .input(
       z.object({
@@ -132,39 +173,98 @@ export const billingProductionRouter = router({
         perHour: z.number().optional(),
       })
     )
-    .mutation(async () => ({ success: true })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "updateRateLimits: no rate-limit store is delivered",
+      });
+    }),
   createDispute: protectedProcedure
     .input(z.object({ invoiceId: z.string(), reason: z.string() }))
-    .mutation(async () => ({ success: true, disputeId: "DSP-001" })),
-  getDisputes: protectedProcedure.query(async () => ({ disputes: [] })),
-  getRevenueForecast: protectedProcedure.query(async () => ({
-    forecast: [],
-    period: "monthly",
-  })),
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "database unavailable",
+        });
+      }
+      const ref = `DSP-${Date.now().toString(36).toUpperCase()}`;
+      const [row] = await db
+        .insert(disputes)
+        .values({
+          ref,
+          agentId: ctx.user.id,
+          transactionRef: input.invoiceId,
+          reason: input.reason,
+          description: input.reason,
+          slaDeadlineAt: new Date(Date.now() + 72 * 3600 * 1000),
+        })
+        .returning({ id: disputes.id, ref: disputes.ref });
+      return { success: true as const, disputeId: row.ref };
+    }),
+  getDisputes: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return { disputes: [] };
+    const rows = await db
+      .select()
+      .from(disputes)
+      .where(eq(disputes.agentId, ctx.user.id))
+      .orderBy(desc(disputes.id))
+      .limit(100);
+    return { disputes: rows };
+  }),
+  // F-12 (wave-4b): zero-payloads / facades / a fabricated 15% tax rate —
+  // no forecast, cohort, plan-migration, PDF, or credit store is delivered.
+  // All fail loud.
+  getRevenueForecast: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getRevenueForecast: no revenue-forecast pipeline is delivered",
+    });
+  }),
   calculateTax: protectedProcedure
     .input(z.object({ amount: z.number(), region: z.string() }))
-    .query(async ({ input }) => ({
-      taxAmount: input.amount * 0.15,
-      rate: 0.15,
-    })),
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "calculateTax: no tax engine is delivered (the previous 15% rate was fabricated)",
+      });
+    }),
   migratePlan: protectedProcedure
     .input(z.object({ fromPlan: z.string(), toPlan: z.string() }))
-    .mutation(async () => ({
-      success: true,
-      effectiveDate: new Date().toISOString(),
-    })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "migratePlan: plan migration is not delivered",
+      });
+    }),
   generateInvoicePdf: protectedProcedure
     .input(z.object({ invoiceId: z.string() }))
-    .mutation(async () => ({ url: "", generated: true })),
-  getCohortAnalytics: protectedProcedure.query(async () => ({
-    cohorts: [],
-    period: "monthly",
-  })),
-  getCreditBalance: protectedProcedure.query(async () => ({
-    balance: 0,
-    currency: "USD",
-  })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "generateInvoicePdf: PDF generation is not delivered",
+      });
+    }),
+  getCohortAnalytics: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getCohortAnalytics: no cohort-analytics pipeline is delivered",
+    });
+  }),
+  getCreditBalance: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getCreditBalance: no credit store is delivered",
+    });
+  }),
   topUpCredits: protectedProcedure
     .input(z.object({ amount: z.number() }))
-    .mutation(async () => ({ success: true, newBalance: 0 })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "topUpCredits: no credit store is delivered",
+      });
+    }),
 });

@@ -135,43 +135,26 @@ export const taxCollectionRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   taxTypes: protectedProcedure.query(async () => {
-    return {
-      taxTypes: [
-        {
-          id: "TT-001",
-          name: "VAT",
-          rate: 7.5,
-          description: "Value Added Tax",
-        },
-        { id: "TT-002", name: "WHT", rate: 10, description: "Withholding Tax" },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "taxTypes: no delivered store on this platform",
+    });
   }),
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   history: protectedProcedure.query(async () => {
-    return {
-      payments: [
-        {
-          id: "TC-001",
-          taxType: "VAT",
-          amount: 75000,
-          status: "remitted",
-          paidAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "history: no delivered store on this platform",
+    });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalPayments: 15000,
-      totalVolume: 15000000,
-      totalCommission: 750000,
-      totalCollected: 15000000,
-      totalRemitted: 14500000,
-      pending: 500000,
-      byType: { VAT: 10000000, WHT: 5000000 },
-      successRate: 97.5,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

@@ -40,6 +40,8 @@ const renewContract = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const suspendBilling = protectedProcedure
   .input(
     z.object({
@@ -47,40 +49,11 @@ const suspendBilling = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "suspendBilling: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "suspendBilling completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "suspendBilling completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "suspendBilling: no billing-lifecycle store",
+    });
   });
 const terminateContract = protectedProcedure
   .input(
@@ -115,6 +88,8 @@ const terminateContract = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const reactivateBilling = protectedProcedure
   .input(
     z.object({
@@ -122,40 +97,11 @@ const reactivateBilling = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "reactivateBilling: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "reactivateBilling completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "reactivateBilling completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "reactivateBilling: no billing-lifecycle store",
+    });
   });
 const getAlerts = protectedProcedure
   .input(
@@ -206,6 +152,8 @@ const getAlerts = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const configureAlertThresholds = protectedProcedure
   .input(
     z.object({
@@ -213,40 +161,11 @@ const configureAlertThresholds = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "configureAlertThresholds: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "configureAlertThresholds completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "configureAlertThresholds completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "configureAlertThresholds: no alert-threshold store",
+    });
   });
 const getSlaMetrics = protectedProcedure
   .input(
@@ -350,6 +269,8 @@ const registerWebhook = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const deleteWebhook = protectedProcedure
   .input(
     z.object({
@@ -357,41 +278,14 @@ const deleteWebhook = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "deleteWebhook: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "deleteWebhook completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "deleteWebhook completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "deleteWebhook: no webhook store in this router",
+    });
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const archiveOldRecords = protectedProcedure
   .input(
     z.object({
@@ -399,41 +293,14 @@ const archiveOldRecords = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "archiveOldRecords: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "archiveOldRecords completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "archiveOldRecords completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "archiveOldRecords: no archival pipeline",
+    });
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const generateComplianceReport = protectedProcedure
   .input(
     z.object({
@@ -441,40 +308,11 @@ const generateComplianceReport = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "generateComplianceReport: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "generateComplianceReport completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "generateComplianceReport completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "generateComplianceReport: no compliance-report engine",
+    });
   });
 const getNotificationPreferences = protectedProcedure
   .input(
@@ -525,6 +363,8 @@ const getNotificationPreferences = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const updateNotificationPreferences = protectedProcedure
   .input(
     z.object({
@@ -532,40 +372,11 @@ const updateNotificationPreferences = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "updateNotificationPreferences: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "updateNotificationPreferences completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "updateNotificationPreferences completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "updateNotificationPreferences: no notification-preference store",
+    });
   });
 const getRevenueForecast = protectedProcedure
   .input(
@@ -682,6 +493,8 @@ const listDisputes = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const resolveDispute = protectedProcedure
   .input(
     z.object({
@@ -689,40 +502,11 @@ const resolveDispute = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(billingRevenuePeriods)
-          .where(eq(billingRevenuePeriods.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "resolveDispute: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "resolveDispute completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "resolveDispute completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "resolveDispute: no dispute-resolution workflow in this router",
+    });
   });
 
 export const billingLifecycleRouter = router({

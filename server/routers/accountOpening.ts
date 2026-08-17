@@ -198,31 +198,20 @@ export const accountOpeningRouter = router({
       }
     }),
 
+  // F-12 (expanded sweep): fixture application rows (AO-001) — no
+  // account-applications store is delivered. Fail loud.
   list: protectedProcedure.query(async () => {
-    return {
-      applications: [
-        {
-          id: "AO-001",
-          customerName: "Fatima Ibrahim",
-          accountType: "savings",
-          status: "approved",
-          createdAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "accountOpening.list: no account-applications store is delivered",
+    });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      total: 1500,
-      totalApplications: 1500,
-      approved: 1200,
-      pending: 200,
-      rejected: 100,
-      byStatus: { approved: 1200, pending: 200, rejected: 100 },
-      byBank: { access: 500, gtbank: 400, zenith: 300, firstbank: 300 },
-      conversionRate: 80,
-      avgProcessingDays: 3,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

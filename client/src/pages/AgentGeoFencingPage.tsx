@@ -1,29 +1,34 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import {
-  MapPin,
-  Search,
-  AlertTriangle,
-  CheckCircle,
-  Shield,
-} from "lucide-react";
+import { MapPin, Search, Shield } from "lucide-react";
 
+// F-12 (S87-02): rewritten against the DELIVERED router (registered as
+// `geofencing`, not `geoFencing`). The previous version hid the mismatch
+// behind @ts-nocheck + 7 @ts-ignore (4 of which were literal text rendered
+// into the JSX) and consumed phantom fields (summary, region, agents,
+// violations). Real sources: geofencing.list ({zones, total} of
+// geofence_zones rows), geofencing.getStats ({totalZones, activeZones,
+// totalChecks}), geofencing.toggle ({id, active}). Per-zone agent counts and
+// violation totals have no delivered schema source and are not shown.
 export default function AgentGeoFencingPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.geoFencing.list.useQuery();
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const toggleMut = trpc.geoFencing.toggle.useMutation({
-    onSuccess: () => toast.success("Geo-fence updated"),
+  const utils = trpc.useUtils();
+  const { data, isLoading } = trpc.geofencing.list.useQuery({ limit: 50 });
+  const { data: stats } = trpc.geofencing.getStats.useQuery();
+  const toggleMut = trpc.geofencing.toggle.useMutation({
+    onSuccess: () => {
+      toast.success("Geo-fence updated");
+      utils.geofencing.list.invalidate();
+      utils.geofencing.getStats.invalidate();
+    },
+    onError: err => toast.error(err.message),
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const zones = (data?.zones || []).filter(
-    (z: any) => !search || z.name?.toLowerCase().includes(search.toLowerCase())
+  const zones = (data?.zones ?? []).filter(
+    z => !search || z.name?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -41,41 +46,27 @@ export default function AgentGeoFencingPage() {
           <MapPin className="w-4 h-4 mr-1" /> Create Zone
         </Button>
       </div>
-      <div className="grid grid-cols-4 gap-4">
-        // @ts-ignore Sprint 85
+      <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">
-              {data?.summary?.totalZones || 0}
-            </p>
+            <p className="text-2xl font-bold">{stats?.totalZones ?? 0}</p>
             <p className="text-sm text-muted-foreground">Total Zones</p>
           </CardContent>
         </Card>
-        // @ts-ignore Sprint 85
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {data?.summary?.activeZones || 0}
+              {stats?.activeZones ?? 0}
             </p>
             <p className="text-sm text-muted-foreground">Active</p>
           </CardContent>
         </Card>
-        // @ts-ignore Sprint 85
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-blue-600">
-              {data?.summary?.agentsAssigned || 0}
+              {stats?.totalChecks ?? 0}
             </p>
-            <p className="text-sm text-muted-foreground">Agents Assigned</p>
-          </CardContent>
-        </Card>
-        // @ts-ignore Sprint 85
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold text-red-600">
-              {data?.summary?.violations || 0}
-            </p>
-            <p className="text-sm text-muted-foreground">Violations (30d)</p>
+            <p className="text-sm text-muted-foreground">Point Checks</p>
           </CardContent>
         </Card>
       </div>
@@ -90,59 +81,60 @@ export default function AgentGeoFencingPage() {
       </div>
       {isLoading ? (
         <div className="text-center py-8">Loading...</div>
+      ) : zones.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          No geo-fence zones configured
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {zones.map((z: any, i: number) => (
-            <Card key={i}>
-              <CardContent className="pt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center ${z.active ? "bg-green-100" : "bg-gray-100"}`}
+          {zones.map(z => {
+            const radiusM = z.radiusMeters ?? z.radiusMetres ?? null;
+            return (
+              <Card key={z.id}>
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center ${z.isActive ? "bg-green-100" : "bg-gray-100"}`}
+                      >
+                        {z.isActive ? (
+                          <Shield className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <MapPin className="w-4 h-4 text-gray-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-medium">{z.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {z.type}
+                          {z.description ? ` · ${z.description}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={z.isActive ? "outline" : "default"}
+                      disabled={toggleMut.isPending}
+                      onClick={() =>
+                        toggleMut.mutate({
+                          id: String(z.id),
+                          active: !z.isActive,
+                        })
+                      }
                     >
-                      {z.active ? (
-                        <Shield className="w-4 h-4 text-green-600" />
-                      ) : (
-                        <MapPin className="w-4 h-4 text-gray-400" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-medium">{z.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {z.region}
-                      </p>
-                    </div>
+                      {z.isActive ? "Disable" : "Enable"}
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant={z.active ? "outline" : "default"}
-                    onClick={() =>
-                      toggleMut.mutate({ id: z.id, active: !z.active })
-                    }
-                  >
-                    {z.active ? "Disable" : "Enable"}
-                  </Button>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                  <div>
-                    <p className="font-medium">{z.agents}</p>
-                    <p className="text-xs text-muted-foreground">Agents</p>
-                  </div>
-                  <div>
-                    <p className="font-medium">{z.radius}km</p>
+                  <div className="text-center text-sm">
+                    <p className="font-medium">
+                      {radiusM != null ? `${(Number(radiusM) / 1000).toFixed(1)}km` : "—"}
+                    </p>
                     <p className="text-xs text-muted-foreground">Radius</p>
                   </div>
-                  <div className="flex items-center justify-center gap-1">
-                    {z.violations > 0 && (
-                      <AlertTriangle className="w-3 h-3 text-red-500" />
-                    )}
-                    <p className="font-medium">{z.violations}</p>
-                    <p className="text-xs text-muted-foreground">Violations</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,10 +1,10 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-
 export const artRobustnessRouter = router({
   list: protectedProcedure
     .input(
@@ -93,49 +93,54 @@ export const artRobustnessRouter = router({
 
       return results;
     }),
+  // F-12 (wave-4b): was a zero-payload/fixture stub — no ART (adversarial
+  // robustness testing) engine or result store is delivered. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return { totalTests: 0, passRate: 0, avgRobustnessScore: 0, lastRunAt: "" };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no ART engine is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a zero-payload/fixture stub — no ART (adversarial
+  // robustness testing) engine or result store is delivered. Fail loud.
   health: protectedProcedure.query(async () => {
-    return {
-      status: "healthy" as const,
-      uptime: 0,
-      lastCheck: new Date().toISOString(),
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "health: no ART engine is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a zero-payload/fixture stub — no ART (adversarial
+  // robustness testing) engine or result store is delivered. Fail loud.
   listAttacks: protectedProcedure.query(async () => {
-    return {
-      attacks: [] as Array<{
-        id: string;
-        name: string;
-        type: string;
-        severity: string;
-      }>,
-      total: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "listAttacks: no ART engine is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a zero-payload/fixture stub — no ART (adversarial
+  // robustness testing) engine or result store is delivered. Fail loud.
   listResults: protectedProcedure.query(async () => {
-    return {
-      results: [] as Array<{
-        id: string;
-        attackId: string;
-        score: number;
-        passed: boolean;
-        timestamp: string;
-      }>,
-      total: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "listResults: no ART engine is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a facade returning a fake queued job — no ART
+  // engine is delivered. Fail loud.
   runAttack: protectedProcedure
-    .input(z.object({ attackId: z.string(), modelId: z.string().optional() }))
-    .mutation(async ({ input }) => {
-      return { jobId: `attack-${Date.now()}`, status: "queued" as const };
+        .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "runAttack: no ART engine is delivered on this platform",
+      });
     }),
-  runFullSuite: protectedProcedure.mutation(async () => {
-    return {
-      jobId: `suite-${Date.now()}`,
-      status: "queued" as const,
-      totalAttacks: 0,
-    };
-  }),
+  // F-12 (wave-4b): was a facade returning a fake queued job — no ART
+  // engine is delivered. Fail loud.
+  runFullSuite: protectedProcedure
+        .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "runFullSuite: no ART engine is delivered on this platform",
+      });
+    }),
 });

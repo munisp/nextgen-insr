@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -137,69 +136,6 @@ function Gauge({
 // ═══════════════════════════════════════════════════════════════════════════════
 // Latency Percentile Chart
 // ═══════════════════════════════════════════════════════════════════════════════
-function LatencyChart({
-  timeline,
-}: {
-  timeline: { hour: string; p50: number; p95: number; p99: number }[];
-}) {
-  const height = 120;
-  const max = Math.max(...timeline.map(t => t.p99), 1);
-  return (
-    <div className="relative" style={{ height: height + 30 }}>
-      <div className="flex items-end gap-0.5" style={{ height }}>
-        {timeline.map((t, i) => (
-          <div
-            key={i}
-            className="flex-1 flex flex-col items-center relative group"
-            style={{ height }}
-          >
-            {/* p99 bar */}
-            <div
-              className="w-full rounded-t absolute bottom-0"
-              style={{
-                height: `${(t.p99 / max) * height}px`,
-                backgroundColor: "rgba(239,68,68,0.3)",
-              }}
-            />
-            {/* p95 bar */}
-            <div
-              className="w-full rounded-t absolute bottom-0"
-              style={{
-                height: `${(t.p95 / max) * height}px`,
-                backgroundColor: "rgba(245,158,11,0.4)",
-              }}
-            />
-            {/* p50 bar */}
-            <div
-              className="w-full rounded-t absolute bottom-0 z-10"
-              style={{
-                height: `${(t.p50 / max) * height}px`,
-                backgroundColor: "#3b82f6",
-              }}
-            />
-            {/* Tooltip */}
-            <div className="absolute bottom-full mb-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs hidden group-hover:block z-20 whitespace-nowrap">
-              <div className="text-gray-300">{t.hour}</div>
-              <div className="text-blue-400">p50: {t.p50}ms</div>
-              <div className="text-amber-400">p95: {t.p95}ms</div>
-              <div className="text-red-400">p99: {t.p99}ms</div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="flex gap-0.5 mt-1">
-        {timeline.map((t, i) => (
-          <span
-            key={i}
-            className="flex-1 text-[8px] text-gray-600 text-center truncate"
-          >
-            {t.hour}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Main Dashboard
@@ -209,27 +145,29 @@ export default function SystemHealthDashboard() {
   const overviewQ = trpc.healthMonitor.overview.useQuery(undefined, {
     refetchInterval: 30_000,
   });
-  const txVolumeQ = trpc.healthMonitor.transactionVolume.useQuery(
-    { hours: timeRange },
+  const txVolumeQ = trpc.healthMonitor.transactionVolume.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
-  const userActivityQ = trpc.healthMonitor.userActivity.useQuery(
-    { hours: timeRange },
+  const userActivityQ = trpc.healthMonitor.userActivity.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
-  const latencyQ = trpc.healthMonitor.apiLatency.useQuery(
-    { hours: timeRange },
+  const latencyQ = trpc.healthMonitor.apiLatency.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
-  const errorsQ = trpc.healthMonitor.errorTracking.useQuery(
-    { hours: timeRange },
+  const errorsQ = trpc.healthMonitor.errorTracking.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
   const securityQ = trpc.healthMonitor.securityEvents.useQuery(undefined, {
     refetchInterval: 60_000,
   });
 
+  // F-12 (wave-4b): overview is REAL host/process metrics (node:os). 24h
+  // transaction totals derive from the real transactionVolume buckets; the
+  // latency/users/errors procedures are fail-loud NOT_IMPLEMENTED and their
+  // sections render honest unavailable states below.
   const o = overviewQ.data;
+  const tx24hCount = txVolumeQ.data?.hourly.reduce((a, h) => a + h.count, 0);
+  const tx24hVolume = txVolumeQ.data?.hourly.reduce((a, h) => a + h.amount, 0);
 
   const formatUptime = (seconds: number) => {
     const d = Math.floor(seconds / 86400);
@@ -274,7 +212,7 @@ export default function SystemHealthDashboard() {
         </div>
 
         {/* KPI Cards Row */}
-        {o && (
+        {(
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             <Card className="bg-gray-900 border-gray-800">
               <CardContent className="pt-4">
@@ -282,10 +220,10 @@ export default function SystemHealthDashboard() {
                   Transactions (24h)
                 </div>
                 <div className="text-2xl font-bold text-white">
-                  {o.transactions.last24h.toLocaleString()}
+                  {tx24hCount != null ? tx24hCount.toLocaleString() : "—"}
                 </div>
-                <div className="text-xs text-green-400 mt-1">
-                  {o.transactions.successRate}% success
+                <div className="text-xs text-gray-500 mt-1">
+                  success rate: —
                 </div>
               </CardContent>
             </Card>
@@ -293,11 +231,9 @@ export default function SystemHealthDashboard() {
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-400 mb-1">Volume (24h)</div>
                 <div className="text-2xl font-bold text-white">
-                  {formatCurrency(o.transactions.totalVolume24h)}
+                  {tx24hVolume != null ? formatCurrency(tx24hVolume) : "—"}
                 </div>
-                <div className="text-xs text-red-400 mt-1">
-                  {o.transactions.failedCount} failed
-                </div>
+                <div className="text-xs text-gray-500 mt-1">failed: —</div>
               </CardContent>
             </Card>
             <Card className="bg-gray-900 border-gray-800">
@@ -305,35 +241,27 @@ export default function SystemHealthDashboard() {
                 <div className="text-xs text-gray-400 mb-1">
                   API Latency (p95)
                 </div>
-                <div className="text-2xl font-bold text-white">
-                  {o.latency.p95}ms
-                </div>
+                <div className="text-2xl font-bold text-gray-500">—</div>
                 <div className="text-xs text-gray-500 mt-1">
-                  p50: {o.latency.p50}ms · p99: {o.latency.p99}ms
+                  APM telemetry not delivered
                 </div>
               </CardContent>
             </Card>
             <Card className="bg-gray-900 border-gray-800">
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-400 mb-1">Active Users</div>
-                <div className="text-2xl font-bold text-white">
-                  {o.users.activeNow}
-                </div>
+                <div className="text-2xl font-bold text-gray-500">—</div>
                 <div className="text-xs text-gray-500 mt-1">
-                  DAU: {o.users.dailyActive}
+                  session telemetry not delivered
                 </div>
               </CardContent>
             </Card>
             <Card className="bg-gray-900 border-gray-800">
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-400 mb-1">Error Rate</div>
-                <div
-                  className={`text-2xl font-bold ${o.errors.errorRate > 5 ? "text-red-400" : o.errors.errorRate > 1 ? "text-amber-400" : "text-green-400"}`}
-                >
-                  {o.errors.errorRate}%
-                </div>
+                <div className="text-2xl font-bold text-gray-500">—</div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {o.errors.last1h} errors/hr
+                  error aggregation not delivered
                 </div>
               </CardContent>
             </Card>
@@ -341,10 +269,10 @@ export default function SystemHealthDashboard() {
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-400 mb-1">Uptime</div>
                 <div className="text-2xl font-bold text-green-400">
-                  {formatUptime(o.system.uptimeSeconds)}
+                  {o ? formatUptime(o.processUptimeSeconds) : "—"}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {o.system.nodeVersion}
+                  {o?.nodeVersion ?? "—"}
                 </div>
               </CardContent>
             </Card>
@@ -363,35 +291,22 @@ export default function SystemHealthDashboard() {
               {txVolumeQ.data && (
                 <>
                   <BarChart
-                    data={txVolumeQ.data.buckets.map(b => ({
-                      label: b.hour.substring(11, 16),
-                      value: b.total,
+                    data={txVolumeQ.data.hourly.map(h => ({
+                      label: h.hour.substring(11, 16),
+                      value: h.count,
                     }))}
                     height={140}
                     barColor="#3b82f6"
                   />
                   <div className="flex gap-4 mt-4 text-xs">
-                    {Object.entries(txVolumeQ.data.summary.byType).map(
-                      ([type, count]) => (
-                        <div key={type} className="flex items-center gap-1">
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{
-                              backgroundColor: {
-                                cash_in: "#22c55e",
-                                cash_out: "#ef4444",
-                                transfer: "#3b82f6",
-                                bill_pay: "#f59e0b",
-                                airtime: "#8b5cf6",
-                              }[type],
-                            }}
-                          />
-                          <span className="text-gray-400 capitalize">
-                            {type.replace("_", " ")}: {count}
-                          </span>
-                        </div>
-                      )
-                    )}
+                    {txVolumeQ.data.byType.map(({ type, count }) => (
+                      <div key={type} className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        <span className="text-gray-400 capitalize">
+                          {type}: {count}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </>
               )}
@@ -408,9 +323,9 @@ export default function SystemHealthDashboard() {
             <CardContent className="space-y-4">
               {txVolumeQ.data && (
                 <>
-                  {Object.entries(txVolumeQ.data.summary.byStatus).map(
-                    ([status, count]) => {
-                      const total = txVolumeQ.data!.summary.total || 1;
+                  {txVolumeQ.data.byStatus.map(({ status, count }) => {
+                      const total =
+                        txVolumeQ.data!.byStatus.reduce((a, x) => a + x.count, 0) || 1;
                       const pct = ((count / total) * 100).toFixed(1);
                       const color =
                         status === "completed"
@@ -446,17 +361,26 @@ export default function SystemHealthDashboard() {
               {o && (
                 <div className="pt-4 border-t border-gray-800 space-y-3">
                   <h4 className="text-sm font-medium text-gray-300">
-                    System Resources
+                    Host Resources (node process host)
                   </h4>
                   <Gauge
-                    value={o.system.memoryUsedMb}
-                    max={o.system.memoryTotalMb}
-                    label="Heap Memory"
+                    value={o.hostCpuLoadPercent}
+                    max={100}
+                    label="Host CPU load %"
+                    color="#22c55e"
+                  />
+                  <Gauge
+                    value={o.hostMemoryUsedPercent}
+                    max={100}
+                    label="Host memory %"
                     color="#3b82f6"
                   />
-                  <div className="text-xs text-gray-500 text-center">
-                    {o.system.memoryUsedMb}MB / {o.system.memoryTotalMb}MB
-                  </div>
+                  <Gauge
+                    value={o.hostDiskUsedPercent}
+                    max={100}
+                    label="Host disk %"
+                    color="#f59e0b"
+                  />
                 </div>
               )}
             </CardContent>
@@ -488,9 +412,9 @@ export default function SystemHealthDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              {latencyQ.data && (
-                <LatencyChart timeline={latencyQ.data.timeline} />
-              )}
+              <div className="text-center text-gray-500 py-8">
+                — API latency telemetry is not delivered on this platform
+              </div>
             </CardContent>
           </Card>
 
@@ -501,40 +425,9 @@ export default function SystemHealthDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {userActivityQ.data && (
-                <>
-                  <BarChart
-                    data={userActivityQ.data.timeline.map(t => ({
-                      label: t.hour,
-                      value: t.count,
-                    }))}
-                    height={100}
-                    barColor="#8b5cf6"
-                  />
-                  <div className="grid grid-cols-3 gap-3 mt-4 text-center">
-                    <div>
-                      <div className="text-lg font-bold text-white">
-                        {userActivityQ.data.uniqueUsers}
-                      </div>
-                      <div className="text-xs text-gray-400">Unique Users</div>
-                    </div>
-                    <div>
-                      <div className="text-lg font-bold text-white">
-                        {userActivityQ.data.totalSessions}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        Total Sessions
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-lg font-bold text-white">
-                        {userActivityQ.data.peakHour}
-                      </div>
-                      <div className="text-xs text-gray-400">Peak Hour</div>
-                    </div>
-                  </div>
-                </>
-              )}
+              <div className="text-center text-gray-500 py-8">
+                — User-session telemetry is not delivered on this platform
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -548,52 +441,8 @@ export default function SystemHealthDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-gray-400 text-xs border-b border-gray-800">
-                      <th className="text-left py-2">Endpoint</th>
-                      <th className="text-right py-2">p50</th>
-                      <th className="text-right py-2">p95</th>
-                      <th className="text-right py-2">p99</th>
-                      <th className="text-right py-2">Err%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {latencyQ.data?.endpoints.slice(0, 10).map((ep, i) => (
-                      <tr
-                        key={i}
-                        className="border-b border-gray-800/50 hover:bg-gray-800/30"
-                      >
-                        <td className="py-2 text-gray-300 font-mono text-xs truncate max-w-[200px]">
-                          {ep.endpoint}
-                        </td>
-                        <td className="py-2 text-right text-gray-400">
-                          {ep.p50}ms
-                        </td>
-                        <td className="py-2 text-right text-amber-400">
-                          {ep.p95}ms
-                        </td>
-                        <td className="py-2 text-right text-red-400">
-                          {ep.p99}ms
-                        </td>
-                        <td className="py-2 text-right">
-                          <span
-                            className={
-                              ep.errorRate > 5
-                                ? "text-red-400"
-                                : ep.errorRate > 0
-                                  ? "text-amber-400"
-                                  : "text-green-400"
-                            }
-                          >
-                            {ep.errorRate}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="text-center text-gray-500 py-8">
+                — Endpoint performance telemetry is not delivered on this platform
               </div>
             </CardContent>
           </Card>
@@ -604,45 +453,12 @@ export default function SystemHealthDashboard() {
                 <CardTitle className="text-white text-lg">
                   Recent Errors
                 </CardTitle>
-                {errorsQ.data && (
-                  <Badge
-                    variant="outline"
-                    className="text-red-400 border-red-600"
-                  >
-                    {errorsQ.data.total} total
-                  </Badge>
-                )}
+
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                {errorsQ.data?.recentErrors.map((err, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2 p-2 bg-gray-800/50 rounded text-xs"
-                  >
-                    <Badge
-                      variant="outline"
-                      className={`text-xs shrink-0 ${err.statusCode >= 500 ? "text-red-400 border-red-600" : "text-amber-400 border-amber-600"}`}
-                    >
-                      {err.statusCode}
-                    </Badge>
-                    <div className="min-w-0">
-                      <div className="text-gray-300 font-mono truncate">
-                        {err.endpoint}
-                      </div>
-                      <div className="text-gray-500">{err.message}</div>
-                      <div className="text-gray-600">
-                        {new Date(err.timestamp).toLocaleTimeString()}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {(!errorsQ.data || errorsQ.data.recentErrors.length === 0) && (
-                  <div className="text-center text-gray-500 py-8">
-                    No recent errors
-                  </div>
-                )}
+              <div className="text-center text-gray-500 py-8">
+                — Application error aggregation is not delivered on this platform
               </div>
             </CardContent>
           </Card>
@@ -656,49 +472,30 @@ export default function SystemHealthDashboard() {
                 <CardTitle className="text-white text-lg">
                   Security Events (24h)
                 </CardTitle>
-                <div className="flex gap-2">
-                  {securityQ.data.criticalEvents > 0 && (
-                    <Badge className="bg-red-600 text-white">
-                      {securityQ.data.criticalEvents} Critical
-                    </Badge>
-                  )}
-                  {securityQ.data.warningEvents > 0 && (
-                    <Badge className="bg-amber-600 text-white">
-                      {securityQ.data.warningEvents} Warning
-                    </Badge>
-                  )}
-                  {securityQ.data.lockedAccounts > 0 && (
-                    <Badge className="bg-orange-600 text-white">
-                      {securityQ.data.lockedAccounts} Locked
-                    </Badge>
-                  )}
-                  {securityQ.data.blockedIps > 0 && (
-                    <Badge className="bg-red-800 text-white">
-                      {securityQ.data.blockedIps} Blocked IPs
-                    </Badge>
-                  )}
-                </div>
+                <Badge variant="outline" className="text-gray-300 border-gray-600">
+                  {securityQ.data.total} audit events
+                </Badge>
               </div>
             </CardHeader>
             <CardContent>
-              {securityQ.data.recentEvents.length > 0 ? (
+              {securityQ.data.events.length > 0 ? (
                 <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                  {securityQ.data.recentEvents.map((evt, i) => (
+                  {securityQ.data.events.map(evt => (
                     <div
-                      key={i}
+                      key={evt.id}
                       className="flex items-center gap-3 p-2 bg-gray-800/30 rounded text-xs"
                     >
                       <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${evt.severity === "critical" ? "bg-red-500" : evt.severity === "warning" ? "bg-amber-500" : "bg-blue-500"}`}
+                        className={`w-2 h-2 rounded-full shrink-0 ${evt.status === "failed" ? "bg-red-500" : "bg-blue-500"}`}
                       />
                       <span className="text-gray-400 shrink-0 w-16">
                         {new Date(evt.timestamp).toLocaleTimeString()}
                       </span>
                       <span className="text-gray-300 font-medium">
-                        {evt.event}
+                        {evt.type}
                       </span>
                       <span className="text-gray-500 truncate">
-                        {JSON.stringify(evt.details).substring(0, 80)}
+                        {evt.resource ?? ""}
                       </span>
                     </div>
                   ))}

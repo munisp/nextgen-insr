@@ -161,12 +161,19 @@ const getStats = publicProcedure
         .from(pnlReports)
         .orderBy(desc(pnlReports.id))
         .limit(5);
+      // F-12 (full sweep): fixture P&L numbers (4.56B/2.89B/36.6%) after
+      // real queries whose results were discarded -> REAL revenue sum from
+      // pnl_reports; expenses/margin have no delivered source -> honest 0s.
+      const [rev] = await db
+        .select({ v: sql<number>`COALESCE(SUM(${pnlReports.totalRevenue}), 0)` })
+        .from(pnlReports)
+        .limit(100);
       return {
-        totalRevenue: 4560000000,
-        totalExpenses: 2890000000,
-        netProfit: 1670000000,
-        profitMargin: 36.6,
-        reportCount: 156,
+        totalRevenue: Number(rev?.v ?? 0),
+        totalExpenses: 0,
+        netProfit: 0,
+        profitMargin: 0,
+        reportCount: Number(total),
         lastGenerated: new Date().toISOString(),
       };
     } catch (error) {

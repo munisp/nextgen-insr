@@ -137,8 +137,12 @@ export const advancedNotificationsRouter = router({
       }
     }),
 
-  dashboard: protectedProcedure.query(async () => {
-    throw notImplemented("Notifications dashboard");
+  // F-12 (wave-4b): zero-payload dashboard — no advanced-notifications store is delivered. Fail loud.
+  dashboard: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dashboard: no advanced-notifications store is delivered",
+    });
   }),
 
   listTemplates: protectedProcedure.query(async () => {

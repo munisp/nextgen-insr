@@ -424,27 +424,20 @@ export const biometricAuthRouter = router({
   }),
 
   // ── Sprint 28 domain procedures ──
+  // F-12 (expanded sweep): fixture rows (BIO-001) — no delivered
+  // store. Fail loud.
   list: protectedProcedure.query(async () => {
-    return {
-      records: [
-        {
-          id: "BIO-001",
-          agentId: "AGT-001",
-          type: "fingerprint",
-          status: "enrolled",
-          enrolledAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "list: no biometric-enrollment store is delivered",
+    });
   }),
+  // F-12 (expanded sweep): fixture rows (successRate 98.5) — no delivered
+  // store. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      total: 150,
-      enrolled: 120,
-      totalVerifications: 5000,
-      successRate: 98.5,
-      totalFailedAttempts: 75,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no biometric telemetry is delivered",
+    });
   }),
 });

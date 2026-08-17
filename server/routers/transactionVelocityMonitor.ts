@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -103,17 +104,15 @@ export const transactionVelocityMonitorRouter = router({
   getAlerts: protectedProcedure
     .input(z.object({ hours: z.number().min(1).max(72).default(24) }))
     .query(async () => {
-      return {
-        alerts: [
-          { id: 1, type: "burst", entityId: "AGT-401", message: "7 transactions in 45 seconds", risk: "high", timestamp: new Date(Date.now() - 3600000).toISOString() },
-          { id: 2, type: "structuring", entityId: "USR-892", message: "3 transactions of ₦4.9M within 2 hours", risk: "critical", timestamp: new Date(Date.now() - 7200000).toISOString() },
-          { id: 3, type: "geo_velocity", entityId: "USR-115", message: "Transactions from Lagos and Kano within 15 minutes", risk: "high", timestamp: new Date(Date.now() - 10800000).toISOString() },
-        ],
-        totalAlerts24h: 12,
-        criticalAlerts: 2,
-        pendingReview: 5,
-      };
-    }),
+    // F-12 (full sweep): the alerts were fabricated (AGT-401 burst,
+    // USR-892 structuring, USR-115 geo_velocity) — no velocity-detection
+    // engine is delivered. Fail loud rather than claim safety with an
+    // empty list.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getAlerts: no velocity-detection engine is delivered",
+    });
+  }),
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();

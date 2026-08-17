@@ -379,22 +379,27 @@ export const gdprDashboardRouter = router({
     const consentedCustomers = await countConsentedCustomers(db);
     const dataBreachesReported = await countAuditActions(db, "DATA_BREACH_REPORTED", ONE_YEAR_AGO());
 
+    // F-12 (verifier round 4): FALSE-COMPLIANCE facade — dpiaCompleted:
+    // true, status: "compliant" and a hardcoded ✅ checklist asserted
+    // regulatory compliance that was never assessed (no DPIA/audit store).
+    // The counts above are real; the compliance claims are now honest
+    // "unassessed" states.
     return {
       regulation: "NDPR 2019",
       regulator: "NITDA",
       consentedCustomers,
       dataBreachesReported,
-      dpiaCompleted: true,
-      lastAuditDate: new Date().toISOString(),
-      status: "compliant",
+      dpiaCompleted: null,
+      lastAuditDate: null,
+      status: "unassessed",
       requirements: {
-        "Sec 2.1 - Lawful basis": "✅ Consent + Contractual necessity",
-        "Sec 2.2 - Data minimization": "✅ Only necessary data collected",
-        "Sec 2.3 - Data subject rights": "✅ DSAR, erasure, portability implemented",
-        "Sec 2.4 - Sensitive data": "✅ BVN/NIN encrypted, biometrics secured",
-        "Sec 3.1 - Data controller": "✅ Registered with NITDA",
-        "Sec 4.1 - Breach notification": "✅ 72-hour reporting workflow",
-        "Sec 4.2 - DPIA": "✅ Completed for all high-risk processing",
+        "Sec 2.1 - Lawful basis": "— not assessed by this platform",
+        "Sec 2.2 - Data minimization": "— not assessed by this platform",
+        "Sec 2.3 - Data subject rights": "— not assessed by this platform",
+        "Sec 2.4 - Sensitive data": "— not assessed by this platform",
+        "Sec 3.1 - Data controller": "— not assessed by this platform",
+        "Sec 4.1 - Breach notification": "— not assessed by this platform",
+        "Sec 4.2 - DPIA": "— not assessed by this platform",
       },
     };
   }),

@@ -1,10 +1,10 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { transactions } from "../../drizzle/schema";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-
 export const advancedBiReportingRouter = router({
   list: protectedProcedure
     .input(
@@ -96,31 +96,39 @@ export const advancedBiReportingRouter = router({
       return results;
     }),
 
+  // F-12 (wave-4b): was a hardcoded fixture (plausible-looking report/KPI
+  // numbers) — no BI report store or KPI pipeline is delivered. Fail loud.
   dashboard: protectedProcedure.query(async () => {
-    return {
-      reports: 25,
-      scheduledReports: 5,
-      lastGenerated: new Date().toISOString(),
-      dataPoints: 50000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dashboard: no BI reporting backend is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a hardcoded fixture (plausible-looking report/KPI
+  // numbers) — no BI report store or KPI pipeline is delivered. Fail loud.
   reportBuilder: protectedProcedure.query(async () => {
-    return {
-      templates: [{ id: "T-001", name: "Monthly Revenue", type: "financial" }],
-      dataSources: ["postgres", "opensearch"],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "reportBuilder: no BI reporting backend is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): facade — fabricated a reportId and
+  // a "generating" status with no report engine. Fail loud.
   generateReport: publicProcedure
     .input(z.object({ templateId: z.string().optional() }).optional())
     .mutation(async () => {
-      return {
-        reportId: "RPT-" + Date.now(),
-        status: "generating",
-        estimatedTime: 30,
-      };
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "generateReport: no BI reporting backend is delivered on this platform",
+      });
     }),
 
+  // F-12 (wave-4b): was a hardcoded fixture (plausible-looking report/KPI
+  // numbers) — no BI report store or KPI pipeline is delivered. Fail loud.
   executiveKpis: protectedProcedure.query(async () => {
-    return { revenue: 0, growth: 0, churn: 0, arpu: 0, kpis: [] };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "executiveKpis: no BI reporting backend is delivered on this platform",
+    });
   }),
 });

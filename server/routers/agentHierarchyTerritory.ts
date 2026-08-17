@@ -129,14 +129,24 @@ const getStats = publicProcedure
         .from(agents)
         .orderBy(desc(agents.id))
         .limit(5);
+      // F-12 (expanded sweep): fixture counts — real aggregates from agents
+      // (role breakdown); territory/region stats have no store — honest 0.
+      const [totalRow] = await db.select({ value: count() }).from(agents).limit(100);
+      const roleRows = await db
+        .select({ role: agents.role, cnt: count() })
+        .from(agents)
+        .groupBy(agents.role)
+        .limit(20);
+      const roles: Record<string, number> = {};
+      for (const r of roleRows) roles[r.role ?? "unknown"] = Number(r.cnt);
       return {
-        totalAgents: 15000,
-        superAgents: 500,
-        masterAgents: 2500,
-        subAgents: 12000,
-        territories: 156,
-        regions: 6,
-        avgAgentsPerTerritory: 96,
+        totalAgents: Number(totalRow.value),
+        superAgents: roles["super_agent"] ?? 0,
+        masterAgents: roles["master_agent"] ?? 0,
+        subAgents: roles["sub_agent"] ?? 0,
+        territories: 0,
+        regions: 0,
+        avgAgentsPerTerritory: 0,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

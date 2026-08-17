@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * ScheduledReports — Manage automated report schedules
  */
@@ -57,11 +56,10 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
   const [recipients, setRecipients] = useState("admin@insureportal.com");
   const [hour, setHour] = useState(18);
   const [minute, setMinute] = useState(0);
-  const [format, setFormat] = useState<"html" | "pdf">("html");
-  const [includeCharts, setIncludeCharts] = useState(true);
+  const [format, setFormat] = useState<"pdf" | "csv" | "xlsx">("pdf");
 
-  const { data: templates } = trpc.scheduledReports.templates.useQuery();
-  const createMutation = trpc.scheduledReports.create.useMutation({
+  const { data: templates } = trpc.scheduledReports.templates.useQuery(undefined, { retry: false });
+  const createMutation = trpc.scheduledReports.createSchedule.useMutation({
     onSuccess: () => {
       toast.success("Report schedule created");
       setOpen(false);
@@ -72,15 +70,18 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
   });
 
   const handleCreate = () => {
+    // F-12 (wave-4b): real createSchedule input is
+    // {reportType, frequency, recipients, format, time} — the phantom
+    // name/type/template/config wrapper is gone.
     createMutation.mutate({
-      name,
-      type,
-      template: template as any,
+      reportType: name,
+      frequency: type,
       recipients: recipients
         .split(",")
-        .map((r: any) => r.trim())
+        .map(r => r.trim())
         .filter(Boolean),
-      config: { includeCharts, format, timezone: "Africa/Lagos", hour, minute },
+      format,
+      time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
     });
   };
 
@@ -123,11 +124,10 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {templates?.map((t: any) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
+                  {/* F-12 (wave-4b): no report-template store is delivered. */}
+                  <SelectItem value="__none" disabled>
+                    — no templates delivered
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -168,19 +168,16 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="html">HTML</SelectItem>
+                  <SelectItem value="csv">CSV</SelectItem>
+                  <SelectItem value="xlsx">XLSX</SelectItem>
                   <SelectItem value="pdf">PDF</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={includeCharts}
-              onCheckedChange={setIncludeCharts}
-            />
-            <Label>Include charts in report</Label>
-          </div>
+          {/* F-12 (wave-4b): "include charts" had no backing field in the
+              real createSchedule input — removed rather than fake the
+              affordance. */}
           <Button
             onClick={handleCreate}
             disabled={!name || !recipients || createMutation.isPending}
@@ -196,29 +193,24 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
 
 export default function ScheduledReports() {
   const utils = trpc.useUtils();
+  // F-12 (wave-4b): list/recentRuns/templates/runNow/update aliases are
+  // fail-loud; the REAL procs are listSchedules/getStats/createSchedule/
+  // deleteSchedule/pauseSchedule (systemConfig-backed). recentRuns has no
+  // run store — the section renders an honest unavailable state.
   const { data: scheduleData, isLoading } =
-    trpc.scheduledReports.list.useQuery();
-  const { data: recentRuns } = trpc.scheduledReports.recentRuns.useQuery({
-    limit: 20,
-  });
+    trpc.scheduledReports.listSchedules.useQuery({});
+  const { data: reportStats } = trpc.scheduledReports.getStats.useQuery();
 
-  const toggleMutation = trpc.scheduledReports.update.useMutation({
+  const toggleMutation = trpc.scheduledReports.pauseSchedule.useMutation({
     onSuccess: () => {
-      utils.scheduledReports.list.invalidate();
+      utils.scheduledReports.listSchedules.invalidate();
       toast.success("Schedule updated");
     },
   });
-  const deleteMutation = trpc.scheduledReports.delete.useMutation({
+  const deleteMutation = trpc.scheduledReports.deleteSchedule.useMutation({
     onSuccess: () => {
-      utils.scheduledReports.list.invalidate();
+      utils.scheduledReports.listSchedules.invalidate();
       toast.success("Schedule deleted");
-    },
-  });
-  const runNowMutation = trpc.scheduledReports.runNow.useMutation({
-    onSuccess: () => {
-      utils.scheduledReports.list.invalidate();
-      utils.scheduledReports.recentRuns.invalidate();
-      toast.success("Report generated and sent");
     },
   });
 
@@ -250,7 +242,7 @@ export default function ScheduledReports() {
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Active</p>
               <p className="text-2xl font-bold mt-1 text-emerald-500">
-                {scheduleData?.enabled ?? 0}
+                {reportStats?.activeSchedules ?? 0}
               </p>
             </CardContent>
           </Card>
@@ -258,7 +250,7 @@ export default function ScheduledReports() {
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Recent Runs</p>
               <p className="text-2xl font-bold mt-1">
-                {recentRuns?.length ?? 0}
+                "—"
               </p>
             </CardContent>
           </Card>
@@ -282,9 +274,9 @@ export default function ScheduledReports() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <Switch
-                          checked={s.enabled}
+                          checked={s.status === "active"}
                           onCheckedChange={enabled =>
-                            toggleMutation.mutate({ id: s.id, enabled })
+                            toggleMutation.mutate({ scheduleId: s.id })
                           }
                         />
                         <div>
@@ -310,17 +302,9 @@ export default function ScheduledReports() {
                       <div className="flex items-center gap-2">
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => runNowMutation.mutate({ id: s.id })}
-                          disabled={runNowMutation.isPending}
-                        >
-                          Run Now
-                        </Button>
-                        <Button
-                          size="sm"
                           variant="ghost"
                           className="text-red-400 hover:text-red-300"
-                          onClick={() => deleteMutation.mutate({ id: s.id })}
+                          onClick={() => deleteMutation.mutate({ scheduleId: s.id })}
                         >
                           Delete
                         </Button>
@@ -346,33 +330,12 @@ export default function ScheduledReports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {recentRuns?.map((run: any) => (
-                      <tr
-                        key={run.id}
-                        className="border-b last:border-0 hover:bg-muted/30"
-                      >
-                        <td className="p-3">{run.scheduleName}</td>
-                        <td className="p-3">
-                          <Badge
-                            variant={
-                              run.status === "success"
-                                ? "default"
-                                : "destructive"
-                            }
-                            className="text-[10px]"
-                          >
-                            {run.status}
-                          </Badge>
-                        </td>
-                        <td className="p-3 text-muted-foreground">
-                          {formatDate(run.startedAt)}
-                        </td>
-                        <td className="p-3">{run.recipientCount}</td>
-                        <td className="p-3 text-red-400 text-xs">
-                          {run.error ?? "—"}
-                        </td>
-                      </tr>
-                    ))}
+                    {/* F-12 (wave-4b): no run-history store is delivered. */}
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-sm text-muted-foreground">
+                        — report run history is not delivered on this platform
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </CardContent>

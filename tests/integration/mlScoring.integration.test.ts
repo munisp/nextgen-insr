@@ -5,7 +5,8 @@
  * No real ML/fraud model is attached, so:
  *   - score / batchScore / explainScore MUST reject with NOT_IMPLEMENTED
  *     ("not configured") instead of returning fabricated scores
- *   - analytics MUST report honest zeros
+ *   - analytics / scoringHistory MUST reject NOT_IMPLEMENTED (F-12 wave-4b:
+ *     zero-payload stubs are silent mockware — loud beats fixture-looking zeros)
  *   - list / getSummary MUST reflect real audit_log rows
  *   - anonymous callers are rejected
  */
@@ -66,13 +67,22 @@ describe("mlScoring router (integration, real DB)", () => {
     expect(err.message).toContain("not configured");
   });
 
-  it("analytics reports honest zeros", async () => {
+  it("analytics rejects NOT_IMPLEMENTED 'not configured' (was zero-payload mockware)", async () => {
     const caller = callerFor(adminUser);
-    const analytics = await caller.mlScoring.analytics();
-    expect(analytics.totalScored).toBe(0);
-    expect(analytics.avgScore).toBe(0);
-    expect(analytics.highRiskCount).toBe(0);
-    expect(analytics.modelAccuracy).toBe(0);
+    const err = await expectTrpcError(
+      caller.mlScoring.analytics(),
+      "NOT_IMPLEMENTED"
+    );
+    expect(err.message).toContain("not configured");
+  });
+
+  it("scoringHistory rejects NOT_IMPLEMENTED 'not configured' (was always-empty stub)", async () => {
+    const caller = callerFor(adminUser);
+    const err = await expectTrpcError(
+      caller.mlScoring.scoringHistory(),
+      "NOT_IMPLEMENTED"
+    );
+    expect(err.message).toContain("not configured");
   });
 
   it("list and getSummary reflect seeded audit_log rows", async () => {

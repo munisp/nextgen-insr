@@ -1,4 +1,5 @@
 // @ts-check
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -160,17 +161,22 @@ export const securityHardeningRouter = router({
         owaspCoverage: report.owaspCoverage,
       };
     }),
-  getDDoSConfig: protectedProcedure.query(async () => ({
-    enabled: true,
-    rateLimit: 1000,
-    windowMs: 60000,
-    blockDuration: 300000,
-  })),
-  getRansomwareGuardStatus: protectedProcedure.query(async () => ({
-    enabled: true,
-    lastScan: null, // no guard scan has run — not fabricated
-    threats: 0,
-  })),
+  getDDoSConfig: protectedProcedure.query(async () => {
+    // F-12 (full sweep): static config facade claiming DDoS protection is
+    // enabled with no config store — a false safety claim. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getDDoSConfig: no DDoS-config store is delivered",
+    });
+  }),
+  getRansomwareGuardStatus: protectedProcedure.query(async () => {
+    // F-12 (full sweep): claims the guard is enabled with 0 threats — no
+    // guard exists; a false safety claim. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getRansomwareGuardStatus: no ransomware guard is delivered",
+    });
+  }),
   evaluatePolicy: protectedProcedure
     .input(
       z.object({ policyId: z.string(), context: z.record(z.string(), z.any()).optional() })

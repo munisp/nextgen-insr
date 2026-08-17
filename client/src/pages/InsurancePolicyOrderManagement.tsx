@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 
 export default function InsuranceOrderManagement() {
@@ -8,23 +8,48 @@ export default function InsuranceOrderManagement() {
   const [selectedOrder, setSelectedOrder] = useState<number | null>(null);
   const limit = 20;
 
-  const { data: orders, refetch } = trpc.policyOrders.listOrders.useQuery({
-    status: statusFilter || undefined,
-    limit,
-    offset: page * limit,
-  });
+  // F-12 (S87-02): policyOrders (listOrders/getOrder/updateStatus) has NO
+  // delivered backend — the orders list renders an honest empty state and
+  // status changes fail loud.
+  const orders: {
+    orders?: Array<{
+      id: number; orderNumber?: string; status?: string; currency?: string;
+      total?: number; items?: Array<Record<string, unknown>>;
+      customerName?: string; createdAt?: string | Date;
+    }>;
+    total?: number;
+  } | undefined = undefined as
+    | {
+        orders?: Array<{
+          id: number; orderNumber?: string; status?: string; currency?: string;
+          total?: number; items?: Array<Record<string, unknown>>;
+          customerName?: string; createdAt?: string | Date;
+        }>;
+        total?: number;
+      }
+    | undefined;
+  const refetch = () => {};
 
-  const { data: orderDetail } = trpc.policyOrders.getOrder.useQuery(
-    { id: selectedOrder! },
-    { enabled: !!selectedOrder }
-  );
+  const orderDetail:
+    | {
+        orderNumber?: string; status?: string; currency?: string;
+        total?: number;
+        items?: Array<{ id: number; name?: string; quantity?: number; total?: number }>;
+        customerName?: string; createdAt?: string | Date;
+      }
+    | undefined = undefined as
+      | {
+          orderNumber?: string; status?: string; currency?: string;
+          total?: number;
+          items?: Array<{ id: number; name?: string; quantity?: number; total?: number }>;
+          customerName?: string; createdAt?: string | Date;
+        }
+      | undefined;
 
-  const updateStatus = trpc.policyOrders.updateStatus.useMutation({
-    onSuccess: () => {
-      refetch();
-      setSelectedOrder(null);
-    },
-  });
+  const updateStatus = {
+    mutate: () => toast.error("Order status updates are not available on this deployment"),
+    isPending: false,
+  };
 
   const statusColors: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-800",
@@ -85,31 +110,28 @@ export default function InsuranceOrderManagement() {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {orders?.orders.map(order => (
+            {orders?.orders?.map(order => (
               <tr key={order.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm font-mono">
                   {order.orderNumber}
                 </td>
-                <td className="px-4 py-3 text-sm">#{order.customerId}</td>
+                <td className="px-4 py-3 text-sm">—</td>
                 <td className="px-4 py-3 text-sm font-medium">
-                  {order.currency} {Number(order.total).toLocaleString()}
+                  {order.currency} {order.total != null ? Number(order.total).toLocaleString() : "—"}
                 </td>
                 <td className="px-4 py-3">
                   <span
-                    className={`text-xs px-2 py-1 rounded ${statusColors[order.status] || ""}`}
+                    className={`text-xs px-2 py-1 rounded ${statusColors[order.status ?? ""] || ""}`}
                   >
                     {order.status}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500">
-                  {new Date(order.createdAt).toLocaleDateString()}
+                  {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "—"}
                 </td>
                 <td className="px-4 py-3 text-sm">
-                  {order.offlineCreated ? (
-                    <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
-                      Offline
-                    </span>
-                  ) : null}
+                  {/* F-12 (wave-4b): offlineCreated is not in the order shape */}
+                  —
                 </td>
                 <td className="px-4 py-3">
                   <button
@@ -158,106 +180,64 @@ export default function InsuranceOrderManagement() {
             className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
-            <h2 className="text-xl font-bold mb-4">
-              Order #{orderDetail.orderNumber}
+            <h2 className="text-lg font-semibold mb-4">
+              Order {orderDetail.orderNumber ?? "—"}
             </h2>
-            <div className="space-y-3">
+            <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Status:</span>
+                <span className="text-gray-500">Status</span>
                 <span
-                  className={`text-xs px-2 py-1 rounded ${statusColors[orderDetail.status] || ""}`}
+                  className={`text-xs px-2 py-1 rounded ${statusColors[orderDetail.status ?? ""] || ""}`}
                 >
-                  {orderDetail.status}
+                  {orderDetail.status ?? "—"}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Total:</span>
-                <span className="font-medium">
-                  {orderDetail.currency}{" "}
-                  {Number(orderDetail.total).toLocaleString()}
+                <span className="text-gray-500">Customer</span>
+                <span>{orderDetail.customerName ?? "—"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Total</span>
+                <span>
+                  {orderDetail.currency ?? ""}{" "}
+                  {orderDetail.total != null
+                    ? Number(orderDetail.total).toLocaleString()
+                    : "—"}
                 </span>
               </div>
-              <hr />
-              <h3 className="font-medium">Items:</h3>
-              {orderDetail.items?.map(item => (
-                <div key={item.id} className="flex justify-between text-sm">
-                  <span>
-                    {item.name} × {item.quantity}
-                  </span>
-                  <span>₦{Number(item.total).toLocaleString()}</span>
-                </div>
-              ))}
-              <hr />
-              {/* Status Actions */}
-              {orderDetail.status !== "delivered" &&
-                orderDetail.status !== "cancelled" && (
-                  <div className="flex gap-2 mt-4">
-                    {orderDetail.status === "pending" && (
-                      <button
-                        onClick={() =>
-                          updateStatus.mutate({
-                            id: selectedOrder,
-                            status: "confirmed",
-                          })
-                        }
-                        className="px-3 py-2 bg-blue-600 text-white rounded text-sm"
-                      >
-                        Confirm
-                      </button>
-                    )}
-                    {orderDetail.status === "confirmed" && (
-                      <button
-                        onClick={() =>
-                          updateStatus.mutate({
-                            id: selectedOrder,
-                            status: "processing",
-                          })
-                        }
-                        className="px-3 py-2 bg-purple-600 text-white rounded text-sm"
-                      >
-                        Process
-                      </button>
-                    )}
-                    {orderDetail.status === "processing" && (
-                      <button
-                        onClick={() =>
-                          updateStatus.mutate({
-                            id: selectedOrder,
-                            status: "shipped",
-                          })
-                        }
-                        className="px-3 py-2 bg-indigo-600 text-white rounded text-sm"
-                      >
-                        Ship
-                      </button>
-                    )}
-                    {orderDetail.status === "shipped" && (
-                      <button
-                        onClick={() =>
-                          updateStatus.mutate({
-                            id: selectedOrder,
-                            status: "delivered",
-                          })
-                        }
-                        className="px-3 py-2 bg-green-600 text-white rounded text-sm"
-                      >
-                        Deliver
-                      </button>
-                    )}
-                    <button
-                      onClick={() =>
-                        updateStatus.mutate({
-                          id: selectedOrder,
-                          status: "cancelled",
-                        })
-                      }
-                      className="px-3 py-2 bg-red-600 text-white rounded text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">Created</span>
+                <span>
+                  {orderDetail.createdAt
+                    ? new Date(orderDetail.createdAt).toLocaleString()
+                    : "—"}
+                </span>
+              </div>
             </div>
+            {(orderDetail.items?.length ?? 0) > 0 && (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium mb-2">Items</h3>
+                <div className="space-y-1">
+                  {orderDetail.items?.map(item => (
+                    <div
+                      key={item.id}
+                      className="flex justify-between text-sm border-b pb-1"
+                    >
+                      <span>{item.name ?? "—"}</span>
+                      <span className="text-gray-500">
+                        ×{item.quantity ?? "—"}
+                      </span>
+                      <span>
+                        ₦
+                        {item.total != null
+                          ? Number(item.total).toLocaleString()
+                          : "—"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <button
               onClick={() => setSelectedOrder(null)}
               className="mt-4 w-full py-2 border rounded-lg"

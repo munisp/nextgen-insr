@@ -1,12 +1,17 @@
-// @ts-nocheck
 import { useState } from "react";
+import { toast } from "sonner";
+
 import { trpc } from "@/lib/trpc";
 
 export default function InsuranceCheckout() {
   const customerId = 1; // From auth context
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [submitting, setSubmitting] = useState(false);
-  const [orderResult, setOrderResult] = useState(null);
+  const [orderResult, setOrderResult] = useState<{
+    orderNumber?: string;
+    currency?: string;
+    total?: number;
+  } | null>(null);
 
   const [address, setAddress] = useState({
     street: "",
@@ -17,14 +22,19 @@ export default function InsuranceCheckout() {
     phone: "",
   });
 
-  const { data: cart } = trpc.insuranceCart.getCart.useQuery({ customerId });
-  const createOrder = trpc.policyOrders.createFromCart.useMutation({
-    onSuccess: data => {
+  // F-12 (S87-02): insuranceCart.getCart and policyOrders.createFromCart have
+  // NO delivered backend (no cart/orders routers exist). The checkout renders
+  // an honest empty cart and the submit action fails loud.
+  const cart: { items?: Array<{ id: number; name?: string; quantity?: number; unitPrice?: number }> } | undefined = undefined as
+    | { items?: Array<{ id: number; name?: string; quantity?: number; unitPrice?: number }> }
+    | undefined;
+  const createOrder = {
+    mutate: (_input?: unknown) => {
       setSubmitting(false);
-      setOrderResult(data);
+      toast.error("Policy checkout is not available on this deployment (no orders backend delivered)");
     },
-    onError: () => setSubmitting(false),
-  });
+    isPending: false,
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,9 +72,11 @@ export default function InsuranceCheckout() {
     );
   }
 
-  const subTotal = cart?.subTotal || 0;
-  const tax = subTotal * 0.075;
-  const shipping = subTotal >= 50000 ? 0 : 500;
+  // F-12 (wave-4b): the cart payload has no subTotal field — no honest
+  // basis for derived tax/shipping either.
+  const subTotal = 0;
+  const tax = 0;
+  const shipping = 0;
   const total = subTotal + tax + shipping;
 
   return (
@@ -156,7 +168,7 @@ export default function InsuranceCheckout() {
                 {item.name} × {item.quantity}
               </span>
               <span>
-                ₦{(Number(item.unitPrice) * item.quantity).toLocaleString()}
+                ₦{(Number(item.unitPrice) * Number(item.quantity ?? 0)).toLocaleString()}
               </span>
             </div>
           ))}

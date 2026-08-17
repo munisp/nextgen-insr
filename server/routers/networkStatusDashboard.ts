@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -93,72 +94,62 @@ export const networkStatusDashboardRouter = router({
 
       return results;
     }),
+  // F-12 (wave-4b): was a zero-payload stub — no carrier/network telemetry
+  // source exists in the schema. Fail loud, never fixture zeros.
   getAlerts: protectedProcedure.query(async () => {
-    return {
-      alerts: [] as Array<{
-        id: string;
-        severity: string;
-        message: string;
-        carrier: string;
-        timestamp: string;
-        resolved: boolean;
-      }>,
-      total: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getAlerts: no carrier telemetry source is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a zero-payload stub — no carrier/network telemetry
+  // source exists in the schema. Fail loud, never fixture zeros.
   getCarrierHeatmap: protectedProcedure.query(async () => {
-    return {
-      data: [] as Array<{
-        carrier: string;
-        region: string;
-        quality: number;
-        latency: number;
-      }>,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getCarrierHeatmap: no carrier telemetry source is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a zero-payload stub — no carrier/network telemetry
+  // source exists in the schema. Fail loud, never fixture zeros.
   getCarrierSummary: protectedProcedure.query(async () => {
-    return {
-      carriers: [] as Array<{
-        name: string;
-        status: string;
-        uptime: number;
-        avgLatency: number;
-        failRate: number;
-      }>,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getCarrierSummary: no carrier telemetry source is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a zero-payload stub — no carrier/network telemetry
+  // source exists in the schema. Fail loud, never fixture zeros.
   getOverview: protectedProcedure.query(async () => {
-    return {
-      totalCarriers: 0,
-      healthyCarriers: 0,
-      degradedCarriers: 0,
-      downCarriers: 0,
-      avgLatency: 0,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getOverview: no carrier telemetry source is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a zero-payload stub — no carrier/network telemetry
+  // source exists in the schema. Fail loud, never fixture zeros.
   getRegions: protectedProcedure.query(async () => {
-    return {
-      regions: [] as Array<{
-        name: string;
-        status: string;
-        carrierCount: number;
-        avgQuality: number;
-      }>,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getRegions: no carrier telemetry source is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): was a zero-payload stub — no carrier/network telemetry
+  // source exists in the schema. Fail loud, never fixture zeros.
   getTimeSeries: protectedProcedure.query(async () => {
-    return {
-      data: [] as Array<{
-        timestamp: string;
-        latency: number;
-        throughput: number;
-        errorRate: number;
-      }>,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getTimeSeries: no carrier telemetry source is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): facade mutation (returned success without persisting —
+  // no alert store exists). Fail loud instead of a fake success.
   resolveAlert: protectedProcedure
     .input(z.object({ alertId: z.string(), resolution: z.string().optional() }))
-    .mutation(async ({ input }) => {
-      return { success: true, alertId: input.alertId };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "resolveAlert: no carrier alert store is delivered on this platform",
+      });
     }),
 });

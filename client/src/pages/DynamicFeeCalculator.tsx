@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -63,19 +62,19 @@ export default function DynamicFeeCalculator() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Fee Structures</p>
                 <p className="text-xl font-bold text-blue-400">
-                  {String(stats?.totalFeeStructures ?? "—")}
+                  {String(stats?.totalRules ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Active</p>
                 <p className="text-xl font-bold text-emerald-400">
-                  {String(stats?.activeFeeStructures ?? "—")}
+                  {String(stats?.activeRules ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Fee Revenue</p>
                 <p className="text-xl font-bold text-amber-400">
-                  {String(stats?.totalFeeRevenue ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
@@ -87,25 +86,25 @@ export default function DynamicFeeCalculator() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Fee Types</p>
                 <p className="text-xl font-bold text-purple-400">
-                  {String(stats?.feeTypes ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Last Updated</p>
                 <p className="text-xl font-bold text-cyan-400">
-                  {String(stats?.lastUpdated ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Pending Changes</p>
                 <p className="text-xl font-bold text-indigo-400">
-                  {String(stats?.pendingChanges ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Compliance</p>
                 <p className="text-xl font-bold text-orange-400">
-                  {String(stats?.complianceStatus ?? "—")}
+                  —
                 </p>
               </div>
             </div>

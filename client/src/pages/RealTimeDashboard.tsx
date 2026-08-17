@@ -1,29 +1,36 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import KpiCard from "@/components/KpiCard";
+import { Banknote, Clock, Users, Zap } from "lucide-react";
 
 export default function RealTimeDashboard() {
   const { user } = useAuth();
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: flow, isLoading } = trpc.realtime.transactionFlow.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
-  // @ts-ignore Sprint 85
-  const { data: vol } = trpc.realtime.volume.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
-
-  const f = flow ?? {};
-  const v = vol ?? {};
+  // F-12 (wave-4b): realtimeDashboardWidgets.dashboard/getStats are
+  // fail-loud (no widget store) — the page binds the REAL transaction
+  // telemetry from systemHealthMonitor.transactionVolume instead.
+  const { data: txData, isLoading } = trpc.healthMonitor.transactionVolume.useQuery(
+    undefined,
+    { enabled: !!user, refetchInterval: 10000 }
+  );
+  const pendingCount =
+    txData?.byStatus.find(x => x.status === "pending")?.count ?? 0;
+  const dayVolume =
+    txData?.hourly.reduce((a, h) => a + Number(h.amount), 0) ?? 0;
 
   // Real per-bucket series only — no randomized multipliers on live totals.
   const txTrend: { time: string; count: number; volume: number }[] =
-    Array.isArray(v.trend) ? v.trend : [];
+    txData?.hourly.map(h => ({
+      time: h.hour,
+      count: Number(h.count),
+      volume: Number(h.amount),
+    })) ?? [];
 
   // Real per-type aggregates only — no fabricated fixed splits.
-  const txByType: { name: string; count: number }[] = (
-    Array.isArray(f.byType) ? f.byType : []
-  ).filter((d: any) => Number(d.count) > 0);
+  const txByType: { name: string; count: number }[] =
+    txData?.byType.map(t => ({ name: t.type, count: Number(t.count) })) ?? [];
 
   return (
     <DashboardLayout>
@@ -33,10 +40,10 @@ export default function RealTimeDashboard() {
           <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Live transaction flow and system activity (10s refresh)</p>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KpiCard title="Txns Today" value={isLoading ? "…" : String(f.total ?? 0)} icon="⚡" trend="up" trendValue="—" />
-          <KpiCard title="Volume Today" value={isLoading ? "…" : `₦${((v.dailyVolume ?? 0) / 1e6).toFixed(1)}M`} icon="💰" trend="up" trendValue="—" />
-          <KpiCard title="Active Agents" value={isLoading ? "…" : String(f.activeAgents ?? 0)} icon="👥" />
-          <KpiCard title="Pending Queue" value={isLoading ? "…" : String(f.pending ?? 0)} icon="⏳" trend="down" trendValue="—" />
+          <KpiCard title="Txns Today" value={isLoading ? "…" : String(txData?.current ?? 0)} icon={Zap} />
+          <KpiCard title="Volume Today" value={isLoading ? "…" : `₦${(dayVolume / 1e6).toFixed(1)}M`} icon={Banknote} />
+          <KpiCard title="Active Agents" value={isLoading ? "…" : "—"} icon={Users} />
+          <KpiCard title="Pending Queue" value={isLoading ? "…" : String(pendingCount)} icon={Clock} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>

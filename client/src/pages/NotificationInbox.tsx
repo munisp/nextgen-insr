@@ -1,12 +1,12 @@
-// @ts-nocheck
 // SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 import { useState, useMemo, useEffect } from "react";
-import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+
 import DashboardLayout from "@/components/DashboardLayout";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -15,12 +15,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
 import {
   useRealtimeNotifications,
   ConnectionStatusBadge,
 } from "@/hooks/useRealtimeNotifications";
-
+import { trpc } from "@/lib/trpc";
 // ── Icons ───────────────────────────────────────────────────────────────────
 
 function MailIcon({ className }: { className?: string }) {
@@ -180,42 +179,12 @@ const channelConfig: Record<
   },
 };
 
-const priorityConfig: Record<string, { color: string; dot: string }> = {
-  critical: {
-    color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    dot: "bg-red-500",
-  },
-  high: {
-    color:
-      "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
-    dot: "bg-orange-500",
-  },
-  medium: {
-    color:
-      "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-    dot: "bg-yellow-500",
-  },
-  low: {
-    color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
-    dot: "bg-slate-400",
-  },
-};
 
-const categoryLabels: Record<string, string> = {
-  rate_alert: "Rate Alert",
-  fraud: "Fraud",
-  transaction: "Transaction",
-  security: "Security",
-  system: "System",
-  settlement: "Settlement",
-  kyc: "KYC",
-  compliance: "Compliance",
-  general: "General",
-};
 
 // ── Time Formatting ─────────────────────────────────────────────────────────
 
-function timeAgo(date: Date | string): string {
+function timeAgo(date: Date | string | null): string {
+  if (date == null) return "—";
   const d = typeof date === "string" ? new Date(date) : date;
   const now = Date.now();
   const diff = now - d.getTime();
@@ -254,9 +223,6 @@ export default function NotificationInbox() {
   });
 
   const [activeTab, setActiveTab] = useState("all");
-  const [channelFilter, setChannelFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -267,22 +233,20 @@ export default function NotificationInbox() {
       : activeTab === "starred"
         ? ("all" as const)
         : ("all" as const);
-  const starred = activeTab === "starred" ? true : undefined;
   const archived = activeTab === "archived";
 
+  // F-12 (wave-4b): real list input is {userId?, status?, limit, offset}
+  // (session-scoped server-side). The rich filters (category/priority/
+  // starred/search) have no delivered server support — applied client-side
+  // over the returned real rows where derivable, omitted otherwise.
   const { data, isLoading, refetch } = trpc.notificationInbox.list.useQuery({
-    // channel: channelFilter as any,
-    category: categoryFilter as any,
-    priority: priorityFilter as any,
-    readStatus,
-    starred,
-    archived,
-    search: search || undefined,
-    page,
-    pageSize: 25,
+    status: archived ? "archived" : readStatus !== "all" ? readStatus : undefined,
+    limit: 25,
+    offset: (page - 1) * 25,
   });
 
-  const { data: counts } = trpc.notificationInbox.getUnreadCounts.useQuery({});
+  // getUnreadCounts is fail-loud NOT_IMPLEMENTED — unread derived from
+  // getStats (real aggregate) instead.
   const { data: stats } = trpc.notificationInbox.getStats.useQuery();
 
   const markRead = trpc.notificationInbox.markRead.useMutation({
@@ -294,9 +258,12 @@ export default function NotificationInbox() {
       toast.success("All notifications marked as read");
     },
   });
-  const toggleStar = trpc.notificationInbox.toggleStar.useMutation({
-    onSuccess: () => refetch(),
-  });
+  // F-12 (wave-4b): no toggleStar procedure exists — loud on interaction.
+  const toggleStar = {
+    mutate: (_input?: unknown) =>
+      toast.error("Notification starring is not delivered on this deployment"),
+    isPending: false,
+  };
   const archiveNotif = trpc.notificationInbox.archive.useMutation({
     onSuccess: () => {
       refetch();
@@ -317,8 +284,16 @@ export default function NotificationInbox() {
     },
   });
 
-  const items = data?.items ?? [];
-  const totalPages = data?.totalPages ?? 1;
+  // F-12 (wave-4b): real list shape is {notifications, total}; search is
+  // applied client-side over the real subject/body columns (no server-side
+  // search support delivered).
+  const items = (data?.notifications ?? []).filter(
+    n =>
+      !search ||
+      (n.subject ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (n.body ?? "").toLowerCase().includes(search.toLowerCase())
+  );
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / 25));
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -350,16 +325,16 @@ export default function NotificationInbox() {
           </div>
           <div className="flex items-center gap-3">
             <ConnectionStatusBadge state={connectionState} />
-            {(realtimeUnread > 0 || (counts && counts.total > 0)) && (
+            {(realtimeUnread > 0 || (stats?.unread ?? 0) > 0) && (
               <Badge variant="destructive" className="text-sm px-3 py-1">
-                {(counts?.total ?? 0) + realtimeUnread} unread
+                {(stats?.unread ?? 0) + realtimeUnread} unread
               </Badge>
             )}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => markAllRead.mutate({})}
-              disabled={!counts || counts.total === 0}
+              onClick={() => markAllRead.mutate()}
+              disabled={(stats?.unread ?? 0) === 0}
             >
               <CheckIcon className="w-4 h-4 mr-1" />
               Mark all read
@@ -386,29 +361,27 @@ export default function NotificationInbox() {
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold text-amber-500">
-                {stats?.last24h ?? 0}
+                —
               </div>
               <div className="text-xs text-muted-foreground">Last 24h</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="flex gap-3 text-sm">
+              {/* F-12 (wave-4b): per-channel breakdown has no delivered
+                  source in getStats — honest "—". */}
+              <div className="flex gap-3 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1">
-                  <MailIcon className="w-3 h-3 text-blue-500" />
-                  {stats?.byChannel?.email ?? 0}
+                  <MailIcon className="w-3 h-3 text-blue-500" />—
                 </span>
                 <span className="flex items-center gap-1">
-                  <PhoneIcon className="w-3 h-3 text-green-500" />
-                  {stats?.byChannel?.sms ?? 0}
+                  <PhoneIcon className="w-3 h-3 text-green-500" />—
                 </span>
                 <span className="flex items-center gap-1">
-                  <BellIcon className="w-3 h-3 text-purple-500" />
-                  {stats?.byChannel?.push ?? 0}
+                  <BellIcon className="w-3 h-3 text-purple-500" />—
                 </span>
                 <span className="flex items-center gap-1">
-                  <InboxIcon className="w-3 h-3 text-amber-500" />
-                  {stats?.byChannel?.in_app ?? 0}
+                  <InboxIcon className="w-3 h-3 text-amber-500" />—
                 </span>
               </div>
               <div className="text-xs text-muted-foreground mt-1">
@@ -436,7 +409,7 @@ export default function NotificationInbox() {
               </div>
             </CardHeader>
             <CardContent className="space-y-2 max-h-48 overflow-y-auto">
-              {realtimeNotifs.slice(0, 10).map((n: any) => (
+              {realtimeNotifs.slice(0, 10).map(n => (
                 <div
                   key={n.id}
                   className="flex items-start gap-3 p-2 rounded-md bg-background/50 border border-border/50"
@@ -480,16 +453,15 @@ export default function NotificationInbox() {
               <TabsTrigger value="all">All</TabsTrigger>
               <TabsTrigger value="unread">
                 Unread
-                {counts && counts.total > 0 && (
+                {(stats?.unread ?? 0) > 0 && (
                   <Badge
                     variant="destructive"
                     className="ml-1 text-[10px] px-1.5 py-0"
                   >
-                    {counts.total}
+                    {stats?.unread ?? 0}
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="starred">Starred</TabsTrigger>
               <TabsTrigger value="archived">Archived</TabsTrigger>
             </TabsList>
 
@@ -505,65 +477,6 @@ export default function NotificationInbox() {
                 }}
                 className="w-48"
               />
-              <Select
-                value={channelFilter}
-                onValueChange={v => {
-                  setChannelFilter(v);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder="Channel" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Channels</SelectItem>
-                  <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="sms">SMS</SelectItem>
-                  <SelectItem value="push">Push</SelectItem>
-                  <SelectItem value="in_app">In-App</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={categoryFilter}
-                onValueChange={v => {
-                  setCategoryFilter(v);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-36">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  <SelectItem value="rate_alert">Rate Alert</SelectItem>
-                  <SelectItem value="fraud">Fraud</SelectItem>
-                  <SelectItem value="transaction">Transaction</SelectItem>
-                  <SelectItem value="security">Security</SelectItem>
-                  <SelectItem value="system">System</SelectItem>
-                  <SelectItem value="settlement">Settlement</SelectItem>
-                  <SelectItem value="kyc">KYC</SelectItem>
-                  <SelectItem value="compliance">Compliance</SelectItem>
-                  <SelectItem value="general">General</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={priorityFilter}
-                onValueChange={v => {
-                  setPriorityFilter(v);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder="Priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Priority</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
 
@@ -577,7 +490,8 @@ export default function NotificationInbox() {
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  bulkDelete.mutate({ ids: Array.from(selectedIds) })
+                  // F-12: real proc takes a single id — fire per selection.
+                  selectedIds.forEach(id => bulkDelete.mutate({ id }))
                 }
               >
                 <TrashIcon className="w-4 h-4 mr-1" />
@@ -612,11 +526,9 @@ export default function NotificationInbox() {
                   <p className="text-muted-foreground mt-1">
                     {activeTab === "unread"
                       ? "You're all caught up!"
-                      : activeTab === "starred"
-                        ? "No starred notifications"
-                        : activeTab === "archived"
-                          ? "No archived notifications"
-                          : "No notifications yet"}
+                      : activeTab === "archived"
+                        ? "No archived notifications"
+                        : "No notifications yet"}
                   </p>
                 </CardContent>
               </Card>
@@ -640,18 +552,20 @@ export default function NotificationInbox() {
                   </span>
                 </div>
 
-                {items.map((notif: any) => {
-                  const ch =
-                    channelConfig[notif.channel] ?? channelConfig.in_app;
-                  const pr =
-                    priorityConfig[notif.priority] ?? priorityConfig.low;
-                  const isSelected = selectedIds.has(notif.id);
+                {items.map(notif => {
+                  // F-12 (wave-4b): real notification_logs columns are
+                  // subject/body/status/channelId/timestamps — channel names,
+                  // priority, category, agent names and star state have no
+                  // delivered source.
+                  const ch = channelConfig.in_app;
+                  const isRead = notif.status === "read";
+                  const isSelected = selectedIds.has(String(notif.id));
 
                   return (
                     <Card
                       key={notif.id}
                       className={`transition-all hover:shadow-md cursor-pointer ${
-                        !notif.read
+                        !isRead
                           ? "border-l-4 border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10"
                           : ""
                       } ${isSelected ? "ring-2 ring-primary" : ""}`}
@@ -662,14 +576,10 @@ export default function NotificationInbox() {
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => toggleSelect(notif.id)}
+                            onChange={() => toggleSelect(String(notif.id))}
                             className="mt-1 rounded border-muted-foreground"
                           />
 
-                          {/* Priority dot */}
-                          <div
-                            className={`w-2.5 h-2.5 rounded-full mt-2 flex-shrink-0 ${pr.dot}`}
-                          />
 
                           {/* Channel icon */}
                           <div
@@ -682,34 +592,15 @@ export default function NotificationInbox() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <h4
-                                className={`text-sm font-medium truncate ${!notif.read ? "font-semibold" : ""}`}
+                                className={`text-sm font-medium truncate ${!isRead ? "font-semibold" : ""}`}
                               >
-                                {notif.title}
+                                {notif.subject ?? "—"}
                               </h4>
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5"
-                              >
-                                {categoryLabels[notif.category] ??
-                                  notif.category}
-                              </Badge>
-                              <Badge
-                                className={`text-[10px] px-1.5 ${pr.color}`}
-                              >
-                                {notif.priority}
-                              </Badge>
                             </div>
                             <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
                               {notif.body}
                             </p>
                             <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                              <span>{ch.label}</span>
-                              {notif.agentName && (
-                                <>
-                                  <span>·</span>
-                                  <span>{notif.agentName}</span>
-                                </>
-                              )}
                               <span>·</span>
                               <span>{timeAgo(notif.createdAt)}</span>
                             </div>
@@ -726,19 +617,16 @@ export default function NotificationInbox() {
                                 toggleStar.mutate({ id: notif.id });
                               }}
                             >
-                              <StarIcon
-                                className={`w-4 h-4 ${notif.starred ? "text-amber-500" : "text-muted-foreground"}`}
-                                filled={notif.starred}
-                              />
+                              <StarIcon className="w-4 h-4 text-muted-foreground" />
                             </Button>
-                            {!notif.read && (
+                            {!isRead && (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
                                 onClick={e => {
                                   e.stopPropagation();
-                                  markRead.mutate({ id: notif.id });
+                                  markRead.mutate({ notificationId: notif.id });
                                 }}
                               >
                                 <CheckIcon className="w-4 h-4 text-muted-foreground" />
@@ -761,7 +649,7 @@ export default function NotificationInbox() {
                               className="h-8 w-8"
                               onClick={e => {
                                 e.stopPropagation();
-                                deleteNotif.mutate({ id: notif.id });
+                                deleteNotif.mutate({ notificationId: notif.id });
                               }}
                             >
                               <TrashIcon className="w-4 h-4 text-muted-foreground" />

@@ -135,47 +135,26 @@ export const remittanceRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   partners: protectedProcedure.query(async () => {
-    return {
-      partners: [
-        {
-          id: "RP-001",
-          name: "WorldRemit",
-          insurance_region: "UK-NG",
-          status: "active",
-        },
-        { id: "RP-002", name: "Lemfi", insurance_region: "CA-NG", status: "active" },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "partners: no remittance-partner store is delivered",
+    });
   }),
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   history: protectedProcedure.query(async () => {
-    return {
-      transactions: [
-        {
-          id: "RM-001",
-          partnerId: "RP-001",
-          amount: 500,
-          currency: "GBP",
-          localAmount: 450000,
-          status: "completed",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "history: no remittance-history store is delivered",
+    });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalTransactions: 2000,
-      totalRemittances: 2000,
-      totalVolume: 500000000,
-      totalFees: 5000000,
-      totalCommission: 2500000,
-      avgAmount: 250000,
-      topInsuranceRegions: [{ insurance_region: "UK-NG", volume: 200000000 }],
-      byPartner: [
-        { partner: "WorldRemit", volume: 300000000, count: 1200 },
-        { partner: "Flutterwave", volume: 200000000, count: 800 },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

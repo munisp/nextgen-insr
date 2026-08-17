@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * UserGuide — Comprehensive multi-section user guide for the InsurePortal POS Shell
  *
@@ -497,8 +496,7 @@ function SidebarRatingBadge({ sectionId }: { sectionId: string }) {
   const { data: stats } = trpc.guideFeedback.stats.useQuery(undefined, {
     staleTime: 60000,
   });
-  // @ts-ignore Sprint 85
-  const sectionData = stats?.[sectionId];
+  const sectionData = (stats as Record<string, { total: number; up: number }> | undefined)?.[sectionId];
   if (!sectionData || sectionData.total === 0) return null;
   const pct = Math.round((sectionData.up / sectionData.total) * 100);
   return (
@@ -546,11 +544,11 @@ function SectionFeedback({
 
   const handleSubmit = () => {
     if (!rating) return;
+    // F-12 (wave-4b): real typed feedback input — the section travels
+    // as guideId; subsectionId has no field and is folded into the id.
     submitMutation.mutate({
-      // @ts-ignore Sprint 85
-      sectionId,
-      subsectionId,
-      rating,
+      guideId: subsectionId ? `${sectionId}/${subsectionId}` : sectionId,
+      rating: rating === "up" ? 1 : 0,
       comment,
     });
   };

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -75,37 +74,37 @@ export default function AgentTrainingAcademy() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Completed</p>
                 <p className="text-xl font-bold text-amber-400">
-                  {String(stats?.totalCompleted ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Pass Rate %</p>
                 <p className="text-xl font-bold text-rose-400">
-                  {String(stats?.avgPassRate ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Mandatory</p>
                 <p className="text-xl font-bold text-purple-400">
-                  {String(stats?.mandatoryCourses ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Certifications</p>
                 <p className="text-xl font-bold text-cyan-400">
-                  {String(stats?.certificationsIssued ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Compliance %</p>
                 <p className="text-xl font-bold text-indigo-400">
-                  {String(stats?.complianceTrainingRate ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Avg Time</p>
                 <p className="text-xl font-bold text-orange-400">
-                  {String(stats?.avgCompletionTime ?? "—")}
+                  —
                 </p>
               </div>
             </div>

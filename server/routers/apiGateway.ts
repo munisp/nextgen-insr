@@ -117,7 +117,7 @@ export const apiGatewayRouter = router({
 
   getStats: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalRecords: 0, activeRecords: 0, lastUpdated: new Date().toISOString(), uptime: 99.9, version: "1.0.0" };
+    if (!database) return { totalRecords: 0, activeRecords: 0, lastUpdated: new Date().toISOString(), uptime: null, version: null }; // F-12: cosmetic 99.9/1.0.0 removed
     const [totalRow] = await database.select({ total: count() }).from(auditLog).where(eq(auditLog.action, "API_KEY_CREATED"));
     const [revokedRow] = await database.select({ total: count() }).from(auditLog).where(eq(auditLog.action, "API_KEY_REVOKED"));
     const total = (totalRow as any)?.total ?? 0;

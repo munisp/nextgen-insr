@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,7 +95,7 @@ export default function CrossBorderRemittanceHub() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(list.data?.insurance_regions ?? [])
+                  {(list.data?.data ?? [])
                     .filter(
                       (item: any) =>
                         !search ||

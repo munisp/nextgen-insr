@@ -128,13 +128,27 @@ const getStats = publicProcedure
         .from(apiKeys)
         .orderBy(desc(apiKeys.id))
         .limit(5);
+      // F-12 (full sweep): fixture stats (350/280/70/1.25M) returned after
+      // real queries whose results were discarded -> REAL aggregates from
+      // api_keys. Request telemetry has no store -> honest 0s.
+      const [tot] = await db.select({ value: count() }).from(apiKeys).limit(100);
+      const [act] = await db
+        .select({ value: count() })
+        .from(apiKeys)
+        .where(eq(apiKeys.status, "active"))
+        .limit(100);
+      const [rev] = await db
+        .select({ value: count() })
+        .from(apiKeys)
+        .where(eq(apiKeys.status, "revoked"))
+        .limit(100);
       return {
-        totalKeys: 350,
-        activeKeys: 280,
-        revokedKeys: 70,
-        totalRequests24h: 1250000,
-        avgRequestsPerKey: 4464,
-        suspiciousActivity: 3,
+        totalKeys: Number(tot.value),
+        activeKeys: Number(act.value),
+        revokedKeys: Number(rev.value),
+        totalRequests24h: 0,
+        avgRequestsPerKey: 0,
+        suspiciousActivity: 0,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

@@ -89,6 +89,8 @@ const getById = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const create = protectedProcedure
   .input(
     z.object({
@@ -96,41 +98,14 @@ const create = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "create: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "create completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "create completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "create: no customer create workflow in this router",
+    });
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const update = protectedProcedure
   .input(
     z.object({
@@ -138,40 +113,11 @@ const update = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(agents)
-          .where(eq(agents.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "update: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "update completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "update completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "update: no customer update workflow in this router",
+    });
   });
 const getStats = protectedProcedure
   .input(
@@ -211,6 +157,29 @@ const getStats = protectedProcedure
   });
 
 export const customerDatabaseRouter = router({
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "delete: database unavailable",
+        });
+      const [existing] = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.id, input.id))
+        .limit(1);
+      if (!existing)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "delete: record not found",
+        });
+      await db.delete(agents).where(eq(agents.id, input.id));
+      return { success: true, id: input.id };
+    }),
+
   list,
   getById,
   create,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -63,49 +62,49 @@ export default function AutoReconciliationEngine() {
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Reconciliations</p>
                 <p className="text-xl font-bold text-blue-400">
-                  {String(stats?.totalReconciliations ?? "—")}
+                  {String(stats?.totalReconciled ?? "—")}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Match Rate %</p>
                 <p className="text-xl font-bold text-emerald-400">
-                  {String(stats?.avgMatchRate ?? "—")}
+                  {stats?.matchRate == null ? "—" : String(stats.matchRate)}
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Exceptions</p>
                 <p className="text-xl font-bold text-amber-400">
-                  {String(stats?.totalExceptions ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Pending Review</p>
                 <p className="text-xl font-bold text-rose-400">
-                  {String(stats?.pendingReview ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Banks</p>
                 <p className="text-xl font-bold text-purple-400">
-                  {String(stats?.banksConnected ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Auto-Resolved</p>
                 <p className="text-xl font-bold text-cyan-400">
-                  {String(stats?.autoResolvedToday ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Manual Review</p>
                 <p className="text-xl font-bold text-indigo-400">
-                  {String(stats?.manualReviewNeeded ?? "—")}
+                  —
                 </p>
               </div>
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                 <p className="text-xs text-gray-400 mb-1">Last Run</p>
                 <p className="text-xl font-bold text-orange-400">
-                  {String(stats?.lastRunTime ?? "—")}
+                  {stats?.lastRunAt ?? "—"}
                 </p>
               </div>
             </div>

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,20 +15,21 @@ import {
 
 export default function TransactionDisputeResolutionPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.transactionDisputeResolution.list.useQuery();
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const resolveMut = trpc.transactionDisputeResolution.resolve.useMutation({
-    onSuccess: () => toast.success("Dispute resolved"),
+  // F-12 (wave-4b): resolve/escalate were phantom procs — the REAL proc is
+  // updateStatus({id, status, resolution?}); list returns {data, total}.
+  const { data, isLoading } = trpc.transactionDisputeResolution.list.useQuery({});
+  const utils = trpc.useUtils();
+  const statusMut = trpc.transactionDisputeResolution.updateStatus.useMutation({
+    onSuccess: () => {
+      toast.success("Dispute updated");
+      utils.transactionDisputeResolution.list.invalidate();
+    },
+    onError: e => toast.error(e.message),
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const escalateMut = trpc.transactionDisputeResolution.escalate.useMutation({
-    onSuccess: () => toast.success("Dispute escalated"),
-  });
-  const disputes = (data?.disputes || []).filter(
+  const disputes = (data?.data || []).filter(
     (d: any) =>
       !search ||
-      d.customerName?.toLowerCase().includes(search.toLowerCase()) ||
+      d.ref?.toLowerCase().includes(search.toLowerCase()) ||
       d.transactionId?.includes(search)
   );
 
@@ -46,14 +46,14 @@ export default function TransactionDisputeResolutionPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{data?.summary?.total || 0}</p>
+            <p className="text-2xl font-bold">{data?.total || 0}</p>
             <p className="text-sm text-muted-foreground">Total Disputes</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-yellow-600">
-              {data?.summary?.open || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Open</p>
           </CardContent>
@@ -61,7 +61,7 @@ export default function TransactionDisputeResolutionPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {data?.summary?.resolved || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Resolved</p>
           </CardContent>
@@ -69,7 +69,7 @@ export default function TransactionDisputeResolutionPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-red-600">
-              ${(data?.summary?.totalAmount || 0).toLocaleString()}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Total Value</p>
           </CardContent>
@@ -105,12 +105,12 @@ export default function TransactionDisputeResolutionPage() {
                       )}
                     </div>
                     <div>
-                      <p className="font-medium">{d.customerName}</p>
+                      <p className="font-medium">{d.ref}</p>
                       <p className="text-sm text-muted-foreground">
                         Txn: {d.transactionId} • ${d.amount?.toLocaleString()}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {d.reason} • {d.category}
+                        {d.reason} • {d.type}
                       </p>
                     </div>
                   </div>
@@ -120,9 +120,10 @@ export default function TransactionDisputeResolutionPage() {
                         <Button
                           size="sm"
                           onClick={() =>
-                            resolveMut.mutate({
+                            statusMut.mutate({
                               id: d.id,
-                              resolution: "Refunded",
+                              status: "resolved",
+                              resolution: "full_refund",
                             })
                           }
                         >
@@ -131,7 +132,7 @@ export default function TransactionDisputeResolutionPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => escalateMut.mutate({ id: d.id })}
+                          onClick={() => statusMut.mutate({ id: d.id, status: "escalated" })}
                         >
                           Escalate
                         </Button>

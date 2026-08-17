@@ -93,6 +93,8 @@ const getConfigs = protectedProcedure
       });
     }
   });
+// F-12 (expanded sweep): echo facade — returned "success ... completed"
+// with no state change. Fail loud.
 const updateConfig = protectedProcedure
   .input(
     z.object({
@@ -100,40 +102,11 @@ const updateConfig = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(async ({ input }) => {
-    try {
-      const db = (await getDb())!;
-      if (input.id) {
-        const [existing] = await db
-          .select()
-          .from(tenants)
-          .where(eq(tenants.id, input.id))
-          .limit(100);
-        if (!existing)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "updateConfig: record not found",
-          });
-        return {
-          success: true,
-          id: input.id,
-          message: "updateConfig completed",
-          timestamp: new Date().toISOString(),
-        };
-      }
-      return {
-        success: true,
-        message: "updateConfig completed",
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) throw error;
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message:
-          error instanceof Error ? error.message : "Internal server error",
-      });
-    }
+  .mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "updateConfig: no config store wired to this router",
+    });
   });
 const getHistory = protectedProcedure
   .input(

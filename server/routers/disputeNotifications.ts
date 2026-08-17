@@ -144,6 +144,9 @@ export const disputeNotificationsRouter = router({
           id: 0,
           timestamp: new Date().toISOString(),
         };
+      // F-12 (expanded sweep): status was "delivered" with no provider
+      // dispatch — the real side effect is the dispute_messages row below;
+      // the notification itself is only recorded, not delivered.
       const notif = {
         id: nextNotifId++,
         disputeId: input.disputeId,
@@ -151,7 +154,7 @@ export const disputeNotificationsRouter = router({
         channel: input.channel ?? "email",
         recipient: `agent-${dispute.agentId}@insureportal.com`,
         subject: input.message ?? `Dispute ${dispute.ref} update`,
-        status: "delivered",
+        status: "recorded",
         sentAt: new Date().toISOString(),
       };
       notificationLog.push(notif);
@@ -192,40 +195,22 @@ export const disputeNotificationsRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      try {
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-      return {
-        success: true,
-        message: "Notification channels configured",
-        channels: input.channels ?? ["email", "sms", "push"],
-        enabled: input.enabled ?? true,
-        timestamp: new Date().toISOString(),
-      };
+      // F-12 (expanded sweep): echo facade — returned
+      // "success ... completed" with no state change. Fail loud.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "configureChannels: no channel-preference store",
+      });
     }),
 
+  // F-12 (expanded sweep): stats were computed from a process-memory log
+  // plus fabricated arithmetic over the disputes count (and 50/30/20%
+  // channel splits / a hardcoded deliveryRate) — no delivery-stats store is
+  // delivered. Fail loud.
   getDeliveryStats: protectedProcedure.query(async () => {
-    const db = (await getDb())!;
-    const [total] = await db.select({ cnt: count() }).from(disputes).limit(100);
-    return {
-      totalSent: notificationLog.length + (total?.cnt ?? 0),
-      delivered:
-        notificationLog.filter(n => n.status === "delivered").length +
-        (total?.cnt ?? 0),
-      failed: 0,
-      pending: 0,
-      channels: {
-        email: Math.ceil((total?.cnt ?? 0) * 0.5),
-        sms: Math.ceil((total?.cnt ?? 0) * 0.3),
-        push: Math.ceil((total?.cnt ?? 0) * 0.2),
-      },
-      deliveryRate: 98.5,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getDeliveryStats: no dispute-notification delivery store is delivered",
+    });
   }),
 });

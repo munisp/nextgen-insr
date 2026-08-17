@@ -153,24 +153,67 @@ export const dragDropReportBuilderRouter = router({
     return { totalReports: Number(total.value) };
   }),
 
+  // F-12 (verifier site 5): saveReport fabricated id "RPT-001" with no DB
+  // write — now a REAL insert into bi_report_definitions (config is stored
+  // as the report query payload). executeReport/exportReport have no
+  // execution/export engine — fail loud. dashboard derives real rows.
   saveReport: publicProcedure
     .input(
       z.object({ name: z.string(), config: z.record(z.string(), z.unknown()) })
     )
-    .mutation(async ({ input }) => {
-      return { id: "RPT-001", name: input.name, saved: true };
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "database unavailable",
+        });
+      }
+      // F-12 (verifier round 4): reportType/dataSource are NOT NULL and
+      // createdBy is integer — the earlier insert violated all three.
+      const [row] = await db
+        .insert(biReportDefinitions)
+        .values({
+          name: input.name,
+          reportType: "custom",
+          dataSource:
+            typeof input.config.dataSource === "string"
+              ? input.config.dataSource
+              : "custom",
+          query: JSON.stringify(input.config),
+          createdBy: ctx.user?.id ?? null,
+        })
+        .returning({ id: biReportDefinitions.id, name: biReportDefinitions.name });
+      return { id: String(row.id), name: row.name, saved: true as const };
     }),
 
   executeReport: protectedProcedure.query(async () => {
-    return { data: [], columns: [], rowCount: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "executeReport: no report-execution engine is delivered",
+    });
   }),
 
   exportReport: protectedProcedure.query(async () => {
-    return { url: "/exports/report.pdf", format: "pdf" };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "exportReport: no report-export pipeline is delivered",
+    });
   }),
-  dashboard: protectedProcedure.query(async () => ({
-    reports: [],
-    recentActivity: [],
-    stats: { totalReports: 0, sharedReports: 0 },
-  })),
+  dashboard: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) {
+      return { reports: [], recentActivity: [], stats: { totalReports: 0, sharedReports: 0 } };
+    }
+    const rows = await db
+      .select()
+      .from(biReportDefinitions)
+      .orderBy(desc(biReportDefinitions.id))
+      .limit(50);
+    return {
+      reports: rows,
+      recentActivity: [],
+      stats: { totalReports: rows.length, sharedReports: 0 },
+    };
+  }),
 });

@@ -107,8 +107,10 @@ export const mlScoringServiceRouter = router({
     }),
 
   // Honest empty analytics — no scoring has been performed by any real model.
+  // F-12 (wave-4b): was a zero-payload stub — no delivered ML model or
+  // ml_scores store exists. Fail loud, never fixture zeros.
   analytics: protectedProcedure.query(async () => {
-    return { totalScored: 0, avgScore: 0, highRiskCount: 0, modelAccuracy: 0 };
+    throw NOT_CONFIGURED();
   }),
 
   batchScore: protectedProcedure
@@ -131,14 +133,9 @@ export const mlScoringServiceRouter = router({
       throw NOT_CONFIGURED();
     }),
 
+  // F-12 (wave-4b): was a zero-payload stub (always-empty history) — no
+  // delivered scoring store. Fail loud, never an honest-looking empty table.
   scoringHistory: protectedProcedure.query(async () => {
-    return {
-      history: [] as Array<{
-        date: string;
-        scored: number;
-        avgScore: number;
-        highRisk: number;
-      }>,
-    };
+    throw NOT_CONFIGURED();
   }),
 });

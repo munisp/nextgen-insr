@@ -124,175 +124,75 @@ async function generateQuarterlyFraudReportFromDb(
 
 export const cbnReportingRouter = router({
   // ── Generate Monthly Activity Report ──────────────────────────────────────
-  generateMonthlyReport: protectedProcedure
-    .input(
-      z.object({
-        year: z.number().int().min(2020).max(2100),
-        month: z.number().int().min(1).max(12),
-        institutionCode: z.string().default("54LINK001"),
-        institutionName: z.string().default("InsurePortal Insurance Platform"),
-      })
-    )
-    .mutation(async ({ input }) => {
-      try {
-        const svc = await callCbnService(
-          "/api/v1/cbn-reports/monthly-activity",
-          "POST",
-          {
-            year: input.year,
-            month: input.month,
-            institution_code: input.institutionCode,
-            institution_name: input.institutionName,
-          }
-        );
-        if (svc) return svc;
-        const result = await generateMonthlyReportFromDb(
-          input.year,
-          input.month,
-          input.institutionCode
-        );
-        if (!result)
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to generate report",
-          });
-        return result;
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+  // F-12 (wave-4b): zero-payload generateMonthlyReport — the CBN reporting pipeline
+  // for this proc is not delivered. Fail loud.
+  generateMonthlyReport: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "generateMonthlyReport: the CBN reporting pipeline is not delivered",
+    });
+  }),
 
   // ── Generate Quarterly Fraud Report ───────────────────────────────────────
-  generateQuarterlyFraudReport: protectedProcedure
-    .input(
-      z.object({
-        year: z.number().int().min(2020).max(2100),
-        quarter: z.number().int().min(1).max(4),
-        institutionCode: z.string().default("54LINK001"),
-      })
-    )
-    .mutation(async ({ input }) => {
-      try {
-        const svc = await callCbnService(
-          "/api/v1/cbn-reports/quarterly-fraud",
-          "POST",
-          {
-            year: input.year,
-            quarter: input.quarter,
-            institution_code: input.institutionCode,
-          }
-        );
-        if (svc) return svc;
-        const result = await generateQuarterlyFraudReportFromDb(
-          input.year,
-          input.quarter,
-          input.institutionCode
-        );
-        if (!result)
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to generate report",
-          });
-        return result;
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+  // F-12 (wave-4b): zero-payload generateQuarterlyFraudReport — the CBN reporting pipeline
+  // for this proc is not delivered. Fail loud.
+  generateQuarterlyFraudReport: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "generateQuarterlyFraudReport: the CBN reporting pipeline is not delivered",
+    });
+  }),
 
   // ── File SAR ──────────────────────────────────────────────────────────────
-  fileSar: protectedProcedure
-    .input(
-      z.object({
-        agentId: z.number().int().positive(),
-        transactionIds: z.array(z.number().int().positive()).min(1),
-        totalAmount: z.number().positive(),
-        reason: z.string().min(10),
-        description: z.string().min(20),
-        customerDetails: z.record(z.string(), z.string()).optional(),
-      })
-    )
-    .mutation(async ({ input }) => {
-      try {
-        const svc = await callCbnService("/api/v1/cbn-reports/sar", "POST", {
-          agent_id: input.agentId,
-          transaction_ids: input.transactionIds,
-          total_amount: input.totalAmount,
-          reason: input.reason,
-          description: input.description,
-          customer_details: input.customerDetails ?? {},
-        });
-        if (svc) return svc;
-        return {
-          sarRef: `SAR-${Date.now()}-${input.agentId}`,
-          agentId: input.agentId,
-          transactionIds: input.transactionIds,
-          totalAmount: input.totalAmount,
-          reason: input.reason,
-          status: "filed_locally",
-          filedAt: new Date().toISOString(),
-          nfiuRef: null,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+  // F-12 (wave-4b): zero-payload fileSar — the CBN reporting pipeline
+  // for this proc is not delivered. Fail loud.
+  fileSar: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "fileSar: the CBN reporting pipeline is not delivered",
+    });
+  }),
 
   // ── Get pending submissions ────────────────────────────────────────────────
-  getPendingSubmissions: protectedProcedure.query(async () => {
-    const svc = await callCbnService("/api/v1/cbn-reports/pending");
-    return { reports: svc ?? [], source: svc ? "service" : "fallback" };
+  // F-12 (S87-02): the dashboard's aggregate filing counts. Real source is the
+  // CBN reporting service (CAT-A Go service); when it is not reachable the
+  // procedure returns null (honest) rather than fixture counts.
+  // F-12 (wave-4b): zero-payload summary — the CBN reporting pipeline
+  // for this proc is not delivered. Fail loud.
+  summary: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "summary: the CBN reporting pipeline is not delivered",
+    });
+  }),
+
+  // F-12 (wave-4b): zero-payload getPendingSubmissions — the CBN reporting pipeline
+  // for this proc is not delivered. Fail loud.
+  getPendingSubmissions: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getPendingSubmissions: the CBN reporting pipeline is not delivered",
+    });
   }),
 
   // ── Mark report as submitted ───────────────────────────────────────────────
-  markSubmitted: protectedProcedure
-    .input(z.object({ reportId: z.string(), cbnReference: z.string().min(5) }))
-    .mutation(async ({ input }) => {
-      try {
-        const svc = await callCbnService(
-          `/api/v1/cbn-reports/${input.reportId}/submit?cbn_reference=${encodeURIComponent(input.cbnReference)}`,
-          "POST"
-        );
-        return (
-          svc ?? {
-            success: true,
-            reportId: input.reportId,
-            cbnReference: input.cbnReference,
-            submittedAt: new Date().toISOString(),
-          }
-        );
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+  // F-12 (wave-4b): zero-payload markSubmitted — the CBN reporting pipeline
+  // for this proc is not delivered. Fail loud.
+  markSubmitted: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "markSubmitted: the CBN reporting pipeline is not delivered",
+    });
+  }),
 
   // ── Health check ──────────────────────────────────────────────────────────
-  health: protectedProcedure.query(async () => {
-    const svc = await callCbnService("/api/v1/cbn-reports/health");
-    return {
-      serviceAvailable: !!svc,
-      serviceUrl: CBN_SERVICE_URL,
-      timestamp: new Date().toISOString(),
-    };
+  // F-12 (wave-4b): zero-payload health — the CBN reporting pipeline
+  // for this proc is not delivered. Fail loud.
+  health: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "health: the CBN reporting pipeline is not delivered",
+    });
   }),
 
   // ── Compliance dashboard ──────────────────────────────────────────────────

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Network Quality Heatmap — Sprint 93
  *
@@ -196,7 +195,7 @@ export default function NetworkQualityHeatmap() {
                 <Users className="h-3.5 w-3.5" /> Total Agents
               </div>
               <div className="text-2xl font-bold">
-                {summary.totalAgents.toLocaleString()}
+                {(summary.totalAgents ?? 0).toLocaleString()}
               </div>
             </CardContent>
           </Card>
@@ -206,7 +205,7 @@ export default function NetworkQualityHeatmap() {
                 <Activity className="h-3.5 w-3.5" /> Avg Latency
               </div>
               <div
-                className={`text-2xl font-bold ${getLatencyColor(summary.avgLatencyMs)}`}
+                className={`text-2xl font-bold ${getLatencyColor(summary.avgLatencyMs ?? 0)}`}
               >
                 {summary.avgLatencyMs}ms
               </div>
@@ -218,9 +217,9 @@ export default function NetworkQualityHeatmap() {
                 <AlertTriangle className="h-3.5 w-3.5" /> Avg Fail Rate
               </div>
               <div
-                className={`text-2xl font-bold ${getHealthColor(summary.avgFailRate)}`}
+                className={`text-2xl font-bold ${getHealthColor(summary.avgFailRate ?? 0)}`}
               >
-                {(summary.avgFailRate * 100).toFixed(1)}%
+                {(summary.avgFailRate ?? 0 * 100).toFixed(1)}%
               </div>
             </CardContent>
           </Card>

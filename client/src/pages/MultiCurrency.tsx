@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -26,8 +25,6 @@ import {
 } from "recharts";
 import {
   ArrowUpDown,
-  TrendingUp,
-  TrendingDown,
   RefreshCw,
   Search,
   Calculator,
@@ -36,36 +33,9 @@ import {
   Clock,
   Zap,
   ArrowRight,
-  Minus,
   History,
 } from "lucide-react";
 
-// ── Sparkline Mini Component ─────────────────────────────────────────────────
-
-function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const points = data
-    .map(
-      (v, i) =>
-        `${(i / (data.length - 1)) * 60},${30 - ((v - min) / range) * 28}`
-    )
-    .join(" ");
-
-  return (
-    <svg width="60" height="30" viewBox="0 0 60 30" className="inline-block">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={positive ? "#22c55e" : "#ef4444"}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 // ── Conversion History Item ──────────────────────────────────────────────────
 
@@ -82,7 +52,6 @@ interface ConversionRecord {
 export default function MultiCurrency() {
   // ── State ──────────────────────────────────────────────────────────────────
   const [baseCurrency, setBaseCurrency] = useState("NGN");
-  const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("rates");
 
@@ -104,7 +73,7 @@ export default function MultiCurrency() {
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const ratesQuery = trpc.fxRates.getRates.useQuery(
-    { base: baseCurrency, category: activeCategory },
+    { baseCurrency },
     { refetchInterval: 60000 }
   );
 
@@ -118,10 +87,33 @@ export default function MultiCurrency() {
     { enabled: parsedCalcAmount > 0 }
   );
 
-  const historicalQuery = trpc.fxRates.historical.useQuery(
-    { from: chartFrom, to: chartTo, period: chartPeriod },
+  // F-12 (wave-4b): real proc is getHistorical({base,target,days}); stats are
+  // derived client-side from the real timeseries.
+  const periodDays = { "7d": 7, "30d": 30, "90d": 90, "1y": 365 }[chartPeriod];
+  const historicalQuery = trpc.fxRates.getHistorical.useQuery(
+    { base: chartFrom, target: chartTo, days: periodDays },
     { enabled: activeTab === "charts" }
   );
+  const timeseries = historicalQuery.data?.timeseries ?? [];
+  const historicalStats = useMemo(() => {
+    if (timeseries.length === 0) return undefined;
+    const rates = timeseries.map(t => t.rate);
+    const first = rates[0];
+    const last = rates[rates.length - 1];
+    return {
+      change: first !== 0 ? Math.round(((last - first) / first) * 10000) / 100 : 0,
+      high: Math.max(...rates),
+      low: Math.min(...rates),
+      average: rates.reduce((a, b) => a + b, 0) / rates.length,
+      volatility:
+        rates.length > 1
+          ? Math.sqrt(
+              rates.reduce((acc, r) => acc + (r - rates.reduce((a, b) => a + b, 0) / rates.length) ** 2, 0) /
+                (rates.length - 1)
+            )
+          : 0,
+    };
+  }, [timeseries]);
 
   const currenciesQuery = trpc.fxRates.currencies.useQuery();
   const refreshMutation = trpc.fxRates.refresh.useMutation({
@@ -129,13 +121,14 @@ export default function MultiCurrency() {
   });
 
   // ── Derived Data ───────────────────────────────────────────────────────────
+  // F-12 (wave-4b): real rates shape is a code→rate map (no names/symbols).
   const filteredRates = useMemo(() => {
-    if (!ratesQuery.data?.rates) return [];
-    if (!searchQuery) return ratesQuery.data.rates;
+    const rates = ratesQuery.data?.rates;
+    if (!rates) return [] as Array<{ code: string; rate: number }>;
+    const rows = Object.entries(rates).map(([code, rate]) => ({ code, rate }));
+    if (!searchQuery) return rows;
     const q = searchQuery.toLowerCase();
-    return ratesQuery.data.rates.filter(
-      r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)
-    );
+    return rows.filter(r => r.code.toLowerCase().includes(q));
   }, [ratesQuery.data?.rates, searchQuery]);
 
   const currencyOptions = useMemo(() => {
@@ -156,8 +149,8 @@ export default function MultiCurrency() {
           from: convertQuery.data!.from,
           to: convertQuery.data!.to,
           amount: convertQuery.data!.amount,
-          result: convertQuery.data!.converted,
-          rate: convertQuery.data!.midMarketRate,
+          result: convertQuery.data!.convertedAmount,
+          rate: convertQuery.data!.rate,
           time: new Date(),
         },
         ...prev.slice(0, 9),
@@ -172,7 +165,7 @@ export default function MultiCurrency() {
       addToHistory();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convertQuery.data?.converted]);
+  }, [convertQuery.data?.convertedAmount]);
 
   const handleQuickPair = useCallback((from: string, to: string) => {
     setCalcFrom(from);
@@ -201,13 +194,9 @@ export default function MultiCurrency() {
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent className="max-h-[300px]">
-        {currencyOptions.map((c: any) => (
+        {currencyOptions.map(c => (
           <SelectItem key={c.code} value={c.code}>
-            <span className="flex items-center gap-2">
-              <span>{c.flag}</span>
-              <span className="font-medium">{c.code}</span>
-              <span className="text-muted-foreground text-xs">{c.name}</span>
-            </span>
+            <span className="font-medium">{c.code}</span>
           </SelectItem>
         ))}
       </SelectContent>
@@ -225,10 +214,10 @@ export default function MultiCurrency() {
               Multi-Currency Exchange
             </h1>
             <p className="text-muted-foreground mt-1">
-              {ratesQuery.data?.totalCurrencies || 0} currencies from{" "}
-              {ratesQuery.data?.source || "..."} &middot; Updated{" "}
-              {ratesQuery.data?.cachedAt
-                ? new Date(ratesQuery.data.cachedAt).toLocaleTimeString()
+              {Object.keys(ratesQuery.data?.rates ?? {}).length} currencies
+              &middot; Updated{" "}
+              {ratesQuery.data?.lastUpdated
+                ? new Date(ratesQuery.data.lastUpdated).toLocaleTimeString()
                 : "..."}
             </p>
           </div>
@@ -289,18 +278,7 @@ export default function MultiCurrency() {
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-2">
-                  {ratesQuery.data?.popularPairs?.map((pair, i) => (
-                    <Button
-                      key={i}
-                      variant="outline"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => handleQuickPair(pair.from, pair.to)}
-                    >
-                      {pair.from} <ArrowRight className="h-3 w-3 mx-1" />{" "}
-                      {pair.to}
-                    </Button>
-                  ))}
+                  {/* F-12: no popular-pairs telemetry source — omitted */}
                 </div>
               </CardContent>
             </Card>
@@ -308,17 +286,8 @@ export default function MultiCurrency() {
             {/* Category Filters + Search */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="flex flex-wrap gap-1.5">
-                {ratesQuery.data?.categories?.map((cat: any) => (
-                  <Button
-                    key={cat.id}
-                    variant={activeCategory === cat.id ? "default" : "outline"}
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => setActiveCategory(cat.id)}
-                  >
-                    {cat.label}
-                  </Button>
-                ))}
+                {/* F-12 (wave-4b): category filters have no delivered
+                    source in getRates — removed. */}
               </div>
               <div className="relative flex-1 max-w-xs">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -374,61 +343,34 @@ export default function MultiCurrency() {
                           </td>
                         </tr>
                       ) : (
-                        filteredRates.map((rate: any) => (
+                        filteredRates.map(rate => (
                           <tr
                             key={rate.code}
                             className="border-b hover:bg-muted/30 transition-colors"
                           >
                             <td className="p-3">
                               <div className="flex items-center gap-2">
-                                <span className="text-lg">{rate.flag}</span>
                                 <div>
                                   <div className="font-medium text-sm">
                                     {rate.code}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    {rate.name}
+                                    —
                                   </div>
-                                </div>
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] hidden lg:inline-flex"
-                                >
-                                  {rate.category}
-                                </Badge>
-                              </div>
+                                </div>                              </div>
                             </td>
                             <td className="p-3 text-right font-mono text-sm">
-                              {rate.symbol} {formatRate(rate.rate)}
+                              {formatRate(rate.rate)}
                             </td>
                             <td className="p-3 text-right hidden sm:table-cell">
-                              <span
-                                className={`inline-flex items-center gap-1 text-xs font-medium ${
-                                  rate.change24h > 0
-                                    ? "text-green-500"
-                                    : rate.change24h < 0
-                                      ? "text-red-500"
-                                      : "text-muted-foreground"
-                                }`}
-                              >
-                                {rate.change24h > 0 ? (
-                                  <TrendingUp className="h-3 w-3" />
-                                ) : rate.change24h < 0 ? (
-                                  <TrendingDown className="h-3 w-3" />
-                                ) : (
-                                  <Minus className="h-3 w-3" />
-                                )}
-                                {rate.change24h > 0 ? "+" : ""}
-                                {rate.change24h.toFixed(2)}%
-                              </span>
+                              {/* F-12 (wave-4b): 24h change telemetry is not
+                                  delivered for the bulk rates view — "—". */}
+                              <span className="text-xs text-muted-foreground">—</span>
                             </td>
                             <td className="p-3 text-center hidden md:table-cell">
-                              {rate.sparkline && (
-                                <Sparkline
-                                  data={rate.sparkline}
-                                  positive={rate.change24h >= 0}
-                                />
-                              )}
+                              {/* F-12 (wave-4b): sparkline series are not
+                                  delivered for the bulk rates view — "—". */}
+                              <span className="text-xs text-muted-foreground">—</span>
                             </td>
                             <td className="p-3 text-center">
                               <Button
@@ -517,7 +459,7 @@ export default function MultiCurrency() {
                             {convertQuery.isLoading ? (
                               <span className="animate-pulse">...</span>
                             ) : convertQuery.data ? (
-                              convertQuery.data.converted.toLocaleString(
+                              convertQuery.data.convertedAmount.toLocaleString(
                                 undefined,
                                 {
                                   minimumFractionDigits: 2,
@@ -549,7 +491,7 @@ export default function MultiCurrency() {
                         </span>
                         <span className="font-mono">
                           1 {calcFrom} ={" "}
-                          {formatRate(convertQuery.data.midMarketRate)} {calcTo}
+                          {formatRate(convertQuery.data.rate)} {calcTo}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
@@ -558,7 +500,7 @@ export default function MultiCurrency() {
                         </span>
                         <span className="font-mono">
                           1 {calcFrom} ={" "}
-                          {formatRate(convertQuery.data.effectiveRate)} {calcTo}
+                          {formatRate(convertQuery.data.rate)} {calcTo}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
@@ -567,23 +509,21 @@ export default function MultiCurrency() {
                         </span>
                         <span className="font-mono">
                           1 {calcTo} ={" "}
-                          {formatRate(convertQuery.data.inverseRate)} {calcFrom}
+                          {convertQuery.data.rate !== 0 ? formatRate(1 / convertQuery.data.rate) : "—"} {calcFrom}
                         </span>
                       </div>
                       <div className="flex justify-between text-sm border-t pt-2 mt-2">
                         <span className="text-muted-foreground">
-                          Spread ({convertQuery.data.spread}%)
+                          Spread (—)
                         </span>
-                        <span className="font-mono text-yellow-500">
-                          {convertQuery.data.fee.toLocaleString()} {calcTo}
-                        </span>
+                        {/* F-12 (wave-4b): convert returns no fee — honest em-dash */}
+                        <span className="font-mono text-yellow-500">—</span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                         <Clock className="h-3 w-3" />
-                        Source: {convertQuery.data.source} &middot;{" "}
-                        {new Date(
-                          convertQuery.data.timestamp
-                        ).toLocaleTimeString()}
+                        
+                        {/* F-12 (wave-4b): convert returns no timestamp */}
+                        —
                       </div>
                     </div>
                   )}
@@ -727,7 +667,7 @@ export default function MultiCurrency() {
             </Card>
 
             {/* Stats Cards */}
-            {historicalQuery.data?.stats && (
+            {historicalStats && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <Card>
                   <CardContent className="pt-4 pb-3 px-4">
@@ -736,13 +676,13 @@ export default function MultiCurrency() {
                     </p>
                     <p
                       className={`text-lg font-bold ${
-                        historicalQuery.data.stats.change >= 0
+                        historicalStats.change >= 0
                           ? "text-green-500"
                           : "text-red-500"
                       }`}
                     >
-                      {historicalQuery.data.stats.change >= 0 ? "+" : ""}
-                      {historicalQuery.data.stats.change}%
+                      {historicalStats.change >= 0 ? "+" : ""}
+                      {historicalStats.change}%
                     </p>
                   </CardContent>
                 </Card>
@@ -750,7 +690,7 @@ export default function MultiCurrency() {
                   <CardContent className="pt-4 pb-3 px-4">
                     <p className="text-xs text-muted-foreground">High</p>
                     <p className="text-lg font-bold font-mono">
-                      {formatRate(historicalQuery.data.stats.high)}
+                      {formatRate(historicalStats.high)}
                     </p>
                   </CardContent>
                 </Card>
@@ -758,7 +698,7 @@ export default function MultiCurrency() {
                   <CardContent className="pt-4 pb-3 px-4">
                     <p className="text-xs text-muted-foreground">Low</p>
                     <p className="text-lg font-bold font-mono">
-                      {formatRate(historicalQuery.data.stats.low)}
+                      {formatRate(historicalStats.low)}
                     </p>
                   </CardContent>
                 </Card>
@@ -766,7 +706,7 @@ export default function MultiCurrency() {
                   <CardContent className="pt-4 pb-3 px-4">
                     <p className="text-xs text-muted-foreground">Average</p>
                     <p className="text-lg font-bold font-mono">
-                      {formatRate(historicalQuery.data.stats.average)}
+                      {formatRate(historicalStats.average)}
                     </p>
                   </CardContent>
                 </Card>
@@ -774,7 +714,7 @@ export default function MultiCurrency() {
                   <CardContent className="pt-4 pb-3 px-4">
                     <p className="text-xs text-muted-foreground">Volatility</p>
                     <p className="text-lg font-bold">
-                      {historicalQuery.data.stats.volatility}%
+                      {historicalStats ? historicalStats.volatility.toFixed(4) : "—"}%
                     </p>
                   </CardContent>
                 </Card>
@@ -797,9 +737,9 @@ export default function MultiCurrency() {
                   <div className="h-[400px] flex items-center justify-center">
                     <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
                   </div>
-                ) : historicalQuery.data?.data ? (
+                ) : timeseries.length > 0 ? (
                   <ResponsiveContainer width="100%" height={400}>
-                    <AreaChart data={historicalQuery.data.data}>
+                    <AreaChart data={timeseries}>
                       <defs>
                         <linearGradient
                           id="rateGradient"
@@ -879,9 +819,9 @@ export default function MultiCurrency() {
                           })
                         }
                       />
-                      {historicalQuery.data.stats && (
+                      {historicalStats && (
                         <ReferenceLine
-                          y={historicalQuery.data.stats.average}
+                          y={historicalStats.average}
                           stroke="#f59e0b"
                           strokeDasharray="5 5"
                           label={{

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,9 +7,7 @@ import { BarChart3, Plus, Play, Download, Save } from "lucide-react";
 
 export default function DragDropReportBuilderPage() {
   const { data: dashboard, isLoading } =
-    // @ts-ignore Sprint 85
     trpc.dragDropReportBuilder.dashboard.useQuery();
-  // @ts-ignore Sprint 85
   const createReport = trpc.dragDropReportBuilder.saveReport.useMutation();
   const [reportName, setReportName] = useState("");
 
@@ -33,14 +30,14 @@ export default function DragDropReportBuilderPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{d.totalReports}</div>
+            <div className="text-2xl font-bold">{d.stats?.totalReports ?? 0}</div>
             <p className="text-sm text-muted-foreground">Total Reports</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-blue-500">
-              {d.scheduledReports}
+              —
             </div>
             <p className="text-sm text-muted-foreground">Scheduled</p>
           </CardContent>
@@ -48,7 +45,7 @@ export default function DragDropReportBuilderPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-green-500">
-              {d.templatesAvailable}
+              —
             </div>
             <p className="text-sm text-muted-foreground">Data Sources</p>
           </CardContent>
@@ -56,7 +53,7 @@ export default function DragDropReportBuilderPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-purple-500">
-              {d.reportsRunToday}
+              —
             </div>
             <p className="text-sm text-muted-foreground">Widget Types</p>
           </CardContent>
@@ -101,7 +98,7 @@ export default function DragDropReportBuilderPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-4 gap-3">
-            {d.popularTemplates.map((w: any) => (
+            {([] as Array<{ id?: unknown; name?: string }>).map((w: any) => (
               <div
                 key={w.type}
                 className="p-4 border rounded-lg text-center cursor-move hover:border-primary transition-colors"
@@ -130,7 +127,7 @@ export default function DragDropReportBuilderPage() {
               </tr>
             </thead>
             <tbody>
-              {d.recentReports.map((r: any) => (
+              {([] as Array<{ id?: unknown; name?: string; createdAt?: string }>).map((r: any) => (
                 <tr key={r.id} className="border-b">
                   <td className="p-2 font-medium">{r.name}</td>
                   <td className="p-2">{r.type}</td>

@@ -106,7 +106,8 @@ export const autoReconciliationEngineRouter = router({
       .limit(100);
     return {
       totalReconciled: Number(count),
-      matchRate: 0.98,
+      // F-12: no match-rate source here — honest null, not a 98% claim.
+      matchRate: null,
       lastRunAt: new Date().toISOString(),
     };
   }),

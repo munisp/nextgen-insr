@@ -1,9 +1,7 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 
 export default function WorkflowAutomationPage() {
-  const { data, isLoading } = trpc.workflowAutomation.dashboard.useQuery();
-  const approve = trpc.workflowAutomation.approveStep.useMutation();
+  const { data, isLoading } = trpc.workflowAutomation.dashboard.useQuery({});
 
   if (isLoading)
     return <div className="p-8 text-center">Loading workflows...</div>;
@@ -17,19 +15,21 @@ export default function WorkflowAutomationPage() {
           <div className="grid grid-cols-4 gap-4">
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Active Workflows</p>
-              <p className="text-2xl font-bold">{data.activeWorkflows}</p>
+              <p className="text-2xl font-bold">{data.summary.active}</p>
             </div>
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Completed Today</p>
-              <p className="text-2xl font-bold">{data.completedToday}</p>
+              {/* F-12 (wave-4b): no completion telemetry is delivered */}
+              <p className="text-2xl font-bold">—</p>
             </div>
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Pending Approvals</p>
-              <p className="text-2xl font-bold">{data.pendingApprovals}</p>
+              {/* F-12 (wave-4b): no approval-queue store is delivered */}
+              <p className="text-2xl font-bold">—</p>
             </div>
             <div className="border rounded p-4">
               <p className="text-sm text-muted-foreground">Avg Completion</p>
-              <p className="text-2xl font-bold">{data.avgCompletionTime}</p>
+              <p className="text-2xl font-bold">—</p>
             </div>
           </div>
 
@@ -40,20 +40,23 @@ export default function WorkflowAutomationPage() {
                 <thead>
                   <tr className="border-b">
                     <th className="text-left p-2">Workflow</th>
-                    <th className="text-left p-2">Type</th>
+                    <th className="text-left p-2">Category</th>
                     <th className="text-right p-2">Instances</th>
                     <th className="text-left p-2">Avg Duration</th>
-                    <th className="text-right p-2">SLA %</th>
+                    <th className="text-right p-2">SLA (hours)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.workflows.map((w: any) => (
+                  {/* F-12 (wave-4b): real rows are workflowDefinitions records;
+                      instance counts and avg durations have no delivered
+                      source — "—". */}
+                  {data.recentItems.map(w => (
                     <tr key={w.id} className="border-b">
                       <td className="p-2 font-medium">{w.name}</td>
-                      <td className="p-2">{w.type}</td>
-                      <td className="p-2 text-right">{w.instances}</td>
-                      <td className="p-2">{w.avgDuration}</td>
-                      <td className="p-2 text-right">{w.slaCompliance}%</td>
+                      <td className="p-2">{w.category ?? "—"}</td>
+                      <td className="p-2 text-right">—</td>
+                      <td className="p-2">—</td>
+                      <td className="p-2 text-right">{w.slaHours ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -63,59 +66,13 @@ export default function WorkflowAutomationPage() {
 
           <div>
             <h2 className="text-lg font-semibold mb-3">Approval Queue</h2>
-            <div className="border rounded p-4 space-y-3">
-              {data.approvalQueue.map((a: any) => (
-                <div
-                  key={a.id}
-                  className="flex justify-between items-center border-b pb-3"
-                >
-                  <div>
-                    <p className="font-medium text-sm">{a.workflow}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Step: {a.currentStep} • Priority:{" "}
-                      <span
-                        className={
-                          a.priority === "critical"
-                            ? "text-red-500"
-                            : a.priority === "high"
-                              ? "text-orange-500"
-                              : ""
-                        }
-                      >
-                        {a.priority}
-                      </span>
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      className="px-3 py-1 bg-green-600 text-white rounded text-xs"
-                      onClick={() =>
-                        approve.mutate({
-                          workflowId: a.id,
-                          stepId: "s1",
-                          decision: "approve",
-                        })
-                      }
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="px-3 py-1 bg-red-600 text-white rounded text-xs"
-                      onClick={() =>
-                        approve.mutate({
-                          workflowId: a.id,
-                          stepId: "s1",
-                          decision: "reject",
-                        })
-                      }
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              ))}
+            <div className="border rounded p-4 text-sm text-muted-foreground">
+              {/* F-12 (wave-4b): no approval-queue store is delivered; the
+                  approve/reject actions had no real backing rows. */}
+              — approval queues are not delivered on this platform
             </div>
           </div>
+
         </>
       )}
     </div>

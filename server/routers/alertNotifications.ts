@@ -114,18 +114,29 @@ export const alertNotificationsRouter = router({
         });
       }
     }),
-  listPreferences: protectedProcedure.query(async () => ({
-    preferences: [],
-    total: 0,
-  })),
+  // F-12 (wave-4b): no admin notification-preference store exists — these
+  // were zero-payload/fixture stubs (getPreference always returned true,
+  // updatePreference returned success without persisting). Fail loud.
+  listPreferences: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "listPreferences: no notification-preference store is delivered",
+    });
+  }),
   getPreference: protectedProcedure
     .input(z.object({ key: z.string() }))
-    .query(async ({ input }) => ({ key: input.key, value: true })),
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "getPreference: no notification-preference store is delivered",
+      });
+    }),
   updatePreference: protectedProcedure
     .input(z.object({ key: z.string(), value: z.boolean() }))
-    .mutation(async ({ input }) => ({
-      key: input.key,
-      value: input.value,
-      updated: true,
-    })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "updatePreference: no notification-preference store is delivered",
+      });
+    }),
 });

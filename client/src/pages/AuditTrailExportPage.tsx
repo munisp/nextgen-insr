@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,15 +9,14 @@ import { Download, Search, FileSpreadsheet, Calendar } from "lucide-react";
 export default function AuditTrailExportPage() {
   const [search, setSearch] = useState("");
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.auditTrailExport.list.useQuery();
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
+  const { data, isLoading } = trpc.auditTrailExport.list.useQuery({});
   const exportMut = trpc.auditTrailExport.export.useMutation({
     onSuccess: (d: any) => {
       toast.success(`Export ready: ${d?.filename || "audit_export.csv"}`);
     },
   });
-  const entries = (data?.entries || []).filter(
+  // F-12 (wave-4b): list returns {data, total} from audit_log.
+  const entries = (data?.data || []).filter(
     (e: any) =>
       !search ||
       e.action?.toLowerCase().includes(search.toLowerCase()) ||
@@ -39,7 +37,7 @@ export default function AuditTrailExportPage() {
         </div>
         <Button
           onClick={() =>
-            exportMut.mutate({ from: dateRange.from, to: dateRange.to })
+            exportMut.mutate({ format: "csv", dateFrom: dateRange.from, dateTo: dateRange.to })
           }
           disabled={exportMut.isPending}
         >
@@ -50,14 +48,14 @@ export default function AuditTrailExportPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{data?.summary?.total || 0}</p>
+            <p className="text-2xl font-bold">{data?.total || 0}</p>
             <p className="text-sm text-muted-foreground">Total Events</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-blue-600">
-              {data?.summary?.today || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Today</p>
           </CardContent>
@@ -65,7 +63,7 @@ export default function AuditTrailExportPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {data?.summary?.users || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Active Users</p>
           </CardContent>
@@ -73,7 +71,7 @@ export default function AuditTrailExportPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-purple-600">
-              {data?.summary?.categories || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Categories</p>
           </CardContent>

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,21 +8,23 @@ import { RotateCcw, Search, CheckCircle, Clock, XCircle } from "lucide-react";
 
 export default function TransactionReversalWorkflowPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.transactionReversalWorkflow.list.useQuery();
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const approveMut = trpc.transactionReversalWorkflow.approve.useMutation({
-    onSuccess: () => toast.success("Reversal approved"),
+  // F-12 (wave-4b): approve/reject were phantom procs — the REAL
+  // maker-checker proc is review({id, decision}). list returns {data,
+  // total} from reversal_requests.
+  const { data, isLoading } = trpc.transactionReversalWorkflow.list.useQuery({});
+  const utils = trpc.useUtils();
+  const reviewMut = trpc.transactionReversalWorkflow.review.useMutation({
+    onSuccess: (_d, v) => {
+      toast.success(v.decision === "approved" ? "Reversal approved" : "Reversal rejected");
+      utils.transactionReversalWorkflow.list.invalidate();
+    },
+    onError: e => toast.error(e.message),
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const rejectMut = trpc.transactionReversalWorkflow.reject.useMutation({
-    onSuccess: () => toast.success("Reversal rejected"),
-  });
-  const reversals = (data?.reversals || []).filter(
+  const reversals = (data?.data || []).filter(
     (r: any) =>
       !search ||
       r.transactionId?.includes(search) ||
-      r.agentName?.toLowerCase().includes(search.toLowerCase())
+      `Agent #${r.agentId}`?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -40,14 +41,14 @@ export default function TransactionReversalWorkflowPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{data?.summary?.total || 0}</p>
+            <p className="text-2xl font-bold">{data?.total || 0}</p>
             <p className="text-sm text-muted-foreground">Total</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-yellow-600">
-              {data?.summary?.pending || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Pending</p>
           </CardContent>
@@ -55,7 +56,7 @@ export default function TransactionReversalWorkflowPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {data?.summary?.approved || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Approved</p>
           </CardContent>
@@ -63,7 +64,7 @@ export default function TransactionReversalWorkflowPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-red-600">
-              ${(data?.summary?.totalAmount || 0).toLocaleString()}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Total Value</p>
           </CardContent>
@@ -100,7 +101,7 @@ export default function TransactionReversalWorkflowPage() {
                   <div>
                     <p className="font-medium">Txn: {r.transactionId}</p>
                     <p className="text-sm text-muted-foreground">
-                      {r.agentName} • ${r.amount?.toLocaleString()} • {r.type}
+                      {`Agent #${r.agentId}`} • ${r.amount?.toLocaleString()} • {r.reason}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Reason: {r.reason}
@@ -112,14 +113,14 @@ export default function TransactionReversalWorkflowPage() {
                     <>
                       <Button
                         size="sm"
-                        onClick={() => approveMut.mutate({ id: r.id })}
+                        onClick={() => reviewMut.mutate({ id: r.id, decision: "approved" })}
                       >
                         Approve
                       </Button>
                       <Button
                         size="sm"
                         variant="destructive"
-                        onClick={() => rejectMut.mutate({ id: r.id })}
+                        onClick={() => reviewMut.mutate({ id: r.id, decision: "rejected" })}
                       >
                         Reject
                       </Button>

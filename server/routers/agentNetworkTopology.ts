@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -18,7 +19,8 @@ import { getDb } from "../db";
  * - Super-agent hubs: Top 5% by volume designated as training centers
  */
 
-const COVERAGE_TARGETS = { urban: { minAgentsPerLGA: 3, maxDistanceKm: 15 }, rural: { minAgentsPerLGA: 2, maxDistanceKm: 30 } };
+// F-12 (full sweep): COVERAGE_TARGETS removed with the fabricated
+// getCoverageGaps fixture it fed.
 
 function calculateNetworkStrength(agent: any): { score: number; level: string } {
   const txnVolume = agent.totalTransactions ?? 100;
@@ -41,16 +43,15 @@ export const agentNetworkTopologyRouter = router({
       return { data: enriched, total: (totalRows as any)[0]?.total ?? 0, limit: input.limit, offset: input.offset };
     }),
 
-  getCoverageGaps: protectedProcedure.query(() => ({
-    underservedLGAs: [
-      { lga: "Ibeju-Lekki", state: "Lagos", population: 120000, agents: 1, gap: "needs_2_more" },
-      { lga: "Eti-Osa", state: "Lagos", population: 280000, agents: 2, gap: "below_target" },
-      { lga: "Kuje", state: "FCT", population: 95000, agents: 0, gap: "no_coverage" },
-    ],
-    overServedAreas: [{ lga: "Ikeja", state: "Lagos", agents: 45, density: "high", recommendation: "redistribute" }],
-    coverageTargets: COVERAGE_TARGETS,
-    nationalCoverage: { totalLGAs: 774, coveredLGAs: 612, coveragePct: 79.1 },
-  })),
+  getCoverageGaps: protectedProcedure.query(() => {
+    // F-12 (full sweep): underserved/over-served LGA rows and national
+    // coverage (612/774, 79.1%) were fabricated — coverage analysis needs
+    // an LGA reference dataset that is not delivered. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getCoverageGaps: no LGA reference dataset is delivered",
+    });
+  }),
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();

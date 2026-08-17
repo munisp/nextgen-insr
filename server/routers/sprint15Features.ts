@@ -9,6 +9,7 @@ import {
   tenants,
   auditLog,
   webhookEndpoints,
+  platform_health_checks,
 } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -103,32 +104,24 @@ export const bulkNotifRouter = router({
 
 // Retry Queue Router
 export const retryQueueRouter = router({
-  list: protectedProcedure.query(async () => {
-    const db = (await getDb())!;
-    const rows = await db
-      .select()
-      .from(transactions)
-      .orderBy(desc(transactions.id))
-      .limit(10);
-    return { items: rows, total: rows.length };
+  // F-12 (wave-4b): transactions rows were presented as a notification
+  // retry queue — a wrong-domain facade (no retry-queue store exists).
+  // Fail loud.
+  list: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "retryQueue.list: no notification retry-queue store is delivered",
+    });
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   retry: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          retriedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "retry: no retry-queue backend is delivered",
+      });
     }),
 });
 
@@ -155,32 +148,23 @@ export const digestRouter = router({
 
 // Rate Limit Dashboard Router
 export const rateLimitDashboardRouter = router({
-  getStatus: protectedProcedure.query(async () => {
-    return {
-      endpoints: [],
-      globalLimit: 1000,
-      currentUsage: 0,
-      windowMs: 60000,
-      resetAt: new Date(Date.now() + 60000).toISOString(),
-    };
+  // F-12 (wave-4b, audit FAIL-3 sweep): fixture rate-limit status — no
+  // rate-limit telemetry is delivered. Fail loud.
+  getStatus: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "rateLimitDashboard.getStatus: no rate-limit telemetry is delivered",
+    });
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   updateLimit: protectedProcedure
     .input(z.object({ endpoint: z.string(), limit: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          endpoint: input.endpoint,
-          newLimit: input.limit,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "updateLimit: no rate-limit store is delivered",
+      });
     }),
 });
 
@@ -194,88 +178,58 @@ export const sysConfigRouter = router({
       .limit(100);
     return { configs: [], tenantCount: total };
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   update: protectedProcedure
     .input(z.object({ key: z.string(), value: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          key: input.key,
-          updatedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "update: no system-config store is delivered",
+      });
     }),
 });
 
 // Session Management Router
 export const sessionMgmtRouter = router({
-  listActive: protectedProcedure.query(async () => {
-    return { sessions: [], total: 0 };
+  // F-12 (wave-4b): zero-payload listActive — no session store is
+  // delivered. Fail loud.
+  listActive: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "listActive: no session store is delivered",
+    });
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   revoke: protectedProcedure
     .input(z.object({ sessionId: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          sessionId: input.sessionId,
-          revokedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "revoke: no session store is delivered",
+      });
     }),
 });
 
 // Data Export Router
 export const dataExportRouter = router({
-  requestExport: protectedProcedure
-    .input(
-      z.object({ format: z.enum(["csv", "json", "xlsx"]), entity: z.string() })
-    )
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          jobId: `export-${Date.now()}`,
-          format: input.format,
-          entity: input.entity,
-          status: "queued",
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
-  getStatus: protectedProcedure
-    .input(z.object({ jobId: z.string() }))
-    .query(async ({ input }) => {
-      try {
-        return { jobId: input.jobId, status: "completed", downloadUrl: null };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+  // F-12 (wave-4b): zero-payload requestExport — the export pipeline is
+  // not delivered. Fail loud.
+  requestExport: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "requestExport: the data export pipeline is not delivered",
+    });
+  }),
+  // F-12 (wave-4b): zero-payload getStatus — the export pipeline is
+  // not delivered. Fail loud.
+  getStatus: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getStatus: the data export pipeline is not delivered",
+    });
+  }),
 });
 
 // Changelog Router
@@ -320,23 +274,15 @@ export const webhookRetryRouter = router({
     const rows = await db.select().from(webhookEndpoints).limit(10);
     return { items: rows, total: rows.length };
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   retryWebhook: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          retriedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "retryWebhook: no webhook-retry backend is delivered",
+      });
     }),
 });
 
@@ -354,111 +300,117 @@ export const eventBusRouter = router({
       activeSubscribers: 0,
     };
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a real store is delivered.
   publish: protectedProcedure
     .input(
       z.object({ topic: z.string(), payload: z.record(z.string(), z.any()) })
     )
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          topic: input.topic,
-          publishedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "publish: no event-bus backend is delivered",
+      });
     }),
 });
 
 // Service Health Router
 export const serviceHealthRouter = router({
+  // F-12 (wave-4b): was a hardcoded all-healthy fixture — now derived from
+  // the real platform_health_checks table (same source as
+  // systemHealthDashboard.getStatus). Latency/uptime have no delivered
+  // source and are not fabricated.
   getAll: protectedProcedure.query(async () => {
-    return {
-      services: [
-        { name: "database", status: "healthy", latencyMs: 5 },
-        { name: "cache", status: "healthy", latencyMs: 1 },
-        { name: "queue", status: "healthy", latencyMs: 3 },
-        { name: "storage", status: "healthy", latencyMs: 10 },
-      ],
-      overallStatus: "healthy",
-      checkedAt: new Date().toISOString(),
-    };
+    const db = await getDb();
+    if (!db) {
+      return {
+        services: [] as Array<{ name: string; status: string; lastChecked: number }>,
+        overallStatus: "unknown",
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    const checks = await db
+      .select()
+      .from(platform_health_checks)
+      .orderBy(desc(platform_health_checks.id))
+      .limit(50);
+    const serviceMap = new Map<string, typeof checks[number]>();
+    for (const check of checks) {
+      if (!serviceMap.has(check.serviceName)) {
+        serviceMap.set(check.serviceName, check);
+      }
+    }
+    const services = Array.from(serviceMap.values()).map(s => ({
+      name: s.serviceName,
+      status: s.checkType,
+      lastChecked: s.id,
+    }));
+    const unhealthy = services.filter(s => s.status === "error").length;
+    const overallStatus =
+      unhealthy === 0 ? "healthy" : unhealthy <= 2 ? "degraded" : "critical";
+    return { services, overallStatus, checkedAt: new Date().toISOString() };
   }),
 });
 
 // Cache Router
 export const cacheRouter = router({
-  getStats: protectedProcedure.query(async () => {
-    return {
-      hitRate: 0.95,
-      missRate: 0.05,
-      totalKeys: 0,
-      memoryUsageMb: 0,
-      evictions: 0,
-    };
+  // F-12 (wave-4b): was a hardcoded fixture (hitRate 0.95) — no cache
+  // telemetry source is delivered. Fail loud.
+  getStats: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "cache.getStats: no cache telemetry source is delivered",
+    });
   }),
+  // F-12 (wave-4b): facade (returned success flushing nothing) — no cache
+  // admin surface is delivered. Fail loud.
   flush: protectedProcedure
     .input(z.object({ pattern: z.string().optional() }))
-    .mutation(async ({ input }) => {
-      try {
-        return { success: true, flushedKeys: 0, pattern: input.pattern ?? "*" };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "cache.flush: no cache admin surface is delivered",
+      });
     }),
 });
 
 // Notification Analytics Router
 export const notificationAnalyticsRouter = router({
-  getStats: protectedProcedure.query(async () => {
-    return {
-      totalSent: 0,
-      totalDelivered: 0,
-      totalFailed: 0,
-      deliveryRate: 1.0,
-      channels: { sms: 0, email: 0, push: 0 },
-    };
+  // F-12 (wave-4b, audit FAIL-3 sweep): zero counts + a fabricated 100%
+  // delivery rate — no notification-analytics pipeline is delivered. Fail
+  // loud.
+  getStats: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "notificationAnalytics.getStats: no notification-analytics pipeline is delivered",
+    });
   }),
+  // F-12 (wave-4b): zero-payload breakdown — no notification-analytics
+  // pipeline is delivered. Fail loud.
   getChannelBreakdown: protectedProcedure
     .input(
       z.object({ period: z.enum(["day", "week", "month"]).default("week") })
     )
-    .query(async ({ input }) => {
-      try {
-        return { period: input.period, breakdown: [] };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .query(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "notificationAnalytics.getChannelBreakdown: no notification-analytics pipeline is delivered",
+      });
     }),
 });
 
 // User Quiet Hours Router
 export const userQuietHoursRouter = router({
-  get: protectedProcedure.query(async () => {
-    return {
-      enabled: false,
-      startHour: 22,
-      endHour: 7,
-      timezone: "UTC",
-      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
-    };
+  // F-12 (wave-4b, audit FAIL-3 sweep): fixture quiet-hours — no store is
+  // delivered. Fail loud.
+  get: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "quietHours.get: no quiet-hours store is delivered",
+    });
   }),
+  // F-12 (wave-4b, audit FAIL-3 sweep): echo facade — returned success
+  // with no state change. Fail loud until a quiet-hours store is delivered.
   update: protectedProcedure
     .input(
       z.object({
@@ -467,24 +419,24 @@ export const userQuietHoursRouter = router({
         endHour: z.number().min(0).max(23),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        return { success: true, ...input };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "quietHours.update: no quiet-hours store is delivered",
+      });
     }),
 });
 
 // Notification Template Router
 export const notifTemplateRouter = router({
-  list: protectedProcedure.query(async () => {
-    return { templates: [], total: 0 };
+  // F-12 (wave-4b): no notification_templates store exists in the schema —
+  // list was a zero-payload and create/update/delete were facades returning
+  // fake success. All fail loud until a template store is delivered.
+  list: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "notifTemplates.list: no notification-template store is delivered",
+    });
   }),
   create: protectedProcedure
     .input(
@@ -495,17 +447,11 @@ export const notifTemplateRouter = router({
         subject: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        return { success: true, id: `tpl-${Date.now()}`, ...input };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "notifTemplates.create: no notification-template store is delivered",
+      });
     }),
   update: protectedProcedure
     .input(
@@ -515,39 +461,19 @@ export const notifTemplateRouter = router({
         body: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          updatedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "notifTemplates.update: no notification-template store is delivered",
+      });
     }),
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(async ({ input }) => {
-      try {
-        return {
-          success: true,
-          id: input.id,
-          deletedAt: new Date().toISOString(),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .mutation(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "notifTemplates.delete: no notification-template store is delivered",
+      });
     }),
 });
 
@@ -623,19 +549,9 @@ export const _quietHoursStore = [
   },
 ];
 
-export function isInQuietHours(config: Record<string, unknown>): boolean {
-  if (!config.enabled) return false;
-  const startTime = config.startTime as string | undefined;
-  const endTime = config.endTime as string | undefined;
-  if (!startTime || !endTime) return false;
-  const [sH] = startTime.split(":").map(Number);
-  const [eH] = endTime.split(":").map(Number);
-  const now = new Date();
-  const currentHour = now.getUTCHours();
-  if (sH > eH) return currentHour >= sH || currentHour < eH;
-  return currentHour >= sH && currentHour < eH;
-}
-
+// F-12 (round 52): static fixture exports restored — they are
+// bound by server/sprint15.test.ts dynamic imports (registered genre:
+// procs fail loud; test-bound static exports stay).
 export const _templates = [
   {
     id: "tpl_001",
@@ -683,7 +599,6 @@ export const _templates = [
     createdAt: "2024-01-05",
   },
 ];
-
 export const _campaigns = [
   {
     id: "camp_001",
@@ -731,7 +646,6 @@ export const _campaigns = [
     segments: ["active_agents", "high_volume"],
   },
 ];
-
 export const _retryQueue = [
   {
     id: "retry_001",
@@ -767,22 +681,6 @@ export const _retryQueue = [
     createdAt: new Date().toISOString(),
   },
 ];
-
-export function calculateBackoff(
-  attempt: number,
-  config: Record<string, number>
-): number {
-  const baseMs = config.baseMs ?? config.initialBackoffMs ?? 1000;
-  const maxBackoffMs = config.maxBackoffMs ?? 300000;
-  const multiplier = config.multiplier ?? config.backoffMultiplier ?? 2;
-  const backoff = Math.min(
-    baseMs * Math.pow(multiplier, attempt - 1),
-    maxBackoffMs
-  );
-  const jitter = Date.now() % 1000;
-  return backoff + jitter;
-}
-
 export const _systemConfig = {
   maintenanceMode: false,
   defaultCurrency: "NGN",
@@ -872,6 +770,45 @@ export const _systemConfig = {
   ],
 };
 
+
+export function isInQuietHours(config: Record<string, unknown>): boolean {
+  if (!config.enabled) return false;
+  const startTime = config.startTime as string | undefined;
+  const endTime = config.endTime as string | undefined;
+  if (!startTime || !endTime) return false;
+  const [sH] = startTime.split(":").map(Number);
+  const [eH] = endTime.split(":").map(Number);
+  const now = new Date();
+  const currentHour = now.getUTCHours();
+  if (sH > eH) return currentHour >= sH || currentHour < eH;
+  return currentHour >= sH && currentHour < eH;
+}
+
+
+
+
+
+
+
+export function calculateBackoff(
+  attempt: number,
+  config: Record<string, number>
+): number {
+  const baseMs = config.baseMs ?? config.initialBackoffMs ?? 1000;
+  const maxBackoffMs = config.maxBackoffMs ?? 300000;
+  const multiplier = config.multiplier ?? config.backoffMultiplier ?? 2;
+  const backoff = Math.min(
+    baseMs * Math.pow(multiplier, attempt - 1),
+    maxBackoffMs
+  );
+  const jitter = Date.now() % 1000;
+  return backoff + jitter;
+}
+
+
+
+// F-12 (round 52 genre): static fixture exports restored — bound by
+// server/sprint15.test.ts dynamic imports (registered test fixtures).
 export const _serviceHealthData = [
   {
     name: "kafka",
@@ -1017,3 +954,4 @@ export const _cacheEntries = [
     sizeBytes: 1024,
   },
 ];
+

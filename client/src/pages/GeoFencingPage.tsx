@@ -5,11 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { MapPin, Shield, AlertTriangle } from "lucide-react";
 
 export default function GeoFencingPage() {
-  // @ts-ignore Sprint 85
   const zones = trpc.geoFenceDedicated.zones.useQuery();
-  // @ts-ignore Sprint 85
   const violations = trpc.geoFenceDedicated.agentLocations.useQuery();
-  // @ts-ignore Sprint 85
   const analytics = trpc.geoFenceDedicated.analytics.useQuery();
 
   return (
@@ -30,7 +27,7 @@ export default function GeoFencingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.totalZones ?? 0}
+                {zones.data?.zones?.length ?? 0}
               </p>
             </CardContent>
           </Card>
@@ -42,7 +39,7 @@ export default function GeoFencingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.activeZones ?? 0}
+                {zones.data?.zones?.filter((z: any) => z.isActive !== false).length ?? 0}
               </p>
             </CardContent>
           </Card>
@@ -54,7 +51,7 @@ export default function GeoFencingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.totalAgentsTracked ?? 0}
+                —
               </p>
             </CardContent>
           </Card>
@@ -66,7 +63,7 @@ export default function GeoFencingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.onlineAgents ?? 0}
+                —
               </p>
             </CardContent>
           </Card>
@@ -117,7 +114,17 @@ export default function GeoFencingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {violations.data?.locations?.map((v: any) => (
+                  {/* F-12 (wave-4b): agentLocations is fail-loud — no
+                      location-tracking store. Rows render only if the
+                      backend delivers real data. */}
+                  {violations.isError && (
+                    <tr>
+                      <td colSpan={5} className="p-4 text-center text-muted-foreground">
+                        — agent location tracking is not delivered on this platform
+                      </td>
+                    </tr>
+                  )}
+                  {(violations.data as { locations?: Array<Record<string, unknown>> } | undefined)?.locations?.map((v: any) => (
                     <tr key={v.id} className="border-b">
                       <td className="p-2">{v.agentName}</td>
                       <td className="p-2">{v.zoneName}</td>

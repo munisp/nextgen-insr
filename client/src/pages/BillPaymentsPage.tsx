@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -9,12 +8,12 @@ import { Zap, Tv, Droplets, Receipt } from "lucide-react";
 
 export default function BillPaymentsPage() {
   const [category, setCategory] = useState<string>("");
-  const payments = trpc.billPayments.history.useQuery({
+  const payments = trpc.billPayments.getHistory.useQuery({
     category: category || undefined,
     limit: 20,
   });
-  const billers = trpc.billPayments.billers.useQuery();
-  const analytics = trpc.billPayments.analytics.useQuery();
+  const billers = trpc.billPayments.getBillers.useQuery();
+  const analytics = trpc.billPayments.getSummary.useQuery({});
 
   const categories = [
     { key: "electricity", label: "Electricity", icon: Zap },
@@ -43,7 +42,7 @@ export default function BillPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalVolume ?? 0).toLocaleString()}
+                NGN {(analytics.data?.volumeNGN ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -55,7 +54,7 @@ export default function BillPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {(analytics.data?.totalPayments ?? 0).toLocaleString()}
+                {(analytics.data?.total ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -79,7 +78,7 @@ export default function BillPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.successRate ?? 0}%
+                —%
               </p>
             </CardContent>
           </Card>
@@ -125,7 +124,7 @@ export default function BillPaymentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {payments.data?.payments?.map((p: any) => (
+                  {payments.data?.data?.map((p: any) => (
                     <tr key={p.id} className="border-b">
                       <td className="p-2 font-mono text-xs">{p.reference}</td>
                       <td className="p-2">{p.billerName}</td>

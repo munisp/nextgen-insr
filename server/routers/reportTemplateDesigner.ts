@@ -147,24 +147,13 @@ export const reportTemplateDesignerRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        const db = await getDb();
-        if (!db) throw new Error("DB not available");
-        await db.insert(auditLog).values({
-          action: "report_generated",
-          resource: "report_templates",
-          resourceId: input.templateId,
-          status: "success",
-          metadata: {
-            dateFrom: input.dateFrom,
-            dateTo: input.dateTo,
-            filters: input.filters,
-          },
+        // F-12 (verifier site 6): the audit insert recorded a successful
+        // generation that never happened — removed with the facade.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "generateReport: no report-generation engine is delivered (the previous random reportId referred to no persisted artifact)",
         });
-        return {
-          success: true,
-          reportId: "RPT-" + crypto.randomUUID().toUpperCase(),
-          status: "generating",
-        };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -175,36 +164,49 @@ export const reportTemplateDesignerRouter = router({
       }
     }),
 
-  create: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented();
-    }),
-
-  delete: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented();
-    }),
-
-  list: protectedProcedure.query(async () => {
-    throw notImplemented();
+  // F-12 (wave-4b): zero-payload create — no report-template store is
+  // delivered. Fail loud.
+  create: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "create: no report-template store is delivered",
+    });
   }),
 
-  setDefault: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented();
-    }),
+  // F-12 (wave-4b): zero-payload delete — no report-template store is
+  // delivered. Fail loud.
+  delete: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "delete: no report-template store is delivered",
+    });
+  }),
 
-  widgetCatalog: protectedProcedure.query(async () => {
-    throw notImplemented();
+  // F-12 (wave-4b): zero-payload list — no report-template store is
+  // delivered. Fail loud.
+  list: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "list: no report-template store is delivered",
+    });
+  }),
+
+  // F-12 (wave-4b): zero-payload setDefault — no report-template store is
+  // delivered. Fail loud.
+  setDefault: protectedProcedure.mutation(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "setDefault: no report-template store is delivered",
+    });
+  }),
+
+  // F-12 (wave-4b): zero-payload widgetCatalog — no report-template store is
+  // delivered. Fail loud.
+  widgetCatalog: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "widgetCatalog: no report-template store is delivered",
+    });
   }),
   update: protectedProcedure
     .input(z.object({ id: z.string(), name: z.string().optional() }))

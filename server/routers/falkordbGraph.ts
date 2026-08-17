@@ -1,10 +1,10 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-
 export const falkordbGraphRouter = router({
   list: protectedProcedure
     .input(
@@ -93,35 +93,49 @@ export const falkordbGraphRouter = router({
 
       return results;
     }),
+  // F-12 (wave-4b): zero-payload stub — no FalkorDB client/connection is
+  // delivered in server/. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return { nodeCount: 0, edgeCount: 0, avgDegree: 0, communities: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no graph database backend is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): zero-payload stub — no FalkorDB client/connection is
+  // delivered in server/. Fail loud.
   fraudRings: protectedProcedure.query(async () => {
-    return {
-      rings: [] as Array<{
-        id: string;
-        size: number;
-        riskScore: number;
-        members: string[];
-      }>,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "fraudRings: no graph database backend is delivered on this platform",
+    });
   }),
+  // F-12 (wave-4b): zero-payload stub — no graph database backend.
   getNeighbors: protectedProcedure
     .input(
       z.object({ nodeId: z.string(), depth: z.number().optional().default(1) })
     )
-    .query(async ({ input }) => {
-      return {
-        nodes: [] as Array<{ id: string; type: string; label: string }>,
-        edges: [] as Array<{ source: string; target: string; type: string }>,
-      };
+    .query(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "getNeighbors: no graph database backend is delivered on this platform",
+      });
     }),
+  // F-12 (wave-4b): zero-payload stub — no FalkorDB client/connection is
+  // delivered in server/. Fail loud.
   health: protectedProcedure.query(async () => {
-    return { status: "healthy" as const, connected: false, latencyMs: 0 };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "health: no graph database backend is delivered on this platform",
+    });
   }),
   shortestPath: protectedProcedure
     .input(z.object({ from: z.string(), to: z.string() }))
-    .query(async ({ input }) => {
-      return { path: [] as string[], distance: 0, found: false };
+    .query(async () => {
+      // F-12 (zero-payload sweep): unconditional zero-payload — no graph
+      // database is provisioned on this deployment. Fail loud.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "shortestPath: no graph database is provisioned on this deployment",
+      });
     }),
 });

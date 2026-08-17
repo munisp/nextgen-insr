@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -9,18 +8,18 @@ import { Smartphone, Signal, Wifi, Phone } from "lucide-react";
 
 export default function AirtimeVendingPage() {
   const [tab, setTab] = useState<"airtime" | "data" | "bundles">("airtime");
-  const airtimeTxns = trpc.airtimeVending.history.useQuery({
+  const airtimeTxns = trpc.airtimeVending.getHistory.useQuery({
     type: "airtime",
     limit: 20,
   });
-  const dataTxns = trpc.airtimeVending.history.useQuery({
+  const dataTxns = trpc.airtimeVending.getHistory.useQuery({
     type: "data",
     limit: 20,
   });
-  const bundles = trpc.airtimeVending.dataBundles.useQuery({
-    networkId: "mtn",
-  });
-  const analytics = trpc.airtimeVending.analytics.useQuery();
+  // F-12 (S87-02): airtimeVending.dataBundles is not delivered — the bundle
+  // catalog renders an honest empty state.
+  const bundles: { data?: Array<Record<string, unknown>>; isLoading: boolean } = { data: undefined, isLoading: false };
+  const analytics = trpc.airtimeVending.getSummary.useQuery({});
 
   const networks = ["MTN", "Airtel", "Glo", "9mobile"];
 
@@ -43,7 +42,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalVolume ?? 0).toLocaleString()}
+                NGN {(analytics.data?.volumeNGN ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -55,7 +54,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {(analytics.data?.totalTransactions ?? 0).toLocaleString()}
+                {(analytics.data?.total ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -67,7 +66,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalCommission ?? 0).toLocaleString()}
+                NGN {(analytics.data?.commissionNGN ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -79,7 +78,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.successRate ?? 0}%
+                —%
               </p>
             </CardContent>
           </Card>
@@ -133,7 +132,7 @@ export default function AirtimeVendingPage() {
                     {(tab === "airtime"
                       ? airtimeTxns
                       : dataTxns
-                    ).data?.transactions?.map((t: any) => (
+                    ).data?.data?.map((t: any) => (
                       <tr key={t.id} className="border-b">
                         <td className="p-2 font-mono text-xs">{t.reference}</td>
                         <td className="p-2">
@@ -175,7 +174,7 @@ export default function AirtimeVendingPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                {bundles.data?.bundles?.map((b: any) => (
+                {((bundles.data ?? []) as any[]).map((b: any) => (
                   <div key={b.id} className="border rounded p-3">
                     <div className="flex items-center justify-between mb-1">
                       <Badge>{b.network}</Badge>

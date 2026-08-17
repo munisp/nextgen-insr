@@ -1,21 +1,27 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { AlertTriangle, DollarSign, FileText, CheckCircle } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import KpiCard from "@/components/KpiCard";
 
 export default function CbnReportingDashboard() {
-  const { data, isLoading } = trpc.cbnReporting.summary.useQuery(undefined, { refetchInterval: 30000 });
-  const d = data ?? {};
+  // F-12 (wave-4b): summary was a zero-payload stub (now fail-loud);
+  // complianceDashboard is the REAL proc (transactions + fraud_alerts).
+  const { data, isLoading } = trpc.cbnReporting.complianceDashboard.useQuery({ year: new Date().getFullYear() }, { refetchInterval: 30000 });
+  const d: Partial<NonNullable<typeof data>> = data ?? {};
 
-  // Only real per-period values from the API — no randomized series.
+  // Real per-month series from complianceDashboard.monthlyStats
+  // (sarLarTrend never existed on the real shape).
   const sarTrend: { month: string; sars: number; lars: number }[] =
-    Array.isArray(d.sarLarTrend) ? d.sarLarTrend : [];
+    (d.monthlyStats ?? []).map(m => ({
+      month: String(m.month),
+      sars: Number((m as { txCount?: number }).txCount ?? 0),
+      lars: 0,
+    }));
 
-  // Only real risk-distribution values — no fabricated 75/18/6/1 split.
-  const riskCategories: { category: string; count: number }[] =
-    Array.isArray(d.riskDistribution) ? d.riskDistribution : [];
+  // No risk-distribution source exists — no fabricated 75/18/6/1 split.
+  const riskCategories: { category: string; count: number }[] = [];
 
   return (
     <DashboardLayout>
@@ -26,10 +32,10 @@ export default function CbnReportingDashboard() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KpiCard title="SARs Filed (YTD)" value={isLoading ? "…" : String(d.sarsFiled ?? 0)} icon="🚨" />
-          <KpiCard title="LARs Filed (YTD)" value={isLoading ? "…" : String(d.larsFiled ?? 0)} icon="💰" />
-          <KpiCard title="CTRs Filed" value={isLoading ? "…" : String(d.ctrsFiled ?? 0)} icon="📋" />
-          <KpiCard title="Compliance Score" value={isLoading ? "…" : `${d.complianceScore ?? 0}%`} icon="✅" trend="up" trendValue="—" />
+          <KpiCard title="SARs Filed (YTD)" value={isLoading ? "…" : String(d.totalSars ?? 0)} icon={AlertTriangle} />
+          <KpiCard title="LARs Filed (YTD)" value={isLoading ? "…" : "—"} icon={DollarSign} />
+          <KpiCard title="CTRs Filed" value={isLoading ? "…" : String(d.pendingSubmissions ?? 0)} icon={FileText} />
+          <KpiCard title="Compliance Score" value={isLoading ? "…" : "—"} icon={CheckCircle} trend="up" trendValue="—" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

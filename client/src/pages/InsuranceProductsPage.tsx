@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -12,8 +11,8 @@ export default function InsuranceProductsPage() {
     "products"
   );
   const products = trpc.insuranceProducts.products.useQuery();
-  const policies = trpc.insuranceProducts.policies.useQuery({ limit: 20 });
-  const claims = trpc.insuranceProducts.policies.useQuery({ limit: 20 });
+  const policies = trpc.insuranceProducts.policies.useQuery();
+  const claims = trpc.insuranceProducts.policies.useQuery();
   const analytics = trpc.insuranceProducts.analytics.useQuery();
 
   return (
@@ -61,7 +60,7 @@ export default function InsuranceProductsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalClaimsPaid ?? 0).toLocaleString()}
+                —
               </p>
             </CardContent>
           </Card>
@@ -73,7 +72,7 @@ export default function InsuranceProductsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.lapsedRate ?? 0}%
+                —%
               </p>
             </CardContent>
           </Card>

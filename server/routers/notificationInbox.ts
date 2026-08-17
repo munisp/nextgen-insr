@@ -18,7 +18,6 @@ import { notification_logs, auditLog } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
-
 export function createNotification(params: {
   channel: string;
   category: string;
@@ -47,23 +46,23 @@ export function createNotification(params: {
 }
 
 export const notificationInboxRouter = router({
-  getStats: protectedProcedure
-    .input(z.object({ userId: z.string() }))
-    .query(async ({ input }) => {
+  // F-12 (wave-4b): userId was client-supplied — any caller could read
+  // any user's stats. Session-scoped to the caller.
+  getStats: protectedProcedure.query(async ({ ctx }) => {
       try {
         const db = await getDb();
         if (!db) return { total: 0, unread: 0, archived: 0 };
         const [total] = await db
           .select({ value: count() })
           .from(notification_logs)
-          .where(eq(notification_logs.recipientId, input.userId))
+          .where(eq(notification_logs.recipientId, String(ctx.user.id)))
           .limit(100);
         const [unread] = await db
           .select({ value: count() })
           .from(notification_logs)
           .where(
             and(
-              eq(notification_logs.recipientId, input.userId),
+              eq(notification_logs.recipientId, String(ctx.user.id)),
               eq(notification_logs.status, "pending")
             )
           )
@@ -85,18 +84,20 @@ export const notificationInboxRouter = router({
   list: protectedProcedure
     .input(
       z.object({
-        userId: z.string(),
+        // F-12 (wave-4b): userId optional — defaults to the session user so
+        // F-12 (wave-4b): optional client userId still allowed cross-user
+        // reads — removed; always the caller.
         status: z.string().optional(),
         limit: z.number().default(20),
         offset: z.number().default(0),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       try {
         const db = await getDb();
         if (!db) return { notifications: [], total: 0 };
         const conditions: any[] = [
-          eq(notification_logs.recipientId, input.userId),
+          eq(notification_logs.recipientId, String(ctx.user.id)),
         ];
         if (input.status)
           conditions.push(eq(notification_logs.status, input.status));
@@ -139,9 +140,9 @@ export const notificationInboxRouter = router({
         });
       }
     }),
-  markAllRead: protectedProcedure
-    .input(z.object({ userId: z.string() }))
-    .mutation(async ({ input }) => {
+  // F-12 (wave-4b): userId was client-supplied — any caller could mark
+  // any user's notifications read. Session-scoped to the caller.
+  markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -150,7 +151,7 @@ export const notificationInboxRouter = router({
           .set({ status: "read" })
           .where(
             and(
-              eq(notification_logs.recipientId, input.userId),
+              eq(notification_logs.recipientId, String(ctx.user.id)),
               eq(notification_logs.status, "pending")
             )
           );
@@ -188,7 +189,7 @@ export const notificationInboxRouter = router({
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "Notification archiving is not implemented yet",
@@ -199,21 +200,21 @@ export const notificationInboxRouter = router({
     .input(
       z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
     )
-    .mutation(async () => {
+    .mutation(() => {
       throw new TRPCError({
         code: "NOT_IMPLEMENTED",
         message: "Bulk notification delete is not implemented yet",
       });
     }),
 
-  getUnreadCounts: protectedProcedure.query(async () => {
+  getUnreadCounts: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "Unread notification counts are not implemented yet",
     });
   }),
 
-  toggleStar: protectedProcedure.query(async () => {
+  toggleStar: protectedProcedure.query(() => {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",
       message: "Notification starring is not implemented yet",

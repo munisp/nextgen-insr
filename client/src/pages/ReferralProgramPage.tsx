@@ -1,4 +1,3 @@
-// @ts-nocheck
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,10 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Gift, Users, TrendingUp, Award } from "lucide-react";
 
 export default function ReferralProgramPage() {
+  // F-12 (wave-4b): leaderboard/tiers/analytics never existed (phantom
+  // procs removed); list + getSummary are REAL (referrals table, status
+  // aggregates). Tier constants live in the router; generateLink and
+  // calculateRewards are fail-loud.
   const referrals = trpc.referralProgramDedicated.list.useQuery({ limit: 20 });
-  const rewards = trpc.referralProgramDedicated.leaderboard.useQuery();
+  const summary = trpc.referralProgramDedicated.getSummary.useQuery();
   const tiers = trpc.referralProgramDedicated.tiers.useQuery();
-  const analytics = trpc.referralProgramDedicated.analytics.useQuery();
 
   return (
     <DashboardLayout>
@@ -30,7 +32,7 @@ export default function ReferralProgramPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.totalReferrals ?? 0}
+                {summary.data?.totalReferrals ?? 0}
               </p>
             </CardContent>
           </Card>
@@ -42,7 +44,7 @@ export default function ReferralProgramPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.conversionRate ?? 0}%
+                {summary.data?.conversionRate != null ? summary.data.conversionRate.toFixed(1) : "—"}%
               </p>
             </CardContent>
           </Card>
@@ -54,7 +56,7 @@ export default function ReferralProgramPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalBonusPaid ?? 0).toLocaleString()}
+                NGN {(summary.data?.totalPaidOut ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -66,7 +68,7 @@ export default function ReferralProgramPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.qualified ?? 0}
+                {summary.data?.completedReferrals ?? 0}
               </p>
             </CardContent>
           </Card>
@@ -87,16 +89,18 @@ export default function ReferralProgramPage() {
                     className="border rounded p-3 flex items-center justify-between"
                   >
                     <div>
-                      <p className="font-semibold">{t.name}</p>
+                      <p className="font-semibold">{`${t.min}–${t.max === Infinity ? "∞" : t.max} referrals/mo`}</p>
                       <p className="text-xs text-muted-foreground">
-                        {t.minReferrals}+ referrals &bull; {t.description}
+                        {t.revShare > 0
+                          ? `+ ${(t.revShare * 100).toFixed(0)}% revenue share for ${t.revShareMonths} month${t.revShareMonths > 1 ? "s" : ""}`
+                          : "flat per-referral reward"}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-bold text-primary">
-                        NGN {t.rewardAmount?.toLocaleString()}
+                        NGN {t.perReferral?.toLocaleString()}
                       </p>
-                      <Badge>{t.type}</Badge>
+                      <Badge>per referral</Badge>
                     </div>
                   </div>
                 ))}
@@ -112,7 +116,9 @@ export default function ReferralProgramPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {rewards.data?.leaderboard?.map((r: any) => (
+                {/* F-12 (wave-4b): no referral leaderboard aggregate is delivered */}
+                <p className="text-sm text-muted-foreground">— referral leaderboard is not delivered on this platform</p>
+                {([] as Array<Record<string, unknown>>).map((r: any) => (
                   <div
                     key={r.id}
                     className="border rounded p-3 flex items-center justify-between"
@@ -160,7 +166,7 @@ export default function ReferralProgramPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {referrals.data?.referrals?.map((r: any) => (
+                  {referrals.data?.data?.map((r: any) => (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{r.referrerName}</td>
                       <td className="p-2">{r.referredName}</td>

@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { useState, useRef, useEffect } from "react";
+import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,24 +29,18 @@ export default function ComplianceChatbotPage() {
   >("kyc");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const startSession = trpc.complianceChatbot.startSession.useMutation({
-    onSuccess: data => setSessionId(data.sessionId),
-  });
-  const sendMsg = trpc.complianceChatbot.sendMessage.useMutation({
-    onSuccess: () => history.refetch(),
-  });
-  const history = trpc.complianceChatbot.getHistory.useQuery(
-    { sessionId: sessionId ?? "" },
-    { enabled: !!sessionId, refetchInterval: 2000 }
-  );
-  const sessions = trpc.complianceChatbot.listSessions.useQuery();
-  const kbSearch = trpc.complianceChatbot.searchKnowledgeBase.useQuery(
-    { query: kbQuery, topK: 5 },
-    { enabled: kbQuery.length > 2 }
-  );
-  const complianceCheck = trpc.complianceChatbot.quickComplianceCheck.useQuery({
-    checkType,
-  });
+  // F-12 (wave-4b): the complianceChatbot router delivers only Sprint-87
+  // generic list/getById/getSummary over compliance report rows — the chatbot
+  // backend (sessions/messages/knowledge-base/compliance-checks) is NOT
+  // delivered. All actions fail loud; sections render honest states.
+  const loud = (action: string) => (_args?: unknown) =>
+    toast.error(`Compliance chatbot ${action} is not delivered on this deployment`);
+  const startSession = { mutate: loud("sessions"), isPending: false };
+  const sendMsg = { mutate: loud("messaging"), isPending: false };
+  const history: { data?: { messages?: Array<{ role: string; content: string; createdAt?: string | Date; sources?: Array<{ title: string; relevance: number }> }> }; refetch: () => void } = { refetch: () => {} };
+  const sessions: { data?: { sessions?: Array<{ id: string; title?: string; preview?: string; relevance?: string | number; lastActivity?: string | Date; createdAt?: string | Date; messageCount?: number }> } } = {};
+  const kbSearch: { data?: { results?: Array<{ id: string; title?: string; category?: string; excerpt?: string; score?: number }> } } = {};
+  const complianceCheck: { data?: { status?: string; details?: string; requirements?: Array<{ name: string; met: boolean }> } } = {};
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -123,7 +117,7 @@ export default function ComplianceChatbotPage() {
                 style={{ height: "calc(100vh - 280px)", minHeight: "400px" }}
               >
                 <CardContent className="flex-1 overflow-y-auto pt-4 space-y-4">
-                  {history.data?.messages.map((msg, i) => (
+                  {history.data?.messages?.map((msg, i) => (
                     <div
                       key={i}
                       className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -232,7 +226,7 @@ export default function ComplianceChatbotPage() {
                     onChange={e => setKbQuery(e.target.value)}
                   />
                 </div>
-                {kbSearch.data?.results.map(r => (
+                {kbSearch.data?.results?.map(r => (
                   <Card key={r.id} className="mb-3">
                     <CardContent className="pt-4">
                       <div className="flex items-center justify-between mb-2">
@@ -240,12 +234,12 @@ export default function ComplianceChatbotPage() {
                         <div className="flex items-center gap-2">
                           <Badge variant="outline">{r.category}</Badge>
                           <Badge variant="secondary">
-                            {(r.relevance * 100).toFixed(0)}% match
+                            {r.score != null ? `${(r.score * 100).toFixed(0)}% match` : "—"}
                           </Badge>
                         </div>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {r.content}
+                        {r.excerpt ?? "—"}
                       </p>
                     </CardContent>
                   </Card>
@@ -302,8 +296,8 @@ export default function ComplianceChatbotPage() {
                             }
                           >
                             {complianceCheck.data.status
-                              .replace(/_/g, " ")
-                              .toUpperCase()}
+                              ?.replace(/_/g, " ")
+                              .toUpperCase() ?? "—"}
                           </Badge>
                         </div>
                       </div>
@@ -315,13 +309,13 @@ export default function ComplianceChatbotPage() {
                           Requirements:
                         </p>
                         <ul className="space-y-1">
-                          {complianceCheck.data.requirements.map((r, i) => (
+                          {complianceCheck.data.requirements?.map((r, i) => (
                             <li
                               key={i}
                               className="text-xs text-muted-foreground flex items-center gap-2"
                             >
                               <CheckCircle className="h-3 w-3 text-green-500" />{" "}
-                              {r}
+                              {r.name}
                             </li>
                           ))}
                         </ul>
@@ -334,7 +328,7 @@ export default function ComplianceChatbotPage() {
           </TabsContent>
 
           <TabsContent value="sessions" className="space-y-4">
-            {sessions.data?.sessions.map(s => (
+            {sessions.data?.sessions?.map(s => (
               <Card
                 key={s.id}
                 className="cursor-pointer hover:border-primary/50"
@@ -353,13 +347,13 @@ export default function ComplianceChatbotPage() {
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{s.messageCount} msgs</Badge>
                     <span className="text-xs text-muted-foreground">
-                      {new Date(s.lastActivity).toLocaleString()}
+                      {s.lastActivity ? new Date(s.lastActivity).toLocaleString() : "—"}
                     </span>
                   </div>
                 </CardContent>
               </Card>
             ))}
-            {(!sessions.data || sessions.data.total === 0) && (
+            {(!sessions.data || (sessions.data as { total?: number }).total === 0) && (
               <p className="text-center text-muted-foreground py-8">
                 No chat sessions yet. Start a new chat above.
               </p>

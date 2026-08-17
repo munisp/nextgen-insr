@@ -95,14 +95,18 @@ const getStats = publicProcedure
         .from(pnlReports)
         .orderBy(desc(pnlReports.id))
         .limit(5);
+      // F-12 (full sweep): fixture compliance stats (94.5/456/120...) after
+      // real queries whose results were discarded -> real report count from
+      // pnl_reports; framework breakdowns + compliance score have no
+      // delivered source -> honest 0s.
       return {
-        complianceScore: 94.5,
-        totalReports: 456,
-        cbnReports: 120,
-        ndprReports: 85,
-        pciDssReports: 95,
-        amlReports: 100,
-        cftReports: 56,
+        complianceScore: 0,
+        totalReports: Number(total),
+        cbnReports: 0,
+        ndprReports: 0,
+        pciDssReports: 0,
+        amlReports: 0,
+        cftReports: 0,
         lastAudit: new Date().toISOString(),
       };
     } catch (error) {

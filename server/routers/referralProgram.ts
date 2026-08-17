@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, count, sum } from "drizzle-orm";
 import { z } from "zod";
 
@@ -90,46 +91,72 @@ export const referralProgramRouter = router({
       };
     }),
 
+  // F-12 (wave-4b): monthlyReferrals 8 and refereeRevenue 150000 were
+  // fixtures fed through the real tier logic — fabricated rewards. Fail
+  // loud until real referral counts/revenue exist.
   calculateRewards: protectedProcedure
     .input(z.object({ agentId: z.number(), month: z.string().optional() }))
-    .query(async ({ input }) => {
-      const monthlyReferrals = 8; // Would query from DB
-      const tier = getRewardTier(monthlyReferrals);
-      const refereeRevenue = 150000; // Total revenue from referees
-
-      const baseReward = monthlyReferrals * tier.perReferral;
-      const revShareReward = Math.round(refereeRevenue * tier.revShare);
-      const totalReward = baseReward + revShareReward;
-      const payable = totalReward >= MIN_PAYOUT_AMOUNT;
-
-      return {
-        agentId: input.agentId,
-        monthlyReferrals,
-        currentTier: { level: tier.min >= 16 ? 3 : tier.min >= 6 ? 2 : 1, perReferral: tier.perReferral, revShare: `${tier.revShare * 100}%` },
-        rewards: { baseReward, revShareReward, totalReward },
-        payable,
-        minPayoutThreshold: MIN_PAYOUT_AMOUNT,
-        nextTierAt: tier.max === Infinity ? null : tier.max + 1,
-        referralsToNextTier: tier.max === Infinity ? 0 : Math.max(0, tier.max + 1 - monthlyReferrals),
-      };
+    .query(() => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "calculateRewards: no referral rewards pipeline is delivered",
+      });
     }),
+
+  // Declared reward-tier configuration (business config, served as-is).
+  tiers: protectedProcedure.query(async () => ({ tiers: REWARD_TIERS })),
 
   getSummary: protectedProcedure.query(async () => {
     const database = await getDb();
-    if (!database) return { totalReferrals: 0, activeReferrals: 0, conversionRate: 0, totalPaidOut: 0 };
+    // F-12 (wave-4b): completed/expired 0.35/0.25 splits, conversionRate
+    // 35.2, totalPaidOut total*650, avgReward 650 and topReferrerCount 12
+    // were all fabricated — real status/bonusCash aggregates now.
+    if (!database)
+      return {
+        totalReferrals: 0,
+        activeReferrals: 0,
+        completedReferrals: 0,
+        expiredReferrals: 0,
+        conversionRate: null,
+        totalPaidOut: 0,
+        avgRewardPerReferral: null,
+        topReferrerCount: 0,
+        lastUpdated: new Date().toISOString(),
+      };
 
-    const totalRows = await database.select({ total: count() }).from(referrals);
-    const total = (totalRows as any)[0]?.total ?? 0;
+    const totalRows = await database
+      .select({ total: count() })
+      .from(referrals);
+    const total = Number((totalRows as any)[0]?.total ?? 0);
+    const byStatus = await database
+      .select({ status: referrals.status, total: count() })
+      .from(referrals)
+      .groupBy(referrals.status);
+    const countOf = (st: string) =>
+      Number(
+        (byStatus as any[]).find(r => r.status === st)?.total ?? 0
+      );
+    const completed = countOf("completed") + countOf("rewarded");
+    const active = countOf("active") + countOf("pending");
+    const expired = countOf("expired");
+    const referrerRows = await database
+      .select({ total: sql`COUNT(DISTINCT ${referrals.referrerAgentId})` })
+      .from(referrals);
+    const distinctReferrers = Number((referrerRows as any)[0]?.total ?? 0);
+    const paidRows = await database
+      .select({ total: sql`COALESCE(SUM(${referrals.bonusCash}), 0)` })
+      .from(referrals);
+    const totalPaid = Number((paidRows as any)[0]?.total ?? 0);
 
     return {
       totalReferrals: total,
-      activeReferrals: await database.select({ total: count() }).from(referrals).then(r => r[0]?.total ?? 0),
-      completedReferrals: Math.floor(total * 0.35),
-      expiredReferrals: Math.floor(total * 0.25),
-      conversionRate: 35.2,
-      totalPaidOut: total * 650,
-      avgRewardPerReferral: 650,
-      topReferrerCount: 12,
+      activeReferrals: active,
+      completedReferrals: completed,
+      expiredReferrals: expired,
+      conversionRate: total > 0 ? (completed / total) * 100 : null,
+      totalPaidOut: totalPaid,
+      avgRewardPerReferral: completed > 0 ? totalPaid / completed : null,
+      topReferrerCount: distinctReferrers,
       lastUpdated: new Date().toISOString(),
     };
   }),

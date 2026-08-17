@@ -37,10 +37,25 @@ export const dynamicFeeCalculatorRouter = router({
         .from(systemConfig)
         .where(sql`${systemConfig.key} LIKE 'fee_rule_%'`)
         .limit(100);
+      // F-12 (wave-4b): avgFeeRate was a fabricated 1.5 — derive it from
+      // the real fee_rule_* rows (null when no rule carries a rate).
+      const rates = rows
+        .map(r => {
+          try {
+            const rule = JSON.parse(String(r.value ?? "{}"));
+            return typeof rule.rate === "number" ? Number(rule.rate) : null;
+          } catch {
+            return null;
+          }
+        })
+        .filter((x): x is number => x != null);
       return {
         totalRules: rows.length,
         activeRules: rows.length,
-        avgFeeRate: 1.5,
+        avgFeeRate:
+          rates.length > 0
+            ? rates.reduce((a, b) => a + b, 0) / rates.length
+            : null,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;
@@ -63,11 +78,10 @@ export const dynamicFeeCalculatorRouter = router({
       try {
         const db = await getDb();
         if (!db)
-          return {
-            fee: Math.round(input.amount * 0.015),
-            rate: 1.5,
-            breakdown: [],
-          };
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Database unavailable",
+          });
         const rows = await db
           .select()
           .from(systemConfig)
@@ -75,7 +89,15 @@ export const dynamicFeeCalculatorRouter = router({
           .limit(1);
         if (rows.length > 0) {
           const rule = JSON.parse(String(rows[0].value ?? "{}"));
-          const rate = Number(rule.rate ?? 1.5);
+          // F-12 (wave-4b): a stored rule without a rate is config
+          // corruption — never silently substitute a fabricated 1.5%.
+          if (typeof rule.rate !== "number") {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: `fee_rule_${input.transactionType} is misconfigured (no rate)`,
+            });
+          }
+          const rate = Number(rule.rate);
           return {
             fee: Math.round((input.amount * rate) / 100),
             rate,
@@ -87,17 +109,12 @@ export const dynamicFeeCalculatorRouter = router({
             ],
           };
         }
-        const defaultRate = 1.5;
-        return {
-          fee: Math.round((input.amount * defaultRate) / 100),
-          rate: defaultRate,
-          breakdown: [
-            {
-              component: "Default fee",
-              amount: Math.round((input.amount * defaultRate) / 100),
-            },
-          ],
-        };
+        // F-12 (wave-4b): no fee rule configured — never quote a
+        // fabricated 1.5% default. Fail loud.
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `No fee rule configured for transaction type "${input.transactionType}"`,
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

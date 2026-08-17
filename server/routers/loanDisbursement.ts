@@ -94,40 +94,26 @@ export const loanDisbursementRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   list: protectedProcedure.query(async () => {
-    return {
-      applications: [
-        {
-          id: "LA-001",
-          agentId: "AGT-001",
-          amount: 500000,
-          status: "disbursed",
-          productId: "LP-001",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "list: no delivered store on this platform",
+    });
   }),
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   products: protectedProcedure.query(async () => {
-    return {
-      products: [
-        {
-          id: "LP-001",
-          name: "Agent Working Capital",
-          maxAmount: 2000000,
-          interestRate: 15,
-          tenorMonths: 12,
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "products: no delivered store on this platform",
+    });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalApplications: 200,
-      totalDisbursed: 50000000,
-      activeLoans: 120,
-      defaultRate: 2.5,
-      avgLoanSize: 400000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

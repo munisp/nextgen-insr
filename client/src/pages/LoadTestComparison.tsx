@@ -1,24 +1,3 @@
-// @ts-nocheck
-import DashboardLayout from "@/components/DashboardLayout";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useState, useMemo } from "react";
-import { toast } from "sonner";
-import { trpc } from "@/lib/trpc";
 import {
   ArrowUpRight,
   ArrowDownRight,
@@ -33,7 +12,27 @@ import {
   Download,
   FileText,
 } from "lucide-react";
+import { useState, useMemo } from "react";
+import { toast } from "sonner";
 
+import DashboardLayout from "@/components/DashboardLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { trpc } from "@/lib/trpc";
 // ─── Delta Display Component ────────────────────────────────────────────────
 
 function DeltaCell({
@@ -483,29 +482,26 @@ function exportComparisonPdf(data: any) {
 export default function LoadTestComparison() {
   const [runIdA, setRunIdA] = useState<string | null>(null);
   const [runIdB, setRunIdB] = useState<string | null>(null);
-
-  // @ts-ignore Sprint 85
   const runsQuery = trpc.loadTestMetrics.listRuns.useQuery({ limit: 50 });
   const runs = runsQuery.data ?? [];
 
   // Auto-select first two runs if available
-  const effectiveA = runIdA ?? runs[0]?.id ?? null;
-  const effectiveB = runIdB ?? runs[1]?.id ?? null;
-
-  // @ts-ignore Sprint 85
+  // F-12 (wave-4b): compareRuns keys on the runId string, not the row PK;
+  // its return shape is flat (no .comparison wrapper).
+  const effectiveA = runIdA ?? runs[0]?.runId ?? null;
+  const effectiveB = runIdB ?? runs[1]?.runId ?? null;
   const comparisonQuery = trpc.loadTestMetrics.compareRuns.useQuery(
-    { runIdA: effectiveA!, runIdB: effectiveB! },
+    { runIdA: effectiveA ?? "", runIdB: effectiveB ?? "" },
     { enabled: !!effectiveA && !!effectiveB && effectiveA !== effectiveB }
   );
 
   const data = comparisonQuery.data;
-  const cmp = data?.comparison;
+  const cmp = data;
 
   const zipfData = useMemo(
     () =>
-      // @ts-ignore Sprint 85
       (cmp?.zipfComparison ?? []).map(d => ({
-        label: `#${d.rank}`,
+        label: `#${d.merchantId}`,
         reqA: d.requestsA,
         reqB: d.requestsB,
       })),
@@ -513,22 +509,18 @@ export default function LoadTestComparison() {
   );
 
   const timelineRpsA = useMemo(
-    // @ts-ignore Sprint 85
     () => (cmp?.timelineOverlay ?? []).map(t => t.rpsA),
     [cmp]
   );
   const timelineRpsB = useMemo(
-    // @ts-ignore Sprint 85
     () => (cmp?.timelineOverlay ?? []).map(t => t.rpsB),
     [cmp]
   );
   const timelineLatA = useMemo(
-    // @ts-ignore Sprint 85
     () => (cmp?.timelineOverlay ?? []).map(t => t.latencyA),
     [cmp]
   );
   const timelineLatB = useMemo(
-    // @ts-ignore Sprint 85
     () => (cmp?.timelineOverlay ?? []).map(t => t.latencyB),
     [cmp]
   );
@@ -600,9 +592,9 @@ export default function LoadTestComparison() {
                   <SelectValue placeholder="Select baseline run" />
                 </SelectTrigger>
                 <SelectContent>
-                  {runs.map((r: any) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name?.slice(0, 50) ?? r.id} —{" "}
+                  {runs.map(r => (
+                    <SelectItem key={r.id} value={r.runId}>
+                      {r.runId} —{" "}
                       {new Date(r.startedAt).toLocaleDateString()}
                     </SelectItem>
                   ))}
@@ -611,8 +603,8 @@ export default function LoadTestComparison() {
               {data?.runA && (
                 <div className="mt-2 text-xs text-muted-foreground space-y-1">
                   <div>
-                    Config: {data.runA.config.targetRps} RPS,{" "}
-                    {data.runA.config.duration}s, {data.runA.config.concurrency}{" "}
+                    Config: {data.runA.targetRps} RPS,{" "}
+                    {data.runA.durationSeconds}s, {data.runA.concurrency}{" "}
                     concurrent
                   </div>
                   <div>
@@ -636,9 +628,9 @@ export default function LoadTestComparison() {
                   <SelectValue placeholder="Select candidate run" />
                 </SelectTrigger>
                 <SelectContent>
-                  {runs.map((r: any) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name?.slice(0, 50) ?? r.id} —{" "}
+                  {runs.map(r => (
+                    <SelectItem key={r.id} value={r.runId}>
+                      {r.runId} —{" "}
                       {new Date(r.startedAt).toLocaleDateString()}
                     </SelectItem>
                   ))}
@@ -647,8 +639,8 @@ export default function LoadTestComparison() {
               {data?.runB && (
                 <div className="mt-2 text-xs text-muted-foreground space-y-1">
                   <div>
-                    Config: {data.runB.config.targetRps} RPS,{" "}
-                    {data.runB.config.duration}s, {data.runB.config.concurrency}{" "}
+                    Config: {data.runB.targetRps} RPS,{" "}
+                    {data.runB.durationSeconds}s, {data.runB.concurrency}{" "}
                     concurrent
                   </div>
                   <div>
@@ -699,7 +691,6 @@ export default function LoadTestComparison() {
                 <DeltaCell label="P50 Latency" unit="ms" {...cmp.latency.p50} />
                 <DeltaCell label="P95 Latency" unit="ms" {...cmp.latency.p95} />
                 <DeltaCell label="P99 Latency" unit="ms" {...cmp.latency.p99} />
-                <DeltaCell label="Max Latency" unit="ms" {...cmp.latency.max} />
               </CardContent>
             </Card>
 
@@ -737,9 +728,9 @@ export default function LoadTestComparison() {
                   />
                   <DeltaCell
                     label="Throughput"
-                    unit=" MB/s"
+                    unit=" req/s"
                     higherBetter
-                    {...cmp.throughput.throughputMbps}
+                    {...cmp.throughput.actualRps}
                   />
                 </CardContent>
               </Card>
@@ -774,10 +765,10 @@ export default function LoadTestComparison() {
                     {...cmp.reliability.failedRequests}
                   />
                   <DeltaCell
-                    label="Success Rate"
+                    label="Error Rate"
                     unit="%"
                     higherBetter
-                    {...cmp.reliability.successRate}
+                    {...cmp.reliability.errorRate}
                   />
                 </CardContent>
               </Card>

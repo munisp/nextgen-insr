@@ -135,42 +135,26 @@ export const pensionCollectionRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   pfas: protectedProcedure.query(async () => {
-    return {
-      pfas: [
-        { id: "PFA-001", name: "ARM Pension", code: "ARM", status: "active" },
-        {
-          id: "PFA-002",
-          name: "Stanbic IBTC",
-          code: "STANBIC",
-          status: "active",
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "pfas: no delivered store on this platform",
+    });
   }),
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   history: protectedProcedure.query(async () => {
-    return {
-      contributions: [
-        {
-          id: "PC-001",
-          pfaId: "PFA-001",
-          amount: 50000,
-          employeeName: "John Doe",
-          status: "remitted",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "history: no delivered store on this platform",
+    });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalContributions: 5000,
-      totalVolume: 25000000,
-      totalCommission: 1250000,
-      totalCollected: 25000000,
-      totalRemitted: 24000000,
-      activePfas: 12,
-      avgContribution: 45000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

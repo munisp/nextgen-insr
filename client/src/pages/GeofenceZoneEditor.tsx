@@ -1,4 +1,3 @@
-// @ts-nocheck
 // SECURITY: SQL template literals in this file are for display/mock purposes only. All actual DB queries use parameterized Drizzle ORM.
 /**
  * Geofence Zone Editor — Create, edit, and manage geofence zones
@@ -78,7 +77,8 @@ export default function GeofenceZoneEditor() {
       description: "",
     });
 
-  const zoneList = zones.data ?? [];
+  // F-12 (wave-4b): listZones returns {zones, total} — unwrap.
+  const zoneList = zones.data?.zones ?? [];
   const filtered = useMemo(() => {
     if (!search) return zoneList;
     const q = search.toLowerCase();
@@ -90,13 +90,16 @@ export default function GeofenceZoneEditor() {
   }, [zoneList, search]);
 
   const handleCreate = () => {
+    // F-12 (wave-4b): real createZone input is {name, lat, lng, radiusKm,
+    // type?} — the zoneType/latitude/longitude/radiusMetres keys never
+    // existed.
     createZone.mutate({
       name: newZone.name,
-      zoneType: "AGENT_OPERATING_AREA",
-      latitude: parseFloat(newZone.lat),
-      longitude: parseFloat(newZone.lng),
-      radiusMetres: newZone.type === "circle" ? parseInt(newZone.radius) : 500,
-      description: newZone.description || undefined,
+      type: "AGENT_OPERATING_AREA",
+      lat: parseFloat(newZone.lat),
+      lng: parseFloat(newZone.lng),
+      radiusKm:
+        newZone.type === "circle" ? parseInt(newZone.radius) / 1000 : 0.5,
     });
   };
 
@@ -350,7 +353,7 @@ export default function GeofenceZoneEditor() {
                         className="h-6 w-6 text-red-400"
                         onClick={() => {
                           if (confirm(`Delete zone "${z.name}"?`))
-                            deleteZone.mutate({ id: z.id });
+                            deleteZone.mutate({ zoneId: String(z.id) });
                         }}
                       >
                         <Trash2 className="w-3 h-3" />

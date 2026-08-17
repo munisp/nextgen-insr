@@ -246,20 +246,8 @@ const DEFAULT_SPLITS = [
 ];
 
 // ── In-memory fallback store (used when DB is unavailable) ──────────────────
-const memTiers: any[] = DEFAULT_TIERS.map((t, i) => ({
-  ...t,
-  id: i + 1,
-  isActive: true,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-}));
-const memSplits: any[] = DEFAULT_SPLITS.map((s, i) => ({
-  ...s,
-  id: i + 1,
-  isActive: true,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-}));
+// F-12: memTiers in-memory store removed — noop-db paths fail loud.
+// F-12: memSplits in-memory store removed — noop-db paths fail loud.
 const memPayouts: any[] = [];
 
 /**
@@ -384,8 +372,9 @@ export const commissionEngineRouter = router({
     try {
       await defaultsReady; // guarantee the default tier/split structure (F-12)
       const db = await getDb();
-      if (!db || (db as any)._isNoop)
-        return { tiers: memTiers.map(t => formatTier(t)) };
+      // F-12 (wave-4b, audit FAIL-3 sweep): the noop-db and empty-result
+      // fallbacks served SEED tiers as if live — honest empty instead.
+      if (!db || (db as any)._isNoop) return { tiers: [] };
       const rows = await db
         .select()
         .from(commissionTiers)
@@ -394,11 +383,15 @@ export const commissionEngineRouter = router({
       const formatted = Array.isArray(rows)
         ? rows.filter((r: any) => r.tierId || r.name).map(formatTier)
         : [];
-      if (formatted.length === 0)
-        return { tiers: memTiers.map(t => formatTier(t)) };
       return { tiers: formatted };
-    } catch {
-      return { tiers: memTiers.map(t => formatTier(t)) };
+    } catch (error) {
+      // F-12 (audit FAIL-3 sweep): error fallback served seed tiers as if
+      // live — rethrow loud instead.
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message:
+          error instanceof Error ? error.message : "failed to list tiers",
+      });
     }
   }),
 
@@ -417,18 +410,13 @@ export const commissionEngineRouter = router({
       try {
         await defaultsReady; // guarantee the default tier/split structure (F-12)
         const db = await getDb();
+        // F-12 (verifier site 4): the noop-db path mutated in-memory
+        // memTiers and claimed success — a mutation facade. Fail loud.
         if (!db || (db as any)._isNoop) {
-          const idx = memTiers.findIndex(t => t.tierId === input.id);
-          if (idx === -1) return { success: false, error: "Tier not found" };
-          if (input.rate !== undefined) memTiers[idx].rate = String(input.rate);
-          if (input.flatFee !== undefined)
-            memTiers[idx].flatFee = String(input.flatFee);
-          if (input.bonusRate !== undefined)
-            memTiers[idx].bonusRate = String(input.bonusRate);
-          if (input.isActive !== undefined)
-            memTiers[idx].isActive = input.isActive;
-          memTiers[idx].updatedAt = new Date();
-          return { success: true, tier: formatTier(memTiers[idx]) };
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "updateTier: no commission database is available on this deployment",
+          });
         }
 
         const [existing] = await db
@@ -505,25 +493,13 @@ export const commissionEngineRouter = router({
       try {
         await defaultsReady; // guarantee the default tier/split structure (F-12)
         const db = await getDb();
+        // F-12 (verifier site 4): noop-db created tiers in process memory —
+        // mutation facade. Fail loud.
         if (!db || (db as any)._isNoop) {
-          const nextNum = memTiers.length + 1;
-          const tierId = `CT-${String(nextNum).padStart(3, "0")}`;
-          const newTier = {
-            ...input,
-            tierId,
-            id: nextNum,
-            minVolume: String(input.minVolume),
-            maxVolume: String(input.maxVolume),
-            rate: String(input.rate),
-            flatFee: String(input.flatFee ?? 0),
-            bonusRate: String(input.bonusRate ?? 0),
-            agentRole: input.agentRole ?? "agent",
-            isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-          memTiers.push(newTier);
-          return { success: true, tier: formatTier(newTier) };
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "createTier: no commission database is available on this deployment",
+          });
         }
 
         // Generate next tier ID
@@ -588,11 +564,13 @@ export const commissionEngineRouter = router({
       try {
         await defaultsReady; // guarantee the default tier/split structure (F-12)
         const db = await getDb();
+        // F-12 (verifier site 4): noop-db mutated process memory — mutation
+        // facade. Fail loud.
         if (!db || (db as any)._isNoop) {
-          const idx = memTiers.findIndex(t => t.tierId === input.id);
-          if (idx === -1) return { success: false, error: "Tier not found" };
-          memTiers[idx].isActive = false;
-          return { success: true, tierId: input.id };
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "deactivateTier: no commission database is available on this deployment",
+          });
         }
 
         const [existing] = await db
@@ -640,21 +618,9 @@ export const commissionEngineRouter = router({
     // [Redis] Try cache first
     const cached = await getCachedSplitRatios("all");
     const db = await getDb();
-    if (!db)
-      return {
-        splits: DEFAULT_SPLITS.map((s, i) => ({
-          ...s,
-          id: s.splitId,
-          superAgentShare: parseFloat(s.superAgentShare),
-          masterAgentShare: parseFloat(s.masterAgentShare),
-          agentShare: parseFloat(s.agentShare),
-          subAgentShare: parseFloat(s.subAgentShare),
-          platformShare: parseFloat(s.platformShare),
-          isActive: true,
-          dbId: i + 1,
-        })),
-        fromCache: false,
-      };
+    // F-12 (verifier site 4): db-null served DEFAULT_SPLITS as live config —
+    // honest empty instead.
+    if (!db || (db as any)._isNoop) return { splits: [], fromCache: false };
 
     const rows = await db
       .select()
@@ -699,16 +665,13 @@ export const commissionEngineRouter = router({
           return { success: false, error: "Shares must total 100%" };
 
         const db = await getDb();
+        // F-12 (verifier site 4): the noop-db path mutated in-memory
+        // memSplits and claimed success — a mutation facade. Fail loud.
         if (!db || (db as any)._isNoop) {
-          const idx = memSplits.findIndex(s => s.splitId === input.id);
-          if (idx === -1) return { success: false, error: "Split not found" };
-          memSplits[idx].superAgentShare = String(input.superAgentShare);
-          memSplits[idx].masterAgentShare = String(input.masterAgentShare);
-          memSplits[idx].agentShare = String(input.agentShare);
-          memSplits[idx].subAgentShare = String(input.subAgentShare);
-          memSplits[idx].platformShare = String(input.platformShare);
-          memSplits[idx].updatedAt = new Date();
-          return { success: true, split: formatSplit(memSplits[idx]) };
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "updateSplit: no commission database is available on this deployment",
+          });
         }
 
         const [existing] = await db
@@ -794,24 +757,13 @@ export const commissionEngineRouter = router({
           return { success: false, error: "Shares must total 100%" };
 
         const db = await getDb();
+        // F-12 (verifier site 4): the noop-db path fabricated a split id and
+        // "created" it in process memory — a mutation facade. Fail loud.
         if (!db || (db as any)._isNoop) {
-          const nextNum = memSplits.length + 1;
-          const splitId = `CS-${String(nextNum).padStart(3, "0")}`;
-          const newSplit = {
-            splitId,
-            transactionType: input.transactionType,
-            superAgentShare: String(input.superAgentShare),
-            masterAgentShare: String(input.masterAgentShare),
-            agentShare: String(input.agentShare),
-            subAgentShare: String(input.subAgentShare),
-            platformShare: String(input.platformShare),
-            id: nextNum,
-            isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-          memSplits.push(newSplit);
-          return { success: true, split: formatSplit(newSplit) };
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "createSplit: no commission database is available on this deployment",
+          });
         }
 
         const [maxRow] = await db
@@ -884,7 +836,29 @@ export const commissionEngineRouter = router({
         // [Dapr] Check calculation cache
         const cacheKey = `sim:${input.transactionType}:${input.amount}:${input.agentRole}`;
         const cached = await daprGetCommissionState(cacheKey);
-        if (cached) return cached;
+        // F-12 (wave-4b): cached state is unknown — narrow to the simulation
+        // result shape so the procedure's output type stays honest.
+        if (
+          cached &&
+          typeof cached === "object" &&
+          "commission" in cached &&
+          "total" in cached
+        ) {
+          const c = cached as {
+            commission: number;
+            bonus?: number;
+            total: number;
+            tier?: string;
+            breakdown?: Record<string, number>;
+          };
+          return {
+            commission: c.commission,
+            bonus: c.bonus ?? 0,
+            total: c.total,
+            tier: c.tier ?? "N/A",
+            breakdown: c.breakdown ?? {},
+          };
+        }
 
         const db = await getDb();
         let tiers: any[] = [];
@@ -904,8 +878,14 @@ export const commissionEngineRouter = router({
             .limit(100);
           splits = splitRows.map(formatSplit);
         } else {
-          tiers = memTiers.filter(t => t.isActive).map(formatTier);
-          splits = memSplits.filter(s => s.isActive).map(formatSplit);
+          // F-12 (verifier round 3): the noop-db branch served in-memory
+          // seed tiers/splits as live config — fail loud like every other
+          // noop-db path.
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "calculateCommission: no commission database is available on this deployment",
+          });
         }
 
         const tier = tiers.find(
@@ -1125,14 +1105,16 @@ export const commissionEngineRouter = router({
   analytics: protectedProcedure.query(async () => {
     await defaultsReady; // guarantee the default tier/split structure (F-12)
     const db = await getDb();
+    // F-12 (wave-4b): db-null fallback returned fixtures (tiers: 9,
+    // avgRate: 0.0078) — honest zeros instead.
     if (!db)
       return {
         totalPayouts: 0,
         totalPaid: 0,
         totalPending: 0,
-        tiers: 9,
-        splits: 5,
-        avgRate: 0.0078,
+        tiers: 0,
+        splits: 0,
+        avgRate: 0,
       };
 
     const [tierCount] = await db

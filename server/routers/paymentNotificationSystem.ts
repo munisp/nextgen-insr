@@ -62,12 +62,46 @@ const getStats = publicProcedure
         .from(notificationDispatchLog)
         .orderBy(desc(notificationDispatchLog.id))
         .limit(5);
+      // F-12 (verifier site 2): the stats fixture (45892/96.14/...) is
+      // dead — real aggregates from notification_dispatch_log; the previously
+      // discarded `total` query is now wired.
+      const [deliveredRow] = await db
+        .select({ value: count() })
+        .from(notificationDispatchLog)
+        .where(eq(notificationDispatchLog.status, "delivered"))
+        .limit(100);
+      const [failedRow] = await db
+        .select({ value: count() })
+        .from(notificationDispatchLog)
+        .where(
+          sql`${notificationDispatchLog.status} IN ('failed', 'bounced')`
+        )
+        .limit(100);
+      const [queuedRow] = await db
+        .select({ value: count() })
+        .from(notificationDispatchLog)
+        .where(eq(notificationDispatchLog.status, "queued"))
+        .limit(100);
+      const channelRows = await db
+        .select({
+          channel: notificationDispatchLog.channel,
+          cnt: count(),
+        })
+        .from(notificationDispatchLog)
+        .groupBy(notificationDispatchLog.channel)
+        .limit(20);
+      const channels: Record<string, number> = {};
+      for (const r of channelRows) channels[r.channel ?? "unknown"] = Number(r.cnt);
+      const totalNum = Number(total);
       return {
-        totalSent: 45892,
-        deliveryRate: 96.14,
-        channels: { email: 12340, sms: 18560, push: 10200, inApp: 4792 },
-        failedDeliveries: 1768,
-        retryQueue: 234,
+        totalSent: totalNum,
+        deliveryRate:
+          totalNum > 0
+            ? Math.round((Number(deliveredRow.value) / totalNum) * 10000) / 100
+            : 0,
+        channels,
+        failedDeliveries: Number(failedRow.value),
+        retryQueue: Number(queuedRow.value),
         lastUpdated: new Date().toISOString(),
       };
     } catch (error) {

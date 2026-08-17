@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -94,13 +95,12 @@ export const serviceMeshRouter = router({
       return results;
     }),
 
-  dashboard: protectedProcedure.query(async () => {
-    return {
-      totalItems: 0,
-      activeItems: 0,
-      recentActivity: [],
-      lastUpdated: new Date().toISOString(),
-    };
+  // F-12 (wave-4b): zero-payload dashboard — no service-mesh store is delivered. Fail loud.
+  dashboard: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dashboard: no service-mesh store is delivered",
+    });
   }),
 
   toggleCircuitBreaker: protectedProcedure.mutation(async () => {

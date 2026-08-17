@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,13 +14,12 @@ import {
 
 export default function RegulatoryCompliancePage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.regulatoryComplianceChecks.list.useQuery();
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
+  const { data, isLoading } = trpc.regulatoryComplianceChecks.list.useQuery({});
   const runCheckMut = trpc.regulatoryComplianceChecks.runCheck.useMutation({
     onSuccess: () => toast.success("Compliance check completed"),
   });
-  const checks = (data?.checks || []).filter(
+  // F-12 (wave-4b): list returns {data, total} from compliance_checks.
+  const checks = (data?.data || []).filter(
     (c: any) => !search || c.name?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -37,7 +35,7 @@ export default function RegulatoryCompliancePage() {
           </p>
         </div>
         <Button
-          onClick={() => runCheckMut.mutate({})}
+          onClick={() => runCheckMut.mutate({ checkType: "kyc_completeness" })}
           disabled={runCheckMut.isPending}
         >
           Run All Checks
@@ -46,14 +44,14 @@ export default function RegulatoryCompliancePage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{data?.summary?.total || 0}</p>
+            <p className="text-2xl font-bold">{data?.total || 0}</p>
             <p className="text-sm text-muted-foreground">Total Checks</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {data?.summary?.passed || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Passed</p>
           </CardContent>
@@ -61,7 +59,7 @@ export default function RegulatoryCompliancePage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-red-600">
-              {data?.summary?.failed || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Failed</p>
           </CardContent>
@@ -69,7 +67,7 @@ export default function RegulatoryCompliancePage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-yellow-600">
-              {data?.summary?.warnings || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Warnings</p>
           </CardContent>

@@ -1,12 +1,3 @@
-// @ts-nocheck
-import { useState } from "react";
-import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
-import { trpc } from "@/lib/trpc";
 import {
   BarChart3,
   Clock,
@@ -18,23 +9,39 @@ import {
   Shield,
   DollarSign,
 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
+import DashboardLayout from "@/components/DashboardLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { trpc } from "@/lib/trpc";
 export default function DisputeAnalyticsDashboard() {
   const [activeTab, setActiveTab] = useState("resolution");
 
   // ── Live tRPC queries ──────────────────────────────────────────────
   const summary = trpc.disputeAnalytics.getSummary.useQuery();
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const resolution = trpc.disputeAnalytics.getResolutionMetrics.useQuery({});
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const refunds = trpc.disputeAnalytics.getRefundRates.useQuery({});
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const sla = trpc.disputeAnalytics.getSlaCompliance.useQuery({});
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
+  const resolution = trpc.disputeAnalytics.getResolutionMetrics.useQuery();
+  const refunds = trpc.disputeAnalytics.getRefundRates.useQuery();
+  const sla = trpc.disputeAnalytics.getSlaCompliance.useQuery();
   const trends = trpc.disputeAnalytics.getTrendData.useQuery({});
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const categories = trpc.disputeAnalytics.getTopCategories.useQuery({});
+  const categories = trpc.disputeAnalytics.getTopCategories.useQuery();
   const utils = trpc.useUtils();
+  // F-12 (wave-4b): honest client-side derivations from real shapes.
+  const breachCount = sla.data
+    ? sla.data.totalDisputes - sla.data.withinSla
+    : undefined;
+  const avgRefundAmount =
+    refunds.data && refunds.data.totalRefunds > 0
+      ? Math.round(refunds.data.totalRefundAmount / refunds.data.totalRefunds)
+      : undefined;
+  const resolvedWeeklyAvg = trends.data?.resolvedDaily
+    ? Math.round(
+        trends.data.resolvedDaily.slice(-7).reduce((x, d) => x + d.count, 0)
+      )
+    : undefined;
 
   const isLoading = summary.isLoading;
 
@@ -96,7 +103,7 @@ export default function DisputeAnalyticsDashboard() {
                 ₦
                 {isLoading
                   ? "—"
-                  : (refunds.data?.totalRefunded ?? 0).toLocaleString()}{" "}
+                  : (refunds.data?.totalRefundAmount ?? 0).toLocaleString()}{" "}
                 total
               </p>
             </CardContent>
@@ -112,7 +119,7 @@ export default function DisputeAnalyticsDashboard() {
                 {isLoading ? "—" : `${summary.data?.slaCompliance}%`}
               </div>
               <p className="text-xs text-muted-foreground">
-                {sla.data?.breachCount ?? "—"} breaches
+                {breachCount ?? "—"} breaches
               </p>
             </CardContent>
           </Card>
@@ -127,7 +134,7 @@ export default function DisputeAnalyticsDashboard() {
                 {isLoading ? "—" : summary.data?.openDisputes}
               </div>
               <p className="text-xs text-muted-foreground">
-                {summary.data?.escalatedThisMonth ?? "—"} escalated this month
+                — escalated tracking not delivered
               </p>
             </CardContent>
           </Card>
@@ -158,7 +165,7 @@ export default function DisputeAnalyticsDashboard() {
                 <CardContent className="pt-4 text-center">
                   <p className="text-xs text-muted-foreground">Median</p>
                   <p className="text-2xl font-bold">
-                    {resolution.data?.medianResolutionHours ?? "—"} hrs
+                    —
                   </p>
                 </CardContent>
               </Card>
@@ -166,7 +173,7 @@ export default function DisputeAnalyticsDashboard() {
                 <CardContent className="pt-4 text-center">
                   <p className="text-xs text-muted-foreground">P95</p>
                   <p className="text-2xl font-bold">
-                    {resolution.data?.p95ResolutionHours ?? "—"} hrs
+                    —
                   </p>
                 </CardContent>
               </Card>
@@ -234,7 +241,7 @@ export default function DisputeAnalyticsDashboard() {
                     Avg Refund Amount
                   </p>
                   <p className="text-2xl font-bold">
-                    ₦{(refunds.data?.avgRefundAmount ?? 0).toLocaleString()}
+                    ₦{(avgRefundAmount ?? 0).toLocaleString()}
                   </p>
                 </CardContent>
               </Card>
@@ -244,7 +251,7 @@ export default function DisputeAnalyticsDashboard() {
                     Total Refunded
                   </p>
                   <p className="text-2xl font-bold text-red-500">
-                    ₦{(refunds.data?.totalRefunded ?? 0).toLocaleString()}
+                    ₦{(refunds.data?.totalRefundAmount ?? 0).toLocaleString()}
                   </p>
                 </CardContent>
               </Card>
@@ -330,7 +337,7 @@ export default function DisputeAnalyticsDashboard() {
                     Total Breaches
                   </p>
                   <p className="text-2xl font-bold text-red-500">
-                    {sla.data?.breachCount ?? "—"}
+                    {breachCount ?? "—"}
                   </p>
                 </CardContent>
               </Card>
@@ -338,7 +345,7 @@ export default function DisputeAnalyticsDashboard() {
                 <CardContent className="pt-4 text-center">
                   <p className="text-xs text-muted-foreground">Total Tracked</p>
                   <p className="text-2xl font-bold">
-                    {sla.data?.totalTracked ?? "—"}
+                    {sla.data?.totalDisputes ?? "—"}
                   </p>
                 </CardContent>
               </Card>
@@ -430,7 +437,7 @@ export default function DisputeAnalyticsDashboard() {
                     Weekly Avg Filed
                   </p>
                   <p className="text-2xl font-bold">
-                    {trends.data?.weeklyAvg?.filed ?? "—"}
+                    {trends.data?.weeklyAvg != null ? Math.round(trends.data.weeklyAvg) : "—"}
                   </p>
                 </CardContent>
               </Card>
@@ -440,7 +447,7 @@ export default function DisputeAnalyticsDashboard() {
                     Weekly Avg Resolved
                   </p>
                   <p className="text-2xl font-bold text-green-600">
-                    {trends.data?.weeklyAvg?.resolved ?? "—"}
+                    {resolvedWeeklyAvg ?? "—"}
                   </p>
                 </CardContent>
               </Card>
@@ -448,7 +455,7 @@ export default function DisputeAnalyticsDashboard() {
                 <CardContent className="pt-4 text-center">
                   <p className="text-xs text-muted-foreground">Trend</p>
                   <p className="text-2xl font-bold flex items-center justify-center gap-1">
-                    {trends.data?.trendDirection === "improving" ? (
+                    {trends.data?.trendDirection === "down" ? (
                       <>
                         <TrendingDown className="h-5 w-5 text-green-500" />{" "}
                         Improving

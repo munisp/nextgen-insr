@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,17 +8,14 @@ import { RotateCcw, Search, AlertTriangle, CheckCircle } from "lucide-react";
 
 export default function CommissionClawbackPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data, isLoading } = trpc.commissionClawback.list.useQuery();
+  const { data, isLoading } = trpc.commissionClawback.list.useQuery({});
   const approveMut = trpc.commissionClawback.approve.useMutation({
     onSuccess: () => toast.success("Clawback approved"),
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const rejectMut = trpc.commissionClawback.reject.useMutation({
     onSuccess: () => toast.success("Clawback rejected"),
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const clawbacks = (data?.clawbacks || []).filter(
+  const clawbacks = (data?.items || []).filter(
     (c: any) =>
       !search || c.agentName?.toLowerCase().includes(search.toLowerCase())
   );
@@ -37,14 +33,14 @@ export default function CommissionClawbackPage() {
       <div className="grid grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{data?.summary?.total || 0}</p>
+            <p className="text-2xl font-bold">{data?.total || 0}</p>
             <p className="text-sm text-muted-foreground">Total Clawbacks</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-yellow-600">
-              {data?.summary?.pending || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Pending</p>
           </CardContent>
@@ -52,7 +48,7 @@ export default function CommissionClawbackPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-green-600">
-              {data?.summary?.approved || 0}
+              —
             </p>
             <p className="text-sm text-muted-foreground">Approved</p>
           </CardContent>
@@ -60,7 +56,7 @@ export default function CommissionClawbackPage() {
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-red-600">
-              ${(data?.summary?.totalAmount || 0).toLocaleString()}
+              $—
             </p>
             <p className="text-sm text-muted-foreground">Total Amount</p>
           </CardContent>

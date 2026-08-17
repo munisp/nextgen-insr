@@ -161,13 +161,28 @@ const getStats = publicProcedure
         .from(merchantPayouts)
         .orderBy(desc(merchantPayouts.id))
         .limit(5);
+      // F-12 (full sweep): fixture stats returned after real queries whose
+      // results were discarded -> REAL aggregates from merchant_payouts.
+      // avgProcessingTime has no telemetry store -> honest null.
+      const [tot] = await db.select({ value: count() }).from(merchantPayouts).limit(100);
+      const statusRows = await db
+        .select({ status: merchantPayouts.status, cnt: count() })
+        .from(merchantPayouts)
+        .groupBy(merchantPayouts.status)
+        .limit(20);
+      const byStatus: Record<string, number> = {};
+      for (const r of statusRows) byStatus[r.status ?? "unknown"] = Number(r.cnt);
+      const [amt] = await db
+        .select({ v: sql<number>`COALESCE(SUM(${merchantPayouts.amount}), 0)` })
+        .from(merchantPayouts)
+        .limit(100);
       return {
-        totalBatches: 890,
-        processed: 750,
-        failed: 40,
-        pending: 100,
-        totalAmount: 15600000000,
-        avgProcessingTime: "4.5 min",
+        totalBatches: Number(tot.value),
+        processed: byStatus["processed"] ?? byStatus["completed"] ?? 0,
+        failed: byStatus["failed"] ?? 0,
+        pending: byStatus["pending"] ?? 0,
+        totalAmount: Number(amt?.v ?? 0),
+        avgProcessingTime: null,
       };
     } catch (error) {
       if (error instanceof TRPCError) throw error;

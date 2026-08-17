@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -59,26 +60,20 @@ export const cardRequestRouter = router({
       return results;
     }),
 
+  // F-12 (expanded sweep): fixture rows (CR-001) — no delivered
+  // store. Fail loud.
   list: protectedProcedure.query(async () => {
-    return {
-      requests: [
-        {
-          id: "CR-001",
-          agentId: "AGT-001",
-          cardType: "debit",
-          status: "delivered",
-          requestedAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "list: no card-request store is delivered",
+    });
   }),
+  // F-12 (full sweep): hardcoded analytics fixture — no delivered store
+  // for this domain. Fail loud.
   analytics: protectedProcedure.query(async () => {
-    return {
-      total: 300,
-      byStatus: { delivered: 250, pending: 30, rejected: 20 },
-      byType: { debit: 200, prepaid: 100 },
-      avgDeliveryDays: 7,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analytics: no analytics store is delivered for this domain",
+    });
   }),
 });

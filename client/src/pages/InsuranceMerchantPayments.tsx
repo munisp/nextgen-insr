@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -14,7 +13,8 @@ export default function MerchantPaymentsPage() {
   const transactions = trpc.merchantPayments.list.useQuery({ limit: 20 });
   const merchants = trpc.merchantPayments.list.useQuery({ limit: 20 });
   const qrCodes = trpc.merchantPayments.list.useQuery({ limit: 20 });
-  const analytics = trpc.merchantPayments.analytics.useQuery();
+  // F-12 (wave-4b): analytics never existed — getSummary is the real proc.
+  const analytics = trpc.merchantPayments.getSummary.useQuery({ periodDays: 30 });
 
   return (
     <DashboardLayout>
@@ -35,7 +35,7 @@ export default function MerchantPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                NGN {(analytics.data?.totalVolume ?? 0).toLocaleString()}
+                NGN {(analytics.data?.volumeNGN ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -47,7 +47,7 @@ export default function MerchantPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {(analytics.data?.totalTransactions ?? 0).toLocaleString()}
+                {(analytics.data?.total ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -59,7 +59,7 @@ export default function MerchantPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.active ?? 0}
+                —
               </p>
             </CardContent>
           </Card>
@@ -71,7 +71,7 @@ export default function MerchantPaymentsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.totalTransactions ?? 0}
+                {analytics.data?.total ?? 0}
               </p>
             </CardContent>
           </Card>
@@ -120,7 +120,7 @@ export default function MerchantPaymentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {transactions.data?.merchants?.map((t: any) => (
+                    {transactions.data?.data?.map((t: any) => (
                       <tr key={t.id} className="border-b">
                         <td className="p-2 font-mono text-xs">{t.reference}</td>
                         <td className="p-2">{t.merchantName}</td>
@@ -173,7 +173,7 @@ export default function MerchantPaymentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {merchants.data?.merchants?.map((m: any) => (
+                    {merchants.data?.data?.map((m: any) => (
                       <tr key={m.id} className="border-b">
                         <td className="p-2 font-semibold">{m.businessName}</td>
                         <td className="p-2">{m.category}</td>
@@ -208,7 +208,7 @@ export default function MerchantPaymentsPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {qrCodes.data?.merchants?.map((q: any) => (
+                {qrCodes.data?.data?.map((q: any) => (
                   <div key={q.id} className="border rounded p-3">
                     <p className="font-semibold">{q.merchantName}</p>
                     <p className="text-xs text-muted-foreground font-mono">

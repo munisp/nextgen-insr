@@ -104,16 +104,20 @@ export const transactionGraphAnalyzerRouter = router({
       return results;
     }),
 
-  analyzeTransaction: protectedProcedure
-    .input(
-      z.object({ id: z.union([z.number(), z.string()]).optional() }).optional()
-    )
-    .mutation(async () => {
-      throw notImplemented("Transaction graph analysis");
-    }),
+  // F-12 (wave-4b): zero-payload analyzeTransaction — no transaction-graph store is delivered. Fail loud.
+  analyzeTransaction: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "analyzeTransaction: no transaction-graph store is delivered",
+    });
+  }),
 
-  getStats: protectedProcedure.query(async () => {
-    throw notImplemented("Transaction graph stats");
+  // F-12 (wave-4b): zero-payload getStats — no transaction-graph store is delivered. Fail loud.
+  getStats: protectedProcedure.query(() => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getStats: no transaction-graph store is delivered",
+    });
   }),
 
   listClusters: protectedProcedure.query(async () => {
