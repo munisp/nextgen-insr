@@ -332,7 +332,7 @@ func (s *BancassuranceService) submitDebitRequest(bankAPI string, mandate *Debit
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(bankAPI, "/")+"/debits", bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(bankAPI, "/")+"/debits", bytes.NewReader(data)) // #nosec G704 -- safe-by-construction: full URL from operator-controlled env (BANK_API_ENDPOINT / MOJALOOP_ENDPOINT), static path suffix, no request-derived component
 	if err != nil {
 		return fmt.Errorf("build debit request: %w", err)
 	}
@@ -1126,7 +1126,7 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- safe-by-construction: env-controlled scheme+host (PERMIFY_ADDR); tenantID url-escaped via neturl.PathEscape
 	if err != nil {
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
@@ -1227,7 +1227,7 @@ func (mc *mojaloopClient) InitiateTransfer(ctx context.Context, amount, currency
 	if err != nil {
 		return "", fmt.Errorf("marshal transfer request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(endpoint, "/")+"/transfers", bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimSuffix(endpoint, "/")+"/transfers", bytes.NewReader(data)) // #nosec G704 -- safe-by-construction: full URL from operator-controlled env (BANK_API_ENDPOINT / MOJALOOP_ENDPOINT), static path suffix, no request-derived component
 	if err != nil {
 		return "", fmt.Errorf("build transfer request: %w", err)
 	}
@@ -1236,7 +1236,7 @@ func (mc *mojaloopClient) InitiateTransfer(ctx context.Context, amount, currency
 	req.Header.Set("FSPIOP-Source", mc.dfspID)
 	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- safe-by-construction: full URL from operator-controlled env (BANK_API_ENDPOINT / MOJALOOP_ENDPOINT), static path suffix, no request-derived component
 	if err != nil {
 		return "", fmt.Errorf("mojaloop transfer request failed: %w", err)
 	}
