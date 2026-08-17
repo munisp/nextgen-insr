@@ -19,21 +19,21 @@ export default function BillingAdminDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.billingAdminKpi.useQuery({ periodDays: 30 });
-  const kpi = data?.kpis ?? {};
+  const kpi: Partial<Exclude<typeof data, undefined>> = data ?? {};
 
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
     trend?: KpiTrend; trendValue?: string; subtitle?: string;
     status?: KpiStatus; href?: string; accent: string;
   }> = [
-    { title: "Revenue (MTD ₦M)", value: kpi.revenueMtd ?? "—", icon: TrendingUp, trend: "up", trendValue: "↑ 11%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
-    { title: "Unreconciled Items", value: kpi.unreconciledItems ?? "—", icon: AlertTriangle, trend: "down", trendValue: "↓ 4", status: "good" as const, href: "#", accent: "var(--risk-low)" },
-    { title: "Platform Fees (MTD ₦)", value: kpi.platformFeesMtd ?? "—", icon: DollarSign, trend: "up", trendValue: "↑ 9%", status: "neutral" as const, href: "#", accent: "var(--role-billing-admin)" },
-    { title: "Tenant Payouts (₦M)", value: kpi.tenantPayoutsMtd ?? "—", icon: Receipt, trend: "up", trendValue: "↑ 13%", status: "neutral" as const, href: "#", accent: "var(--insurance-primary)" },
-    { title: "Failed Transactions", value: kpi.failedTransactions ?? "—", icon: XCircle, trend: "down", trendValue: "↓ 2", status: "good" as const, href: "#", accent: "var(--risk-low)" },
-    { title: "Disputes Open", value: kpi.disputesOpen ?? "—", icon: Scale, trend: "flat", trendValue: "stable", status: "warning" as const, href: "#", accent: "var(--risk-medium)" },
-    { title: "Chargeback Rate%", value: kpi.chargebackRate ?? "—", icon: Activity, trend: "down", trendValue: "↓ 0.2%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
-    { title: "Reconciliation Rate%", value: kpi.reconciliationRate ?? "—", icon: CheckCircle, trend: "up", trendValue: "↑ 0.5%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Revenue (MTD ₦M)", value: "—", icon: TrendingUp, trend: "up", trendValue: "↑ 11%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Unreconciled Items", value: "—", icon: AlertTriangle, trend: "down", trendValue: "↓ 4", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Platform Fees (MTD ₦)", value: kpi.billing?.platformRevenue != null ? Number(kpi.billing.platformRevenue).toLocaleString() : "—", icon: DollarSign, trend: "up", trendValue: "↑ 9%", status: "neutral" as const, href: "#", accent: "var(--role-billing-admin)" },
+    { title: "Tenant Payouts (₦M)", value: kpi.billing?.tenantShare != null ? (Number(kpi.billing.tenantShare) / 1e6).toFixed(1) : "—", icon: Receipt, trend: "up", trendValue: "↑ 13%", status: "neutral" as const, href: "#", accent: "var(--insurance-primary)" },
+    { title: "Failed Transactions", value: "—", icon: XCircle, trend: "down", trendValue: "↓ 2", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Disputes Open", value: "—", icon: Scale, trend: "flat", trendValue: "stable", status: "warning" as const, href: "#", accent: "var(--risk-medium)" },
+    { title: "Chargeback Rate%", value: "—", icon: Activity, trend: "down", trendValue: "↓ 0.2%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Reconciliation Rate%", value: "—", icon: CheckCircle, trend: "up", trendValue: "↑ 0.5%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
   ];
 
   const invoiceStatus = [{ name: 'Paid', value: Number(data?.paid ?? 0) }, { name: 'Pending', value: Number(data?.pending ?? 0) }, { name: 'Overdue', value: Number(data?.overdue ?? 0) }].filter(d=>d.value>0);

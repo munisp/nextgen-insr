@@ -21,17 +21,23 @@ export default function SecurityDashboardPage() {
   const scanMutation = trpc.securityAudit.runSecurityScan.useMutation();
   const scan = scanMutation.data;
   const isLoading = scanMutation.isPending;
-  const { data: ddos } = trpc.securityAudit.getDDoSStatus.useQuery({});
-  const { data: backup } = trpc.securityAudit.getBackupStatus.useQuery({});
-  const { data: integrity } = trpc.securityAudit.getFileIntegrity.useQuery({});
+  // NOTE: getDDoSStatus/getBackupStatus/getFileIntegrity were removed — the
+  // delivered procedures return agent-registry rows (stub payloads), not real
+  // security status, so the cards below render honest empty states.
 
-  const s = scan ?? {};
+  // F-12: runSecurityScan returns an ack {success,id,message,timestamp}; the
+  // vulnerability metrics below have no delivered data source and render "—".
+  const s: Partial<{
+    overallScore: number; openVulnerabilities: number; lastScanAt: string;
+    critical: number; high: number; medium: number; low: number;
+    authScore: number; encryptionScore: number;
+  }> = {};
   const cards = [
     { title: "Security Score", value: s.overallScore ? s.overallScore + "%" : "—", icon: Shield, trend: "up" as const, trendValue: "↑ 3%", status: (Number(s.overallScore ?? 0) >= 90 ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
     { title: "Open Vulnerabilities", value: s.openVulnerabilities ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 2", status: (Number(s.openVulnerabilities ?? 0) > 0 ? "critical" : "good") as "critical" | "good", href: "/security-audit-dashboard", accent: "var(--risk-critical)" },
-    { title: "DDoS Status", value: ddos?.status ?? "—", icon: Zap, trend: "flat" as const, trendValue: "monitoring", status: (ddos?.status === "clean" ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Backup Status", value: backup?.status ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: backup?.lastBackup ? "recent" : "check", status: (backup?.status === "healthy" ? "good" : "warning") as "good" | "warning", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
-    { title: "File Integrity", value: integrity?.status ?? "—", icon: Lock, trend: "flat" as const, trendValue: "monitored", status: (integrity?.status === "clean" ? "good" : "critical") as "good" | "critical", href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "DDoS Status", value: "—", icon: Zap, trend: "flat" as const, trendValue: "monitoring", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Backup Status", value: "—", icon: CheckCircle, trend: "flat" as const, trendValue: "check", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
+    { title: "File Integrity", value: "—", icon: Lock, trend: "flat" as const, trendValue: "monitored", status: "warning" as const, href: "/security-audit-dashboard", accent: "var(--risk-low)" },
     { title: "Last Scan", value: s.lastScanAt ? new Date(s.lastScanAt).toLocaleDateString() : "—", icon: Clock, trend: "flat" as const, trendValue: "automated", status: "neutral" as const, href: "/security-audit-dashboard", accent: "var(--insurance-secondary)" },
   ];
 

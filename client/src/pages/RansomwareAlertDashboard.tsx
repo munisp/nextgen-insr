@@ -20,7 +20,12 @@ export default function RansomwareAlertDashboard() {
   const { data: alerts } = trpc.ransomwareAlerts.getAlerts.useQuery();
   const { data: recent } = trpc.ransomwareAlerts.getRecent.useQuery({ limit: 5 });
 
-  const s = data ?? {};
+  // F-12: the ransomwareAlerts router is deliberately fail-loud (every
+  // procedure throws NOT_IMPLEMENTED) — stats render honest "—" until delivered.
+  const s: Partial<{
+    alertsToday: number; activeThreats: number; resolvedMtd: number;
+    quarantined: number; detectionRate: number; lastBackupAge: number;
+  }> = {};
   const cards = [
     { title: "Active Threats", value: s.activeThreats ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "monitored", status: (Number(s.activeThreats ?? 0) > 0 ? "critical" : "good") as "critical" | "good", href: "/ransomware-alert-dashboard", accent: "var(--risk-critical)" },
     { title: "Quarantined Files", value: s.quarantined ?? "—", icon: Shield, trend: "flat" as const, trendValue: "isolated", status: "warning" as const, href: "/ransomware-alert-dashboard", accent: "var(--risk-medium)" },
@@ -39,7 +44,7 @@ export default function RansomwareAlertDashboard() {
 
   const alertTrend = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(Date.now() - (6 - i) * 86400000);
-    return { day: d.toLocaleDateString("en-NG", { weekday: "short" }), alerts: Math.max(0, Number(s.alertsToday ?? 0) * (0.5 + Math.random())) };
+    return { day: d.toLocaleDateString("en-NG", { weekday: "short" }), alerts: Number(s.alertsToday ?? 0) };
   });
 
   return (

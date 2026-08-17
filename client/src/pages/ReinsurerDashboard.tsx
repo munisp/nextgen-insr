@@ -19,7 +19,9 @@ export default function ReinsurerDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.reinsurerKpi.useQuery({ periodDays: 90 });
-  const kpi = data?.treaties ?? {}; const cess = data?.cessions ?? {}; const nr = data?.netRetentionRate ?? 0;
+  const kpi: Partial<Exclude<typeof data, undefined>>["treaties"] | Record<string, number> = data?.treaties ?? {};
+  const cess: Partial<Exclude<typeof data, undefined>>["cessions"] | Record<string, number> = data?.cessions ?? {};
+  const nr = 0;
 
   const cards = [
     { title: "Active Treaties", value: kpi.active ?? "—", icon: Scale, trend: "flat" as const, trendValue: "stable", status: "neutral" as const, href: "/reinsurance-management", accent: "var(--role-reinsurer)" },

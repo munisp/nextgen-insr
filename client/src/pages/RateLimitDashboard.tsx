@@ -19,14 +19,14 @@ export default function RateLimitDashboard() {
   const { data: rules, isLoading } = trpc.rateLimitEngine.listRules.useQuery({ page: 1, limit: 20 });
   const { data: dashData } = trpc.apiRateLimiterDash.getSummary.useQuery();
 
-  const d = dashData ?? {};
-  const ruleList = (rules?.data ?? rules ?? []) as any[];
+  const d: Partial<Exclude<typeof dashData, undefined>> = dashData ?? {};
+  const ruleList = (rules?.items ?? rules ?? []) as any[];
 
   const cards = [
     { title: "Active Rules", value: ruleList.filter((r: any) => r.enabled !== false).length || d.activeRules || "—", icon: Shield, trend: "flat" as const, trendValue: "enforced", status: "good" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-primary)" },
     { title: "Requests (1h)", value: d.requestsLastHour ?? "—", icon: Zap, trend: "up" as const, trendValue: "live", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-secondary)" },
     { title: "Throttled (1h)", value: d.throttledLastHour ?? "—", icon: AlertTriangle, trend: "flat" as const, trendValue: "blocked", status: (Number(d.throttledLastHour ?? 0) > 100 ? "warning" : "good") as "warning" | "good", href: "/rate-limit-dashboard", accent: "var(--risk-medium)" },
-    { title: "Throttle Rate (%)", value: d.throttleRate ? d.throttleRate.toFixed(2)+"%" : "—", icon: Activity, trend: "down" as const, trendValue: "↓ 0.1%", status: (Number(d.throttleRate ?? 0) > 5 ? "warning" : "good") as "warning" | "good", href: "/rate-limit-dashboard", accent: "var(--risk-low)" },
+    { title: "Throttle Rate (%)", value: d.throttleRate ? d.throttleRate?.toFixed(2)+"%" : "—", icon: Activity, trend: "down" as const, trendValue: "↓ 0.1%", status: (Number(d.throttleRate ?? 0) > 5 ? "warning" : "good") as "warning" | "good", href: "/rate-limit-dashboard", accent: "var(--risk-low)" },
     { title: "Unique IPs (1h)", value: d.uniqueIps ?? "—", icon: CheckCircle, trend: "flat" as const, trendValue: "monitored", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-primary)" },
     { title: "Top Blocked Route", value: d.topBlockedRoute ?? "—", icon: TrendingUp, trend: "flat" as const, trendValue: "most blocked", status: "neutral" as const, href: "/rate-limit-dashboard", accent: "var(--insurance-secondary)" },
   ];

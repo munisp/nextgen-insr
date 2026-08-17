@@ -20,8 +20,8 @@ export default function RealtimePnlDashboard() {
   const { data: stats } = trpc.realtimePnlDashboard.getStats.useQuery();
   const { data: pnlList } = trpc.realtimePnlDashboard.list.useQuery({ limit: 10 });
 
-  const d = data ?? {};
-  const s = stats ?? {};
+  const d: Partial<Exclude<typeof data, undefined>> = data ?? {};
+  const s: Partial<Exclude<typeof stats, undefined>> = stats ?? {};
 
   const cards = [
     { title: "Gross Premium (₦M)", value: d.grossPremium ? (d.grossPremium/1e6).toFixed(2) : s.grossPremium ?? "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/financial-reporting-suite", accent: "var(--risk-low)" },
@@ -42,8 +42,8 @@ export default function RealtimePnlDashboard() {
 
   const monthlyPnl = Array.from({ length: 6 }, (_, i) => {
     const dt = new Date(); dt.setMonth(dt.getMonth() - 5 + i);
-    const premium = (d.grossPremium ?? 0)/1e6 * (0.7 + Math.random() * 0.6);
-    const claims = (d.claimsPaid ?? 0)/1e6 * (0.7 + Math.random() * 0.6);
+    const premium = (d.grossPremium ?? 0)/1e6;
+    const claims = (d.claimsPaid ?? 0)/1e6;
     return { month: dt.toLocaleDateString("en-NG", { month: "short" }), premium, claims, pnl: premium - claims };
   });
 

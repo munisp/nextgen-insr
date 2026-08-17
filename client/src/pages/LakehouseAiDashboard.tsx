@@ -23,7 +23,7 @@ export default function LakehouseAiDashboard() {
   const { data: health } = trpc.lakehouseAi.health.useQuery();
   const { data: lineage } = trpc.lakehouseAi.dataLineage.useQuery();
 
-  const a = analytics ?? {};
+  const a: Partial<Exclude<typeof analytics, undefined>> = analytics ?? {};
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
     trend?: KpiTrend; trendValue?: string; subtitle?: string;
@@ -119,7 +119,7 @@ export default function LakehouseAiDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(jobs.jobs as any[]).map((j: any) => (
+                  {((jobs?.jobs ?? []) as any[]).map((j: any) => (
                     <tr key={j.id} style={{ borderBottom: "1px solid var(--card-border)" }}>
                       <td className="px-3 py-2 font-medium" style={{ color: "var(--text-primary)" }}>{j.name}</td>
                       <td className="px-3 py-2">

@@ -14,21 +14,22 @@ export default function Ifrs17Dashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.ifrs17Dashboard.useQuery({ periodDays: 90 });
-  const kpi = data?.kpis ?? {};
+  const kpi: Partial<Exclude<typeof data, undefined>["kpis"]> = data?.kpis ?? {};
+  const ifrs: Partial<Exclude<typeof data, undefined>["ifrs17"]> = data?.ifrs17 ?? {};
 
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
     trend?: KpiTrend; trendValue?: string; subtitle?: string;
     status?: KpiStatus; href: string; accent: string;
   }> = [
-    { title: "BEL (₦M)", value: kpi.bel ?? "—", icon: TrendingUp, trend: "up", trendValue: "↑ 2.1%", status: "neutral" as const, href: "#", accent: "var(--role-actuary)" },
+    { title: "BEL (₦M)", value: "—", icon: TrendingUp, trend: "up", trendValue: "↑ 2.1%", status: "neutral" as const, href: "#", accent: "var(--role-actuary)" },
     { title: "Risk Adjustment (₦M)", value: kpi.riskAdjustment ?? "—", icon: Shield, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "#", accent: "var(--role-actuary)" },
-    { title: "CSM (₦M)", value: kpi.csm ?? "—", icon: DollarSign, trend: "up", trendValue: "↑ 1.4%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
-    { title: "Loss Component (₦M)", value: kpi.lossComponent ?? "—", icon: AlertTriangle, trend: "down", trendValue: "↓ 0.8%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
-    { title: "Insurance Revenue (₦M)", value: kpi.insuranceRevenue ?? "—", icon: BarChart2, trend: "up", trendValue: "↑ 5.2%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
-    { title: "Insurance Service Exp", value: kpi.insuranceServiceExp ?? "—", icon: Receipt, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "#", accent: "var(--insurance-primary)" },
-    { title: "Net Financial Result", value: kpi.netFinancialResult ?? "—", icon: Activity, trend: "up", trendValue: "↑ 3.1%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
-    { title: "Discount Rate%", value: kpi.discountRate ?? "—", icon: TrendingUp, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "#", accent: "var(--role-actuary)" },
+    { title: "CSM (₦M)", value: ifrs.csm ?? "—", icon: DollarSign, trend: "up", trendValue: "↑ 1.4%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Loss Component (₦M)", value: "—", icon: AlertTriangle, trend: "down", trendValue: "↓ 0.8%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Insurance Revenue (₦M)", value: "—", icon: BarChart2, trend: "up", trendValue: "↑ 5.2%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Insurance Service Exp", value: "—", icon: Receipt, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "#", accent: "var(--insurance-primary)" },
+    { title: "Net Financial Result", value: "—", icon: Activity, trend: "up", trendValue: "↑ 3.1%", status: "good" as const, href: "#", accent: "var(--risk-low)" },
+    { title: "Discount Rate%", value: "—", icon: TrendingUp, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "#", accent: "var(--role-actuary)" },
   ];
 
   return (

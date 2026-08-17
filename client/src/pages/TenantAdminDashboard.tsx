@@ -20,8 +20,8 @@ export default function TenantAdminDashboard() {
   const { data: tenants } = trpc.tenantAdmin.listTenants.useQuery({ limit: 5 });
   const { data: dash } = trpc.tenantAdmin.dashboard.useQuery();
 
-  const s = stats ?? {};
-  const d = dash ?? {};
+  const s: Partial<Exclude<typeof stats, undefined>> = stats ?? {};
+  const d: Partial<Exclude<typeof dash, undefined>> = dash ?? {};
 
   const cards = [
     { title: "Total Tenants", value: s.total ?? "—", icon: Users, trend: "up" as const, trendValue: "↑ 2 MTD", status: "good" as const, href: "/tenant-admin-dashboard", accent: "var(--insurance-primary)" },
@@ -99,7 +99,7 @@ export default function TenantAdminDashboard() {
         </div>
 
         {/* Recent Tenants */}
-        {(tenants?.data ?? []).length > 0 && (
+        {(tenants?.tenants ?? []).length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Recent Tenants</h2>
@@ -115,7 +115,7 @@ export default function TenantAdminDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(tenants.data as any[]).slice(0, 5).map((t: any) => (
+                  {((tenants?.tenants ?? []) as any[]).slice(0, 5).map((t: any) => (
                     <tr key={t.id} style={{ borderBottom: "1px solid var(--card-border)" }}>
                       <td className="px-3 py-2 font-medium" style={{ color: "var(--text-primary)" }}>{t.name ?? `Tenant-${t.id}`}</td>
                       <td className="px-3 py-2" style={{ color: "var(--text-secondary)" }}>{t.plan ?? "starter"}</td>

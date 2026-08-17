@@ -19,19 +19,19 @@ export default function BrokerDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.brokerKpi.useQuery({ periodDays: 30 });
-  const kpi = data?.kpis ?? data ?? {};
+  const kpi: Partial<Exclude<typeof data, undefined>> = data ?? {};
 
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
     trend?: KpiTrend; trendValue?: string; subtitle?: string;
     status?: KpiStatus; href?: string; accent: string;
   }> = [
-    { title: "Active Policies", value: kpi.policies?.active ?? kpi.activePolicies ?? "—", icon: FileText, trend: "up", trendValue: "+3 this week", status: "good" as const, href: "/policies", accent: "var(--role-broker)" },
-    { title: "Total Clients", value: kpi.clients?.total ?? kpi.totalClients ?? "—", icon: Users, trend: "up", trendValue: "+5 MTD", status: "neutral" as const, href: "/customers", accent: "var(--insurance-primary)" },
-    { title: "Premium Volume (₦M)", value: kpi.premiums?.total ? (kpi.premiums.total/1e6).toFixed(1) : kpi.premiumVolume ?? "—", icon: DollarSign, trend: "up", trendValue: "↑ 8%", status: "good" as const, href: "/premium-collection", accent: "var(--risk-low)" },
-    { title: "Commission Earned (₦)", value: kpi.commissions?.total ? Number(kpi.commissions.total).toLocaleString() : kpi.commissionEarned ?? "—", icon: TrendingUp, trend: "up", trendValue: "↑ 12%", status: "good" as const, href: "/commission-payouts", accent: "var(--risk-low)" },
-    { title: "Pending Renewals", value: kpi.renewals?.pending ?? kpi.pendingRenewals ?? "—", icon: Activity, trend: "up", trendValue: "due soon", status: "warning" as const, href: "/policy-renewals", accent: "var(--risk-medium)" },
-    { title: "Open Claims", value: kpi.claims?.open ?? kpi.openClaims ?? "—", icon: BarChart2, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "/claims", accent: "var(--insurance-secondary)" },
+    { title: "Active Policies", value: kpi.portfolio?.activePolicies ?? "—", icon: FileText, trend: "up", trendValue: "+3 this week", status: "good" as const, href: "/policies", accent: "var(--role-broker)" },
+    { title: "Total Clients", value: "—", icon: Users, trend: "up", trendValue: "+5 MTD", status: "neutral" as const, href: "/customers", accent: "var(--insurance-primary)" },
+    { title: "Premium Volume (₦M)", value: kpi.portfolio?.totalPremiumInForce != null ? (Number(kpi.portfolio.totalPremiumInForce) / 1e6).toFixed(1) : "—", icon: DollarSign, trend: "up", trendValue: "↑ 8%", status: "good" as const, href: "/premium-collection", accent: "var(--risk-low)" },
+    { title: "Commission Earned (₦)", value: kpi.commissions?.totalEarned != null ? Number(kpi.commissions.totalEarned).toLocaleString() : "—", icon: TrendingUp, trend: "up", trendValue: "↑ 12%", status: "good" as const, href: "/commission-payouts", accent: "var(--risk-low)" },
+    { title: "Pending Renewals", value: "—", icon: Activity, trend: "up", trendValue: "due soon", status: "warning" as const, href: "/policy-renewals", accent: "var(--risk-medium)" },
+    { title: "Open Claims", value: kpi.claims?.open ?? "—", icon: BarChart2, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "/claims", accent: "var(--insurance-secondary)" },
   ];
 
   return (
@@ -67,11 +67,8 @@ export default function BrokerDashboard() {
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie data={[
-                  { name: "Life", value: Math.max(1, Math.floor((kpi.policies?.active ?? 10) * 0.35)) },
-                  { name: "Motor", value: Math.max(1, Math.floor((kpi.policies?.active ?? 10) * 0.25)) },
-                  { name: "Health", value: Math.max(1, Math.floor((kpi.policies?.active ?? 10) * 0.20)) },
-                  { name: "Property", value: Math.max(1, Math.floor((kpi.policies?.active ?? 10) * 0.12)) },
-                  { name: "Other", value: Math.max(1, Math.floor((kpi.policies?.active ?? 10) * 0.08)) },
+                  { name: "Policies", value: kpi.portfolio?.totalPolicies ?? 0 },
+                                                                        { name: "Other", value: Math.max(1, Math.floor((kpi.policies?.active ?? 10) * 0.08)) },
                 ]} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`}>
                   {COLORS.map((c, i) => <Cell key={i} fill={c} />)}
                 </Pie>

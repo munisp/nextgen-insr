@@ -27,7 +27,7 @@ export default function ClaimsDashboard() {
   // fraudData declaration was dead code and is removed.
   const recentClaims = undefined as { data?: Array<Record<string, unknown>> } | undefined;
 
-  const kpi = data?.kpis ?? {};
+  const kpi: Partial<Exclude<typeof data, undefined>["kpis"]> = data?.kpis ?? {};
 
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
@@ -141,7 +141,7 @@ export default function ClaimsDashboard() {
             <button onClick={() => navigate("/claims")} className="text-xs" style={{ color: "var(--insurance-primary)" }}>View All →</button>
           </div>
           <div className="rounded-xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-            {recentClaims?.data?.length > 0 ? (
+            {(recentClaims?.data?.length ?? 0) > 0 ? (
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--card-border)" }}>
@@ -151,7 +151,7 @@ export default function ClaimsDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(recentClaims.data as any[]).slice(0, 5).map((c: any) => (
+                  {((recentClaims?.data ?? []) as any[]).slice(0, 5).map((c: any) => (
                     <tr key={c.id} className="cursor-pointer hover:opacity-80" onClick={() => navigate(`/claims/${c.id}`)}
                       style={{ borderBottom: "1px solid var(--card-border)" }}>
                       <td className="px-3 py-2 font-mono" style={{ color: "var(--text-primary)" }}>{c.claimNumber ?? `CLM-${c.id}`}</td>

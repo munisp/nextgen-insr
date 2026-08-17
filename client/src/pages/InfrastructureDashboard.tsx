@@ -20,9 +20,9 @@ export default function InfrastructureDashboard() {
   const { data: metrics } = trpc.platformMetricsExporter.list.useQuery({ limit: 100, offset: 0 });
   const { data: network } = trpc.networkTelemetry.getSummary.useQuery();
 
-  const h = data ?? {};
-  const m = metrics ?? {};
-  const n = network ?? {};
+  const h: Partial<Exclude<typeof data, undefined>> = data ?? {};
+  const m: Partial<Exclude<typeof metrics, undefined>> = metrics ?? {};
+  const n: Partial<Exclude<typeof network, undefined>> = network ?? {};
 
   const cards = [
     { title: "Platform Health", value: h.overallStatus ?? "—", icon: Shield, trend: "flat" as const, trendValue: "all services", status: (h.overallStatus === "healthy" ? "good" : "warning") as "good" | "warning", href: "/system-health-dashboard", accent: "var(--risk-low)" },

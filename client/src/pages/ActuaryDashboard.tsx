@@ -19,19 +19,19 @@ export default function ActuaryDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.actuaryKpi.useQuery({ periodDays: 90 });
-  const kpi = data?.kpis ?? data ?? {};
+  const kpi: Partial<Exclude<typeof data, undefined>> = data ?? {};
 
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
     trend?: KpiTrend; trendValue?: string; subtitle?: string;
     status?: KpiStatus; href: string; accent: string;
   }> = [
-    { title: "Gross Reserve (₦M)", value: kpi.reserves?.grossReserve ? (kpi.reserves.grossReserve/1e6).toFixed(1) : "—", icon: Shield, trend: "up", trendValue: "IFRS17", status: "neutral" as const, href: "/reserve-calculations", accent: "var(--role-actuary)" },
-    { title: "Net Reserve (₦M)", value: kpi.reserves?.netReserve ? (kpi.reserves.netReserve/1e6).toFixed(1) : "—", icon: TrendingUp, trend: "up", trendValue: "BBA/PAA", status: "neutral" as const, href: "/ifrs17-dashboard", accent: "var(--insurance-primary)" },
-    { title: "Risk Adjustment (₦M)", value: kpi.reserves?.riskAdjustment ? (kpi.reserves.riskAdjustment/1e6).toFixed(1) : "—", icon: Activity, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "/actuarial-models", accent: "var(--risk-medium)" },
-    { title: "Loss Ratio (%)", value: kpi.claims?.lossRatio ? kpi.claims.lossRatio.toFixed(1)+"%" : "—", icon: BarChart2, trend: "down", trendValue: "↓ 2.1%", status: kpi.claims?.lossRatio > 80 ? "critical" : "good" as const, href: "/actuarial-reports", accent: "var(--risk-low)" },
-    { title: "Total Incurred (₦M)", value: kpi.claims?.totalIncurred ? (kpi.claims.totalIncurred/1e6).toFixed(1) : "—", icon: DollarSign, trend: "up", trendValue: "MTD", status: "neutral" as const, href: "/claims", accent: "var(--insurance-secondary)" },
-    { title: "Total Paid (₦M)", value: kpi.claims?.totalPaid ? (kpi.claims.totalPaid/1e6).toFixed(1) : "—", icon: BookOpen, trend: "up", trendValue: "settled", status: "good" as const, href: "/settlement-engine", accent: "var(--risk-low)" },
+    { title: "Gross Reserve (₦M)", value: kpi.reserves?.grossReserve ? (kpi.reserves?.grossReserve/1e6).toFixed(1) : "—", icon: Shield, trend: "up", trendValue: "IFRS17", status: "neutral" as const, href: "/reserve-calculations", accent: "var(--role-actuary)" },
+    { title: "Net Reserve (₦M)", value: kpi.reserves?.netReserve ? (kpi.reserves?.netReserve/1e6).toFixed(1) : "—", icon: TrendingUp, trend: "up", trendValue: "BBA/PAA", status: "neutral" as const, href: "/ifrs17-dashboard", accent: "var(--insurance-primary)" },
+    { title: "Risk Adjustment (₦M)", value: kpi.reserves?.riskAdjustment ? (kpi.reserves?.riskAdjustment/1e6).toFixed(1) : "—", icon: Activity, trend: "flat", trendValue: "stable", status: "neutral" as const, href: "/actuarial-models", accent: "var(--risk-medium)" },
+    { title: "Loss Ratio (%)", value: kpi.claims?.lossRatio ? kpi.claims?.lossRatio.toFixed(1)+"%" : "—", icon: BarChart2, trend: "down", trendValue: "↓ 2.1%", status: kpi.claims?.lossRatio > 80 ? "critical" : "good" as const, href: "/actuarial-reports", accent: "var(--risk-low)" },
+    { title: "Total Incurred (₦M)", value: kpi.claims?.totalIncurred ? (kpi.claims?.totalIncurred/1e6).toFixed(1) : "—", icon: DollarSign, trend: "up", trendValue: "MTD", status: "neutral" as const, href: "/claims", accent: "var(--insurance-secondary)" },
+    { title: "Total Paid (₦M)", value: kpi.claims?.totalPaid ? (kpi.claims?.totalPaid/1e6).toFixed(1) : "—", icon: BookOpen, trend: "up", trendValue: "settled", status: "good" as const, href: "/settlement-engine", accent: "var(--risk-low)" },
   ];
 
   return (

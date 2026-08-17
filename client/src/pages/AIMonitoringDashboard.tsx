@@ -22,7 +22,7 @@ export default function AIMonitoringDashboard() {
   const { data: alertsData } = trpc.aiMonitoring.alerts.useQuery();
   const { data: healthData } = trpc.aiMonitoring.serviceHealth.useQuery();
 
-  const d = dash ?? {};
+  const d: Partial<Exclude<typeof dash, undefined>> = dash ?? {};
   const cards: Array<{
     title: string; value: string | number; icon: React.ElementType;
     trend?: KpiTrend; trendValue?: string; subtitle?: string;
@@ -133,7 +133,7 @@ export default function AIMonitoringDashboard() {
           <section>
             <h2 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-secondary)" }}>Recent AI Alerts</h2>
             <div className="rounded-xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-              {(alertsData.items as any[]).slice(0, 5).map((a: any) => (
+              {((alertsData?.items ?? []) as any[]).slice(0, 5).map((a: any) => (
                 <div key={a.id} className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid var(--card-border)" }}>
                   <div>
                     <p className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>{a.message}</p>

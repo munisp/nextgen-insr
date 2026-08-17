@@ -19,7 +19,8 @@ export default function UnderwriterDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const { data, isLoading } = trpc.insuranceKpiDashboard.underwriterKpi.useQuery({ periodDays: 30 });
-  const kpi = data?.applications ?? {}; const pol = data?.policies ?? {};
+  const kpi: Partial<Exclude<typeof data, undefined>>["applications"] | Record<string, number> = data?.applications ?? {};
+  const pol: Record<string, number> = {};
 
   const cards = [
     { title: "Pending Applications", value: kpi.pending ?? "—", icon: Clock, trend: "up" as const, trendValue: "+4 today", status: "warning" as const, href: "/underwriting-queue", accent: "var(--risk-medium)" },
