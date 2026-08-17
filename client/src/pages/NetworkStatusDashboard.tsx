@@ -55,23 +55,8 @@ export default function NetworkStatusDashboard() {
               Real-time connectivity monitoring across African markets
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <select
-              value={timeRange}
-              onChange={e => setTimeRange(Number(e.target.value))}
-              className="px-3 py-2 rounded-lg text-sm text-white"
-              style={{
-                background: COLORS.card,
-                border: `1px solid ${COLORS.border}`,
-              }}
-            >
-              <option value={6}>6 hours</option>
-              <option value={12}>12 hours</option>
-              <option value={24}>24 hours</option>
-              <option value={48}>48 hours</option>
-              <option value={168}>7 days</option>
-            </select>
-          </div>
+          {/* F-12 (wave-4b): the time-range selector drove telemetry
+              sections that are gone — removed (its state was dangling). */}
         </div>
 
         {/* F-12 (wave-4b): every carrier-telemetry procedure on this page
