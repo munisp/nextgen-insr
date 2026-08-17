@@ -27,7 +27,7 @@ jobs:
       - name: Fix matrix modules
         run: |
           set -e
-          MODULES="claims-adjudication-engine fraud-detection-go ussd-gateway enhanced-kyc-kyb enterprise-mdm disaster-recovery-module naicom-compliance-module ab-testing-framework agent-commission-management audit-trail-system bancassurance-integration batch-processing-engine customer-360-view gdpr-compliance group-life-admin native-mobile-ios ndpr-compliance nmid-integration performance-monitoring-dashboard pfa-integration policy-renewal-automation reinsurance-management strategic-implementations microinsurance-engine instant-payout-service takaful-module cross-company-fraud-database blockchain-transparency insurance-tech-innovations dr-ha-service"
+          export MODULES="claims-adjudication-engine fraud-detection-go ussd-gateway enhanced-kyc-kyb enterprise-mdm disaster-recovery-module naicom-compliance-module ab-testing-framework agent-commission-management audit-trail-system bancassurance-integration batch-processing-engine customer-360-view gdpr-compliance group-life-admin native-mobile-ios ndpr-compliance nmid-integration performance-monitoring-dashboard pfa-integration policy-renewal-automation reinsurance-management strategic-implementations microinsurance-engine instant-payout-service takaful-module cross-company-fraud-database blockchain-transparency insurance-tech-innovations dr-ha-service"
           export PATH=$PATH:$(go env GOPATH)/bin
           python3 - <<'PYEOF'
           import os, re, subprocess, sys, pathlib
