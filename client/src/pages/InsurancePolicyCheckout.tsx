@@ -5,7 +5,11 @@ export default function InsuranceCheckout() {
   const customerId = 1; // From auth context
   const [paymentMethod, setPaymentMethod] = useState("card");
   const [submitting, setSubmitting] = useState(false);
-  const [orderResult, setOrderResult] = useState(null);
+  const [orderResult, setOrderResult] = useState<{
+    orderNumber?: string;
+    currency?: string;
+    total?: number;
+  } | null>(null);
 
   const [address, setAddress] = useState({
     street: "",
@@ -19,9 +23,11 @@ export default function InsuranceCheckout() {
   // F-12 (S87-02): insuranceCart.getCart and policyOrders.createFromCart have
   // NO delivered backend (no cart/orders routers exist). The checkout renders
   // an honest empty cart and the submit action fails loud.
-  const cart: { items?: Array<Record<string, unknown>> } | undefined = undefined;
+  const cart: { items?: Array<{ id: number; name?: string; quantity?: number; unitPrice?: number }> } | undefined = undefined as
+    | { items?: Array<{ id: number; name?: string; quantity?: number; unitPrice?: number }> }
+    | undefined;
   const createOrder = {
-    mutate: () => {
+    mutate: (_input?: unknown) => {
       setSubmitting(false);
       toast.error("Policy checkout is not available on this deployment (no orders backend delivered)");
     },
@@ -158,7 +164,7 @@ export default function InsuranceCheckout() {
                 {item.name} × {item.quantity}
               </span>
               <span>
-                ₦{(Number(item.unitPrice) * item.quantity).toLocaleString()}
+                ₦{(Number(item.unitPrice) * Number(item.quantity ?? 0)).toLocaleString()}
               </span>
             </div>
           ))}
