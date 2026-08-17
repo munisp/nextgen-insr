@@ -7,10 +7,10 @@ import (
 
 // TracerConfig holds configuration for OpenTelemetry tracing.
 type TracerConfig struct {
-	ServiceName    string
-	Environment    string
-	CollectorURL   string
-	SamplingRate   float64
+	ServiceName  string
+	Environment  string
+	CollectorURL string
+	SamplingRate float64
 }
 
 // DefaultTracerConfig returns production-ready tracing config from environment.

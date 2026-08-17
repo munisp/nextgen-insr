@@ -14,9 +14,9 @@ import (
 	"github.com/munisp/NGApp/gdpr-compliance/internal/repository"
 	"github.com/munisp/NGApp/gdpr-compliance/internal/service"
 
+	"database/sql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -57,11 +57,10 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	port := os.Getenv("PORT")
 	if port == "" {

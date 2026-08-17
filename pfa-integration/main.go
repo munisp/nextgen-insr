@@ -1,34 +1,36 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"context"
+	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"sync"
+	"syscall"
 	"time"
-	"context"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -36,9 +38,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -52,7 +58,9 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // PFAService handles Pension Fund Administrator integration
@@ -60,15 +68,15 @@ type PFAService struct{}
 
 // PFAPartner represents a PFA partner
 type PFAPartner struct {
-	PFAID            string   `json:"pfa_id"`
-	PFAName          string   `json:"pfa_name"`
-	PFACode          string   `json:"pfa_code"`
-	LicenseNumber    string   `json:"license_number"`
-	IntegrationType  string   `json:"integration_type"`
-	Products         []string `json:"products"`
-	CommissionRate   float64  `json:"commission_rate"`
-	Status           string   `json:"status"`
-	APIEndpoint      string   `json:"api_endpoint"`
+	PFAID           string   `json:"pfa_id"`
+	PFAName         string   `json:"pfa_name"`
+	PFACode         string   `json:"pfa_code"`
+	LicenseNumber   string   `json:"license_number"`
+	IntegrationType string   `json:"integration_type"`
+	Products        []string `json:"products"`
+	CommissionRate  float64  `json:"commission_rate"`
+	Status          string   `json:"status"`
+	APIEndpoint     string   `json:"api_endpoint"`
 }
 
 // RSAHolder represents a Retirement Savings Account holder
@@ -91,53 +99,53 @@ type RSAHolder struct {
 
 // AnnuityProduct represents an annuity product
 type AnnuityProduct struct {
-	ProductID        string    `json:"product_id"`
-	ProductName      string    `json:"product_name"`
-	ProductType      string    `json:"product_type"` // life_annuity, term_certain, joint_life
-	MinPurchaseAge   int       `json:"min_purchase_age"`
-	MaxPurchaseAge   int       `json:"max_purchase_age"`
-	MinPurchaseAmount float64  `json:"min_purchase_amount"`
-	GuaranteedPeriod int       `json:"guaranteed_period_years"`
-	EscalationRate   float64   `json:"escalation_rate"`
-	JointLifeOption  bool      `json:"joint_life_option"`
-	Status           string    `json:"status"`
+	ProductID         string  `json:"product_id"`
+	ProductName       string  `json:"product_name"`
+	ProductType       string  `json:"product_type"` // life_annuity, term_certain, joint_life
+	MinPurchaseAge    int     `json:"min_purchase_age"`
+	MaxPurchaseAge    int     `json:"max_purchase_age"`
+	MinPurchaseAmount float64 `json:"min_purchase_amount"`
+	GuaranteedPeriod  int     `json:"guaranteed_period_years"`
+	EscalationRate    float64 `json:"escalation_rate"`
+	JointLifeOption   bool    `json:"joint_life_option"`
+	Status            string  `json:"status"`
 }
 
 // AnnuityQuote represents an annuity quote
 type AnnuityQuote struct {
-	QuoteID          string    `json:"quote_id"`
-	RSAPIN           string    `json:"rsa_pin"`
-	ProductID        string    `json:"product_id"`
-	PurchaseAmount   float64   `json:"purchase_amount"`
-	Age              int       `json:"age"`
-	Gender           string    `json:"gender"`
-	AnnuityType      string    `json:"annuity_type"`
-	PaymentFrequency string    `json:"payment_frequency"`
-	GuaranteedPeriod int       `json:"guaranteed_period"`
-	MonthlyPension   float64   `json:"monthly_pension"`
-	AnnualPension    float64   `json:"annual_pension"`
-	CommutedLumpSum  float64   `json:"commuted_lump_sum"`
-	NetPurchaseAmount float64  `json:"net_purchase_amount"`
-	ValidUntil       time.Time `json:"valid_until"`
-	Status           string    `json:"status"`
+	QuoteID           string    `json:"quote_id"`
+	RSAPIN            string    `json:"rsa_pin"`
+	ProductID         string    `json:"product_id"`
+	PurchaseAmount    float64   `json:"purchase_amount"`
+	Age               int       `json:"age"`
+	Gender            string    `json:"gender"`
+	AnnuityType       string    `json:"annuity_type"`
+	PaymentFrequency  string    `json:"payment_frequency"`
+	GuaranteedPeriod  int       `json:"guaranteed_period"`
+	MonthlyPension    float64   `json:"monthly_pension"`
+	AnnualPension     float64   `json:"annual_pension"`
+	CommutedLumpSum   float64   `json:"commuted_lump_sum"`
+	NetPurchaseAmount float64   `json:"net_purchase_amount"`
+	ValidUntil        time.Time `json:"valid_until"`
+	Status            string    `json:"status"`
 }
 
 // AnnuityPolicy represents an annuity policy
 type AnnuityPolicy struct {
-	PolicyID         string    `json:"policy_id"`
-	RSAPIN           string    `json:"rsa_pin"`
-	HolderName       string    `json:"holder_name"`
-	ProductID        string    `json:"product_id"`
-	PurchaseAmount   float64   `json:"purchase_amount"`
-	CommutedLumpSum  float64   `json:"commuted_lump_sum"`
-	NetPurchaseAmount float64  `json:"net_purchase_amount"`
-	MonthlyPension   float64   `json:"monthly_pension"`
-	PaymentFrequency string    `json:"payment_frequency"`
-	GuaranteedPeriod int       `json:"guaranteed_period"`
-	StartDate        time.Time `json:"start_date"`
-	NextPaymentDate  time.Time `json:"next_payment_date"`
-	Beneficiaries    []AnnuityBeneficiary `json:"beneficiaries"`
-	Status           string    `json:"status"`
+	PolicyID          string               `json:"policy_id"`
+	RSAPIN            string               `json:"rsa_pin"`
+	HolderName        string               `json:"holder_name"`
+	ProductID         string               `json:"product_id"`
+	PurchaseAmount    float64              `json:"purchase_amount"`
+	CommutedLumpSum   float64              `json:"commuted_lump_sum"`
+	NetPurchaseAmount float64              `json:"net_purchase_amount"`
+	MonthlyPension    float64              `json:"monthly_pension"`
+	PaymentFrequency  string               `json:"payment_frequency"`
+	GuaranteedPeriod  int                  `json:"guaranteed_period"`
+	StartDate         time.Time            `json:"start_date"`
+	NextPaymentDate   time.Time            `json:"next_payment_date"`
+	Beneficiaries     []AnnuityBeneficiary `json:"beneficiaries"`
+	Status            string               `json:"status"`
 }
 
 // AnnuityBeneficiary represents an annuity beneficiary
@@ -152,30 +160,30 @@ type AnnuityBeneficiary struct {
 
 // PensionPayment represents a pension payment
 type PensionPayment struct {
-	PaymentID        string    `json:"payment_id"`
-	PolicyID         string    `json:"policy_id"`
-	RSAPIN           string    `json:"rsa_pin"`
-	Amount           float64   `json:"amount"`
-	PaymentDate      time.Time `json:"payment_date"`
-	PaymentMethod    string    `json:"payment_method"`
-	BankName         string    `json:"bank_name"`
-	AccountNo        string    `json:"account_no"`
-	Status           string    `json:"status"`
-	Reference        string    `json:"reference"`
+	PaymentID     string    `json:"payment_id"`
+	PolicyID      string    `json:"policy_id"`
+	RSAPIN        string    `json:"rsa_pin"`
+	Amount        float64   `json:"amount"`
+	PaymentDate   time.Time `json:"payment_date"`
+	PaymentMethod string    `json:"payment_method"`
+	BankName      string    `json:"bank_name"`
+	AccountNo     string    `json:"account_no"`
+	Status        string    `json:"status"`
+	Reference     string    `json:"reference"`
 }
 
 // GroupLifeForPension represents group life for pension contributors
 type GroupLifeForPension struct {
-	PolicyID         string    `json:"policy_id"`
-	EmployerCode     string    `json:"employer_code"`
-	EmployerName     string    `json:"employer_name"`
-	TotalContributors int      `json:"total_contributors"`
-	TotalSumAssured  float64   `json:"total_sum_assured"`
-	AnnualPremium    float64   `json:"annual_premium"`
-	CoverageMultiple float64   `json:"coverage_multiple"`
-	EffectiveDate    time.Time `json:"effective_date"`
-	ExpiryDate       time.Time `json:"expiry_date"`
-	Status           string    `json:"status"`
+	PolicyID          string    `json:"policy_id"`
+	EmployerCode      string    `json:"employer_code"`
+	EmployerName      string    `json:"employer_name"`
+	TotalContributors int       `json:"total_contributors"`
+	TotalSumAssured   float64   `json:"total_sum_assured"`
+	AnnualPremium     float64   `json:"annual_premium"`
+	CoverageMultiple  float64   `json:"coverage_multiple"`
+	EffectiveDate     time.Time `json:"effective_date"`
+	ExpiryDate        time.Time `json:"expiry_date"`
+	Status            string    `json:"status"`
 }
 
 // MortalityTable for annuity calculations (Nigerian life table)
@@ -191,33 +199,33 @@ func NewPFAService() *PFAService {
 // CalculateAnnuityQuote calculates annuity quote
 func (s *PFAService) CalculateAnnuityQuote(holder *RSAHolder, purchaseAmount float64, productType string, guaranteedPeriod int) *AnnuityQuote {
 	age := time.Now().Year() - holder.DateOfBirth.Year()
-	
+
 	// Commutation (25% lump sum allowed by PenCom)
 	commutedLumpSum := purchaseAmount * 0.25
 	netPurchaseAmount := purchaseAmount - commutedLumpSum
-	
+
 	// Annuity rate based on age and gender
 	annuityRate := s.getAnnuityRate(age, holder.Gender, guaranteedPeriod)
-	
+
 	// Calculate annual pension
 	annualPension := netPurchaseAmount * annuityRate
 	monthlyPension := annualPension / 12
-	
+
 	return &AnnuityQuote{
-		QuoteID:          fmt.Sprintf("AQ-%d", time.Now().Unix()),
-		RSAPIN:           holder.RSAPIN,
-		PurchaseAmount:   purchaseAmount,
-		Age:              age,
-		Gender:           holder.Gender,
-		AnnuityType:      productType,
-		PaymentFrequency: "monthly",
-		GuaranteedPeriod: guaranteedPeriod,
-		MonthlyPension:   math.Round(monthlyPension*100) / 100,
-		AnnualPension:    math.Round(annualPension*100) / 100,
-		CommutedLumpSum:  commutedLumpSum,
+		QuoteID:           fmt.Sprintf("AQ-%d", time.Now().Unix()),
+		RSAPIN:            holder.RSAPIN,
+		PurchaseAmount:    purchaseAmount,
+		Age:               age,
+		Gender:            holder.Gender,
+		AnnuityType:       productType,
+		PaymentFrequency:  "monthly",
+		GuaranteedPeriod:  guaranteedPeriod,
+		MonthlyPension:    math.Round(monthlyPension*100) / 100,
+		AnnualPension:     math.Round(annualPension*100) / 100,
+		CommutedLumpSum:   commutedLumpSum,
 		NetPurchaseAmount: netPurchaseAmount,
-		ValidUntil:       time.Now().AddDate(0, 0, 30),
-		Status:           "pending",
+		ValidUntil:        time.Now().AddDate(0, 0, 30),
+		Status:            "pending",
 	}
 }
 
@@ -225,38 +233,38 @@ func (s *PFAService) CalculateAnnuityQuote(holder *RSAHolder, purchaseAmount flo
 func (s *PFAService) getAnnuityRate(age int, gender string, guaranteedPeriod int) float64 {
 	// Base rate (higher age = higher rate)
 	baseRate := 0.05 + float64(age-50)*0.002
-	
+
 	// Gender adjustment (females live longer, lower rate)
 	if gender == "female" {
 		baseRate *= 0.92
 	}
-	
+
 	// Guaranteed period adjustment (longer guarantee = lower rate)
 	guaranteeAdjustment := 1 - float64(guaranteedPeriod)*0.005
-	
+
 	return baseRate * guaranteeAdjustment
 }
 
 // CalculateGroupLifePremium calculates group life premium for pension contributors
 func (s *PFAService) CalculateGroupLifePremium(employerCode string, contributors []RSAHolder, coverageMultiple float64) *GroupLifeForPension {
 	totalSumAssured := 0.0
-	
+
 	for _, contributor := range contributors {
 		sumAssured := contributor.MonthlySalary * 12 * coverageMultiple
 		totalSumAssured += sumAssured
 	}
-	
+
 	// Premium rate (per mille)
 	premiumRate := 1.5 // 1.5 per 1000
 	annualPremium := totalSumAssured * premiumRate / 1000
-	
+
 	// Group discount
 	if len(contributors) >= 100 {
 		annualPremium *= 0.85
 	} else if len(contributors) >= 50 {
 		annualPremium *= 0.90
 	}
-	
+
 	return &GroupLifeForPension{
 		PolicyID:          fmt.Sprintf("GLP-%d", time.Now().Unix()),
 		EmployerCode:      employerCode,
@@ -291,7 +299,7 @@ func (s *PFAService) ValidateRSAPIN(rsaPin string) (bool, *RSAHolder) {
 	if len(rsaPin) != 15 {
 		return false, nil
 	}
-	
+
 	// Return mock holder data
 	holder := &RSAHolder{
 		RSAPIN:           rsaPin,
@@ -303,7 +311,7 @@ func (s *PFAService) ValidateRSAPIN(rsaPin string) (bool, *RSAHolder) {
 		ContributionRate: 0.18,
 		Status:           "active",
 	}
-	
+
 	return true, holder
 }
 
@@ -315,32 +323,32 @@ func (s *PFAService) HandleAnnuityQuote(w http.ResponseWriter, r *http.Request) 
 		ProductType      string    `json:"product_type"`
 		GuaranteedPeriod int       `json:"guaranteed_period"`
 	}
-	
+
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	quote := s.CalculateAnnuityQuote(&req.Holder, req.PurchaseAmount, req.ProductType, req.GuaranteedPeriod)
-	
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(quote)
+	_ = json.NewEncoder(w).Encode(quote)
 }
 
 func (s *PFAService) HandleValidateRSA(w http.ResponseWriter, r *http.Request) {
 	type Request struct {
 		RSAPIN string `json:"rsa_pin"`
 	}
-	
+
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	valid, holder := s.ValidateRSAPIN(req.RSAPIN)
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"valid":  valid,
@@ -354,17 +362,17 @@ func (s *PFAService) HandleGroupLifePremium(w http.ResponseWriter, r *http.Reque
 		Contributors     []RSAHolder `json:"contributors"`
 		CoverageMultiple float64     `json:"coverage_multiple"`
 	}
-	
+
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	
+
 	result := s.CalculateGroupLifePremium(req.EmployerCode, req.Contributors, req.CoverageMultiple)
-	
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *PFAService) HandleHealth(w http.ResponseWriter, r *http.Request) {
@@ -404,7 +412,6 @@ func (s *PFAService) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
 	val := r.URL.Query().Get(key)
@@ -439,7 +446,6 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 	return n, nil
 }
 
-
 var db *sql.DB
 
 func initDB() {
@@ -472,12 +478,12 @@ func initDB() {
             status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT NOW()
         )`); err != nil {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS pfa_rsa_accounts (id TEXT PRIMARY KEY, employee_id TEXT, employer_id TEXT, rsa_pin TEXT UNIQUE, monthly_basic NUMERIC(15,2), employee_contrib NUMERIC(15,2), employer_contrib NUMERIC(15,2), balance NUMERIC(15,2) DEFAULT 0, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS pfa_contributions (id TEXT PRIMARY KEY, rsa_pin TEXT, month TEXT, amount NUMERIC(15,2), status TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
+		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS pfa_rsa_accounts (id TEXT PRIMARY KEY, employee_id TEXT, employer_id TEXT, rsa_pin TEXT UNIQUE, monthly_basic NUMERIC(15,2), employee_contrib NUMERIC(15,2), employer_contrib NUMERIC(15,2), balance NUMERIC(15,2) DEFAULT 0, status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+			if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS pfa_contributions (id TEXT PRIMARY KEY, rsa_pin TEXT, month TEXT, amount NUMERIC(15,2), status TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+				log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+			}
+			log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+		}
 		jsonLog("warn", "create table failed", "error", err.Error())
 	} else {
 		jsonLog("info", "table ready", "table", "pfa_contributions")
@@ -503,8 +509,6 @@ func execInTransaction(fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-
-
 // otelMiddleware adds trace context propagation to requests.
 func otelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -524,16 +528,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -544,9 +545,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -554,7 +560,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -607,11 +615,11 @@ func handleReady(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 // ─── Domain CRUD Handlers (PostgreSQL-backed) ────────────────────────────────
@@ -619,9 +627,13 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -634,7 +646,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		if cached, ok := redisClient.CacheGet("pfa-integration:list"); ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("X-Cache", "HIT")
-			w.Write([]byte(cached))
+			_, _ = w.Write([]byte(cached))
 			return
 		}
 	}
@@ -644,27 +656,33 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
-		if err := rows.Scan(ptrs...); err != nil { continue }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-		switch v := vals[i].(type) {
-		case []byte:
-			row[col] = string(v)
-		default:
-			row[col] = v
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
-	}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
-	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
 func handleGetEntity(w http.ResponseWriter, r *http.Request) {
@@ -679,7 +697,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	if !rows.Next() {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -687,7 +705,9 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -701,13 +721,14 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 			row[col] = v
 		}
 	}
-	json.NewEncoder(w).Encode(row)
+	_ = json.NewEncoder(w).Encode(row)
 }
 
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value("user_id").(string)
 	if !permifyCheck(r.Context(), "pfa-integration", "", "create", userID) {
-		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden); return
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	var body map[string]interface{}
@@ -720,7 +741,9 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -738,13 +761,17 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 	// Index to OpenSearch for full-text search
 	if osClient != nil {
 		go osClient.IndexLog("info", "entity_created", "pfa-integration", map[string]interface{}{"action": "created", "timestamp": time.Now().Format(time.RFC3339)})
 	}
-	if redisClient != nil { redisClient.CacheInvalidate("pfa-integration:list") }
+	if redisClient != nil {
+		redisClient.CacheInvalidate("pfa-integration:list")
+	}
 }
 
 func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
@@ -768,25 +795,26 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	if db != nil {
-		db.QueryRow("SELECT COUNT(*) FROM pfa_contributions").Scan(&count)
+		_ = db.QueryRow("SELECT COUNT(*) FROM pfa_contributions").Scan(&count)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"service": "pfa_contributions", "table": "pfa_contributions", "total_records": count})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"service": "pfa_contributions", "table": "pfa_contributions", "total_records": count})
 }
-
 
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -797,6 +825,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -805,7 +834,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -814,10 +845,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -826,46 +857,64 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -876,6 +925,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -884,9 +934,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -920,11 +974,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -943,6 +997,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -969,9 +1024,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -981,7 +1040,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -1014,7 +1073,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			jsonLog("warn", "auth_failure", "service", "pfa-integration", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -1055,11 +1114,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -1089,11 +1148,10 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
-
 func handleRSARegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
@@ -1104,7 +1162,8 @@ func handleRSARegister(w http.ResponseWriter, r *http.Request) {
 		MonthlyBasic float64 `json:"monthly_basic"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	// PenCom: Employee contributes 8%, Employer contributes 10% of basic salary
 	employeeContrib := req.MonthlyBasic * 0.08
@@ -1115,13 +1174,13 @@ func handleRSARegister(w http.ResponseWriter, r *http.Request) {
 		db.Exec("INSERT INTO pfa_rsa_accounts (id, employee_id, employer_id, rsa_pin, monthly_basic, employee_contrib, employer_contrib, balance, status) VALUES ($1,$2,$3,$4,$5,$6,$7,0,'active')",
 			regID, req.EmployeeID, req.EmployerID, req.RSAPin, req.MonthlyBasic, employeeContrib, employerContrib)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"registration_id": regID, "monthly_employee": employeeContrib, "monthly_employer": employerContrib, "total_monthly": totalMonthly, "annual_contribution": totalMonthly * 12})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"registration_id": regID, "monthly_employee": employeeContrib, "monthly_employer": employerContrib, "total_monthly": totalMonthly, "annual_contribution": totalMonthly * 12})
 }
-
 
 func handleContributionProcess(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
@@ -1131,14 +1190,15 @@ func handleContributionProcess(w http.ResponseWriter, r *http.Request) {
 		Amount float64 `json:"amount"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	contribID := fmt.Sprintf("CTR-%d", time.Now().UnixNano())
 	if db != nil {
-		db.Exec("INSERT INTO pfa_contributions (id, rsa_pin, month, amount, status) VALUES ($1,$2,$3,$4,'processed')", contribID, req.RSAPin, req.Month, req.Amount)
-		db.Exec("UPDATE pfa_rsa_accounts SET balance = balance + $1 WHERE rsa_pin = $2", req.Amount, req.RSAPin)
+		_, _ = db.Exec("INSERT INTO pfa_contributions (id, rsa_pin, month, amount, status) VALUES ($1,$2,$3,$4,'processed')", contribID, req.RSAPin, req.Month, req.Amount)
+		_, _ = db.Exec("UPDATE pfa_rsa_accounts SET balance = balance + $1 WHERE rsa_pin = $2", req.Amount, req.RSAPin)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"contribution_id": contribID, "amount": req.Amount, "status": "processed"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"contribution_id": contribID, "amount": req.Amount, "status": "processed"})
 }
 
 func bodyLimitMiddleware(next http.Handler) http.Handler {
@@ -1154,7 +1214,7 @@ func main() {
 	initDB()
 	initMiddleware()
 	service := NewPFAService()
-	
+
 	http.HandleFunc("/api/pfa/annuity-quote", service.HandleAnnuityQuote)
 	http.HandleFunc("/api/pfa/validate-rsa", service.HandleValidateRSA)
 	http.HandleFunc("/api/pfa/group-life-premium", service.HandleGroupLifePremium)
@@ -1168,14 +1228,14 @@ func main() {
 	http.HandleFunc("/health", service.HandleHealth)
 	http.HandleFunc("/ready", handleReady)
 	http.HandleFunc("/live", handleLive)
-	
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	
+
 	log.Printf("PFA Integration Service starting on port %s", port)
-	
+
 	srv := &http.Server{Addr: ":" + port, Handler: bodyLimitMiddleware(http.DefaultServeMux)}
 	go func() {
 		sigCh := make(chan os.Signal, 1)

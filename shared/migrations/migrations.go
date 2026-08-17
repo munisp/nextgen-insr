@@ -130,7 +130,7 @@ func (r *MigrationRunner) MigrateUp() (int, error) {
 		}
 
 		if _, err := tx.Exec(m.UpSQL); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return count, fmt.Errorf("executing migration %s: %w", m.Version, err)
 		}
 
@@ -138,7 +138,7 @@ func (r *MigrationRunner) MigrateUp() (int, error) {
 			"INSERT INTO schema_migrations (version, service, description) VALUES ($1, $2, $3)",
 			m.Version, r.serviceName, m.Description,
 		); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return count, fmt.Errorf("recording migration %s: %w", m.Version, err)
 		}
 
@@ -178,7 +178,7 @@ func (r *MigrationRunner) MigrateDown(n int) (int, error) {
 		}
 
 		if _, err := tx.Exec(m.DownSQL); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return count, fmt.Errorf("rolling back %s: %w", m.Version, err)
 		}
 
@@ -186,7 +186,7 @@ func (r *MigrationRunner) MigrateDown(n int) (int, error) {
 			"DELETE FROM schema_migrations WHERE version = $1 AND service = $2",
 			m.Version, r.serviceName,
 		); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return count, err
 		}
 
@@ -231,7 +231,7 @@ func GenerateMigration(dir, name string) (string, string, error) {
 	upFile := filepath.Join(dir, fmt.Sprintf("%s_%s.up.sql", version, name))
 	downFile := filepath.Join(dir, fmt.Sprintf("%s_%s.down.sql", version, name))
 
-	os.MkdirAll(dir, 0755)
+	_ = os.MkdirAll(dir, 0755)
 
 	if err := os.WriteFile(upFile, []byte("-- Migration up\n"), 0644); err != nil {
 		return "", "", err
@@ -253,7 +253,7 @@ func (r *MigrationRunner) getAppliedVersions() (map[string]bool, error) {
 	if err != nil {
 		return result, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var version string

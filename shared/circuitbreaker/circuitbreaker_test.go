@@ -23,7 +23,7 @@ func TestCircuitBreakerOpens(t *testing.T) {
 
 	testErr := errors.New("service down")
 	for i := 0; i < 3; i++ {
-		cb.Execute(func() error { return testErr })
+		_ = cb.Execute(func() error { return testErr })
 	}
 
 	if cb.State() != StateOpen {
@@ -40,8 +40,8 @@ func TestCircuitBreakerHalfOpen(t *testing.T) {
 	cb := New("test", Config{MaxFailures: 2, Timeout: 50 * time.Millisecond, HalfOpenMax: 1})
 
 	testErr := errors.New("service down")
-	cb.Execute(func() error { return testErr })
-	cb.Execute(func() error { return testErr })
+	_ = cb.Execute(func() error { return testErr })
+	_ = cb.Execute(func() error { return testErr })
 
 	if cb.State() != StateOpen {
 		t.Fatalf("expected open, got %s", cb.State())
@@ -62,12 +62,12 @@ func TestCircuitBreakerReOpens(t *testing.T) {
 	cb := New("test", Config{MaxFailures: 2, Timeout: 50 * time.Millisecond, HalfOpenMax: 1})
 
 	testErr := errors.New("service down")
-	cb.Execute(func() error { return testErr })
-	cb.Execute(func() error { return testErr })
+	_ = cb.Execute(func() error { return testErr })
+	_ = cb.Execute(func() error { return testErr })
 
 	time.Sleep(60 * time.Millisecond)
 
-	cb.Execute(func() error { return testErr })
+	_ = cb.Execute(func() error { return testErr })
 	if cb.State() != StateOpen {
 		t.Fatalf("expected re-open after half-open failure, got %s", cb.State())
 	}

@@ -202,9 +202,9 @@ func extractPermission(method, path string) (string, string) {
 }
 
 type cacheRule struct {
-	pattern             string
-	maxAge              int
-	scope               string
+	pattern              string
+	maxAge               int
+	scope                string
 	staleWhileRevalidate int
 }
 

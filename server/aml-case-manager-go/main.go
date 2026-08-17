@@ -1,15 +1,15 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
+	"net"
 
-	_ "github.com/lib/pq"
 	"encoding/json"
 	"fmt"
+	_ "github.com/lib/pq"
 	"log"
 	"math/rand"
 	"net/http"
@@ -57,16 +57,16 @@ import (
 // ══════════════════════════════════════════════════════════════════════════════
 
 type Config struct {
-	Port        string
+	Port         string
 	KafkaBrokers string
-	RedisURL    string
-	KeycloakURL string
-	TemporalURL string
-	DaprURL     string
-	FluvioURL   string
-	PermifyURL  string
-	GoAMLURL    string
-	Environment string
+	RedisURL     string
+	KeycloakURL  string
+	TemporalURL  string
+	DaprURL      string
+	FluvioURL    string
+	PermifyURL   string
+	GoAMLURL     string
+	Environment  string
 }
 
 func loadConfig() Config {
@@ -99,20 +99,19 @@ func requireEnv(key string) string {
 	return v
 }
 
-
 // ── Domain Models ────────────────────────────────────────────────────────────
 
 type CaseStatus string
 
 const (
-	StatusOpen              CaseStatus = "open"
-	StatusAssigned          CaseStatus = "assigned"
+	StatusOpen               CaseStatus = "open"
+	StatusAssigned           CaseStatus = "assigned"
 	StatusUnderInvestigation CaseStatus = "under_investigation"
-	StatusEscalated         CaseStatus = "escalated"
-	StatusPendingSAR        CaseStatus = "pending_sar"
-	StatusSARFiled          CaseStatus = "sar_filed"
-	StatusClosed            CaseStatus = "closed"
-	StatusFalsePositive     CaseStatus = "false_positive"
+	StatusEscalated          CaseStatus = "escalated"
+	StatusPendingSAR         CaseStatus = "pending_sar"
+	StatusSARFiled           CaseStatus = "sar_filed"
+	StatusClosed             CaseStatus = "closed"
+	StatusFalsePositive      CaseStatus = "false_positive"
 )
 
 type CasePriority string
@@ -128,37 +127,37 @@ type AlertType string
 
 const (
 	AlertTransactionSuspicious AlertType = "transaction_suspicious"
-	AlertSanctionsMatch       AlertType = "sanctions_match"
-	AlertPEPMatch             AlertType = "pep_match"
-	AlertStructuring          AlertType = "structuring"
-	AlertVelocity             AlertType = "velocity_breach"
-	AlertThresholdBreach      AlertType = "threshold_breach"
-	AlertAdverseMedia         AlertType = "adverse_media"
-	AlertUnusualPattern       AlertType = "unusual_pattern"
+	AlertSanctionsMatch        AlertType = "sanctions_match"
+	AlertPEPMatch              AlertType = "pep_match"
+	AlertStructuring           AlertType = "structuring"
+	AlertVelocity              AlertType = "velocity_breach"
+	AlertThresholdBreach       AlertType = "threshold_breach"
+	AlertAdverseMedia          AlertType = "adverse_media"
+	AlertUnusualPattern        AlertType = "unusual_pattern"
 )
 
 type AMLCase struct {
-	ID              string       `json:"id"`
-	CaseNumber      string       `json:"case_number"`
-	Status          CaseStatus   `json:"status"`
-	Priority        CasePriority `json:"priority"`
-	AlertType       AlertType    `json:"alert_type"`
-	AlertID         string       `json:"alert_id"`
-	Subject         CaseSubject  `json:"subject"`
-	AssignedTo      string       `json:"assigned_to,omitempty"`
-	EscalatedTo     string       `json:"escalated_to,omitempty"`
-	RiskScore       float64      `json:"risk_score"`
-	TotalAmount     float64      `json:"total_amount"`
-	TransactionCount int         `json:"transaction_count"`
-	SARFilingID     string       `json:"sar_filing_id,omitempty"`
-	Notes           []CaseNote   `json:"notes"`
-	Timeline        []TimelineEntry `json:"timeline"`
-	SLADeadline     time.Time    `json:"sla_deadline"`
-	SLABreached     bool         `json:"sla_breached"`
-	Resolution      string       `json:"resolution,omitempty"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
-	ClosedAt        *time.Time   `json:"closed_at,omitempty"`
+	ID               string          `json:"id"`
+	CaseNumber       string          `json:"case_number"`
+	Status           CaseStatus      `json:"status"`
+	Priority         CasePriority    `json:"priority"`
+	AlertType        AlertType       `json:"alert_type"`
+	AlertID          string          `json:"alert_id"`
+	Subject          CaseSubject     `json:"subject"`
+	AssignedTo       string          `json:"assigned_to,omitempty"`
+	EscalatedTo      string          `json:"escalated_to,omitempty"`
+	RiskScore        float64         `json:"risk_score"`
+	TotalAmount      float64         `json:"total_amount"`
+	TransactionCount int             `json:"transaction_count"`
+	SARFilingID      string          `json:"sar_filing_id,omitempty"`
+	Notes            []CaseNote      `json:"notes"`
+	Timeline         []TimelineEntry `json:"timeline"`
+	SLADeadline      time.Time       `json:"sla_deadline"`
+	SLABreached      bool            `json:"sla_breached"`
+	Resolution       string          `json:"resolution,omitempty"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
+	ClosedAt         *time.Time      `json:"closed_at,omitempty"`
 }
 
 type CaseSubject struct {
@@ -214,7 +213,7 @@ func (s *AppState) publishKafka(topic string, event map[string]interface{}) {
 	if s.config.DaprURL != "" {
 		go func() {
 			url := fmt.Sprintf("%s/v1.0/publish/kafka-pubsub/%s", s.config.DaprURL, topic)
-			http.Post(url, "application/json", strings.NewReader(string(payload)))
+			_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
 		}()
 	}
 }
@@ -226,7 +225,7 @@ func (s *AppState) streamToFluvio(data interface{}) {
 	payload, _ := json.Marshal(data)
 	go func() {
 		url := fmt.Sprintf("%s/api/v1/produce/aml-cases", s.config.FluvioURL)
-		http.Post(url, "application/json", strings.NewReader(string(payload)))
+		_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
 	}()
 }
 
@@ -242,7 +241,7 @@ func (s *AppState) notifyDapr(channel, message string, metadata map[string]inter
 	})
 	go func() {
 		url := fmt.Sprintf("%s/v1.0/publish/notifications/compliance-alerts", s.config.DaprURL)
-		http.Post(url, "application/json", strings.NewReader(string(payload)))
+		_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
 	}()
 }
 
@@ -258,7 +257,7 @@ func (s *AppState) startTemporalTimer(caseID string, slaDeadline time.Time) {
 			"deadline":      slaDeadline.Format(time.RFC3339),
 		})
 		url := fmt.Sprintf("%s/api/v1/namespaces/default/workflows", s.config.TemporalURL)
-		http.Post(url, "application/json", strings.NewReader(string(payload)))
+		_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
 	}()
 }
 
@@ -296,13 +295,13 @@ func priorityFromRisk(score float64) CasePriority {
 
 func (s *AppState) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AlertType        AlertType    `json:"alert_type"`
-		AlertID          string       `json:"alert_id"`
-		Subject          CaseSubject  `json:"subject"`
-		RiskScore        float64      `json:"risk_score"`
-		TotalAmount      float64      `json:"total_amount"`
-		TransactionCount int          `json:"transaction_count"`
-		InitialNote      string       `json:"initial_note,omitempty"`
+		AlertType        AlertType   `json:"alert_type"`
+		AlertID          string      `json:"alert_id"`
+		Subject          CaseSubject `json:"subject"`
+		RiskScore        float64     `json:"risk_score"`
+		TotalAmount      float64     `json:"total_amount"`
+		TransactionCount int         `json:"transaction_count"`
+		InitialNote      string      `json:"initial_note,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
@@ -364,7 +363,7 @@ func (s *AppState) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(amlCase)
+	_ = json.NewEncoder(w).Encode(amlCase)
 }
 
 func (s *AppState) handleListCases(w http.ResponseWriter, r *http.Request) {
@@ -393,7 +392,7 @@ func (s *AppState) handleListCases(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"cases": results, "total": len(results)})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"cases": results, "total": len(results)})
 }
 
 func (s *AppState) handleGetCase(w http.ResponseWriter, r *http.Request) {
@@ -406,7 +405,7 @@ func (s *AppState) handleGetCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (s *AppState) transitionCase(id string, newStatus CaseStatus, actor, details string, extra func(*AMLCase)) (*AMLCase, error) {
@@ -435,7 +434,7 @@ func (s *AppState) handleAssign(w http.ResponseWriter, r *http.Request) {
 		AssignedTo string `json:"assigned_to"`
 		Actor      string `json:"actor"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	c, err := s.transitionCase(id, StatusAssigned, req.Actor, fmt.Sprintf("Assigned to %s", req.AssignedTo), func(c *AMLCase) {
 		c.AssignedTo = req.AssignedTo
@@ -449,13 +448,15 @@ func (s *AppState) handleAssign(w http.ResponseWriter, r *http.Request) {
 	s.notifyDapr("compliance-alerts", fmt.Sprintf("Case %s assigned to %s", c.CaseNumber, req.AssignedTo), nil)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (s *AppState) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, 3)
-	var req struct{ Actor string `json:"actor"` }
-	json.NewDecoder(r.Body).Decode(&req)
+	var req struct {
+		Actor string `json:"actor"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	c, err := s.transitionCase(id, StatusUnderInvestigation, req.Actor, "Investigation started", nil)
 	if err != nil {
@@ -465,7 +466,7 @@ func (s *AppState) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 
 	s.publishKafka("aml.case.investigation_started", map[string]interface{}{"case_id": id})
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (s *AppState) handleEscalate(w http.ResponseWriter, r *http.Request) {
@@ -475,7 +476,7 @@ func (s *AppState) handleEscalate(w http.ResponseWriter, r *http.Request) {
 		Reason      string `json:"reason"`
 		Actor       string `json:"actor"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	c, err := s.transitionCase(id, StatusEscalated, req.Actor, fmt.Sprintf("Escalated to %s: %s", req.EscalatedTo, req.Reason), func(c *AMLCase) {
 		c.EscalatedTo = req.EscalatedTo
@@ -489,13 +490,15 @@ func (s *AppState) handleEscalate(w http.ResponseWriter, r *http.Request) {
 	s.notifyDapr("compliance-alerts", fmt.Sprintf("ESCALATION: Case %s escalated to %s — %s", c.CaseNumber, req.EscalatedTo, req.Reason), nil)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (s *AppState) handleFileSAR(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, 3)
-	var req struct{ Actor string `json:"actor"` }
-	json.NewDecoder(r.Body).Decode(&req)
+	var req struct {
+		Actor string `json:"actor"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	c, err := s.transitionCase(id, StatusPendingSAR, req.Actor, "SAR filing initiated", nil)
 	if err != nil {
@@ -516,9 +519,9 @@ func (s *AppState) handleFileSAR(w http.ResponseWriter, r *http.Request) {
 				"nationality":  "Nigeria",
 				"risk_level":   c.Subject.RiskLevel,
 			},
-			"indicators":       []string{string(c.AlertType)},
-			"narrative":        fmt.Sprintf("AML Case %s: %s alert with risk score %.1f", c.CaseNumber, c.AlertType, c.RiskScore),
-			"risk_score":       c.RiskScore,
+			"indicators":        []string{string(c.AlertType)},
+			"narrative":         fmt.Sprintf("AML Case %s: %s alert with risk score %.1f", c.CaseNumber, c.AlertType, c.RiskScore),
+			"risk_score":        c.RiskScore,
 			"reporting_officer": req.Actor,
 		}
 		payload, _ := json.Marshal(sarReq)
@@ -527,16 +530,18 @@ func (s *AppState) handleFileSAR(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[AML-Case] Failed to create SAR via goAML: %v", err)
 			return
 		}
-		defer resp.Body.Close()
-		var sarResp struct{ ID string `json:"id"` }
-		json.NewDecoder(resp.Body).Decode(&sarResp)
+		defer func() { _ = resp.Body.Close() }()
+		var sarResp struct {
+			ID string `json:"id"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&sarResp)
 
 		s.mu.Lock()
 		c.SARFilingID = sarResp.ID
 		c.Status = StatusSARFiled
 		c.Timeline = append(c.Timeline, TimelineEntry{
 			Action: "sar_filed", Actor: "system",
-			Details: fmt.Sprintf("SAR filed via goAML, filing ID: %s", sarResp.ID),
+			Details:   fmt.Sprintf("SAR filed via goAML, filing ID: %s", sarResp.ID),
 			OldStatus: "pending_sar", NewStatus: "sar_filed", Timestamp: time.Now(),
 		})
 		s.mu.Unlock()
@@ -544,7 +549,7 @@ func (s *AppState) handleFileSAR(w http.ResponseWriter, r *http.Request) {
 
 	s.publishKafka("aml.case.sar_initiated", map[string]interface{}{"case_id": id})
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (s *AppState) handleClose(w http.ResponseWriter, r *http.Request) {
@@ -553,7 +558,7 @@ func (s *AppState) handleClose(w http.ResponseWriter, r *http.Request) {
 		Resolution string `json:"resolution"`
 		Actor      string `json:"actor"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	c, err := s.transitionCase(id, StatusClosed, req.Actor, fmt.Sprintf("Case closed: %s", req.Resolution), func(c *AMLCase) {
 		now := time.Now()
@@ -567,7 +572,7 @@ func (s *AppState) handleClose(w http.ResponseWriter, r *http.Request) {
 
 	s.publishKafka("aml.case.closed", map[string]interface{}{"case_id": id, "resolution": req.Resolution})
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (s *AppState) handleFalsePositive(w http.ResponseWriter, r *http.Request) {
@@ -576,7 +581,7 @@ func (s *AppState) handleFalsePositive(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 		Actor  string `json:"actor"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	c, err := s.transitionCase(id, StatusFalsePositive, req.Actor, fmt.Sprintf("Marked as false positive: %s", req.Reason), func(c *AMLCase) {
 		now := time.Now()
@@ -590,7 +595,7 @@ func (s *AppState) handleFalsePositive(w http.ResponseWriter, r *http.Request) {
 
 	s.publishKafka("aml.case.false_positive", map[string]interface{}{"case_id": id, "reason": req.Reason})
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (s *AppState) handleAddNote(w http.ResponseWriter, r *http.Request) {
@@ -600,7 +605,7 @@ func (s *AppState) handleAddNote(w http.ResponseWriter, r *http.Request) {
 		Content string `json:"content"`
 		Type    string `json:"type"` // investigation, evidence, decision
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	s.mu.Lock()
 	c, ok := s.cases[id]
@@ -619,7 +624,7 @@ func (s *AppState) handleAddNote(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(note)
+	_ = json.NewEncoder(w).Encode(note)
 }
 
 func (s *AppState) handleTimeline(w http.ResponseWriter, r *http.Request) {
@@ -632,7 +637,7 @@ func (s *AppState) handleTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"case_id": id, "timeline": c.Timeline})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"case_id": id, "timeline": c.Timeline})
 }
 
 func (s *AppState) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -660,9 +665,9 @@ func (s *AppState) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"total_cases":   total,
-		"by_status":     stats,
-		"avg_risk_score": avgRisk,
+		"total_cases":      total,
+		"by_status":        stats,
+		"avg_risk_score":   avgRisk,
 		"sla_breach_count": stats["sla_breached"],
 	})
 }
@@ -706,7 +711,6 @@ func truncate(s string, max int) string {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
 	val := r.URL.Query().Get(key)
@@ -742,13 +746,16 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 }
 
 var db *sql.DB
+
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -756,9 +763,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -772,9 +783,10 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
-
 
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
@@ -808,9 +820,6 @@ func initDB() {
 }
 
 // ─── Domain CRUD Handlers (PostgreSQL-backed) ────────────────────────────────
-
-
-
 
 func execInTransaction(fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()
@@ -848,14 +857,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -866,9 +874,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -876,7 +889,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -921,9 +936,13 @@ func isPQClientError(err error) bool {
 func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -936,27 +955,33 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
-		if err := rows.Scan(ptrs...); err != nil { continue }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-		switch v := vals[i].(type) {
-		case []byte:
-			row[col] = string(v)
-		default:
-			row[col] = v
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
-	}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
-	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
 func handleGetEntity(w http.ResponseWriter, r *http.Request) {
@@ -971,7 +996,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	if !rows.Next() {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -979,7 +1004,9 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -993,7 +1020,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 			row[col] = v
 		}
 	}
-	json.NewEncoder(w).Encode(row)
+	_ = json.NewEncoder(w).Encode(row)
 }
 
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
@@ -1008,7 +1035,9 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		switch mv := v.(type) {
 		case map[string]interface{}:
@@ -1035,8 +1064,10 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
 func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
@@ -1060,25 +1091,26 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	if db != nil {
-		db.QueryRow("SELECT COUNT(*) FROM aml_cases").Scan(&count)
+		_ = db.QueryRow("SELECT COUNT(*) FROM aml_cases").Scan(&count)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"service": "aml_cases", "table": "aml_cases", "total_records": count})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"service": "aml_cases", "table": "aml_cases", "total_records": count})
 }
-
 
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -1089,6 +1121,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -1097,7 +1130,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -1106,10 +1141,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -1118,46 +1153,64 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -1168,6 +1221,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -1176,9 +1230,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -1212,11 +1270,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -1235,6 +1293,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -1261,9 +1320,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -1273,7 +1336,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -1305,7 +1368,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -1346,11 +1409,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -1379,7 +1442,6 @@ func initMiddleware() {
 	osClient = newOpenSearchClient(osURL, os.Getenv("OPENSEARCH_USER"))
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
-
 
 func main() {
 	cfg := loadConfig()
@@ -1427,7 +1489,6 @@ func main() {
 	mux.HandleFunc("/api/v1/aml_cases/create", handleCreateEntity)
 	mux.HandleFunc("/api/v1/aml_cases/delete", handleDeleteEntity)
 	mux.HandleFunc("/stats", handleStats)
-
 
 	addr := ":" + cfg.Port
 	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}

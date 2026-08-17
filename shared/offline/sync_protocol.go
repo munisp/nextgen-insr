@@ -50,10 +50,10 @@ type SyncRequest struct {
 
 // SyncResponse is returned from server with remote changes
 type SyncResponse struct {
-	SyncToken  string       `json:"sync_token"`
-	Changes    []SyncRecord `json:"changes"`
-	Conflicts  []Conflict   `json:"conflicts,omitempty"`
-	HasMore    bool         `json:"has_more"`
+	SyncToken string       `json:"sync_token"`
+	Changes   []SyncRecord `json:"changes"`
+	Conflicts []Conflict   `json:"conflicts,omitempty"`
+	HasMore   bool         `json:"has_more"`
 }
 
 // Conflict represents a sync conflict that needs resolution
@@ -67,12 +67,12 @@ type Conflict struct {
 
 // OfflineConfig configures offline sync behavior
 type OfflineConfig struct {
-	MaxRetries        int           `json:"max_retries"`
-	RetryBackoffMs    int           `json:"retry_backoff_ms"`
-	SyncIntervalMs    int           `json:"sync_interval_ms"`
-	MaxBatchSize      int           `json:"max_batch_size"`
-	ConflictStrategy  string        `json:"conflict_strategy"`
-	CacheTTLSeconds   int           `json:"cache_ttl_seconds"`
+	MaxRetries       int    `json:"max_retries"`
+	RetryBackoffMs   int    `json:"retry_backoff_ms"`
+	SyncIntervalMs   int    `json:"sync_interval_ms"`
+	MaxBatchSize     int    `json:"max_batch_size"`
+	ConflictStrategy string `json:"conflict_strategy"`
+	CacheTTLSeconds  int    `json:"cache_ttl_seconds"`
 }
 
 // DefaultOfflineConfig returns sensible defaults for Nigerian market conditions

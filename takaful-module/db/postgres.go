@@ -325,7 +325,7 @@ func (p *PostgreSQL) ListProducts(ctx context.Context, category string, isActive
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanProducts(rows)
 }
 
@@ -380,17 +380,30 @@ func (p *PostgreSQL) ListParticipants(ctx context.Context, status, kycStatus str
 	args := []interface{}{}
 	pos := 1
 	if status != "" {
-		query += fmt.Sprintf(" AND status=$%d", pos); args = append(args, status); pos++
+		query += fmt.Sprintf(" AND status=$%d", pos)
+		args = append(args, status)
+		pos++
 	}
 	if kycStatus != "" {
-		query += fmt.Sprintf(" AND kyc_status=$%d", pos); args = append(args, kycStatus); pos++
+		query += fmt.Sprintf(" AND kyc_status=$%d", pos)
+		args = append(args, kycStatus)
+		pos++
 	}
 	query += " ORDER BY created_at DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit); pos++ }
-	if offset > 0 { query += fmt.Sprintf(" OFFSET $%d", pos); args = append(args, offset) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+		pos++
+	}
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", pos)
+		args = append(args, offset)
+	}
 	rows, err := p.db.QueryContext(ctx, query, args...)
-	if err != nil { return nil, err }
-	defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
 	return scanParticipants(rows)
 }
 
@@ -417,7 +430,9 @@ func (p *PostgreSQL) GetContribution(ctx context.Context, id string) (*models.Co
 		&c.ID, &c.ParticipantID, &c.ProductID, &c.TransactionID, &c.Amount,
 		&c.TabarruPortion, &c.WakalaFee, &c.InvestmentPortion, &c.PaymentMethod,
 		&c.Status, &c.ProcessedAt, &c.ReferenceNo, &c.Notes, &c.CreatedAt)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &c, nil
 }
 
@@ -433,8 +448,10 @@ func (p *PostgreSQL) GetContributionsByParticipant(ctx context.Context, particip
 	} else {
 		rows, err = p.db.QueryContext(ctx, query, participantID)
 	}
-	if err != nil { return nil, err }
-	defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
 	return scanContributions(rows)
 }
 
@@ -470,7 +487,9 @@ func (p *PostgreSQL) GetPool(ctx context.Context, id string) (*models.TabarruPoo
 		&pool.TotalTabarru, &pool.TotalWakalaFee, &pool.InvestmentReturn,
 		&pool.IsShariahCompliant, &pool.PeriodStart, &pool.PeriodEnd, &pool.Status,
 		&pool.CreatedAt, &pool.UpdatedAt)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &pool, nil
 }
 
@@ -487,8 +506,10 @@ func (p *PostgreSQL) ListPools(ctx context.Context, status string) ([]models.Tab
 	}
 	query += " ORDER BY created_at DESC"
 	rows, err := p.db.QueryContext(ctx, query, args...)
-	if err != nil { return nil, err }
-	defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
 	return scanPools(rows)
 }
 
@@ -529,7 +550,9 @@ func (p *PostgreSQL) GetClaim(ctx context.Context, id string) (*models.Claim, er
 		&c.ClaimType, &c.ClaimAmount, &c.Deductible, &c.PaidAmount, &c.RejectionReason,
 		&c.Status, &c.FiledAt, &c.ApprovedAt, &c.PaidAt, &c.ReviewedBy,
 		&c.ClaimDocuments, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &c, nil
 }
 
@@ -541,13 +564,20 @@ func (p *PostgreSQL) GetClaimsByParticipant(ctx context.Context, participantID s
 	args := []interface{}{participantID}
 	pos := 2
 	if status != "" {
-		query += fmt.Sprintf(" AND status=$%d", pos); args = append(args, status); pos++
+		query += fmt.Sprintf(" AND status=$%d", pos)
+		args = append(args, status)
+		pos++
 	}
 	query += " ORDER BY filed_at DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+	}
 	rows, err := p.db.QueryContext(ctx, query, args...)
-	if err != nil { return nil, err }
-	defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
 	return scanClaims(rows)
 }
 
@@ -575,7 +605,9 @@ func (p *PostgreSQL) GetSurplusDistribution(ctx context.Context, period, poolID 
 		&sd.OperatorShare, &sd.DistributionRatio, &sd.ParticipantCount,
 		&sd.AvgParticipantShare, &sd.Status, &sd.ApprovedBy, &sd.ApprovedAt,
 		&sd.DistributedAt, &sd.Notes, &sd.CreatedAt)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &sd, nil
 }
 
@@ -601,12 +633,16 @@ func (p *PostgreSQL) GetZakatRecords(ctx context.Context, participantID string, 
 	args := []interface{}{participantID}
 	pos := 2
 	if year > 0 {
-		query += fmt.Sprintf(" AND year=$%d", pos); args = append(args, year); pos++
+		query += fmt.Sprintf(" AND year=$%d", pos)
+		args = append(args, year)
+		pos++
 	}
 	query += " ORDER BY year DESC"
 	rows, err := p.db.QueryContext(ctx, query, args...)
-	if err != nil { return nil, err }
-	defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
 	return scanZakatRecords(rows)
 }
 
@@ -646,7 +682,9 @@ func scanProducts(rows *sql.Rows) ([]models.TakafulProduct, error) {
 			&p.WakalaFeePercent, &p.ParticipantShare, &p.TabarruPercent, &p.IsShariahCertified,
 			&p.ShariahBoardID, &p.ShariahCertDate, &p.ShariahExpiryDate, &p.IsActive,
 			&p.MaxCoverageAmount, &p.WaitingPeriodDays, &p.CoInsurancePct, &p.CreatedAt, &p.UpdatedAt)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		products = append(products, p)
 	}
 	return products, nil
@@ -661,7 +699,9 @@ func scanParticipants(rows *sql.Rows) ([]models.Participant, error) {
 			&p.KYCStatus, &p.KYCVerifiedAt, &p.IsParticipant, &p.EnrollmentDate,
 			&p.LastContribution, &p.TotalContributions, &p.CurrentShare, &p.SurplusBalance,
 			&p.Status, &p.CreatedAt, &p.UpdatedAt)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		participants = append(participants, p)
 	}
 	return participants, nil
@@ -675,7 +715,9 @@ func scanContributions(rows *sql.Rows) ([]models.Contribution, error) {
 			&item.Amount, &item.TabarruPortion, &item.WakalaFee, &item.InvestmentPortion,
 			&item.PaymentMethod, &item.Status, &item.ProcessedAt, &item.ReferenceNo,
 			&item.Notes, &item.CreatedAt)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		c = append(c, item)
 	}
 	return c, nil
@@ -689,7 +731,9 @@ func scanPools(rows *sql.Rows) ([]models.TabarruPool, error) {
 			&p.CurrentBalance, &p.InvestmentBalance, &p.TotalParticipants, &p.TotalTabarru,
 			&p.TotalWakalaFee, &p.InvestmentReturn, &p.IsShariahCompliant, &p.PeriodStart,
 			&p.PeriodEnd, &p.Status, &p.CreatedAt, &p.UpdatedAt)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		pools = append(pools, p)
 	}
 	return pools, nil
@@ -703,7 +747,9 @@ func scanClaims(rows *sql.Rows) ([]models.Claim, error) {
 			&c.ClaimType, &c.ClaimAmount, &c.Deductible, &c.PaidAmount, &c.RejectionReason,
 			&c.Status, &c.FiledAt, &c.ApprovedAt, &c.PaidAt, &c.ReviewedBy,
 			&c.ClaimDocuments, &c.CreatedAt, &c.UpdatedAt)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		claims = append(claims, c)
 	}
 	return claims, nil
@@ -716,7 +762,9 @@ func scanZakatRecords(rows *sql.Rows) ([]models.ZakatRecord, error) {
 		err := rows.Scan(&z.ID, &z.ParticipantID, &z.Year, &z.NetWealth, &z.NisabThreshold,
 			&z.IsZakatObliged, &z.ZakatRate, &z.ZakatAmount, &z.Paid, &z.PaidAt,
 			&z.Recipients, &z.Status, &z.CalculatedAt)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		records = append(records, z)
 	}
 	return records, nil

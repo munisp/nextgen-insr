@@ -208,7 +208,10 @@ func (p *PostgreSQL) GetQueuedNotifications(ctx context.Context, channel string,
 		pos++
 	}
 	query += " ORDER BY priority ASC, queued_at ASC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -231,7 +234,10 @@ func (p *PostgreSQL) GetNotificationsByCustomer(ctx context.Context, customerID,
 		pos++
 	}
 	query += " ORDER BY created_at DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {

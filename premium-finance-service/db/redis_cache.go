@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/insureportal/premium-finance-service/config"
+	"github.com/redis/go-redis/v9"
 )
 
 // RedisCache wraps go-redis with domain-specific cache operations
@@ -41,19 +41,19 @@ func (r *RedisCache) Close() error {
 
 // Key prefixes
 const (
-	PrefixApp      = "pf:app:"
-	PrefixCredit   = "pf:credit:"
-	PrefixSchedule = "pf:schedule:"
+	PrefixApp        = "pf:app:"
+	PrefixCredit     = "pf:credit:"
+	PrefixSchedule   = "pf:schedule:"
 	PrefixCollateral = "pf:collateral:"
-	PrefixSummary  = "pf:summary:"
-	PrefixStats    = "pf:stats:"
-	PrefixLock     = "pf:lock:"
+	PrefixSummary    = "pf:summary:"
+	PrefixStats      = "pf:stats:"
+	PrefixLock       = "pf:lock:"
 )
 
 const (
-	TCacheShort = 5 * time.Minute
+	TCacheShort  = 5 * time.Minute
 	TCacheMedium = 30 * time.Minute
-	TCacheLong  = 2 * time.Hour
+	TCacheLong   = 2 * time.Hour
 )
 
 // CacheApplication stores a finance application in cache

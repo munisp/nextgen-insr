@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"math"
 	"github.com/unified-insurance/reinsurance-management/internal/models"
 	"github.com/unified-insurance/reinsurance-management/internal/repository"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -105,11 +105,11 @@ func (s *ReinsuranceService) CalculateCession(ctx context.Context, req CessionRe
 		TreatyID: req.TreatyID, PolicyID: req.PolicyID, PolicyNumber: req.PolicyNumber,
 		LineOfBusiness: treaty.LineOfBusiness, SumInsured: req.SumInsured,
 		RetainedAmount: math.Round(retainedAmount*100) / 100,
-		CededAmount: math.Round(cededAmount*100) / 100,
-		GrossPremium: req.GrossPremium,
-		CededPremium: math.Round(cededPremium*100) / 100,
-		Commission: math.Round(commission*100) / 100,
-		EffectiveDate: req.EffectiveDate, ExpiryDate: req.ExpiryDate,
+		CededAmount:    math.Round(cededAmount*100) / 100,
+		GrossPremium:   req.GrossPremium,
+		CededPremium:   math.Round(cededPremium*100) / 100,
+		Commission:     math.Round(commission*100) / 100,
+		EffectiveDate:  req.EffectiveDate, ExpiryDate: req.ExpiryDate,
 	}
 	if err := s.repo.CreateCession(ctx, cession); err != nil {
 		return nil, fmt.Errorf("failed to create cession: %w", err)
@@ -131,8 +131,8 @@ func (s *ReinsuranceService) CreateFacultativePlacement(ctx context.Context, req
 		RiskDescription: req.RiskDescription, LineOfBusiness: req.LineOfBusiness,
 		SumInsured: req.SumInsured, RetainedAmount: req.RetainedAmount,
 		CededAmount: math.Round(cededAmount*100) / 100,
-		Premium: req.Premium, CededPremium: math.Round(cededPremium*100) / 100,
-		Commission: math.Round(commission*100) / 100,
+		Premium:     req.Premium, CededPremium: math.Round(cededPremium*100) / 100,
+		Commission:  math.Round(commission*100) / 100,
 		RiskDetails: req.RiskDetails, Status: "pending",
 	}
 	if err := s.repo.CreateFacPlacement(ctx, fac); err != nil {
@@ -178,9 +178,9 @@ func (s *ReinsuranceService) CalculateClaimRecovery(ctx context.Context, req Cla
 	recovery := &models.ClaimRecovery{
 		ClaimID: req.ClaimID, TreatyID: req.TreatyID, PolicyID: req.PolicyID,
 		GrossClaimAmount: req.GrossClaimAmount,
-		RetainedAmount: math.Round(retainedAmount*100) / 100,
-		RecoveryAmount: math.Round(recoveryAmount*100) / 100,
-		Status: "pending",
+		RetainedAmount:   math.Round(retainedAmount*100) / 100,
+		RecoveryAmount:   math.Round(recoveryAmount*100) / 100,
+		Status:           "pending",
 	}
 	if err := s.repo.CreateClaimRecovery(ctx, recovery); err != nil {
 		return nil, fmt.Errorf("failed to create recovery: %w", err)
@@ -235,12 +235,12 @@ func (s *ReinsuranceService) GenerateAccountStatement(ctx context.Context, treat
 
 	account := &models.ReinsuranceAccount{
 		TreatyID: treatyID, Period: period,
-		CededPremium: math.Round(cededPremium*100) / 100,
-		Commission: math.Round(commission*100) / 100,
-		ClaimsRecovered: math.Round(totalRecoveries*100) / 100,
+		CededPremium:     math.Round(cededPremium*100) / 100,
+		Commission:       math.Round(commission*100) / 100,
+		ClaimsRecovered:  math.Round(totalRecoveries*100) / 100,
 		ProfitCommission: math.Round(profitComm*100) / 100,
-		Balance: math.Round(balance*100) / 100,
-		Status: "open",
+		Balance:          math.Round(balance*100) / 100,
+		Status:           "open",
 	}
 	if err := s.repo.CreateAccount(ctx, account); err != nil {
 		return nil, fmt.Errorf("failed to create account: %w", err)

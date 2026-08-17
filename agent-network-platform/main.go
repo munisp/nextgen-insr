@@ -91,7 +91,7 @@ func publishEvent(topic string, key string, payload interface{}) {
 		log.Printf("WARN: kafka publish error: %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 }
 
 // ── Redis Caching ───────────────────────────────────────────────────────────
@@ -186,7 +186,7 @@ func main() {
 	initKafka()
 	initRedis()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
@@ -252,30 +252,30 @@ var (
 
 func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
+	_, _ = fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
+	_, _ = fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	_, _ = fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	_, _ = fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if db == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
 		return
 	}
 	if err := db.Ping(); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }

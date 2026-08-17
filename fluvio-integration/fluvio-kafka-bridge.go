@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/segmentio/kafka-go"
 	"database/sql"
+	"github.com/segmentio/kafka-go"
 
 	_ "github.com/lib/pq"
 )
@@ -54,7 +54,7 @@ func (f *FluvioNativeClient) Produce(ctx context.Context, topic string, data []b
 	if err != nil {
 		return fmt.Errorf("fluvio produce failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("fluvio produce returned status %d", resp.StatusCode)
@@ -81,7 +81,7 @@ func (f *FluvioNativeClient) Consume(ctx context.Context, topic string, offset i
 			log.Printf("[Fluvio] Consume connection failed: %v", err)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		decoder := json.NewDecoder(resp.Body)
 		for {
@@ -121,14 +121,14 @@ func (n nopCloser) Read(p []byte) (int, error) {
 func (n nopCloser) Close() error { return nil }
 
 type FluvioKafkaBridge struct {
-	kafkaReaders   map[string]*kafka.Reader
-	kafkaWriters   map[string]*kafka.Writer
-	fluvioClient   *FluvioNativeClient
-	fluvioTopics   map[string]string
-	wg             sync.WaitGroup
-	ctx            context.Context
-	cancel         context.CancelFunc
-	mu             sync.RWMutex
+	kafkaReaders map[string]*kafka.Reader
+	kafkaWriters map[string]*kafka.Writer
+	fluvioClient *FluvioNativeClient
+	fluvioTopics map[string]string
+	wg           sync.WaitGroup
+	ctx          context.Context
+	cancel       context.CancelFunc
+	mu           sync.RWMutex
 }
 
 type BridgeConfig struct {
@@ -141,12 +141,12 @@ func NewFluvioKafkaBridge(config BridgeConfig) *FluvioKafkaBridge {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &FluvioKafkaBridge{
-		kafkaReaders:  make(map[string]*kafka.Reader),
-		kafkaWriters:  make(map[string]*kafka.Writer),
-		fluvioClient:  NewFluvioNativeClient(config.FluvioEndpoint),
-		fluvioTopics:  config.TopicMappings,
-		ctx:           ctx,
-		cancel:        cancel,
+		kafkaReaders: make(map[string]*kafka.Reader),
+		kafkaWriters: make(map[string]*kafka.Writer),
+		fluvioClient: NewFluvioNativeClient(config.FluvioEndpoint),
+		fluvioTopics: config.TopicMappings,
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 }
 
@@ -331,23 +331,22 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	config := BridgeConfig{
 		KafkaBrokers:   getEnv("KAFKA_BROKERS", "kafka-0.kafka-headless:9092"),
 		FluvioEndpoint: getEnv("FLUVIO_ENDPOINT", "fluvio-sc:9003"),
 		TopicMappings: map[string]string{
-			"fraud-detection-events":     "fraud-detection-realtime",
-			"analytics-events":           "analytics-realtime",
-			"geospatial-events":          "geospatial-events",
-			"ml-predictions":             "ml-predictions-realtime",
-			"policy-events":              "policy-events-stream",
-			"claim-events":               "claim-events-stream",
-			"payment-events":             "payment-events-stream",
+			"fraud-detection-events": "fraud-detection-realtime",
+			"analytics-events":       "analytics-realtime",
+			"geospatial-events":      "geospatial-events",
+			"ml-predictions":         "ml-predictions-realtime",
+			"policy-events":          "policy-events-stream",
+			"claim-events":           "claim-events-stream",
+			"payment-events":         "payment-events-stream",
 		},
 	}
 

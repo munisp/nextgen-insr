@@ -237,7 +237,7 @@ func (p *PostgreSQL) UpdateHeartbeat(ctx context.Context, serviceName, instanceI
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx,
 		`UPDATE service_registrations SET status=$1, last_heartbeat=NOW(), is_healthy=$2 
@@ -269,7 +269,7 @@ func (p *PostgreSQL) GetProtectedServices(ctx context.Context) ([]models.Service
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanServiceHealthStatuses(rows)
 }
@@ -413,7 +413,7 @@ func (p *PostgreSQL) GetFailoverEvents(ctx context.Context, status string, limit
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []models.FailoverEvent
 	for rows.Next() {
@@ -491,7 +491,7 @@ func (p *PostgreSQL) GetDRDrills(ctx context.Context, status string, limit int) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var drills []models.DRDrill
 	for rows.Next() {
@@ -584,7 +584,7 @@ func (p *PostgreSQL) GetBackupStatuses(ctx context.Context, status string, limit
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var backups []models.BackupStatus
 	for rows.Next() {
@@ -629,7 +629,7 @@ func (p *PostgreSQL) GetRTOTracker(ctx context.Context, metricName string) ([]mo
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanRTOTrackers(rows)
 }
@@ -668,7 +668,7 @@ func (p *PostgreSQL) GetNAICOMNotifications(ctx context.Context, limit int) ([]m
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var notifs []models.NAICOMNotification
 	for rows.Next() {

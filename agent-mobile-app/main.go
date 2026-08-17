@@ -114,7 +114,6 @@ func initDB() {
 	}
 }
 
-
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -184,7 +183,7 @@ func publishEvent(topic string, key string, payload interface{}) {
 		log.Printf("WARN: kafka publish error: %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 }
 
 var (
@@ -229,38 +228,38 @@ var (
 
 func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
+	_, _ = fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
+	_, _ = fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	_, _ = fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	_, _ = fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if db == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
 		return
 	}
 	if err := db.Ping(); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {
 	initDB()
 	initKafka()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
@@ -269,7 +268,7 @@ func main() {
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/metrics", prodMetricsHandler)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "agent-mobile-app"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "agent-mobile-app"})
 	})
 	r.Get("/ready", handleReady)
 	r.Get("/live", handleLive)
@@ -278,17 +277,25 @@ func main() {
 	r.Get("/api/v1/agent/{id}/commission", agentCommission)
 
 	port := os.Getenv("PORT")
-	if port == "" { port = "8134" }
+	if port == "" {
+		port = "8134"
+	}
 	log.Printf("Agent Mobile App starting on :%s", port)
-	srv := &http.Server{Addr: ":"+port, Handler: tracingMiddleware(corsMiddleware(r)), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
-	go func() { if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatalf("Server failed: %v", err) } }()
+	srv := &http.Server{Addr: ":" + port, Handler: tracingMiddleware(corsMiddleware(r)), ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Printf(`{"level":"info","msg":"shutting down gracefully","service":"agent-mobile-app"}`)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil { log.Fatalf("Forced shutdown: %v", err) }
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Forced shutdown: %v", err)
+	}
 	log.Println("Server stopped")
 }
 
@@ -316,27 +323,27 @@ func agentDashboard(w http.ResponseWriter, r *http.Request) {
 
 	if err := db.QueryRow(`SELECT COUNT(*) FROM agent_policies WHERE agent_id = $1 AND created_at::date = CURRENT_DATE`, agentID).Scan(&policiesSold); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
 		return
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM agent_policies WHERE agent_id = $1 AND status = 'renewed' AND created_at::date = CURRENT_DATE`, agentID).Scan(&renewals); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
 		return
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM agent_claims WHERE agent_id = $1 AND created_at::date = CURRENT_DATE`, agentID).Scan(&claimsFiled); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
 		return
 	}
 	if err := db.QueryRow(`SELECT COALESCE(SUM(premium),0) FROM agent_policies WHERE agent_id = $1 AND created_at::date = CURRENT_DATE`, agentID).Scan(&premiumCollected); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
 		return
 	}
 	if err := db.QueryRow(`SELECT COALESCE(SUM(amount),0) FROM agent_commissions WHERE agent_id = $1 AND created_at::date = CURRENT_DATE`, agentID).Scan(&commissionEarned); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
 		return
 	}
 
@@ -345,11 +352,11 @@ func agentDashboard(w http.ResponseWriter, r *http.Request) {
 	err := db.QueryRow(`SELECT balance, rating FROM agent_wallets WHERE agent_id = $1`, agentID).Scan(&walletBalance, &rating)
 	if err == sql.ErrNoRows {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "agent wallet not found (agent not onboarded)", "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "agent wallet not found (agent not onboarded)", "agent_id": agentID})
 		return
 	} else if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("dashboard query failed: %s", err.Error()), "agent_id": agentID})
 		return
 	}
 
@@ -421,7 +428,7 @@ func agentCheckin(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("territory lookup failed: %s", err.Error()), "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("territory lookup failed: %s", err.Error()), "agent_id": agentID})
 		return
 	}
 
@@ -429,13 +436,13 @@ func agentCheckin(w http.ResponseWriter, r *http.Request) {
 	within := distanceKm <= radiusKm
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"agent_id":             agentID,
-		"checked_in":           true,
-		"location":             territoryName,
-		"within_geofence":      within,
-		"distance_km":          math.Round(distanceKm*100) / 100,
-		"territory_radius_km":  radiusKm,
-		"timestamp":            time.Now().Format(time.RFC3339),
+		"agent_id":            agentID,
+		"checked_in":          true,
+		"location":            territoryName,
+		"within_geofence":     within,
+		"distance_km":         math.Round(distanceKm*100) / 100,
+		"territory_radius_km": radiusKm,
+		"timestamp":           time.Now().Format(time.RFC3339),
 	})
 }
 
@@ -450,10 +457,10 @@ func agentCommission(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query(`SELECT policy_id, amount, type, status FROM agent_commissions WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 100`, agentID)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("commission query failed: %s", err.Error()), "agent_id": agentID})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("commission query failed: %s", err.Error()), "agent_id": agentID})
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	commissions := []map[string]interface{}{}
 	var totalPending, totalCredited float64

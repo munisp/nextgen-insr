@@ -32,7 +32,7 @@ func TestNewTigerBeetleClient(t *testing.T) {
 
 func TestCreateAccount(t *testing.T) {
 	client := setupTestClient(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -56,7 +56,7 @@ func TestCreateAccount(t *testing.T) {
 
 func TestCreateAccounts_Batch(t *testing.T) {
 	client := setupTestClient(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -91,7 +91,7 @@ func TestCreateAccounts_Batch(t *testing.T) {
 
 func TestCreateTransfer_Success(t *testing.T) {
 	client := setupTestClient(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -138,7 +138,7 @@ func TestCreateTransfer_Success(t *testing.T) {
 
 func TestCreateTransfer_InsufficientFunds(t *testing.T) {
 	client := setupTestClient(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -184,7 +184,7 @@ func TestCreateTransfer_InsufficientFunds(t *testing.T) {
 
 func TestCreateTransfer_Duplicate(t *testing.T) {
 	client := setupTestClient(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -234,7 +234,7 @@ func TestCreateTransfer_Duplicate(t *testing.T) {
 
 func TestGetAccountBalance(t *testing.T) {
 	client := setupTestClient(t)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 

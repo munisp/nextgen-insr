@@ -70,7 +70,7 @@ func checkService(name string, port int, client *http.Client) ServiceHealth {
 		result.Error = err.Error()
 		return result
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		result.Status = "unhealthy"
@@ -136,7 +136,7 @@ func handleAggregatedHealth(w http.ResponseWriter, r *http.Request) {
 	if status == "unhealthy" {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	json.NewEncoder(w).Encode(agg)
+	_ = json.NewEncoder(w).Encode(agg)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -148,11 +148,11 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {

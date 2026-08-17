@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -31,7 +31,7 @@ import (
 func jsonResponse(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func errorResponse(w http.ResponseWriter, status int, message string) {
@@ -40,7 +40,7 @@ func errorResponse(w http.ResponseWriter, status int, message string) {
 
 func generateID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
@@ -74,7 +74,7 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req models.VerificationRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -146,7 +146,7 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 				kycDoc.ExpiryDate = &exp
 			}
 		}
-		h.store.StoreDocument(&kycDoc)
+		_ = h.store.StoreDocument(&kycDoc)
 	}
 
 	// Check cache first
@@ -182,11 +182,11 @@ func (h *Handler) submitIndividualKYC(w http.ResponseWriter, r *http.Request) {
 	if len(flags) > 0 {
 		result.Details = append(result.Details, "requires manual review")
 		kyc.Status = models.UnderReview
-		h.store.UpdateKYCStatus(customerID, kyc.Status)
+		_ = h.store.UpdateKYCStatus(customerID, kyc.Status)
 	}
 
 	if h.cache != nil {
-		h.cache.CacheKYCResult(customerID, &result)
+		_ = h.cache.CacheKYCResult(customerID, &result)
 	}
 
 	jsonResponse(w, http.StatusCreated, map[string]interface{}{
@@ -212,7 +212,7 @@ func (h *Handler) submitBusinessKYC(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req models.VerificationRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -294,7 +294,7 @@ func (h *Handler) submitBusinessKYC(w http.ResponseWriter, r *http.Request) {
 				kycDoc.ExpiryDate = &exp
 			}
 		}
-		h.store.StoreDocument(&kycDoc)
+		_ = h.store.StoreDocument(&kycDoc)
 	}
 
 	// Auto-mark CAC/TIN as verified if numbers provided
@@ -408,7 +408,7 @@ func (h *Handler) verifyNIN(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req struct {
 		NIN       string `json:"nin"`
@@ -484,7 +484,7 @@ func (h *Handler) verifyNIN(w http.ResponseWriter, r *http.Request) {
 
 	// Cache result
 	if h.cache != nil {
-		h.cache.CacheNINLookup(req.NIN, ninResult)
+		_ = h.cache.CacheNINLookup(req.NIN, ninResult)
 	}
 
 	jsonResponse(w, http.StatusOK, map[string]interface{}{
@@ -509,7 +509,7 @@ func (h *Handler) verifyBVN(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req struct {
 		BVN         string `json:"bvn"`
@@ -584,7 +584,7 @@ func (h *Handler) verifyBVN(w http.ResponseWriter, r *http.Request) {
 
 	// Cache result
 	if h.cache != nil {
-		h.cache.CacheBVNLookup(req.BVN, bvnResult)
+		_ = h.cache.CacheBVNLookup(req.BVN, bvnResult)
 	}
 
 	jsonResponse(w, http.StatusOK, map[string]interface{}{
@@ -609,7 +609,7 @@ func (h *Handler) refreshKYC(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req struct {
 		CustomerID string `json:"customer_id"`
@@ -796,7 +796,7 @@ func (h *Handler) callNINAPI(nin, fullName, dob string) (*models.NINResult, erro
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -860,7 +860,7 @@ func (h *Handler) callBVNAPI(bvn, fullName string) (*models.BVNResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -899,7 +899,7 @@ func (h *Handler) checkAPIServerStatus(url string) map[string]interface{} {
 	if err != nil {
 		return map[string]interface{}{"status": "unavailable", "url": url, "error": err.Error()}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	status := "unavailable"
 	if resp.StatusCode == http.StatusOK {
@@ -1202,7 +1202,7 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		reqID := r.Header.Get("X-Request-ID")
 		if reqID == "" {
 			b := make([]byte, 8)
-			rand.Read(b)
+			_, _ = rand.Read(b)
 			reqID = hex.EncodeToString(b)
 		}
 		w.Header().Set("X-Request-ID", reqID)
@@ -1220,7 +1220,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to create logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer log.Sync()
+	defer func() { _ = log.Sync() }()
 
 	cfg := config.Load()
 	log.Info("configuration loaded",

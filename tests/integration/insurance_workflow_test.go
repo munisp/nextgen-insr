@@ -58,10 +58,10 @@ func post(url string, payload interface{}) (int, map[string]interface{}, error) 
 	if err != nil {
 		return 0, nil, fmt.Errorf("post %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(data, &result)
+	_ = json.Unmarshal(data, &result)
 	return resp.StatusCode, result, nil
 }
 
@@ -70,10 +70,10 @@ func get(url string) (int, map[string]interface{}, error) {
 	if err != nil {
 		return 0, nil, fmt.Errorf("get %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(data, &result)
+	_ = json.Unmarshal(data, &result)
 	return resp.StatusCode, result, nil
 }
 
@@ -83,7 +83,7 @@ func del(url string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("delete %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode, nil
 }
 
@@ -127,11 +127,11 @@ func TestFullInsuranceWorkflow(t *testing.T) {
 
 	t.Run("Step2_CreateQuoteAndUnderwrite", func(t *testing.T) {
 		quote := map[string]interface{}{
-			"application_id":  "APP-" + time.Now().Format("150405"),
-			"decision":        "approved",
-			"premium_quoted":  75000.00,
-			"risk_score":      0.25,
-			"risk_class":      "standard",
+			"application_id": "APP-" + time.Now().Format("150405"),
+			"decision":       "approved",
+			"premium_quoted": 75000.00,
+			"risk_score":     0.25,
+			"risk_class":     "standard",
 		}
 		code, result, err := post(cfg.AgenticUnderwriting+"/api/v1/decisions/create", quote)
 		if err != nil {
@@ -279,13 +279,13 @@ func TestFullInsuranceWorkflow(t *testing.T) {
 
 	t.Run("Step10_SendNotification", func(t *testing.T) {
 		notification := map[string]interface{}{
-			"recipient":    "adebayo@example.com",
-			"channel":      "email",
-			"template":     "claim_approved",
-			"subject":      "Your Insurance Claim Has Been Approved",
-			"body":         "Dear Adebayo, your claim for NGN 420,000 has been approved.",
-			"claim_id":     claimID,
-			"policy_id":    policyID,
+			"recipient": "adebayo@example.com",
+			"channel":   "email",
+			"template":  "claim_approved",
+			"subject":   "Your Insurance Claim Has Been Approved",
+			"body":      "Dear Adebayo, your claim for NGN 420,000 has been approved.",
+			"claim_id":  claimID,
+			"policy_id": policyID,
 		}
 		code, _, err := post(cfg.Communication+"/api/v1/notifications/create", notification)
 		if err != nil {
@@ -317,11 +317,11 @@ func TestFullInsuranceWorkflow(t *testing.T) {
 
 	t.Run("Step12_NaicomRegulatory", func(t *testing.T) {
 		report := map[string]interface{}{
-			"report_type":   "claims_quarterly",
-			"period":        "2026-Q2",
-			"total_claims":  1,
-			"total_paid":    420000.00,
-			"total_pending": 0,
+			"report_type":     "claims_quarterly",
+			"period":          "2026-Q2",
+			"total_claims":    1,
+			"total_paid":      420000.00,
+			"total_pending":   0,
 			"submission_date": time.Now().Format("2006-01-02"),
 		}
 		code, _, err := post(cfg.NaicomCompliance+"/api/v1/compliance_reports/create", report)
@@ -356,10 +356,10 @@ func TestFullInsuranceWorkflow(t *testing.T) {
 
 	t.Run("Step14_Cleanup", func(t *testing.T) {
 		if policyID != "" {
-			del(cfg.PolicyLifecycle + "/api/v1/transitions/delete?id=" + policyID)
+			_, _ = del(cfg.PolicyLifecycle + "/api/v1/transitions/delete?id=" + policyID)
 		}
 		if quoteID != "" {
-			del(cfg.AgenticUnderwriting + "/api/v1/decisions/delete?id=" + quoteID)
+			_, _ = del(cfg.AgenticUnderwriting + "/api/v1/decisions/delete?id=" + quoteID)
 		}
 		t.Log("Cleanup complete")
 	})
@@ -368,7 +368,7 @@ func TestFullInsuranceWorkflow(t *testing.T) {
 // TestGroupLifeWorkflow tests group life insurance enrollment→premium→claim
 func TestGroupLifeWorkflow(t *testing.T) {
 	groupLifeURL := envOr("GROUP_LIFE_URL", "http://localhost:9311")
-	
+
 	t.Run("HealthCheck", func(t *testing.T) {
 		code, _, err := get(groupLifeURL + "/health")
 		if err != nil {

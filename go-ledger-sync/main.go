@@ -399,7 +399,7 @@ func healthAggregatorHandler(w http.ResponseWriter, r *http.Request) {
 			overall = "degraded"
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		checks = append(checks, HealthCheck{
 			Service:   svc.name,
@@ -520,13 +520,13 @@ func updateAccount(accountID, currency string, amount int64, pending bool) {
 
 func jsonResponse(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -641,7 +641,7 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	port := os.Getenv("GO_LEDGER_PORT")
 	if port == "" {
@@ -702,5 +702,5 @@ var prodMetricsStart = time.Now()
 
 func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n# TYPE process_uptime_seconds gauge\nprocess_uptime_seconds %.2f\n", time.Since(prodMetricsStart).Seconds())
+	_, _ = fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n# TYPE process_uptime_seconds gauge\nprocess_uptime_seconds %.2f\n", time.Since(prodMetricsStart).Seconds())
 }

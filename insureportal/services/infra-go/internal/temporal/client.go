@@ -24,27 +24,27 @@ import (
 
 // Workflow type identifiers
 const (
-	WorkflowPolicyIssuance       = "PolicyIssuanceWorkflow"
-	WorkflowClaimProcessing      = "ClaimProcessingWorkflow"
-	WorkflowPremiumCollection    = "PremiumCollectionWorkflow"
-	WorkflowPolicyRenewal        = "PolicyRenewalWorkflow"
-	WorkflowReinsuranceCession   = "ReinsuranceCessionWorkflow"
-	WorkflowIFRS17Measurement    = "IFRS17MeasurementWorkflow"
-	WorkflowComplianceReporting  = "ComplianceReportingWorkflow"
-	WorkflowFloatReplenishment   = "FloatReplenishmentWorkflow"
-	WorkflowKYCVerification      = "KYCVerificationWorkflow"
-	WorkflowFraudInvestigation   = "FraudInvestigationWorkflow"
-	WorkflowSettlement           = "SettlementWorkflow"
-	WorkflowUnderwriting         = "UnderwritingWorkflow"
+	WorkflowPolicyIssuance      = "PolicyIssuanceWorkflow"
+	WorkflowClaimProcessing     = "ClaimProcessingWorkflow"
+	WorkflowPremiumCollection   = "PremiumCollectionWorkflow"
+	WorkflowPolicyRenewal       = "PolicyRenewalWorkflow"
+	WorkflowReinsuranceCession  = "ReinsuranceCessionWorkflow"
+	WorkflowIFRS17Measurement   = "IFRS17MeasurementWorkflow"
+	WorkflowComplianceReporting = "ComplianceReportingWorkflow"
+	WorkflowFloatReplenishment  = "FloatReplenishmentWorkflow"
+	WorkflowKYCVerification     = "KYCVerificationWorkflow"
+	WorkflowFraudInvestigation  = "FraudInvestigationWorkflow"
+	WorkflowSettlement          = "SettlementWorkflow"
+	WorkflowUnderwriting        = "UnderwritingWorkflow"
 )
 
 // Task queues
 const (
-	TaskQueueInsurance   = "insurance-queue"
-	TaskQueueClaims      = "claims-queue"
-	TaskQueueSettlement  = "settlement-queue"
-	TaskQueueCompliance  = "compliance-queue"
-	TaskQueueActuarial   = "actuarial-queue"
+	TaskQueueInsurance  = "insurance-queue"
+	TaskQueueClaims     = "claims-queue"
+	TaskQueueSettlement = "settlement-queue"
+	TaskQueueCompliance = "compliance-queue"
+	TaskQueueActuarial  = "actuarial-queue"
 )
 
 // StartWorkflowRequest is the request to start a Temporal workflow
@@ -58,9 +58,9 @@ type StartWorkflowRequest struct {
 
 // WorkflowOptions configures workflow execution
 type WorkflowOptions struct {
-	ExecutionTimeout string `json:"executionTimeout,omitempty"` // e.g. "24h"
-	RunTimeout       string `json:"runTimeout,omitempty"`
-	TaskTimeout      string `json:"taskTimeout,omitempty"`
+	ExecutionTimeout string       `json:"executionTimeout,omitempty"` // e.g. "24h"
+	RunTimeout       string       `json:"runTimeout,omitempty"`
+	TaskTimeout      string       `json:"taskTimeout,omitempty"`
 	RetryPolicy      *RetryPolicy `json:"retryPolicy,omitempty"`
 }
 
@@ -75,22 +75,22 @@ type RetryPolicy struct {
 
 // WorkflowStatus represents the status of a running workflow
 type WorkflowStatus struct {
-	WorkflowID  string                 `json:"workflowId"`
-	RunID       string                 `json:"runId"`
-	Status      string                 `json:"status"`
-	WorkflowType string                `json:"workflowType"`
-	StartTime   time.Time              `json:"startTime"`
-	CloseTime   *time.Time             `json:"closeTime,omitempty"`
-	Result      map[string]interface{} `json:"result,omitempty"`
-	Error       string                 `json:"error,omitempty"`
+	WorkflowID   string                 `json:"workflowId"`
+	RunID        string                 `json:"runId"`
+	Status       string                 `json:"status"`
+	WorkflowType string                 `json:"workflowType"`
+	StartTime    time.Time              `json:"startTime"`
+	CloseTime    *time.Time             `json:"closeTime,omitempty"`
+	Result       map[string]interface{} `json:"result,omitempty"`
+	Error        string                 `json:"error,omitempty"`
 }
 
 // Client is the Temporal HTTP bridge client
 type Client struct {
-	logger      *zap.Logger
-	address     string
-	namespace   string
-	httpClient  *http.Client
+	logger     *zap.Logger
+	address    string
+	namespace  string
+	httpClient *http.Client
 }
 
 // NewClient creates a new Temporal client
@@ -99,9 +99,9 @@ func NewClient(logger *zap.Logger) *Client {
 	namespace := getEnv("TEMPORAL_NAMESPACE", "insureportal-production")
 
 	return &Client{
-		logger:    logger,
-		address:   address,
-		namespace: namespace,
+		logger:     logger,
+		address:    address,
+		namespace:  namespace,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}
 }
@@ -117,7 +117,7 @@ func (c *Client) Ping(ctx context.Context) string {
 	if err != nil {
 		return "unreachable"
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusOK {
 		return "ok"
 	}
@@ -163,10 +163,10 @@ func (c *Client) StartWorkflow(ctx context.Context, req StartWorkflowRequest) (*
 			StartTime:    time.Now(),
 		}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	runID := ""
 	if rid, ok := result["run_id"].(string); ok {
@@ -233,7 +233,7 @@ func (c *Client) SignalWorkflowHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued_offline"})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "signaled"})
 }
 
@@ -257,7 +257,7 @@ func (c *Client) CancelWorkflowHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "cancel_queued"})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
@@ -276,10 +276,10 @@ func (c *Client) GetWorkflowHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -295,10 +295,10 @@ func (c *Client) GetWorkflowHistoryHandler(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, map[string]interface{}{"history": []interface{}{}})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -322,10 +322,10 @@ func (c *Client) QueryWorkflowHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"result": nil})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -345,10 +345,10 @@ func (c *Client) GetTaskQueueStatsHandler(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -374,7 +374,7 @@ func getEnv(key, fallback string) string {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

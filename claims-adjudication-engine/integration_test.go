@@ -31,7 +31,7 @@ func getTestDB(t *testing.T) *sql.DB {
 
 func TestIntegration_DBConnection(t *testing.T) {
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Verify table exists
 	var exists bool
@@ -46,10 +46,10 @@ func TestIntegration_DBConnection(t *testing.T) {
 
 func TestIntegration_InsertAndQuery(t *testing.T) {
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM claims WHERE \"claimNumber\" = 'INT-TEST-99901'")
+	_, _ = testDB.Exec("DELETE FROM claims WHERE \"claimNumber\" = 'INT-TEST-99901'")
 
 	// Insert test record
 	_, err := testDB.Exec("INSERT INTO claims (\"userId\", \"policyId\", \"claimNumber\", amount, \"incidentDate\", description) VALUES (2, 1, 'INT-TEST-99901', 25000.00, NOW(), 'Integration test claim')")
@@ -68,13 +68,13 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM claims WHERE \"claimNumber\" = 'INT-TEST-99901'")
+	_, _ = testDB.Exec("DELETE FROM claims WHERE \"claimNumber\" = 'INT-TEST-99901'")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {
 	// Require a reachable database for this integration test
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	e := newTestEngine()
 	req := httptest.NewRequest("GET", "/health", nil)
@@ -98,7 +98,7 @@ func TestIntegration_HealthEndpoint(t *testing.T) {
 func TestIntegration_ReadyEndpoint(t *testing.T) {
 	// Require a reachable database for this integration test
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Engine without a repository must report not ready
 	e := newTestEngine()
@@ -140,7 +140,7 @@ func TestIntegration_LiveEndpoint(t *testing.T) {
 func TestIntegration_APIEndpoint(t *testing.T) {
 	// Require a reachable database for this integration test
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	e := newTestEngine()
 	body := `{"policyId":"POL-INT-001","amount":25000,"claimType":"health","evidenceCount":3}`
@@ -153,7 +153,7 @@ func TestIntegration_APIEndpoint(t *testing.T) {
 	mux.HandleFunc("/api/v1/adjudicate", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		rw.WriteHeader(http.StatusOK)
-		json.NewEncoder(rw).Encode(map[string]string{"status": "processed"})
+		_ = json.NewEncoder(rw).Encode(map[string]string{"status": "processed"})
 	})
 	mux.ServeHTTP(w, req)
 

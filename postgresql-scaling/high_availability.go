@@ -41,17 +41,17 @@ type HAManager struct {
 	standby        *sql.DB
 	currentPrimary *sql.DB
 	mu             sync.RWMutex
-	
+
 	// Health tracking
-	primaryHealthy   bool
-	standbyHealthy   bool
-	failureCount     int
-	lastFailover     time.Time
-	
+	primaryHealthy bool
+	standbyHealthy bool
+	failureCount   int
+	lastFailover   time.Time
+
 	// Callbacks
-	onFailover       func(oldPrimary, newPrimary string)
-	onHealthChange   func(node string, healthy bool)
-	
+	onFailover     func(oldPrimary, newPrimary string)
+	onHealthChange func(node string, healthy bool)
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -59,7 +59,7 @@ type HAManager struct {
 // NewHAManager creates a new high availability manager
 func NewHAManager(config *HAConfig) (*HAManager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	ha := &HAManager{
 		config:         config,
 		primaryHealthy: true,
@@ -67,24 +67,24 @@ func NewHAManager(config *HAConfig) (*HAManager, error) {
 		ctx:            ctx,
 		cancel:         cancel,
 	}
-	
+
 	// Connect to primary
 	primaryDSN := fmt.Sprintf(
 		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
 		config.Primary.Host, config.Primary.Port, config.Primary.Database,
 		config.Primary.User, config.Primary.Password, config.Primary.SSLMode,
 	)
-	
+
 	primary, err := sql.Open("postgres", primaryDSN)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to connect to primary: %w", err)
 	}
-	
+
 	primary.SetMaxOpenConns(config.Primary.MaxConns)
 	ha.primary = primary
 	ha.currentPrimary = primary
-	
+
 	// Connect to hot standby
 	if config.HotStandby != nil {
 		standbyDSN := fmt.Sprintf(
@@ -92,7 +92,7 @@ func NewHAManager(config *HAConfig) (*HAManager, error) {
 			config.HotStandby.Host, config.HotStandby.Port, config.HotStandby.Database,
 			config.HotStandby.User, config.HotStandby.Password, config.HotStandby.SSLMode,
 		)
-		
+
 		standby, err := sql.Open("postgres", standbyDSN)
 		if err != nil {
 			// Log warning but continue - standby is optional
@@ -102,10 +102,10 @@ func NewHAManager(config *HAConfig) (*HAManager, error) {
 			ha.standby = standby
 		}
 	}
-	
+
 	// Start health check loop
 	go ha.healthCheckLoop()
-	
+
 	return ha, nil
 }
 
@@ -113,7 +113,7 @@ func NewHAManager(config *HAConfig) (*HAManager, error) {
 func (ha *HAManager) healthCheckLoop() {
 	ticker := time.NewTicker(ha.config.HealthCheck.Interval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ha.ctx.Done():
@@ -128,25 +128,25 @@ func (ha *HAManager) healthCheckLoop() {
 func (ha *HAManager) checkHealth() {
 	ha.mu.Lock()
 	defer ha.mu.Unlock()
-	
+
 	// Check primary health
 	ctx, cancel := context.WithTimeout(ha.ctx, ha.config.HealthCheck.Timeout)
 	primaryHealthy := ha.checkNodeHealth(ctx, ha.primary)
 	cancel()
-	
+
 	if primaryHealthy != ha.primaryHealthy {
 		ha.primaryHealthy = primaryHealthy
 		if ha.onHealthChange != nil {
 			ha.onHealthChange("primary", primaryHealthy)
 		}
 	}
-	
+
 	// Check standby health
 	if ha.standby != nil {
 		ctx, cancel := context.WithTimeout(ha.ctx, ha.config.HealthCheck.Timeout)
 		standbyHealthy := ha.checkNodeHealth(ctx, ha.standby)
 		cancel()
-		
+
 		if standbyHealthy != ha.standbyHealthy {
 			ha.standbyHealthy = standbyHealthy
 			if ha.onHealthChange != nil {
@@ -154,11 +154,11 @@ func (ha *HAManager) checkHealth() {
 			}
 		}
 	}
-	
+
 	// Handle primary failure
 	if !ha.primaryHealthy {
 		ha.failureCount++
-		
+
 		if ha.failureCount >= ha.config.FailoverPolicy.FailoverThreshold {
 			ha.attemptFailover()
 		}
@@ -172,12 +172,12 @@ func (ha *HAManager) checkNodeHealth(ctx context.Context, db *sql.DB) bool {
 	if db == nil {
 		return false
 	}
-	
+
 	// Simple ping check
 	if err := db.PingContext(ctx); err != nil {
 		return false
 	}
-	
+
 	// Verify we can execute a query
 	var result int
 	err := db.QueryRowContext(ctx, "SELECT 1").Scan(&result)
@@ -191,36 +191,36 @@ func (ha *HAManager) attemptFailover() {
 		fmt.Println("Failover cooldown active, skipping")
 		return
 	}
-	
+
 	// Check if auto failover is enabled
 	if !ha.config.FailoverPolicy.AutoFailover {
 		fmt.Println("Auto failover disabled, manual intervention required")
 		return
 	}
-	
+
 	// Check if standby is available
 	if ha.standby == nil || !ha.standbyHealthy {
 		fmt.Println("Hot standby not available for failover")
 		return
 	}
-	
+
 	// Perform failover
 	oldPrimary := ha.currentPrimary
 	ha.currentPrimary = ha.standby
 	ha.lastFailover = time.Now()
 	ha.failureCount = 0
-	
+
 	fmt.Println("Failover completed: switched to hot standby")
-	
+
 	if ha.onFailover != nil {
 		ha.onFailover(ha.config.Primary.Host, ha.config.HotStandby.Host)
 	}
-	
+
 	// Try to close old primary connection
 	if oldPrimary != nil {
 		go func() {
 			time.Sleep(5 * time.Second)
-			oldPrimary.Close()
+			_ = oldPrimary.Close()
 		}()
 	}
 }
@@ -271,15 +271,15 @@ func (ha *HAManager) OnHealthChange(callback func(node string, healthy bool)) {
 func (ha *HAManager) ManualFailover() error {
 	ha.mu.Lock()
 	defer ha.mu.Unlock()
-	
+
 	if ha.standby == nil {
 		return fmt.Errorf("no hot standby available")
 	}
-	
+
 	if !ha.standbyHealthy {
 		return fmt.Errorf("hot standby is not healthy")
 	}
-	
+
 	ha.attemptFailover()
 	return nil
 }
@@ -287,45 +287,45 @@ func (ha *HAManager) ManualFailover() error {
 // Close closes all database connections
 func (ha *HAManager) Close() error {
 	ha.cancel()
-	
+
 	var errs []error
-	
+
 	if ha.primary != nil {
 		if err := ha.primary.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close primary: %w", err))
 		}
 	}
-	
+
 	if ha.standby != nil {
 		if err := ha.standby.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close standby: %w", err))
 		}
 	}
-	
+
 	if len(errs) > 0 {
 		return fmt.Errorf("errors closing connections: %v", errs)
 	}
-	
+
 	return nil
 }
 
 // HAStatus represents the current HA status
 type HAStatus struct {
-	PrimaryHost     string
-	PrimaryHealthy  bool
-	StandbyHost     string
-	StandbyHealthy  bool
-	CurrentPrimary  string
-	LastFailover    time.Time
-	FailureCount    int
-	AutoFailover    bool
+	PrimaryHost    string
+	PrimaryHealthy bool
+	StandbyHost    string
+	StandbyHealthy bool
+	CurrentPrimary string
+	LastFailover   time.Time
+	FailureCount   int
+	AutoFailover   bool
 }
 
 // GetStatus returns the current HA status
 func (ha *HAManager) GetStatus() *HAStatus {
 	ha.mu.RLock()
 	defer ha.mu.RUnlock()
-	
+
 	status := &HAStatus{
 		PrimaryHost:    ha.config.Primary.Host,
 		PrimaryHealthy: ha.primaryHealthy,
@@ -333,18 +333,18 @@ func (ha *HAManager) GetStatus() *HAStatus {
 		FailureCount:   ha.failureCount,
 		AutoFailover:   ha.config.FailoverPolicy.AutoFailover,
 	}
-	
+
 	if ha.config.HotStandby != nil {
 		status.StandbyHost = ha.config.HotStandby.Host
 		status.StandbyHealthy = ha.standbyHealthy
 	}
-	
+
 	if ha.currentPrimary == ha.primary {
 		status.CurrentPrimary = ha.config.Primary.Host
 	} else if ha.config.HotStandby != nil {
 		status.CurrentPrimary = ha.config.HotStandby.Host
 	}
-	
+
 	return status
 }
 
@@ -369,11 +369,11 @@ func (rl *ReplicationLag) GetLag(ctx context.Context) (int64, error) {
 		FROM pg_stat_replication
 		LIMIT 1
 	`).Scan(&lag)
-	
+
 	if err != nil {
 		return 0, fmt.Errorf("failed to get replication lag: %w", err)
 	}
-	
+
 	return lag, nil
 }
 
@@ -386,10 +386,10 @@ func (rl *ReplicationLag) GetLagSeconds(ctx context.Context) (float64, error) {
 			0
 		)
 	`).Scan(&lag)
-	
+
 	if err != nil {
 		return 0, fmt.Errorf("failed to get replication lag: %w", err)
 	}
-	
+
 	return lag, nil
 }

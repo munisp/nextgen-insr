@@ -68,7 +68,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(5)
@@ -84,15 +84,15 @@ func main() {
 
 	// Health endpoints
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "fund-flow-orchestrator"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "fund-flow-orchestrator"})
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.Ping(); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "error": err.Error()})
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	})
 
 	// Publish endpoint — receives events from monolith
@@ -194,11 +194,11 @@ func handleOutboxStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 var metricsData struct {
-	mu               sync.Mutex
-	kafkaRelayed     int64
-	tbSynced         int64
+	mu                 sync.Mutex
+	kafkaRelayed       int64
+	tbSynced           int64
 	idempotencyCleaned int64
-	errors           int64
+	errors             int64
 }
 
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -207,10 +207,10 @@ func handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int64{
-		"kafka_events_relayed":   metricsData.kafkaRelayed,
-		"tigerbeetle_synced":     metricsData.tbSynced,
-		"idempotency_cleaned":    metricsData.idempotencyCleaned,
-		"errors":                 metricsData.errors,
+		"kafka_events_relayed": metricsData.kafkaRelayed,
+		"tigerbeetle_synced":   metricsData.tbSynced,
+		"idempotency_cleaned":  metricsData.idempotencyCleaned,
+		"errors":               metricsData.errors,
 	})
 }
 
@@ -258,7 +258,7 @@ func kafkaOutboxRelay(ctx context.Context, wg *sync.WaitGroup) {
 				log.Printf("→ Kafka relay: topic=%s key=%s", evt.Topic, evt.EventKey)
 				ids = append(ids, evt.ID)
 			}
-			rows.Close()
+			_ = rows.Close()
 
 			if len(ids) > 0 {
 				for _, id := range ids {
@@ -320,7 +320,7 @@ func tigerBeetleSyncWorker(ctx context.Context, wg *sync.WaitGroup) {
 				log.Printf("→ TigerBeetle sync: %s → %s amount=%.2f trace=%s", entry.DebitAccount, entry.CreditAccount, entry.Amount, entry.TraceID)
 				ids = append(ids, entry.ID)
 			}
-			rows.Close()
+			_ = rows.Close()
 
 			if len(ids) > 0 {
 				for _, id := range ids {

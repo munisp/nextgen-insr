@@ -80,7 +80,7 @@ func (r *RedisCache) InvalidatePolicy(ctx context.Context, id string) error {
 	key := policyKey(id)
 	numVal, _ := r.client.Get(ctx, policyKey(id)).Result()
 	var pol models.Policy
-	json.Unmarshal([]byte(numVal), &pol)
+	_ = json.Unmarshal([]byte(numVal), &pol)
 	numKey := policyByNumberKey(pol.PolicyNumber)
 	return r.client.Del(ctx, key, numKey).Err()
 }

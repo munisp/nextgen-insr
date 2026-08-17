@@ -48,7 +48,7 @@ func (f *FluvioClient) Produce(ctx context.Context, topic string, key string, va
 	if err != nil {
 		return fmt.Errorf("fluvio produce: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("fluvio error (%d): %s", resp.StatusCode, string(b))

@@ -12,12 +12,12 @@ import (
 // Config holds all configuration for the disaster recovery service
 type Config struct {
 	// Server
-	Port              int           `mapstructure:"PORT"`
-	Env               string        `mapstructure:"ENV"`
-	ReadTimeout       time.Duration `mapstructure:"READ_TIMEOUT"`
-	WriteTimeout      time.Duration `mapstructure:"WRITE_TIMEOUT"`
-	ShutdownTimeout   time.Duration `mapstructure:"SHUTDOWN_TIMEOUT"`
-	HealthCheckPath   string        `mapstructure:"HEALTH_CHECK_PATH"`
+	Port            int           `mapstructure:"PORT"`
+	Env             string        `mapstructure:"ENV"`
+	ReadTimeout     time.Duration `mapstructure:"READ_TIMEOUT"`
+	WriteTimeout    time.Duration `mapstructure:"WRITE_TIMEOUT"`
+	ShutdownTimeout time.Duration `mapstructure:"SHUTDOWN_TIMEOUT"`
+	HealthCheckPath string        `mapstructure:"HEALTH_CHECK_PATH"`
 
 	// PostgreSQL
 	DBHost     string `mapstructure:"DB_HOST"`
@@ -30,23 +30,23 @@ type Config struct {
 	DBMinConns int    `mapstructure:"DB_MIN_CONNS"`
 
 	// Redis
-	RedisAddr     string `mapstructure:"REDIS_ADDR"`
-	RedisPass     string `mapstructure:"REDIS_PASS"`
-	RedisDB       int    `mapstructure:"REDIS_DB"`
-	RedisMaxRetries int   `mapstructure:"REDIS_MAX_RETRIES"`
+	RedisAddr       string `mapstructure:"REDIS_ADDR"`
+	RedisPass       string `mapstructure:"REDIS_PASS"`
+	RedisDB         int    `mapstructure:"REDIS_DB"`
+	RedisMaxRetries int    `mapstructure:"REDIS_MAX_RETRIES"`
 
 	// DR Specific
-	RTOTarget              time.Duration `mapstructure:"RTO_TARGET"`
-	RPOTarget              time.Duration `mapstructure:"RPO_TARGET"`
-	PrimaryDC              string        `mapstructure:"PRIMARY_DC"`
-	SecondaryDC            string        `mapstructure:"SECONDARY_DC"`
-	FailoverAutoThreshold  int           `mapstructure:"FAILOVER_AUTO_THRESHOLD"`
-	DRDrillIntervalMonths  int           `mapstructure:"DR_DRILL_INTERVAL_MONTHS"`
-	NAICOMNotifyThreshold  time.Duration `mapstructure:"NAICOM_NOTIFY_THRESHOLD"`
-	BackupInterval         time.Duration `mapstructure:"BACKUP_INTERVAL"`
+	RTOTarget             time.Duration `mapstructure:"RTO_TARGET"`
+	RPOTarget             time.Duration `mapstructure:"RPO_TARGET"`
+	PrimaryDC             string        `mapstructure:"PRIMARY_DC"`
+	SecondaryDC           string        `mapstructure:"SECONDARY_DC"`
+	FailoverAutoThreshold int           `mapstructure:"FAILOVER_AUTO_THRESHOLD"`
+	DRDrillIntervalMonths int           `mapstructure:"DR_DRILL_INTERVAL_MONTHS"`
+	NAICOMNotifyThreshold time.Duration `mapstructure:"NAICOM_NOTIFY_THRESHOLD"`
+	BackupInterval        time.Duration `mapstructure:"BACKUP_INTERVAL"`
 
 	// Logging
-	LogLevel string `mapstructure:"LOG_LEVEL"`
+	LogLevel  string `mapstructure:"LOG_LEVEL"`
 	LogFormat string `mapstructure:"LOG_FORMAT"`
 
 	// Temporal (if used)
@@ -56,12 +56,12 @@ type Config struct {
 // Load reads configuration from environment variables with defaults
 func Load() (*Config, error) {
 	c := &Config{
-		Port:              getEnvInt("PORT", 8090),
-		Env:               getEnv("ENV", "production"),
-		ReadTimeout:       getEnvDuration("READ_TIMEOUT", 15*time.Second),
-		WriteTimeout:      getEnvDuration("WRITE_TIMEOUT", 15*time.Second),
-		ShutdownTimeout:   getEnvDuration("SHUTDOWN_TIMEOUT", 30*time.Second),
-		HealthCheckPath:   getEnv("HEALTH_CHECK_PATH", "/health"),
+		Port:            getEnvInt("PORT", 8090),
+		Env:             getEnv("ENV", "production"),
+		ReadTimeout:     getEnvDuration("READ_TIMEOUT", 15*time.Second),
+		WriteTimeout:    getEnvDuration("WRITE_TIMEOUT", 15*time.Second),
+		ShutdownTimeout: getEnvDuration("SHUTDOWN_TIMEOUT", 30*time.Second),
+		HealthCheckPath: getEnv("HEALTH_CHECK_PATH", "/health"),
 
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnvInt("DB_PORT", 5432),
@@ -72,19 +72,19 @@ func Load() (*Config, error) {
 		DBMaxConns: getEnvInt("DB_MAX_CONNS", 20),
 		DBMinConns: getEnvInt("DB_MIN_CONNS", 5),
 
-		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPass:     getEnv("REDIS_PASS", ""),
-		RedisDB:       getEnvInt("REDIS_DB", 0),
+		RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPass:       getEnv("REDIS_PASS", ""),
+		RedisDB:         getEnvInt("REDIS_DB", 0),
 		RedisMaxRetries: getEnvInt("REDIS_MAX_RETRIES", 3),
 
-		RTOTarget:              getEnvDuration("RTO_TARGET", 4*time.Hour),
-		RPOTarget:              getEnvDuration("RPO_TARGET", 1*time.Hour),
-		PrimaryDC:              getEnv("PRIMARY_DC", "Lagos-1"),
-		SecondaryDC:            getEnv("SECONDARY_DC", "Abuja-1"),
-		FailoverAutoThreshold:  getEnvInt("FAILOVER_AUTO_THRESHOLD", 30),
-		DRDrillIntervalMonths:  getEnvInt("DR_DRILL_INTERVAL_MONTHS", 3),
-		NAICOMNotifyThreshold:  getEnvDuration("NAICOM_NOTIFY_THRESHOLD", 2*time.Hour),
-		BackupInterval:         getEnvDuration("BACKUP_INTERVAL", 1*time.Hour),
+		RTOTarget:             getEnvDuration("RTO_TARGET", 4*time.Hour),
+		RPOTarget:             getEnvDuration("RPO_TARGET", 1*time.Hour),
+		PrimaryDC:             getEnv("PRIMARY_DC", "Lagos-1"),
+		SecondaryDC:           getEnv("SECONDARY_DC", "Abuja-1"),
+		FailoverAutoThreshold: getEnvInt("FAILOVER_AUTO_THRESHOLD", 30),
+		DRDrillIntervalMonths: getEnvInt("DR_DRILL_INTERVAL_MONTHS", 3),
+		NAICOMNotifyThreshold: getEnvDuration("NAICOM_NOTIFY_THRESHOLD", 2*time.Hour),
+		BackupInterval:        getEnvDuration("BACKUP_INTERVAL", 1*time.Hour),
 
 		LogLevel:  getEnv("LOG_LEVEL", "info"),
 		LogFormat: getEnv("LOG_FORMAT", "json"),

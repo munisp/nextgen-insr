@@ -15,10 +15,10 @@ import "math"
 
 // MortalityTable contains age-specific mortality rates
 type MortalityTable struct {
-	Name   string             `json:"name"`
-	Gender string             `json:"gender"`
-	Year   int                `json:"year"`
-	Rates  map[int]float64    `json:"rates"` // age -> qx
+	Name   string          `json:"name"`
+	Gender string          `json:"gender"`
+	Year   int             `json:"year"`
+	Rates  map[int]float64 `json:"rates"` // age -> qx
 }
 
 // NigerianMaleTable — abridged mortality rates for Nigerian males
@@ -105,8 +105,8 @@ func CalculateLifePremium(age int, term int, sumAssured float64, gender string, 
 	}
 
 	// Gross premium = net premium + loadings
-	expenseLoading := netPremium * 0.30  // 30% expense loading (Nigerian market)
-	profitMargin := netPremium * 0.05    // 5% profit margin
+	expenseLoading := netPremium * 0.30 // 30% expense loading (Nigerian market)
+	profitMargin := netPremium * 0.05   // 5% profit margin
 	grossPremium := netPremium + expenseLoading + profitMargin
 
 	return LifePremiumResult{
@@ -167,11 +167,11 @@ var SampleNigerianMotorTriangle = LossTriangle{
 	AccidentYears: []int{2020, 2021, 2022, 2023, 2024},
 	DevPeriods:    5,
 	Cumulative: [][]float64{
-		{450, 680, 780, 810, 820},     // 2020: fully developed
-		{520, 790, 910, 945, 0},       // 2021: 4 periods
-		{610, 920, 1060, 0, 0},        // 2022: 3 periods
-		{580, 870, 0, 0, 0},           // 2023: 2 periods
-		{650, 0, 0, 0, 0},             // 2024: 1 period
+		{450, 680, 780, 810, 820}, // 2020: fully developed
+		{520, 790, 910, 945, 0},   // 2021: 4 periods
+		{610, 920, 1060, 0, 0},    // 2022: 3 periods
+		{580, 870, 0, 0, 0},       // 2023: 2 periods
+		{650, 0, 0, 0, 0},         // 2024: 1 period
 	},
 }
 
@@ -255,15 +255,15 @@ type BurningCostInput struct {
 }
 
 type BurningCostResult struct {
-	BurningCostRate       float64   `json:"burning_cost_rate"`
-	LoadedRate            float64   `json:"loaded_rate"`
-	PurePremium           float64   `json:"pure_premium"`
-	TechnicalPremium      float64   `json:"technical_premium"`
-	TrendedLosses         []float64 `json:"trended_losses"`
-	AverageLossRatio      float64   `json:"average_loss_ratio"`
-	YearsAnalyzed         int       `json:"years_analyzed"`
-	Retention             float64   `json:"retention"`
-	Limit                 float64   `json:"limit"`
+	BurningCostRate  float64   `json:"burning_cost_rate"`
+	LoadedRate       float64   `json:"loaded_rate"`
+	PurePremium      float64   `json:"pure_premium"`
+	TechnicalPremium float64   `json:"technical_premium"`
+	TrendedLosses    []float64 `json:"trended_losses"`
+	AverageLossRatio float64   `json:"average_loss_ratio"`
+	YearsAnalyzed    int       `json:"years_analyzed"`
+	Retention        float64   `json:"retention"`
+	Limit            float64   `json:"limit"`
 }
 
 // CalculateBurningCost computes the burning cost rate for XOL reinsurance
@@ -329,10 +329,10 @@ func CalculateBurningCost(data []BurningCostInput, retention, limit, prospective
 // ─── Combined Ratio Calculation ──────────────────────────────────────────────
 
 type CombinedRatioResult struct {
-	LossRatio    float64 `json:"loss_ratio"`
-	ExpenseRatio float64 `json:"expense_ratio"`
-	CombinedRatio float64 `json:"combined_ratio"`
-	Profitable   bool    `json:"profitable"`
+	LossRatio          float64 `json:"loss_ratio"`
+	ExpenseRatio       float64 `json:"expense_ratio"`
+	CombinedRatio      float64 `json:"combined_ratio"`
+	Profitable         bool    `json:"profitable"`
 	UnderwritingResult float64 `json:"underwriting_result"`
 }
 
@@ -350,10 +350,10 @@ func CalculateCombinedRatio(incurredClaims, earnedPremium, expenses float64) Com
 	uwResult := earnedPremium - incurredClaims - expenses
 
 	return CombinedRatioResult{
-		LossRatio:    math.Round(lossRatio*10000) / 10000,
-		ExpenseRatio: math.Round(expenseRatio*10000) / 10000,
-		CombinedRatio: math.Round(combined*10000) / 10000,
-		Profitable:   combined < 1.0,
+		LossRatio:          math.Round(lossRatio*10000) / 10000,
+		ExpenseRatio:       math.Round(expenseRatio*10000) / 10000,
+		CombinedRatio:      math.Round(combined*10000) / 10000,
+		Profitable:         combined < 1.0,
 		UnderwritingResult: math.Round(uwResult*100) / 100,
 	}
 }

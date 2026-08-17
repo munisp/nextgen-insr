@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -24,7 +25,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to init logger: %v", err))
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 	zap.ReplaceGlobals(logger)
 	log := zap.L()
 
@@ -40,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to init PostgreSQL", zap.Error(err))
 	}
-	defer pg.Close()
+	defer func() { _ = pg.Close() }()
 	log.Info("PostgreSQL initialized")
 
 	rdb, err := db.NewRedisCache(cfg)
@@ -48,7 +49,7 @@ func main() {
 		log.Warn("Redis not available, running without cache", zap.Error(err))
 		rdb = &db.RedisCache{}
 	}
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	log.Info("Redis initialized")
 
 	policySvc := service.NewPolicyService(pg, rdb, cfg)
@@ -126,4 +127,26 @@ func main() {
 		log.Error("Server forced shutdown", zap.Error(err))
 	}
 	log.Info("Policy Workflow server stopped")
+}
+
+// validateQueryParam returns a query parameter value, rejecting over-long input.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	val := r.URL.Query().Get(key)
+	if len(val) > maxLen {
+		return "", fmt.Errorf("parameter %s exceeds max length %d", key, maxLen)
+	}
+	return val, nil
+}
+
+// validateIntParam parses an optional integer query parameter.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	val := r.URL.Query().Get(key)
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %s must be an integer", key)
+	}
+	return n, nil
 }

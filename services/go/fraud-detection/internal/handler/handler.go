@@ -109,10 +109,10 @@ func (h *Handler) GetFraudStats(c *gin.Context) {
 
 func (h *Handler) SubmitFraudReport(c *gin.Context) {
 	var req struct {
-		ClaimID     int64  `json:"claimId" binding:"required"`
-		ReporterID  int64  `json:"reporterId" binding:"required"`
-		Reason      string `json:"reason" binding:"required"`
-		Evidence    string `json:"evidence"`
+		ClaimID    int64  `json:"claimId" binding:"required"`
+		ReporterID int64  `json:"reporterId" binding:"required"`
+		Reason     string `json:"reason" binding:"required"`
+		Evidence   string `json:"evidence"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -130,9 +130,9 @@ func (h *Handler) SubmitFraudReport(c *gin.Context) {
 
 func (h *Handler) UpdateThreshold(c *gin.Context) {
 	var req struct {
-		AutoApproveBelow float64 `json:"autoApproveBelow" binding:"required"`
+		AutoApproveBelow  float64 `json:"autoApproveBelow" binding:"required"`
 		ManualReviewAbove float64 `json:"manualReviewAbove" binding:"required"`
-		AutoRejectAbove  float64 `json:"autoRejectAbove" binding:"required"`
+		AutoRejectAbove   float64 `json:"autoRejectAbove" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

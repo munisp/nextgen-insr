@@ -77,7 +77,7 @@ func initDB() {
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	// Determine the embedded dir relative to this script
 	// When run as `go run ./scripts/gen-manifest/main.go` from installer/,

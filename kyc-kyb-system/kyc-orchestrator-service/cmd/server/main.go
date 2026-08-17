@@ -24,7 +24,7 @@ import (
 
 func main() {
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	port := getEnv("PORT", "8085")
 	livenessURL := getEnv("LIVENESS_ENGINE_URL", "http://localhost:8110")
@@ -37,7 +37,7 @@ func main() {
 	if err != nil {
 		logger.Warn("postgres_init_failed_using_memory", zap.Error(err))
 	} else {
-		defer pgRepo.Close()
+		defer func() { _ = pgRepo.Close() }()
 		logger.Info("postgres_connected")
 	}
 
@@ -47,7 +47,7 @@ func main() {
 	if err != nil {
 		logger.Warn("redis_init_failed", zap.Error(err))
 	} else {
-		defer redisCache.Close()
+		defer func() { _ = redisCache.Close() }()
 		logger.Info("redis_connected")
 	}
 
@@ -57,7 +57,7 @@ func main() {
 	if err != nil {
 		logger.Warn("kafka_producer_init_failed", zap.Error(err))
 	} else {
-		defer kafkaProducer.Close()
+		defer func() { _ = kafkaProducer.Close() }()
 		logger.Info("kafka_producer_ready")
 	}
 
@@ -179,7 +179,7 @@ func main() {
 				allowed, level, err := redisCache.GetKYCGate(c.Request.Context(), userID)
 				if err == nil && level > 0 {
 					if kafkaProducer != nil {
-						kafkaProducer.PublishGateEvent(c.Request.Context(), userID, allowed, "cache_hit")
+						_ = kafkaProducer.PublishGateEvent(c.Request.Context(), userID, allowed, "cache_hit")
 					}
 					c.JSON(200, gin.H{"allowed": allowed, "level": level, "source": "cache", "user_id": userID, "timestamp": time.Now()})
 					return
@@ -197,14 +197,14 @@ func main() {
 			}
 
 			if redisCache != nil {
-				redisCache.SetKYCGate(c.Request.Context(), userID, allowed, level, 5*time.Minute)
+				_ = redisCache.SetKYCGate(c.Request.Context(), userID, allowed, level, 5*time.Minute)
 			}
 			if kafkaProducer != nil {
 				reason := "no_approved_verification"
 				if allowed {
 					reason = fmt.Sprintf("level_%d_approved", level)
 				}
-				kafkaProducer.PublishGateEvent(c.Request.Context(), userID, allowed, reason)
+				_ = kafkaProducer.PublishGateEvent(c.Request.Context(), userID, allowed, reason)
 			}
 
 			c.JSON(200, gin.H{"allowed": allowed, "level": level, "source": "database", "user_id": userID, "timestamp": time.Now()})
@@ -218,7 +218,7 @@ func main() {
 			}
 			levelStr := c.Param("level")
 			level := 0
-			fmt.Sscanf(levelStr, "%d", &level)
+			_, _ = fmt.Sscanf(levelStr, "%d", &level)
 			limits := mojaBridge.GetTransferLimits(level)
 			c.JSON(200, gin.H{"limits": limits})
 		})
@@ -260,18 +260,18 @@ func main() {
 	// Middleware status endpoint
 	r.GET("/api/v1/middleware/status", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"postgres":     pgRepo != nil,
-			"redis":        redisCache != nil,
-			"kafka":        kafkaProducer != nil,
-			"temporal":     true,
-			"opensearch":   auditor != nil,
-			"apisix":       gw != nil,
-			"mojaloop":     mojaBridge != nil,
-			"keycloak":     keycloakMW != nil,
-			"permify":      permifyClient != nil,
-			"deepface":     livenessURL,
-			"paddleocr":    ocrURL,
-			"identity":     identityMatcherURL,
+			"postgres":   pgRepo != nil,
+			"redis":      redisCache != nil,
+			"kafka":      kafkaProducer != nil,
+			"temporal":   true,
+			"opensearch": auditor != nil,
+			"apisix":     gw != nil,
+			"mojaloop":   mojaBridge != nil,
+			"keycloak":   keycloakMW != nil,
+			"permify":    permifyClient != nil,
+			"deepface":   livenessURL,
+			"paddleocr":  ocrURL,
+			"identity":   identityMatcherURL,
 		})
 	})
 

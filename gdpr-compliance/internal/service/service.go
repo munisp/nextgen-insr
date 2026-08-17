@@ -31,7 +31,11 @@ func (s *GDPRService) RecordConsent(ctx context.Context, req ConsentRequest) (*m
 		SubjectRef: req.SubjectRef, Purpose: req.Purpose, LegalBasis: req.LegalBasis,
 		Granted: req.Granted, IPAddress: req.IPAddress, Channel: req.Channel, Version: req.Version,
 	}
-	if req.Granted { cr.GrantedAt = &now } else { cr.WithdrawnAt = &now }
+	if req.Granted {
+		cr.GrantedAt = &now
+	} else {
+		cr.WithdrawnAt = &now
+	}
 	if req.ExpiryDays > 0 {
 		exp := now.AddDate(0, 0, req.ExpiryDays)
 		cr.ExpiresAt = &exp
@@ -41,8 +45,12 @@ func (s *GDPRService) RecordConsent(ctx context.Context, req ConsentRequest) (*m
 	}
 	subject, _ := s.repo.GetSubject(ctx, req.SubjectRef)
 	if subject != nil {
-		if req.Granted { subject.ConsentStatus = "granted" } else { subject.ConsentStatus = "withdrawn" }
-		s.repo.UpdateSubject(ctx, subject)
+		if req.Granted {
+			subject.ConsentStatus = "granted"
+		} else {
+			subject.ConsentStatus = "withdrawn"
+		}
+		_ = s.repo.UpdateSubject(ctx, subject)
 	}
 	return cr, nil
 }
@@ -54,7 +62,9 @@ func (s *GDPRService) SubmitAccessRequest(ctx context.Context, req AccessRequest
 		Reason: req.Reason, Status: "received",
 		DueDate: time.Now().AddDate(0, 0, 30),
 	}
-	if req.RequestType == "erasure" { dar.DueDate = time.Now().AddDate(0, 0, 30) }
+	if req.RequestType == "erasure" {
+		dar.DueDate = time.Now().AddDate(0, 0, 30)
+	}
 	if err := s.repo.CreateAccessRequest(ctx, dar); err != nil {
 		return nil, fmt.Errorf("failed to submit request: %w", err)
 	}
@@ -63,15 +73,21 @@ func (s *GDPRService) SubmitAccessRequest(ctx context.Context, req AccessRequest
 
 func (s *GDPRService) ProcessAccessRequest(ctx context.Context, requestRef string, response map[string]interface{}) error {
 	dar, err := s.repo.GetAccessRequest(ctx, requestRef)
-	if err != nil { return fmt.Errorf("request not found") }
+	if err != nil {
+		return fmt.Errorf("request not found")
+	}
 	now := time.Now()
-	dar.Status = "completed"; dar.CompletedAt = &now; dar.Response = response
+	dar.Status = "completed"
+	dar.CompletedAt = &now
+	dar.Response = response
 	return s.repo.UpdateAccessRequest(ctx, dar)
 }
 
 func (s *GDPRService) RejectAccessRequest(ctx context.Context, requestRef, reason string) error {
 	dar, err := s.repo.GetAccessRequest(ctx, requestRef)
-	if err != nil { return fmt.Errorf("request not found") }
+	if err != nil {
+		return fmt.Errorf("request not found")
+	}
 	dar.Status = "rejected"
 	dar.Response = map[string]interface{}{"rejection_reason": reason}
 	return s.repo.UpdateAccessRequest(ctx, dar)
@@ -93,7 +109,7 @@ func (s *GDPRService) RegisterProcessingActivity(ctx context.Context, req Proces
 
 func (s *GDPRService) ReportBreach(ctx context.Context, req BreachReportRequest) (*models.DataBreach, error) {
 	breach := &models.DataBreach{
-		BreachRef: fmt.Sprintf("BRH-%d", time.Now().UnixNano()%1000000),
+		BreachRef:   fmt.Sprintf("BRH-%d", time.Now().UnixNano()%1000000),
 		Description: req.Description, Severity: req.Severity,
 		DataCategories: req.DataCategories, AffectedCount: req.AffectedCount,
 		DetectedAt: req.DetectedAt, Measures: req.Measures, Status: "detected",

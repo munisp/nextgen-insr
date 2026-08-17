@@ -35,13 +35,13 @@ type cachedToken struct {
 }
 
 type KeycloakUser struct {
-	ID         string                 `json:"id"`
-	Username   string                 `json:"username"`
-	Email      string                 `json:"email"`
-	FirstName  string                 `json:"firstName"`
-	LastName   string                 `json:"lastName"`
-	Enabled    bool                   `json:"enabled"`
-	Attributes map[string][]string    `json:"attributes,omitempty"`
+	ID         string              `json:"id"`
+	Username   string              `json:"username"`
+	Email      string              `json:"email"`
+	FirstName  string              `json:"firstName"`
+	LastName   string              `json:"lastName"`
+	Enabled    bool                `json:"enabled"`
+	Attributes map[string][]string `json:"attributes,omitempty"`
 }
 
 func NewKeycloakClient(logger *zap.Logger, realmURL, clientID, clientSecret, adminURL string) *KeycloakClient {
@@ -65,7 +65,7 @@ func (c *KeycloakClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("keycloak ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("keycloak unhealthy: %d", resp.StatusCode)
 	}
@@ -89,13 +89,13 @@ func (c *KeycloakClient) ValidateToken(ctx context.Context, token string) (map[s
 	if err != nil {
 		return nil, fmt.Errorf("token validation: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("invalid token: status %d", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	var claims map[string]interface{}
-	json.Unmarshal(body, &claims)
+	_ = json.Unmarshal(body, &claims)
 
 	c.mu.Lock()
 	c.tokenCache[token] = &cachedToken{Claims: claims, ExpiresAt: time.Now().Add(5 * time.Minute)}
@@ -124,7 +124,7 @@ func (c *KeycloakClient) GetKYCLevel(ctx context.Context, token string) (int, er
 			return int(v), nil
 		case string:
 			var l int
-			fmt.Sscanf(v, "%d", &l)
+			_, _ = fmt.Sscanf(v, "%d", &l)
 			return l, nil
 		}
 	}
@@ -146,10 +146,10 @@ func (c *KeycloakClient) GetServiceToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("service token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(body, &result)
+	_ = json.Unmarshal(body, &result)
 	if token, ok := result["access_token"].(string); ok {
 		return token, nil
 	}
@@ -179,7 +179,7 @@ func (c *KeycloakClient) UpdateUserKYCLevel(ctx context.Context, userID string, 
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("update user failed (%d): %s", resp.StatusCode, string(body))
@@ -216,7 +216,7 @@ func (c *KeycloakClient) SetupRealmClients(ctx context.Context) error {
 			c.logger.Warn("client_registration_failed", zap.String("client", client["clientId"].(string)), zap.Error(err))
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	return nil
 }
@@ -233,7 +233,7 @@ func (c *KeycloakClient) subscribeToInvalidations() {
 	}
 	ctx := context.Background()
 	sub := c.redis.Subscribe(ctx, "__token_invalidation__")
-	defer sub.Close()
+	defer func() { _ = sub.Close() }()
 
 	for msg := range sub.Channel() {
 		var data map[string]interface{}

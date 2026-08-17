@@ -42,7 +42,7 @@ func (d *DaprClient) PublishEvent(ctx context.Context, pubsubName, topic string,
 	if err != nil {
 		return fmt.Errorf("dapr publish: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("dapr publish failed (%d): %s", resp.StatusCode, string(b))
@@ -65,7 +65,7 @@ func (d *DaprClient) InvokeService(ctx context.Context, appID, method string, da
 	if err != nil {
 		return nil, fmt.Errorf("dapr invoke: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return io.ReadAll(resp.Body)
 }
 
@@ -85,7 +85,7 @@ func (d *DaprClient) SaveState(ctx context.Context, storeName, key string, value
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -99,6 +99,6 @@ func (d *DaprClient) GetState(ctx context.Context, storeName, key string) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return io.ReadAll(resp.Body)
 }

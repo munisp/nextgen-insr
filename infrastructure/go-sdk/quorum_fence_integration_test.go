@@ -99,12 +99,12 @@ func (p *latencyProxy) serve() {
 }
 
 func (p *latencyProxy) handleConn(client net.Conn) {
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	backend, err := net.DialTimeout("tcp", p.targetAddr, 2*time.Second)
 	if err != nil {
 		return
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	relay := func(src, dst net.Conn) {
 		buf := make([]byte, 32*1024)
@@ -149,7 +149,7 @@ func (p *latencyProxy) handleConn(client net.Conn) {
 
 func (p *latencyProxy) Close() {
 	close(p.done)
-	p.listener.Close()
+	_ = p.listener.Close()
 }
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -171,11 +171,11 @@ type latencyProfile struct {
 }
 
 var profiles = []latencyProfile{
-	{"Lagos_baseline",          0,           0,           0.00},
-	{"London_120ms",            55*time.Millisecond,  65*time.Millisecond,  0.00},
-	{"Singapore_250ms",         120*time.Millisecond, 130*time.Millisecond, 0.00},
-	{"HighJitter_0-500ms",      0,           500*time.Millisecond, 0.00},
-	{"PacketLoss_10pct",        20*time.Millisecond,  30*time.Millisecond,  0.10},
+	{"Lagos_baseline", 0, 0, 0.00},
+	{"London_120ms", 55 * time.Millisecond, 65 * time.Millisecond, 0.00},
+	{"Singapore_250ms", 120 * time.Millisecond, 130 * time.Millisecond, 0.00},
+	{"HighJitter_0-500ms", 0, 500 * time.Millisecond, 0.00},
+	{"PacketLoss_10pct", 20 * time.Millisecond, 30 * time.Millisecond, 0.10},
 }
 
 func newTestEnv(t *testing.T, profile latencyProfile) *testEnv {
@@ -215,14 +215,14 @@ func TestQuorumWeightModel(t *testing.T) {
 		want    bool
 		votes   int
 	}{
-		{[]string{"ng-lagos", "gb-london", "sg-singapore"}, true, 6},   // 3+2+1 = 6 ≥ 4
-		{[]string{"ng-lagos", "gb-london"},              true, 5},   // 3+2 = 5 ≥ 4
-		{[]string{"ng-lagos", "sg-singapore"},           true, 4},   // 3+1 = 4 ≥ 4 (exact majority)
-		{[]string{"gb-london", "sg-singapore"},          false, 3},  // 2+1 = 3 < 4
-		{[]string{"ng-lagos"},                        false, 3},  // 3 < 4 (weight=3 but need 4)
-		{[]string{"gb-london"},                       false, 2},  // 2 < 4
-		{[]string{"sg-singapore"},                    false, 1},  // 1 < 4
-		{[]string{},                               false, 0},  // no regions
+		{[]string{"ng-lagos", "gb-london", "sg-singapore"}, true, 6},             // 3+2+1 = 6 ≥ 4
+		{[]string{"ng-lagos", "gb-london"}, true, 5},                             // 3+2 = 5 ≥ 4
+		{[]string{"ng-lagos", "sg-singapore"}, true, 4},                          // 3+1 = 4 ≥ 4 (exact majority)
+		{[]string{"gb-london", "sg-singapore"}, false, 3},                        // 2+1 = 3 < 4
+		{[]string{"ng-lagos"}, false, 3},                                         // 3 < 4 (weight=3 but need 4)
+		{[]string{"gb-london"}, false, 2},                                        // 2 < 4
+		{[]string{"sg-singapore"}, false, 1},                                     // 1 < 4
+		{[]string{}, false, 0},                                                   // no regions
 		{[]string{"ng-lagos", "gb-london", "sg-singapore", "ng-lagos"}, true, 9}, // duplicates counted (3+2+1+3=9)
 	}
 	for _, tc := range cases {
@@ -295,9 +295,9 @@ func TestLeaseAcquisitionUnderLatency(t *testing.T) {
 
 func TestLeaseRenewalUnderLatency(t *testing.T) {
 	for _, profile := range []latencyProfile{
-		{"Lagos_baseline",   0,                    0,                    0},
-		{"London_120ms",     55*time.Millisecond,  65*time.Millisecond,  0},
-		{"Singapore_250ms",  120*time.Millisecond, 130*time.Millisecond, 0},
+		{"Lagos_baseline", 0, 0, 0},
+		{"London_120ms", 55 * time.Millisecond, 65 * time.Millisecond, 0},
+		{"Singapore_250ms", 120 * time.Millisecond, 130 * time.Millisecond, 0},
 	} {
 		profile := profile
 		t.Run(profile.name, func(t *testing.T) {
@@ -533,8 +533,8 @@ func TestConcurrentAcquisitionThunderingHerd(t *testing.T) {
 
 func TestConcurrentAcquisitionUnderLatency(t *testing.T) {
 	for _, profile := range []latencyProfile{
-		{"London_120ms",    55*time.Millisecond, 65*time.Millisecond, 0},
-		{"Singapore_250ms", 120*time.Millisecond, 130*time.Millisecond, 0},
+		{"London_120ms", 55 * time.Millisecond, 65 * time.Millisecond, 0},
+		{"Singapore_250ms", 120 * time.Millisecond, 130 * time.Millisecond, 0},
 	} {
 		profile := profile
 		t.Run(profile.name, func(t *testing.T) {
@@ -780,7 +780,7 @@ func BenchmarkAcquireRelease_Lagos(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		resource := fmt.Sprintf("bench-resource-%d", i)
-				guard, err := fencer.AcquireLease(ctx, resource, "ng-lagos", allRegions(), 30*time.Second)
+		guard, err := fencer.AcquireLease(ctx, resource, "ng-lagos", allRegions(), 30*time.Second)
 		if err != nil {
 			b.Fatalf("AcquireLease: %v", err)
 		}

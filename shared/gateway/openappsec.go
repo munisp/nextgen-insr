@@ -28,15 +28,15 @@ func NewOpenAppSecClient() *OpenAppSecClient {
 }
 
 type WAFPolicy struct {
-	Name     string   `json:"name"`
-	Mode     string   `json:"mode"` // detect, prevent
-	Rules    []WAFRule `json:"rules"`
+	Name  string    `json:"name"`
+	Mode  string    `json:"mode"` // detect, prevent
+	Rules []WAFRule `json:"rules"`
 }
 
 type WAFRule struct {
-	Type       string `json:"type"` // sql-injection, xss, command-injection
-	Action     string `json:"action"` // block, log, allow
-	Severity   string `json:"severity"`
+	Type     string `json:"type"`   // sql-injection, xss, command-injection
+	Action   string `json:"action"` // block, log, allow
+	Severity string `json:"severity"`
 }
 
 func (o *OpenAppSecClient) ApplyPolicy(ctx context.Context, policy WAFPolicy) error {
@@ -51,8 +51,8 @@ func (o *OpenAppSecClient) ApplyPolicy(ctx context.Context, policy WAFPolicy) er
 	if err != nil {
 		return fmt.Errorf("openappsec apply: %w", err)
 	}
-	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.ReadAll(resp.Body)
 	return nil
 }
 

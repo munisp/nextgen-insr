@@ -1,20 +1,19 @@
 package main
 
 import (
-
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/worker"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	types "github.com/tigerbeetle/tigerbeetle-go"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
 
-	ttb "github.com/munisp/nextgen-insr/bidirectional-integrations/temporal-tigerbeetle"
 	"database/sql"
+	ttb "github.com/munisp/nextgen-insr/bidirectional-integrations/temporal-tigerbeetle"
 
 	_ "github.com/lib/pq"
 )
@@ -55,11 +54,10 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	temporalHost := getEnv("TEMPORAL_HOST", "temporal-frontend.temporal:7233")
 	temporalNamespace := getEnv("TEMPORAL_NAMESPACE", "insurance-platform")
@@ -127,12 +125,12 @@ func main() {
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("healthy"))
+	_, _ = w.Write([]byte("healthy"))
 }
 
 func readyHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ready"))
+	_, _ = w.Write([]byte("ready"))
 }
 
 func getEnv(key, defaultValue string) string {

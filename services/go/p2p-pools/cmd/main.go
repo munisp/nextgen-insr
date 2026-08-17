@@ -15,46 +15,46 @@ import (
 
 // Pool represents a peer-to-peer microinsurance pool (digital ajo)
 type Pool struct {
-	ID              int64    `json:"id"`
-	Name            string   `json:"name"`
-	Description     string   `json:"description"`
-	InsuranceType   string   `json:"insuranceType"` // health, motor, life, property
-	MaxMembers      int      `json:"maxMembers"`
-	CurrentMembers  int      `json:"currentMembers"`
-	MonthlyContrib  float64  `json:"monthlyContribution"` // per member in NGN
-	TotalPooled     float64  `json:"totalPooled"`
-	MaxCoverage     float64  `json:"maxCoverage"` // per claim
-	Status          string   `json:"status"`      // forming, active, suspended, dissolved
-	Region          string   `json:"region"`
-	AdminUserID     int64    `json:"adminUserId"`
-	Members         []Member `json:"members,omitempty"`
-	CreatedAt       string   `json:"createdAt"`
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	InsuranceType  string   `json:"insuranceType"` // health, motor, life, property
+	MaxMembers     int      `json:"maxMembers"`
+	CurrentMembers int      `json:"currentMembers"`
+	MonthlyContrib float64  `json:"monthlyContribution"` // per member in NGN
+	TotalPooled    float64  `json:"totalPooled"`
+	MaxCoverage    float64  `json:"maxCoverage"` // per claim
+	Status         string   `json:"status"`      // forming, active, suspended, dissolved
+	Region         string   `json:"region"`
+	AdminUserID    int64    `json:"adminUserId"`
+	Members        []Member `json:"members,omitempty"`
+	CreatedAt      string   `json:"createdAt"`
 }
 
 // Member represents a pool member
 type Member struct {
-	UserID        int64   `json:"userId"`
-	Name          string  `json:"name"`
-	JoinedAt      string  `json:"joinedAt"`
-	TotalPaid     float64 `json:"totalPaid"`
-	ClaimsMade    int     `json:"claimsMade"`
-	Status        string  `json:"status"` // active, suspended, left
-	TrustScore    float64 `json:"trustScore"` // 0-100 peer rating
+	UserID     int64   `json:"userId"`
+	Name       string  `json:"name"`
+	JoinedAt   string  `json:"joinedAt"`
+	TotalPaid  float64 `json:"totalPaid"`
+	ClaimsMade int     `json:"claimsMade"`
+	Status     string  `json:"status"`     // active, suspended, left
+	TrustScore float64 `json:"trustScore"` // 0-100 peer rating
 }
 
 // PoolClaim represents a claim against the pool
 type PoolClaim struct {
-	ID          int64   `json:"id"`
-	PoolID      int64   `json:"poolId"`
-	ClaimantID  int64   `json:"claimantId"`
-	Amount      float64 `json:"amount"`
-	Reason      string  `json:"reason"`
-	Evidence    string  `json:"evidence"`
-	Status      string  `json:"status"` // pending_vote, approved, rejected, paid
-	VotesFor    int     `json:"votesFor"`
-	VotesAgainst int   `json:"votesAgainst"`
-	VotesNeeded int     `json:"votesNeeded"` // 67% majority
-	CreatedAt   string  `json:"createdAt"`
+	ID           int64   `json:"id"`
+	PoolID       int64   `json:"poolId"`
+	ClaimantID   int64   `json:"claimantId"`
+	Amount       float64 `json:"amount"`
+	Reason       string  `json:"reason"`
+	Evidence     string  `json:"evidence"`
+	Status       string  `json:"status"` // pending_vote, approved, rejected, paid
+	VotesFor     int     `json:"votesFor"`
+	VotesAgainst int     `json:"votesAgainst"`
+	VotesNeeded  int     `json:"votesNeeded"` // 67% majority
+	CreatedAt    string  `json:"createdAt"`
 }
 
 func main() {
@@ -114,7 +114,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	srv.Shutdown(ctx)
+	_ = srv.Shutdown(ctx)
 }
 
 func createPool(c *gin.Context) {
@@ -156,11 +156,11 @@ func listPools(c *gin.Context) {
 
 func getPool(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"id":            c.Param("id"),
-		"name":          "Lagos Motor Circle",
-		"status":        "active",
+		"id":             c.Param("id"),
+		"name":           "Lagos Motor Circle",
+		"status":         "active",
 		"currentMembers": 15,
-		"totalPooled":   450000,
+		"totalPooled":    450000,
 	})
 }
 
@@ -210,8 +210,8 @@ func listContributions(c *gin.Context) {
 
 func getPoolLedger(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"ledger":       []interface{}{},
-		"totalInflows": 450000,
+		"ledger":        []interface{}{},
+		"totalInflows":  450000,
 		"totalOutflows": 150000,
 		"balance":       300000,
 	})

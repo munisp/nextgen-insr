@@ -107,5 +107,3 @@ type CompensationNotificationRequest struct {
 	PolicyID   string `json:"policy_id"`
 	Reason     string `json:"reason"`
 }
-
-

@@ -36,9 +36,9 @@ func NewRedisCache(cfg *config.Config) (*RedisCache, error) {
 func (r *RedisCache) Close() error { return r.client.Close() }
 
 const (
-	keyPrefix = "mdm:"
-	goldenTTL = 10 * time.Minute
-	agentTTL  = 1 * time.Hour
+	keyPrefix    = "mdm:"
+	goldenTTL    = 10 * time.Minute
+	agentTTL     = 1 * time.Hour
 	dashboardTTL = 30 * time.Second
 )
 
@@ -48,21 +48,29 @@ func goldenKey(entityID, entityType string) string {
 func agentKey(code string) string {
 	return fmt.Sprintf("%sagent:%s", keyPrefix, code)
 }
-func dashboardKey() string { return fmt.Sprintf("%sdashboard", keyPrefix) }
+func dashboardKey() string  { return fmt.Sprintf("%sdashboard", keyPrefix) }
 func issueCountKey() string { return fmt.Sprintf("%scounter:open_issues", keyPrefix) }
 
 func (r *RedisCache) CacheGoldenRecord(ctx context.Context, gr *models.GoldenRecord) error {
 	val, err := json.Marshal(gr)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return r.client.Set(ctx, goldenKey(gr.EntityID, string(gr.EntityType)), val, goldenTTL).Err()
 }
 
 func (r *RedisCache) GetGoldenRecord(ctx context.Context, entityID, entityType string) (*models.GoldenRecord, error) {
 	val, err := r.client.Get(ctx, goldenKey(entityID, entityType)).Result()
-	if err == redis.Nil { return nil, nil }
-	if err != nil { return nil, err }
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var gr models.GoldenRecord
-	if err := json.Unmarshal([]byte(val), &gr); err != nil { return nil, err }
+	if err := json.Unmarshal([]byte(val), &gr); err != nil {
+		return nil, err
+	}
 	return &gr, nil
 }
 
@@ -72,45 +80,65 @@ func (r *RedisCache) InvalidateGoldenRecord(ctx context.Context, entityID, entit
 
 func (r *RedisCache) CacheAgentRecord(ctx context.Context, ar *models.AgentRecord) error {
 	val, err := json.Marshal(ar)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return r.client.Set(ctx, agentKey(ar.AgentCode), val, agentTTL).Err()
 }
 
 func (r *RedisCache) GetAgentRecord(ctx context.Context, code string) (*models.AgentRecord, error) {
 	val, err := r.client.Get(ctx, agentKey(code)).Result()
-	if err == redis.Nil { return nil, nil }
-	if err != nil { return nil, err }
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var ar models.AgentRecord
-	if err := json.Unmarshal([]byte(val), &ar); err != nil { return nil, err }
+	if err := json.Unmarshal([]byte(val), &ar); err != nil {
+		return nil, err
+	}
 	return &ar, nil
 }
 
 func (r *RedisCache) CacheDashboard(ctx context.Context, dash *models.MasterDataDashboard) error {
 	val, err := json.Marshal(dash)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return r.client.Set(ctx, dashboardKey(), val, dashboardTTL).Err()
 }
 
 func (r *RedisCache) GetCachedDashboard(ctx context.Context) (*models.MasterDataDashboard, error) {
 	val, err := r.client.Get(ctx, dashboardKey()).Result()
-	if err == redis.Nil { return nil, nil }
-	if err != nil { return nil, err }
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var dash models.MasterDataDashboard
-	if err := json.Unmarshal([]byte(val), &dash); err != nil { return nil, err }
+	if err := json.Unmarshal([]byte(val), &dash); err != nil {
+		return nil, err
+	}
 	return &dash, nil
 }
 
 func (r *RedisCache) IncrementIssueCount(ctx context.Context) error {
 	key := issueCountKey()
 	_, err := r.client.Incr(ctx, key).Result()
-	if err == nil { r.client.Expire(ctx, key, 24*time.Hour) }
+	if err == nil {
+		r.client.Expire(ctx, key, 24*time.Hour)
+	}
 	return err
 }
 
 func (r *RedisCache) DecrementIssueCount(ctx context.Context) error {
 	key := issueCountKey()
 	_, err := r.client.Decr(ctx, key).Result()
-	if err == nil { r.client.Expire(ctx, key, 24*time.Hour) }
+	if err == nil {
+		r.client.Expire(ctx, key, 24*time.Hour)
+	}
 	return err
 }
 
@@ -148,11 +176,11 @@ func (r *RedisCache) PublishSyncEvent(ctx context.Context, syncID, source, targe
 func (r *RedisCache) PublishQualityEvent(ctx context.Context, entityType, entityID string, score float64) error {
 	channel := fmt.Sprintf("mdm:quality:%s", entityType)
 	data := map[string]interface{}{
-		"event":        "quality_assessed",
-		"entity_type":  entityType,
-		"entity_id":    entityID,
+		"event":         "quality_assessed",
+		"entity_type":   entityType,
+		"entity_id":     entityID,
 		"quality_score": score,
-		"timestamp":    time.Now().Format(time.RFC3339),
+		"timestamp":     time.Now().Format(time.RFC3339),
 	}
 	val, _ := json.Marshal(data)
 	return r.client.Publish(ctx, channel, val).Err()
@@ -172,6 +200,8 @@ func (r *RedisCache) FindFuzzyMatch(ctx context.Context, entityType, searchField
 }
 
 func min(a, b int) int {
-	if a < b { return a }
+	if a < b {
+		return a
+	}
 	return b
 }

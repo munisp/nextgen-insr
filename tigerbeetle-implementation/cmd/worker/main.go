@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create TigerBeetle client: %v", err)
 	}
-	defer ledgerClient.Close()
+	defer func() { _ = ledgerClient.Close() }()
 	log.Println("TigerBeetle client connected successfully")
 
 	// Initialize PostgreSQL connection
@@ -45,7 +45,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Test database connection
 	if err := db.Ping(); err != nil {

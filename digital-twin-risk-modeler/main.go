@@ -1,22 +1,22 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"syscall"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -24,11 +24,13 @@ import (
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -36,9 +38,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -52,7 +58,9 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // Digital Twin Risk Modeler
@@ -70,37 +78,51 @@ type SimulationRequest struct {
 }
 
 type SimulationResult struct {
-	Scenario         string   `json:"scenario"`
-	Iterations       int      `json:"iterations"`
-	MeanLoss         float64  `json:"mean_loss"`
-	MedianLoss       float64  `json:"median_loss"`
-	P95Loss          float64  `json:"p95_loss"`
-	P99Loss          float64  `json:"p99_loss"`
-	MaxLoss          float64  `json:"max_loss"`
-	LossRatio        float64  `json:"loss_ratio"`
-	CapitalRequired  float64  `json:"capital_required"`
-	RuinProbability  float64  `json:"ruin_probability"`
-	ExecutionMs      int64    `json:"execution_ms"`
+	Scenario        string  `json:"scenario"`
+	Iterations      int     `json:"iterations"`
+	MeanLoss        float64 `json:"mean_loss"`
+	MedianLoss      float64 `json:"median_loss"`
+	P95Loss         float64 `json:"p95_loss"`
+	P99Loss         float64 `json:"p99_loss"`
+	MaxLoss         float64 `json:"max_loss"`
+	LossRatio       float64 `json:"loss_ratio"`
+	CapitalRequired float64 `json:"capital_required"`
+	RuinProbability float64 `json:"ruin_probability"`
+	ExecutionMs     int64   `json:"execution_ms"`
 }
 
 func runMonteCarlo(req SimulationRequest) SimulationResult {
 	start := time.Now()
-	if req.Iterations == 0 { req.Iterations = 10000 }
-	if req.TimeHorizon == 0 { req.TimeHorizon = 12 }
+	if req.Iterations == 0 {
+		req.Iterations = 10000
+	}
+	if req.TimeHorizon == 0 {
+		req.TimeHorizon = 12
+	}
 
 	// Scenario-specific parameters
 	var baseLossRate, volatility, catastropheFactor float64
 	switch req.Scenario {
 	case "pandemic":
-		baseLossRate = 0.08; volatility = 0.15; catastropheFactor = 2.5
+		baseLossRate = 0.08
+		volatility = 0.15
+		catastropheFactor = 2.5
 	case "flood":
-		baseLossRate = 0.12; volatility = 0.25; catastropheFactor = 3.0
+		baseLossRate = 0.12
+		volatility = 0.25
+		catastropheFactor = 3.0
 	case "recession":
-		baseLossRate = 0.06; volatility = 0.10; catastropheFactor = 1.5
+		baseLossRate = 0.06
+		volatility = 0.10
+		catastropheFactor = 1.5
 	case "earthquake":
-		baseLossRate = 0.15; volatility = 0.35; catastropheFactor = 4.0
+		baseLossRate = 0.15
+		volatility = 0.35
+		catastropheFactor = 4.0
 	default:
-		baseLossRate = 0.05; volatility = 0.08; catastropheFactor = 1.0
+		baseLossRate = 0.05
+		volatility = 0.08
+		catastropheFactor = 1.0
 	}
 
 	losses := make([]float64, req.Iterations)
@@ -111,13 +133,19 @@ func runMonteCarlo(req SimulationRequest) SimulationResult {
 		totalLoss := 0.0
 		for m := 0; m < req.TimeHorizon; m++ {
 			monthlyRate := baseLossRate + volatility*rand.NormFloat64()
-			if rand.Float64() < 0.02 { monthlyRate *= catastropheFactor }
-			if monthlyRate < 0 { monthlyRate = 0 }
+			if rand.Float64() < 0.02 {
+				monthlyRate *= catastropheFactor
+			}
+			if monthlyRate < 0 {
+				monthlyRate = 0
+			}
 			monthLoss := req.PortfolioValue * monthlyRate / 12
 			totalLoss += monthLoss
 		}
 		losses[i] = totalLoss
-		if totalLoss > reserves { ruinCount++ }
+		if totalLoss > reserves {
+			ruinCount++
+		}
 	}
 
 	// Sort for percentiles
@@ -127,38 +155,51 @@ func runMonteCarlo(req SimulationRequest) SimulationResult {
 	p99Idx := int(float64(req.Iterations) * 0.99)
 
 	mean := 0.0
-	for _, l := range losses { mean += l }
+	for _, l := range losses {
+		mean += l
+	}
 	mean /= float64(req.Iterations)
 
 	return SimulationResult{
 		Scenario: req.Scenario, Iterations: req.Iterations,
-		MeanLoss: math.Round(mean*100)/100,
-		MedianLoss: math.Round(losses[req.Iterations/2]*100)/100,
-		P95Loss: math.Round(losses[p95Idx]*100)/100,
-		P99Loss: math.Round(losses[p99Idx]*100)/100,
-		MaxLoss: math.Round(losses[req.Iterations-1]*100)/100,
-		LossRatio: math.Round(mean/req.PortfolioValue*10000)/10000,
-		CapitalRequired: math.Round(losses[p99Idx]*1.1*100)/100,
+		MeanLoss:        math.Round(mean*100) / 100,
+		MedianLoss:      math.Round(losses[req.Iterations/2]*100) / 100,
+		P95Loss:         math.Round(losses[p95Idx]*100) / 100,
+		P99Loss:         math.Round(losses[p99Idx]*100) / 100,
+		MaxLoss:         math.Round(losses[req.Iterations-1]*100) / 100,
+		LossRatio:       math.Round(mean/req.PortfolioValue*10000) / 10000,
+		CapitalRequired: math.Round(losses[p99Idx]*1.1*100) / 100,
 		RuinProbability: float64(ruinCount) / float64(req.Iterations),
-		ExecutionMs: time.Since(start).Milliseconds(),
+		ExecutionMs:     time.Since(start).Milliseconds(),
 	}
 }
 
 func sortFloat64s(a []float64) {
 	for i := 1; i < len(a); i++ {
-		key := a[i]; j := i - 1
-		for j >= 0 && a[j] > key { a[j+1] = a[j]; j-- }
+		key := a[i]
+		j := i - 1
+		for j >= 0 && a[j] > key {
+			a[j+1] = a[j]
+			j--
+		}
 		a[j+1] = key
 	}
 }
 
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" { log.Fatal("FATAL: DATABASE_URL environment variable is required") }
+	if dsn == "" {
+		log.Fatal("FATAL: DATABASE_URL environment variable is required")
+	}
 	var err error
 	db, err = sql.Open("postgres", dsn)
-	if err != nil { log.Printf(`{"level":"warn","msg":"db failed","error":"%s"}`, err); return }
-	db.SetMaxOpenConns(25); db.SetMaxIdleConns(5); db.SetConnMaxLifetime(5 * time.Minute)
+	if err != nil {
+		log.Printf(`{"level":"warn","msg":"db failed","error":"%s"}`, err)
+		return
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS risk_simulations (
 		id SERIAL PRIMARY KEY, scenario TEXT, iterations INT, mean_loss REAL, p95_loss REAL,
 		p99_loss REAL, capital_required REAL, ruin_prob REAL, execution_ms BIGINT, created_at TIMESTAMPTZ DEFAULT NOW()
@@ -170,11 +211,13 @@ func initDB() {
 
 func handleSimulate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	var req SimulationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusBadRequest); return
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err), http.StatusBadRequest)
+		return
 	}
 	result := runMonteCarlo(req)
 	if db != nil {
@@ -184,8 +227,10 @@ func handleSimulate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "handleSimulate", "digital-twin-risk-modeler", nil) }
+	_ = json.NewEncoder(w).Encode(result)
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "handleSimulate", "digital-twin-risk-modeler", nil)
+	}
 }
 
 func handleStressTest(w http.ResponseWriter, r *http.Request) {
@@ -197,20 +242,29 @@ func handleStressTest(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	_ = json.NewEncoder(w).Encode(results)
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	dbStatus := "disconnected"
-	if db != nil { if err := db.Ping(); err == nil { dbStatus = "connected" } }
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "digital-twin-risk-modeler", "database": dbStatus})
+	if db != nil {
+		if err := db.Ping(); err == nil {
+			dbStatus = "connected"
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "service": "digital-twin-risk-modeler", "database": dbStatus})
 }
 func handleReady(w http.ResponseWriter, r *http.Request) {
-	if db == nil { w.WriteHeader(503); json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"}); return }
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	if db == nil {
+		w.WriteHeader(503)
+		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
-func handleLive(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "alive"}) }
-
+func handleLive(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+}
 
 type rateLimiter struct {
 	mu       sync.Mutex
@@ -218,6 +272,7 @@ type rateLimiter struct {
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -228,9 +283,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -238,7 +298,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -278,25 +340,33 @@ func jsonLog(level, msg string, kvs ...string) {
 // ─── Digital Twin Risk Modeling Logic ────────────────────────────────────────
 
 type AssetRiskModel struct {
-	AssetID       string  `json:"asset_id"`
-	AssetType     string  `json:"asset_type"`
-	CurrentValue  float64 `json:"current_value"`
-	RiskScore     float64 `json:"risk_score"`
-	FailureProb   float64 `json:"failure_probability"`
-	ExpectedLoss  float64 `json:"expected_loss"`
-	OptimalCover  float64 `json:"optimal_coverage"`
+	AssetID         string   `json:"asset_id"`
+	AssetType       string   `json:"asset_type"`
+	CurrentValue    float64  `json:"current_value"`
+	RiskScore       float64  `json:"risk_score"`
+	FailureProb     float64  `json:"failure_probability"`
+	ExpectedLoss    float64  `json:"expected_loss"`
+	OptimalCover    float64  `json:"optimal_coverage"`
 	Recommendations []string `json:"recommendations"`
 }
 
 func modelAssetRisk(assetType string, age int, value float64, maintenanceScore float64, environmentRisk float64) AssetRiskModel {
 	// Failure probability based on bathtub curve (reliability engineering)
 	failureProb := 0.01 // base 1%
-	if age < 2 { failureProb = 0.03 } // infant mortality
-	if age > 10 { failureProb += float64(age-10) * 0.005 } // wear-out
+	if age < 2 {
+		failureProb = 0.03
+	} // infant mortality
+	if age > 10 {
+		failureProb += float64(age-10) * 0.005
+	} // wear-out
 
 	// Adjust for maintenance quality (0-100)
-	if maintenanceScore < 50 { failureProb *= 2.0 }
-	if maintenanceScore < 25 { failureProb *= 1.5 }
+	if maintenanceScore < 50 {
+		failureProb *= 2.0
+	}
+	if maintenanceScore < 25 {
+		failureProb *= 1.5
+	}
 
 	// Environment risk multiplier
 	failureProb *= (1 + environmentRisk/100)
@@ -308,7 +378,9 @@ func modelAssetRisk(assetType string, age int, value float64, maintenanceScore f
 		"electronics": 0.80, "inventory": 0.50,
 	}
 	severity := severityFactor[assetType]
-	if severity == 0 { severity = 0.50 }
+	if severity == 0 {
+		severity = 0.50
+	}
 	expectedLoss := value * failureProb * severity
 
 	// Optimal coverage (expected loss * safety margin)
@@ -316,16 +388,22 @@ func modelAssetRisk(assetType string, age int, value float64, maintenanceScore f
 
 	riskScore := failureProb * 100
 	recs := []string{}
-	if riskScore > 50 { recs = append(recs, "Immediate maintenance required") }
-	if riskScore > 30 { recs = append(recs, "Increase coverage") }
-	if age > 15 { recs = append(recs, "Consider asset replacement") }
+	if riskScore > 50 {
+		recs = append(recs, "Immediate maintenance required")
+	}
+	if riskScore > 30 {
+		recs = append(recs, "Increase coverage")
+	}
+	if age > 15 {
+		recs = append(recs, "Consider asset replacement")
+	}
 
 	return AssetRiskModel{
 		AssetType: assetType, CurrentValue: value,
-		RiskScore: math.Round(riskScore*100) / 100,
-		FailureProb: math.Round(failureProb*10000) / 10000,
-		ExpectedLoss: math.Round(expectedLoss*100) / 100,
-		OptimalCover: math.Round(optimalCover*100) / 100,
+		RiskScore:       math.Round(riskScore*100) / 100,
+		FailureProb:     math.Round(failureProb*10000) / 10000,
+		ExpectedLoss:    math.Round(expectedLoss*100) / 100,
+		OptimalCover:    math.Round(optimalCover*100) / 100,
 		Recommendations: recs,
 	}
 }
@@ -336,12 +414,12 @@ func handleModelRisk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		AssetID        string  `json:"asset_id"`
-		AssetType      string  `json:"asset_type"`
-		Age            int     `json:"age_years"`
-		Value          float64 `json:"value"`
+		AssetID          string  `json:"asset_id"`
+		AssetType        string  `json:"asset_type"`
+		Age              int     `json:"age_years"`
+		Value            float64 `json:"value"`
 		MaintenanceScore float64 `json:"maintenance_score"`
-		EnvironmentRisk float64 `json:"environment_risk"`
+		EnvironmentRisk  float64 `json:"environment_risk"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
@@ -350,15 +428,14 @@ func handleModelRisk(w http.ResponseWriter, r *http.Request) {
 	result := modelAssetRisk(req.AssetType, req.Age, req.Value, req.MaintenanceScore, req.EnvironmentRisk)
 	result.AssetID = req.AssetID
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
-
 
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -369,6 +446,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -377,7 +455,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -386,10 +466,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -398,46 +478,64 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -448,6 +546,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -456,9 +555,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -492,11 +595,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -515,6 +618,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -541,9 +645,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -553,7 +661,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -586,7 +694,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			jsonLog("warn", "auth_failure", "service", "digital-twin-risk-modeler", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -627,11 +735,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -660,7 +768,6 @@ func initMiddleware() {
 	osClient = newOpenSearchClient(osURL, os.Getenv("OPENSEARCH_USER"))
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
-
 
 func bodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

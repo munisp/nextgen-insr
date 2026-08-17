@@ -40,7 +40,7 @@ func Respond(w http.ResponseWriter, status int, code ErrorCode, message string, 
 	if len(details) > 0 {
 		resp.Error.Details = details[0]
 	}
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func BadRequest(w http.ResponseWriter, msg string) {
@@ -70,5 +70,5 @@ func Internal(w http.ResponseWriter, msg string) {
 func RespondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }

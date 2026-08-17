@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"math"
 	"github.com/unified-insurance/pfa-integration/internal/models"
 	"github.com/unified-insurance/pfa-integration/internal/repository"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -269,10 +269,10 @@ func (s *PFAService) ApproveFundTransfer(ctx context.Context, transferID uuid.UU
 
 func (s *PFAService) GeneratePenComReport(ctx context.Context, reportType, period string) (*models.PenComReport, error) {
 	reportData := map[string]interface{}{
-		"report_type":    reportType,
-		"period":         period,
-		"generated_at":   time.Now(),
-		"generator":      "pfa-integration-service",
+		"report_type":  reportType,
+		"period":       period,
+		"generated_at": time.Now(),
+		"generator":    "pfa-integration-service",
 	}
 
 	report := &models.PenComReport{
@@ -304,7 +304,9 @@ func (s *PFAService) GetPaymentsByPolicy(ctx context.Context, policyID uuid.UUID
 func (s *PFAService) calculateAge(dob time.Time) int {
 	now := time.Now()
 	age := now.Year() - dob.Year()
-	if now.YearDay() < dob.YearDay() { age-- }
+	if now.YearDay() < dob.YearDay() {
+		age--
+	}
 	return age
 }
 
@@ -346,13 +348,21 @@ func (s *PFAService) calculateAnnuityFactor(age int, rate float64, guaranteedPer
 }
 
 func (s *PFAService) getMortalityRate(age int) float64 {
-	if rate, ok := annuityMortalityRates[age]; ok { return rate }
+	if rate, ok := annuityMortalityRates[age]; ok {
+		return rate
+	}
 	lower, upper := 55, 100
 	for a := range annuityMortalityRates {
-		if a <= age && a > lower { lower = a }
-		if a >= age && a < upper { upper = a }
+		if a <= age && a > lower {
+			lower = a
+		}
+		if a >= age && a < upper {
+			upper = a
+		}
 	}
-	if lower == upper { return annuityMortalityRates[lower] }
+	if lower == upper {
+		return annuityMortalityRates[lower]
+	}
 	lRate := annuityMortalityRates[lower]
 	uRate := annuityMortalityRates[upper]
 	t := float64(age-lower) / float64(upper-lower)
@@ -362,10 +372,18 @@ func (s *PFAService) getMortalityRate(age int) float64 {
 func (s *PFAService) calculatePensionTax(monthlyAmount float64) float64 {
 	annualAmount := monthlyAmount * 12
 	// Nigerian PAYE tax bands (simplified for pension income)
-	if annualAmount <= 300000 { return 0 }
-	if annualAmount <= 600000 { return (annualAmount - 300000) * 0.07 / 12 }
-	if annualAmount <= 1100000 { return (300000*0.07 + (annualAmount-600000)*0.11) / 12 }
-	if annualAmount <= 1600000 { return (300000*0.07 + 500000*0.11 + (annualAmount-1100000)*0.15) / 12 }
+	if annualAmount <= 300000 {
+		return 0
+	}
+	if annualAmount <= 600000 {
+		return (annualAmount - 300000) * 0.07 / 12
+	}
+	if annualAmount <= 1100000 {
+		return (300000*0.07 + (annualAmount-600000)*0.11) / 12
+	}
+	if annualAmount <= 1600000 {
+		return (300000*0.07 + 500000*0.11 + (annualAmount-1100000)*0.15) / 12
+	}
 	return (300000*0.07 + 500000*0.11 + 500000*0.15 + (annualAmount-1600000)*0.19) / 12
 }
 
@@ -375,17 +393,25 @@ func (s *PFAService) getIndustryFactor(industry string) float64 {
 		"technology": 0.9, "education": 0.8, "healthcare": 1.1, "mining": 1.8,
 		"agriculture": 1.2, "telecoms": 1.0, "government": 0.9,
 	}
-	if f, ok := factors[industry]; ok { return f }
+	if f, ok := factors[industry]; ok {
+		return f
+	}
 	return 1.0
 }
 
 func (s *PFAService) getGroupSizeDiscount(count int) float64 {
 	switch {
-	case count >= 1000: return 0.70
-	case count >= 500: return 0.75
-	case count >= 200: return 0.80
-	case count >= 100: return 0.85
-	case count >= 50: return 0.90
-	default: return 1.0
+	case count >= 1000:
+		return 0.70
+	case count >= 500:
+		return 0.75
+	case count >= 200:
+		return 0.80
+	case count >= 100:
+		return 0.85
+	case count >= 50:
+		return 0.90
+	default:
+		return 1.0
 	}
 }

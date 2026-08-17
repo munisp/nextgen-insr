@@ -46,7 +46,7 @@ func NewEngine(cfg *config.Config) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create logger: %w", err)
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	if cfg.Observability.LogLevel != "" {
 		lvl := zap.InfoLevel
@@ -199,8 +199,8 @@ func (e *Engine) adjudicateClaim(claim *models.Claim) *models.AdjudicationResult
 
 	// Update cache
 	if e.cache != nil {
-		e.cache.SetCachedClaim(context.Background(), claim)
-		e.cache.CacheAdjudicationResult(context.Background(), claim.ID, string(result.Decision))
+		_ = e.cache.SetCachedClaim(context.Background(), claim)
+		_ = e.cache.CacheAdjudicationResult(context.Background(), claim.ID, string(result.Decision))
 	}
 
 	// Track metrics
@@ -554,7 +554,7 @@ func publishEvent(topic string, key string, payload interface{}) {
 		log.Printf("WARN: kafka publish error: %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 }
 
 // ── Redis Caching ───────────────────────────────────────────────────────────
@@ -717,7 +717,7 @@ func prodRateLimitMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Retry-After", "60")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
 			return
 		}
 		bucket.tokens--
@@ -749,15 +749,15 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
 	errCount := atomic.LoadInt64(&prodMetricsErrCount)
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
+	_, _ = fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
+	_, _ = fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_errors_total %d\n", errCount)
+	_, _ = fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	_, _ = fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	_, _ = fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
 // Panic recovery middleware - catches panics and returns 500
@@ -767,7 +767,7 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 			if err := recover(); err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
 				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
 			}
 		}()
@@ -805,7 +805,7 @@ func initDB() {
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 // Circuit breaker for external API calls
@@ -867,7 +867,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize engine: %v", err)
 	}
-	defer engine.Shutdown(context.Background())
+	defer func() { _ = engine.Shutdown(context.Background()) }()
 
 	// Setup router
 	r := chi.NewRouter()
@@ -969,7 +969,7 @@ func handleHealth(e *Engine) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(status)
+		_ = json.NewEncoder(w).Encode(status)
 	}
 }
 
@@ -1050,7 +1050,7 @@ func handleAdjudicate(e *Engine) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(result)
+		_ = json.NewEncoder(w).Encode(result)
 	}
 }
 
@@ -1124,7 +1124,7 @@ func handleGetClaim(e *Engine) http.HandlerFunc {
 		if e.cache != nil {
 			if cached, err := e.cache.GetCachedClaim(r.Context(), claimID); err == nil && cached != nil {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(cached)
+				_ = json.NewEncoder(w).Encode(cached)
 				return
 			}
 		}
@@ -1143,11 +1143,11 @@ func handleGetClaim(e *Engine) http.HandlerFunc {
 
 		// Update cache
 		if e.cache != nil {
-			e.cache.SetCachedClaim(r.Context(), claim)
+			_ = e.cache.SetCachedClaim(r.Context(), claim)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(claim)
+		_ = json.NewEncoder(w).Encode(claim)
 	}
 }
 
@@ -1171,10 +1171,10 @@ func handleListClaims(e *Engine) http.HandlerFunc {
 			filter.InsurerID = insurerID
 		}
 		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-			fmt.Sscanf(limitStr, "%d", &filter.Limit)
+			_, _ = fmt.Sscanf(limitStr, "%d", &filter.Limit)
 		}
 		if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-			fmt.Sscanf(offsetStr, "%d", &filter.Offset)
+			_, _ = fmt.Sscanf(offsetStr, "%d", &filter.Offset)
 		}
 
 		if e.db == nil {
@@ -1189,7 +1189,7 @@ func handleListClaims(e *Engine) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(paginated)
+		_ = json.NewEncoder(w).Encode(paginated)
 	}
 }
 
@@ -1226,7 +1226,7 @@ func handleUpdateClaimStatus(e *Engine) http.HandlerFunc {
 
 		// Invalidate cache
 		if e.cache != nil {
-			e.cache.InvalidateClaim(r.Context(), claimID)
+			_ = e.cache.InvalidateClaim(r.Context(), claimID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1254,9 +1254,9 @@ func handleApproveClaim(e *Engine) http.HandlerFunc {
 		}
 
 		if e.cache != nil {
-			e.cache.InvalidateClaim(r.Context(), claimID)
-			e.cache.RemoveFromQueue(r.Context(), "supervisor_queue", claimID)
-			e.cache.RemoveFromQueue(r.Context(), "executive_review_queue", claimID)
+			_ = e.cache.InvalidateClaim(r.Context(), claimID)
+			_ = e.cache.RemoveFromQueue(r.Context(), "supervisor_queue", claimID)
+			_ = e.cache.RemoveFromQueue(r.Context(), "executive_review_queue", claimID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1284,9 +1284,9 @@ func handleDenyClaim(e *Engine) http.HandlerFunc {
 		}
 
 		if e.cache != nil {
-			e.cache.InvalidateClaim(r.Context(), claimID)
-			e.cache.RemoveFromQueue(r.Context(), "supervisor_queue", claimID)
-			e.cache.RemoveFromQueue(r.Context(), "executive_review_queue", claimID)
+			_ = e.cache.InvalidateClaim(r.Context(), claimID)
+			_ = e.cache.RemoveFromQueue(r.Context(), "supervisor_queue", claimID)
+			_ = e.cache.RemoveFromQueue(r.Context(), "executive_review_queue", claimID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1306,7 +1306,7 @@ func handleEscalateClaim(e *Engine) http.HandlerFunc {
 		var body struct {
 			Reason string `json:"reason"`
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		if e.db == nil {
 			http.Error(w, "Database not available", http.StatusServiceUnavailable)
@@ -1319,7 +1319,7 @@ func handleEscalateClaim(e *Engine) http.HandlerFunc {
 		}
 
 		if e.cache != nil {
-			e.cache.AddToQueue(r.Context(), "executive_review_queue", claimID)
+			_ = e.cache.AddToQueue(r.Context(), "executive_review_queue", claimID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -1338,7 +1338,7 @@ func handleGetQueueClaims(e *Engine) http.HandlerFunc {
 		limit := 20
 
 		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-			fmt.Sscanf(limitStr, "%d", &limit)
+			_, _ = fmt.Sscanf(limitStr, "%d", &limit)
 		}
 
 		if e.db == nil {
@@ -1369,7 +1369,7 @@ func handleClaimsMetrics(e *Engine) http.HandlerFunc {
 		if e.cache != nil {
 			if cached, err := e.cache.GetCachedMetrics(r.Context()); err == nil && cached != nil {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(cached)
+				_ = json.NewEncoder(w).Encode(cached)
 				return
 			}
 		}
@@ -1387,11 +1387,11 @@ func handleClaimsMetrics(e *Engine) http.HandlerFunc {
 
 		// Update cache
 		if e.cache != nil {
-			e.cache.SetCachedMetrics(r.Context(), metrics)
+			_ = e.cache.SetCachedMetrics(r.Context(), metrics)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metrics)
+		_ = json.NewEncoder(w).Encode(metrics)
 	}
 }
 
@@ -1427,7 +1427,7 @@ func handleMetrics(e *Engine) http.HandlerFunc {
 		metrics["errors"] = e.errorCount.Load()
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metrics)
+		_ = json.NewEncoder(w).Encode(metrics)
 	}
 }
 

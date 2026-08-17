@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -25,7 +25,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to init logger: %v", err))
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 	zap.ReplaceGlobals(logger)
 	log := zap.L()
 
@@ -41,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to init PostgreSQL", zap.Error(err))
 	}
-	defer pg.Close()
+	defer func() { _ = pg.Close() }()
 	log.Info("PostgreSQL initialized")
 
 	rdb, err := db.NewRedisCache(cfg)
@@ -49,7 +49,7 @@ func main() {
 		log.Warn("Redis not available, running without cache", zap.Error(err))
 		rdb = &db.RedisCache{}
 	}
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	log.Info("Redis initialized")
 
 	takafulSvc := service.NewTakafulService(pg, rdb, cfg)

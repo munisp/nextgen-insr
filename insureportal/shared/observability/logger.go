@@ -9,9 +9,9 @@ import (
 )
 
 type Logger struct {
-	service   string
-	osClient  *OpenSearchClient
-	index     string
+	service  string
+	osClient *OpenSearchClient
+	index    string
 }
 
 func NewLogger(service string) *Logger {
@@ -33,18 +33,18 @@ func (l *Logger) log(level, msg string, fields map[string]interface{}) {
 		entry[k] = v
 	}
 	data, _ := json.Marshal(entry)
-	fmt.Fprintln(os.Stdout, string(data))
+	_, _ = fmt.Fprintln(os.Stdout, string(data))
 
 	// async send to opensearch (best-effort)
 	go func() {
 		logEntry := LogEntry{
 			Timestamp: time.Now(),
-			Level:    level,
-			Service:  l.service,
-			Message:  msg,
-			Fields:   fields,
+			Level:     level,
+			Service:   l.service,
+			Message:   msg,
+			Fields:    fields,
 		}
-		l.osClient.IndexLog(context.Background(), l.index, logEntry)
+		_ = l.osClient.IndexLog(context.Background(), l.index, logEntry)
 	}()
 }
 

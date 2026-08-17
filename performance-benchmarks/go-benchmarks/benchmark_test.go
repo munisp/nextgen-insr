@@ -25,19 +25,19 @@ func uint128HL(high, low uint64) types.Uint128 {
 }
 
 type BenchmarkMetrics struct {
-	TotalOperations   int64
-	SuccessfulOps     int64
-	FailedOps         int64
-	TotalDuration     time.Duration
-	MinLatency        time.Duration
-	MaxLatency        time.Duration
-	AvgLatency        time.Duration
-	P50Latency        time.Duration
-	P95Latency        time.Duration
-	P99Latency        time.Duration
-	Throughput        float64
-	MemoryAllocated   uint64
-	MemoryUsed        uint64
+	TotalOperations int64
+	SuccessfulOps   int64
+	FailedOps       int64
+	TotalDuration   time.Duration
+	MinLatency      time.Duration
+	MaxLatency      time.Duration
+	AvgLatency      time.Duration
+	P50Latency      time.Duration
+	P95Latency      time.Duration
+	P99Latency      time.Duration
+	Throughput      float64
+	MemoryAllocated uint64
+	MemoryUsed      uint64
 }
 
 func BenchmarkCreateAccount(b *testing.B) {
@@ -69,7 +69,7 @@ func BenchmarkCreateTransfer(b *testing.B) {
 	// Setup accounts
 	debitAccount := uint128HL(1, 1)
 	creditAccount := uint128HL(1, 2)
-	
+
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
 
@@ -88,7 +88,7 @@ func BenchmarkCreateTransfer(b *testing.B) {
 				Code:            1,
 				IsPending:       false,
 			}
-			
+
 			_, err := client.CreateTransfer(context.Background(), req)
 			if err != nil {
 				b.Logf("Create transfer failed: %v", err)
@@ -107,7 +107,7 @@ func BenchmarkPendingTransferWorkflow(b *testing.B) {
 	// Setup accounts
 	debitAccount := uint128HL(2, 1)
 	creditAccount := uint128HL(2, 2)
-	
+
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
 
@@ -117,7 +117,7 @@ func BenchmarkPendingTransferWorkflow(b *testing.B) {
 		for pb.Next() {
 			i++
 			ctx := context.Background()
-			
+
 			// Create pending transfer
 			pendingID := fmt.Sprintf("PENDING-%s-%d", uuid.New().String(), i)
 			pendingReq := ttb.TransferRequest{
@@ -130,13 +130,13 @@ func BenchmarkPendingTransferWorkflow(b *testing.B) {
 				IsPending:       true,
 				Timeout:         3600,
 			}
-			
+
 			_, err := client.CreateTransfer(ctx, pendingReq)
 			if err != nil {
 				b.Logf("Create pending transfer failed: %v", err)
 				continue
 			}
-			
+
 			// Post pending transfer
 			postID := fmt.Sprintf("POST-%s", pendingID)
 			_, err = client.PostPendingTransfer(ctx, postID, pendingID, 1, 1)
@@ -149,7 +149,7 @@ func BenchmarkPendingTransferWorkflow(b *testing.B) {
 
 func BenchmarkConcurrentWorkflows(b *testing.B) {
 	concurrencyLevels := []int{10, 50, 100, 500, 1000}
-	
+
 	for _, concurrency := range concurrencyLevels {
 		b.Run(fmt.Sprintf("Concurrency-%d", concurrency), func(b *testing.B) {
 			client, err := ttb.NewTigerBeetleClient(uint128HL(0, 0), []string{"localhost:3000"})
@@ -161,20 +161,20 @@ func BenchmarkConcurrentWorkflows(b *testing.B) {
 			// Setup accounts
 			debitAccount := uint128HL(uint64(concurrency), 1)
 			creditAccount := uint128HL(uint64(concurrency), 2)
-			
+
 			client.CreateAccount(context.Background(), debitAccount, 1, 1)
 			client.CreateAccount(context.Background(), creditAccount, 1, 2)
 
 			b.ResetTimer()
-			
+
 			var wg sync.WaitGroup
 			var successCount, failCount int64
-			
+
 			for i := 0; i < b.N; i++ {
 				wg.Add(1)
 				go func(idx int) {
 					defer wg.Done()
-					
+
 					transferID := fmt.Sprintf("TXN-%d-%d", concurrency, idx)
 					req := ttb.TransferRequest{
 						TransferID:      transferID,
@@ -185,7 +185,7 @@ func BenchmarkConcurrentWorkflows(b *testing.B) {
 						Code:            1,
 						IsPending:       false,
 					}
-					
+
 					_, err := client.CreateTransfer(context.Background(), req)
 					if err != nil {
 						atomic.AddInt64(&failCount, 1)
@@ -193,14 +193,14 @@ func BenchmarkConcurrentWorkflows(b *testing.B) {
 						atomic.AddInt64(&successCount, 1)
 					}
 				}(i)
-				
+
 				if (i+1)%concurrency == 0 {
 					wg.Wait()
 				}
 			}
-			
+
 			wg.Wait()
-			
+
 			b.ReportMetric(float64(successCount)/float64(b.N)*100, "success_rate_%")
 			b.ReportMetric(float64(failCount), "failed_ops")
 		})
@@ -217,15 +217,15 @@ func BenchmarkThroughput(b *testing.B) {
 	// Setup accounts
 	debitAccount := uint128HL(100, 1)
 	creditAccount := uint128HL(100, 2)
-	
+
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
 
 	b.ResetTimer()
-	
+
 	start := time.Now()
 	var opsCount int64
-	
+
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			transferID := fmt.Sprintf("THROUGHPUT-%d", atomic.AddInt64(&opsCount, 1))
@@ -238,14 +238,14 @@ func BenchmarkThroughput(b *testing.B) {
 				Code:            1,
 				IsPending:       false,
 			}
-			
+
 			client.CreateTransfer(context.Background(), req)
 		}
 	})
-	
+
 	duration := time.Since(start)
 	throughput := float64(opsCount) / duration.Seconds()
-	
+
 	b.ReportMetric(throughput, "ops/sec")
 	b.ReportMetric(float64(duration.Microseconds())/float64(opsCount), "avg_latency_us")
 }
@@ -260,17 +260,17 @@ func BenchmarkLatencyDistribution(b *testing.B) {
 	// Setup accounts
 	debitAccount := uint128HL(200, 1)
 	creditAccount := uint128HL(200, 2)
-	
+
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
 
 	latencies := make([]time.Duration, b.N)
-	
+
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
-		
+
 		transferID := fmt.Sprintf("LATENCY-%d", i)
 		req := ttb.TransferRequest{
 			TransferID:      transferID,
@@ -281,14 +281,14 @@ func BenchmarkLatencyDistribution(b *testing.B) {
 			Code:            1,
 			IsPending:       false,
 		}
-		
+
 		client.CreateTransfer(context.Background(), req)
 		latencies[i] = time.Since(start)
 	}
-	
+
 	// Calculate percentiles
 	p50, p95, p99 := calculatePercentiles(latencies)
-	
+
 	b.ReportMetric(float64(p50.Microseconds()), "p50_latency_us")
 	b.ReportMetric(float64(p95.Microseconds()), "p95_latency_us")
 	b.ReportMetric(float64(p99.Microseconds()), "p99_latency_us")
@@ -298,11 +298,11 @@ func calculatePercentiles(latencies []time.Duration) (p50, p95, p99 time.Duratio
 	if len(latencies) == 0 {
 		return 0, 0, 0
 	}
-	
+
 	// Sort latencies
 	sorted := make([]time.Duration, len(latencies))
 	copy(sorted, latencies)
-	
+
 	// Simple bubble sort for small datasets
 	for i := 0; i < len(sorted); i++ {
 		for j := i + 1; j < len(sorted); j++ {
@@ -311,11 +311,11 @@ func calculatePercentiles(latencies []time.Duration) (p50, p95, p99 time.Duratio
 			}
 		}
 	}
-	
+
 	p50 = sorted[len(sorted)*50/100]
 	p95 = sorted[len(sorted)*95/100]
 	p99 = sorted[len(sorted)*99/100]
-	
+
 	return p50, p95, p99
 }
 
@@ -329,13 +329,13 @@ func BenchmarkMemoryUsage(b *testing.B) {
 	// Setup accounts
 	debitAccount := uint128HL(300, 1)
 	creditAccount := uint128HL(300, 2)
-	
+
 	client.CreateAccount(context.Background(), debitAccount, 1, 1)
 	client.CreateAccount(context.Background(), creditAccount, 1, 2)
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		transferID := fmt.Sprintf("MEMORY-%d", i)
 		req := ttb.TransferRequest{
@@ -347,7 +347,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 			Code:            1,
 			IsPending:       false,
 		}
-		
+
 		client.CreateTransfer(context.Background(), req)
 	}
 }

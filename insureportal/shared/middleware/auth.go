@@ -24,14 +24,14 @@ type Claims struct {
 
 // AuthConfig holds authentication configuration
 type AuthConfig struct {
-	KeycloakURL    string
-	Realm          string
-	ClientID       string
-	ClientSecret   string
-	RequiredRoles  []string
-	SkipPaths      []string
-	JWTSecret      string
-	TokenHeader    string
+	KeycloakURL   string
+	Realm         string
+	ClientID      string
+	ClientSecret  string
+	RequiredRoles []string
+	SkipPaths     []string
+	JWTSecret     string
+	TokenHeader   string
 }
 
 // DefaultAuthConfig returns default auth configuration from environment

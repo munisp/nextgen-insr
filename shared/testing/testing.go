@@ -217,7 +217,7 @@ func NewMockService(statusCode int, body interface{}) *MockService {
 		})
 
 		w.WriteHeader(mock.Response.StatusCode)
-		w.Write(mock.Response.Body)
+		_, _ = w.Write(mock.Response.Body)
 	}))
 
 	return mock

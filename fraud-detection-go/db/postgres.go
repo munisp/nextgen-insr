@@ -16,7 +16,7 @@ import (
 
 // PostgresStore wraps a *sql.DB with helper methods for fraud-domain tables.
 type PostgresStore struct {
-	db   *sql.DB
+	db     *sql.DB
 	logger *zap.Logger
 }
 
@@ -38,7 +38,7 @@ func NewPostgresStore(ctx context.Context, dsn string, maxOpen, maxIdle int, con
 	store := &PostgresStore{db: db, logger: logger}
 
 	if err := store.migrate(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
@@ -165,7 +165,7 @@ func (s *PostgresStore) GetTransactionHistory(ctx context.Context, accountID str
 	if err != nil {
 		return nil, fmt.Errorf("query transaction history: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []models.TransactionRecord
 	for rows.Next() {
@@ -248,7 +248,7 @@ func (s *PostgresStore) GetFraudCases(ctx context.Context, status, accountID str
 	if err != nil {
 		return nil, fmt.Errorf("query fraud cases: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var cases []models.FraudCase
 	for rows.Next() {
@@ -328,7 +328,7 @@ func (s *PostgresStore) GetStats(ctx context.Context) (models.FraudStats, error)
 	if err != nil {
 		stats.FalsePositiveRate = 0.02
 	} else if total > 0 {
-		stats.FalsePositiveRate = roundTo(blockedLow / float64(total), 4)
+		stats.FalsePositiveRate = roundTo(blockedLow/float64(total), 4)
 	} else {
 		stats.FalsePositiveRate = 0.0
 	}

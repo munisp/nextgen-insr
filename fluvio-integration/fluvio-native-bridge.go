@@ -54,8 +54,6 @@ type FluvioNativeBridge struct {
 	metrics      *BridgeMetrics
 }
 
-
-
 // BridgeMetrics tracks bridge performance
 type BridgeMetrics struct {
 	KafkaToFluvioMessages int64
@@ -136,7 +134,7 @@ func (p *FluvioProducer) Send(key, value []byte) error {
 	if err != nil {
 		return fmt.Errorf("fluvio produce failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("fluvio produce returned %d", resp.StatusCode)
 	}

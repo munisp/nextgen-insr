@@ -27,15 +27,15 @@ func NewRedisCache(ctx context.Context, cfg *config.RedisConfig) (*RedisCache, e
 func (r *RedisCache) Close() error { return r.Client.Close() }
 
 const (
-	PrefixTreaty   = "ri:treaty:"
-	PrefixCession  = "ri:cession:"
-	PrefixRecovery = "ri:recovery:"
+	PrefixTreaty     = "ri:treaty:"
+	PrefixCession    = "ri:cession:"
+	PrefixRecovery   = "ri:recovery:"
 	PrefixCommission = "ri:commission:"
-	PrefixSummary  = "ri:summary:"
-	PrefixStats    = "ri:stats:"
-	PrefixLock     = "ri:lock:"
-	TCacheMedium   = 30 * time.Minute
-	TCacheLong     = 2 * time.Hour
+	PrefixSummary    = "ri:summary:"
+	PrefixStats      = "ri:stats:"
+	PrefixLock       = "ri:lock:"
+	TCacheMedium     = 30 * time.Minute
+	TCacheLong       = 2 * time.Hour
 )
 
 func (r *RedisCache) CacheTreaty(ctx context.Context, id string, data []byte, ttl time.Duration) error {

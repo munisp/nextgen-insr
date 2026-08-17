@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	"database/sql"
 	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -29,33 +29,33 @@ type MojaloopKafkaConnector struct {
 }
 
 type PaymentEvent struct {
-	EventType       string    `json:"event_type"`
-	PaymentID       uuid.UUID `json:"payment_id"`
-	CustomerID      uuid.UUID `json:"customer_id"`
-	PolicyID        uuid.UUID `json:"policy_id"`
-	Amount          string    `json:"amount"`
-	Currency        string    `json:"currency"`
-	Status          string    `json:"status"`
-	PaymentMethod   string    `json:"payment_method"`
-	Timestamp       time.Time `json:"timestamp"`
+	EventType     string    `json:"event_type"`
+	PaymentID     uuid.UUID `json:"payment_id"`
+	CustomerID    uuid.UUID `json:"customer_id"`
+	PolicyID      uuid.UUID `json:"policy_id"`
+	Amount        string    `json:"amount"`
+	Currency      string    `json:"currency"`
+	Status        string    `json:"status"`
+	PaymentMethod string    `json:"payment_method"`
+	Timestamp     time.Time `json:"timestamp"`
 }
 
 type MojaloopEvent struct {
-	EventType         string    `json:"event_type"`
-	TransferID        string    `json:"transfer_id"`
-	QuoteID           string    `json:"quote_id"`
-	PaymentID         uuid.UUID `json:"payment_id"`
-	TransferState     string    `json:"transfer_state"`
-	Amount            string    `json:"amount"`
-	Currency          string    `json:"currency"`
-	PayerFSP          string    `json:"payer_fsp"`
-	PayeeFSP          string    `json:"payee_fsp"`
-	ILPPacket         string    `json:"ilp_packet"`
-	Condition         string    `json:"condition"`
-	Fulfilment        string    `json:"fulfilment"`
-	ErrorCode         string    `json:"error_code"`
-	ErrorDescription  string    `json:"error_description"`
-	Timestamp         time.Time `json:"timestamp"`
+	EventType        string    `json:"event_type"`
+	TransferID       string    `json:"transfer_id"`
+	QuoteID          string    `json:"quote_id"`
+	PaymentID        uuid.UUID `json:"payment_id"`
+	TransferState    string    `json:"transfer_state"`
+	Amount           string    `json:"amount"`
+	Currency         string    `json:"currency"`
+	PayerFSP         string    `json:"payer_fsp"`
+	PayeeFSP         string    `json:"payee_fsp"`
+	ILPPacket        string    `json:"ilp_packet"`
+	Condition        string    `json:"condition"`
+	Fulfilment       string    `json:"fulfilment"`
+	ErrorCode        string    `json:"error_code"`
+	ErrorDescription string    `json:"error_description"`
+	Timestamp        time.Time `json:"timestamp"`
 }
 
 func NewMojaloopKafkaConnector(kafkaBrokers string) *MojaloopKafkaConnector {
@@ -158,13 +158,13 @@ func (c *MojaloopKafkaConnector) processPaymentEvent(event PaymentEvent) {
 	log.Printf("Processing payment event: %s for payment %s", event.EventType, event.PaymentID)
 
 	mojaloopEvent := MojaloopEvent{
-		EventType:    "mojaloop.transfer.initiate",
-		PaymentID:    event.PaymentID,
-		Amount:       event.Amount,
-		Currency:     event.Currency,
-		PayerFSP:     "insurance-platform",
-		PayeeFSP:     "recipient-fsp",
-		Timestamp:    time.Now(),
+		EventType: "mojaloop.transfer.initiate",
+		PaymentID: event.PaymentID,
+		Amount:    event.Amount,
+		Currency:  event.Currency,
+		PayerFSP:  "insurance-platform",
+		PayeeFSP:  "recipient-fsp",
+		Timestamp: time.Now(),
 	}
 
 	if err := c.publishMojaloopEvent(mojaloopEvent); err != nil {
@@ -325,11 +325,10 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
 	if kafkaBrokers == "" {

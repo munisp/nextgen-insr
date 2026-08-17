@@ -20,24 +20,24 @@ type MojaloopClient struct {
 }
 
 type MojaloopTransfer struct {
-	TransferID    string `json:"transferId"`
-	PayerFSP      string `json:"payerFsp"`
-	PayeeFSP      string `json:"payeeFsp"`
-	Amount        string `json:"amount"`
-	Currency      string `json:"currency"`
-	PayerID       string `json:"payerId"`
-	PayeeID       string `json:"payeeId"`
-	KYCLevel      int    `json:"kycLevel"`
+	TransferID     string `json:"transferId"`
+	PayerFSP       string `json:"payerFsp"`
+	PayeeFSP       string `json:"payeeFsp"`
+	Amount         string `json:"amount"`
+	Currency       string `json:"currency"`
+	PayerID        string `json:"payerId"`
+	PayeeID        string `json:"payeeId"`
+	KYCLevel       int    `json:"kycLevel"`
 	IdempotencyKey string `json:"idempotencyKey,omitempty"`
 }
 
 type MojaloopQuote struct {
-	QuoteID       string `json:"quoteId"`
+	QuoteID        string `json:"quoteId"`
 	TransferAmount string `json:"transferAmount"`
-	PayeeFee      string `json:"payeeFspFee"`
-	Commission    string `json:"payeeFspCommission"`
-	Condition     string `json:"condition"`
-	Expiration    string `json:"expiration"`
+	PayeeFee       string `json:"payeeFspFee"`
+	Commission     string `json:"payeeFspCommission"`
+	Condition      string `json:"condition"`
+	Expiration     string `json:"expiration"`
 }
 
 // TransferLimits per KYC level (NGN)
@@ -68,16 +68,16 @@ func (c *MojaloopClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("mojaloop ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
 func (c *MojaloopClient) fspiopHeaders() map[string]string {
 	return map[string]string{
-		"Content-Type":    "application/vnd.interoperability.transfers+json;version=1.1",
-		"Accept":          "application/vnd.interoperability.transfers+json;version=1.1",
-		"FSPIOP-Source":   c.fspID,
-		"Date":            time.Now().UTC().Format(http.TimeFormat),
+		"Content-Type":  "application/vnd.interoperability.transfers+json;version=1.1",
+		"Accept":        "application/vnd.interoperability.transfers+json;version=1.1",
+		"FSPIOP-Source": c.fspID,
+		"Date":          time.Now().UTC().Format(http.TimeFormat),
 	}
 }
 
@@ -94,10 +94,10 @@ func (c *MojaloopClient) LookupParticipant(ctx context.Context, idType, idValue 
 	if err != nil {
 		return "", fmt.Errorf("participant lookup: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(body, &result)
+	_ = json.Unmarshal(body, &result)
 	if fsp, ok := result["fspId"].(string); ok {
 		return fsp, nil
 	}
@@ -106,12 +106,12 @@ func (c *MojaloopClient) LookupParticipant(ctx context.Context, idType, idValue 
 
 func (c *MojaloopClient) RequestQuote(ctx context.Context, transfer MojaloopTransfer) (*MojaloopQuote, error) {
 	data, _ := json.Marshal(map[string]interface{}{
-		"quoteId":        fmt.Sprintf("q-%d", time.Now().UnixNano()),
-		"transactionId":  transfer.TransferID,
-		"payee":          map[string]string{"fspId": transfer.PayeeFSP, "partyIdType": "MSISDN", "partyIdentifier": transfer.PayeeID},
-		"payer":          map[string]string{"fspId": transfer.PayerFSP, "partyIdType": "MSISDN", "partyIdentifier": transfer.PayerID},
-		"amountType":     "SEND",
-		"amount":         map[string]string{"amount": transfer.Amount, "currency": transfer.Currency},
+		"quoteId":         fmt.Sprintf("q-%d", time.Now().UnixNano()),
+		"transactionId":   transfer.TransferID,
+		"payee":           map[string]string{"fspId": transfer.PayeeFSP, "partyIdType": "MSISDN", "partyIdentifier": transfer.PayeeID},
+		"payer":           map[string]string{"fspId": transfer.PayerFSP, "partyIdType": "MSISDN", "partyIdentifier": transfer.PayerID},
+		"amountType":      "SEND",
+		"amount":          map[string]string{"amount": transfer.Amount, "currency": transfer.Currency},
 		"transactionType": map[string]string{"scenario": "TRANSFER", "initiator": "PAYER", "initiatorType": "CONSUMER"},
 	})
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/quotes", bytes.NewReader(data))
@@ -125,10 +125,10 @@ func (c *MojaloopClient) RequestQuote(ctx context.Context, transfer MojaloopTran
 	if err != nil {
 		return nil, fmt.Errorf("quote request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var quote MojaloopQuote
-	json.Unmarshal(body, &quote)
+	_ = json.Unmarshal(body, &quote)
 	return &quote, nil
 }
 
@@ -138,19 +138,19 @@ func (c *MojaloopClient) ExecuteTransfer(ctx context.Context, transfer MojaloopT
 		return fmt.Errorf("invalid KYC level: %d", transfer.KYCLevel)
 	}
 	var amount float64
-	fmt.Sscanf(transfer.Amount, "%f", &amount)
+	_, _ = fmt.Sscanf(transfer.Amount, "%f", &amount)
 	if amount > limit {
 		return fmt.Errorf("transfer amount %.2f exceeds KYC level %d limit of %.2f", amount, transfer.KYCLevel, limit)
 	}
 
 	data, _ := json.Marshal(map[string]interface{}{
-		"transferId":  transfer.TransferID,
-		"payerFsp":    transfer.PayerFSP,
-		"payeeFsp":    transfer.PayeeFSP,
-		"amount":      map[string]string{"amount": transfer.Amount, "currency": transfer.Currency},
-		"ilpPacket":   "",
-		"condition":   "",
-		"expiration":  time.Now().Add(30 * time.Second).UTC().Format(time.RFC3339),
+		"transferId": transfer.TransferID,
+		"payerFsp":   transfer.PayerFSP,
+		"payeeFsp":   transfer.PayeeFSP,
+		"amount":     map[string]string{"amount": transfer.Amount, "currency": transfer.Currency},
+		"ilpPacket":  "",
+		"condition":  "",
+		"expiration": time.Now().Add(30 * time.Second).UTC().Format(time.RFC3339),
 	})
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/transfers", bytes.NewReader(data))
 	if err != nil {
@@ -166,7 +166,7 @@ func (c *MojaloopClient) ExecuteTransfer(ctx context.Context, transfer MojaloopT
 	if err != nil {
 		return fmt.Errorf("transfer execution: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("transfer failed (%d): %s", resp.StatusCode, string(body))

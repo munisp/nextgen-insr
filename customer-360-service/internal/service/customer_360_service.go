@@ -22,16 +22,16 @@ type Customer360Service struct {
 }
 
 type Customer360Config struct {
-	KafkaBrokers      []string
-	RedisAddr         string
-	RedisPassword     string
-	DaprPort          int
-	KeycloakURL       string
-	KeycloakRealm     string
-	KeycloakClientID  string
-	KeycloakSecret    string
-	SparkMaster       string
-	DeltaTablePath    string
+	KafkaBrokers     []string
+	RedisAddr        string
+	RedisPassword    string
+	DaprPort         int
+	KeycloakURL      string
+	KeycloakRealm    string
+	KeycloakClientID string
+	KeycloakSecret   string
+	SparkMaster      string
+	DeltaTablePath   string
 }
 
 func NewCustomer360Service(db *gorm.DB, config *Customer360Config) (*Customer360Service, error) {
@@ -94,7 +94,7 @@ func (s *Customer360Service) GetCustomer360View(ctx context.Context, customerID 
 		return nil, err
 	}
 
-	s.redis.CacheCustomer360(ctx, customerID, view, 15*time.Minute)
+	_ = s.redis.CacheCustomer360(ctx, customerID, view, 15*time.Minute)
 
 	s.kafka.PublishEvent(ctx, middleware.TopicCustomerViewed, &middleware.CustomerEvent{
 		EventType:  "CUSTOMER_360_VIEWED",
@@ -231,7 +231,7 @@ func (s *Customer360Service) generateRecommendations(ctx context.Context, custom
 		})
 	}
 
-	s.redis.CacheRecommendations(ctx, customerID, recommendations, 1*time.Hour)
+	_ = s.redis.CacheRecommendations(ctx, customerID, recommendations, 1*time.Hour)
 
 	s.kafka.PublishEvent(ctx, middleware.TopicRecommendationGen, &middleware.CustomerEvent{
 		EventType:  "RECOMMENDATIONS_GENERATED",
@@ -333,7 +333,7 @@ func (s *Customer360Service) TrackJourneyEvent(ctx context.Context, customerID s
 		},
 	})
 
-	s.redis.InvalidateCustomer360Cache(ctx, customerID)
+	_ = s.redis.InvalidateCustomer360Cache(ctx, customerID)
 
 	return nil
 }
@@ -358,7 +358,7 @@ func (s *Customer360Service) CreateInteraction(ctx context.Context, customerID s
 		},
 	})
 
-	s.redis.InvalidateCustomer360Cache(ctx, customerID)
+	_ = s.redis.InvalidateCustomer360Cache(ctx, customerID)
 
 	return nil
 }
@@ -381,7 +381,7 @@ func (s *Customer360Service) UpdateCustomerSegment(ctx context.Context, customer
 		},
 	})
 
-	s.redis.InvalidateCustomer360Cache(ctx, customerID)
+	_ = s.redis.InvalidateCustomer360Cache(ctx, customerID)
 
 	return nil
 }
@@ -422,11 +422,11 @@ func (s *Customer360Service) SearchCustomers(ctx context.Context, query string, 
 }
 
 func (s *Customer360Service) Close() error {
-	s.kafka.Close()
-	s.redis.Close()
-	s.dapr.Close()
-	s.keycloak.Close()
-	s.lakehouse.Close()
+	_ = s.kafka.Close()
+	_ = s.redis.Close()
+	_ = s.dapr.Close()
+	_ = s.keycloak.Close()
+	_ = s.lakehouse.Close()
 	return nil
 }
 

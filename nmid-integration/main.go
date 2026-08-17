@@ -217,20 +217,20 @@ func handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	total := atomic.LoadInt64(&reqCount)
 	errors := atomic.LoadInt64(&errCount)
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", total)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errors)
-	fmt.Fprintf(w, "# HELP http_request_duration_ms Average request latency\n")
-	fmt.Fprintf(w, "# TYPE http_request_duration_ms gauge\n")
-	fmt.Fprintf(w, "http_request_duration_ms %.2f\n", avgLatencyMs)
+	_, _ = fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_requests_total %d\n", total)
+	_, _ = fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_errors_total %d\n", errors)
+	_, _ = fmt.Fprintf(w, "# HELP http_request_duration_ms Average request latency\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_request_duration_ms gauge\n")
+	_, _ = fmt.Fprintf(w, "http_request_duration_ms %.2f\n", avgLatencyMs)
 	if db != nil {
 		if err := db.Ping(); err == nil {
-			fmt.Fprintf(w, "# HELP db_connection_active Database connected\n")
-			fmt.Fprintf(w, "# TYPE db_connection_active gauge\n")
-			fmt.Fprintf(w, "db_connection_active 1\n")
+			_, _ = fmt.Fprintf(w, "# HELP db_connection_active Database connected\n")
+			_, _ = fmt.Fprintf(w, "# TYPE db_connection_active gauge\n")
+			_, _ = fmt.Fprintf(w, "db_connection_active 1\n")
 		}
 	}
 }
@@ -243,7 +243,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	if cached, ok := redisClient.CacheGet(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Cache", "HIT")
-		w.Write([]byte(cached))
+		_, _ = w.Write([]byte(cached))
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -276,7 +276,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
@@ -336,7 +336,7 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cols, _ := rows.Columns()
 	if !rows.Next() {
@@ -361,7 +361,7 @@ func handleGetByID(w http.ResponseWriter, r *http.Request) {
 			row[col] = v
 		}
 	}
-	json.NewEncoder(w).Encode(row)
+	_ = json.NewEncoder(w).Encode(row)
 }
 
 func handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -421,7 +421,7 @@ func handleCreate(w http.ResponseWriter, r *http.Request) {
 	if kafkaWriter != nil {
 		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
 func handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -456,7 +456,7 @@ func handleDelete(w http.ResponseWriter, r *http.Request) {
 	if kafkaWriter != nil {
 		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
 }
 
 // ─── Health & Probes ─────────────────────────────────────────────────────────
@@ -467,31 +467,31 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	if err := db.Ping(); err != nil {
 		dbStatus = "disconnected"
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "database": dbStatus})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "database": dbStatus})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": dbStatus})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": dbStatus})
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := db.Ping(); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready"})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM nmid_lookups").Scan(&count)
+	_ = db.QueryRow("SELECT COUNT(*) FROM nmid_lookups").Scan(&count)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"service":       "nmid-integration",
 		"table":         "nmid_lookups",
@@ -539,10 +539,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -566,20 +566,20 @@ func (r *redisPool) respCmd(args ...string) (string, error) {
 	for _, a := range args {
 		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
 	}
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 		r.conn = nil
 		r.cbOpen = true
 		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 		r.conn = nil
 		r.cbOpen = true
 		r.cbUntil = time.Now().Add(30 * time.Second)
@@ -600,14 +600,14 @@ func (r *redisPool) CacheGet(key string) (string, bool) {
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
 	for _, k := range keys {
-		r.respCmd("DEL", k)
+		_, _ = r.respCmd("DEL", k)
 	}
 }
 
@@ -668,11 +668,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -734,7 +734,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -767,7 +767,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			jsonLog("warn", "auth_failure", "service", "nmid-integration", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -808,11 +808,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -905,7 +905,7 @@ func publishEvent(topic string, key string, payload interface{}) {
 		log.Printf("WARN: kafka publish error: %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 }
 
 // --- Production Middleware ---
@@ -981,7 +981,7 @@ func prodRateLimitMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Retry-After", "60")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
 			return
 		}
 		bucket.tokens--
@@ -1013,15 +1013,15 @@ func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	reqCount := atomic.LoadInt64(&prodMetricsReqCount)
 	errCount := atomic.LoadInt64(&prodMetricsErrCount)
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
-	fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
-	fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
-	fmt.Fprintf(w, "http_errors_total %d\n", errCount)
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
+	_, _ = fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_requests_total %d\n", reqCount)
+	_, _ = fmt.Fprintf(w, "# HELP http_errors_total Total HTTP errors (4xx/5xx)\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_errors_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_errors_total %d\n", errCount)
+	_, _ = fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	_, _ = fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	_, _ = fmt.Fprintf(w, "process_uptime_seconds %.2f\n", uptime)
 }
 
 // Panic recovery middleware - catches panics and returns 500
@@ -1031,7 +1031,7 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 			if err := recover(); err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
 				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
 			}
 		}()

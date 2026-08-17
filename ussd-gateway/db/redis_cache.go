@@ -47,10 +47,10 @@ func (rc *RedisCache) Ping() error {
 // --- Session management helpers ---
 
 const (
-	sessionKeyPrefix    = "ussd:session:"
-	rateLimitPrefix     = "ussd:ratelimit:"
-	rateLimitTTL        = 60 * time.Second  // 1-minute sliding window
-	sessionTTL          = 180 * time.Second // 3-minute USSD session timeout
+	sessionKeyPrefix     = "ussd:session:"
+	rateLimitPrefix      = "ussd:ratelimit:"
+	rateLimitTTL         = 60 * time.Second  // 1-minute sliding window
+	sessionTTL           = 180 * time.Second // 3-minute USSD session timeout
 	maxMessagesPerMinute = 20
 )
 

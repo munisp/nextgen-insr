@@ -103,7 +103,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"DL-008", "Reinsurance Treaty Renewal", "NAICOM", "annual", "filing", "pending", "Treaty lapse risk", "Annual reinsurance program renewal", time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)},
 	}
 	for _, d := range deadlines {
-		s.db.ExecContext(ctx, `INSERT INTO compliance_deadlines (id, title, authority, due_date, frequency, category, status, penalty, description)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO compliance_deadlines (id, title, authority, due_date, frequency, category, status, penalty, description)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO UPDATE SET title=$2, authority=$3, due_date=$4, status=$7`,
 			d.id, d.title, d.auth, d.dueDate, d.freq, d.cat, d.status, d.penalty, d.desc)
 	}
@@ -129,12 +129,12 @@ func (s *Store) ListDeadlines(ctx context.Context, authority, status string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var id, title, auth, freq, cat, st, penalty, desc string
 		var due time.Time
-		rows.Scan(&id, &title, &auth, &due, &freq, &cat, &st, &penalty, &desc)
+		_ = rows.Scan(&id, &title, &auth, &due, &freq, &cat, &st, &penalty, &desc)
 		daysUntil := int(time.Until(due).Hours() / 24)
 		alert := "normal"
 		if daysUntil <= 7 {
@@ -160,12 +160,12 @@ func (s *Store) GetUpcoming(ctx context.Context, days int) ([]map[string]interfa
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var id, title, auth, st, penalty string
 		var due time.Time
-		rows.Scan(&id, &title, &auth, &due, &st, &penalty)
+		_ = rows.Scan(&id, &title, &auth, &due, &st, &penalty)
 		daysUntil := int(time.Until(due).Hours() / 24)
 		alert := "normal"
 		if daysUntil <= 7 {
@@ -197,7 +197,7 @@ func publishEvent(kafkaURL, topic string, event interface{}) {
 		if err != nil {
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 }
 
@@ -206,7 +206,7 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -217,7 +217,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		dbErr := store.db.PingContext(r.Context())
@@ -265,5 +265,5 @@ func main() {
 	<-quit
 	shutdownCtx, c := context.WithTimeout(ctx, 30*time.Second)
 	defer c()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

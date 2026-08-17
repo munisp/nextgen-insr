@@ -115,7 +115,7 @@ func BenchmarkRenewLease_Lagos_0ms(b *testing.B) {
 	if err != nil {
 		b.Fatalf("AcquireLease: %v", err)
 	}
-	defer guard.ReleaseLease(ctx)
+	defer func() { _ = guard.ReleaseLease(ctx) }()
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -170,7 +170,7 @@ func BenchmarkConcurrent_10Goroutines(b *testing.B) {
 			if err != nil {
 				continue // ErrFenceConflict is expected under contention
 			}
-			guard.ReleaseLease(ctx)
+			_ = guard.ReleaseLease(ctx)
 		}
 	})
 }
@@ -184,7 +184,7 @@ func BenchmarkGetFenceStatus_Held(b *testing.B) {
 	if err != nil {
 		b.Fatalf("AcquireLease: %v", err)
 	}
-	defer guard.ReleaseLease(ctx)
+	defer func() { _ = guard.ReleaseLease(ctx) }()
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -227,10 +227,10 @@ func BenchmarkHighFrequency_10kQPS(b *testing.B) {
 
 	for iter := 0; iter < b.N; iter++ {
 		var (
-			ops     int64
-			errors  int64
-			wg      sync.WaitGroup
-			stop    = make(chan struct{})
+			ops    int64
+			errors int64
+			wg     sync.WaitGroup
+			stop   = make(chan struct{})
 		)
 
 		wg.Add(goroutines)
@@ -251,7 +251,7 @@ func BenchmarkHighFrequency_10kQPS(b *testing.B) {
 						atomic.AddInt64(&errors, 1)
 						continue
 					}
-					guard.ReleaseLease(ctx)
+					_ = guard.ReleaseLease(ctx)
 					localOps++
 				}
 			}(g)
@@ -294,7 +294,7 @@ func BenchmarkLuaScript_Renew(b *testing.B) {
 	if err != nil {
 		b.Fatalf("acquire: %v", err)
 	}
-	defer guard.ReleaseLease(ctx)
+	defer func() { _ = guard.ReleaseLease(ctx) }()
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -332,7 +332,7 @@ func BenchmarkRenewLock_Legacy(b *testing.B) {
 	if err != nil {
 		b.Fatalf("AcquireLock: %v", err)
 	}
-	defer client.ReleaseLock(ctx, guard)
+	defer func() { _, _ = client.ReleaseLock(ctx, guard) }()
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {

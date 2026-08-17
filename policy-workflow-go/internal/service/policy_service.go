@@ -12,10 +12,10 @@ import (
 )
 
 type PolicyService struct {
-	pg   *db.PostgreSQL
-	rdb  *db.RedisCache
-	cfg  *config.Config
-	log  *zap.Logger
+	pg  *db.PostgreSQL
+	rdb *db.RedisCache
+	cfg *config.Config
+	log *zap.Logger
 }
 
 func NewPolicyService(pg *db.PostgreSQL, rdb *db.RedisCache, cfg *config.Config) *PolicyService {
@@ -164,11 +164,11 @@ func (s *PolicyService) executeTransition(ctx context.Context, pol *models.Polic
 	case models.StateUnderwriting:
 		// Create underwriting record
 		uw := &models.UnderwritingRecord{
-			PolicyID:     pol.ID,
-			RiskScore:    pol.RiskScore,
-			AutoRoute:    pol.RiskScore < s.cfg.UnderwritingAutoThreshold,
+			PolicyID:       pol.ID,
+			RiskScore:      pol.RiskScore,
+			AutoRoute:      pol.RiskScore < s.cfg.UnderwritingAutoThreshold,
 			Recommendation: "pending",
-			Status:       "pending",
+			Status:         "pending",
 		}
 		if err := s.pg.CreateUnderwritingRecord(ctx, uw); err != nil {
 			s.log.Warn("Failed to create underwriting record", zap.Error(err))
@@ -388,13 +388,13 @@ func (s *PolicyService) CancelPolicy(ctx context.Context, policyID, cancelType, 
 
 	// Create cancellation record
 	cancel := &models.CancellationRecord{
-		PolicyID:       pol.ID,
-		Type:           cancelType,
-		Reason:         reason,
+		PolicyID:         pol.ID,
+		Type:             cancelType,
+		Reason:           reason,
 		CancellationDate: now(),
-		CancelledBy:    cancelledBy,
-		RefundAmount:   refundAmount,
-		RefundStatus:   "pending",
+		CancelledBy:      cancelledBy,
+		RefundAmount:     refundAmount,
+		RefundStatus:     "pending",
 	}
 	if err := s.pg.CreateCancellationRecord(ctx, cancel); err != nil {
 		return err
@@ -415,12 +415,12 @@ func (s *PolicyService) CancelPolicy(ctx context.Context, policyID, cancelType, 
 
 	now := now()
 	updates := map[string]interface{}{
-		"current_state":        string(models.StateCancelled),
-		"status":               "cancelled",
-		"cancelled_at":         &now,
-		"cancellation_reason":  reason,
-		"refund_amount":        refundAmount,
-		"updated_at":           now,
+		"current_state":       string(models.StateCancelled),
+		"status":              "cancelled",
+		"cancelled_at":        &now,
+		"cancellation_reason": reason,
+		"refund_amount":       refundAmount,
+		"updated_at":          now,
 	}
 	if err := s.pg.UpdatePolicy(ctx, pol.ID, updates); err != nil {
 		return err
@@ -446,14 +446,14 @@ func (s *PolicyService) GetDashboard(ctx context.Context) (*models.PolicyDashboa
 	}
 
 	dash := &models.PolicyDashboard{
-		TotalPolicies:      0,
-		DraftCount:         stateCounts["draft"],
-		ActiveCount:        stateCounts["active"],
-		UnderwritingCount:  stateCounts["underwriting"],
-		RenewalCount:       stateCounts["renewal"],
-		LapsedCount:        stateCounts["lapsed"],
-		CancelledCount:     stateCounts["cancelled"],
-		DeclinedCount:      stateCounts["declined"],
+		TotalPolicies:     0,
+		DraftCount:        stateCounts["draft"],
+		ActiveCount:       stateCounts["active"],
+		UnderwritingCount: stateCounts["underwriting"],
+		RenewalCount:      stateCounts["renewal"],
+		LapsedCount:       stateCounts["lapsed"],
+		CancelledCount:    stateCounts["cancelled"],
+		DeclinedCount:     stateCounts["declined"],
 	}
 
 	policies, _ := s.pg.ListPolicies(ctx, "", "", 1000, 0)
@@ -474,7 +474,7 @@ func (s *PolicyService) GetDashboard(ctx context.Context) (*models.PolicyDashboa
 		dash.ApprovalRate = float64(dash.ActiveCount) / float64(dash.TotalPolicies) * 100
 	}
 
-	s.rdb.CacheDashboard(ctx, dash)
+	_ = s.rdb.CacheDashboard(ctx, dash)
 	return dash, nil
 }
 

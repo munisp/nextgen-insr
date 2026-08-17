@@ -43,20 +43,20 @@ type TBTransfer struct {
 
 // Ledger codes for different account types
 const (
-	LedgerPremium    uint32 = 1
-	LedgerClaims     uint32 = 2
-	LedgerCommission uint32 = 3
-	LedgerPayout     uint32 = 4
-	LedgerReserve    uint32 = 5
+	LedgerPremium     uint32 = 1
+	LedgerClaims      uint32 = 2
+	LedgerCommission  uint32 = 3
+	LedgerPayout      uint32 = 4
+	LedgerReserve     uint32 = 5
 	LedgerMobileMoney uint32 = 6
 )
 
 // KYC-level transfer limits (in minor currency units, e.g., kobo)
 var KYCTransferLimits = map[int]uint64{
-	0: 5000_00,      // Level 0: ₦5,000
-	1: 50000_00,     // Level 1: ₦50,000
-	2: 500000_00,    // Level 2: ₦500,000
-	3: 10000000_00,  // Level 3: ₦10,000,000
+	0: 5000_00,     // Level 0: ₦5,000
+	1: 50000_00,    // Level 1: ₦50,000
+	2: 500000_00,   // Level 2: ₦500,000
+	3: 10000000_00, // Level 3: ₦10,000,000
 }
 
 func NewTigerBeetleClient(logger *zap.Logger, addr string) *TigerBeetleClient {
@@ -78,7 +78,7 @@ func (c *TigerBeetleClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("tigerbeetle ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("tigerbeetle unhealthy: %d", resp.StatusCode)
 	}
@@ -106,7 +106,7 @@ func (c *TigerBeetleClient) GetAccountBalance(ctx context.Context, accountID str
 	if err != nil {
 		return nil, fmt.Errorf("get balance: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("get balance failed: %s", string(body))
@@ -185,7 +185,7 @@ func (c *TigerBeetleClient) post(ctx context.Context, path string, payload inter
 	if err != nil {
 		return fmt.Errorf("tigerbeetle %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("tigerbeetle %s failed (%d): %s", path, resp.StatusCode, string(body))

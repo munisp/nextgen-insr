@@ -16,16 +16,16 @@ import (
 // Integrations: Kafka, Redis, PostgreSQL, OpenSearch, Temporal
 
 type AgentProfile struct {
-	AgentID     string `json:"agent_id"`
-	Name        string `json:"name"`
-	Level       int    `json:"level"`
-	XP          int    `json:"xp"`
-	Rank        string `json:"rank"` // Rookie, Associate, Pro, Elite, Legend
-	Region      string `json:"region"`
-	Badges      []string `json:"badges"`
-	Streak      int    `json:"streak_days"`
-	TotalSales  int    `json:"total_sales"`
-	MonthSales  int    `json:"month_sales"`
+	AgentID    string   `json:"agent_id"`
+	Name       string   `json:"name"`
+	Level      int      `json:"level"`
+	XP         int      `json:"xp"`
+	Rank       string   `json:"rank"` // Rookie, Associate, Pro, Elite, Legend
+	Region     string   `json:"region"`
+	Badges     []string `json:"badges"`
+	Streak     int      `json:"streak_days"`
+	TotalSales int      `json:"total_sales"`
+	MonthSales int      `json:"month_sales"`
 }
 
 type Challenge struct {
@@ -40,12 +40,12 @@ type Challenge struct {
 }
 
 type LeaderboardEntry struct {
-	Rank     int    `json:"rank"`
-	AgentID  string `json:"agent_id"`
-	Name     string `json:"name"`
-	Score    int    `json:"score"`
-	Level    int    `json:"level"`
-	Region   string `json:"region"`
+	Rank    int    `json:"rank"`
+	AgentID string `json:"agent_id"`
+	Name    string `json:"name"`
+	Score   int    `json:"score"`
+	Level   int    `json:"level"`
+	Region  string `json:"region"`
 }
 
 var (
@@ -57,7 +57,9 @@ var (
 
 func rankForLevel(level int) string {
 	idx := level / 5
-	if idx >= len(ranks) { idx = len(ranks) - 1 }
+	if idx >= len(ranks) {
+		idx = len(ranks) - 1
+	}
 	return ranks[idx]
 }
 
@@ -70,8 +72,8 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "healthy",
-			"service": "agent-gamification",
+			"status":   "healthy",
+			"service":  "agent-gamification",
 			"features": []string{"xp", "levels", "leaderboards", "challenges", "badges", "streaks"},
 		})
 	})
@@ -86,7 +88,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(profile)
+		_ = json.NewEncoder(w).Encode(profile)
 	})
 
 	mux.HandleFunc("/api/v1/gamification/xp/award", func(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +97,7 @@ func main() {
 			XP      int    `json:"xp"`
 			Reason  string `json:"reason"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		agentsMu.Lock()
 		profile, ok := agents[req.AgentID]
 		if ok {
@@ -110,11 +112,11 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success":   true,
-			"new_xp":    profile.XP,
-			"new_level": profile.Level,
-			"new_rank":  profile.Rank,
-			"leveled_up": profile.XP % xpPerLevel < req.XP,
+			"success":    true,
+			"new_xp":     profile.XP,
+			"new_level":  profile.Level,
+			"new_rank":   profile.Rank,
+			"leveled_up": profile.XP%xpPerLevel < req.XP,
 		})
 	})
 
@@ -123,17 +125,23 @@ func main() {
 		agentsMu.RLock()
 		var entries []LeaderboardEntry
 		for _, a := range agents {
-			if region != "" && a.Region != region { continue }
+			if region != "" && a.Region != region {
+				continue
+			}
 			entries = append(entries, LeaderboardEntry{
 				AgentID: a.AgentID, Name: a.Name, Score: a.XP, Level: a.Level, Region: a.Region,
 			})
 		}
 		agentsMu.RUnlock()
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Score > entries[j].Score })
-		for i := range entries { entries[i].Rank = i + 1 }
-		if len(entries) > 50 { entries = entries[:50] }
+		for i := range entries {
+			entries[i].Rank = i + 1
+		}
+		if len(entries) > 50 {
+			entries = entries[:50]
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"leaderboard": entries, "total": len(entries)})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"leaderboard": entries, "total": len(entries)})
 	})
 
 	mux.HandleFunc("/api/v1/gamification/challenges", func(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +152,7 @@ func main() {
 			{ID: "ch-3", Title: "Territory King", Description: "Onboard 20 new customers this month", Type: "monthly", Target: 20, Reward: 5000, StartDate: now.Format("2006-01-02"), EndDate: now.AddDate(0, 1, 0).Format("2006-01-02")},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"challenges": challenges})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"challenges": challenges})
 	})
 
 	log.Printf("Agent Gamification starting on port %s", port)
@@ -157,14 +165,16 @@ func seedAgents() {
 	for i, name := range names {
 		id := "AGT-" + string(rune('A'+i)) + "001"
 		agents[id] = &AgentProfile{
-			AgentID: id, Name: name, Level: (i+1)*3, XP: (i+1)*3*xpPerLevel + 500,
-			Rank: rankForLevel((i+1)*3), Region: regions[i], Badges: []string{"onboarded", "first_sale"},
-			Streak: (i+1)*5, TotalSales: (i+1)*50, MonthSales: (i+1)*8,
+			AgentID: id, Name: name, Level: (i + 1) * 3, XP: (i+1)*3*xpPerLevel + 500,
+			Rank: rankForLevel((i + 1) * 3), Region: regions[i], Badges: []string{"onboarded", "first_sale"},
+			Streak: (i + 1) * 5, TotalSales: (i + 1) * 50, MonthSales: (i + 1) * 8,
 		}
 	}
 }
 
 func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" { return v }
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return def
 }

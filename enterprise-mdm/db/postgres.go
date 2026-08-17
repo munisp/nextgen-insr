@@ -299,7 +299,7 @@ func (p *PostgreSQL) ListGoldenRecords(ctx context.Context, entityType models.En
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanGoldenRecords(rows)
 }
 
@@ -310,7 +310,7 @@ func (p *PostgreSQL) CountByEntityType(ctx context.Context) (map[string]models.E
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make(map[string]models.EntityQuality)
 	for rows.Next() {
 		var et models.EntityType
@@ -353,7 +353,7 @@ func (p *PostgreSQL) GetRecordSources(ctx context.Context, goldenRecordID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanRecordSources(rows)
 }
 
@@ -387,7 +387,7 @@ func (p *PostgreSQL) GetPendingMergeCandidates(ctx context.Context, limit int) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanMergeCandidates(rows)
 }
 
@@ -468,7 +468,7 @@ func (p *PostgreSQL) GetOpenIssues(ctx context.Context, entityType models.Entity
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanDataIssues(rows)
 }
 
@@ -515,7 +515,7 @@ func (p *PostgreSQL) GetRecentSyncs(ctx context.Context, limit int) ([]models.Sy
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanSyncLogs(rows)
 }
 
@@ -574,7 +574,7 @@ func (p *PostgreSQL) ListAgentRecords(ctx context.Context, status string, limit,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanAgentRecords(rows)
 }
 
@@ -618,7 +618,7 @@ func (p *PostgreSQL) ListProductRecords(ctx context.Context, isActive bool) ([]m
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanProductRecords(rows)
 }
 

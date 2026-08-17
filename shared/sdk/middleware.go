@@ -74,7 +74,7 @@ func RateLimitMiddleware(next http.Handler, requestsPerMin int) http.Handler {
 				mu.Unlock()
 				w.Header().Set("Retry-After", "60")
 				w.WriteHeader(http.StatusTooManyRequests)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "rate limit exceeded", "retry_after": 60})
 				return
 			}
 			mu.Unlock()
@@ -94,7 +94,7 @@ func PanicRecoveryMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if err := recover(); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
 			}
 		}()
 		next.ServeHTTP(w, r)

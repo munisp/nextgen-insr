@@ -9,7 +9,7 @@ import (
 
 // Config holds all runtime configuration
 type Config struct {
-	Server ServerConfig
+	Server   ServerConfig
 	Postgres PostgresConfig
 	Redis    RedisConfig
 	CORS     CORSConfig
@@ -38,22 +38,22 @@ type PostgresConfig struct {
 }
 
 type RedisConfig struct {
-	Host           string
-	Port           string
-	Password       string
-	DB             int
-	MaxRetries     int
-	PoolSize       int
-	ReadTimeout    time.Duration
-	WriteTimeout   time.Duration
+	Host         string
+	Port         string
+	Password     string
+	DB           int
+	MaxRetries   int
+	PoolSize     int
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
 }
 
 type CORSConfig struct {
-	AllowedOrigins []string
-	AllowedMethods []string
-	AllowedHeaders []string
+	AllowedOrigins   []string
+	AllowedMethods   []string
+	AllowedHeaders   []string
 	AllowCredentials bool
-	MaxAge         time.Duration
+	MaxAge           time.Duration
 }
 
 type LoggingConfig struct {
@@ -63,18 +63,18 @@ type LoggingConfig struct {
 
 // BankConfig holds bank integration specific settings
 type BankConfig struct {
-	MaxTransferAmount  float64
-	MinTransferAmount  float64
-	DefaultFeePercent  float64
-	SettlementPeriod   time.Duration
-	NameEnquiryTTL     time.Duration
-	VerificationTTL    time.Duration
-	NIPMaxAmount       float64
-	NIBSSMaxAmount     float64
-	SupportedBanks     []string
-	CallbackTimeout    time.Duration
-	RetryAttempts      int
-	RetryDelay         time.Duration
+	MaxTransferAmount float64
+	MinTransferAmount float64
+	DefaultFeePercent float64
+	SettlementPeriod  time.Duration
+	NameEnquiryTTL    time.Duration
+	VerificationTTL   time.Duration
+	NIPMaxAmount      float64
+	NIBSSMaxAmount    float64
+	SupportedBanks    []string
+	CallbackTimeout   time.Duration
+	RetryAttempts     int
+	RetryDelay        time.Duration
 }
 
 // NewConfig loads configuration from environment variables
@@ -99,19 +99,19 @@ func NewConfig() *Config {
 			SSLMode:         envOr("DB_SSL_MODE", "disable"),
 		},
 		Redis: RedisConfig{
-			Host:           envOr("REDIS_HOST", "localhost"),
-			Port:           envOr("REDIS_PORT", "6379"),
-			Password:       envOr("REDIS_PASSWORD", ""),
-			DB:             intOr("REDIS_DB", 0),
-			MaxRetries:     intOr("REDIS_MAX_RETRIES", 3),
-			PoolSize:       intOr("REDIS_POOL_SIZE", 10),
-			ReadTimeout:    durationEnvOrDefault("REDIS_READ_TIMEOUT", 3*time.Second),
-			WriteTimeout:   durationEnvOrDefault("REDIS_WRITE_TIMEOUT", 3*time.Second),
+			Host:         envOr("REDIS_HOST", "localhost"),
+			Port:         envOr("REDIS_PORT", "6379"),
+			Password:     envOr("REDIS_PASSWORD", ""),
+			DB:           intOr("REDIS_DB", 0),
+			MaxRetries:   intOr("REDIS_MAX_RETRIES", 3),
+			PoolSize:     intOr("REDIS_POOL_SIZE", 10),
+			ReadTimeout:  durationEnvOrDefault("REDIS_READ_TIMEOUT", 3*time.Second),
+			WriteTimeout: durationEnvOrDefault("REDIS_WRITE_TIMEOUT", 3*time.Second),
 		},
 		CORS: CORSConfig{
-			AllowedOrigins: parseCSV(envOr("CORS_ALLOWED_ORIGINS", "*")),
-			AllowedMethods: parseCSV(envOr("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")),
-			AllowedHeaders: parseCSV(envOr("CORS_ALLOWED_HEADERS", "Origin,Content-Type,Accept,Authorization,X-Request-ID")),
+			AllowedOrigins:   parseCSV(envOr("CORS_ALLOWED_ORIGINS", "*")),
+			AllowedMethods:   parseCSV(envOr("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")),
+			AllowedHeaders:   parseCSV(envOr("CORS_ALLOWED_HEADERS", "Origin,Content-Type,Accept,Authorization,X-Request-ID")),
 			AllowCredentials: boolOr("CORS_ALLOW_CREDENTIALS", false),
 			MaxAge:           durationEnvOrDefault("CORS_MAX_AGE", 12*time.Hour),
 		},
@@ -129,7 +129,7 @@ func NewConfig() *Config {
 			NIPMaxAmount:      floatOr("NIP_MAX_AMOUNT", 10000000),
 			NIBSSMaxAmount:    floatOr("NIBSS_MAX_AMOUNT", 5000000),
 			CallbackTimeout:   durationEnvOrDefault("CALLBACK_TIMEOUT", 30*time.Second),
-			RetryAttempts:    intOr("RETRY_ATTEMPTS", 3),
+			RetryAttempts:     intOr("RETRY_ATTEMPTS", 3),
 			RetryDelay:        durationEnvOrDefault("RETRY_DELAY", 5*time.Second),
 		},
 	}
@@ -145,40 +145,52 @@ func (c *RedisConfig) RedisAddr() string {
 }
 
 func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" { return v }
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return fallback
 }
 
 func durationEnvOrDefault(key string, fallback time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil { return d }
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
 	}
 	return fallback
 }
 
 func intOr(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
-		if i, err := strconv.Atoi(v); err == nil { return i }
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
 	}
 	return fallback
 }
 
 func floatOr(key string, fallback float64) float64 {
 	if v := os.Getenv(key); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil { return f }
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
 	}
 	return fallback
 }
 
 func boolOr(key string, fallback bool) bool {
 	if v := os.Getenv(key); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil { return b }
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
 	}
 	return fallback
 }
 
 func parseCSV(s string) []string {
-	if s == "" { return nil }
+	if s == "" {
+		return nil
+	}
 	result := make([]string, 0)
 	start := 0
 	for i := 0; i < len(s); i++ {
@@ -187,6 +199,8 @@ func parseCSV(s string) []string {
 			start = i + 1
 		}
 	}
-	if start < len(s) { result = append(result, s[start:]) }
+	if start < len(s) {
+		result = append(result, s[start:])
+	}
 	return result
 }

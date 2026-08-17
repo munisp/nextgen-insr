@@ -20,29 +20,29 @@ import (
 // TigerBeetlePostgresSync provides real-time bi-directional sync between
 // TigerBeetle and PostgreSQL using CDC (Change Data Capture)
 type TigerBeetlePostgresSync struct {
-	tbClient      tigerbeetle_go.Client
-	pgPool        *pgxpool.Pool
-	kafkaReader   *kafka.Reader
-	kafkaWriter   *kafka.Writer
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wg            sync.WaitGroup
-	metrics       *SyncMetrics
-	syncInterval  time.Duration
+	tbClient     tigerbeetle_go.Client
+	pgPool       *pgxpool.Pool
+	kafkaReader  *kafka.Reader
+	kafkaWriter  *kafka.Writer
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	metrics      *SyncMetrics
+	syncInterval time.Duration
 }
 
 // SyncMetrics tracks synchronization performance
 type SyncMetrics struct {
-	TBToPostgresTransfers   int64
-	PostgresToTBTransfers   int64
-	TBToPostgresErrors      int64
-	PostgresToTBErrors      int64
-	LastTBToPostgresSync    time.Time
-	LastPostgresToTBSync    time.Time
-	ReconciliationRuns      int64
-	DiscrepanciesFound      int64
-	DiscrepanciesResolved   int64
-	mu                      sync.RWMutex
+	TBToPostgresTransfers int64
+	PostgresToTBTransfers int64
+	TBToPostgresErrors    int64
+	PostgresToTBErrors    int64
+	LastTBToPostgresSync  time.Time
+	LastPostgresToTBSync  time.Time
+	ReconciliationRuns    int64
+	DiscrepanciesFound    int64
+	DiscrepanciesResolved int64
+	mu                    sync.RWMutex
 }
 
 // TransferEvent represents a transfer event from CDC
@@ -399,15 +399,15 @@ func (s *TigerBeetlePostgresSync) GetMetrics() map[string]interface{} {
 	defer s.metrics.mu.RUnlock()
 
 	return map[string]interface{}{
-		"tb_to_postgres_transfers":   s.metrics.TBToPostgresTransfers,
-		"postgres_to_tb_transfers":   s.metrics.PostgresToTBTransfers,
-		"tb_to_postgres_errors":      s.metrics.TBToPostgresErrors,
-		"postgres_to_tb_errors":      s.metrics.PostgresToTBErrors,
-		"last_tb_to_postgres_sync":   s.metrics.LastTBToPostgresSync,
-		"last_postgres_to_tb_sync":   s.metrics.LastPostgresToTBSync,
-		"reconciliation_runs":        s.metrics.ReconciliationRuns,
-		"discrepancies_found":        s.metrics.DiscrepanciesFound,
-		"discrepancies_resolved":     s.metrics.DiscrepanciesResolved,
+		"tb_to_postgres_transfers": s.metrics.TBToPostgresTransfers,
+		"postgres_to_tb_transfers": s.metrics.PostgresToTBTransfers,
+		"tb_to_postgres_errors":    s.metrics.TBToPostgresErrors,
+		"postgres_to_tb_errors":    s.metrics.PostgresToTBErrors,
+		"last_tb_to_postgres_sync": s.metrics.LastTBToPostgresSync,
+		"last_postgres_to_tb_sync": s.metrics.LastPostgresToTBSync,
+		"reconciliation_runs":      s.metrics.ReconciliationRuns,
+		"discrepancies_found":      s.metrics.DiscrepanciesFound,
+		"discrepancies_resolved":   s.metrics.DiscrepanciesResolved,
 	}
 }
 

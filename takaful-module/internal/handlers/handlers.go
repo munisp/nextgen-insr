@@ -68,7 +68,7 @@ func (h *Handlers) GetProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(prod)
+	_ = json.NewEncoder(w).Encode(prod)
 }
 
 func (h *Handlers) ListProducts(w http.ResponseWriter, r *http.Request) {
@@ -98,9 +98,9 @@ func (h *Handlers) RegisterParticipant(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":   true,
+		"success":     true,
 		"participant": ptc,
-		"message":   "Participant registered successfully",
+		"message":     "Participant registered successfully",
 	})
 }
 
@@ -115,7 +115,7 @@ func (h *Handlers) GetParticipant(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(ptc)
+	_ = json.NewEncoder(w).Encode(ptc)
 }
 
 func (h *Handlers) ListParticipants(w http.ResponseWriter, r *http.Request) {
@@ -157,9 +157,9 @@ func (h *Handlers) VerifyKYC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":       true,
+		"success":        true,
 		"participant_id": body.ParticipantID,
-		"kyc_status":    body.Status,
+		"kyc_status":     body.Status,
 	})
 }
 
@@ -212,16 +212,16 @@ func (h *Handlers) MakeContribution(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":         true,
-		"contribution_id": contrib.ID,
-		"transaction_id":  contrib.TransactionID,
-		"amount":          contrib.Amount,
-		"tabarru_portion": contrib.TabarruPortion,
-		"wakala_fee":      contrib.WakalaFee,
+		"success":            true,
+		"contribution_id":    contrib.ID,
+		"transaction_id":     contrib.TransactionID,
+		"amount":             contrib.Amount,
+		"tabarru_portion":    contrib.TabarruPortion,
+		"wakala_fee":         contrib.WakalaFee,
 		"investment_portion": contrib.InvestmentPortion,
-		"status":          contrib.Status,
-		"shariah_compliant": true,
-		"timestamp":       time.Now().Format(time.RFC3339),
+		"status":             contrib.Status,
+		"shariah_compliant":  true,
+		"timestamp":          time.Now().Format(time.RFC3339),
 	})
 }
 
@@ -237,7 +237,7 @@ func (h *Handlers) GetPool(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(pool)
+	_ = json.NewEncoder(w).Encode(pool)
 }
 
 func (h *Handlers) ListPools(w http.ResponseWriter, r *http.Request) {
@@ -259,7 +259,7 @@ func (h *Handlers) GetPoolStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(stats)
+	_ = json.NewEncoder(w).Encode(stats)
 }
 
 // --- Claim Handlers ---
@@ -284,9 +284,9 @@ func (h *Handlers) CreateClaim(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":   true,
-		"claim":     claim,
-		"message":   "Claim filed successfully",
+		"success": true,
+		"claim":   claim,
+		"message": "Claim filed successfully",
 	})
 }
 
@@ -326,7 +326,7 @@ func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(claim)
+	_ = json.NewEncoder(w).Encode(claim)
 }
 
 func (h *Handlers) GetClaimsByParticipant(w http.ResponseWriter, r *http.Request) {
@@ -363,10 +363,10 @@ func (h *Handlers) CalculateSurplus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":      true,
 		"distribution": sd,
-		"ratio":          "70/30",
-		"shariah_note":   "Surplus distribution follows Islamic insurance principles",
+		"ratio":        "70/30",
+		"shariah_note": "Surplus distribution follows Islamic insurance principles",
 	})
 }
 
@@ -393,10 +393,10 @@ func (h *Handlers) CalculateZakat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":      true,
 		"zakat_record": record,
-		"rate":          record.ZakatRate,
-		"is_obliged":    record.IsZakatObliged,
+		"rate":         record.ZakatRate,
+		"is_obliged":   record.IsZakatObliged,
 	})
 }
 

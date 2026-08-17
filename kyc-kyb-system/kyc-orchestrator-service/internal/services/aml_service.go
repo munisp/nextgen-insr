@@ -11,9 +11,9 @@ import (
 )
 
 type AMLService struct {
-	logger     *zap.Logger
-	pepList    map[string]bool
-	sanctions  map[string]bool
+	logger    *zap.Logger
+	pepList   map[string]bool
+	sanctions map[string]bool
 }
 
 func NewAMLService(logger *zap.Logger) *AMLService {

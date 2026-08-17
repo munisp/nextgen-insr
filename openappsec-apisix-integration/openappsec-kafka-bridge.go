@@ -12,39 +12,39 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/segmentio/kafka-go"
 	"database/sql"
+	"github.com/segmentio/kafka-go"
 
 	_ "github.com/lib/pq"
 )
 
 type SecurityEvent struct {
-	IncidentID    string                 `json:"incident_id"`
-	Timestamp     time.Time              `json:"timestamp"`
-	SourceIP      string                 `json:"source_ip"`
-	Method        string                 `json:"method"`
-	URI           string                 `json:"uri"`
-	UserAgent     string                 `json:"user_agent"`
-	ThreatType    string                 `json:"threat_type"`
-	Severity      string                 `json:"severity"`
-	Action        string                 `json:"action"`
-	RiskScore     float64                `json:"risk_score"`
-	PolicyName    string                 `json:"policy_name"`
-	RuleMatched   string                 `json:"rule_matched"`
-	RequestBody   string                 `json:"request_body,omitempty"`
-	ResponseCode  int                    `json:"response_code"`
-	Metadata      map[string]interface{} `json:"metadata"`
+	IncidentID   string                 `json:"incident_id"`
+	Timestamp    time.Time              `json:"timestamp"`
+	SourceIP     string                 `json:"source_ip"`
+	Method       string                 `json:"method"`
+	URI          string                 `json:"uri"`
+	UserAgent    string                 `json:"user_agent"`
+	ThreatType   string                 `json:"threat_type"`
+	Severity     string                 `json:"severity"`
+	Action       string                 `json:"action"`
+	RiskScore    float64                `json:"risk_score"`
+	PolicyName   string                 `json:"policy_name"`
+	RuleMatched  string                 `json:"rule_matched"`
+	RequestBody  string                 `json:"request_body,omitempty"`
+	ResponseCode int                    `json:"response_code"`
+	Metadata     map[string]interface{} `json:"metadata"`
 }
 
 type WAFValidationRequest struct {
-	Method      string                 `json:"method"`
-	URI         string                 `json:"uri"`
-	Headers     map[string]string      `json:"headers"`
-	Args        map[string]string      `json:"args"`
-	Body        string                 `json:"body"`
-	Policy      string                 `json:"policy"`
-	Mode        string                 `json:"mode"`
-	CustomRules []string               `json:"customRules"`
+	Method      string            `json:"method"`
+	URI         string            `json:"uri"`
+	Headers     map[string]string `json:"headers"`
+	Args        map[string]string `json:"args"`
+	Body        string            `json:"body"`
+	Policy      string            `json:"policy"`
+	Mode        string            `json:"mode"`
+	CustomRules []string          `json:"customRules"`
 }
 
 type WAFValidationResponse struct {
@@ -56,19 +56,19 @@ type WAFValidationResponse struct {
 }
 
 type OpenAppSecKafkaBridge struct {
-	kafkaWriter    *kafka.Writer
-	kafkaReader    *kafka.Reader
-	httpServer     *http.Server
-	wg             sync.WaitGroup
-	ctx            context.Context
-	cancel         context.CancelFunc
+	kafkaWriter *kafka.Writer
+	kafkaReader *kafka.Reader
+	httpServer  *http.Server
+	wg          sync.WaitGroup
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 func NewOpenAppSecKafkaBridge() *OpenAppSecKafkaBridge {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	kafkaBrokers := getEnv("KAFKA_BROKERS", "kafka-0.kafka-headless:9092,kafka-1.kafka-headless:9092,kafka-2.kafka-headless:9092")
-	
+
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(kafkaBrokers),
 		Topic:        "54link.security.waf_events",
@@ -167,12 +167,12 @@ func (b *OpenAppSecKafkaBridge) handleValidation(w http.ResponseWriter, r *http.
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func (b *OpenAppSecKafkaBridge) validateRequest(req WAFValidationRequest) WAFValidationResponse {
 	incidentID := fmt.Sprintf("INC-%d", time.Now().UnixNano())
-	
+
 	if b.detectSQLInjection(req.URI, req.Body) {
 		return WAFValidationResponse{
 			Action:     "block",
@@ -318,36 +318,36 @@ func (b *OpenAppSecKafkaBridge) processCommand(data []byte) {
 
 func (b *OpenAppSecKafkaBridge) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil)})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil)})
 }
 
 func (b *OpenAppSecKafkaBridge) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP openappsec_requests_total Total number of requests processed\n")
-	fmt.Fprintf(w, "# TYPE openappsec_requests_total counter\n")
-	fmt.Fprintf(w, "openappsec_requests_total 0\n")
+	_, _ = fmt.Fprintf(w, "# HELP openappsec_requests_total Total number of requests processed\n")
+	_, _ = fmt.Fprintf(w, "# TYPE openappsec_requests_total counter\n")
+	_, _ = fmt.Fprintf(w, "openappsec_requests_total 0\n")
 }
 
 func (b *OpenAppSecKafkaBridge) Stop() error {
 	log.Println("Shutting down OpenAppSec Kafka Bridge...")
-	
+
 	b.cancel()
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	if err := b.httpServer.Shutdown(ctx); err != nil {
 		log.Printf("HTTP server shutdown error: %v", err)
 	}
-	
+
 	if err := b.kafkaWriter.Close(); err != nil {
 		log.Printf("Kafka writer close error: %v", err)
 	}
-	
+
 	if err := b.kafkaReader.Close(); err != nil {
 		log.Printf("Kafka reader close error: %v", err)
 	}
-	
+
 	b.wg.Wait()
 	log.Println("OpenAppSec Kafka Bridge stopped")
 	return nil
@@ -376,7 +376,7 @@ func (b *OpenAppSecKafkaBridge) getResponseCode(action string) int {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && 
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
 		(s[:len(substr)] == substr || contains(s[1:], substr)))
 }
 
@@ -423,14 +423,13 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	bridge := NewOpenAppSecKafkaBridge()
-	
+
 	if err := bridge.Start(); err != nil {
 		log.Fatalf("Failed to start bridge: %v", err)
 	}

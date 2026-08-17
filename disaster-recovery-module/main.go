@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -26,7 +26,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	zap.ReplaceGlobals(logger)
 	log := zap.L()
@@ -51,7 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to initialize PostgreSQL", zap.Error(err))
 	}
-	defer pg.Close()
+	defer func() { _ = pg.Close() }()
 	log.Info("PostgreSQL initialized")
 
 	// Initialize Redis
@@ -61,7 +61,7 @@ func main() {
 		// Create a no-op Redis cache for graceful degradation
 		rdb = &db.RedisCache{}
 	}
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	log.Info("Redis initialized")
 
 	// Initialize services
@@ -125,12 +125,12 @@ func main() {
 	r.Get("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		// Simplified metrics endpoint
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(w, "# HELP dr_services_total Total registered services\n")
-		fmt.Fprintf(w, "# TYPE dr_services_total gauge\n")
-		fmt.Fprintf(w, "dr_services_total 0\n")
-		fmt.Fprintf(w, "# HELP dr_failovers_total Total failover events\n")
-		fmt.Fprintf(w, "# TYPE dr_failovers_total counter\n")
-		fmt.Fprintf(w, "dr_failovers_total 0\n")
+		_, _ = fmt.Fprintf(w, "# HELP dr_services_total Total registered services\n")
+		_, _ = fmt.Fprintf(w, "# TYPE dr_services_total gauge\n")
+		_, _ = fmt.Fprintf(w, "dr_services_total 0\n")
+		_, _ = fmt.Fprintf(w, "# HELP dr_failovers_total Total failover events\n")
+		_, _ = fmt.Fprintf(w, "# TYPE dr_failovers_total counter\n")
+		_, _ = fmt.Fprintf(w, "dr_failovers_total 0\n")
 	})
 
 	// Graceful shutdown

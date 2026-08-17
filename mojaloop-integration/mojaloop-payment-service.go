@@ -24,26 +24,26 @@ type MojaloopPaymentService struct {
 }
 
 type Payment struct {
-	ID                  uuid.UUID `gorm:"type:uuid;primary_key"`
-	CustomerID          uuid.UUID `gorm:"type:uuid;not null;index"`
-	PolicyID            uuid.UUID `gorm:"type:uuid;index"`
-	Amount              string    `gorm:"not null"`
-	Currency            string    `gorm:"not null"`
-	PaymentMethod       string    `gorm:"not null"`
-	Status              string    `gorm:"not null;index"`
-	MojaloopTransferID  string    `gorm:"index"`
-	MojaloopQuoteID     string    
-	TigerBeetleTransferID string  
-	PayerPartyID        string    
-	PayeePartyID        string    
-	ILPPacket           string    
-	Condition           string    
-	Fulfilment          string    
-	ErrorCode           string    
-	ErrorDescription    string    
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	CompletedAt         *time.Time
+	ID                    uuid.UUID `gorm:"type:uuid;primary_key"`
+	CustomerID            uuid.UUID `gorm:"type:uuid;not null;index"`
+	PolicyID              uuid.UUID `gorm:"type:uuid;index"`
+	Amount                string    `gorm:"not null"`
+	Currency              string    `gorm:"not null"`
+	PaymentMethod         string    `gorm:"not null"`
+	Status                string    `gorm:"not null;index"`
+	MojaloopTransferID    string    `gorm:"index"`
+	MojaloopQuoteID       string
+	TigerBeetleTransferID string
+	PayerPartyID          string
+	PayeePartyID          string
+	ILPPacket             string
+	Condition             string
+	Fulfilment            string
+	ErrorCode             string
+	ErrorDescription      string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	CompletedAt           *time.Time
 }
 
 func NewMojaloopPaymentService(
@@ -148,10 +148,10 @@ func (s *MojaloopPaymentService) lookupParties(ctx context.Context, payment *Pay
 		return fmt.Errorf("payee lookup failed: %w", err)
 	}
 
-	log.Printf("Party lookup successful - Payer: %s, Payee: %s", 
+	log.Printf("Party lookup successful - Payer: %s, Payee: %s",
 		payerResp.Party.FspId, payeeResp.Party.FspId)
 
-	s.publishEvent("payment.parties_resolved", payment)
+	_ = s.publishEvent("payment.parties_resolved", payment)
 	return nil
 }
 
@@ -197,7 +197,7 @@ func (s *MojaloopPaymentService) requestQuote(ctx context.Context, payment *Paym
 	payment.Status = "quote_received"
 	s.db.Save(payment)
 
-	s.publishEvent("payment.quote_received", payment)
+	_ = s.publishEvent("payment.quote_received", payment)
 	return nil
 }
 
@@ -231,7 +231,7 @@ func (s *MojaloopPaymentService) prepareTransfer(ctx context.Context, payment *P
 
 	log.Printf("Transfer prepared: %s, state: %s", transferResp.TransferID, transferResp.TransferState)
 
-	s.publishEvent("payment.transfer_prepared", payment)
+	_ = s.publishEvent("payment.transfer_prepared", payment)
 	return nil
 }
 
@@ -249,7 +249,7 @@ func (s *MojaloopPaymentService) fulfillTransfer(ctx context.Context, payment *P
 	payment.Status = "transfer_fulfilled"
 	s.db.Save(payment)
 
-	s.publishEvent("payment.transfer_fulfilled", payment)
+	_ = s.publishEvent("payment.transfer_fulfilled", payment)
 	return nil
 }
 
@@ -291,7 +291,7 @@ func (s *MojaloopPaymentService) completePayment(payment *Payment) {
 	}
 
 	s.db.Save(payment)
-	s.publishEvent("payment.completed", payment)
+	_ = s.publishEvent("payment.completed", payment)
 	log.Printf("Payment completed: %s", payment.ID)
 }
 
@@ -302,7 +302,7 @@ func (s *MojaloopPaymentService) failPayment(payment *Payment, errorCode, errorD
 	payment.UpdatedAt = time.Now()
 	s.db.Save(payment)
 
-	s.publishEvent("payment.failed", payment)
+	_ = s.publishEvent("payment.failed", payment)
 	log.Printf("Payment failed: %s, error: %s - %s", payment.ID, errorCode, errorDescription)
 }
 

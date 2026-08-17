@@ -53,31 +53,31 @@ func envOr(key, def string) string {
 // ── Domain Types ────────────────────────────────────────────────────────────
 
 type Product struct {
-	ID                string   `json:"id"`
-	Name              string   `json:"name"`
-	Category          string   `json:"category"`
-	MinPremium        int64    `json:"min_premium"`
-	MaxPremium        int64    `json:"max_premium"`
-	MaxCoverage       int64    `json:"max_coverage"`
-	DurationType      string   `json:"duration_type"`
-	MaxDuration       int      `json:"max_duration"`
-	Description       string   `json:"description"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Category           string   `json:"category"`
+	MinPremium         int64    `json:"min_premium"`
+	MaxPremium         int64    `json:"max_premium"`
+	MaxCoverage        int64    `json:"max_coverage"`
+	DurationType       string   `json:"duration_type"`
+	MaxDuration        int      `json:"max_duration"`
+	Description        string   `json:"description"`
 	ActivationTriggers []string `json:"activation_triggers"`
-	Active            bool     `json:"active"`
+	Active             bool     `json:"active"`
 }
 
 type Policy struct {
-	ID           string    `json:"id"`
-	ProductID    string    `json:"product_id"`
-	CustomerID   string    `json:"customer_id"`
-	Status       string    `json:"status"`
-	Premium      int64     `json:"premium"`
-	Coverage     int64     `json:"coverage"`
-	TriggerType  string    `json:"trigger_type"`
-	ActivatedAt  time.Time `json:"activated_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	ID            string     `json:"id"`
+	ProductID     string     `json:"product_id"`
+	CustomerID    string     `json:"customer_id"`
+	Status        string     `json:"status"`
+	Premium       int64      `json:"premium"`
+	Coverage      int64      `json:"coverage"`
+	TriggerType   string     `json:"trigger_type"`
+	ActivatedAt   time.Time  `json:"activated_at"`
+	ExpiresAt     time.Time  `json:"expires_at"`
 	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
-	Metadata     string    `json:"metadata,omitempty"`
+	Metadata      string     `json:"metadata,omitempty"`
 }
 
 type ActivateRequest struct {
@@ -189,7 +189,7 @@ func (s *Store) ListProducts(ctx context.Context, category string) ([]Product, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var products []Product
 	for rows.Next() {
@@ -267,7 +267,7 @@ func (s *Store) ListPolicies(ctx context.Context, customerID, status string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var policies []Policy
 	for rows.Next() {
@@ -318,7 +318,7 @@ func (ep *EventPublisher) Publish(topic string, event interface{}) {
 			log.Printf("[Kafka] publish error: %v", err)
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 }
 
@@ -550,7 +550,7 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	if status != http.StatusOK {
 		w.WriteHeader(status)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -562,7 +562,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	events := NewEventPublisher(cfg.KafkaURL)
 	srv := &Server{cfg: cfg, store: store, events: events, idGen: &IDGenerator{}}
@@ -596,5 +596,5 @@ func main() {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer shutdownCancel()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

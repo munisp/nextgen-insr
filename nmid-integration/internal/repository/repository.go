@@ -26,7 +26,9 @@ func (r *NMIDRepository) AutoMigrate() error {
 }
 
 func (r *NMIDRepository) CreateVehicle(ctx context.Context, v *models.VehicleRecord) error {
-	v.ID = uuid.New(); v.CreatedAt = time.Now(); v.UpdatedAt = time.Now()
+	v.ID = uuid.New()
+	v.CreatedAt = time.Now()
+	v.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(v).Error
 }
 
@@ -46,7 +48,9 @@ func (r *NMIDRepository) UpdateVehicle(ctx context.Context, v *models.VehicleRec
 }
 
 func (r *NMIDRepository) CreatePolicyRegistration(ctx context.Context, p *models.PolicyRegistration) error {
-	p.ID = uuid.New(); p.CreatedAt = time.Now(); p.UpdatedAt = time.Now()
+	p.ID = uuid.New()
+	p.CreatedAt = time.Now()
+	p.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(p).Error
 }
 
@@ -76,7 +80,8 @@ func (r *NMIDRepository) GetExpiringPolicies(ctx context.Context, beforeDate tim
 }
 
 func (r *NMIDRepository) CreateClaimHistory(ctx context.Context, c *models.ClaimHistoryRecord) error {
-	c.ID = uuid.New(); c.CreatedAt = time.Now()
+	c.ID = uuid.New()
+	c.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(c).Error
 }
 
@@ -86,7 +91,8 @@ func (r *NMIDRepository) GetClaimHistory(ctx context.Context, regNo string) ([]m
 }
 
 func (r *NMIDRepository) CreateVerification(ctx context.Context, v *models.CertificateVerification) error {
-	v.ID = uuid.New(); v.CreatedAt = time.Now()
+	v.ID = uuid.New()
+	v.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(v).Error
 }
 
@@ -96,7 +102,8 @@ func (r *NMIDRepository) GetVerificationsByCert(ctx context.Context, certNo stri
 }
 
 func (r *NMIDRepository) CreateBatch(ctx context.Context, b *models.BatchRegistration) error {
-	b.ID = uuid.New(); b.CreatedAt = time.Now()
+	b.ID = uuid.New()
+	b.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(b).Error
 }
 
@@ -110,7 +117,8 @@ func (r *NMIDRepository) UpdateBatch(ctx context.Context, b *models.BatchRegistr
 }
 
 func (r *NMIDRepository) CreateRenewalTracking(ctx context.Context, rt *models.RenewalTracking) error {
-	rt.ID = uuid.New(); rt.CreatedAt = time.Now()
+	rt.ID = uuid.New()
+	rt.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(rt).Error
 }
 
@@ -124,7 +132,8 @@ func (r *NMIDRepository) UpdateRenewalTracking(ctx context.Context, rt *models.R
 }
 
 func (r *NMIDRepository) CreateSyncLog(ctx context.Context, l *models.NMIDSyncLog) error {
-	l.ID = uuid.New(); l.CreatedAt = time.Now()
+	l.ID = uuid.New()
+	l.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(l).Error
 }
 

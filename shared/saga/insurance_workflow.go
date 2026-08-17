@@ -18,34 +18,34 @@ import (
 type StepStatus string
 
 const (
-	StatusPending    StepStatus = "pending"
-	StatusRunning    StepStatus = "running"
-	StatusCompleted  StepStatus = "completed"
-	StatusFailed     StepStatus = "failed"
+	StatusPending     StepStatus = "pending"
+	StatusRunning     StepStatus = "running"
+	StatusCompleted   StepStatus = "completed"
+	StatusFailed      StepStatus = "failed"
 	StatusCompensated StepStatus = "compensated"
 )
 
 // SagaStep represents one step in a distributed workflow
 type SagaStep struct {
-	Name           string     `json:"name"`
-	Service        string     `json:"service"`
-	Status         StepStatus `json:"status"`
-	StartedAt      time.Time  `json:"started_at,omitempty"`
-	CompletedAt    time.Time  `json:"completed_at,omitempty"`
+	Name           string      `json:"name"`
+	Service        string      `json:"service"`
+	Status         StepStatus  `json:"status"`
+	StartedAt      time.Time   `json:"started_at,omitempty"`
+	CompletedAt    time.Time   `json:"completed_at,omitempty"`
 	Input          interface{} `json:"input"`
 	Output         interface{} `json:"output,omitempty"`
-	Error          string     `json:"error,omitempty"`
-	CompensateFunc string     `json:"compensate_action"`
+	Error          string      `json:"error,omitempty"`
+	CompensateFunc string      `json:"compensate_action"`
 }
 
 // Saga represents a complete distributed workflow
 type Saga struct {
-	ID          string      `json:"saga_id"`
-	Type        string      `json:"saga_type"`
-	Status      StepStatus  `json:"status"`
-	Steps       []SagaStep  `json:"steps"`
-	CreatedAt   time.Time   `json:"created_at"`
-	CompletedAt time.Time   `json:"completed_at,omitempty"`
+	ID          string                 `json:"saga_id"`
+	Type        string                 `json:"saga_type"`
+	Status      StepStatus             `json:"status"`
+	Steps       []SagaStep             `json:"steps"`
+	CreatedAt   time.Time              `json:"created_at"`
+	CompletedAt time.Time              `json:"completed_at,omitempty"`
 	Context     map[string]interface{} `json:"context"`
 }
 
@@ -227,8 +227,8 @@ func NewClaimsProcessingSaga(input ClaimsProcessingInput) *Saga {
 // ─── Renewal Saga ────────────────────────────────────────────────────────────
 
 type RenewalInput struct {
-	PolicyNumber string  `json:"policy_number"`
-	CustomerID   string  `json:"customer_id"`
+	PolicyNumber   string  `json:"policy_number"`
+	CustomerID     string  `json:"customer_id"`
 	CurrentPremium float64 `json:"current_premium"`
 }
 

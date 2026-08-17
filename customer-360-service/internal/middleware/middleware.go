@@ -23,22 +23,22 @@ type KafkaClient struct {
 }
 
 const (
-	TopicCustomerCreated     = "customer.created"
-	TopicCustomerUpdated     = "customer.updated"
-	TopicCustomerViewed      = "customer.viewed"
-	TopicInteractionCreated  = "customer.interaction.created"
-	TopicRecommendationGen   = "customer.recommendation.generated"
-	TopicJourneyEvent        = "customer.journey.event"
-	TopicRiskAssessment      = "customer.risk.assessment"
-	TopicSegmentationUpdate  = "customer.segmentation.updated"
+	TopicCustomerCreated    = "customer.created"
+	TopicCustomerUpdated    = "customer.updated"
+	TopicCustomerViewed     = "customer.viewed"
+	TopicInteractionCreated = "customer.interaction.created"
+	TopicRecommendationGen  = "customer.recommendation.generated"
+	TopicJourneyEvent       = "customer.journey.event"
+	TopicRiskAssessment     = "customer.risk.assessment"
+	TopicSegmentationUpdate = "customer.segmentation.updated"
 )
 
 type CustomerEvent struct {
-	EventID      string                 `json:"event_id"`
-	EventType    string                 `json:"event_type"`
-	CustomerID   string                 `json:"customer_id"`
-	Timestamp    time.Time              `json:"timestamp"`
-	Data         map[string]interface{} `json:"data,omitempty"`
+	EventID    string                 `json:"event_id"`
+	EventType  string                 `json:"event_type"`
+	CustomerID string                 `json:"customer_id"`
+	Timestamp  time.Time              `json:"timestamp"`
+	Data       map[string]interface{} `json:"data,omitempty"`
 }
 
 func NewKafkaClient(brokers []string, consumerGroup string) (*KafkaClient, error) {
@@ -201,7 +201,7 @@ func (d *DaprClient) InvokeService(ctx context.Context, appID, methodName string
 	if err != nil {
 		return nil, fmt.Errorf("failed to invoke service: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -333,7 +333,7 @@ func (k *KeycloakClient) ValidateToken(ctx context.Context, token string) (*User
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token validation failed with status: %d", resp.StatusCode)
@@ -369,7 +369,7 @@ func (k *KeycloakClient) GetToken(ctx context.Context) (*TokenResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var tokenResp TokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
@@ -402,19 +402,19 @@ func NewLakehouseClient(sparkMaster, deltaTablePath string) (*LakehouseClient, e
 
 func (l *LakehouseClient) GetCustomerAnalytics(ctx context.Context, customerID string) (map[string]interface{}, error) {
 	return map[string]interface{}{
-		"total_policies":        5,
-		"active_policies":       3,
-		"total_premium_paid":    250000.00,
-		"total_claims_paid":     75000.00,
-		"claim_frequency":       0.15,
-		"average_claim_amount":  25000.00,
-		"loss_ratio":            0.30,
-		"retention_rate":        0.95,
-		"cross_sell_score":      0.72,
-		"up_sell_score":         0.65,
-		"engagement_score":      0.85,
-		"nps":                   8.5,
-		"csat":                  4.2,
+		"total_policies":       5,
+		"active_policies":      3,
+		"total_premium_paid":   250000.00,
+		"total_claims_paid":    75000.00,
+		"claim_frequency":      0.15,
+		"average_claim_amount": 25000.00,
+		"loss_ratio":           0.30,
+		"retention_rate":       0.95,
+		"cross_sell_score":     0.72,
+		"up_sell_score":        0.65,
+		"engagement_score":     0.85,
+		"nps":                  8.5,
+		"csat":                 4.2,
 	}, nil
 }
 

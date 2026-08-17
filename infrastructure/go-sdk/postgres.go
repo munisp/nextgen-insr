@@ -62,7 +62,7 @@ func (c *PostgresClient) Migrate(ctx context.Context, statements []string) error
 
 func (c *PostgresClient) Close() {
 	if c.db != nil {
-		c.db.Close()
+		_ = c.db.Close()
 	}
 }
 

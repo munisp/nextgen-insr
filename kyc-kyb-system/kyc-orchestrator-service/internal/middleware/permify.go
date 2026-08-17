@@ -133,7 +133,7 @@ func (p *PermifyClient) SetupKYCSchema(ctx context.Context) error {
 		p.logger.Warn("permify_schema_setup_failed", zap.Error(err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	p.logger.Info("permify_kyc_schema_configured")
 	return nil
@@ -170,7 +170,7 @@ func (p *PermifyClient) GrantKYCVerified(ctx context.Context, userID string, ent
 		p.logger.Debug("permify_grant_failed", zap.Error(err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }
@@ -205,7 +205,7 @@ func (p *PermifyClient) CheckPermission(ctx context.Context, check PermissionChe
 	if err != nil {
 		return &PermissionResult{Can: true, Reason: "permify_unavailable"}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Can            string `json:"can"`

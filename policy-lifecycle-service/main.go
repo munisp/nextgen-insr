@@ -110,7 +110,7 @@ func isPQClientError(err error) bool {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "kafka": "configured", "redis": "configured", "service": "policy-lifecycle-service"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "kafka": "configured", "redis": "configured", "service": "policy-lifecycle-service"})
 }
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	status := map[string]string{"status": "ready"}
@@ -123,10 +123,10 @@ func handleReady(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func handleTransition(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +159,7 @@ func handleTransition(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleTransitions(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(validTransitions)
+	_ = json.NewEncoder(w).Encode(validTransitions)
 }
 
 // validateQueryParam validates and sanitizes a query parameter.
@@ -366,7 +366,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		if cached, ok := redisClient.CacheGet("policy-lifecycle-service:list"); ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("X-Cache", "HIT")
-			w.Write([]byte(cached))
+			_, _ = w.Write([]byte(cached))
 			return
 		}
 	}
@@ -376,7 +376,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
 	for rows.Next() {
@@ -402,7 +402,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	if results == nil {
 		results = []map[string]interface{}{}
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
 func handleGetEntity(w http.ResponseWriter, r *http.Request) {
@@ -417,7 +417,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	if !rows.Next() {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -441,7 +441,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 			row[col] = v
 		}
 	}
-	json.NewEncoder(w).Encode(row)
+	_ = json.NewEncoder(w).Encode(row)
 }
 
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
@@ -484,7 +484,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	if kafkaWriter != nil {
 		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 	// Index to OpenSearch for full-text search
 	if osClient != nil {
 		go osClient.IndexLog("info", "entity_created", "policy-lifecycle-service", map[string]interface{}{"action": "created", "timestamp": time.Now().Format(time.RFC3339)})
@@ -519,16 +519,16 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 	if kafkaWriter != nil {
 		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	if db != nil {
-		db.QueryRow("SELECT COUNT(*) FROM policy_transitions").Scan(&count)
+		_ = db.QueryRow("SELECT COUNT(*) FROM policy_transitions").Scan(&count)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"service": "policy_transitions", "table": "policy_transitions", "total_records": count})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"service": "policy_transitions", "table": "policy_transitions", "total_records": count})
 }
 
 // ── Middleware Clients ────────────────────────────────────────────────────
@@ -566,10 +566,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -593,20 +593,20 @@ func (r *redisPool) respCmd(args ...string) (string, error) {
 	for _, a := range args {
 		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
 	}
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 		r.conn = nil
 		r.cbOpen = true
 		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 		r.conn = nil
 		r.cbOpen = true
 		r.cbUntil = time.Now().Add(30 * time.Second)
@@ -627,14 +627,14 @@ func (r *redisPool) CacheGet(key string) (string, bool) {
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
 	for _, k := range keys {
-		r.respCmd("DEL", k)
+		_, _ = r.respCmd("DEL", k)
 	}
 }
 
@@ -695,11 +695,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -761,7 +761,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -794,7 +794,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			jsonLog("warn", "auth_failure", "service", "policy-lifecycle-service", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -835,11 +835,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -907,7 +907,7 @@ func (tc *temporalClient) StartWorkflow(ctx context.Context, workflowID, workflo
 		jsonLog("warn", "temporal_workflow_start_failed", "error", err.Error(), "workflow_id", workflowID)
 		return workflowID, nil // Continue without Temporal in dev
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	jsonLog("info", "temporal_workflow_started", "workflow_id", workflowID, "type", workflowType, "queue", taskQueue)
 	return workflowID, nil
 }
@@ -922,7 +922,7 @@ func (tc *temporalClient) SignalWorkflow(ctx context.Context, workflowID, signal
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -969,7 +969,7 @@ func daprInvoke(appID, method string, data interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return io.ReadAll(resp.Body)
 }
 

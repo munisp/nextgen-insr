@@ -31,7 +31,7 @@ func getTestDB(t *testing.T) *sql.DB {
 
 func TestIntegration_DBConnection(t *testing.T) {
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Verify table exists
 	var exists bool
@@ -46,10 +46,10 @@ func TestIntegration_DBConnection(t *testing.T) {
 
 func TestIntegration_InsertAndQuery(t *testing.T) {
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM multi_tenant_platform WHERE id >= 99900")
+	_, _ = testDB.Exec("DELETE FROM multi_tenant_platform WHERE id >= 99900")
 
 	// Insert test record
 	_, err := testDB.Exec(`INSERT INTO multi_tenant_platform (id, data, status, created_at, updated_at, tenant_id) VALUES (99901, '{"name":"TestCorp","domain":"test.insureportal.ng"}'::jsonb, 'active', NOW(), NOW(), 1)`)
@@ -68,7 +68,7 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM multi_tenant_platform WHERE id >= 99900")
+	_, _ = testDB.Exec("DELETE FROM multi_tenant_platform WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {
@@ -170,12 +170,12 @@ func TestIntegration_APIEndpoint(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(rw).Encode(map[string]string{"status": "healthy"})
+		_ = json.NewEncoder(rw).Encode(map[string]string{"status": "healthy"})
 	})
 	mux.HandleFunc("/api/v1/tenants", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		rw.WriteHeader(http.StatusOK)
-		json.NewEncoder(rw).Encode(map[string]string{"status": "processed"})
+		_ = json.NewEncoder(rw).Encode(map[string]string{"status": "processed"})
 	})
 	mux.ServeHTTP(w, req)
 

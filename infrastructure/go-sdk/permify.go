@@ -37,7 +37,7 @@ func (c *PermifyClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("permify ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -150,7 +150,7 @@ func (c *PermifyClient) WriteSchema(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("write schema: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("schema write failed (%d): %s", resp.StatusCode, string(body))
@@ -179,7 +179,7 @@ func (c *PermifyClient) WriteRelationship(ctx context.Context, entityType, entit
 	if err != nil {
 		return fmt.Errorf("write relationship: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("relationship write failed (%d): %s", resp.StatusCode, string(body))
@@ -205,7 +205,7 @@ func (c *PermifyClient) CheckPermission(ctx context.Context, entityType, entityI
 		c.logger.Warn("permify_unavailable_denying", zap.String("entity", entityType), zap.String("permission", permission))
 		return false, fmt.Errorf("permify unavailable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {

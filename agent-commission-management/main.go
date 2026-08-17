@@ -45,15 +45,19 @@ var tiers = map[string]CommissionTier{
 
 func calculateCommission(premium float64, product string, tier string) float64 {
 	t, ok := tiers[tier]
-	if !ok { t = tiers["new"] }
+	if !ok {
+		t = tiers["new"]
+	}
 	rates := map[string]float64{"motor": t.Motor, "health": t.Health, "life": t.Life, "home": t.Home}
 	rate := rates[product]
-	if rate == 0 { rate = 0.08 }
+	if rate == 0 {
+		rate = 0.08
+	}
 	return math.Round(premium*rate*100) / 100
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "agent-commission-management"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "agent-commission-management"})
 }
 
 func handleCalculate(w http.ResponseWriter, r *http.Request) {
@@ -62,10 +66,10 @@ func handleCalculate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		AgentID  string  `json:"agent_id"`
-		Premium  float64 `json:"premium"`
-		Product  string  `json:"product"`
-		Tier     string  `json:"tier"`
+		AgentID string  `json:"agent_id"`
+		Premium float64 `json:"premium"`
+		Product string  `json:"product"`
+		Tier    string  `json:"tier"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -86,7 +90,7 @@ func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if db == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": "payout summary unavailable: database not connected"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "payout summary unavailable: database not connected"})
 		return
 	}
 	period := time.Now().Format("2006-01")
@@ -98,7 +102,7 @@ func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
 		FROM agent_commissions WHERE period = $1`, period).Scan(&totalPayable, &agentsDue, &pendingApproval)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("payout summary query failed: %s", err.Error())})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("payout summary query failed: %s", err.Error())})
 		return
 	}
 
@@ -107,7 +111,7 @@ func handlePayoutSummary(w http.ResponseWriter, r *http.Request) {
 		SELECT SUM(amount) AS t FROM agent_commissions WHERE period = $1 GROUP BY agent_id
 	) per_agent`, period).Scan(&avgPayout, &topEarner); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("payout summary query failed: %s", err.Error())})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("payout summary query failed: %s", err.Error())})
 		return
 	}
 
@@ -169,7 +173,6 @@ func initDB() {
 		log.Printf("WARN: table creation failed: %v", err)
 	}
 }
-
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +243,7 @@ func publishEvent(topic string, key string, payload interface{}) {
 		log.Printf("WARN: kafka publish error: %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 }
 
 var (
@@ -285,38 +288,38 @@ var (
 
 func prodMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
-	fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
-	fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
-	fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
-	fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
-	fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
+	_, _ = fmt.Fprintf(w, "# HELP http_requests_total Total HTTP requests\n")
+	_, _ = fmt.Fprintf(w, "# TYPE http_requests_total counter\n")
+	_, _ = fmt.Fprintf(w, "http_requests_total %d\n", atomic.LoadInt64(&metricsReqCount))
+	_, _ = fmt.Fprintf(w, "# HELP process_uptime_seconds Process uptime in seconds\n")
+	_, _ = fmt.Fprintf(w, "# TYPE process_uptime_seconds gauge\n")
+	_, _ = fmt.Fprintf(w, "process_uptime_seconds %.2f\n", time.Since(metricsStartTime).Seconds())
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if db == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database not initialized"})
 		return
 	}
 	if err := db.Ping(); err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func main() {
 	initDB()
 	initKafka()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)

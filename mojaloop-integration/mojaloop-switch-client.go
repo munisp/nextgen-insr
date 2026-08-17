@@ -21,10 +21,10 @@ type MojaloopClient struct {
 }
 
 type Party struct {
-	PartyIdType string `json:"partyIdType"`
-	PartyIdentifier string `json:"partyIdentifier"`
+	PartyIdType      string `json:"partyIdType"`
+	PartyIdentifier  string `json:"partyIdentifier"`
 	PartySubIdOrType string `json:"partySubIdOrType,omitempty"`
-	FspId string `json:"fspId,omitempty"`
+	FspId            string `json:"fspId,omitempty"`
 }
 
 type Money struct {
@@ -33,51 +33,51 @@ type Money struct {
 }
 
 type TransferRequest struct {
-	TransferID      string    `json:"transferId"`
-	PayerFSP        string    `json:"payerFsp"`
-	PayeeFSP        string    `json:"payeeFsp"`
-	Amount          Money     `json:"amount"`
-	ILPPacket       string    `json:"ilpPacket"`
-	Condition       string    `json:"condition"`
-	Expiration      time.Time `json:"expiration"`
+	TransferID string    `json:"transferId"`
+	PayerFSP   string    `json:"payerFsp"`
+	PayeeFSP   string    `json:"payeeFsp"`
+	Amount     Money     `json:"amount"`
+	ILPPacket  string    `json:"ilpPacket"`
+	Condition  string    `json:"condition"`
+	Expiration time.Time `json:"expiration"`
 }
 
 type TransferResponse struct {
-	TransferID      string    `json:"transferId"`
-	TransferState   string    `json:"transferState"`
+	TransferID         string    `json:"transferId"`
+	TransferState      string    `json:"transferState"`
 	CompletedTimestamp time.Time `json:"completedTimestamp,omitempty"`
-	Fulfilment      string    `json:"fulfilment,omitempty"`
+	Fulfilment         string    `json:"fulfilment,omitempty"`
 }
 
 type QuoteRequest struct {
-	QuoteID         string    `json:"quoteId"`
-	TransactionID   string    `json:"transactionId"`
-	Payer           Party     `json:"payer"`
-	Payee           Party     `json:"payee"`
-	AmountType      string    `json:"amountType"`
-	Amount          Money     `json:"amount"`
+	QuoteID         string          `json:"quoteId"`
+	TransactionID   string          `json:"transactionId"`
+	Payer           Party           `json:"payer"`
+	Payee           Party           `json:"payee"`
+	AmountType      string          `json:"amountType"`
+	Amount          Money           `json:"amount"`
 	TransactionType TransactionType `json:"transactionType"`
-	Note            string    `json:"note,omitempty"`
-	Expiration      time.Time `json:"expiration"`
+	Note            string          `json:"note,omitempty"`
+	Expiration      time.Time       `json:"expiration"`
 }
 
 type QuoteResponse struct {
-	QuoteID         string    `json:"quoteId"`
-	TransferAmount  Money     `json:"transferAmount"`
-	PayeeReceiveAmount Money  `json:"payeeReceiveAmount,omitempty"`
-	PayeeFspFee     Money     `json:"payeeFspFee,omitempty"`
-	PayeeFspCommission Money  `json:"payeeFspCommission,omitempty"`
-	Expiration      time.Time `json:"expiration"`
-	ILPPacket       string    `json:"ilpPacket"`
-	Condition       string    `json:"condition"`
+	QuoteID            string    `json:"quoteId"`
+	TransferAmount     Money     `json:"transferAmount"`
+	PayeeReceiveAmount Money     `json:"payeeReceiveAmount,omitempty"`
+	PayeeFspFee        Money     `json:"payeeFspFee,omitempty"`
+	PayeeFspCommission Money     `json:"payeeFspCommission,omitempty"`
+	Expiration         time.Time `json:"expiration"`
+	ILPPacket          string    `json:"ilpPacket"`
+	Condition          string    `json:"condition"`
 }
 
 type TransactionType struct {
-	Scenario        string `json:"scenario"`
-	SubScenario     string `json:"subScenario,omitempty"`
-	Initiator       string `json:"initiator"`
-	InitiatorType   string `json:"initiatorType"`
-	RefundInfo      *RefundInfo `json:"refundInfo,omitempty"`
+	Scenario      string      `json:"scenario"`
+	SubScenario   string      `json:"subScenario,omitempty"`
+	Initiator     string      `json:"initiator"`
+	InitiatorType string      `json:"initiatorType"`
+	RefundInfo    *RefundInfo `json:"refundInfo,omitempty"`
 }
 
 type RefundInfo struct {
@@ -136,7 +136,7 @@ func (c *MojaloopClient) LookupParty(ctx context.Context, req PartyLookupRequest
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.handleErrorResponse(resp)
@@ -169,7 +169,7 @@ func (c *MojaloopClient) RequestQuote(ctx context.Context, req QuoteRequest) (*Q
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		return nil, c.handleErrorResponse(resp)
@@ -202,7 +202,7 @@ func (c *MojaloopClient) PrepareTransfer(ctx context.Context, req TransferReques
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		return nil, c.handleErrorResponse(resp)
@@ -220,8 +220,8 @@ func (c *MojaloopClient) FulfillTransfer(ctx context.Context, transferID, fulfil
 	url := fmt.Sprintf("%s/transfers/%s", c.baseURL, transferID)
 
 	reqBody := map[string]string{
-		"fulfilment": fulfilment,
-		"transferState": "COMMITTED",
+		"fulfilment":         fulfilment,
+		"transferState":      "COMMITTED",
 		"completedTimestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -241,7 +241,7 @@ func (c *MojaloopClient) FulfillTransfer(ctx context.Context, transferID, fulfil
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return c.handleErrorResponse(resp)
@@ -264,7 +264,7 @@ func (c *MojaloopClient) GetTransferStatus(ctx context.Context, transferID strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.handleErrorResponse(resp)
@@ -311,24 +311,24 @@ type SettlementWindow struct {
 }
 
 type Settlement struct {
-	ID                  int64              `json:"id"`
-	State               string             `json:"state"`
-	SettlementWindows   []SettlementWindow `json:"settlementWindows"`
-	Participants        []SettlementParticipant `json:"participants"`
-	CreatedAt           time.Time          `json:"createdDate"`
-	ChangedAt           time.Time          `json:"changedDate,omitempty"`
+	ID                int64                   `json:"id"`
+	State             string                  `json:"state"`
+	SettlementWindows []SettlementWindow      `json:"settlementWindows"`
+	Participants      []SettlementParticipant `json:"participants"`
+	CreatedAt         time.Time               `json:"createdDate"`
+	ChangedAt         time.Time               `json:"changedDate,omitempty"`
 }
 
 type SettlementParticipant struct {
-	ID        int64             `json:"id"`
-	Accounts  []SettlementAccount `json:"accounts"`
+	ID       int64               `json:"id"`
+	Accounts []SettlementAccount `json:"accounts"`
 }
 
 type SettlementAccount struct {
-	ID             int64  `json:"id"`
-	Reason         string `json:"reason,omitempty"`
-	State          string `json:"state"`
-	NetSettlement  Money  `json:"netSettlementAmount"`
+	ID            int64  `json:"id"`
+	Reason        string `json:"reason,omitempty"`
+	State         string `json:"state"`
+	NetSettlement Money  `json:"netSettlementAmount"`
 }
 
 func (c *MojaloopClient) GetSettlementWindows(ctx context.Context, state string) ([]SettlementWindow, error) {
@@ -347,7 +347,7 @@ func (c *MojaloopClient) GetSettlementWindows(ctx context.Context, state string)
 	if err != nil {
 		return nil, fmt.Errorf("settlement windows request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.handleErrorResponse(resp)
@@ -378,7 +378,7 @@ func (c *MojaloopClient) CloseSettlementWindow(ctx context.Context, windowID int
 	if err != nil {
 		return nil, fmt.Errorf("close settlement window failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, c.handleErrorResponse(resp)
@@ -413,7 +413,7 @@ func (c *MojaloopClient) CreateSettlement(ctx context.Context, windowIDs []int64
 	if err != nil {
 		return nil, fmt.Errorf("create settlement failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, c.handleErrorResponse(resp)
@@ -439,7 +439,7 @@ func (c *MojaloopClient) GetSettlement(ctx context.Context, settlementID int64) 
 	if err != nil {
 		return nil, fmt.Errorf("get settlement failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.handleErrorResponse(resp)

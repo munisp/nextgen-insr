@@ -38,12 +38,12 @@ import (
 // ─── Chaos proxy: a real TCP proxy that can be killed ─────────────────────────
 
 type chaosProxy struct {
-	listener  net.Listener
-	target    string
-	mu        sync.Mutex
+	listener    net.Listener
+	target      string
+	mu          sync.Mutex
 	partitioned bool
-	conns     []net.Conn
-	done      chan struct{}
+	conns       []net.Conn
+	done        chan struct{}
 }
 
 func newChaosProxy(target string) (*chaosProxy, error) {
@@ -81,7 +81,7 @@ func (p *chaosProxy) handle(client net.Conn) {
 	p.mu.Lock()
 	if p.partitioned {
 		p.mu.Unlock()
-		client.Close()
+		_ = client.Close()
 		return
 	}
 	p.conns = append(p.conns, client)
@@ -89,7 +89,7 @@ func (p *chaosProxy) handle(client net.Conn) {
 
 	upstream, err := net.DialTimeout("tcp", p.target, 2*time.Second)
 	if err != nil {
-		client.Close()
+		_ = client.Close()
 		return
 	}
 	p.mu.Lock()
@@ -106,7 +106,7 @@ func (p *chaosProxy) Partition() {
 	defer p.mu.Unlock()
 	p.partitioned = true
 	for _, c := range p.conns {
-		c.Close()
+		_ = c.Close()
 	}
 	p.conns = nil
 }
@@ -120,10 +120,10 @@ func (p *chaosProxy) Heal() {
 
 func (p *chaosProxy) Close() {
 	close(p.done)
-	p.listener.Close()
+	_ = p.listener.Close()
 	p.mu.Lock()
 	for _, c := range p.conns {
-		c.Close()
+		_ = c.Close()
 	}
 	p.mu.Unlock()
 }
@@ -190,7 +190,7 @@ func TestChaos_C1_ConnectionDroppedWhileLeaseHeld(t *testing.T) {
 		if guard2.Epoch <= guard.Epoch {
 			t.Errorf("C1: Epoch not advanced: %d <= %d", guard2.Epoch, guard.Epoch)
 		}
-		guard2.ReleaseLease(ctx)
+		_ = guard2.ReleaseLease(ctx)
 	}
 }
 
@@ -239,7 +239,7 @@ func TestChaos_C3_PartitionHealsCircuitCloses(t *testing.T) {
 	ctx := context.Background()
 	for i := 0; i < 15; i++ {
 		ctxT, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-		fencer.AcquireLease(ctxT, "chaos-c3-warmup", "ng-lagos", allRegionsChaos(), 1*time.Second)
+		_, _ = fencer.AcquireLease(ctxT, "chaos-c3-warmup", "ng-lagos", allRegionsChaos(), 1*time.Second)
 		cancel()
 	}
 	state := getFencerCircuitState(client)
@@ -259,7 +259,7 @@ func TestChaos_C3_PartitionHealsCircuitCloses(t *testing.T) {
 		t.Errorf("C3: Fresh client acquire failed after heal: %v", err)
 	} else {
 		t.Logf("C3: Fresh client acquired epoch=%d after partition healed", guard.Epoch)
-		guard.ReleaseLease(ctx)
+		_ = guard.ReleaseLease(ctx)
 	}
 	t.Logf("C3: Original circuit state: %s (resets after 30s in production)", state)
 }
@@ -288,7 +288,7 @@ func TestChaos_C4_SplitBrainSimultaneousAcquire(t *testing.T) {
 			if err == nil {
 				atomic.AddInt64(&winners, 1)
 				time.Sleep(50 * time.Millisecond)
-				guard.ReleaseLease(ctx)
+				_ = guard.ReleaseLease(ctx)
 			} else {
 				atomic.AddInt64(&losers, 1)
 			}
@@ -346,7 +346,7 @@ func TestChaos_C5_ZombieLeaderBlocked(t *testing.T) {
 		t.Log("C5: Node B (legitimate leader) renewal OK")
 	}
 
-	guardB.ReleaseLease(ctx)
+	_ = guardB.ReleaseLease(ctx)
 }
 
 // ─── C6: Cascading failures: Redis + network + thundering herd ────────────────
@@ -400,7 +400,7 @@ func TestChaos_C6_CascadingFailures(t *testing.T) {
 		t.Errorf("C6 Phase5: Fresh client recovery failed: %v", err)
 	} else {
 		t.Logf("C6 Phase5: Recovery via fresh client, epoch=%d", guard2.Epoch)
-		guard2.ReleaseLease(ctx)
+		_ = guard2.ReleaseLease(ctx)
 	}
 	if partitionFailures > 0 {
 		t.Logf("C6: Correctly blocked %d writes during partition", partitionFailures)
@@ -449,7 +449,7 @@ func TestChaos_C7_TTLRaceCondition(t *testing.T) {
 		t.Errorf("C7: Epoch not advanced: %d <= %d", guard2.Epoch, guard.Epoch)
 	} else {
 		t.Logf("C7: New epoch=%d > old=%d", guard2.Epoch, guard.Epoch)
-		guard2.ReleaseLease(ctx)
+		_ = guard2.ReleaseLease(ctx)
 	}
 }
 
@@ -488,10 +488,10 @@ func TestChaos_C8_MultiRegionFailoverCascade(t *testing.T) {
 			t.Errorf("C8 Phase%d [%s]: expected OK, got %v", i+1, phase.desc, err)
 		} else if !phase.expectOK && err == nil {
 			t.Errorf("C8 Phase%d [%s]: expected failure, got epoch=%d", i+1, phase.desc, guard.Epoch)
-			guard.ReleaseLease(ctx)
+			_ = guard.ReleaseLease(ctx)
 		} else if phase.expectOK {
 			t.Logf("C8 Phase%d [%s]: OK epoch=%d", i+1, phase.desc, guard.Epoch)
-			guard.ReleaseLease(ctx)
+			_ = guard.ReleaseLease(ctx)
 		} else {
 			t.Logf("C8 Phase%d [%s]: Correctly rejected: %v", i+1, phase.desc, err)
 		}
@@ -529,7 +529,7 @@ func TestChaos_C9_RapidPartitionHealCycles(t *testing.T) {
 		cancel2()
 		if err == nil {
 			successfulAcquires++
-			guard.ReleaseLease(ctx)
+			_ = guard.ReleaseLease(ctx)
 		}
 	}
 
@@ -600,7 +600,7 @@ func TestChaos_C10_ConcurrentRenewalStorm(t *testing.T) {
 		t.Logf("C10: Post-storm acquire: %v (may need circuit reset)", err)
 	} else {
 		t.Logf("C10: Post-storm acquire OK epoch=%d", guard2.Epoch)
-		guard2.ReleaseLease(ctx)
+		_ = guard2.ReleaseLease(ctx)
 	}
 
 	// Key assertion: storm did not corrupt the fence

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/insureportal/premium-finance-service/config"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Postgres wraps a connection pool with convenience methods
@@ -530,47 +530,47 @@ func (p *Postgres) GetLoanSummary(ctx context.Context) ([]map[string]interface{}
 
 // ApplicationDB is the database model for finance applications
 type ApplicationDB struct {
-	ID              string         `db:"id"`
-	ApplicationID   string         `db:"application_id"`
-	PolicyID        string         `db:"policy_id"`
-	CustomerID      string         `db:"customer_id"`
-	PremiumAmount   float64        `db:"premium_amount"`
-	Currency        string         `db:"currency"`
-	TermMonths      int            `db:"term_months"`
-	Frequency       string         `db:"frequency"`
-	Status          string         `db:"status"`
-	CreditScore     int            `db:"credit_score"`
-	CreditRating    string         `db:"credit_rating"`
-	InterestRate    float64        `db:"interest_rate"`
-	TotalPayable    float64        `db:"total_payable"`
-	MonthlyPayment  float64        `db:"monthly_payment"`
-	ApprovedBy      string         `db:"approved_by"`
-	ApprovedAt      *string        `db:"approved_at"`
-	RejectedAt      *string        `db:"rejected_at"`
-	RejectionReason string         `db:"rejection_reason"`
-	Metadata        string         `db:"metadata"`
-	CreatedAt       string         `db:"created_at"`
-	UpdatedAt       string         `db:"updated_at"`
+	ID              string  `db:"id"`
+	ApplicationID   string  `db:"application_id"`
+	PolicyID        string  `db:"policy_id"`
+	CustomerID      string  `db:"customer_id"`
+	PremiumAmount   float64 `db:"premium_amount"`
+	Currency        string  `db:"currency"`
+	TermMonths      int     `db:"term_months"`
+	Frequency       string  `db:"frequency"`
+	Status          string  `db:"status"`
+	CreditScore     int     `db:"credit_score"`
+	CreditRating    string  `db:"credit_rating"`
+	InterestRate    float64 `db:"interest_rate"`
+	TotalPayable    float64 `db:"total_payable"`
+	MonthlyPayment  float64 `db:"monthly_payment"`
+	ApprovedBy      string  `db:"approved_by"`
+	ApprovedAt      *string `db:"approved_at"`
+	RejectedAt      *string `db:"rejected_at"`
+	RejectionReason string  `db:"rejection_reason"`
+	Metadata        string  `db:"metadata"`
+	CreatedAt       string  `db:"created_at"`
+	UpdatedAt       string  `db:"updated_at"`
 }
 
 // CreditProfileDB is the database model for credit profiles
 type CreditProfileDB struct {
-	ID                  string    `db:"id"`
-	CustomerID          string    `db:"customer_id"`
-	CreditScore         int       `db:"credit_score"`
-	ScoreDate           string    `db:"score_date"`
-	PaymentHistory      float64   `db:"payment_history"`
-	ClaimsRatio         float64   `db:"claims_ratio"`
-	TenureYears         int       `db:"tenure_years"`
-	ActivePolicies      int       `db:"active_policies"`
-	DefaultHistory      int       `db:"default_history"`
-	IncomeEstimate      float64   `db:"income_estimate"`
-	EmploymentStatus    string    `db:"employment_status"`
-	Rating              string    `db:"rating"`
-	Recommendation      string    `db:"recommendation"`
-	MaxFinanced         float64   `db:"max_financed_amount"`
-	RecommendedRate     float64   `db:"recommended_interest_rate"`
-	CreatedAt           string    `db:"created_at"`
+	ID               string  `db:"id"`
+	CustomerID       string  `db:"customer_id"`
+	CreditScore      int     `db:"credit_score"`
+	ScoreDate        string  `db:"score_date"`
+	PaymentHistory   float64 `db:"payment_history"`
+	ClaimsRatio      float64 `db:"claims_ratio"`
+	TenureYears      int     `db:"tenure_years"`
+	ActivePolicies   int     `db:"active_policies"`
+	DefaultHistory   int     `db:"default_history"`
+	IncomeEstimate   float64 `db:"income_estimate"`
+	EmploymentStatus string  `db:"employment_status"`
+	Rating           string  `db:"rating"`
+	Recommendation   string  `db:"recommendation"`
+	MaxFinanced      float64 `db:"max_financed_amount"`
+	RecommendedRate  float64 `db:"recommended_interest_rate"`
+	CreatedAt        string  `db:"created_at"`
 }
 
 // ScheduleEntryDB is the database model for payment schedule entries
@@ -590,45 +590,45 @@ type ScheduleEntryDB struct {
 
 // CollateralDB is the database model for collateral
 type CollateralDB struct {
-	ID           string         `db:"id"`
-	LoanID       string         `db:"loan_id"`
-	Type         string         `db:"type"`
-	Details      string         `db:"details"`
-	Value        float64        `db:"value"`
-	Currency     string         `db:"currency"`
-	Status       string         `db:"status"`
-	VerifiedAt   *string        `db:"verified_at"`
-	Metadata     string         `db:"metadata"`
-	CreatedAt    string         `db:"created_at"`
+	ID         string  `db:"id"`
+	LoanID     string  `db:"loan_id"`
+	Type       string  `db:"type"`
+	Details    string  `db:"details"`
+	Value      float64 `db:"value"`
+	Currency   string  `db:"currency"`
+	Status     string  `db:"status"`
+	VerifiedAt *string `db:"verified_at"`
+	Metadata   string  `db:"metadata"`
+	CreatedAt  string  `db:"created_at"`
 }
 
 // CollectionActionDB is the database model for collection actions
 type CollectionActionDB struct {
-	ID           string         `db:"id"`
-	LoanID       string         `db:"loan_id"`
-	CustomerID   string         `db:"customer_id"`
-	ActionType   string         `db:"action_type"`
-	Status       string         `db:"status"`
-	PerformedBy  string         `db:"performed_by"`
-	ScheduledAt  *string        `db:"scheduled_at"`
-	CompletedAt  *string        `db:"completed_at"`
-	Notes        string         `db:"notes"`
-	Metadata     string         `db:"metadata"`
-	CreatedAt    string         `db:"created_at"`
+	ID          string  `db:"id"`
+	LoanID      string  `db:"loan_id"`
+	CustomerID  string  `db:"customer_id"`
+	ActionType  string  `db:"action_type"`
+	Status      string  `db:"status"`
+	PerformedBy string  `db:"performed_by"`
+	ScheduledAt *string `db:"scheduled_at"`
+	CompletedAt *string `db:"completed_at"`
+	Notes       string  `db:"notes"`
+	Metadata    string  `db:"metadata"`
+	CreatedAt   string  `db:"created_at"`
 }
 
 // EarlySettlementDB is the database model for early settlements
 type EarlySettlementDB struct {
-	ID                 string    `db:"id"`
-	LoanID             string    `db:"loan_id"`
-	RequestedAt        string    `db:"requested_at"`
-	RemainingBalance   float64   `db:"remaining_balance"`
-	RemainingInterest  float64   `db:"remaining_interest"`
-	RebateAmount       float64   `db:"rebate_amount"`
-	RebatePercent      float64   `db:"rebate_percent"`
-	TotalPayable       float64   `db:"total_payable"`
-	Status             string    `db:"status"`
-	ProcessedBy        string    `db:"processed_by"`
-	ProcessedAt        *string   `db:"processed_at"`
-	CreatedAt          string    `db:"created_at"`
+	ID                string  `db:"id"`
+	LoanID            string  `db:"loan_id"`
+	RequestedAt       string  `db:"requested_at"`
+	RemainingBalance  float64 `db:"remaining_balance"`
+	RemainingInterest float64 `db:"remaining_interest"`
+	RebateAmount      float64 `db:"rebate_amount"`
+	RebatePercent     float64 `db:"rebate_percent"`
+	TotalPayable      float64 `db:"total_payable"`
+	Status            string  `db:"status"`
+	ProcessedBy       string  `db:"processed_by"`
+	ProcessedAt       *string `db:"processed_at"`
+	CreatedAt         string  `db:"created_at"`
 }

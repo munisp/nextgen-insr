@@ -18,15 +18,15 @@ type APISixGateway struct {
 }
 
 type RouteConfig struct {
-	URI         string            `json:"uri"`
-	Name        string            `json:"name"`
-	Methods     []string          `json:"methods"`
-	Upstream    UpstreamConfig    `json:"upstream"`
-	Plugins     map[string]interface{} `json:"plugins"`
+	URI      string                 `json:"uri"`
+	Name     string                 `json:"name"`
+	Methods  []string               `json:"methods"`
+	Upstream UpstreamConfig         `json:"upstream"`
+	Plugins  map[string]interface{} `json:"plugins"`
 }
 
 type UpstreamConfig struct {
-	Type  string      `json:"type"`
+	Type  string       `json:"type"`
 	Nodes []NodeConfig `json:"nodes"`
 }
 
@@ -61,7 +61,7 @@ func (g *APISixGateway) setupKYCRoutes() error {
 			Name:    "kyc-orchestrator",
 			Methods: []string{"GET", "POST", "PUT"},
 			Upstream: UpstreamConfig{
-				Type: "roundrobin",
+				Type:  "roundrobin",
 				Nodes: []NodeConfig{{Host: "127.0.0.1", Port: 8085, Weight: 1}},
 			},
 			Plugins: map[string]interface{}{
@@ -91,7 +91,7 @@ func (g *APISixGateway) setupKYCRoutes() error {
 					"prefer_name": true,
 				},
 				"request-id": map[string]interface{}{
-					"header_name":  "X-Request-ID",
+					"header_name":         "X-Request-ID",
 					"include_in_response": true,
 				},
 			},
@@ -101,7 +101,7 @@ func (g *APISixGateway) setupKYCRoutes() error {
 			Name:    "kyb-orchestrator",
 			Methods: []string{"GET", "POST", "PUT"},
 			Upstream: UpstreamConfig{
-				Type: "roundrobin",
+				Type:  "roundrobin",
 				Nodes: []NodeConfig{{Host: "127.0.0.1", Port: 8085, Weight: 1}},
 			},
 			Plugins: map[string]interface{}{
@@ -126,7 +126,7 @@ func (g *APISixGateway) setupKYCRoutes() error {
 			Name:    "deepface-liveness",
 			Methods: []string{"POST"},
 			Upstream: UpstreamConfig{
-				Type: "roundrobin",
+				Type:  "roundrobin",
 				Nodes: []NodeConfig{{Host: "127.0.0.1", Port: 8110, Weight: 1}},
 			},
 			Plugins: map[string]interface{}{
@@ -150,7 +150,7 @@ func (g *APISixGateway) setupKYCRoutes() error {
 			Name:    "document-ocr",
 			Methods: []string{"POST"},
 			Upstream: UpstreamConfig{
-				Type: "roundrobin",
+				Type:  "roundrobin",
 				Nodes: []NodeConfig{{Host: "127.0.0.1", Port: 8111, Weight: 1}},
 			},
 			Plugins: map[string]interface{}{
@@ -168,7 +168,7 @@ func (g *APISixGateway) setupKYCRoutes() error {
 			Name:    "identity-matcher",
 			Methods: []string{"POST"},
 			Upstream: UpstreamConfig{
-				Type: "roundrobin",
+				Type:  "roundrobin",
 				Nodes: []NodeConfig{{Host: "127.0.0.1", Port: 8112, Weight: 1}},
 			},
 			Plugins: map[string]interface{}{
@@ -198,7 +198,7 @@ func (g *APISixGateway) setupKYCRoutes() error {
 			g.logger.Debug("apisix_route_skip", zap.String("name", route.Name), zap.Error(err))
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		g.logger.Info("apisix_route_configured", zap.String("name", route.Name), zap.String("uri", route.URI))
 	}
 
@@ -209,9 +209,9 @@ func (g *APISixGateway) SetupOpenAppSecPlugin(ctx context.Context) error {
 	wafConfig := map[string]interface{}{
 		"plugins": map[string]interface{}{
 			"openappsec": map[string]interface{}{
-				"enable":           true,
-				"mode":             "prevent",
-				"practice_id":      "kyc-waf-practice",
+				"enable":             true,
+				"mode":               "prevent",
+				"practice_id":        "kyc-waf-practice",
 				"source_identifiers": []string{"headerkey:X-Forwarded-For", "sourceip"},
 				"custom_rules": []map[string]interface{}{
 					{
@@ -269,7 +269,7 @@ func (g *APISixGateway) SetupOpenAppSecPlugin(ctx context.Context) error {
 		g.logger.Warn("openappsec_setup_failed", zap.Error(err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	g.logger.Info("openappsec_waf_configured")
 	return nil

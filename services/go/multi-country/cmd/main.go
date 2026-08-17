@@ -109,7 +109,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"EG", "Egypt", "EGP", "Africa/Cairo", "FRA", "planned", 0.14, 60000000000},
 	}
 	for _, c := range countries {
-		s.db.ExecContext(ctx, `INSERT INTO countries (code, name, currency, timezone, regulator, status, vat_rate, min_capital)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO countries (code, name, currency, timezone, regulator, status, vat_rate, min_capital)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (code) DO UPDATE SET status=$6`,
 			c.code, c.name, c.currency, c.tz, c.regulator, c.status, c.vat, c.minCap)
 	}
@@ -128,13 +128,13 @@ func (s *Store) ListCountries(ctx context.Context, status string) ([]map[string]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var code, name, currency, tz, reg, st string
 		var vat float64
 		var minCap int64
-		rows.Scan(&code, &name, &currency, &tz, &reg, &st, &vat, &minCap)
+		_ = rows.Scan(&code, &name, &currency, &tz, &reg, &st, &vat, &minCap)
 		result = append(result, map[string]interface{}{
 			"code": code, "name": name, "currency": currency, "timezone": tz,
 			"regulator": reg, "status": st, "vat_rate": vat, "min_capital": minCap,
@@ -168,7 +168,7 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -179,7 +179,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		dbErr := store.db.PingContext(r.Context())
@@ -232,5 +232,5 @@ func main() {
 	<-quit
 	shutdownCtx, c := context.WithTimeout(ctx, 30*time.Second)
 	defer c()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

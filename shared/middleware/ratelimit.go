@@ -78,7 +78,7 @@ func RateLimitMiddleware(rate, burst int) func(http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "1")
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":{"code":"RATE_LIMITED","message":"Too many requests"}}`))
+				_, _ = w.Write([]byte(`{"error":{"code":"RATE_LIMITED","message":"Too many requests"}}`))
 				return
 			}
 

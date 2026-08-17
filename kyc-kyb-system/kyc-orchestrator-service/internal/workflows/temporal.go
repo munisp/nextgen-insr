@@ -26,12 +26,12 @@ type KYCWorkflowInput struct {
 }
 
 type KYCWorkflowResult struct {
-	SessionID  string `json:"session_id"`
-	Status     string `json:"status"`
-	Level      int    `json:"level"`
+	SessionID  string  `json:"session_id"`
+	Status     string  `json:"status"`
+	Level      int     `json:"level"`
 	RiskScore  float64 `json:"risk_score"`
-	AMLCleared bool   `json:"aml_cleared"`
-	Duration   string `json:"duration"`
+	AMLCleared bool    `json:"aml_cleared"`
+	Duration   string  `json:"duration"`
 }
 
 type KYBWorkflowInput struct {
@@ -44,10 +44,10 @@ type KYBWorkflowInput struct {
 }
 
 type KYBWorkflowResult struct {
-	SessionID  string `json:"session_id"`
-	Status     string `json:"status"`
-	RiskScore  float64 `json:"risk_score"`
-	Duration   string `json:"duration"`
+	SessionID string  `json:"session_id"`
+	Status    string  `json:"status"`
+	RiskScore float64 `json:"risk_score"`
+	Duration  string  `json:"duration"`
 }
 
 func KYCVerificationWorkflow(ctx workflow.Context, input KYCWorkflowInput) (*KYCWorkflowResult, error) {

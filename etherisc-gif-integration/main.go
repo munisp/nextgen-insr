@@ -261,20 +261,20 @@ func handleReady(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	if db != nil {
-		db.QueryRow(`SELECT COUNT(*) FROM gif_policies`).Scan(&count)
+		_ = db.QueryRow(`SELECT COUNT(*) FROM gif_policies`).Scan(&count)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"table": "gif_policies", "count": count})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"table": "gif_policies", "count": count})
 }
 
 // ─── Domain CRUD Handlers ────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		if cached, ok := redisClient.CacheGet("etherisc-gif-integration:list"); ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("X-Cache", "HIT")
-			w.Write([]byte(cached))
+			_, _ = w.Write([]byte(cached))
 			return
 		}
 	}
@@ -311,7 +311,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
 	for rows.Next() {
@@ -337,7 +337,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	if results == nil {
 		results = []map[string]interface{}{}
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
 func handleGetEntity(w http.ResponseWriter, r *http.Request) {
@@ -357,7 +357,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	if !rows.Next() {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -381,7 +381,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 			row[col] = v
 		}
 	}
-	json.NewEncoder(w).Encode(row)
+	_ = json.NewEncoder(w).Encode(row)
 }
 
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
@@ -424,7 +424,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	if kafkaWriter != nil {
 		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 	// Index to OpenSearch for full-text search
 	if osClient != nil {
 		go osClient.IndexLog("info", "entity_created", "etherisc-gif-integration", map[string]interface{}{"action": "created", "timestamp": time.Now().Format(time.RFC3339)})
@@ -459,7 +459,7 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 	if kafkaWriter != nil {
 		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": id, "status": "deleted"})
 }
 
 // ── Middleware Clients ────────────────────────────────────────────────────
@@ -497,10 +497,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -524,20 +524,20 @@ func (r *redisPool) respCmd(args ...string) (string, error) {
 	for _, a := range args {
 		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
 	}
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 		r.conn = nil
 		r.cbOpen = true
 		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close()
+		_ = r.conn.Close()
 		r.conn = nil
 		r.cbOpen = true
 		r.cbUntil = time.Now().Add(30 * time.Second)
@@ -558,14 +558,14 @@ func (r *redisPool) CacheGet(key string) (string, bool) {
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
 	for _, k := range keys {
-		r.respCmd("DEL", k)
+		_, _ = r.respCmd("DEL", k)
 	}
 }
 
@@ -626,11 +626,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -692,7 +692,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -725,7 +725,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			jsonLog("warn", "auth_failure", "service", "etherisc-gif-integration", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -766,11 +766,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -822,7 +822,7 @@ func handleOnchainRegister(w http.ResponseWriter, r *http.Request) {
 		db.Exec("INSERT INTO onchain_policies (id, policy_id, product_id, customer_address, premium, tx_hash, status) VALUES ($1,$2,$3,$4,$5,$6,'registered')",
 			fmt.Sprintf("OC-%d", time.Now().UnixNano()), req.PolicyID, req.ProductID, req.CustomerAddr, req.Premium, txHash)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"policy_id": req.PolicyID, "tx_hash": txHash, "status": "registered", "chain": "ethereum"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"policy_id": req.PolicyID, "tx_hash": txHash, "status": "registered", "chain": "ethereum"})
 }
 
 func handleParametricTrigger(w http.ResponseWriter, r *http.Request) {
@@ -864,15 +864,15 @@ func handleParametricTrigger(w http.ResponseWriter, r *http.Request) {
 func handleOraclePriceFeed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if db == nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"feeds": []interface{}{}})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"feeds": []interface{}{}})
 		return
 	}
 	rows, err := db.Query("SELECT id, product_id, oracle_data, measured_value, threshold, triggered, payout_percentage FROM parametric_triggers ORDER BY created_at DESC LIMIT 50")
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"feeds": []interface{}{}, "error": err.Error()})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"feeds": []interface{}{}, "error": err.Error()})
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var feeds []map[string]interface{}
 	for rows.Next() {
 		var id, productID, oracleData string
@@ -887,7 +887,7 @@ func handleOraclePriceFeed(w http.ResponseWriter, r *http.Request) {
 	if feeds == nil {
 		feeds = []map[string]interface{}{}
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"feeds": feeds, "count": len(feeds)})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"feeds": feeds, "count": len(feeds)})
 }
 
 // Panic recovery middleware - catches panics and returns 500
@@ -897,7 +897,7 @@ func prodRecoveryMiddleware(next http.Handler) http.Handler {
 			if err := recover(); err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
 				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
 			}
 		}()
@@ -922,7 +922,7 @@ func newRouter() *chi.Mux {
 	})
 	r.Use(keycloakAuthMiddleware)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "etherisc-gif-integration"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "etherisc-gif-integration"})
 	})
 	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) { handleReady(w, r) })
 	r.Get("/stats", handleStats)
@@ -1008,7 +1008,7 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	r := newRouter()
 	port := os.Getenv("PORT")

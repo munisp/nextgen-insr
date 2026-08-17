@@ -123,7 +123,7 @@ func (s *GroupLifeService) SubmitClaim(ctx context.Context, req SubmitClaimReque
 
 	claim := &models.GroupClaim{
 		ClaimNumber: fmt.Sprintf("GLC-%d", time.Now().UnixNano()%1000000),
-		SchemeID: member.SchemeID, MemberID: req.MemberID,
+		SchemeID:    member.SchemeID, MemberID: req.MemberID,
 		ClaimType: req.ClaimType, EventDate: req.EventDate,
 		ReportDate: time.Now(), SumAssured: member.SumAssured,
 		ClaimAmount: claimAmount, CauseOfEvent: req.CauseOfEvent,
@@ -191,12 +191,12 @@ func (s *GroupLifeService) CalculatePremium(ctx context.Context, schemeID uuid.U
 	period := time.Now().Format("2006-01")
 	ps := &models.PremiumSchedule{
 		SchemeID: schemeID, Period: period,
-		DueDate: time.Now().AddDate(0, 0, 30),
+		DueDate:      time.Now().AddDate(0, 0, 30),
 		GrossPremium: math.Round(grossPremium*100) / 100,
-		Discount: math.Round(discountAmount*100) / 100,
-		Tax: math.Round(tax*100) / 100,
-		NetPremium: math.Round(netPremium*100) / 100,
-		Status: "pending",
+		Discount:     math.Round(discountAmount*100) / 100,
+		Tax:          math.Round(tax*100) / 100,
+		NetPremium:   math.Round(netPremium*100) / 100,
+		Status:       "pending",
 	}
 	if err := s.repo.CreatePremiumSchedule(ctx, ps); err != nil {
 		return nil, fmt.Errorf("failed to create premium schedule: %w", err)
@@ -226,7 +226,7 @@ func (s *GroupLifeService) RecordPayment(ctx context.Context, scheduleID uuid.UU
 func (s *GroupLifeService) CreateEndorsement(ctx context.Context, req EndorsementRequest) (*models.SchemeEndorsement, error) {
 	endorsement := &models.SchemeEndorsement{
 		EndorsementNo: fmt.Sprintf("END-%d", time.Now().UnixNano()%1000000),
-		SchemeID: req.SchemeID, EndorsementType: req.EndorsementType,
+		SchemeID:      req.SchemeID, EndorsementType: req.EndorsementType,
 		Description: req.Description, EffectiveDate: req.EffectiveDate,
 		PremiumImpact: req.PremiumImpact, Status: "pending",
 	}
@@ -257,10 +257,10 @@ func (s *GroupLifeService) CalculateExperienceRating(ctx context.Context, scheme
 	er := &models.ExperienceRating{
 		SchemeID: schemeID, Period: period,
 		EarnedPremium: earnedPremium, IncurredClaims: incurredClaims,
-		LossRatio: math.Round(lossRatio*10000) / 10000,
-		ExpenseRatio: expenseRatio,
+		LossRatio:     math.Round(lossRatio*10000) / 10000,
+		ExpenseRatio:  expenseRatio,
 		CombinedRatio: math.Round(combinedRatio*10000) / 10000,
-		RenewalRate: math.Round(renewalRate*100) / 100,
+		RenewalRate:   math.Round(renewalRate*100) / 100,
 	}
 	if err := s.repo.CreateExperienceRating(ctx, er); err != nil {
 		return nil, fmt.Errorf("failed to create experience rating: %w", err)
@@ -302,18 +302,22 @@ func (s *GroupLifeService) GetExperienceRatings(ctx context.Context, schemeID uu
 
 func (s *GroupLifeService) updateSchemeAggregates(ctx context.Context, schemeID uuid.UUID) {
 	scheme, err := s.repo.GetScheme(ctx, schemeID)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	count, _ := s.repo.CountActiveMembers(ctx, schemeID)
 	totalSA, _ := s.repo.GetTotalSumAssured(ctx, schemeID)
 	scheme.TotalMembers = int(count)
 	scheme.TotalSumAssured = totalSA
-	s.repo.UpdateScheme(ctx, scheme)
+	_ = s.repo.UpdateScheme(ctx, scheme)
 }
 
 func calculateAge(dob time.Time) int {
 	now := time.Now()
 	age := now.Year() - dob.Year()
-	if now.YearDay() < dob.YearDay() { age-- }
+	if now.YearDay() < dob.YearDay() {
+		age--
+	}
 	return age
 }
 

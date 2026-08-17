@@ -39,7 +39,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -98,7 +98,7 @@ func main() {
 		logger.Error("Server forced shutdown", zap.Error(err))
 	}
 
-	redis.Close()
+	_ = redis.Close()
 	pg.Close()
 	logger.Info("Server exited properly")
 }
@@ -178,7 +178,7 @@ func readinessHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger)
 
 		if err := pg.Pool.Ping(ctx); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "postgres_unavailable"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "postgres_unavailable"})
 			return
 		}
 
@@ -214,7 +214,7 @@ func listProductsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logg
 		if redis != nil {
 			if cacheData, err := redis.GetCachedProduct(r.Context(), cacheKey); err == nil && len(cacheData) > 0 {
 				w.Header().Set("X-Cache", "HIT")
-				json.NewEncoder(w).Encode(json.RawMessage(cacheData))
+				_ = json.NewEncoder(w).Encode(json.RawMessage(cacheData))
 				return
 			}
 			w.Header().Set("X-Cache", "MISS")
@@ -239,7 +239,7 @@ func listProductsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logg
 			}
 		}
 
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -319,11 +319,11 @@ func createProductHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		if redis != nil {
-			redis.InvalidateAllProducts(r.Context())
+			_ = redis.InvalidateAllProducts(r.Context())
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(product)
+		_ = json.NewEncoder(w).Encode(product)
 	}
 }
 
@@ -336,7 +336,7 @@ func getProductHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 		if redis != nil {
 			if cacheData, err := redis.GetCachedProduct(r.Context(), id); err == nil && len(cacheData) > 0 {
 				w.Header().Set("X-Cache", "HIT")
-				json.NewEncoder(w).Encode(json.RawMessage(cacheData))
+				_ = json.NewEncoder(w).Encode(json.RawMessage(cacheData))
 				return
 			}
 			w.Header().Set("X-Cache", "MISS")
@@ -354,7 +354,7 @@ func getProductHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			}
 		}
 
-		json.NewEncoder(w).Encode(product)
+		_ = json.NewEncoder(w).Encode(product)
 	}
 }
 
@@ -427,11 +427,11 @@ func updateProductHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		if redis != nil {
-			redis.InvalidateProduct(r.Context(), id)
-			redis.InvalidateAllProducts(r.Context())
+			_ = redis.InvalidateProduct(r.Context(), id)
+			_ = redis.InvalidateAllProducts(r.Context())
 		}
 
-		json.NewEncoder(w).Encode(product)
+		_ = json.NewEncoder(w).Encode(product)
 	}
 }
 
@@ -447,8 +447,8 @@ func deleteProductHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		if redis != nil {
-			redis.InvalidateProduct(r.Context(), id)
-			redis.InvalidateAllProducts(r.Context())
+			_ = redis.InvalidateProduct(r.Context(), id)
+			_ = redis.InvalidateAllProducts(r.Context())
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -572,7 +572,7 @@ func enrollHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) ht
 		}
 
 		if redis != nil {
-			redis.InvalidateAllEnrollments(r.Context())
+			_ = redis.InvalidateAllEnrollments(r.Context())
 		}
 
 		w.WriteHeader(http.StatusCreated)
@@ -599,7 +599,7 @@ func getEnrollmentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 			return
 		}
 
-		json.NewEncoder(w).Encode(enrollment)
+		_ = json.NewEncoder(w).Encode(enrollment)
 	}
 }
 
@@ -629,7 +629,7 @@ func cancelEnrollmentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.
 		enrollment.UpdatedAt = time.Now().UTC()
 
 		if redis != nil {
-			redis.InvalidateEnrollment(r.Context(), id)
+			_ = redis.InvalidateEnrollment(r.Context(), id)
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
@@ -749,7 +749,7 @@ func createClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		}
 
 		if redis != nil {
-			redis.InvalidateClaim(r.Context(), claimID)
+			_ = redis.InvalidateClaim(r.Context(), claimID)
 		}
 
 		w.WriteHeader(http.StatusCreated)
@@ -769,7 +769,7 @@ func getClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) 
 
 		if redis != nil {
 			if data, err := redis.GetCachedClaim(r.Context(), id); err == nil && len(data) > 0 {
-				json.NewEncoder(w).Encode(json.RawMessage(data))
+				_ = json.NewEncoder(w).Encode(json.RawMessage(data))
 				return
 			}
 		}
@@ -780,7 +780,7 @@ func getClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) 
 			return
 		}
 
-		json.NewEncoder(w).Encode(claim)
+		_ = json.NewEncoder(w).Encode(claim)
 	}
 }
 
@@ -813,10 +813,10 @@ func approveClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logg
 		}
 
 		if redis != nil {
-			redis.InvalidateClaim(r.Context(), claimID)
+			_ = redis.InvalidateClaim(r.Context(), claimID)
 		}
 
-		json.NewEncoder(w).Encode(claim)
+		_ = json.NewEncoder(w).Encode(claim)
 	}
 }
 
@@ -854,10 +854,10 @@ func rejectClaimHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		}
 
 		if redis != nil {
-			redis.InvalidateClaim(r.Context(), claimID)
+			_ = redis.InvalidateClaim(r.Context(), claimID)
 		}
 
-		json.NewEncoder(w).Encode(claim)
+		_ = json.NewEncoder(w).Encode(claim)
 	}
 }
 
@@ -967,11 +967,11 @@ func createGroupHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		}
 
 		if redis != nil {
-			redis.InvalidateGroup(r.Context(), req.GroupID)
+			_ = redis.InvalidateGroup(r.Context(), req.GroupID)
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(group)
+		_ = json.NewEncoder(w).Encode(group)
 	}
 }
 
@@ -987,7 +987,7 @@ func getGroupHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) 
 			return
 		}
 
-		json.NewEncoder(w).Encode(group)
+		_ = json.NewEncoder(w).Encode(group)
 	}
 }
 
@@ -1088,7 +1088,7 @@ func recordPaymentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		if redis != nil {
-			redis.InvalidateEnrollment(r.Context(), req.EnrollmentID)
+			_ = redis.InvalidateEnrollment(r.Context(), req.EnrollmentID)
 		}
 
 		w.WriteHeader(http.StatusCreated)
@@ -1178,7 +1178,7 @@ func createTriggerHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(trigger)
+		_ = json.NewEncoder(w).Encode(trigger)
 	}
 }
 
@@ -1270,7 +1270,7 @@ func validateEnrollment(req struct {
 
 func generateID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
@@ -1294,7 +1294,7 @@ func parseIntQuery(val string, fallback int) int {
 		return fallback
 	}
 	var n int
-	fmt.Sscanf(val, "%d", &n)
+	_, _ = fmt.Sscanf(val, "%d", &n)
 	if n < 0 {
 		return fallback
 	}

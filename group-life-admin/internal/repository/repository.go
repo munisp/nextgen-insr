@@ -26,7 +26,9 @@ func (r *GroupLifeRepository) AutoMigrate() error {
 }
 
 func (r *GroupLifeRepository) CreateScheme(ctx context.Context, s *models.GroupScheme) error {
-	s.ID = uuid.New(); s.CreatedAt = time.Now(); s.UpdatedAt = time.Now()
+	s.ID = uuid.New()
+	s.CreatedAt = time.Now()
+	s.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(s).Error
 }
 
@@ -38,7 +40,9 @@ func (r *GroupLifeRepository) GetScheme(ctx context.Context, id uuid.UUID) (*mod
 func (r *GroupLifeRepository) ListSchemes(ctx context.Context, status string) ([]models.GroupScheme, error) {
 	var schemes []models.GroupScheme
 	q := r.db.WithContext(ctx)
-	if status != "" { q = q.Where("status = ?", status) }
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
 	return schemes, q.Order("created_at DESC").Find(&schemes).Error
 }
 
@@ -48,7 +52,9 @@ func (r *GroupLifeRepository) UpdateScheme(ctx context.Context, s *models.GroupS
 }
 
 func (r *GroupLifeRepository) CreateMember(ctx context.Context, m *models.SchemeMember) error {
-	m.ID = uuid.New(); m.CreatedAt = time.Now(); m.UpdatedAt = time.Now()
+	m.ID = uuid.New()
+	m.CreatedAt = time.Now()
+	m.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(m).Error
 }
 
@@ -78,7 +84,8 @@ func (r *GroupLifeRepository) GetTotalSumAssured(ctx context.Context, schemeID u
 }
 
 func (r *GroupLifeRepository) CreateBeneficiary(ctx context.Context, b *models.MemberBeneficiary) error {
-	b.ID = uuid.New(); b.CreatedAt = time.Now()
+	b.ID = uuid.New()
+	b.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(b).Error
 }
 
@@ -88,7 +95,9 @@ func (r *GroupLifeRepository) GetBeneficiaries(ctx context.Context, memberID uui
 }
 
 func (r *GroupLifeRepository) CreateClaim(ctx context.Context, c *models.GroupClaim) error {
-	c.ID = uuid.New(); c.CreatedAt = time.Now(); c.UpdatedAt = time.Now()
+	c.ID = uuid.New()
+	c.CreatedAt = time.Now()
+	c.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(c).Error
 }
 
@@ -113,7 +122,8 @@ func (r *GroupLifeRepository) GetTotalClaimsByScheme(ctx context.Context, scheme
 }
 
 func (r *GroupLifeRepository) CreatePremiumSchedule(ctx context.Context, ps *models.PremiumSchedule) error {
-	ps.ID = uuid.New(); ps.CreatedAt = time.Now()
+	ps.ID = uuid.New()
+	ps.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(ps).Error
 }
 
@@ -127,7 +137,8 @@ func (r *GroupLifeRepository) UpdatePremiumSchedule(ctx context.Context, ps *mod
 }
 
 func (r *GroupLifeRepository) CreateEndorsement(ctx context.Context, e *models.SchemeEndorsement) error {
-	e.ID = uuid.New(); e.CreatedAt = time.Now()
+	e.ID = uuid.New()
+	e.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(e).Error
 }
 
@@ -137,7 +148,8 @@ func (r *GroupLifeRepository) GetEndorsements(ctx context.Context, schemeID uuid
 }
 
 func (r *GroupLifeRepository) CreateExperienceRating(ctx context.Context, er *models.ExperienceRating) error {
-	er.ID = uuid.New(); er.CreatedAt = time.Now()
+	er.ID = uuid.New()
+	er.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(er).Error
 }
 

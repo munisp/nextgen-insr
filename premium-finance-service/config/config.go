@@ -9,7 +9,7 @@ import (
 
 // Config holds all runtime configuration loaded from environment variables
 type Config struct {
-	Server ServerConfig
+	Server   ServerConfig
 	Postgres PostgresConfig
 	Redis    RedisConfig
 	CORS     CORSConfig
@@ -41,23 +41,23 @@ type PostgresConfig struct {
 
 // RedisConfig holds Redis connection settings
 type RedisConfig struct {
-	Host           string
-	Port           string
-	Password       string
-	DB             int
-	MaxRetries     int
-	PoolSize       int
-	ReadTimeout    time.Duration
-	WriteTimeout   time.Duration
+	Host         string
+	Port         string
+	Password     string
+	DB           int
+	MaxRetries   int
+	PoolSize     int
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
 }
 
 // CORSConfig holds CORS settings
 type CORSConfig struct {
-	AllowedOrigins []string
-	AllowedMethods []string
-	AllowedHeaders []string
+	AllowedOrigins   []string
+	AllowedMethods   []string
+	AllowedHeaders   []string
 	AllowCredentials bool
-	MaxAge         time.Duration
+	MaxAge           time.Duration
 }
 
 // LoggingConfig holds logging settings
@@ -110,19 +110,19 @@ func NewConfig() *Config {
 			SSLMode:         envOr("DB_SSL_MODE", "disable"),
 		},
 		Redis: RedisConfig{
-			Host:           envOr("REDIS_HOST", "localhost"),
-			Port:           envOr("REDIS_PORT", "6379"),
-			Password:       envOr("REDIS_PASSWORD", ""),
-			DB:             intOr("REDIS_DB", 0),
-			MaxRetries:     intOr("REDIS_MAX_RETRIES", 3),
-			PoolSize:       intOr("REDIS_POOL_SIZE", 10),
-			ReadTimeout:    durationEnvOrDefault("REDIS_READ_TIMEOUT", 3*time.Second),
-			WriteTimeout:   durationEnvOrDefault("REDIS_WRITE_TIMEOUT", 3*time.Second),
+			Host:         envOr("REDIS_HOST", "localhost"),
+			Port:         envOr("REDIS_PORT", "6379"),
+			Password:     envOr("REDIS_PASSWORD", ""),
+			DB:           intOr("REDIS_DB", 0),
+			MaxRetries:   intOr("REDIS_MAX_RETRIES", 3),
+			PoolSize:     intOr("REDIS_POOL_SIZE", 10),
+			ReadTimeout:  durationEnvOrDefault("REDIS_READ_TIMEOUT", 3*time.Second),
+			WriteTimeout: durationEnvOrDefault("REDIS_WRITE_TIMEOUT", 3*time.Second),
 		},
 		CORS: CORSConfig{
-			AllowedOrigins: parseCSV(envOr("CORS_ALLOWED_ORIGINS", "*")),
-			AllowedMethods: parseCSV(envOr("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")),
-			AllowedHeaders: parseCSV(envOr("CORS_ALLOWED_HEADERS", "Origin,Content-Type,Accept,Authorization,X-Request-ID")),
+			AllowedOrigins:   parseCSV(envOr("CORS_ALLOWED_ORIGINS", "*")),
+			AllowedMethods:   parseCSV(envOr("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")),
+			AllowedHeaders:   parseCSV(envOr("CORS_ALLOWED_HEADERS", "Origin,Content-Type,Accept,Authorization,X-Request-ID")),
 			AllowCredentials: boolOr("CORS_ALLOW_CREDENTIALS", false),
 			MaxAge:           durationEnvOrDefault("CORS_MAX_AGE", 12*time.Hour),
 		},

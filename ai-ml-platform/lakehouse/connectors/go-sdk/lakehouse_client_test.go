@@ -13,7 +13,7 @@ import (
 func TestNewClient(t *testing.T) {
 	config := DefaultConfig("test-service")
 	client := NewClient(config)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if client.config.ServiceName != "test-service" {
 		t.Errorf("expected service name 'test-service', got '%s'", client.config.ServiceName)
@@ -40,7 +40,7 @@ func TestEmitAndFlush(t *testing.T) {
 		}
 		atomic.AddInt64(&received, int64(len(events)))
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 	}))
 	defer server.Close()
 
@@ -84,7 +84,7 @@ func TestEmitAndFlush(t *testing.T) {
 	}
 
 	// Close triggers final flush
-	client.Close()
+	_ = client.Close()
 
 	if atomic.LoadInt64(&received) != 3 {
 		t.Errorf("expected 3 events received, got %d", atomic.LoadInt64(&received))
@@ -124,7 +124,7 @@ func TestBatchFlushOnThreshold(t *testing.T) {
 	}
 
 	time.Sleep(100 * time.Millisecond) // Let flush happen
-	client.Close()
+	_ = client.Close()
 
 	if atomic.LoadInt64(&batchCount) < 1 {
 		t.Error("expected at least 1 batch flush on threshold")
@@ -156,7 +156,7 @@ func TestCircuitBreaker(t *testing.T) {
 		time.Sleep(60 * time.Millisecond)
 	}
 
-	client.Close()
+	_ = client.Close()
 
 	stats := client.GetStats()
 	if stats.Failed == 0 {

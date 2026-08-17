@@ -17,10 +17,10 @@ type ServiceConfig struct {
 	Environment    string
 
 	// Server configuration
-	HTTPPort     int
-	GRPCPort     int
-	MetricsPort  int
-	HealthPort   int
+	HTTPPort    int
+	GRPCPort    int
+	MetricsPort int
+	HealthPort  int
 
 	// Database configuration
 	DatabaseURL      string
@@ -46,8 +46,8 @@ type ServiceConfig struct {
 	KafkaClientID      string
 
 	// Dapr configuration
-	DaprHTTPPort  int
-	DaprGRPCPort  int
+	DaprHTTPPort   int
+	DaprGRPCPort   int
 	DaprPubSubName string
 	DaprStateStore string
 
@@ -64,9 +64,9 @@ type ServiceConfig struct {
 	LogFormat         string
 
 	// Security
-	EncryptionKey     string
-	JWTSecret         string
-	APIKeyHeader      string
+	EncryptionKey      string
+	JWTSecret          string
+	APIKeyHeader       string
 	CORSAllowedOrigins []string
 
 	// Timeouts

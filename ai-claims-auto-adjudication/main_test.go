@@ -15,7 +15,7 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["service"] != "ai-claims-auto-adjudication" {
 		t.Errorf("expected service=ai-claims-auto-adjudication, got %v", resp["service"])
 	}
@@ -38,7 +38,7 @@ func TestLiveEndpoint(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["status"] != "alive" {
 		t.Errorf("expected status=alive, got %s", resp["status"])
 	}

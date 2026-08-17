@@ -112,7 +112,7 @@ func (t *TemporalClient) doRequest(ctx context.Context, method, url string, body
 		t.tripCircuitBreaker()
 		return nil, fmt.Errorf("temporal request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 500 {
 		t.tripCircuitBreaker()
@@ -173,7 +173,7 @@ func (t *TemporalClient) GetWorkflowStatus(ctx context.Context, workflowID, runI
 		return nil, err
 	}
 	var result map[string]interface{}
-	json.Unmarshal(respBody, &result)
+	_ = json.Unmarshal(respBody, &result)
 	return result, nil
 }
 
@@ -209,7 +209,7 @@ func (t *TemporalClient) QueryWorkflow(ctx context.Context, workflowID, runID, q
 		return nil, err
 	}
 	var result interface{}
-	json.Unmarshal(respBody, &result)
+	_ = json.Unmarshal(respBody, &result)
 	return result, nil
 }
 

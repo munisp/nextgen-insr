@@ -16,7 +16,7 @@ func NewPostgres(ctx context.Context, connString string) (*Postgres, error) {
 	return &Postgres{}, nil
 }
 
-func (p *Postgres) Close()                        {}
+func (p *Postgres) Close()                         {}
 func (p *Postgres) Ping(ctx context.Context) error { return nil }
 
 type Claim struct {
@@ -94,7 +94,8 @@ func (r *Redis) Close()                   {}
 func (r *Redis) GetClaimScore(ctx context.Context, claimID int64) (interface{}, error) {
 	return nil, fmt.Errorf("not cached")
 }
-func (r *Redis) SetClaimScore(ctx context.Context, claimID int64, score interface{}, ttl time.Duration) {}
+func (r *Redis) SetClaimScore(ctx context.Context, claimID int64, score interface{}, ttl time.Duration) {
+}
 
 // KafkaConsumer for claim events
 type KafkaConsumer struct{}

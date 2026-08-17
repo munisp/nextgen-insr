@@ -40,60 +40,60 @@ const (
 )
 
 type KYCVerification struct {
-	ID                 string             `json:"id" db:"id"`
-	UserID             string             `json:"user_id" db:"user_id"`
-	SessionID          string             `json:"session_id" db:"session_id"`
-	Level              KYCLevel           `json:"level" db:"level"`
-	Status             VerificationStatus `json:"status" db:"status"`
-	VerificationType   string             `json:"verification_type" db:"verification_type"`
-	DocumentType       DocumentType       `json:"document_type,omitempty" db:"document_type"`
-	DocumentNumber     string             `json:"document_number,omitempty" db:"document_number"`
-	NINVerified        bool               `json:"nin_verified" db:"nin_verified"`
-	BVNVerified        bool               `json:"bvn_verified" db:"bvn_verified"`
-	PhoneVerified      bool               `json:"phone_verified" db:"phone_verified"`
-	BiometricVerified  bool               `json:"biometric_verified" db:"biometric_verified"`
-	DocumentVerified   bool               `json:"document_verified" db:"document_verified"`
-	AddressVerified    bool               `json:"address_verified" db:"address_verified"`
-	LivenessVerified   bool               `json:"liveness_verified" db:"liveness_verified"`
-	FaceMatchScore     float64            `json:"face_match_score" db:"face_match_score"`
-	RiskScore          float64            `json:"risk_score" db:"risk_score"`
-	AMLCleared         bool               `json:"aml_cleared" db:"aml_cleared"`
-	PEPChecked         bool               `json:"pep_checked" db:"pep_checked"`
-	SanctionsCleared   bool               `json:"sanctions_cleared" db:"sanctions_cleared"`
-	ReviewerID         *string            `json:"reviewer_id,omitempty" db:"reviewer_id"`
-	ReviewNotes        *string            `json:"review_notes,omitempty" db:"review_notes"`
-	RejectionReason    *string            `json:"rejection_reason,omitempty" db:"rejection_reason"`
-	VerifiedAt         *time.Time         `json:"verified_at,omitempty" db:"verified_at"`
-	ExpiresAt          *time.Time         `json:"expires_at,omitempty" db:"expires_at"`
-	CreatedAt          time.Time          `json:"created_at" db:"created_at"`
-	UpdatedAt          time.Time          `json:"updated_at" db:"updated_at"`
+	ID                string             `json:"id" db:"id"`
+	UserID            string             `json:"user_id" db:"user_id"`
+	SessionID         string             `json:"session_id" db:"session_id"`
+	Level             KYCLevel           `json:"level" db:"level"`
+	Status            VerificationStatus `json:"status" db:"status"`
+	VerificationType  string             `json:"verification_type" db:"verification_type"`
+	DocumentType      DocumentType       `json:"document_type,omitempty" db:"document_type"`
+	DocumentNumber    string             `json:"document_number,omitempty" db:"document_number"`
+	NINVerified       bool               `json:"nin_verified" db:"nin_verified"`
+	BVNVerified       bool               `json:"bvn_verified" db:"bvn_verified"`
+	PhoneVerified     bool               `json:"phone_verified" db:"phone_verified"`
+	BiometricVerified bool               `json:"biometric_verified" db:"biometric_verified"`
+	DocumentVerified  bool               `json:"document_verified" db:"document_verified"`
+	AddressVerified   bool               `json:"address_verified" db:"address_verified"`
+	LivenessVerified  bool               `json:"liveness_verified" db:"liveness_verified"`
+	FaceMatchScore    float64            `json:"face_match_score" db:"face_match_score"`
+	RiskScore         float64            `json:"risk_score" db:"risk_score"`
+	AMLCleared        bool               `json:"aml_cleared" db:"aml_cleared"`
+	PEPChecked        bool               `json:"pep_checked" db:"pep_checked"`
+	SanctionsCleared  bool               `json:"sanctions_cleared" db:"sanctions_cleared"`
+	ReviewerID        *string            `json:"reviewer_id,omitempty" db:"reviewer_id"`
+	ReviewNotes       *string            `json:"review_notes,omitempty" db:"review_notes"`
+	RejectionReason   *string            `json:"rejection_reason,omitempty" db:"rejection_reason"`
+	VerifiedAt        *time.Time         `json:"verified_at,omitempty" db:"verified_at"`
+	ExpiresAt         *time.Time         `json:"expires_at,omitempty" db:"expires_at"`
+	CreatedAt         time.Time          `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at" db:"updated_at"`
 }
 
 type KYBVerification struct {
-	ID                   string             `json:"id" db:"id"`
-	BusinessID           string             `json:"business_id" db:"business_id"`
-	SessionID            string             `json:"session_id" db:"session_id"`
-	Status               VerificationStatus `json:"status" db:"status"`
-	CompanyName          string             `json:"company_name" db:"company_name"`
-	RCNumber             string             `json:"rc_number" db:"rc_number"`
-	TIN                  string             `json:"tin,omitempty" db:"tin"`
-	CACVerified          bool               `json:"cac_verified" db:"cac_verified"`
-	TINVerified          bool               `json:"tin_verified" db:"tin_verified"`
-	DirectorsVerified    bool               `json:"directors_verified" db:"directors_verified"`
-	UBOIdentified        bool               `json:"ubo_identified" db:"ubo_identified"`
-	AddressVerified      bool               `json:"address_verified" db:"address_verified"`
-	AMLCleared           bool               `json:"aml_cleared" db:"aml_cleared"`
-	SanctionsCleared     bool               `json:"sanctions_cleared" db:"sanctions_cleared"`
-	RiskScore            float64            `json:"risk_score" db:"risk_score"`
-	Directors            []Director         `json:"directors,omitempty"`
-	UBOs                 []UBO              `json:"ubos,omitempty"`
-	Documents            []KYBDocument      `json:"documents,omitempty"`
-	ReviewerID           *string            `json:"reviewer_id,omitempty" db:"reviewer_id"`
-	ReviewNotes          *string            `json:"review_notes,omitempty" db:"review_notes"`
-	VerifiedAt           *time.Time         `json:"verified_at,omitempty" db:"verified_at"`
-	ExpiresAt            *time.Time         `json:"expires_at,omitempty" db:"expires_at"`
-	CreatedAt            time.Time          `json:"created_at" db:"created_at"`
-	UpdatedAt            time.Time          `json:"updated_at" db:"updated_at"`
+	ID                string             `json:"id" db:"id"`
+	BusinessID        string             `json:"business_id" db:"business_id"`
+	SessionID         string             `json:"session_id" db:"session_id"`
+	Status            VerificationStatus `json:"status" db:"status"`
+	CompanyName       string             `json:"company_name" db:"company_name"`
+	RCNumber          string             `json:"rc_number" db:"rc_number"`
+	TIN               string             `json:"tin,omitempty" db:"tin"`
+	CACVerified       bool               `json:"cac_verified" db:"cac_verified"`
+	TINVerified       bool               `json:"tin_verified" db:"tin_verified"`
+	DirectorsVerified bool               `json:"directors_verified" db:"directors_verified"`
+	UBOIdentified     bool               `json:"ubo_identified" db:"ubo_identified"`
+	AddressVerified   bool               `json:"address_verified" db:"address_verified"`
+	AMLCleared        bool               `json:"aml_cleared" db:"aml_cleared"`
+	SanctionsCleared  bool               `json:"sanctions_cleared" db:"sanctions_cleared"`
+	RiskScore         float64            `json:"risk_score" db:"risk_score"`
+	Directors         []Director         `json:"directors,omitempty"`
+	UBOs              []UBO              `json:"ubos,omitempty"`
+	Documents         []KYBDocument      `json:"documents,omitempty"`
+	ReviewerID        *string            `json:"reviewer_id,omitempty" db:"reviewer_id"`
+	ReviewNotes       *string            `json:"review_notes,omitempty" db:"review_notes"`
+	VerifiedAt        *time.Time         `json:"verified_at,omitempty" db:"verified_at"`
+	ExpiresAt         *time.Time         `json:"expires_at,omitempty" db:"expires_at"`
+	CreatedAt         time.Time          `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at" db:"updated_at"`
 }
 
 type Director struct {
@@ -106,12 +106,12 @@ type Director struct {
 }
 
 type UBO struct {
-	Name            string  `json:"name"`
-	OwnershipPct    float64 `json:"ownership_pct"`
-	NIN             string  `json:"nin,omitempty"`
-	KYCVerified     bool    `json:"kyc_verified"`
-	PEPStatus       bool    `json:"pep_status"`
-	SanctionStatus  bool    `json:"sanction_status"`
+	Name           string  `json:"name"`
+	OwnershipPct   float64 `json:"ownership_pct"`
+	NIN            string  `json:"nin,omitempty"`
+	KYCVerified    bool    `json:"kyc_verified"`
+	PEPStatus      bool    `json:"pep_status"`
+	SanctionStatus bool    `json:"sanction_status"`
 }
 
 type KYBDocument struct {
@@ -142,12 +142,12 @@ type AMLScreeningResult struct {
 }
 
 type RiskAssessment struct {
-	SessionID       string             `json:"session_id"`
-	OverallScore    float64            `json:"overall_score"`
-	RiskLevel       string             `json:"risk_level"`
-	Factors         []RiskFactor       `json:"factors"`
-	Recommendation  string             `json:"recommendation"`
-	RequiredLevel   KYCLevel           `json:"required_level"`
+	SessionID      string       `json:"session_id"`
+	OverallScore   float64      `json:"overall_score"`
+	RiskLevel      string       `json:"risk_level"`
+	Factors        []RiskFactor `json:"factors"`
+	Recommendation string       `json:"recommendation"`
+	RequiredLevel  KYCLevel     `json:"required_level"`
 }
 
 type RiskFactor struct {

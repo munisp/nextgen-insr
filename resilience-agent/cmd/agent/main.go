@@ -3,10 +3,10 @@
 // Exposes a lightweight HTTP API on :8031 that the Node.js POS server
 // consults for real-time connectivity intelligence:
 //
-//   GET  /probe          — measure latency to the configured probe URL
-//   GET  /carrier/:phone — identify Nigerian carrier from phone prefix
-//   POST /retry          — submit a transaction with exponential-backoff retry
-//   GET  /health         — liveness check
+//	GET  /probe          — measure latency to the configured probe URL
+//	GET  /carrier/:phone — identify Nigerian carrier from phone prefix
+//	POST /retry          — submit a transaction with exponential-backoff retry
+//	GET  /health         — liveness check
 package main
 
 import (
@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
+	"database/sql"
 	"github.com/54link/resilience-agent/internal/carrier"
 	"github.com/54link/resilience-agent/internal/probe"
 	"github.com/54link/resilience-agent/internal/retry"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -62,11 +62,10 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	port := os.Getenv("RESILIENCE_PORT")
 	if port == "" {
@@ -91,7 +90,7 @@ func main() {
 		}
 		result := probe.Probe(probeURL)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
+		_ = json.NewEncoder(w).Encode(result)
 	})
 
 	// ── GET /carrier/{phone} ───────────────────────────────────────────────────
@@ -103,7 +102,7 @@ func main() {
 		phone := strings.TrimPrefix(r.URL.Path, "/carrier/")
 		c := carrier.Detect(phone)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(c)
+		_ = json.NewEncoder(w).Encode(c)
 	})
 
 	// ── POST /retry ────────────────────────────────────────────────────────────
@@ -126,7 +125,7 @@ func main() {
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-		json.NewEncoder(w).Encode(result)
+		_ = json.NewEncoder(w).Encode(result)
 	})
 
 	// ── GET /health ────────────────────────────────────────────────────────────

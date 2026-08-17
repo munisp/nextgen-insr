@@ -10,12 +10,12 @@ import (
 // Config holds all configuration for the Takaful service
 type Config struct {
 	// Server
-	Port          int           `mapstructure:"PORT"`
-	Env           string        `mapstructure:"ENV"`
-	ReadTimeout   time.Duration `mapstructure:"READ_TIMEOUT"`
-	WriteTimeout  time.Duration `mapstructure:"WRITE_TIMEOUT"`
+	Port            int           `mapstructure:"PORT"`
+	Env             string        `mapstructure:"ENV"`
+	ReadTimeout     time.Duration `mapstructure:"READ_TIMEOUT"`
+	WriteTimeout    time.Duration `mapstructure:"WRITE_TIMEOUT"`
 	ShutdownTimeout time.Duration `mapstructure:"SHUTDOWN_TIMEOUT"`
-	HealthCheckPath string      `mapstructure:"HEALTH_CHECK_PATH"`
+	HealthCheckPath string        `mapstructure:"HEALTH_CHECK_PATH"`
 
 	// PostgreSQL
 	DBHost     string `mapstructure:"DB_HOST"`
@@ -28,22 +28,22 @@ type Config struct {
 	DBMinConns int    `mapstructure:"DB_MIN_CONNS"`
 
 	// Redis
-	RedisAddr     string `mapstructure:"REDIS_ADDR"`
-	RedisPass     string `mapstructure:"REDIS_PASS"`
-	RedisDB       int    `mapstructure:"REDIS_DB"`
-	RedisMaxRetries int   `mapstructure:"REDIS_MAX_RETRIES"`
+	RedisAddr       string `mapstructure:"REDIS_ADDR"`
+	RedisPass       string `mapstructure:"REDIS_PASS"`
+	RedisDB         int    `mapstructure:"REDIS_DB"`
+	RedisMaxRetries int    `mapstructure:"REDIS_MAX_RETRIES"`
 
 	// Takaful specific
-	WakalaFeePercent    float64 `mapstructure:"WAKALA_FEE_PERCENT"`
-	ParticipantShare    float64 `mapstructure:"PARTICIPANT_SHARE"`
-	MinContribution     float64 `mapstructure:"MIN_CONTRIBUTION"`
-	ShariahBoardApproval bool   `mapstructure:"SHARIAH_BOARD_APPROVAL"`
-	MaxTabarruPercent   float64 `mapstructure:"MAX_TABARRU_PERCENT"`
+	WakalaFeePercent     float64 `mapstructure:"WAKALA_FEE_PERCENT"`
+	ParticipantShare     float64 `mapstructure:"PARTICIPANT_SHARE"`
+	MinContribution      float64 `mapstructure:"MIN_CONTRIBUTION"`
+	ShariahBoardApproval bool    `mapstructure:"SHARIAH_BOARD_APPROVAL"`
+	MaxTabarruPercent    float64 `mapstructure:"MAX_TABARRU_PERCENT"`
 
 	// Zakat
-	ZakatRate         float64 `mapstructure:"ZAKAT_RATE"`
+	ZakatRate           float64 `mapstructure:"ZAKAT_RATE"`
 	ZakatNisabThreshold float64 `mapstructure:"ZAKAT_NISAB_THRESHOLD"`
-	ZakatYearStart    string  `mapstructure:"ZAKAT_YEAR_START"`
+	ZakatYearStart      string  `mapstructure:"ZAKAT_YEAR_START"`
 
 	// Logging
 	LogLevel  string `mapstructure:"LOG_LEVEL"`
@@ -53,10 +53,10 @@ type Config struct {
 // Load reads configuration from environment variables with defaults
 func Load() (*Config, error) {
 	c := &Config{
-		Port:          getEnvInt("PORT", 8128),
-		Env:           getEnv("ENV", "production"),
-		ReadTimeout:   getEnvDuration("READ_TIMEOUT", 15*time.Second),
-		WriteTimeout:  getEnvDuration("WRITE_TIMEOUT", 15*time.Second),
+		Port:            getEnvInt("PORT", 8128),
+		Env:             getEnv("ENV", "production"),
+		ReadTimeout:     getEnvDuration("READ_TIMEOUT", 15*time.Second),
+		WriteTimeout:    getEnvDuration("WRITE_TIMEOUT", 15*time.Second),
 		ShutdownTimeout: getEnvDuration("SHUTDOWN_TIMEOUT", 30*time.Second),
 		HealthCheckPath: getEnv("HEALTH_CHECK_PATH", "/health"),
 
@@ -69,20 +69,20 @@ func Load() (*Config, error) {
 		DBMaxConns: getEnvInt("DB_MAX_CONNS", 20),
 		DBMinConns: getEnvInt("DB_MIN_CONNS", 5),
 
-		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPass:     getEnv("REDIS_PASS", ""),
-		RedisDB:       getEnvInt("REDIS_DB", 0),
+		RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPass:       getEnv("REDIS_PASS", ""),
+		RedisDB:         getEnvInt("REDIS_DB", 0),
 		RedisMaxRetries: getEnvInt("REDIS_MAX_RETRIES", 3),
 
-		WakalaFeePercent:    getEnvFloat("WAKALA_FEE_PERCENT", 30.0),
-		ParticipantShare:    getEnvFloat("PARTICIPANT_SHARE", 70.0),
-		MinContribution:     getEnvFloat("MIN_CONTRIBUTION", 1000.0),
+		WakalaFeePercent:     getEnvFloat("WAKALA_FEE_PERCENT", 30.0),
+		ParticipantShare:     getEnvFloat("PARTICIPANT_SHARE", 70.0),
+		MinContribution:      getEnvFloat("MIN_CONTRIBUTION", 1000.0),
 		ShariahBoardApproval: true,
-		MaxTabarruPercent:   getEnvFloat("MAX_TABARRU_PERCENT", 100.0),
+		MaxTabarruPercent:    getEnvFloat("MAX_TABARRU_PERCENT", 100.0),
 
-		ZakatRate:             getEnvFloat("ZAKAT_RATE", 0.025),
-		ZakatNisabThreshold:   getEnvFloat("ZAKAT_NISAB_THRESHOLD", 85.0), // in grams of gold
-		ZakatYearStart:        getEnv("ZAKAT_YEAR_START", "01-01"),
+		ZakatRate:           getEnvFloat("ZAKAT_RATE", 0.025),
+		ZakatNisabThreshold: getEnvFloat("ZAKAT_NISAB_THRESHOLD", 85.0), // in grams of gold
+		ZakatYearStart:      getEnv("ZAKAT_YEAR_START", "01-01"),
 
 		LogLevel:  getEnv("LOG_LEVEL", "info"),
 		LogFormat: getEnv("LOG_FORMAT", "json"),

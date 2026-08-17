@@ -31,11 +31,11 @@ import (
 	"context"
 	"database/sql"
 
-	_ "github.com/lib/pq"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"os"
@@ -131,7 +131,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 func randomID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
 }
 
@@ -163,8 +163,6 @@ func getOrCreateUser(userID, userName, displayName string) *User {
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
 // GET /health
-
-
 
 func execInTransaction(fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()
@@ -202,14 +200,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -220,9 +217,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -230,7 +232,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -420,7 +424,7 @@ func handleAuthBegin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		UserID string `json:"userId"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	var options *protocol.CredentialAssertion
 	var sessionData *webauthn.SessionData
@@ -648,11 +652,11 @@ func newRouter() http.Handler {
 	mux.HandleFunc("/api/v1/fido2/authenticate/finish", handleAuthFinish)
 	mux.HandleFunc("/api/v1/fido2/credentials/", func(w http.ResponseWriter, r *http.Request) {
 
-	mux.HandleFunc("/api/v1/fido2_credentials", handleListEntities)
-	mux.HandleFunc("/api/v1/fido2_credential", handleGetEntity)
-	mux.HandleFunc("/api/v1/fido2_credentials/create", handleCreateEntity)
-	mux.HandleFunc("/api/v1/fido2_credentials/delete", handleDeleteEntity)
-	mux.HandleFunc("/stats", handleStats)
+		mux.HandleFunc("/api/v1/fido2_credentials", handleListEntities)
+		mux.HandleFunc("/api/v1/fido2_credential", handleGetEntity)
+		mux.HandleFunc("/api/v1/fido2_credentials/create", handleCreateEntity)
+		mux.HandleFunc("/api/v1/fido2_credentials/delete", handleDeleteEntity)
+		mux.HandleFunc("/stats", handleStats)
 
 		switch r.Method {
 		case http.MethodGet:
@@ -677,7 +681,6 @@ func min(a, b int) int {
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-
 
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
@@ -714,13 +717,16 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 }
 
 var db *sql.DB
+
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -728,9 +734,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -744,9 +754,10 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
-
 
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
@@ -784,9 +795,13 @@ func initDB() {
 func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -799,27 +814,33 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
-		if err := rows.Scan(ptrs...); err != nil { continue }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-		switch v := vals[i].(type) {
-		case []byte:
-			row[col] = string(v)
-		default:
-			row[col] = v
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
-	}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
-	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
 func handleGetEntity(w http.ResponseWriter, r *http.Request) {
@@ -834,7 +855,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	if !rows.Next() {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -842,7 +863,9 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -856,7 +879,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 			row[col] = v
 		}
 	}
-	json.NewEncoder(w).Encode(row)
+	_ = json.NewEncoder(w).Encode(row)
 }
 
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
@@ -871,7 +894,9 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		switch mv := v.(type) {
 		case map[string]interface{}:
@@ -898,7 +923,7 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
 func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
@@ -922,16 +947,16 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	if db != nil {
-		db.QueryRow("SELECT COUNT(*) FROM fido2_credentials").Scan(&count)
+		_ = db.QueryRow("SELECT COUNT(*) FROM fido2_credentials").Scan(&count)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"service": "fido2_credentials", "table": "fido2_credentials", "total_records": count})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"service": "fido2_credentials", "table": "fido2_credentials", "total_records": count})
 }
 
 func main() {

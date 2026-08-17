@@ -1,33 +1,35 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
+	"context"
+	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"sync"
+	"syscall"
 	"time"
-	"context"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -35,9 +37,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -51,7 +57,9 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // BancassuranceService handles bank-insurance integration
@@ -59,33 +67,33 @@ type BancassuranceService struct{}
 
 // BankPartner represents a bank partner
 type BankPartner struct {
-	BankID           string   `json:"bank_id"`
-	BankName         string   `json:"bank_name"`
-	BankCode         string   `json:"bank_code"`
-	IntegrationType  string   `json:"integration_type"` // api, webhook, batch
-	Products         []string `json:"products"`
-	CommissionRate   float64  `json:"commission_rate"`
-	Status           string   `json:"status"`
-	APIEndpoint      string   `json:"api_endpoint"`
-	WebhookURL       string   `json:"webhook_url"`
+	BankID          string   `json:"bank_id"`
+	BankName        string   `json:"bank_name"`
+	BankCode        string   `json:"bank_code"`
+	IntegrationType string   `json:"integration_type"` // api, webhook, batch
+	Products        []string `json:"products"`
+	CommissionRate  float64  `json:"commission_rate"`
+	Status          string   `json:"status"`
+	APIEndpoint     string   `json:"api_endpoint"`
+	WebhookURL      string   `json:"webhook_url"`
 }
 
 // BankCustomer represents a bank customer for insurance
 type BankCustomer struct {
-	CustomerID       string    `json:"customer_id"`
-	BankAccountNo    string    `json:"bank_account_no"`
-	BVN              string    `json:"bvn"`
-	FullName         string    `json:"full_name"`
-	Email            string    `json:"email"`
-	Phone            string    `json:"phone"`
-	DateOfBirth      time.Time `json:"date_of_birth"`
-	Address          string    `json:"address"`
-	AccountType      string    `json:"account_type"`
-	AccountBalance   float64   `json:"account_balance"`
-	SalaryAccount    bool      `json:"salary_account"`
-	MonthlySalary    float64   `json:"monthly_salary"`
-	CreditScore      int       `json:"credit_score"`
-	ExistingLoans    float64   `json:"existing_loans"`
+	CustomerID     string    `json:"customer_id"`
+	BankAccountNo  string    `json:"bank_account_no"`
+	BVN            string    `json:"bvn"`
+	FullName       string    `json:"full_name"`
+	Email          string    `json:"email"`
+	Phone          string    `json:"phone"`
+	DateOfBirth    time.Time `json:"date_of_birth"`
+	Address        string    `json:"address"`
+	AccountType    string    `json:"account_type"`
+	AccountBalance float64   `json:"account_balance"`
+	SalaryAccount  bool      `json:"salary_account"`
+	MonthlySalary  float64   `json:"monthly_salary"`
+	CreditScore    int       `json:"credit_score"`
+	ExistingLoans  float64   `json:"existing_loans"`
 }
 
 // InsuranceOffer represents an insurance offer to bank customer
@@ -122,43 +130,43 @@ type LoanProtectionPolicy struct {
 
 // MortgageInsurance represents mortgage protection insurance
 type MortgageInsurance struct {
-	PolicyID         string    `json:"policy_id"`
-	MortgageID       string    `json:"mortgage_id"`
-	CustomerID       string    `json:"customer_id"`
-	PropertyValue    float64   `json:"property_value"`
-	MortgageAmount   float64   `json:"mortgage_amount"`
-	OutstandingBalance float64 `json:"outstanding_balance"`
-	CoverageTypes    []string  `json:"coverage_types"` // fire, flood, earthquake, life
-	TotalPremium     float64   `json:"total_premium"`
-	StartDate        time.Time `json:"start_date"`
-	EndDate          time.Time `json:"end_date"`
-	Status           string    `json:"status"`
+	PolicyID           string    `json:"policy_id"`
+	MortgageID         string    `json:"mortgage_id"`
+	CustomerID         string    `json:"customer_id"`
+	PropertyValue      float64   `json:"property_value"`
+	MortgageAmount     float64   `json:"mortgage_amount"`
+	OutstandingBalance float64   `json:"outstanding_balance"`
+	CoverageTypes      []string  `json:"coverage_types"` // fire, flood, earthquake, life
+	TotalPremium       float64   `json:"total_premium"`
+	StartDate          time.Time `json:"start_date"`
+	EndDate            time.Time `json:"end_date"`
+	Status             string    `json:"status"`
 }
 
 // DebitMandateRequest represents a debit mandate for premium collection
 type DebitMandateRequest struct {
-	MandateID        string    `json:"mandate_id"`
-	CustomerID       string    `json:"customer_id"`
-	BankAccountNo    string    `json:"bank_account_no"`
-	BankCode         string    `json:"bank_code"`
-	Amount           float64   `json:"amount"`
-	Frequency        string    `json:"frequency"` // monthly, quarterly, annually
-	StartDate        time.Time `json:"start_date"`
-	EndDate          time.Time `json:"end_date"`
-	PolicyNumber     string    `json:"policy_number"`
-	Status           string    `json:"status"`
+	MandateID     string    `json:"mandate_id"`
+	CustomerID    string    `json:"customer_id"`
+	BankAccountNo string    `json:"bank_account_no"`
+	BankCode      string    `json:"bank_code"`
+	Amount        float64   `json:"amount"`
+	Frequency     string    `json:"frequency"` // monthly, quarterly, annually
+	StartDate     time.Time `json:"start_date"`
+	EndDate       time.Time `json:"end_date"`
+	PolicyNumber  string    `json:"policy_number"`
+	Status        string    `json:"status"`
 }
 
 // PremiumCollection represents a premium collection record
 type PremiumCollection struct {
-	CollectionID     string    `json:"collection_id"`
-	MandateID        string    `json:"mandate_id"`
-	PolicyNumber     string    `json:"policy_number"`
-	Amount           float64   `json:"amount"`
-	CollectionDate   time.Time `json:"collection_date"`
-	Status           string    `json:"status"` // pending, successful, failed
-	FailureReason    string    `json:"failure_reason,omitempty"`
-	RetryCount       int       `json:"retry_count"`
+	CollectionID   string    `json:"collection_id"`
+	MandateID      string    `json:"mandate_id"`
+	PolicyNumber   string    `json:"policy_number"`
+	Amount         float64   `json:"amount"`
+	CollectionDate time.Time `json:"collection_date"`
+	Status         string    `json:"status"` // pending, successful, failed
+	FailureReason  string    `json:"failure_reason,omitempty"`
+	RetryCount     int       `json:"retry_count"`
 }
 
 func NewBancassuranceService() *BancassuranceService {
@@ -323,7 +331,7 @@ func (s *BancassuranceService) submitDebitRequest(bankAPI string, mandate *Debit
 	if err != nil {
 		return fmt.Errorf("bank debit request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("bank debit rejected: HTTP %d", resp.StatusCode)
 	}
@@ -332,9 +340,9 @@ func (s *BancassuranceService) submitDebitRequest(bankAPI string, mandate *Debit
 
 func getProductName(productType string) string {
 	names := map[string]string{
-		"credit_life":        "A&G Credit Life Insurance",
-		"loan_protection":    "A&G Loan Protection Plan",
-		"savings_plan":       "A&G Savings Plus Insurance",
+		"credit_life":         "A&G Credit Life Insurance",
+		"loan_protection":     "A&G Loan Protection Plan",
+		"savings_plan":        "A&G Savings Plus Insurance",
 		"mortgage_protection": "A&G Mortgage Shield",
 	}
 	if name, ok := names[productType]; ok {
@@ -359,7 +367,7 @@ func (s *BancassuranceService) HandleGenerateOffer(w http.ResponseWriter, r *htt
 	offer := s.GenerateOffer(&req.Customer, req.ProductType)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(offer)
+	_ = json.NewEncoder(w).Encode(offer)
 }
 
 func (s *BancassuranceService) HandleCreateLoanProtection(w http.ResponseWriter, r *http.Request) {
@@ -379,7 +387,7 @@ func (s *BancassuranceService) HandleCreateLoanProtection(w http.ResponseWriter,
 	policy := s.CreateLoanProtection(req.LoanID, &req.Customer, req.LoanAmount, req.TenureMonths)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(policy)
+	_ = json.NewEncoder(w).Encode(policy)
 }
 
 func (s *BancassuranceService) HandleHealth(w http.ResponseWriter, r *http.Request) {
@@ -410,7 +418,6 @@ func (s *BancassuranceService) HandleHealth(w http.ResponseWriter, r *http.Reque
 		},
 	})
 }
-
 
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
@@ -446,7 +453,6 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 	return n, nil
 }
 
-
 var db *sql.DB
 
 func initDB() {
@@ -478,12 +484,12 @@ func initDB() {
             status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT NOW()
         )`); err != nil {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bancassurance_bundles (id TEXT PRIMARY KEY, bank_product_id TEXT, insurance_product TEXT, customer_id TEXT, loan_amount NUMERIC(15,2), tenure_months INT, total_premium NUMERIC(15,2), bank_commission NUMERIC(15,2), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bancassurance_referrals (id TEXT PRIMARY KEY, referral_code TEXT, bank_branch TEXT, agent_id TEXT, product_type TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
-		log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
-	}
+		if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bancassurance_bundles (id TEXT PRIMARY KEY, bank_product_id TEXT, insurance_product TEXT, customer_id TEXT, loan_amount NUMERIC(15,2), tenure_months INT, total_premium NUMERIC(15,2), bank_commission NUMERIC(15,2), status TEXT DEFAULT 'active', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+			if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS bancassurance_referrals (id TEXT PRIMARY KEY, referral_code TEXT, bank_branch TEXT, agent_id TEXT, product_type TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMPTZ DEFAULT NOW())`); err != nil {
+				log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+			}
+			log.Printf(`{"level":"warn","msg":"create table failed","error":"%s"}`, err)
+		}
 		jsonLog("warn", "create table failed", "error", err.Error())
 	} else {
 		jsonLog("info", "table ready", "table", "bancassurance_referrals")
@@ -509,8 +515,6 @@ func execInTransaction(fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-
-
 // otelMiddleware adds trace context propagation to requests.
 func otelMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -530,16 +534,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -550,9 +551,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -560,7 +566,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -613,11 +621,11 @@ func handleReady(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(status)
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
 
 // ─── Domain CRUD Handlers (PostgreSQL-backed) ────────────────────────────────
@@ -625,9 +633,13 @@ func handleLive(w http.ResponseWriter, r *http.Request) {
 func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -640,7 +652,7 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		if cached, ok := redisClient.CacheGet("bancassurance-integration:list"); ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("X-Cache", "HIT")
-			w.Write([]byte(cached))
+			_, _ = w.Write([]byte(cached))
 			return
 		}
 	}
@@ -650,27 +662,33 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
-		if err := rows.Scan(ptrs...); err != nil { continue }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-		switch v := vals[i].(type) {
-		case []byte:
-			row[col] = string(v)
-		default:
-			row[col] = v
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
-	}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
-	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
 func handleGetEntity(w http.ResponseWriter, r *http.Request) {
@@ -685,7 +703,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	if !rows.Next() {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -693,7 +711,9 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -707,13 +727,14 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 			row[col] = v
 		}
 	}
-	json.NewEncoder(w).Encode(row)
+	_ = json.NewEncoder(w).Encode(row)
 }
 
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value("user_id").(string)
 	if !permifyCheck(r.Context(), "bancassurance-integration", "", "create", userID) {
-		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden); return
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	var body map[string]interface{}
@@ -726,7 +747,9 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -744,13 +767,17 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 	// Index to OpenSearch for full-text search
 	if osClient != nil {
 		go osClient.IndexLog("info", "entity_created", "bancassurance-integration", map[string]interface{}{"action": "created", "timestamp": time.Now().Format(time.RFC3339)})
 	}
-	if redisClient != nil { redisClient.CacheInvalidate("bancassurance-integration:list") }
+	if redisClient != nil {
+		redisClient.CacheInvalidate("bancassurance-integration:list")
+	}
 }
 
 func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
@@ -774,25 +801,26 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	if db != nil {
-		db.QueryRow("SELECT COUNT(*) FROM bancassurance_referrals").Scan(&count)
+		_ = db.QueryRow("SELECT COUNT(*) FROM bancassurance_referrals").Scan(&count)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"service": "bancassurance_referrals", "table": "bancassurance_referrals", "total_records": count})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"service": "bancassurance_referrals", "table": "bancassurance_referrals", "total_records": count})
 }
-
 
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -803,6 +831,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -811,7 +840,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -820,10 +851,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -832,46 +863,64 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -882,6 +931,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -890,9 +940,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -926,11 +980,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -949,6 +1003,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -975,9 +1030,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -987,7 +1046,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -1020,7 +1079,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			jsonLog("warn", "auth_failure", "service", "bancassurance-integration", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -1061,11 +1120,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -1095,8 +1154,6 @@ func initMiddleware() {
 	osClient = newOpenSearchClient(osURL, os.Getenv("OPENSEARCH_USER"))
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
-
-
 
 // ── Mojaloop Payment Switch Integration ───────────────────────────────────
 type mojaloopClient struct {
@@ -1131,9 +1188,9 @@ func (mc *mojaloopClient) PartyLookup(ctx context.Context, partyType, partyID st
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result, nil
 }
 
@@ -1172,7 +1229,7 @@ func (mc *mojaloopClient) InitiateTransfer(ctx context.Context, amount, currency
 	if err != nil {
 		return "", fmt.Errorf("mojaloop transfer request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("mojaloop transfer rejected: HTTP %d", resp.StatusCode)
 	}
@@ -1197,11 +1254,10 @@ func (mc *mojaloopClient) InitiateTransfer(ctx context.Context, amount, currency
 
 var mojaloopCli *mojaloopClient
 
-
-
 func handleBundleProducts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
@@ -1213,7 +1269,8 @@ func handleBundleProducts(w http.ResponseWriter, r *http.Request) {
 		TenureMonths     int     `json:"tenure_months"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	// Business rule: Credit life premium = 0.5% of loan amount per year
 	annualPremium := req.LoanAmount * 0.005
@@ -1225,14 +1282,16 @@ func handleBundleProducts(w http.ResponseWriter, r *http.Request) {
 		db.Exec("INSERT INTO bancassurance_bundles (id, bank_product_id, insurance_product, customer_id, loan_amount, tenure_months, total_premium, bank_commission, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')",
 			bundleID, req.BankProductID, req.InsuranceProduct, req.CustomerID, req.LoanAmount, req.TenureMonths, totalPremium, bankCommission)
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "bundle_created", bundleID, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"bundle_id": bundleID, "total_premium": totalPremium, "bank_commission": bankCommission, "insurer_retention": totalPremium - bankCommission})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "bundle_created", bundleID, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"bundle_id": bundleID, "total_premium": totalPremium, "bank_commission": bankCommission, "insurer_retention": totalPremium - bankCommission})
 }
-
 
 func handleReferralTrack(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
@@ -1243,37 +1302,39 @@ func handleReferralTrack(w http.ResponseWriter, r *http.Request) {
 		ProductType  string `json:"product_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	refID := fmt.Sprintf("REF-%d", time.Now().UnixNano())
 	if db != nil {
 		db.Exec("INSERT INTO bancassurance_referrals (id, referral_code, bank_branch, agent_id, product_type, status, created_at) VALUES ($1,$2,$3,$4,$5,'pending',NOW())",
 			refID, req.ReferralCode, req.BankBranch, req.AgentID, req.ProductType)
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"referral_id": refID, "status": "tracked"})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"referral_id": refID, "status": "tracked"})
 }
-
 
 func handleSettlement(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed); return
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 
 	var req struct {
-		Period    string `json:"period"` // YYYY-MM
-		BankCode  string `json:"bank_code"`
+		Period   string `json:"period"` // YYYY-MM
+		BankCode string `json:"bank_code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400); return
+		http.Error(w, `{"error":"invalid request"}`, 400)
+		return
 	}
 	var totalPremium, bankCommission float64
 	var bundleCount int
 	if db != nil {
-		db.QueryRow("SELECT COALESCE(SUM(total_premium),0), COALESCE(SUM(bank_commission),0), COUNT(*) FROM bancassurance_bundles WHERE status='active' AND to_char(created_at,'YYYY-MM')=$1", req.Period).Scan(&totalPremium, &bankCommission, &bundleCount)
+		_ = db.QueryRow("SELECT COALESCE(SUM(total_premium),0), COALESCE(SUM(bank_commission),0), COUNT(*) FROM bancassurance_bundles WHERE status='active' AND to_char(created_at,'YYYY-MM')=$1", req.Period).Scan(&totalPremium, &bankCommission, &bundleCount)
 	}
 	netSettlement := totalPremium - bankCommission
-	json.NewEncoder(w).Encode(map[string]interface{}{"period": req.Period, "total_premium": totalPremium, "bank_commission": bankCommission, "net_settlement": netSettlement, "bundle_count": bundleCount})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"period": req.Period, "total_premium": totalPremium, "bank_commission": bankCommission, "net_settlement": netSettlement, "bundle_count": bundleCount})
 }
 
 func bodyLimitMiddleware(next http.Handler) http.Handler {

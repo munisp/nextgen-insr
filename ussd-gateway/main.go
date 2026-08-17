@@ -127,7 +127,7 @@ func (app *Application) start(ctx context.Context) error {
 	// Connect to Redis.
 	rc, err := db.NewRedisCache(app.cfg.RedisAddr, app.cfg.RedisPass, app.cfg.RedisDB)
 	if err != nil {
-		pg.Close()
+		_ = pg.Close()
 		return fmt.Errorf("redis init: %w", err)
 	}
 	app.redis = rc
@@ -173,13 +173,13 @@ func maskDSN(dsn string) string {
 func jsonOK(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func jsonError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // ---------------------------------------------------------------------------
@@ -1293,7 +1293,7 @@ func main() {
 
 	cfg := loadConfig()
 	logger := newLogger(cfg.LogLevel)
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	app := newApp(cfg, logger)
 

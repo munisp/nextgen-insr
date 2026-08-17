@@ -119,7 +119,7 @@ func (c *ClaimCache) GetCachedClaim(ctx context.Context, claimID string) (*model
 			if data, err := json.Marshal(claim); err == nil {
 				bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				c.client.Set(bgCtx, key, data, c.ttl).Err()
+				_ = c.client.Set(bgCtx, key, data, c.ttl).Err()
 			}
 		}()
 	}
@@ -176,7 +176,7 @@ func (c *ClaimCache) GetCachedMetrics(ctx context.Context) (*models.ClaimMetrics
 			if data, err := json.Marshal(metrics); err == nil {
 				bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
-				c.client.Set(bgCtx, key, data, c.metricsTTL).Err()
+				_ = c.client.Set(bgCtx, key, data, c.metricsTTL).Err()
 			}
 		}()
 	}
@@ -296,7 +296,7 @@ func (c *ClaimCache) AddToQueue(ctx context.Context, queue string, claimID strin
 // RemoveFromQueue removes a claim from a queue.
 func (c *ClaimCache) RemoveFromQueue(ctx context.Context, queue string, claimID string) error {
 	if c.isRedisAvailable(ctx) {
-		c.client.SRem(ctx, c.prefix+"queue:"+queue, claimID).Err()
+		_ = c.client.SRem(ctx, c.prefix+"queue:"+queue, claimID).Err()
 	}
 	return nil
 }

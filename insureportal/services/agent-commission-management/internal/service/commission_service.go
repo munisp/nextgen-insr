@@ -303,8 +303,8 @@ func (s *CommissionService) GetDashboard(ctx context.Context) (*models.Commissio
 	// Get top agent ranking from Redis
 	if agentID, amount, err := s.rdb.GetTopAgent(ctx, 1); err == nil && agentID != "" {
 		dash.TopAgent = models.AgentRank{
-			AgentID:   agentID,
-			Amount:    amount,
+			AgentID: agentID,
+			Amount:  amount,
 		}
 	}
 

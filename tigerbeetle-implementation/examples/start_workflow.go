@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"go.temporal.io/sdk/client"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/client"
 
 	"insurance-platform/models"
 	"insurance-platform/workflows"
@@ -228,8 +228,8 @@ func listWorkflows(c client.Client) {
 
 	log.Println("Running Policy Issuance Workflows:")
 	for _, execution := range resp.Executions {
-		log.Printf("  - ID: %s, Start Time: %s", 
-			execution.Execution.WorkflowId, 
+		log.Printf("  - ID: %s, Start Time: %s",
+			execution.Execution.WorkflowId,
 			execution.StartTime)
 	}
 }

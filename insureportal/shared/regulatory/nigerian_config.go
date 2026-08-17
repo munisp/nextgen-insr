@@ -9,12 +9,12 @@ import (
 // NigerianRegulatoryConfig holds all configurable regulatory parameters.
 // These values can be updated without redeployment by mounting a config file.
 type NigerianRegulatoryConfig struct {
-	NAICOM NAICOMConfig  `json:"naicom"`
-	NMID   NMIDConfig    `json:"nmid"`
-	NDPR   NDPRConfig    `json:"ndpr"`
-	Tax    TaxConfig     `json:"tax"`
-	Motor  MotorConfig   `json:"motor"`
-	Life   LifeConfig    `json:"life"`
+	NAICOM NAICOMConfig `json:"naicom"`
+	NMID   NMIDConfig   `json:"nmid"`
+	NDPR   NDPRConfig   `json:"ndpr"`
+	Tax    TaxConfig    `json:"tax"`
+	Motor  MotorConfig  `json:"motor"`
+	Life   LifeConfig   `json:"life"`
 }
 
 // NAICOMConfig holds NAICOM regulatory thresholds
@@ -29,11 +29,11 @@ type NAICOMConfig struct {
 
 // NMIDConfig holds NMID motor insurance parameters
 type NMIDConfig struct {
-	ThirdPartyMinPremium    float64            `json:"third_party_min_premium"`
-	ComprehensiveBaseRate   float64            `json:"comprehensive_base_rate"`
-	VehicleClassRates       map[string]float64 `json:"vehicle_class_rates"`
-	AgeDepreciationRates    map[string]float64 `json:"age_depreciation_rates"`
-	ExcessAmounts           map[string]float64 `json:"excess_amounts"`
+	ThirdPartyMinPremium  float64            `json:"third_party_min_premium"`
+	ComprehensiveBaseRate float64            `json:"comprehensive_base_rate"`
+	VehicleClassRates     map[string]float64 `json:"vehicle_class_rates"`
+	AgeDepreciationRates  map[string]float64 `json:"age_depreciation_rates"`
+	ExcessAmounts         map[string]float64 `json:"excess_amounts"`
 }
 
 // NDPRConfig holds Nigerian Data Protection Regulation parameters
@@ -48,9 +48,9 @@ type NDPRConfig struct {
 
 // TaxConfig holds Nigerian tax rates
 type TaxConfig struct {
-	VATPercent              float64 `json:"vat_percent"`
-	WithholdingTaxPercent   float64 `json:"withholding_tax_percent"`
-	StampDutyPercent        float64 `json:"stamp_duty_percent"`
+	VATPercent                 float64 `json:"vat_percent"`
+	WithholdingTaxPercent      float64 `json:"withholding_tax_percent"`
+	StampDutyPercent           float64 `json:"stamp_duty_percent"`
 	InformationTechLevyPercent float64 `json:"information_tech_levy_percent"`
 }
 
@@ -64,12 +64,12 @@ type MotorConfig struct {
 
 // LifeConfig holds life insurance parameters
 type LifeConfig struct {
-	MortalityTableName    string             `json:"mortality_table_name"`
-	MinEntryAge           int                `json:"min_entry_age"`
-	MaxEntryAge           int                `json:"max_entry_age"`
-	MaxCoverageMultiple   float64            `json:"max_coverage_multiple"`
-	GroupLifeMinMembers   int                `json:"group_life_min_members"`
-	OccupationClasses     map[string]float64 `json:"occupation_classes"`
+	MortalityTableName  string             `json:"mortality_table_name"`
+	MinEntryAge         int                `json:"min_entry_age"`
+	MaxEntryAge         int                `json:"max_entry_age"`
+	MaxCoverageMultiple float64            `json:"max_coverage_multiple"`
+	GroupLifeMinMembers int                `json:"group_life_min_members"`
+	OccupationClasses   map[string]float64 `json:"occupation_classes"`
 }
 
 var (
@@ -103,23 +103,23 @@ func DefaultConfig() *NigerianRegulatoryConfig {
 	defaultConfigOnce.Do(func() {
 		defaultConfig = &NigerianRegulatoryConfig{
 			NAICOM: NAICOMConfig{
-				MinCapitalRequirement:       3000000000,  // NGN 3 billion
+				MinCapitalRequirement:       3000000000, // NGN 3 billion
 				SolvencyMarginPercent:       15.0,
 				MaxSingleRiskPercent:        10.0,
 				TechnicalReservePercent:     40.0,
-				CompulsoryMotorCoverMinimum: 1000000,     // NGN 1 million
+				CompulsoryMotorCoverMinimum: 1000000, // NGN 1 million
 				ReinsuranceCessionLimit:     70.0,
 			},
 			NMID: NMIDConfig{
 				ThirdPartyMinPremium:  5000,
 				ComprehensiveBaseRate: 0.05,
 				VehicleClassRates: map[string]float64{
-					"private_car":      1.0,
-					"commercial":       1.25,
-					"motorcycle":       0.75,
-					"truck":            1.5,
-					"bus":              1.35,
-					"special_vehicle":  2.0,
+					"private_car":     1.0,
+					"commercial":      1.25,
+					"motorcycle":      0.75,
+					"truck":           1.5,
+					"bus":             1.35,
+					"special_vehicle": 2.0,
 				},
 				AgeDepreciationRates: map[string]float64{
 					"0-1":  1.0,
@@ -136,7 +136,7 @@ func DefaultConfig() *NigerianRegulatoryConfig {
 				},
 			},
 			NDPR: NDPRConfig{
-				DataRetentionDays:       2555,  // ~7 years
+				DataRetentionDays:       2555, // ~7 years
 				ConsentExpiryDays:       365,
 				BreachNotificationHours: 72,
 				DPORequired:             true,

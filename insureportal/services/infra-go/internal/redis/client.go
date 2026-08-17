@@ -37,26 +37,38 @@ func NewClient(logger *zap.Logger) *Client {
 }
 
 func (c *Client) Ping(ctx context.Context) string {
-	if c.rdb == nil { return "not_configured" }
-	if err := c.rdb.Ping(ctx).Err(); err != nil { return "unreachable" }
+	if c.rdb == nil {
+		return "not_configured"
+	}
+	if err := c.rdb.Ping(ctx).Err(); err != nil {
+		return "unreachable"
+	}
 	return "ok"
 }
 
 func (c *Client) Close() {
-	if c.rdb != nil { c.rdb.Close() }
+	if c.rdb != nil {
+		c.rdb.Close()
+	}
 }
 
 // AcquireLock acquires a distributed lock using SET NX PX
 func (c *Client) AcquireLock(ctx context.Context, key string, ttlMs int64) (bool, error) {
-	if c.rdb == nil { return true, nil } // fail-open
+	if c.rdb == nil {
+		return true, nil
+	} // fail-open
 	result, err := c.rdb.SetNX(ctx, "lock:"+key, "1", time.Duration(ttlMs)*time.Millisecond).Result()
-	if err != nil { return true, nil } // fail-open
+	if err != nil {
+		return true, nil
+	} // fail-open
 	return result, nil
 }
 
 // ReleaseLock releases a distributed lock
 func (c *Client) ReleaseLock(ctx context.Context, key string) error {
-	if c.rdb == nil { return nil }
+	if c.rdb == nil {
+		return nil
+	}
 	return c.rdb.Del(ctx, "lock:"+key).Err()
 }
 
@@ -65,7 +77,9 @@ func (c *Client) ReleaseLock(ctx context.Context, key string) error {
 func (c *Client) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	status := c.Ping(r.Context())
 	code := http.StatusOK
-	if status != "ok" { code = http.StatusServiceUnavailable }
+	if status != "ok" {
+		code = http.StatusServiceUnavailable
+	}
 	writeJSON(w, code, map[string]string{"status": status})
 }
 
@@ -108,7 +122,9 @@ func (c *Client) SetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	val, _ := json.Marshal(req.Value)
 	ttl := time.Duration(req.TTLMs) * time.Millisecond
-	if ttl == 0 { ttl = 24 * time.Hour }
+	if ttl == 0 {
+		ttl = 24 * time.Hour
+	}
 	c.rdb.Set(r.Context(), req.Key, val, ttl) //nolint:errcheck
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -129,13 +145,15 @@ func (c *Client) GetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var result interface{}
-	json.Unmarshal([]byte(val), &result)
+	_ = json.Unmarshal([]byte(val), &result)
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (c *Client) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
-	if c.rdb != nil { c.rdb.Del(r.Context(), key) } //nolint:errcheck
+	if c.rdb != nil {
+		c.rdb.Del(r.Context(), key)
+	} //nolint:errcheck
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -144,14 +162,18 @@ func (c *Client) PipelineHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" { return v }
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return fallback
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if v != nil { json.NewEncoder(w).Encode(v) }
+	if v != nil {
+		json.NewEncoder(w).Encode(v)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

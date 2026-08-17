@@ -28,11 +28,11 @@ func NewPermifyClient() *PermifyClient {
 }
 
 type PermissionCheckRequest struct {
-	TenantID string            `json:"tenant_id"`
-	Entity   PermifyEntity     `json:"entity"`
-	Subject  PermifySubject    `json:"subject"`
-	Permission string          `json:"permission"`
-	Metadata map[string]string `json:"metadata,omitempty"`
+	TenantID   string            `json:"tenant_id"`
+	Entity     PermifyEntity     `json:"entity"`
+	Subject    PermifySubject    `json:"subject"`
+	Permission string            `json:"permission"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 type PermifyEntity struct {
@@ -47,7 +47,7 @@ type PermifySubject struct {
 }
 
 type PermissionCheckResponse struct {
-	Can       string `json:"can"`
+	Can       string                 `json:"can"`
 	Decisions map[string]interface{} `json:"decisions,omitempty"`
 }
 
@@ -67,7 +67,7 @@ func (p *PermifyClient) Check(ctx context.Context, req PermissionCheckRequest) (
 	if err != nil {
 		return false, fmt.Errorf("permify check: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	var result PermissionCheckResponse
@@ -99,6 +99,6 @@ func (p *PermifyClient) WriteRelationship(ctx context.Context, tenantID string, 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }

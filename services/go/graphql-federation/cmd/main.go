@@ -127,12 +127,12 @@ func (s *Store) ListSubgraphs(ctx context.Context) ([]map[string]interface{}, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var id, name, url, version, status string
 		var updated time.Time
-		rows.Scan(&id, &name, &url, &version, &status, &updated)
+		_ = rows.Scan(&id, &name, &url, &version, &status, &updated)
 		result = append(result, map[string]interface{}{
 			"id": id, "name": name, "url": url, "version": version,
 			"status": status, "updated_at": updated.Format(time.RFC3339),
@@ -146,12 +146,12 @@ func (s *Store) GetComposedSchema(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var composed strings.Builder
 	composed.WriteString("# Composed Federation Schema\n\n")
 	for rows.Next() {
 		var name, sdl string
-		rows.Scan(&name, &sdl)
+		_ = rows.Scan(&name, &sdl)
 		composed.WriteString(fmt.Sprintf("# --- Subgraph: %s ---\n%s\n\n", name, sdl))
 	}
 	return composed.String(), nil
@@ -192,12 +192,12 @@ func (s *Store) ExecuteQuery(ctx context.Context, query, operationName string, v
 			for rows.Next() {
 				var id, ptype, status string
 				var premium int64
-				rows.Scan(&id, &ptype, &premium, &status)
+				_ = rows.Scan(&id, &ptype, &premium, &status)
 				policies = append(policies, map[string]interface{}{
 					"id": id, "productType": ptype, "premium": premium, "status": status,
 				})
 			}
-			rows.Close()
+			_ = rows.Close()
 			result["data"].(map[string]interface{})["policies"] = policies
 		case "sg-claims":
 			rows, err := s.db.QueryContext(ctx, `SELECT id, policy_id, claim_type, amount, status FROM claims LIMIT 10`)
@@ -208,12 +208,12 @@ func (s *Store) ExecuteQuery(ctx context.Context, query, operationName string, v
 			for rows.Next() {
 				var id, polID, ctype, status string
 				var amount int64
-				rows.Scan(&id, &polID, &ctype, &amount, &status)
+				_ = rows.Scan(&id, &polID, &ctype, &amount, &status)
 				claims = append(claims, map[string]interface{}{
 					"id": id, "policyID": polID, "type": ctype, "amount": amount, "status": status,
 				})
 			}
-			rows.Close()
+			_ = rows.Close()
 			result["data"].(map[string]interface{})["claims"] = claims
 		}
 	}
@@ -239,7 +239,7 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -250,7 +250,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -304,7 +304,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(schema))
+		_, _ = w.Write([]byte(schema))
 	})
 
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second}
@@ -319,5 +319,5 @@ func main() {
 	<-quit
 	shutdownCtx, c := context.WithTimeout(ctx, 30*time.Second)
 	defer c()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

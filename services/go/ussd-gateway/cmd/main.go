@@ -14,13 +14,13 @@ import (
 
 // USSDSession represents an active USSD session
 type USSDSession struct {
-	SessionID   string    `json:"sessionId"`
-	PhoneNumber string    `json:"phoneNumber"`
-	ServiceCode string    `json:"serviceCode"`
-	Text        string    `json:"text"`
-	State       string    `json:"state"`
+	SessionID   string            `json:"sessionId"`
+	PhoneNumber string            `json:"phoneNumber"`
+	ServiceCode string            `json:"serviceCode"`
+	Text        string            `json:"text"`
+	State       string            `json:"state"`
 	Data        map[string]string `json:"data"`
-	CreatedAt   time.Time `json:"createdAt"`
+	CreatedAt   time.Time         `json:"createdAt"`
 }
 
 // Menu represents a USSD menu structure
@@ -70,7 +70,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	srv.Shutdown(ctx)
+	_ = srv.Shutdown(ctx)
 }
 
 func handleUSSDCallback(c *gin.Context) {

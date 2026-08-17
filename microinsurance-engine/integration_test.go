@@ -32,7 +32,7 @@ func getTestDB(t *testing.T) *sql.DB {
 
 func TestIntegration_DBConnection(t *testing.T) {
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Verify table exists
 	var exists bool
@@ -47,10 +47,10 @@ func TestIntegration_DBConnection(t *testing.T) {
 
 func TestIntegration_InsertAndQuery(t *testing.T) {
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM microinsurance_policies WHERE id >= 99900")
+	_, _ = testDB.Exec("DELETE FROM microinsurance_policies WHERE id >= 99900")
 
 	// Insert test record
 	_, err := testDB.Exec("INSERT INTO microinsurance_policies (id, product_name, premium, coverage_amount, farmer_id) VALUES (99901, 'int-test', 500.00, 50000.00, 'FRM-INT-99901')")
@@ -69,13 +69,13 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM microinsurance_policies WHERE id >= 99900")
+	_, _ = testDB.Exec("DELETE FROM microinsurance_policies WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {
 	// Require a reachable database for this integration test
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
@@ -97,7 +97,7 @@ func TestIntegration_HealthEndpoint(t *testing.T) {
 func TestIntegration_APIEndpoint(t *testing.T) {
 	// Require a reachable database for this integration test
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	body := `{"productName":"crop-basic","premium":500,"coverageAmount":50000,"farmerId":"FRM-INT-001"}`
 	req := httptest.NewRequest("POST", "/api/v1/enroll", bytes.NewBufferString(body))
@@ -109,7 +109,7 @@ func TestIntegration_APIEndpoint(t *testing.T) {
 	mux.HandleFunc("/api/v1/enroll", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		rw.WriteHeader(http.StatusOK)
-		json.NewEncoder(rw).Encode(map[string]string{"status": "processed"})
+		_ = json.NewEncoder(rw).Encode(map[string]string{"status": "processed"})
 	})
 	mux.ServeHTTP(w, req)
 

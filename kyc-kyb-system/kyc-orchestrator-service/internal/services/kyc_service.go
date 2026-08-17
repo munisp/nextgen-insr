@@ -14,12 +14,12 @@ import (
 )
 
 type KYCService struct {
-	logger              *zap.Logger
-	livenessURL         string
-	ocrURL              string
-	identityMatcherURL  string
-	verifications       map[string]*models.KYCVerification
-	events              map[string][]models.VerificationEvent
+	logger             *zap.Logger
+	livenessURL        string
+	ocrURL             string
+	identityMatcherURL string
+	verifications      map[string]*models.KYCVerification
+	events             map[string][]models.VerificationEvent
 }
 
 func NewKYCService(logger *zap.Logger, livenessURL, ocrURL, identityMatcherURL string) *KYCService {
@@ -297,10 +297,10 @@ func (s *KYCService) callDocumentOCR(sessionID, imageBase64, docType string) (*o
 	if err != nil {
 		return &ocrResult{IsValid: false, Confidence: 0}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
-		IsValid bool    `json:"is_valid"`
+		IsValid bool `json:"is_valid"`
 		Checks  []struct {
 			Passed     bool    `json:"passed"`
 			Confidence float64 `json:"confidence"`
@@ -333,7 +333,7 @@ func (s *KYCService) callLivenessDetection(sessionID, imageBase64, challengeType
 	if err != nil {
 		return &livenessResultDTO{Result: "error", Confidence: 0}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Result     string  `json:"result"`
@@ -358,7 +358,7 @@ func (s *KYCService) callFaceMatch(sessionID, selfieBase64 string) (*faceMatchRe
 	if err != nil {
 		return &faceMatchResult{Verified: false, Similarity: 0}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result faceMatchResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

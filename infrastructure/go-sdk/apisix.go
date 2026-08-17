@@ -55,7 +55,7 @@ func (c *APISixClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("apisix ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -154,11 +154,11 @@ func (c *APISixClient) defaultPlugins() map[string]interface{} {
 func (c *APISixClient) SetupOIDCPlugin(ctx context.Context, routeID string, keycloakURL, clientID, clientSecret string) error {
 	plugin := map[string]interface{}{
 		"openid-connect": map[string]interface{}{
-			"client_id":             clientID,
-			"client_secret":         clientSecret,
-			"discovery":             keycloakURL + "/.well-known/openid-configuration",
-			"bearer_only":           true,
-			"realm":                 "insurance",
+			"client_id":              clientID,
+			"client_secret":          clientSecret,
+			"discovery":              keycloakURL + "/.well-known/openid-configuration",
+			"bearer_only":            true,
+			"realm":                  "insurance",
 			"introspection_endpoint": keycloakURL + "/protocol/openid-connect/token/introspect",
 		},
 	}
@@ -168,10 +168,10 @@ func (c *APISixClient) SetupOIDCPlugin(ctx context.Context, routeID string, keyc
 func (c *APISixClient) SetupWAFPlugin(ctx context.Context, routeID string) error {
 	plugin := map[string]interface{}{
 		"openappsec": map[string]interface{}{
-			"mode":              "prevent",
-			"security_level":    "high",
-			"log_level":         "info",
-			"block_response":    map[string]interface{}{"code": 403, "body": `{"error":"blocked by WAF"}`},
+			"mode":           "prevent",
+			"security_level": "high",
+			"log_level":      "info",
+			"block_response": map[string]interface{}{"code": 403, "body": `{"error":"blocked by WAF"}`},
 		},
 	}
 	return c.patchRoutePlugins(ctx, routeID, plugin)
@@ -191,7 +191,7 @@ func (c *APISixClient) putAdmin(ctx context.Context, path string, body interface
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("apisix admin %s failed (%d): %s", path, resp.StatusCode, string(body))

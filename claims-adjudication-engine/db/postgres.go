@@ -99,7 +99,7 @@ func (r *ClaimsRepository) runMigrations(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to query applied migrations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var name string
@@ -276,7 +276,7 @@ func (r *ClaimsRepository) runMigrations(ctx context.Context) error {
 		}
 
 		if _, err := tx.ExecContext(ctx, mig.sql); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("failed to execute migration %s: %w", mig.name, err)
 		}
 
@@ -286,7 +286,7 @@ func (r *ClaimsRepository) runMigrations(ctx context.Context) error {
 			"INSERT INTO _schema_migrations (name, checksum) VALUES ($1, $2)",
 			mig.name, migChecksum,
 		); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("failed to record migration %s: %w", mig.name, err)
 		}
 
@@ -544,7 +544,7 @@ func (r *ClaimsRepository) GetClaimsByFilter(ctx context.Context, filter *models
 	if err != nil {
 		return nil, fmt.Errorf("failed to get claims count: %w", err)
 	}
-	defer countRows.Close()
+	defer func() { _ = countRows.Close() }()
 
 	if countRows.Next() {
 		if err := countRows.Scan(&total); err != nil {
@@ -567,7 +567,7 @@ func (r *ClaimsRepository) GetClaimsByFilter(ctx context.Context, filter *models
 	if err != nil {
 		return nil, fmt.Errorf("failed to query claims: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	claims := make([]models.Claim, 0)
 	for rows.Next() {
@@ -637,7 +637,7 @@ func (r *ClaimsRepository) GetEvidenceByClaim(ctx context.Context, claimID strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to query evidence: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	evidence := make([]models.EvidenceDoc, 0)
 	for rows.Next() {
@@ -674,7 +674,7 @@ func (r *ClaimsRepository) GetClaimsInQueue(ctx context.Context, queue string, l
 	if err != nil {
 		return nil, fmt.Errorf("failed to query queue claims: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	claims := make([]models.Claim, 0)
 	for rows.Next() {
@@ -703,7 +703,7 @@ func (r *ClaimsRepository) ArchiveClaim(ctx context.Context, claimID string) err
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var claim models.Claim
 	err = tx.QueryRowContext(ctx, `

@@ -89,12 +89,12 @@ func (h *Handlers) CalculateCommission(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":          true,
-		"commission":       c,
+		"success":           true,
+		"commission":        c,
 		"commission_amount": c.CommissionAmount,
-		"net_commission":   c.NetCommission,
-		"withholding_tax":  c.WithholdingTax,
-		"payable_amount":   c.PayableAmount,
+		"net_commission":    c.NetCommission,
+		"withholding_tax":   c.WithholdingTax,
+		"payable_amount":    c.PayableAmount,
 	})
 }
 
@@ -109,7 +109,7 @@ func (h *Handlers) GetCommission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (h *Handlers) GetCommissionByPolicy(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +123,7 @@ func (h *Handlers) GetCommissionByPolicy(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(c)
+	_ = json.NewEncoder(w).Encode(c)
 }
 
 func (h *Handlers) GetCommissionByAgent(w http.ResponseWriter, r *http.Request) {
@@ -153,17 +153,17 @@ func (h *Handlers) GetCommissionByAgent(w http.ResponseWriter, r *http.Request) 
 // --- Payment ---
 func (h *Handlers) ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		AgentID        string  `json:"agent_id"`
-		AgentCode      string  `json:"agent_code"`
-		Amount         float64 `json:"amount"`
-		PeriodStart    string  `json:"period_start"`
-		PeriodEnd      string  `json:"period_end"`
-		PaymentDate    string  `json:"payment_date"`
-		PaymentMethod  string  `json:"payment_method"`
-		BankAccount    string  `json:"bank_account"`
-		BankName       string  `json:"bank_name"`
-		CommissionIDs  string  `json:"commission_ids"`
-		CommissionCount int    `json:"commission_count"`
+		AgentID         string  `json:"agent_id"`
+		AgentCode       string  `json:"agent_code"`
+		Amount          float64 `json:"amount"`
+		PeriodStart     string  `json:"period_start"`
+		PeriodEnd       string  `json:"period_end"`
+		PaymentDate     string  `json:"payment_date"`
+		PaymentMethod   string  `json:"payment_method"`
+		BankAccount     string  `json:"bank_account"`
+		BankName        string  `json:"bank_name"`
+		CommissionIDs   string  `json:"commission_ids"`
+		CommissionCount int     `json:"commission_count"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, `{"error":"invalid_json"}`, http.StatusBadRequest)
@@ -197,13 +197,13 @@ func (h *Handlers) ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":       true,
-		"payment_id":    payment.PaymentID,
-		"agent_id":      payment.AgentID,
-		"amount":        payment.Amount,
-		"status":        payment.Status,
-		"payment_date":  payment.PaymentDate.Format(time.RFC3339),
-		"reference_no":  payment.PaymentID,
+		"success":      true,
+		"payment_id":   payment.PaymentID,
+		"agent_id":     payment.AgentID,
+		"amount":       payment.Amount,
+		"status":       payment.Status,
+		"payment_date": payment.PaymentDate.Format(time.RFC3339),
+		"reference_no": payment.PaymentID,
 	})
 }
 
@@ -216,7 +216,9 @@ func (h *Handlers) GetPaymentRecords(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit := 20
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 { limit = v }
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
 	}
 	payments, err := h.commission.GetPaymentRecords(r.Context(), agentID, status, limit)
 	if err != nil {
@@ -224,8 +226,8 @@ func (h *Handlers) GetPaymentRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"payments":  payments,
-		"count":     len(payments),
+		"payments": payments,
+		"count":    len(payments),
 	})
 }
 
@@ -263,14 +265,16 @@ func (h *Handlers) GetAgentProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(ap)
+	_ = json.NewEncoder(w).Encode(ap)
 }
 
 func (h *Handlers) ListAgentProfiles(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit == 0 || limit > 100 { limit = 20 }
+	if limit == 0 || limit > 100 {
+		limit = 20
+	}
 
 	profiles, err := h.commission.ListAgentProfiles(r.Context(), status, limit, offset)
 	if err != nil {
@@ -343,7 +347,7 @@ func (h *Handlers) CreateClawback(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":  true,
 		"clawback": cb,
 	})
 }
@@ -378,9 +382,9 @@ func (h *Handlers) ProcessClawback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":     true,
 		"clawback_id": body.ID,
-		"message":   "Clawback processed successfully",
+		"message":     "Clawback processed successfully",
 	})
 }
 
@@ -402,7 +406,7 @@ func (h *Handlers) CreateAdjustment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":    true,
 		"adjustment": adj,
 	})
 }
@@ -442,9 +446,9 @@ func (h *Handlers) ApproveAdjustment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":      true,
+		"success":       true,
 		"adjustment_id": body.AdjustmentID,
-		"message":      "Adjustment approved",
+		"message":       "Adjustment approved",
 	})
 }
 
@@ -476,7 +480,9 @@ func (h *Handlers) GetCommissionReports(w http.ResponseWriter, r *http.Request) 
 	status := r.URL.Query().Get("status")
 	limit := 20
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 { limit = v }
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
 	}
 	reports, err := h.commission.GetCommissionReports(r.Context(), reportType, status, limit)
 	if err != nil {
@@ -496,7 +502,7 @@ func (h *Handlers) GetDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(dash)
+	_ = json.NewEncoder(w).Encode(dash)
 }
 
 func parseTime(s string) time.Time {

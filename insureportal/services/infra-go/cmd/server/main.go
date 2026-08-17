@@ -45,7 +45,7 @@ import (
 func main() {
 	// ── Logger ────────────────────────────────────────────────────────────────
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	port := getEnv("INFRA_GO_PORT", "8090")
 	logger.Info("InsurePortal infra-go sidecar starting", zap.String("port", port))

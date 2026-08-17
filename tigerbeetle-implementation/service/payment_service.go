@@ -23,10 +23,10 @@ const (
 
 // PaymentService handles all payment-related business logic.
 type PaymentService struct {
-	ledgerClient     LedgerClient
-	paymentRepo      PaymentRepository
-	kafkaProducer    KafkaProducer
-	ledgerID         uint32
+	ledgerClient  LedgerClient
+	paymentRepo   PaymentRepository
+	kafkaProducer KafkaProducer
+	ledgerID      uint32
 }
 
 // PaymentRepository is the subset of repository.PaymentRepository used by
@@ -254,19 +254,19 @@ func (s *PaymentService) ProcessRefund(ctx context.Context, req models.RefundReq
 
 	// 7. Record refund in PostgreSQL
 	refund := models.Payment{
-		TransactionID:      transferID.String(),
-		PolicyID:           originalPayment.PolicyID,
-		CustomerID:         originalPayment.CustomerID,
-		Amount:             req.Amount,
-		Currency:           originalPayment.Currency,
-		PaymentType:        models.PaymentTypeRefund,
-		PaymentMethod:      originalPayment.PaymentMethod,
-		Status:             models.PaymentStatusCompleted,
-		OriginalPaymentID:  sql.NullInt64{Int64: req.PaymentID, Valid: true},
-		RefundReason:       sql.NullString{String: req.Reason, Valid: true},
-		ProcessedAt:        time.Now(),
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		TransactionID:     transferID.String(),
+		PolicyID:          originalPayment.PolicyID,
+		CustomerID:        originalPayment.CustomerID,
+		Amount:            req.Amount,
+		Currency:          originalPayment.Currency,
+		PaymentType:       models.PaymentTypeRefund,
+		PaymentMethod:     originalPayment.PaymentMethod,
+		Status:            models.PaymentStatusCompleted,
+		OriginalPaymentID: sql.NullInt64{Int64: req.PaymentID, Valid: true},
+		RefundReason:      sql.NullString{String: req.Reason, Valid: true},
+		ProcessedAt:       time.Now(),
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 
 	refundID, err := s.paymentRepo.Create(ctx, refund)
@@ -350,7 +350,7 @@ func (s *PaymentService) getCustomerAccountID(ctx context.Context, customerID st
 	// In a real implementation, this would look up the customer's account ID from a database
 	// or create a new account if one doesn't exist.
 	// For now, we generate a deterministic account ID based on the customer ID.
-	
+
 	// Parse customer ID to uint64 (assuming it's numeric)
 	var customerIDNum uint64
 	_, err := fmt.Sscanf(customerID, "%d", &customerIDNum)

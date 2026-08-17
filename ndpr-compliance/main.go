@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -26,10 +26,10 @@ import (
 
 // package-level state accessible to handlers
 var (
-	pkgCfg  *config.Config
-	pkgPg   *db.Postgres
+	pkgCfg   *config.Config
+	pkgPg    *db.Postgres
 	pkgRedis *db.RedisCache
-	pkgLog  *zap.Logger
+	pkgLog   *zap.Logger
 )
 
 func main() {
@@ -39,7 +39,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -92,7 +92,7 @@ func main() {
 		logger.Error("Server forced shutdown", zap.Error(err))
 	}
 
-	redis.Close()
+	_ = redis.Close()
 	pg.Close()
 	logger.Info("Server exited properly")
 }
@@ -165,7 +165,7 @@ func readinessHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger)
 		w.Header().Set("Content-Type", "application/json")
 		if err := pg.Pool.Ping(r.Context()); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "postgres_unavailable"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "postgres_unavailable"})
 			return
 		}
 		if redis != nil && redis.Client.Ping(r.Context()).Err() != nil {
@@ -185,17 +185,17 @@ func recordConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req struct {
-			SubjectID     string            `json:"subject_id"`
-			FullName      string            `json:"full_name"`
-			Email         string            `json:"email"`
-			Purposes      []string          `json:"purposes"`
-			Method        string            `json:"method"`
-			LawfulBasis   string            `json:"lawful_basis"`
-			IPAddress     string            `json:"ip_address"`
-			UserAgent     string            `json:"user_agent"`
-			Version       string            `json:"version"`
-			ConsentText   string            `json:"consent_text"`
-			Metadata      map[string]any    `json:"metadata,omitempty"`
+			SubjectID   string         `json:"subject_id"`
+			FullName    string         `json:"full_name"`
+			Email       string         `json:"email"`
+			Purposes    []string       `json:"purposes"`
+			Method      string         `json:"method"`
+			LawfulBasis string         `json:"lawful_basis"`
+			IPAddress   string         `json:"ip_address"`
+			UserAgent   string         `json:"user_agent"`
+			Version     string         `json:"version"`
+			ConsentText string         `json:"consent_text"`
+			Metadata    map[string]any `json:"metadata,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body", logger)
@@ -208,20 +208,20 @@ func recordConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 
 		now := time.Now().UTC()
 		consent := &models.Consent{
-			ID:            generateID(),
-			ConsentID:     fmt.Sprintf("CON-%s", generateID()),
-			SubjectID:     req.SubjectID,
-			Purposes:      parseStringSliceToPurposes(req.Purposes),
-			Method:        parseConsentMethod(req.Method),
-			LawfulBasis:   parseLawfulBasis(req.LawfulBasis),
-			IPAddress:     req.IPAddress,
-			UserAgent:     req.UserAgent,
-			Version:       req.Version,
-			ConsentText:   req.ConsentText,
-			Withdrawn:     false,
-			Metadata:      req.Metadata,
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:          generateID(),
+			ConsentID:   fmt.Sprintf("CON-%s", generateID()),
+			SubjectID:   req.SubjectID,
+			Purposes:    parseStringSliceToPurposes(req.Purposes),
+			Method:      parseConsentMethod(req.Method),
+			LawfulBasis: parseLawfulBasis(req.LawfulBasis),
+			IPAddress:   req.IPAddress,
+			UserAgent:   req.UserAgent,
+			Version:     req.Version,
+			ConsentText: req.ConsentText,
+			Withdrawn:   false,
+			Metadata:    req.Metadata,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		}
 
 		if err := pg.InsertConsent(r.Context(), consent); err != nil {
@@ -229,10 +229,10 @@ func recordConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 			return
 		}
 		if redis != nil {
-			redis.InvalidateConsents(r.Context(), req.SubjectID)
+			_ = redis.InvalidateConsents(r.Context(), req.SubjectID)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(consent)
+		_ = json.NewEncoder(w).Encode(consent)
 	}
 }
 
@@ -242,7 +242,7 @@ func getConsentsBySubjectHandler(pg *db.Postgres, redis *db.RedisCache, logger *
 		subjectID := chi.URLParam(r, "subjectId")
 		if redis != nil {
 			if data, err := redis.GetConsents(r.Context(), subjectID); err == nil && len(data) > 0 {
-				json.NewEncoder(w).Encode(json.RawMessage(data))
+				_ = json.NewEncoder(w).Encode(json.RawMessage(data))
 				return
 			}
 		}
@@ -253,7 +253,7 @@ func getConsentsBySubjectHandler(pg *db.Postgres, redis *db.RedisCache, logger *
 		}
 		if redis != nil {
 			data, _ := json.Marshal(consents)
-			redis.CacheConsents(r.Context(), subjectID, data, db.TCacheMedium)
+			_ = redis.CacheConsents(r.Context(), subjectID, data, db.TCacheMedium)
 		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"subject_id": subjectID,
@@ -274,7 +274,7 @@ func getConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			writeError(w, http.StatusNotFound, "consent not found", logger)
 			return
 		}
-		json.NewEncoder(w).Encode(consent)
+		_ = json.NewEncoder(w).Encode(consent)
 	}
 }
 
@@ -282,10 +282,10 @@ func withdrawConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.L
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req struct {
-			WithdrawnBy    string `json:"withdrawn_by"`
+			WithdrawnBy      string `json:"withdrawn_by"`
 			WithdrawalReason string `json:"withdrawal_reason"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		consentID := chi.URLParam(r, "consentId")
 		consent, err := pg.GetConsent(r.Context(), consentID)
@@ -310,11 +310,11 @@ func withdrawConsentHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.L
 		consent.UpdatedAt = now
 
 		if redis != nil {
-			redis.InvalidateConsents(r.Context(), consent.SubjectID)
+			_ = redis.InvalidateConsents(r.Context(), consent.SubjectID)
 		}
 		json.NewEncoder(w).Encode(map[string]any{
-			"consent":    consent,
-			"withdrawn":  true,
+			"consent":      consent,
+			"withdrawn":    true,
 			"withdrawn_at": now.Format(time.RFC3339),
 		})
 	}
@@ -326,13 +326,13 @@ func submitDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req struct {
-			SubjectID   string   `json:"subject_id"`
-			FullName    string   `json:"full_name"`
-			Email       string   `json:"email"`
-			Type        string   `json:"type"`
-			Description string   `json:"description"`
-			AssignedTo  string   `json:"assigned_to"`
-			DataSources []string `json:"data_sources"`
+			SubjectID   string         `json:"subject_id"`
+			FullName    string         `json:"full_name"`
+			Email       string         `json:"email"`
+			Type        string         `json:"type"`
+			Description string         `json:"description"`
+			AssignedTo  string         `json:"assigned_to"`
+			DataSources []string       `json:"data_sources"`
 			Metadata    map[string]any `json:"metadata,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -347,22 +347,22 @@ func submitDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 		slaDays := getSlaDays(req.Type)
 		receivedAt := time.Now().UTC()
 		dsar := &models.DSAR{
-			ID:            generateID(),
-			DSARID:        fmt.Sprintf("DSAR-%s", generateID()),
-			SubjectID:     req.SubjectID,
-			FullName:      req.FullName,
-			Email:         req.Email,
-			Type:          parseDSARType(req.Type),
-			Description:   req.Description,
-			Status:        models.DSARReceived,
-			SLADays:       slaDays,
-			ReceivedAt:    receivedAt,
-			Deadline:      receivedAt.AddDate(0, 0, slaDays),
-			AssignedTo:    req.AssignedTo,
-			DataSources:   req.DataSources,
-			Metadata:      req.Metadata,
-			CreatedAt:     receivedAt,
-			UpdatedAt:     receivedAt,
+			ID:          generateID(),
+			DSARID:      fmt.Sprintf("DSAR-%s", generateID()),
+			SubjectID:   req.SubjectID,
+			FullName:    req.FullName,
+			Email:       req.Email,
+			Type:        parseDSARType(req.Type),
+			Description: req.Description,
+			Status:      models.DSARReceived,
+			SLADays:     slaDays,
+			ReceivedAt:  receivedAt,
+			Deadline:    receivedAt.AddDate(0, 0, slaDays),
+			AssignedTo:  req.AssignedTo,
+			DataSources: req.DataSources,
+			Metadata:    req.Metadata,
+			CreatedAt:   receivedAt,
+			UpdatedAt:   receivedAt,
 		}
 
 		if err := pg.InsertDSAR(r.Context(), dsar); err != nil {
@@ -370,11 +370,11 @@ func submitDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			return
 		}
 		if redis != nil {
-			redis.InvalidateDSAR(r.Context(), dsar.DSARID)
+			_ = redis.InvalidateDSAR(r.Context(), dsar.DSARID)
 		}
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{
-			"dsar":    dsar,
+			"dsar":     dsar,
 			"sla_days": slaDays,
 			"deadline": dsar.Deadline.Format("2006-01-02"),
 		})
@@ -387,7 +387,7 @@ func getDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) h
 		id := chi.URLParam(r, "id")
 		if redis != nil {
 			if data, err := redis.GetDSAR(r.Context(), id); err == nil && len(data) > 0 {
-				json.NewEncoder(w).Encode(json.RawMessage(data))
+				_ = json.NewEncoder(w).Encode(json.RawMessage(data))
 				return
 			}
 		}
@@ -403,7 +403,7 @@ func getDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) h
 		}
 		if redis != nil {
 			data, _ := json.Marshal(dsar)
-			redis.CacheDSAR(r.Context(), id, data, db.TCacheShort)
+			_ = redis.CacheDSAR(r.Context(), id, data, db.TCacheShort)
 		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"dsar":          dsar,
@@ -458,9 +458,9 @@ func executeDSARHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logge
 		}
 		dsar.UpdatedAt = time.Now().UTC()
 		if redis != nil {
-			redis.InvalidateDSAR(r.Context(), dsarID)
+			_ = redis.InvalidateDSAR(r.Context(), dsarID)
 		}
-		json.NewEncoder(w).Encode(map[string]any{"dsar": dsar, "action": req.Action, "status": string(dsar.Status)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"dsar": dsar, "action": req.Action, "status": string(dsar.Status)})
 	}
 }
 
@@ -490,7 +490,7 @@ func dsarReportingHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Log
 				typeBreakdown = append(typeBreakdown, map[string]any{"type": t, "total": total, "completed": completed, "overdue": overdue})
 			}
 		}
-		json.NewEncoder(w).Encode(map[string]any{"dsar_stats": stats, "type_breakdown": typeBreakdown, "generated_at": time.Now().UTC().Format(time.RFC3339)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"dsar_stats": stats, "type_breakdown": typeBreakdown, "generated_at": time.Now().UTC().Format(time.RFC3339)})
 	}
 }
 
@@ -500,16 +500,16 @@ func reportBreachHandler(logger *zap.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req struct {
-			Title            string   `json:"title"`
-			Description      string   `json:"description"`
-			Severity         string   `json:"severity"`
-			DetectionDate    string   `json:"detection_date"`
-			Reporter         string   `json:"reported_by"`
-			AffectedPersons  int64    `json:"affected_persons"`
-			DataTypes        []string `json:"data_types_affected"`
-			Cause            string   `json:"cause"`
-			RemediationSteps []string `json:"remediation_steps"`
-			ImpactAssessment string   `json:"impact_assessment"`
+			Title            string         `json:"title"`
+			Description      string         `json:"description"`
+			Severity         string         `json:"severity"`
+			DetectionDate    string         `json:"detection_date"`
+			Reporter         string         `json:"reported_by"`
+			AffectedPersons  int64          `json:"affected_persons"`
+			DataTypes        []string       `json:"data_types_affected"`
+			Cause            string         `json:"cause"`
+			RemediationSteps []string       `json:"remediation_steps"`
+			ImpactAssessment string         `json:"impact_assessment"`
 			Metadata         map[string]any `json:"metadata,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -558,9 +558,9 @@ func reportBreachHandler(logger *zap.Logger) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{
-			"breach":                   breach,
+			"breach":                      breach,
 			"nitda_notification_deadline": breach.NITDADeadline.Format(time.RFC3339),
-			"hours_to_notify":          nitdaHrs,
+			"hours_to_notify":             nitdaHrs,
 		})
 	}
 }
@@ -571,7 +571,7 @@ func getBreachHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger)
 		id := chi.URLParam(r, "id")
 		if redis != nil {
 			if data, err := redis.GetBreach(r.Context(), id); err == nil && len(data) > 0 {
-				json.NewEncoder(w).Encode(json.RawMessage(data))
+				_ = json.NewEncoder(w).Encode(json.RawMessage(data))
 				return
 			}
 		}
@@ -582,13 +582,13 @@ func getBreachHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger)
 		}
 		if redis != nil {
 			data, _ := json.Marshal(breach)
-			redis.CacheBreach(r.Context(), id, data, db.TCacheShort)
+			_ = redis.CacheBreach(r.Context(), id, data, db.TCacheShort)
 		}
 		json.NewEncoder(w).Encode(map[string]any{
-			"breach":              breach,
-			"nitda_deadline":      breach.NITDADeadline.Format(time.RFC3339),
+			"breach":               breach,
+			"nitda_deadline":       breach.NITDADeadline.Format(time.RFC3339),
 			"hours_until_deadline": max(0, int(time.Until(breach.NITDADeadline).Hours())),
-			"sla_at_risk":         time.Until(breach.NITDADeadline).Hours() < 24,
+			"sla_at_risk":          time.Until(breach.NITDADeadline).Hours() < 24,
 		})
 	}
 }
@@ -599,7 +599,7 @@ func markNITDANotifiedHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap
 		var req struct {
 			NotificationID string `json:"nitda_notification_id"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		breachID := chi.URLParam(r, "id")
 		_, err := pg.GetBreach(r.Context(), breachID)
 		if err != nil {
@@ -616,13 +616,13 @@ func markNITDANotifiedHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap
 			return
 		}
 		if redis != nil {
-			redis.InvalidateBreach(r.Context(), breachID)
+			_ = redis.InvalidateBreach(r.Context(), breachID)
 		}
 		json.NewEncoder(w).Encode(map[string]any{
-			"breach_id":         breachID,
-			"nitda_notified":    true,
-			"notified_at":       now.Format(time.RFC3339),
-			"notification_id":   req.NotificationID,
+			"breach_id":       breachID,
+			"nitda_notified":  true,
+			"notified_at":     now.Format(time.RFC3339),
+			"notification_id": req.NotificationID,
 		})
 	}
 }
@@ -646,9 +646,9 @@ func markBreachResolvedHandler(pg *db.Postgres, redis *db.RedisCache, logger *za
 			return
 		}
 		if redis != nil {
-			redis.InvalidateBreach(r.Context(), breachID)
+			_ = redis.InvalidateBreach(r.Context(), breachID)
 		}
-		json.NewEncoder(w).Encode(map[string]any{"breach_id": breachID, "resolved": true, "resolved_at": now.Format(time.RFC3339)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"breach_id": breachID, "resolved": true, "resolved_at": now.Format(time.RFC3339)})
 	}
 }
 
@@ -669,7 +669,7 @@ func listDPIAsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger)
 			writeError(w, http.StatusInternalServerError, "failed to list DPIAs", logger)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"dpias": dpias, "total": total, "limit": limit, "offset": offset})
+		_ = json.NewEncoder(w).Encode(map[string]any{"dpias": dpias, "total": total, "limit": limit, "offset": offset})
 	}
 }
 
@@ -677,19 +677,19 @@ func createDPIAHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var req struct {
-			Title                     string            `json:"title"`
-			Description               string            `json:"description"`
-			ProcessingPurpose         string            `json:"processing_purpose"`
-			DataController            string            `json:"data_controller"`
-			DataProcessor             string            `json:"data_processor"`
-			RiskLevel                 string            `json:"risk_level"`
-			DataCategories            []string          `json:"data_categories"`
-			Subjects                  []string          `json:"data_subjects"`
-			NecessityAssessment       string            `json:"necessity_assessment"`
-			ProportionalityAssessment string            `json:"proportionality_assessment"`
-			Risks                     []string          `json:"risks"`
+			Title                     string                  `json:"title"`
+			Description               string                  `json:"description"`
+			ProcessingPurpose         string                  `json:"processing_purpose"`
+			DataController            string                  `json:"data_controller"`
+			DataProcessor             string                  `json:"data_processor"`
+			RiskLevel                 string                  `json:"risk_level"`
+			DataCategories            []string                `json:"data_categories"`
+			Subjects                  []string                `json:"data_subjects"`
+			NecessityAssessment       string                  `json:"necessity_assessment"`
+			ProportionalityAssessment string                  `json:"proportionality_assessment"`
+			Risks                     []string                `json:"risks"`
 			Mitigations               []models.DPIAMitigation `json:"mitigations"`
-			Metadata                  map[string]any    `json:"metadata,omitempty"`
+			Metadata                  map[string]any          `json:"metadata,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid request body", logger)
@@ -735,7 +735,7 @@ func createDPIAHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(dpia)
+		_ = json.NewEncoder(w).Encode(dpia)
 	}
 }
 
@@ -756,7 +756,7 @@ func updateDPIAHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			DPOReviewedAt, DPOComments            string
 			ReviewDueDate                         string
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		if req.Title != "" {
 			dpia.Title = req.Title
@@ -795,7 +795,7 @@ func updateDPIAHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger
 			writeError(w, http.StatusInternalServerError, "failed to update DPIA", logger)
 			return
 		}
-		json.NewEncoder(w).Encode(dpia)
+		_ = json.NewEncoder(w).Encode(dpia)
 	}
 }
 
@@ -809,7 +809,7 @@ func listRetentionPoliciesHandler(pg *db.Postgres, redis *db.RedisCache, logger 
 			writeError(w, http.StatusInternalServerError, "failed to list retention policies", logger)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]any{"policies": policies, "total": len(policies)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"policies": policies, "total": len(policies)})
 	}
 }
 
@@ -852,7 +852,7 @@ func upsertRetentionPolicyHandler(pg *db.Postgres, redis *db.RedisCache, logger 
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(policy)
+		_ = json.NewEncoder(w).Encode(policy)
 	}
 }
 
@@ -889,7 +889,7 @@ func metricsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) h
 		w.Header().Set("Content-Type", "application/json")
 		if redis != nil {
 			if data, err := redis.GetMetrics(r.Context()); err == nil && len(data) > 0 {
-				json.NewEncoder(w).Encode(json.RawMessage(data))
+				_ = json.NewEncoder(w).Encode(json.RawMessage(data))
 				return
 			}
 		}
@@ -900,9 +900,9 @@ func metricsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) h
 		}
 		if redis != nil {
 			data, _ := json.Marshal(metrics)
-			redis.CacheMetrics(r.Context(), data, db.TCacheMedium)
+			_ = redis.CacheMetrics(r.Context(), data, db.TCacheMedium)
 		}
-		json.NewEncoder(w).Encode(metrics)
+		_ = json.NewEncoder(w).Encode(metrics)
 	}
 }
 
@@ -910,7 +910,7 @@ func metricsHandler(pg *db.Postgres, redis *db.RedisCache, logger *zap.Logger) h
 
 func writeError(w http.ResponseWriter, code int, message string, logger *zap.Logger) {
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 func validateConsent(subjectID string, purposes []string, consentText string) error {
@@ -928,7 +928,7 @@ func validateConsent(subjectID string, purposes []string, consentText string) er
 
 func generateID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
@@ -1013,7 +1013,7 @@ func parseIntQuery(val string, fallback int) int {
 		return fallback
 	}
 	var n int
-	fmt.Sscanf(val, "%d", &n)
+	_, _ = fmt.Sscanf(val, "%d", &n)
 	if n < 0 {
 		return fallback
 	}

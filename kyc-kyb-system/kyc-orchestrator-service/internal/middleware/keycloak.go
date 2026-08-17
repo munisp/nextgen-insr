@@ -25,18 +25,18 @@ type KeycloakMiddleware struct {
 }
 
 type TokenClaims struct {
-	Sub            string   `json:"sub"`
-	Email          string   `json:"email"`
-	Name           string   `json:"name"`
-	RealmAccess    struct {
+	Sub         string `json:"sub"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	RealmAccess struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
 	ResourceAccess map[string]struct {
 		Roles []string `json:"roles"`
 	} `json:"resource_access"`
-	KYCLevel       int    `json:"kyc_level"`
-	KYCStatus      string `json:"kyc_status"`
-	KYCSessionID   string `json:"kyc_session_id"`
+	KYCLevel     int    `json:"kyc_level"`
+	KYCStatus    string `json:"kyc_status"`
+	KYCSessionID string `json:"kyc_session_id"`
 }
 
 func NewKeycloakMiddleware(logger *zap.Logger, config KeycloakConfig) *KeycloakMiddleware {
@@ -166,7 +166,7 @@ func (k *KeycloakMiddleware) validateToken(token string) (*TokenClaims, error) {
 	if err != nil {
 		return nil, fmt.Errorf("keycloak unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("token invalid: status %d", resp.StatusCode)
@@ -184,9 +184,9 @@ func (k *KeycloakMiddleware) UpdateUserKYCAttributes(userID string, kycLevel int
 	url := fmt.Sprintf("%s/admin/realms/insurance/users/%s", k.config.AdminURL, userID)
 	payload := map[string]interface{}{
 		"attributes": map[string][]string{
-			"kyc_level":      {fmt.Sprintf("%d", kycLevel)},
-			"kyc_status":     {kycStatus},
-			"kyc_session_id": {sessionID},
+			"kyc_level":       {fmt.Sprintf("%d", kycLevel)},
+			"kyc_status":      {kycStatus},
+			"kyc_session_id":  {sessionID},
 			"kyc_verified_at": {time.Now().UTC().Format(time.RFC3339)},
 		},
 	}
@@ -203,7 +203,7 @@ func (k *KeycloakMiddleware) UpdateUserKYCAttributes(userID string, kycLevel int
 		k.logger.Warn("keycloak_update_failed", zap.Error(err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }

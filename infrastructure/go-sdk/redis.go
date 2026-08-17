@@ -70,29 +70,29 @@ type LockGuard struct {
 }
 
 type RedisClient struct {
-	client          *redis.Client
-	logger          *zap.Logger
-	mu              sync.RWMutex
-	circuitState    CircuitState
-	failureCount    int
-	successCount    int
-	lastFailure     time.Time
-	circuitTimeout  time.Duration
-	failureThreshold int
-	successThreshold int
-	rateLimitScript *redis.Script
+	client            *redis.Client
+	logger            *zap.Logger
+	mu                sync.RWMutex
+	circuitState      CircuitState
+	failureCount      int
+	successCount      int
+	lastFailure       time.Time
+	circuitTimeout    time.Duration
+	failureThreshold  int
+	successThreshold  int
+	rateLimitScript   *redis.Script
 	releaseLockScript *redis.Script
 	invalidateScript  *redis.Script
 }
 
 func NewRedisClient(logger *zap.Logger, addr string) *RedisClient {
 	c := &RedisClient{
-		logger:           logger,
-		circuitState:     CircuitClosed,
-		circuitTimeout:   30 * time.Second,
-		failureThreshold: 5,
-		successThreshold: 3,
-		rateLimitScript:  redis.NewScript(rateLimitLua),
+		logger:            logger,
+		circuitState:      CircuitClosed,
+		circuitTimeout:    30 * time.Second,
+		failureThreshold:  5,
+		successThreshold:  3,
+		rateLimitScript:   redis.NewScript(rateLimitLua),
 		releaseLockScript: redis.NewScript(releaseLockLua),
 		invalidateScript:  redis.NewScript(invalidateLua),
 	}
@@ -359,6 +359,6 @@ func (c *RedisClient) PoolStats() *redis.PoolStats {
 
 func (c *RedisClient) Close() {
 	if c.client != nil {
-		c.client.Close()
+		_ = c.client.Close()
 	}
 }

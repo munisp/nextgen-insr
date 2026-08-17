@@ -32,7 +32,7 @@ func NewOpenSearchClient() *OpenSearchClient {
 }
 
 type LogEntry struct {
-	Timestamp   time.Time              `json:"@timestamp"`
+	Timestamp  time.Time              `json:"@timestamp"`
 	Level      string                 `json:"level"`
 	Service    string                 `json:"service"`
 	Message    string                 `json:"message"`
@@ -65,8 +65,8 @@ func (o *OpenSearchClient) IndexLog(ctx context.Context, index string, entry Log
 	if err != nil {
 		return fmt.Errorf("opensearch index: %w", err)
 	}
-	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.ReadAll(resp.Body)
 	return nil
 }
 
@@ -85,7 +85,7 @@ func (o *OpenSearchClient) Search(ctx context.Context, index string, query map[s
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 
 	var result struct {

@@ -15,19 +15,19 @@ import (
 
 // ParametricPolicy represents a parametric insurance policy with trigger conditions
 type ParametricPolicy struct {
-	ID              int64             `json:"id"`
-	UserID          int64             `json:"userId"`
-	PolicyNumber    string            `json:"policyNumber"`
-	Type            string            `json:"type"` // rainfall, drought, flood, temperature, wind
-	Region          string            `json:"region"`
-	Coordinates     [2]float64        `json:"coordinates"` // [lat, lng]
-	TriggerParams   TriggerParameters `json:"triggerParams"`
-	CoverageAmount  float64           `json:"coverageAmount"`
-	Premium         float64           `json:"premium"`
-	Status          string            `json:"status"` // active, triggered, expired, paid_out
-	StartDate       string            `json:"startDate"`
-	EndDate         string            `json:"endDate"`
-	CreatedAt       string            `json:"createdAt"`
+	ID             int64             `json:"id"`
+	UserID         int64             `json:"userId"`
+	PolicyNumber   string            `json:"policyNumber"`
+	Type           string            `json:"type"` // rainfall, drought, flood, temperature, wind
+	Region         string            `json:"region"`
+	Coordinates    [2]float64        `json:"coordinates"` // [lat, lng]
+	TriggerParams  TriggerParameters `json:"triggerParams"`
+	CoverageAmount float64           `json:"coverageAmount"`
+	Premium        float64           `json:"premium"`
+	Status         string            `json:"status"` // active, triggered, expired, paid_out
+	StartDate      string            `json:"startDate"`
+	EndDate        string            `json:"endDate"`
+	CreatedAt      string            `json:"createdAt"`
 }
 
 // TriggerParameters defines the conditions that trigger an automatic payout
@@ -119,7 +119,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	srv.Shutdown(ctx)
+	_ = srv.Shutdown(ctx)
 }
 
 func createPolicy(c *gin.Context) {
@@ -224,12 +224,12 @@ func getParametricQuote(c *gin.Context) {
 	premium := calculateParametricPremium(req.CoverageAmount, req.Type, req.Region, req.Duration)
 
 	c.JSON(http.StatusOK, gin.H{
-		"type":           req.Type,
-		"region":         req.Region,
-		"coverageAmount": req.CoverageAmount,
-		"premium":        premium,
-		"premiumMonthly": premium / float64(req.Duration),
-		"riskLevel":      classifyRegionRisk(req.Region, req.Type),
+		"type":               req.Type,
+		"region":             req.Region,
+		"coverageAmount":     req.CoverageAmount,
+		"premium":            premium,
+		"premiumMonthly":     premium / float64(req.Duration),
+		"riskLevel":          classifyRegionRisk(req.Region, req.Type),
 		"historicalTriggers": 2,
 	})
 }

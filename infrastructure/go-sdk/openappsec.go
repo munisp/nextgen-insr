@@ -19,10 +19,10 @@ type OpenAppSecClient struct {
 }
 
 type WAFPolicy struct {
-	Name           string   `json:"name"`
-	Mode           string   `json:"mode"`
-	SecurityLevel  string   `json:"security_level"`
-	TrustedSources []string `json:"trusted_sources,omitempty"`
+	Name           string    `json:"name"`
+	Mode           string    `json:"mode"`
+	SecurityLevel  string    `json:"security_level"`
+	TrustedSources []string  `json:"trusted_sources,omitempty"`
 	CustomRules    []WAFRule `json:"custom_rules,omitempty"`
 }
 
@@ -51,7 +51,7 @@ func (c *OpenAppSecClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("openappsec ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -95,7 +95,7 @@ func (c *OpenAppSecClient) ApplyPolicy(ctx context.Context, policy WAFPolicy) er
 	if err != nil {
 		return fmt.Errorf("apply WAF policy: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("WAF policy failed (%d): %s", resp.StatusCode, string(body))
@@ -112,7 +112,7 @@ func (c *OpenAppSecClient) GetThreatLog(ctx context.Context, limit int) ([]map[s
 	if err != nil {
 		return nil, fmt.Errorf("threat log: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var threats []map[string]interface{}
 	if err := json.Unmarshal(body, &threats); err != nil {
@@ -131,9 +131,9 @@ func (c *OpenAppSecClient) GetSecurityDashboard(ctx context.Context) (map[string
 	if err != nil {
 		return nil, fmt.Errorf("security dashboard: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var dashboard map[string]interface{}
-	json.Unmarshal(body, &dashboard)
+	_ = json.Unmarshal(body, &dashboard)
 	return dashboard, nil
 }

@@ -14,35 +14,35 @@ type KYCEventType string
 
 const (
 	EventKYCStarted         KYCEventType = "kyc.started"
-	EventKYCDocumentSubmit   KYCEventType = "kyc.document.submitted"
-	EventKYCSelfieSubmit     KYCEventType = "kyc.selfie.submitted"
-	EventKYCNINVerified      KYCEventType = "kyc.nin.verified"
-	EventKYCBVNVerified      KYCEventType = "kyc.bvn.verified"
-	EventKYCPhoneVerified    KYCEventType = "kyc.phone.verified"
-	EventKYCLivenessChecked  KYCEventType = "kyc.liveness.checked"
-	EventKYCAMLScreened      KYCEventType = "kyc.aml.screened"
-	EventKYCApproved         KYCEventType = "kyc.approved"
-	EventKYCRejected         KYCEventType = "kyc.rejected"
-	EventKYCEscalated        KYCEventType = "kyc.escalated"
-	EventKYCExpired          KYCEventType = "kyc.expired"
-	EventKYBStarted          KYCEventType = "kyb.started"
-	EventKYBCACVerified      KYCEventType = "kyb.cac.verified"
-	EventKYBTINVerified      KYCEventType = "kyb.tin.verified"
-	EventKYBApproved         KYCEventType = "kyb.approved"
-	EventKYBRejected         KYCEventType = "kyb.rejected"
-	EventKYCGateChecked      KYCEventType = "kyc.gate.checked"
-	EventKYCRiskAssessed     KYCEventType = "kyc.risk.assessed"
+	EventKYCDocumentSubmit  KYCEventType = "kyc.document.submitted"
+	EventKYCSelfieSubmit    KYCEventType = "kyc.selfie.submitted"
+	EventKYCNINVerified     KYCEventType = "kyc.nin.verified"
+	EventKYCBVNVerified     KYCEventType = "kyc.bvn.verified"
+	EventKYCPhoneVerified   KYCEventType = "kyc.phone.verified"
+	EventKYCLivenessChecked KYCEventType = "kyc.liveness.checked"
+	EventKYCAMLScreened     KYCEventType = "kyc.aml.screened"
+	EventKYCApproved        KYCEventType = "kyc.approved"
+	EventKYCRejected        KYCEventType = "kyc.rejected"
+	EventKYCEscalated       KYCEventType = "kyc.escalated"
+	EventKYCExpired         KYCEventType = "kyc.expired"
+	EventKYBStarted         KYCEventType = "kyb.started"
+	EventKYBCACVerified     KYCEventType = "kyb.cac.verified"
+	EventKYBTINVerified     KYCEventType = "kyb.tin.verified"
+	EventKYBApproved        KYCEventType = "kyb.approved"
+	EventKYBRejected        KYCEventType = "kyb.rejected"
+	EventKYCGateChecked     KYCEventType = "kyc.gate.checked"
+	EventKYCRiskAssessed    KYCEventType = "kyc.risk.assessed"
 )
 
 type KYCEvent struct {
-	ID        string            `json:"id"`
-	Type      KYCEventType      `json:"type"`
-	SessionID string            `json:"session_id"`
-	UserID    string            `json:"user_id"`
-	Timestamp time.Time         `json:"timestamp"`
+	ID        string                 `json:"id"`
+	Type      KYCEventType           `json:"type"`
+	SessionID string                 `json:"session_id"`
+	UserID    string                 `json:"user_id"`
+	Timestamp time.Time              `json:"timestamp"`
 	Data      map[string]interface{} `json:"data"`
-	Source    string            `json:"source"`
-	Version   string            `json:"version"`
+	Source    string                 `json:"source"`
+	Version   string                 `json:"version"`
 }
 
 const (

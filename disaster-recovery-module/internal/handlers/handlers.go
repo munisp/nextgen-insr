@@ -15,7 +15,7 @@ import (
 
 // Handlers holds HTTP handler dependencies
 type Handlers struct {
-	dr *service.DRService
+	dr  *service.DRService
 	log *zap.Logger
 }
 
@@ -32,10 +32,10 @@ func NewHandlers(dr *service.DRService) *Handlers {
 // HealthCheck returns service health status
 func (h *Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "healthy",
-		"service":   "disaster-recovery-module",
-		"timestamp": time.Now().Format(time.RFC3339),
-		"version":   "1.0.0",
+		"status":     "healthy",
+		"service":    "disaster-recovery-module",
+		"timestamp":  time.Now().Format(time.RFC3339),
+		"version":    "1.0.0",
 		"rto_target": "4 hours",
 		"rpo_target": "1 hour",
 	})
@@ -54,9 +54,9 @@ func (h *Handlers) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 	if dbStatus != "ok" {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":   "unhealthy",
-			"service":  "disaster-recovery-module",
-			"database": dbStatus,
+			"status":    "unhealthy",
+			"service":   "disaster-recovery-module",
+			"database":  dbStatus,
 			"timestamp": time.Now().Format(time.RFC3339),
 		})
 		return
@@ -84,7 +84,7 @@ func (h *Handlers) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(dashboard)
+	_ = json.NewEncoder(w).Encode(dashboard)
 }
 
 // GetDRStatus returns detailed DR status
@@ -102,10 +102,10 @@ func (h *Handlers) GetDRStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"primary_dc":         "Lagos-1",
-		"secondary_dc":       "Abuja-1",
+		"primary_dc":          "Lagos-1",
+		"secondary_dc":        "Abuja-1",
 		"last_failover_event": services,
-		"timestamp":          time.Now().Format(time.RFC3339),
+		"timestamp":           time.Now().Format(time.RFC3339),
 	})
 }
 
@@ -119,17 +119,17 @@ func (h *Handlers) TriggerFailover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Type            string `json:"type"` // full, partial, planned, unplanned
-		TriggeredBy     string `json:"triggered_by"`
-		TriggerReason   string `json:"trigger_reason"`
-		ServicesAffected int   `json:"services_affected"`
-		FromDC          string `json:"from_dc"`
-		ToDC            string `json:"to_dc"`
+		Type             string `json:"type"` // full, partial, planned, unplanned
+		TriggeredBy      string `json:"triggered_by"`
+		TriggerReason    string `json:"trigger_reason"`
+		ServicesAffected int    `json:"services_affected"`
+		FromDC           string `json:"from_dc"`
+		ToDC             string `json:"to_dc"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": "invalid_request_body",
+			"error":   "invalid_request_body",
 			"details": err.Error(),
 		})
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -291,9 +291,9 @@ func (h *Handlers) CreateDRDrill(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":   true,
-		"drill":     drill,
-		"message":   "DR drill scheduled successfully",
+		"success": true,
+		"drill":   drill,
+		"message": "DR drill scheduled successfully",
 	})
 }
 
@@ -318,10 +318,10 @@ func (h *Handlers) CompleteDRDrill(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":      true,
 		"drill_number": body.DrillNumber,
-		"status":      body.Status,
-		"message":     "DR drill completed successfully",
+		"status":       body.Status,
+		"message":      "DR drill completed successfully",
 	})
 }
 
@@ -367,13 +367,13 @@ func (h *Handlers) CreateBackupStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	backup := &models.BackupStatus{
-		BackupType:  body.BackupType,
-		SourceDC:    body.SourceDC,
-		Destination: body.Destination,
-		Status:      body.Status,
+		BackupType:   body.BackupType,
+		SourceDC:     body.SourceDC,
+		Destination:  body.Destination,
+		Status:       body.Status,
 		BackupSizeGB: body.SizeGB,
-		LagSec:      &body.LagSec,
-		S3Key:       body.S3Key,
+		LagSec:       &body.LagSec,
+		S3Key:        body.S3Key,
 	}
 
 	if err := h.dr.RecordBackupStatus(r.Context(), backup); err != nil {
@@ -451,18 +451,18 @@ func (h *Handlers) RegisterService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reg := &models.ServiceRegistration{
-		ServiceName:    body.ServiceName,
-		ServiceGroup:   body.ServiceGroup,
-		Version:        body.Version,
-		InstanceID:     body.InstanceID,
-		Host:           body.Host,
-		Port:           body.Port,
-		HealthEndpoint: body.HealthEndpoint,
-		IsProtected:    body.IsProtected,
-		IsAutoFailover: body.AutoFailover,
+		ServiceName:      body.ServiceName,
+		ServiceGroup:     body.ServiceGroup,
+		Version:          body.Version,
+		InstanceID:       body.InstanceID,
+		Host:             body.Host,
+		Port:             body.Port,
+		HealthEndpoint:   body.HealthEndpoint,
+		IsProtected:      body.IsProtected,
+		IsAutoFailover:   body.AutoFailover,
 		FailoverPriority: body.Priority,
-		Dependencies:   body.Dependencies,
-		Status:         "registered",
+		Dependencies:     body.Dependencies,
+		Status:           "registered",
 	}
 
 	if err := h.dr.RegisterService(r.Context(), reg); err != nil {
@@ -473,9 +473,9 @@ func (h *Handlers) RegisterService(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"message":  "Service registered for DR protection",
-		"service":  reg,
+		"success": true,
+		"message": "Service registered for DR protection",
+		"service": reg,
 	})
 }
 
@@ -508,10 +508,10 @@ func (h *Handlers) UpdateHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "Heartbeat recorded",
-		"service": body.ServiceName,
-		"status":  body.Status,
+		"success":   true,
+		"message":   "Heartbeat recorded",
+		"service":   body.ServiceName,
+		"status":    body.Status,
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
 }
@@ -541,21 +541,21 @@ func (h *Handlers) GetRTOCompliance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"metrics":   trackers,
+		"metrics":    trackers,
 		"rto_target": "4 hours",
 		"rpo_target": "1 hour",
-		"count":     len(trackers),
+		"count":      len(trackers),
 	})
 }
 
 // RecordRTOMetric records an RTO/RPO metric
 func (h *Handlers) RecordRTOMetric(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		MetricName string  `json:"metric_name"`
+		MetricName  string  `json:"metric_name"`
 		TargetValue float64 `json:"target_value"`
 		ActualValue float64 `json:"actual_value"`
-		Unit       string  `json:"unit"`
-		Compliant  bool    `json:"compliant"`
+		Unit        string  `json:"unit"`
+		Compliant   bool    `json:"compliant"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -578,8 +578,8 @@ func (h *Handlers) RecordRTOMetric(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"tracker":  tracker,
+		"success":   true,
+		"tracker":   tracker,
 		"compliant": body.Compliant,
 	})
 }
@@ -622,10 +622,10 @@ func (h *Handlers) SendNAICOMNotification(w http.ResponseWriter, r *http.Request
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":          true,
-		"notification":     notif,
-		"message":          "NAICOM notification recorded successfully",
-		"regulatory_req":   "NAICOM notification within 2 hours of outage > 30 minutes",
+		"success":        true,
+		"notification":   notif,
+		"message":        "NAICOM notification recorded successfully",
+		"regulatory_req": "NAICOM notification within 2 hours of outage > 30 minutes",
 	})
 }
 
@@ -692,11 +692,11 @@ func ValidateEventType(eventType string) bool {
 // ValidateDrillType validates the DR drill type
 func ValidateDrillType(drillType string) bool {
 	validTypes := map[string]bool{
-		"full_failover":      true,
-		"partial_failover":   true,
-		"failback":           true,
-		"backup_restore":     true,
-		"network_partition":  true,
+		"full_failover":     true,
+		"partial_failover":  true,
+		"failback":          true,
+		"backup_restore":    true,
+		"network_partition": true,
 	}
 	return validTypes[drillType]
 }

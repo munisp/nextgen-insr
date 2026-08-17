@@ -103,7 +103,7 @@ func httpCheck(ctx context.Context, url string) (bool, string, error) {
 	if err != nil {
 		return false, fmt.Sprintf("connection failed: %v", err), err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 400 {
 		return true, "OK", nil
 	}
@@ -180,7 +180,7 @@ func (hc *HealthChecker) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	if !allHealthy {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func env(key, fallback string) string {
@@ -189,7 +189,6 @@ func env(key, fallback string) string {
 	}
 	return fallback
 }
-
 
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
@@ -239,7 +238,7 @@ func main() {
 	mux.HandleFunc("/health", hc.StatusHandler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 	mux.Handle("/metrics", promhttp.Handler())
 

@@ -26,10 +26,10 @@ func post(url string, payload interface{}) (int, map[string]interface{}, error) 
 	if err != nil {
 		return 0, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(data, &result)
+	_ = json.Unmarshal(data, &result)
 	return resp.StatusCode, result, nil
 }
 
@@ -38,10 +38,10 @@ func get(url string) (int, map[string]interface{}, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(data, &result)
+	_ = json.Unmarshal(data, &result)
 	return resp.StatusCode, result, nil
 }
 
@@ -63,11 +63,11 @@ func TestAIClaimsAutoAdjudication(t *testing.T) {
 
 	t.Run("HighRiskClaimRejected", func(t *testing.T) {
 		claim := map[string]interface{}{
-			"claim_type":     "fire",
-			"claimed_amount": 5000000.00,
+			"claim_type":      "fire",
+			"claimed_amount":  5000000.00,
 			"policy_age_days": 15,
 			"previous_claims": 3,
-			"location_risk":  "high",
+			"location_risk":   "high",
 		}
 		code, result, err := post(base+"/api/v1/adjudicate", claim)
 		if err != nil {
@@ -284,10 +284,10 @@ func TestDigitalTwinRiskModeler(t *testing.T) {
 
 	t.Run("SimulateFloodRisk", func(t *testing.T) {
 		scenario := map[string]interface{}{
-			"scenario_type": "flood",
-			"location":      "Lagos",
-			"severity":      0.8,
-			"duration_days": 5,
+			"scenario_type":      "flood",
+			"location":           "Lagos",
+			"severity":           0.8,
+			"duration_days":      5,
 			"properties_at_risk": 1500,
 			"avg_property_value": 15000000.0,
 		}
@@ -319,11 +319,11 @@ func TestInsuranceAsAService(t *testing.T) {
 
 	t.Run("CreateEmbeddedProduct", func(t *testing.T) {
 		product := map[string]interface{}{
-			"partner_name":  "Jumia Nigeria",
-			"product_type":  "gadget_protection",
+			"partner_name":   "Jumia Nigeria",
+			"product_type":   "gadget_protection",
 			"coverage_limit": 500000.00,
-			"premium_rate":  0.05,
-			"commission":    20.0,
+			"premium_rate":   0.05,
+			"commission":     20.0,
 		}
 		code, result, err := post(base+"/api/v1/products/create", product)
 		if err != nil {
@@ -459,13 +459,13 @@ func TestUsageBasedInsurance(t *testing.T) {
 
 	t.Run("SubmitTelemetry", func(t *testing.T) {
 		telemetry := map[string]interface{}{
-			"device_id":       "OBD-001",
-			"policy_id":       "UBI-001",
-			"speed_kmh":       85.0,
-			"distance_km":     150.0,
-			"harsh_braking":   2,
+			"device_id":         "OBD-001",
+			"policy_id":         "UBI-001",
+			"speed_kmh":         85.0,
+			"distance_km":       150.0,
+			"harsh_braking":     2,
 			"night_driving_pct": 0.15,
-			"score":           78.0,
+			"score":             78.0,
 		}
 		code, result, err := post(base+"/api/v1/ubi_telemetry/create", telemetry)
 		if err != nil {
@@ -532,10 +532,10 @@ func TestNDPRCompliance(t *testing.T) {
 
 	t.Run("CreateDataSubjectRequest", func(t *testing.T) {
 		request := map[string]interface{}{
-			"subject_name":  "Adebayo Ogundimu",
-			"request_type":  "data_access",
-			"email":         "adebayo@example.com",
-			"status":        "pending",
+			"subject_name":   "Adebayo Ogundimu",
+			"request_type":   "data_access",
+			"email":          "adebayo@example.com",
+			"status":         "pending",
 			"submitted_date": time.Now().Format("2006-01-02"),
 		}
 		code, result, err := post(base+"/api/v1/data_requests/create", request)

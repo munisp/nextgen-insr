@@ -1,15 +1,15 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
+	"net"
 
-	_ "github.com/lib/pq"
 	"encoding/json"
 	"fmt"
+	_ "github.com/lib/pq"
 	"log"
 	"math/rand"
 	"net/http"
@@ -55,24 +55,24 @@ import (
 // ── Configuration ────────────────────────────────────────────────────────────
 
 type Config struct {
-	Port             string
-	KYCEngineURL     string
-	LivenessURL      string
-	SanctionsURL     string
-	KafkaBrokers     string
-	RedisURL         string
-	KeycloakURL      string
-	TigerBeetleURL   string
-	TemporalURL      string
-	DaprURL          string
-	PermifyURL       string
-	FirstCentralURL  string
-	CRCURL           string
+	Port              string
+	KYCEngineURL      string
+	LivenessURL       string
+	SanctionsURL      string
+	KafkaBrokers      string
+	RedisURL          string
+	KeycloakURL       string
+	TigerBeetleURL    string
+	TemporalURL       string
+	DaprURL           string
+	PermifyURL        string
+	FirstCentralURL   string
+	CRCURL            string
 	CreditRegistryURL string
-	FirstCentralKey  string
-	CRCKey           string
+	FirstCentralKey   string
+	CRCKey            string
 	CreditRegistryKey string
-	Environment      string
+	Environment       string
 }
 
 func loadConfig() Config {
@@ -113,7 +113,6 @@ func requireEnv(key string) string {
 	return v
 }
 
-
 // ── Domain Models ────────────────────────────────────────────────────────────
 
 type KYCLevel string
@@ -134,28 +133,28 @@ const (
 )
 
 type EnforcementResult struct {
-	Allowed          bool       `json:"allowed"`
-	Reason           string     `json:"reason"`
-	RequiredKYCLevel KYCLevel   `json:"required_kyc_level"`
-	CurrentKYCLevel  KYCLevel   `json:"current_kyc_level,omitempty"`
-	KYCVerified      bool       `json:"kyc_verified"`
-	NextSteps        []string   `json:"next_steps,omitempty"`
-	ApplicationID    string     `json:"application_id,omitempty"`
-	KafkaEventID     string     `json:"kafka_event_id,omitempty"`
-	GatewayReachable bool       `json:"gateway_reachable"`
-	FailClosed       bool       `json:"fail_closed"`
+	Allowed          bool     `json:"allowed"`
+	Reason           string   `json:"reason"`
+	RequiredKYCLevel KYCLevel `json:"required_kyc_level"`
+	CurrentKYCLevel  KYCLevel `json:"current_kyc_level,omitempty"`
+	KYCVerified      bool     `json:"kyc_verified"`
+	NextSteps        []string `json:"next_steps,omitempty"`
+	ApplicationID    string   `json:"application_id,omitempty"`
+	KafkaEventID     string   `json:"kafka_event_id,omitempty"`
+	GatewayReachable bool     `json:"gateway_reachable"`
+	FailClosed       bool     `json:"fail_closed"`
 }
 
 type AccountOpeningRequest struct {
-	CustomerID   string      `json:"customer_id"`
-	Tier         AccountTier `json:"tier"`
-	ProductType  string      `json:"product_type"` // savings, current, domiciliary, fixed_deposit, corporate
-	FirstName    string      `json:"first_name"`
-	LastName     string      `json:"last_name"`
-	Phone        string      `json:"phone"`
-	BVN          string      `json:"bvn,omitempty"`
-	NIN          string      `json:"nin,omitempty"`
-	Email        string      `json:"email,omitempty"`
+	CustomerID  string      `json:"customer_id"`
+	Tier        AccountTier `json:"tier"`
+	ProductType string      `json:"product_type"` // savings, current, domiciliary, fixed_deposit, corporate
+	FirstName   string      `json:"first_name"`
+	LastName    string      `json:"last_name"`
+	Phone       string      `json:"phone"`
+	BVN         string      `json:"bvn,omitempty"`
+	NIN         string      `json:"nin,omitempty"`
+	Email       string      `json:"email,omitempty"`
 }
 
 type LoanEnforcementRequest struct {
@@ -167,30 +166,30 @@ type LoanEnforcementRequest struct {
 }
 
 type BureauVerificationRequest struct {
-	CustomerID  string `json:"customer_id"`
-	BVN         string `json:"bvn"`
-	NIN         string `json:"nin,omitempty"`
-	FullName    string `json:"full_name"`
-	DateOfBirth string `json:"date_of_birth"`
-	Phone       string `json:"phone"`
+	CustomerID  string   `json:"customer_id"`
+	BVN         string   `json:"bvn"`
+	NIN         string   `json:"nin,omitempty"`
+	FullName    string   `json:"full_name"`
+	DateOfBirth string   `json:"date_of_birth"`
+	Phone       string   `json:"phone"`
 	Bureaus     []string `json:"bureaus,omitempty"` // firstcentral, crc, creditregistry
 }
 
 type BureauResult struct {
-	Bureau         string  `json:"bureau"`
-	Status         string  `json:"status"` // verified, not_found, mismatch, error, timeout
-	Confidence     float64 `json:"confidence"`
-	CreditScore    int     `json:"credit_score,omitempty"`
+	Bureau         string   `json:"bureau"`
+	Status         string   `json:"status"` // verified, not_found, mismatch, error, timeout
+	Confidence     float64  `json:"confidence"`
+	CreditScore    int      `json:"credit_score,omitempty"`
 	MatchedFields  []string `json:"matched_fields,omitempty"`
 	Discrepancies  []string `json:"discrepancies,omitempty"`
-	ResponseTimeMs int64   `json:"response_time_ms"`
+	ResponseTimeMs int64    `json:"response_time_ms"`
 }
 
 type BureauVerificationResult struct {
 	VerificationID string         `json:"verification_id"`
 	CustomerID     string         `json:"customer_id"`
 	OverallStatus  string         `json:"overall_status"` // verified, partial, failed
-	Consensus      float64        `json:"consensus"` // % agreement across bureaus
+	Consensus      float64        `json:"consensus"`      // % agreement across bureaus
 	BureauResults  []BureauResult `json:"bureau_results"`
 	CreditScore    int            `json:"aggregated_credit_score,omitempty"`
 	Timestamp      time.Time      `json:"timestamp"`
@@ -208,11 +207,11 @@ var productKYCMap = map[string]struct {
 	Level KYCLevel
 	Tier  AccountTier
 }{
-	"savings":      {KYCLevelBasic, Tier1},
-	"current":      {KYCLevelStandard, Tier2},
-	"domiciliary":  {KYCLevelEnhanced, Tier3},
+	"savings":       {KYCLevelBasic, Tier1},
+	"current":       {KYCLevelStandard, Tier2},
+	"domiciliary":   {KYCLevelEnhanced, Tier3},
 	"fixed_deposit": {KYCLevelStandard, Tier2},
-	"corporate":    {KYCLevelFullEDD, Tier3},
+	"corporate":     {KYCLevelFullEDD, Tier3},
 }
 
 // ── Loan KYC Level Requirements (CBN) ────────────────────────────────────────
@@ -233,22 +232,22 @@ func requiredKYCForLoan(loanType string, amount float64) KYCLevel {
 // ── Application State ────────────────────────────────────────────────────────
 
 type AppState struct {
-	config    Config
-	mu        sync.RWMutex
-	kycCache  map[string]KYCLevel // customerID → verified level
-	applications map[string]*ApplicationRecord
+	config        Config
+	mu            sync.RWMutex
+	kycCache      map[string]KYCLevel // customerID → verified level
+	applications  map[string]*ApplicationRecord
 	bureauResults map[string]*BureauVerificationResult
-	startTime time.Time
+	startTime     time.Time
 }
 
 type ApplicationRecord struct {
-	ID          string      `json:"id"`
-	CustomerID  string      `json:"customer_id"`
-	Type        string      `json:"type"` // account, loan
-	Status      string      `json:"status"` // pending_kyc, approved, blocked
-	KYCVerified bool        `json:"kyc_verified"`
-	KYCLevel    KYCLevel    `json:"kyc_level"`
-	CreatedAt   time.Time   `json:"created_at"`
+	ID          string    `json:"id"`
+	CustomerID  string    `json:"customer_id"`
+	Type        string    `json:"type"`   // account, loan
+	Status      string    `json:"status"` // pending_kyc, approved, blocked
+	KYCVerified bool      `json:"kyc_verified"`
+	KYCLevel    KYCLevel  `json:"kyc_level"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func NewAppState(cfg Config) *AppState {
@@ -273,7 +272,7 @@ func (s *AppState) publishKafka(topic string, event map[string]interface{}) stri
 	if s.config.DaprURL != "" {
 		go func() {
 			url := fmt.Sprintf("%s/v1.0/publish/kafka-pubsub/%s", s.config.DaprURL, topic)
-			http.Post(url, "application/json", strings.NewReader(string(payload)))
+			_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
 		}()
 	}
 	return eventID
@@ -298,7 +297,7 @@ func (s *AppState) setKYCPermission(customerID string, level KYCLevel) {
 			},
 		})
 		url := fmt.Sprintf("%s/v1/relationships/write", s.config.PermifyURL)
-		http.Post(url, "application/json", strings.NewReader(string(payload)))
+		_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
 	}()
 }
 
@@ -340,7 +339,7 @@ func (s *AppState) checkKYCStatus(customerID string, requiredLevel KYCLevel) (bo
 		log.Printf("[KYC-Enforcement] KYC engine unreachable: %v — FAIL CLOSED", err)
 		return false, "", false // FAIL CLOSED
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		// Service returned error — fail closed
@@ -351,7 +350,7 @@ func (s *AppState) checkKYCStatus(customerID string, requiredLevel KYCLevel) (bo
 		Level    string `json:"level"`
 		Verified bool   `json:"verified"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	currentLevel := KYCLevel(result.Level)
 	verified := result.Verified && isLevelSufficient(currentLevel, requiredLevel)
@@ -517,14 +516,14 @@ func (s *AppState) handleAccountOpening(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"allowed":           true,
-		"reason":            "KYC verified — account approved",
+		"allowed":            true,
+		"reason":             "KYC verified — account approved",
 		"required_kyc_level": requiredLevel,
 		"current_kyc_level":  currentLevel,
-		"kyc_verified":      true,
-		"application_id":    appID,
-		"gateway_reachable": true,
-		"fail_closed":       false,
+		"kyc_verified":       true,
+		"application_id":     appID,
+		"gateway_reachable":  true,
+		"fail_closed":        false,
 		"limits": map[string]interface{}{
 			"max_balance": maxBal,
 			"daily_limit": dailyLim,
@@ -650,12 +649,12 @@ func (s *AppState) handleKYCCheck(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"customer_id":      req.CustomerID,
-		"verified":         verified,
-		"current_level":    current,
-		"required_level":   req.Level,
+		"customer_id":       req.CustomerID,
+		"verified":          verified,
+		"current_level":     current,
+		"required_level":    req.Level,
 		"gateway_reachable": reachable,
-		"fail_closed":      !reachable,
+		"fail_closed":       !reachable,
 	})
 }
 
@@ -691,17 +690,17 @@ func (s *AppState) handleVerifyCallback(w http.ResponseWriter, r *http.Request) 
 
 	// Kafka event
 	s.publishKafka("account.kyc.verified", map[string]interface{}{
-		"customer_id":          req.CustomerID,
-		"level":                req.Level,
+		"customer_id":           req.CustomerID,
+		"level":                 req.Level,
 		"applications_approved": approved,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"customer_id":          req.CustomerID,
-		"level":                req.Level,
+		"customer_id":           req.CustomerID,
+		"level":                 req.Level,
 		"applications_approved": approved,
-		"status":               "verified",
+		"status":                "verified",
 	})
 }
 
@@ -729,10 +728,10 @@ func (s *AppState) handleApproveGate(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error":      "KYC_NOT_VERIFIED",
-			"message":    "Manual approval is BLOCKED until KYC completes — there is no override path",
-			"kyc_level":  app.KYCLevel,
-			"status":     app.Status,
+			"error":     "KYC_NOT_VERIFIED",
+			"message":   "Manual approval is BLOCKED until KYC completes — there is no override path",
+			"kyc_level": app.KYCLevel,
+			"status":    app.Status,
 		})
 		return
 	}
@@ -830,7 +829,7 @@ func (s *AppState) handleBureauVerify(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *AppState) callBureau(bureau string, req BureauVerificationRequest) BureauResult {
@@ -877,7 +876,7 @@ func (s *AppState) callBureau(bureau string, req BureauVerificationRequest) Bure
 			ResponseTimeMs: elapsed,
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 404 {
 		return BureauResult{
@@ -902,7 +901,7 @@ func (s *AppState) callBureau(bureau string, req BureauVerificationRequest) Bure
 		Discrepancies []string `json:"discrepancies"`
 		Confidence    float64  `json:"confidence"`
 	}
-	json.NewDecoder(resp.Body).Decode(&bureauResp)
+	_ = json.NewDecoder(resp.Body).Decode(&bureauResp)
 
 	status := "mismatch"
 	if bureauResp.Verified {
@@ -938,7 +937,7 @@ func (s *AppState) handleBureauStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *AppState) handleTierRequirements(w http.ResponseWriter, r *http.Request) {
@@ -948,29 +947,29 @@ func (s *AppState) handleTierRequirements(w http.ResponseWriter, r *http.Request
 			"tier_1": map[string]interface{}{
 				"name": "Basic (Mobile Money)", "max_balance": 300000, "daily_limit": 50000,
 				"documents": []string{"phone", "name", "dob"},
-				"liveness": false, "bvn": false, "nin": false, "address": false,
+				"liveness":  false, "bvn": false, "nin": false, "address": false,
 				"kyc_level": "basic",
 			},
 			"tier_2": map[string]interface{}{
 				"name": "Standard", "max_balance": 500000, "daily_limit": 200000,
 				"documents": []string{"phone", "name", "dob", "bvn", "id_document"},
-				"liveness": true, "bvn": true, "nin": false, "address": false,
+				"liveness":  true, "bvn": true, "nin": false, "address": false,
 				"kyc_level": "standard",
 			},
 			"tier_3": map[string]interface{}{
 				"name": "Enhanced (Full Banking)", "max_balance": 0, "daily_limit": 0,
 				"documents": []string{"phone", "name", "dob", "bvn", "nin", "id_document", "utility_bill", "passport_photo", "signature"},
-				"liveness": true, "bvn": true, "nin": true, "address": true,
+				"liveness":  true, "bvn": true, "nin": true, "address": true,
 				"kyc_level": "enhanced",
 			},
 		},
 		"loan_requirements": map[string]interface{}{
-			"personal":    map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
-			"sme":         map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
-			"corporate":   map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
-			"mortgage":    map[string]interface{}{"min_level": "full_edd", "threshold": "any amount"},
-			"above_10m":   map[string]interface{}{"min_level": "enhanced", "threshold": "≥₦10,000,000"},
-			"above_50m":   map[string]interface{}{"min_level": "full_edd", "threshold": "≥₦50,000,000"},
+			"personal":  map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
+			"sme":       map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
+			"corporate": map[string]interface{}{"min_level": "enhanced", "threshold": "any amount"},
+			"mortgage":  map[string]interface{}{"min_level": "full_edd", "threshold": "any amount"},
+			"above_10m": map[string]interface{}{"min_level": "enhanced", "threshold": "≥₦10,000,000"},
+			"above_50m": map[string]interface{}{"min_level": "full_edd", "threshold": "≥₦50,000,000"},
 		},
 		"cbn_circular": "CBN/DIR/GEN/CIR/04/010",
 	})
@@ -985,14 +984,14 @@ func (s *AppState) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime_sec": time.Since(s.startTime).Seconds(),
 		"design":     "fail-closed",
 		"integrations": map[string]string{
-			"kyc_engine":      s.config.KYCEngineURL,
-			"sanctions":       s.config.SanctionsURL,
-			"kafka":           s.config.KafkaBrokers,
-			"tigerbeetle":     s.config.TigerBeetleURL,
-			"permify":         s.config.PermifyURL,
-			"firstcentral":    s.config.FirstCentralURL,
-			"crc":             s.config.CRCURL,
-			"creditregistry":  s.config.CreditRegistryURL,
+			"kyc_engine":     s.config.KYCEngineURL,
+			"sanctions":      s.config.SanctionsURL,
+			"kafka":          s.config.KafkaBrokers,
+			"tigerbeetle":    s.config.TigerBeetleURL,
+			"permify":        s.config.PermifyURL,
+			"firstcentral":   s.config.FirstCentralURL,
+			"crc":            s.config.CRCURL,
+			"creditregistry": s.config.CreditRegistryURL,
 		},
 	})
 }
@@ -1006,7 +1005,6 @@ func generateID() string {
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
-
 
 // validateQueryParam validates and sanitizes a query parameter.
 func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
@@ -1043,13 +1041,16 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 }
 
 var db *sql.DB
+
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -1057,9 +1058,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -1073,9 +1078,10 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
-
 
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
@@ -1109,9 +1115,6 @@ func initDB() {
 }
 
 // ─── Domain CRUD Handlers (PostgreSQL-backed) ────────────────────────────────
-
-
-
 
 func execInTransaction(fn func(tx *sql.Tx) error) error {
 	tx, err := db.Begin()
@@ -1149,14 +1152,13 @@ func otelMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-
-
 type rateLimiter struct {
 	mu       sync.Mutex
 	requests map[string][]time.Time
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -1167,9 +1169,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -1177,7 +1184,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -1222,9 +1231,13 @@ func isPQClientError(err error) bool {
 func handleListEntities(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 { page = 1 }
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 || limit > 100 { limit = 20 }
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
 	offset := (page - 1) * limit
 
 	var total int
@@ -1237,27 +1250,33 @@ func handleListEntities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
 	for rows.Next() {
 		vals := make([]interface{}, len(cols))
 		ptrs := make([]interface{}, len(cols))
-		for i := range vals { ptrs[i] = &vals[i] }
-		if err := rows.Scan(ptrs...); err != nil { continue }
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			continue
+		}
 		row := make(map[string]interface{})
 		for i, col := range cols {
-		switch v := vals[i].(type) {
-		case []byte:
-			row[col] = string(v)
-		default:
-			row[col] = v
+			switch v := vals[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			default:
+				row[col] = v
+			}
 		}
-	}
 		results = append(results, row)
 	}
-	if results == nil { results = []map[string]interface{}{} }
-	json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
+	if results == nil {
+		results = []map[string]interface{}{}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": total, "page": page, "limit": limit})
 }
 
 func handleGetEntity(w http.ResponseWriter, r *http.Request) {
@@ -1272,7 +1291,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, _ := rows.Columns()
 	if !rows.Next() {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
@@ -1280,7 +1299,9 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 	}
 	vals := make([]interface{}, len(cols))
 	ptrs := make([]interface{}, len(cols))
-	for i := range vals { ptrs[i] = &vals[i] }
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
 	if err := rows.Scan(ptrs...); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -1294,7 +1315,7 @@ func handleGetEntity(w http.ResponseWriter, r *http.Request) {
 			row[col] = v
 		}
 	}
-	json.NewEncoder(w).Encode(row)
+	_ = json.NewEncoder(w).Encode(row)
 }
 
 func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
@@ -1309,7 +1330,9 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 	placeholders := make([]string, 0)
 	i := 1
 	for k, v := range body {
-		if k == "id" || k == "created_at" { continue }
+		if k == "id" || k == "created_at" {
+			continue
+		}
 		cols = append(cols, k)
 		switch mv := v.(type) {
 		case map[string]interface{}:
@@ -1336,8 +1359,10 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": newID, "status": "created"})
 }
 
 func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
@@ -1361,25 +1386,26 @@ func handleDeleteEntity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil) }
-	json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "created", r.URL.Path, nil)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": idStr, "status": "deleted"})
 }
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	var count int
 	if db != nil {
-		db.QueryRow("SELECT COUNT(*) FROM kyc_enforcement_records").Scan(&count)
+		_ = db.QueryRow("SELECT COUNT(*) FROM kyc_enforcement_records").Scan(&count)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"service": "kyc_enforcement_records", "table": "kyc_enforcement_records", "total_records": count})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"service": "kyc_enforcement_records", "table": "kyc_enforcement_records", "total_records": count})
 }
-
 
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -1390,6 +1416,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -1398,7 +1425,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -1407,10 +1436,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -1419,46 +1448,64 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -1469,6 +1516,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -1477,9 +1525,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -1513,11 +1565,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -1536,6 +1588,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -1562,9 +1615,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -1574,7 +1631,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -1606,7 +1663,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -1647,11 +1704,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -1681,7 +1738,6 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
 func main() {
 	cfg := loadConfig()
 	state := NewAppState(cfg)
@@ -1705,7 +1761,6 @@ func main() {
 	mux.HandleFunc("/api/v1/kyc_enforcement_records/create", handleCreateEntity)
 	mux.HandleFunc("/api/v1/kyc_enforcement_records/delete", handleDeleteEntity)
 	mux.HandleFunc("/stats", handleStats)
-
 
 	addr := ":" + cfg.Port
 	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}

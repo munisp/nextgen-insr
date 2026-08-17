@@ -102,8 +102,8 @@ func (a *OpenSearchAuditor) createIndices() error {
 					},
 				},
 				"settings": map[string]interface{}{
-					"number_of_shards":   1,
-					"number_of_replicas": 1,
+					"number_of_shards":     1,
+					"number_of_replicas":   1,
 					"index.lifecycle.name": "kyc-audit-policy",
 				},
 			},
@@ -113,12 +113,12 @@ func (a *OpenSearchAuditor) createIndices() error {
 			mapping: map[string]interface{}{
 				"mappings": map[string]interface{}{
 					"properties": map[string]interface{}{
-						"@timestamp":  map[string]string{"type": "date"},
-						"session_id":  map[string]string{"type": "keyword"},
-						"user_id":     map[string]string{"type": "keyword"},
-						"event_type":  map[string]string{"type": "keyword"},
-						"source":      map[string]string{"type": "keyword"},
-						"details":     map[string]string{"type": "text"},
+						"@timestamp": map[string]string{"type": "date"},
+						"session_id": map[string]string{"type": "keyword"},
+						"user_id":    map[string]string{"type": "keyword"},
+						"event_type": map[string]string{"type": "keyword"},
+						"source":     map[string]string{"type": "keyword"},
+						"details":    map[string]string{"type": "text"},
 					},
 				},
 			},
@@ -144,12 +144,12 @@ func (a *OpenSearchAuditor) createIndices() error {
 			mapping: map[string]interface{}{
 				"mappings": map[string]interface{}{
 					"properties": map[string]interface{}{
-						"@timestamp":           map[string]string{"type": "date"},
-						"metric_type":          map[string]string{"type": "keyword"},
-						"verification_count":   map[string]string{"type": "integer"},
-						"avg_duration_ms":      map[string]string{"type": "float"},
-						"success_rate":         map[string]string{"type": "float"},
-						"country":              map[string]string{"type": "keyword"},
+						"@timestamp":         map[string]string{"type": "date"},
+						"metric_type":        map[string]string{"type": "keyword"},
+						"verification_count": map[string]string{"type": "integer"},
+						"avg_duration_ms":    map[string]string{"type": "float"},
+						"success_rate":       map[string]string{"type": "float"},
+						"country":            map[string]string{"type": "keyword"},
 					},
 				},
 			},
@@ -169,7 +169,7 @@ func (a *OpenSearchAuditor) createIndices() error {
 			a.logger.Debug("opensearch_index_create_skip", zap.String("index", idx.name), zap.Error(err))
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	return nil
@@ -193,7 +193,7 @@ func (a *OpenSearchAuditor) IndexAuditEntry(ctx context.Context, entry AuditEntr
 		a.logger.Debug("opensearch_index_failed", zap.Error(err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		a.logger.Warn("opensearch_index_error", zap.Int("status", resp.StatusCode), zap.String("id", entry.ID))
@@ -220,7 +220,7 @@ func (a *OpenSearchAuditor) IndexEvent(ctx context.Context, index string, id str
 		a.logger.Debug("opensearch_event_index_failed", zap.Error(err))
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }
@@ -247,7 +247,7 @@ func (a *OpenSearchAuditor) SearchAuditLog(ctx context.Context, sessionID string
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Hits struct {
@@ -298,7 +298,7 @@ func (a *OpenSearchAuditor) GetComplianceMetrics(ctx context.Context, period str
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Hits struct {

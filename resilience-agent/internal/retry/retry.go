@@ -101,7 +101,7 @@ func postOnce(ctx context.Context, url string, body []byte) (int, string, error)
 	if err != nil {
 		return 0, "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	return resp.StatusCode, string(data), nil

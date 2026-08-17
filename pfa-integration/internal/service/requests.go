@@ -7,12 +7,12 @@ import (
 )
 
 type RegisterPFARequest struct {
-	PFACode       string  `json:"pfa_code"`
-	PFAName       string  `json:"pfa_name"`
-	PenComLicense string  `json:"pencom_license"`
-	ContactEmail  string  `json:"contact_email"`
-	ContactPhone  string  `json:"contact_phone"`
-	APIEndpoint   string  `json:"api_endpoint"`
+	PFACode        string  `json:"pfa_code"`
+	PFAName        string  `json:"pfa_name"`
+	PenComLicense  string  `json:"pencom_license"`
+	ContactEmail   string  `json:"contact_email"`
+	ContactPhone   string  `json:"contact_phone"`
+	APIEndpoint    string  `json:"api_endpoint"`
 	CommissionRate float64 `json:"commission_rate"`
 }
 
@@ -40,14 +40,14 @@ type AnnuityQuoteRequest struct {
 }
 
 type GroupLifeRequest struct {
-	PFAPartnerID        uuid.UUID `json:"pfa_partner_id"`
-	EmployerRCNo        string    `json:"employer_rc_no"`
-	EmployerName        string    `json:"employer_name"`
-	MemberCount         int       `json:"member_count"`
-	TotalAnnualEmolument float64  `json:"total_annual_emolument"`
-	CoverMultiple       float64   `json:"cover_multiple"`
-	Industry            string    `json:"industry"`
-	InceptionDate       time.Time `json:"inception_date"`
+	PFAPartnerID         uuid.UUID `json:"pfa_partner_id"`
+	EmployerRCNo         string    `json:"employer_rc_no"`
+	EmployerName         string    `json:"employer_name"`
+	MemberCount          int       `json:"member_count"`
+	TotalAnnualEmolument float64   `json:"total_annual_emolument"`
+	CoverMultiple        float64   `json:"cover_multiple"`
+	Industry             string    `json:"industry"`
+	InceptionDate        time.Time `json:"inception_date"`
 }
 
 type FundTransferRequest struct {

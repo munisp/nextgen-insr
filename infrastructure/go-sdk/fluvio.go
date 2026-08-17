@@ -63,7 +63,7 @@ func (c *FluvioClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("fluvio ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -84,7 +84,7 @@ func (c *FluvioClient) CreateTopic(ctx context.Context, name string, partitions,
 	if err != nil {
 		return fmt.Errorf("create topic: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -107,7 +107,7 @@ func (c *FluvioClient) Produce(ctx context.Context, topic string, event FluvioEv
 	if err != nil {
 		return fmt.Errorf("produce to %s: %w", topic, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("produce failed (%d): %s", resp.StatusCode, string(body))
@@ -125,10 +125,10 @@ func (c *FluvioClient) Consume(ctx context.Context, topic string, offset, limit 
 	if err != nil {
 		return nil, fmt.Errorf("consume from %s: %w", topic, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var events []FluvioEvent
-	json.Unmarshal(body, &events)
+	_ = json.Unmarshal(body, &events)
 	return events, nil
 }
 

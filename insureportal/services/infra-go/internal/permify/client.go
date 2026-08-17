@@ -17,11 +17,11 @@ import (
 
 // CheckRequest is the Permify permission check request
 type CheckRequest struct {
-	TenantID   string     `json:"tenantId"`
-	Metadata   *Metadata  `json:"metadata"`
-	Entity     Entity     `json:"entity"`
-	Permission string     `json:"permission"`
-	Subject    Subject    `json:"subject"`
+	TenantID   string    `json:"tenantId"`
+	Metadata   *Metadata `json:"metadata"`
+	Entity     Entity    `json:"entity"`
+	Permission string    `json:"permission"`
+	Subject    Subject   `json:"subject"`
 }
 
 type Metadata struct {
@@ -47,9 +47,9 @@ type CheckResponse struct {
 
 // WriteRelationshipRequest writes a relationship tuple
 type WriteRelationshipRequest struct {
-	TenantID  string         `json:"tenantId"`
-	Metadata  *WriteMetadata `json:"metadata"`
-	Tuples    []RelationTuple `json:"tuples"`
+	TenantID string          `json:"tenantId"`
+	Metadata *WriteMetadata  `json:"metadata"`
+	Tuples   []RelationTuple `json:"tuples"`
 }
 
 type WriteMetadata struct {
@@ -81,11 +81,17 @@ func NewClient(logger *zap.Logger) *Client {
 
 func (c *Client) Ping(ctx context.Context) string {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.endpoint+"/healthz", nil)
-	if err != nil { return "error" }
+	if err != nil {
+		return "error"
+	}
 	resp, err := c.httpClient.Do(req)
-	if err != nil { return "unreachable" }
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusOK { return "ok" }
+	if err != nil {
+		return "unreachable"
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusOK {
+		return "ok"
+	}
 	return fmt.Sprintf("http_%d", resp.StatusCode)
 }
 
@@ -95,7 +101,9 @@ func (c *Client) Check(ctx context.Context, req CheckRequest) (bool, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, "POST",
 		fmt.Sprintf("%s/v1/tenants/%s/permissions/check", c.endpoint, req.TenantID),
 		bytes.NewReader(body))
-	if err != nil { return true, nil } // fail-open
+	if err != nil {
+		return true, nil
+	} // fail-open
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
@@ -103,10 +111,10 @@ func (c *Client) Check(ctx context.Context, req CheckRequest) (bool, error) {
 		c.logger.Warn("Permify check failed (fail-open)", zap.Error(err))
 		return true, nil // fail-open when unavailable
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result CheckResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED", nil
 }
 
@@ -160,15 +168,15 @@ func (c *Client) WriteRelationshipHandler(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued_offline"})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
 func (c *Client) DeleteRelationshipHandler(w http.ResponseWriter, r *http.Request) {
 	var req WriteRelationshipRequest
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 	body, _ := json.Marshal(req)
 	httpReq, _ := http.NewRequestWithContext(r.Context(), "DELETE",
 		fmt.Sprintf("%s/v1/tenants/%s/relationships/delete", c.endpoint, req.TenantID),
@@ -179,13 +187,15 @@ func (c *Client) DeleteRelationshipHandler(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	writeJSON(w, resp.StatusCode, nil)
 }
 
 func (c *Client) ReadRelationshipsHandler(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.URL.Query().Get("tenantId")
-	if tenantID == "" { tenantID = "default" }
+	if tenantID == "" {
+		tenantID = "default"
+	}
 	httpReq, _ := http.NewRequestWithContext(r.Context(), "POST",
 		fmt.Sprintf("%s/v1/tenants/%s/relationships/read", c.endpoint, tenantID), nil)
 	resp, err := c.httpClient.Do(httpReq)
@@ -193,9 +203,9 @@ func (c *Client) ReadRelationshipsHandler(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, map[string]interface{}{"tuples": []interface{}{}})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
@@ -204,7 +214,7 @@ func (c *Client) WriteSchemaHandler(w http.ResponseWriter, r *http.Request) {
 		TenantID string `json:"tenantId"`
 		Schema   string `json:"schema"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 	body, _ := json.Marshal(map[string]string{"schema": req.Schema})
 	httpReq, _ := http.NewRequestWithContext(r.Context(), "POST",
 		fmt.Sprintf("%s/v1/tenants/%s/schemas/write", c.endpoint, req.TenantID),
@@ -215,15 +225,17 @@ func (c *Client) WriteSchemaHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued_offline"})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
 func (c *Client) ReadSchemaHandler(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.URL.Query().Get("tenantId")
-	if tenantID == "" { tenantID = "default" }
+	if tenantID == "" {
+		tenantID = "default"
+	}
 	httpReq, _ := http.NewRequestWithContext(r.Context(), "POST",
 		fmt.Sprintf("%s/v1/tenants/%s/schemas/read", c.endpoint, tenantID), nil)
 	resp, err := c.httpClient.Do(httpReq)
@@ -231,21 +243,25 @@ func (c *Client) ReadSchemaHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"schema": ""})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
 func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" { return v }
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return fallback
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if v != nil { json.NewEncoder(w).Encode(v) }
+	if v != nil {
+		json.NewEncoder(w).Encode(v)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

@@ -6,11 +6,11 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/google/uuid"
+	types "github.com/tigerbeetle/tigerbeetle-go"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
-	types "github.com/tigerbeetle/tigerbeetle-go"
-	"github.com/google/uuid"
 )
 
 type TigerBeetleClient struct {
@@ -384,11 +384,11 @@ func PaymentWorkflow(ctx workflow.Context, input PaymentWorkflowInput) (*Payment
 	err = workflow.ExecuteActivity(ctx, "ValidatePaymentActivity", input.PaymentID).Get(ctx, &paymentApproved)
 	if err != nil {
 		logger.Error("Payment validation failed", "error", err)
-		
+
 		voidID := fmt.Sprintf("VOID-%s", transferID)
 		var voidResult *TransferResult
-		workflow.ExecuteActivity(ctx, "VoidPendingTransferActivity", voidID, transferID, input.Ledger, input.Code).Get(ctx, &voidResult)
-		
+		_ = workflow.ExecuteActivity(ctx, "VoidPendingTransferActivity", voidID, transferID, input.Ledger, input.Code).Get(ctx, &voidResult)
+
 		return &PaymentWorkflowResult{
 			PaymentID:    input.PaymentID,
 			Status:       "failed",
@@ -399,14 +399,14 @@ func PaymentWorkflow(ctx workflow.Context, input PaymentWorkflowInput) (*Payment
 
 	if !paymentApproved {
 		logger.Info("Payment not approved, voiding transfer")
-		
+
 		voidID := fmt.Sprintf("VOID-%s", transferID)
 		var voidResult *TransferResult
 		err = workflow.ExecuteActivity(ctx, "VoidPendingTransferActivity", voidID, transferID, input.Ledger, input.Code).Get(ctx, &voidResult)
 		if err != nil {
 			logger.Error("Failed to void pending transfer", "error", err)
 		}
-		
+
 		return &PaymentWorkflowResult{
 			PaymentID:    input.PaymentID,
 			TransferID:   transferID,

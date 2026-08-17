@@ -119,24 +119,24 @@ func (m *Metrics) MetricsHandler() http.HandlerFunc {
 		defer m.mu.RUnlock()
 
 		for name, counter := range m.counters {
-			fmt.Fprintf(w, "# TYPE %s_%s counter\n", m.service, name)
-			fmt.Fprintf(w, "%s_%s %d\n", m.service, name, counter.Load())
+			_, _ = fmt.Fprintf(w, "# TYPE %s_%s counter\n", m.service, name)
+			_, _ = fmt.Fprintf(w, "%s_%s %d\n", m.service, name, counter.Load())
 		}
 
 		for name, gauge := range m.gauges {
-			fmt.Fprintf(w, "# TYPE %s_%s gauge\n", m.service, name)
-			fmt.Fprintf(w, "%s_%s %d\n", m.service, name, gauge.Load())
+			_, _ = fmt.Fprintf(w, "# TYPE %s_%s gauge\n", m.service, name)
+			_, _ = fmt.Fprintf(w, "%s_%s %d\n", m.service, name, gauge.Load())
 		}
 
 		for name, hist := range m.hists {
 			hist.mu.Lock()
-			fmt.Fprintf(w, "# TYPE %s_%s summary\n", m.service, name)
-			fmt.Fprintf(w, "%s_%s_count %d\n", m.service, name, hist.count)
-			fmt.Fprintf(w, "%s_%s_sum %.2f\n", m.service, name, hist.sum)
+			_, _ = fmt.Fprintf(w, "# TYPE %s_%s summary\n", m.service, name)
+			_, _ = fmt.Fprintf(w, "%s_%s_count %d\n", m.service, name, hist.count)
+			_, _ = fmt.Fprintf(w, "%s_%s_sum %.2f\n", m.service, name, hist.sum)
 			if hist.count > 0 {
-				fmt.Fprintf(w, "%s_%s_min %.2f\n", m.service, name, hist.min)
-				fmt.Fprintf(w, "%s_%s_max %.2f\n", m.service, name, hist.max)
-				fmt.Fprintf(w, "%s_%s_avg %.2f\n", m.service, name, hist.sum/float64(hist.count))
+				_, _ = fmt.Fprintf(w, "%s_%s_min %.2f\n", m.service, name, hist.min)
+				_, _ = fmt.Fprintf(w, "%s_%s_max %.2f\n", m.service, name, hist.max)
+				_, _ = fmt.Fprintf(w, "%s_%s_avg %.2f\n", m.service, name, hist.sum/float64(hist.count))
 			}
 			hist.mu.Unlock()
 		}
@@ -185,7 +185,7 @@ func (m *Metrics) MetricsJSONHandler() http.HandlerFunc {
 			latencies[name] = entry
 		}
 
-		json.NewEncoder(w).Encode(result)
+		_ = json.NewEncoder(w).Encode(result)
 	}
 }
 

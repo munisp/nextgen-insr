@@ -104,7 +104,7 @@ func newRouter() *chi.Mux {
 	r.Use(rateLimitMiddleware)
 	r.Use(middleware.Logger, middleware.Recoverer)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "scripts-runner"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "healthy", "database": fmt.Sprintf("%v", db != nil), "service": "scripts-runner"})
 	})
 	r.Get("/api/v1/scripts", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -120,7 +120,7 @@ func newRouter() *chi.Mux {
 		var body struct {
 			Script string `json:"script"`
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"script": body.Script, "status": "completed", "duration": "2.3s",
 			"output": fmt.Sprintf("Script %s executed successfully", body.Script),
@@ -189,7 +189,7 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	r := newRouter()
 	port := os.Getenv("PORT")

@@ -25,12 +25,12 @@ import (
 
 // Server holds all dependencies
 type Server struct {
-	Config       *config.Config
-	Postgres     *db.Postgres
-	Redis        *db.RedisCache
-	Logger       *zap.SugaredLogger
-	ready        atomic.Bool
-	reqCount     atomic.Int64
+	Config   *config.Config
+	Postgres *db.Postgres
+	Redis    *db.RedisCache
+	Logger   *zap.SugaredLogger
+	ready    atomic.Bool
+	reqCount atomic.Int64
 }
 
 type Response struct {
@@ -38,7 +38,6 @@ type Response struct {
 	Data    interface{} `json:"data,omitempty"`
 	Error   string      `json:"error,omitempty"`
 }
-
 
 func main() {
 	cfg := config.NewConfig()
@@ -201,34 +200,34 @@ func (s *Server) handleCalculate(w http.ResponseWriter, r *http.Request) {
 
 	totalInterest := req.Premium * rate * float64(req.Months)
 	total := req.Premium + totalInterest
-	monthly := math.Ceil(total/float64(req.Months))
+	monthly := math.Ceil(total / float64(req.Months))
 
 	_, _ = s.Redis.IncrementStatsAtomically(r.Context(), "calculations", 1)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"premium":          req.Premium,
-		"months":           req.Months,
-		"interest_rate":    rate,
-		"monthly_rate":     fmt.Sprintf("%.4f%%", rate*100),
-		"total_interest":   totalInterest,
-		"total_payable":    total,
-		"monthly_installment": monthly,
-		"loyal_discount":   req.LoyalYears >= s.Config.Finance.LoyalCustomerThreshold,
+		"premium":                 req.Premium,
+		"months":                  req.Months,
+		"interest_rate":           rate,
+		"monthly_rate":            fmt.Sprintf("%.4f%%", rate*100),
+		"total_interest":          totalInterest,
+		"total_payable":           total,
+		"monthly_installment":     monthly,
+		"loyal_discount":          req.LoyalYears >= s.Config.Finance.LoyalCustomerThreshold,
 		"early_settlement_rebate": fmt.Sprintf("%.0f%% of remaining interest", s.Config.Finance.EarlySettlementRebate*100),
-		"late_fee_percent": s.Config.Finance.LateFeePercent * 100,
+		"late_fee_percent":        s.Config.Finance.LateFeePercent * 100,
 	}})
 }
 
 // handleApply creates a finance application
 func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		PolicyID     string  `json:"policy_id"`
-		CustomerID   string  `json:"customer_id"`
-		Premium      float64 `json:"premium"`
-		Months       int     `json:"months"`
-		Frequency    string  `json:"frequency"`
-		LoyalYears   int     `json:"loyal_years"`
+		PolicyID   string  `json:"policy_id"`
+		CustomerID string  `json:"customer_id"`
+		Premium    float64 `json:"premium"`
+		Months     int     `json:"months"`
+		Frequency  string  `json:"frequency"`
+		LoyalYears int     `json:"loyal_years"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -263,11 +262,11 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 	scheduleEntries := make([]*db.ScheduleEntryDB, req.Months)
 	for i := 0; i < req.Months; i++ {
 		scheduleEntries[i] = &db.ScheduleEntryDB{
-			ID:               fmt.Sprintf("sched_%d_%d", time.Now().UnixNano(), i),
+			ID:                fmt.Sprintf("sched_%d_%d", time.Now().UnixNano(), i),
 			InstallmentNumber: i + 1,
-			DueDate:          time.Now().AddDate(0, i+1, 0).Format("2006-01-02"),
-			Amount:           monthlyPayment,
-			Status:           string(models.InstPending),
+			DueDate:           time.Now().AddDate(0, i+1, 0).Format("2006-01-02"),
+			Amount:            monthlyPayment,
+			Status:            string(models.InstPending),
 		}
 	}
 
@@ -300,11 +299,11 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 
 	// Publish event
 	_ = s.Redis.PublishFinanceEvent(r.Context(), map[string]interface{}{
-		"event":        "finance.application_submitted",
+		"event":          "finance.application_submitted",
 		"application_id": appID,
-		"policy_id":    req.PolicyID,
-		"amount":       req.Premium,
-		"term_months":  req.Months,
+		"policy_id":      req.PolicyID,
+		"amount":         req.Premium,
+		"term_months":    req.Months,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
@@ -312,18 +311,18 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
-			"application_id": appID,
-			"policy_id":      req.PolicyID,
-			"customer_id":    req.CustomerID,
-			"premium":        req.Premium,
-			"term_months":    req.Months,
-			"frequency":      req.Frequency,
-			"interest_rate":  rate,
-			"total_payable":  totalPayable,
+			"application_id":  appID,
+			"policy_id":       req.PolicyID,
+			"customer_id":     req.CustomerID,
+			"premium":         req.Premium,
+			"term_months":     req.Months,
+			"frequency":       req.Frequency,
+			"interest_rate":   rate,
+			"total_payable":   totalPayable,
 			"monthly_payment": monthlyPayment,
-			"status":         "submitted",
-			"schedule":       scheduleEntries,
-			"next_due_date":  scheduleEntries[0].DueDate,
+			"status":          "submitted",
+			"schedule":        scheduleEntries,
+			"next_due_date":   scheduleEntries[0].DueDate,
 		},
 	})
 }
@@ -432,10 +431,10 @@ func (s *Server) handleUpdateApplicationStatus(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"application_id": appID,
+		"application_id":  appID,
 		"previous_status": app.Status,
-		"new_status":     req.Status,
-		"updated_at":     now.Format(time.RFC3339),
+		"new_status":      req.Status,
+		"updated_at":      now.Format(time.RFC3339),
 	}})
 }
 
@@ -465,14 +464,14 @@ func (s *Server) handleGetSchedule(w http.ResponseWriter, r *http.Request) {
 // handleCreditScore triggers a credit score calculation
 func (s *Server) handleCreditScore(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		CustomerID     string  `json:"customer_id"`
-		PaymentHistory float64 `json:"payment_history"`
-		ClaimsRatio    float64 `json:"claims_ratio"`
-		TenureYears    int     `json:"tenure_years"`
-		ActivePolicies int     `json:"active_policies"`
-		DefaultHistory int     `json:"default_history"`
-		IncomeEstimate float64 `json:"income_estimate"`
-		EmploymentStatus string `json:"employment_status"`
+		CustomerID       string  `json:"customer_id"`
+		PaymentHistory   float64 `json:"payment_history"`
+		ClaimsRatio      float64 `json:"claims_ratio"`
+		TenureYears      int     `json:"tenure_years"`
+		ActivePolicies   int     `json:"active_policies"`
+		DefaultHistory   int     `json:"default_history"`
+		IncomeEstimate   float64 `json:"income_estimate"`
+		EmploymentStatus string  `json:"employment_status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -531,21 +530,21 @@ func (s *Server) handleCreditScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	profile := &db.CreditProfileDB{
-		ID:              fmt.Sprintf("cred_%d", time.Now().UnixNano()),
-		CustomerID:      req.CustomerID,
-		CreditScore:     score,
-		ScoreDate:       time.Now().Format(time.RFC3339),
-		PaymentHistory:  req.PaymentHistory,
-		ClaimsRatio:     req.ClaimsRatio,
-		TenureYears:     req.TenureYears,
-		ActivePolicies:  req.ActivePolicies,
-		DefaultHistory:  req.DefaultHistory,
-		IncomeEstimate:  req.IncomeEstimate,
+		ID:               fmt.Sprintf("cred_%d", time.Now().UnixNano()),
+		CustomerID:       req.CustomerID,
+		CreditScore:      score,
+		ScoreDate:        time.Now().Format(time.RFC3339),
+		PaymentHistory:   req.PaymentHistory,
+		ClaimsRatio:      req.ClaimsRatio,
+		TenureYears:      req.TenureYears,
+		ActivePolicies:   req.ActivePolicies,
+		DefaultHistory:   req.DefaultHistory,
+		IncomeEstimate:   req.IncomeEstimate,
 		EmploymentStatus: req.EmploymentStatus,
-		Rating:          rating,
-		Recommendation:  fmt.Sprintf("approved_with_score_%d", score),
-		MaxFinanced:     maxFinanced,
-		RecommendedRate: recommendedRate,
+		Rating:           rating,
+		Recommendation:   fmt.Sprintf("approved_with_score_%d", score),
+		MaxFinanced:      maxFinanced,
+		RecommendedRate:  recommendedRate,
 	}
 
 	if err := s.Postgres.UpsertCreditProfile(r.Context(), profile); err != nil {
@@ -557,13 +556,13 @@ func (s *Server) handleCreditScore(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"customer_id":            req.CustomerID,
-		"credit_score":           score,
-		"credit_rating":          rating,
-		"max_financed_amount":    maxFinanced,
+		"customer_id":               req.CustomerID,
+		"credit_score":              score,
+		"credit_rating":             rating,
+		"max_financed_amount":       maxFinanced,
 		"recommended_interest_rate": recommendedRate,
-		"recommendation":         profile.Recommendation,
-		"scored_at":              time.Now().Format(time.RFC3339),
+		"recommendation":            profile.Recommendation,
+		"scored_at":                 time.Now().Format(time.RFC3339),
 	}})
 }
 
@@ -590,11 +589,11 @@ func (s *Server) handleGetCreditProfile(w http.ResponseWriter, r *http.Request) 
 // handleAddCollateral adds collateral for a loan
 func (s *Server) handleAddCollateral(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		LoanID  string  `json:"loan_id"`
-		Type    string  `json:"type"`
-		Details string  `json:"details"`
-		Value   float64 `json:"value"`
-		Currency string `json:"currency"`
+		LoanID   string  `json:"loan_id"`
+		Type     string  `json:"type"`
+		Details  string  `json:"details"`
+		Value    float64 `json:"value"`
+		Currency string  `json:"currency"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -609,14 +608,14 @@ func (s *Server) handleAddCollateral(w http.ResponseWriter, r *http.Request) {
 	}
 
 	collateral := &db.CollateralDB{
-		ID:        fmt.Sprintf("coll_%d", time.Now().UnixNano()),
-		LoanID:    req.LoanID,
-		Type:      req.Type,
-		Details:   req.Details,
-		Value:     req.Value,
-		Currency:  req.Currency,
-		Status:    "pending_verification",
-		Metadata:  "{}",
+		ID:       fmt.Sprintf("coll_%d", time.Now().UnixNano()),
+		LoanID:   req.LoanID,
+		Type:     req.Type,
+		Details:  req.Details,
+		Value:    req.Value,
+		Currency: req.Currency,
+		Status:   "pending_verification",
+		Metadata: "{}",
 	}
 
 	if err := s.Postgres.InsertCollateral(r.Context(), collateral); err != nil {
@@ -659,11 +658,11 @@ func (s *Server) handleGetCollateral(w http.ResponseWriter, r *http.Request) {
 // handleCollectionAction creates a collection action for an overdue account
 func (s *Server) handleCollectionAction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		LoanID     string                 `json:"loan_id"`
-		CustomerID string                 `json:"customer_id"`
-		ActionType string                 `json:"action_type"`
-		Notes      string                 `json:"notes"`
-		Scheduled  string                 `json:"scheduled_at,omitempty"`
+		LoanID     string `json:"loan_id"`
+		CustomerID string `json:"customer_id"`
+		ActionType string `json:"action_type"`
+		Notes      string `json:"notes"`
+		Scheduled  string `json:"scheduled_at,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, "invalid request body", http.StatusBadRequest)
@@ -724,13 +723,13 @@ func (s *Server) handleGetOverdue(w http.ResponseWriter, r *http.Request) {
 				dueDate, _ := time.Parse("2006-01-02", entry.DueDate)
 				if time.Now().After(dueDate) {
 					overdueLoans = append(overdueLoans, map[string]interface{}{
-						"loan_id":         app.ID,
-						"application_id":  app.ApplicationID,
-						"customer_id":     app.CustomerID,
-						"installment_no":  entry.InstallmentNumber,
-						"due_date":        entry.DueDate,
-						"amount":          entry.Amount,
-						"days_overdue":    int(time.Since(dueDate).Hours() / 24),
+						"loan_id":            app.ID,
+						"application_id":     app.ApplicationID,
+						"customer_id":        app.CustomerID,
+						"installment_no":     entry.InstallmentNumber,
+						"due_date":           entry.DueDate,
+						"amount":             entry.Amount,
+						"days_overdue":       int(time.Since(dueDate).Hours() / 24),
 						"recommended_action": string(models.ActionSMS),
 					})
 				}
@@ -791,15 +790,15 @@ func (s *Server) handleEarlySettlement(w http.ResponseWriter, r *http.Request) {
 	totalPayable := remainingBalance - rebateAmount
 
 	settlement := &db.EarlySettlementDB{
-		ID:               fmt.Sprintf("es_%d", time.Now().UnixNano()),
-		LoanID:           req.LoanID,
-		RequestedAt:      time.Now().Format(time.RFC3339),
-		RemainingBalance: remainingBalance,
+		ID:                fmt.Sprintf("es_%d", time.Now().UnixNano()),
+		LoanID:            req.LoanID,
+		RequestedAt:       time.Now().Format(time.RFC3339),
+		RemainingBalance:  remainingBalance,
 		RemainingInterest: remainingInterest,
-		RebateAmount:     rebateAmount,
-		RebatePercent:    s.Config.Finance.EarlySettlementRebate,
-		TotalPayable:     totalPayable,
-		Status:           "requested",
+		RebateAmount:      rebateAmount,
+		RebatePercent:     s.Config.Finance.EarlySettlementRebate,
+		TotalPayable:      totalPayable,
+		Status:            "requested",
 	}
 
 	if err := s.Postgres.InsertEarlySettlement(r.Context(), settlement); err != nil {
@@ -808,16 +807,16 @@ func (s *Server) handleEarlySettlement(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
-		"settlement_id":        settlement.ID,
-		"loan_id":              req.LoanID,
-		"remaining_balance":    remainingBalance,
-		"remaining_interest":   remainingInterest,
-		"rebate_amount":        rebateAmount,
-		"rebate_percent":       s.Config.Finance.EarlySettlementRebate * 100,
-		"total_payable_now":    totalPayable,
-		"status":               "pending_approval",
-		"early_savings":        rebateAmount,
-		"policy_upon_payment":  string(models.LoanStatusPaidOff),
+		"settlement_id":       settlement.ID,
+		"loan_id":             req.LoanID,
+		"remaining_balance":   remainingBalance,
+		"remaining_interest":  remainingInterest,
+		"rebate_amount":       rebateAmount,
+		"rebate_percent":      s.Config.Finance.EarlySettlementRebate * 100,
+		"total_payable_now":   totalPayable,
+		"status":              "pending_approval",
+		"early_savings":       rebateAmount,
+		"policy_upon_payment": string(models.LoanStatusPaidOff),
 	}})
 }
 
@@ -874,15 +873,15 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summary := map[string]interface{}{
-		"total_applications":   totalApp,
+		"total_applications":    totalApp,
 		"approved_applications": approvedApp,
-		"active_loans":         activeLoans,
-		"total_origination":    totalOrigination,
-		"total_receivable":     totalReceivable,
-		"total_collected":      totalCollected,
-		"overdue_amount":       overdueAmount,
-		"avg_credit_score":     totalCreditScore / int(totalApp),
-		"updated_at":           time.Now().UTC().Format(time.RFC3339),
+		"active_loans":          activeLoans,
+		"total_origination":     totalOrigination,
+		"total_receivable":      totalReceivable,
+		"total_collected":       totalCollected,
+		"overdue_amount":        overdueAmount,
+		"avg_credit_score":      totalCreditScore / int(totalApp),
+		"updated_at":            time.Now().UTC().Format(time.RFC3339),
 	}
 
 	data, _ := json.Marshal(summary)

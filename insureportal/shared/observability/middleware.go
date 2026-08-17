@@ -32,7 +32,7 @@ func RequestLogging(logger *Logger) func(http.Handler) http.Handler {
 			requestID := r.Header.Get("X-Request-ID")
 			if requestID == "" {
 				b := make([]byte, 8)
-				rand.Read(b)
+				_, _ = rand.Read(b)
 				requestID = hex.EncodeToString(b)
 			}
 			w.Header().Set("X-Request-ID", requestID)

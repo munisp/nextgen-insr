@@ -1,21 +1,21 @@
 package main
 
 import (
-	"net"
-	"encoding/binary"
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"syscall"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -23,11 +23,13 @@ import (
 
 // Circuit breaker for external HTTP calls
 type circuitBreakerState int
+
 const (
 	cbClosed circuitBreakerState = iota
 	cbOpen
 	cbHalfOpen
 )
+
 type circuitBreaker struct {
 	state       circuitBreakerState
 	failures    int
@@ -35,9 +37,13 @@ type circuitBreaker struct {
 	resetAfter  time.Duration
 	lastFailure time.Time
 }
+
 var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
+
 func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed { return true }
+	if c.state == cbClosed {
+		return true
+	}
 	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
 		c.state = cbHalfOpen
 		return true
@@ -51,7 +57,9 @@ func (c *circuitBreaker) recordSuccess() {
 func (c *circuitBreaker) recordFailure() {
 	c.failures++
 	c.lastFailure = time.Now()
-	if c.failures >= c.threshold { c.state = cbOpen }
+	if c.failures >= c.threshold {
+		c.state = cbOpen
+	}
 }
 
 // AI Claims Auto-Adjudication Service
@@ -192,8 +200,10 @@ func handleAutoAdjudicate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(decision)
-	if kafkaWriter != nil { kafkaWriter.PublishEvent(r.Context(), "handleAutoAdjudicate", "ai-claims-auto-adjudication", nil) }
+	_ = json.NewEncoder(w).Encode(decision)
+	if kafkaWriter != nil {
+		kafkaWriter.PublishEvent(r.Context(), "handleAutoAdjudicate", "ai-claims-auto-adjudication", nil)
+	}
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -211,16 +221,15 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 func handleReady(w http.ResponseWriter, r *http.Request) {
 	if db == nil {
 		w.WriteHeader(503)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not_ready", "reason": "database unreachable"})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 func handleLive(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }
-
 
 type rateLimiter struct {
 	mu       sync.Mutex
@@ -228,6 +237,7 @@ type rateLimiter struct {
 	limit    int
 	window   time.Duration
 }
+
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
 }
@@ -238,9 +248,14 @@ func (rl *rateLimiter) allow(ip string) bool {
 	cutoff := now.Add(-rl.window)
 	var valid []time.Time
 	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) { valid = append(valid, t) }
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	if len(valid) >= rl.limit { rl.requests[ip] = valid; return false }
+	if len(valid) >= rl.limit {
+		rl.requests[ip] = valid
+		return false
+	}
 	rl.requests[ip] = append(valid, now)
 	return true
 }
@@ -248,7 +263,9 @@ func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" { ip = strings.Split(fwd, ",")[0] }
+			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+				ip = strings.Split(fwd, ",")[0]
+			}
 			if !rl.allow(strings.TrimSpace(ip)) {
 				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
 				return
@@ -288,13 +305,13 @@ func jsonLog(level, msg string, kvs ...string) {
 // ─── AI Claims Auto-Adjudication Logic ───────────────────────────────────────
 
 type ClaimDecision struct {
-	ClaimID       string  `json:"claim_id"`
-	Amount        float64 `json:"amount"`
-	RiskScore     float64 `json:"risk_score"`
-	Decision      string  `json:"decision"` // auto_approve, manual_review, reject
-	Confidence    float64 `json:"confidence"`
-	Factors       []string `json:"factors"`
-	SLACategory   string  `json:"sla_category"`
+	ClaimID     string   `json:"claim_id"`
+	Amount      float64  `json:"amount"`
+	RiskScore   float64  `json:"risk_score"`
+	Decision    string   `json:"decision"` // auto_approve, manual_review, reject
+	Confidence  float64  `json:"confidence"`
+	Factors     []string `json:"factors"`
+	SLACategory string   `json:"sla_category"`
 }
 
 // Multi-factor claim scoring (weighted rule engine)
@@ -303,27 +320,55 @@ func adjudicateClaim(claimID string, amount float64, policyAge int, claimHistory
 	factors := []string{}
 
 	// Amount-based risk (higher amounts = higher risk)
-	if amount > 5000000 { score += 35; factors = append(factors, "high_value_claim") }
-	if amount > 1000000 { score += 15; factors = append(factors, "significant_amount") }
+	if amount > 5000000 {
+		score += 35
+		factors = append(factors, "high_value_claim")
+	}
+	if amount > 1000000 {
+		score += 15
+		factors = append(factors, "significant_amount")
+	}
 
 	// Policy age (new policies are riskier)
-	if policyAge < 90 { score += 25; factors = append(factors, "new_policy_90d") }
-	if policyAge < 30 { score += 15; factors = append(factors, "very_new_policy_30d") }
+	if policyAge < 90 {
+		score += 25
+		factors = append(factors, "new_policy_90d")
+	}
+	if policyAge < 30 {
+		score += 15
+		factors = append(factors, "very_new_policy_30d")
+	}
 
 	// Claims history (frequent claimants)
-	if claimHistory > 3 { score += 20; factors = append(factors, "frequent_claimant") }
-	if claimHistory > 5 { score += 15; factors = append(factors, "excessive_claims") }
+	if claimHistory > 3 {
+		score += 20
+		factors = append(factors, "frequent_claimant")
+	}
+	if claimHistory > 5 {
+		score += 15
+		factors = append(factors, "excessive_claims")
+	}
 
 	// Documentation
-	if !hasDocuments { score += 20; factors = append(factors, "missing_documentation") }
+	if !hasDocuments {
+		score += 20
+		factors = append(factors, "missing_documentation")
+	}
 
 	// Policy coverage match
-	if !matchesPolicy { score += 30; factors = append(factors, "coverage_mismatch") }
+	if !matchesPolicy {
+		score += 30
+		factors = append(factors, "coverage_mismatch")
+	}
 
 	// Decision thresholds
 	decision := "auto_approve"
-	if score >= 60 { decision = "reject" }
-	if score >= 30 && score < 60 { decision = "manual_review" }
+	if score >= 60 {
+		decision = "reject"
+	}
+	if score >= 30 && score < 60 {
+		decision = "manual_review"
+	}
 
 	// Confidence is computed from the score's distance to the nearest
 	// decision boundary (30 = review threshold, 60 = reject threshold).
@@ -335,8 +380,12 @@ func adjudicateClaim(claimID string, amount float64, policyAge int, claimHistory
 
 	// SLA based on complexity
 	sla := "fast_track" // 5 days
-	if decision == "manual_review" { sla = "standard" } // 15 days
-	if decision == "reject" { sla = "investigation" }   // 30 days
+	if decision == "manual_review" {
+		sla = "standard"
+	} // 15 days
+	if decision == "reject" {
+		sla = "investigation"
+	} // 30 days
 
 	return ClaimDecision{
 		ClaimID: claimID, Amount: amount,
@@ -351,12 +400,12 @@ func handleAdjudicateClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ClaimID      string  `json:"claim_id"`
-		Amount       float64 `json:"amount"`
-		PolicyAge    int     `json:"policy_age_days"`
-		ClaimHistory int     `json:"claim_history_count"`
-		HasDocuments bool    `json:"has_documents"`
-		MatchesPolicy bool   `json:"matches_policy_coverage"`
+		ClaimID       string  `json:"claim_id"`
+		Amount        float64 `json:"amount"`
+		PolicyAge     int     `json:"policy_age_days"`
+		ClaimHistory  int     `json:"claim_history_count"`
+		HasDocuments  bool    `json:"has_documents"`
+		MatchesPolicy bool    `json:"matches_policy_coverage"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
@@ -369,15 +418,14 @@ func handleAdjudicateClaim(w http.ResponseWriter, r *http.Request) {
 			req.ClaimID, result.Decision, result.RiskScore, string(data))
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
-
 
 // ── Middleware Clients ────────────────────────────────────────────────────
 var (
-	redisClient  *redisPool
-	kafkaWriter  *kafkaProducer
-	osClient     *opensearchClient
+	redisClient *redisPool
+	kafkaWriter *kafkaProducer
+	osClient    *opensearchClient
 )
 
 type redisPool struct {
@@ -388,6 +436,7 @@ type redisPool struct {
 	cbOpen   bool
 	cbUntil  time.Time
 }
+
 func newRedisPool(addr, password string) *redisPool {
 	r := &redisPool{addr: addr, password: password}
 	go r.connect()
@@ -396,7 +445,9 @@ func newRedisPool(addr, password string) *redisPool {
 func (r *redisPool) connect() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.conn != nil { return }
+	if r.conn != nil {
+		return
+	}
 	conn, err := net.DialTimeout("tcp", r.addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "redis_connect_failed", "error", err.Error(), "addr", r.addr)
@@ -405,10 +456,10 @@ func (r *redisPool) connect() {
 		return
 	}
 	if r.password != "" {
-		fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
+		_, _ = fmt.Fprintf(conn, "*2\r\n$4\r\nAUTH\r\n$%d\r\n%s\r\n", len(r.password), r.password)
 		buf := make([]byte, 128)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, _ = conn.Read(buf)
 	}
 	r.conn = conn
 	r.cbOpen = false
@@ -417,46 +468,64 @@ func (r *redisPool) connect() {
 func (r *redisPool) respCmd(args ...string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.cbOpen && time.Now().Before(r.cbUntil) { return "", fmt.Errorf("circuit open") }
+	if r.cbOpen && time.Now().Before(r.cbUntil) {
+		return "", fmt.Errorf("circuit open")
+	}
 	if r.conn == nil {
 		r.mu.Unlock()
 		r.connect()
 		r.mu.Lock()
-		if r.conn == nil { return "", fmt.Errorf("not connected") }
+		if r.conn == nil {
+			return "", fmt.Errorf("not connected")
+		}
 	}
 	cmd := fmt.Sprintf("*%d\r\n", len(args))
-	for _, a := range args { cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a) }
-	r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	for _, a := range args {
+		cmd += fmt.Sprintf("$%d\r\n%s\r\n", len(a), a)
+	}
+	_ = r.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	_, err := fmt.Fprint(r.conn, cmd)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
-	r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 4096)
 	n, err := r.conn.Read(buf)
 	if err != nil {
-		r.conn.Close(); r.conn = nil; r.cbOpen = true; r.cbUntil = time.Now().Add(30 * time.Second)
+		_ = r.conn.Close()
+		r.conn = nil
+		r.cbOpen = true
+		r.cbUntil = time.Now().Add(30 * time.Second)
 		return "", err
 	}
 	return string(buf[:n]), nil
 }
 func (r *redisPool) CacheGet(key string) (string, bool) {
 	resp, err := r.respCmd("GET", key)
-	if err != nil || strings.HasPrefix(resp, "$-1") { return "", false }
+	if err != nil || strings.HasPrefix(resp, "$-1") {
+		return "", false
+	}
 	parts := strings.SplitN(resp, "\r\n", 3)
-	if len(parts) >= 2 { return parts[1], true }
+	if len(parts) >= 2 {
+		return parts[1], true
+	}
 	return "", false
 }
 func (r *redisPool) CacheSet(key string, value string, ttl time.Duration) {
 	if ttl > 0 {
-		r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
+		_, _ = r.respCmd("SETEX", key, fmt.Sprintf("%d", int(ttl.Seconds())), value)
 	} else {
-		r.respCmd("SET", key, value)
+		_, _ = r.respCmd("SET", key, value)
 	}
 }
 func (r *redisPool) CacheInvalidate(keys ...string) {
-	for _, k := range keys { r.respCmd("DEL", k) }
+	for _, k := range keys {
+		r.respCmd("DEL", k)
+	}
 }
 
 type kafkaProducer struct {
@@ -467,6 +536,7 @@ type kafkaProducer struct {
 	cbOpen  bool
 	cbUntil time.Time
 }
+
 func newKafkaProducer(brokers, topic string) *kafkaProducer {
 	p := &kafkaProducer{brokers: brokers, topic: topic}
 	go p.connect()
@@ -475,9 +545,13 @@ func newKafkaProducer(brokers, topic string) *kafkaProducer {
 func (k *kafkaProducer) connect() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.conn != nil { return }
+	if k.conn != nil {
+		return
+	}
 	addr := k.brokers
-	if idx := strings.Index(addr, ","); idx > 0 { addr = addr[:idx] }
+	if idx := strings.Index(addr, ","); idx > 0 {
+		addr = addr[:idx]
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		jsonLog("warn", "kafka_connect_failed", "error", err.Error(), "brokers", k.brokers)
@@ -511,11 +585,11 @@ func (k *kafkaProducer) PublishEvent(ctx context.Context, eventType string, key 
 	if k.conn != nil {
 		msg := append([]byte{0, 0, 0, 0}, data...)
 		binary.BigEndian.PutUint32(msg[:4], uint32(len(data)))
-		k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		_ = k.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		_, err := k.conn.Write(msg)
 		if err != nil {
 			jsonLog("warn", "kafka_publish_failed", "error", err.Error(), "topic", k.topic)
-			k.conn.Close()
+			_ = k.conn.Close()
 			k.conn = nil
 			k.cbOpen = true
 			k.cbUntil = time.Now().Add(30 * time.Second)
@@ -534,6 +608,7 @@ type opensearchClient struct {
 	cbUntil  time.Time
 	mu       sync.Mutex
 }
+
 func newOpenSearchClient(url, user string) *opensearchClient {
 	return &opensearchClient{
 		url:      url,
@@ -560,9 +635,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	idx := fmt.Sprintf("logs-%s-%s", service, time.Now().Format("2006.01.02"))
 	reqURL := fmt.Sprintf("%s/%s/_doc", o.url, idx)
 	req, err := http.NewRequest("POST", reqURL, bytes.NewReader(data))
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if o.user != "" { req.SetBasicAuth(o.user, o.password) }
+	if o.user != "" {
+		req.SetBasicAuth(o.user, o.password)
+	}
 	resp, err := o.client.Do(req)
 	if err != nil {
 		o.mu.Lock()
@@ -572,7 +651,7 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 		jsonLog("debug", "opensearch_index_failed", "error", err.Error())
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
@@ -605,7 +684,7 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 			jsonLog("warn", "auth_failure", "service", "ai-claims-auto-adjudication", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
 			w.WriteHeader(401)
-			json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
 			return
 		}
 		// In production: validate JWT against Keycloak JWKS endpoint
@@ -646,11 +725,11 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var result struct {
 		Can string `json:"can"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Can == "RESULT_ALLOWED"
 }
 
@@ -680,7 +759,6 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-
 func bodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
@@ -702,24 +780,31 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		rows, err := db.Query("SELECT id, claim_type, amount, risk_score, decision, created_at FROM adjudication_results ORDER BY id DESC LIMIT 50")
 		if err != nil {
-			json.NewEncoder(w).Encode(map[string]interface{}{"data": []interface{}{}, "error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []interface{}{}, "error": err.Error()})
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		var results []map[string]interface{}
 		for rows.Next() {
-			var id int; var claimType, decision string; var amount, riskScore float64; var createdAt interface{}
-			if err := rows.Scan(&id, &claimType, &amount, &riskScore, &decision, &createdAt); err != nil { continue }
+			var id int
+			var claimType, decision string
+			var amount, riskScore float64
+			var createdAt interface{}
+			if err := rows.Scan(&id, &claimType, &amount, &riskScore, &decision, &createdAt); err != nil {
+				continue
+			}
 			results = append(results, map[string]interface{}{"id": id, "claim_type": claimType, "amount": amount, "risk_score": riskScore, "decision": decision, "created_at": createdAt})
 		}
-		if results == nil { results = []map[string]interface{}{} }
-		json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": len(results)})
+		if results == nil {
+			results = []map[string]interface{}{}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": results, "total": len(results)})
 	})
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var total int
-		db.QueryRow("SELECT COUNT(*) FROM adjudication_results").Scan(&total)
-		json.NewEncoder(w).Encode(map[string]interface{}{"service": "ai-claims-auto-adjudication", "total_adjudications": total})
+		_ = db.QueryRow("SELECT COUNT(*) FROM adjudication_results").Scan(&total)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"service": "ai-claims-auto-adjudication", "total_adjudications": total})
 	})
 	port := os.Getenv("PORT")
 	if port == "" {

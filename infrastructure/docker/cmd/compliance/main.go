@@ -120,18 +120,18 @@ func initSchema() error {
 
 	// Seed NAICOM returns if empty
 	var count int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM naicom_returns`).Scan(&count)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM naicom_returns`).Scan(&count)
 	if count == 0 {
-		db.ExecContext(ctx, `INSERT INTO naicom_returns (id,period,return_type,status,submitted_at) VALUES ('NR-Q1-2024','Q1-2024','quarterly','submitted','2024-04-15T10:00:00Z')`)
-		db.ExecContext(ctx, `INSERT INTO naicom_returns (id,period,return_type,status,due_date) VALUES ('NR-Q2-2024','Q2-2024','quarterly','pending','2024-07-15')`)
+		_, _ = db.ExecContext(ctx, `INSERT INTO naicom_returns (id,period,return_type,status,submitted_at) VALUES ('NR-Q1-2024','Q1-2024','quarterly','submitted','2024-04-15T10:00:00Z')`)
+		_, _ = db.ExecContext(ctx, `INSERT INTO naicom_returns (id,period,return_type,status,due_date) VALUES ('NR-Q2-2024','Q2-2024','quarterly','pending','2024-07-15')`)
 	}
 
 	// Seed IFRS17 groups if empty
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ifrs17_contract_groups`).Scan(&count)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ifrs17_contract_groups`).Scan(&count)
 	if count == 0 {
-		db.ExecContext(ctx, `INSERT INTO ifrs17_contract_groups (id,group_name,model,contracts,csm) VALUES ('IG-001','profitable-annual','GMM',15000,500000000)`)
-		db.ExecContext(ctx, `INSERT INTO ifrs17_contract_groups (id,group_name,model,contracts,loss_component) VALUES ('IG-002','onerous-motor','GMM',2000,50000000)`)
-		db.ExecContext(ctx, `INSERT INTO ifrs17_contract_groups (id,group_name,model,contracts,liability) VALUES ('IG-003','short-duration','PAA',30000,800000000)`)
+		_, _ = db.ExecContext(ctx, `INSERT INTO ifrs17_contract_groups (id,group_name,model,contracts,csm) VALUES ('IG-001','profitable-annual','GMM',15000,500000000)`)
+		_, _ = db.ExecContext(ctx, `INSERT INTO ifrs17_contract_groups (id,group_name,model,contracts,loss_component) VALUES ('IG-002','onerous-motor','GMM',2000,50000000)`)
+		_, _ = db.ExecContext(ctx, `INSERT INTO ifrs17_contract_groups (id,group_name,model,contracts,liability) VALUES ('IG-003','short-duration','PAA',30000,800000000)`)
 	}
 
 	return nil
@@ -178,7 +178,7 @@ func handleNaicomReturns(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Failed to query returns: %v", err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		var returns []map[string]interface{}
 		for rows.Next() {
 			var id, period, returnType, status string
@@ -218,7 +218,7 @@ func handleNaicomReturns(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		db.ExecContext(ctx, `INSERT INTO audit_trail (action, actor, resource) VALUES ('naicom.return.created', 'system', $1)`, id)
+		_, _ = db.ExecContext(ctx, `INSERT INTO audit_trail (action, actor, resource) VALUES ('naicom.return.created', 'system', $1)`, id)
 		writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "period": body.Period, "status": "pending"})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -230,10 +230,10 @@ func handleNaicomSolvency(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var totalPolicies int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ifrs17_contract_groups`).Scan(&totalPolicies)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ifrs17_contract_groups`).Scan(&totalPolicies)
 
 	var totalCSM float64
-	db.QueryRowContext(ctx, `SELECT COALESCE(SUM(csm), 0) FROM ifrs17_contract_groups`).Scan(&totalCSM)
+	_ = db.QueryRowContext(ctx, `SELECT COALESCE(SUM(csm), 0) FROM ifrs17_contract_groups`).Scan(&totalCSM)
 
 	totalAssets := 5000000000.00 + totalCSM
 	totalLiabilities := 2700000000.00
@@ -241,9 +241,14 @@ func handleNaicomSolvency(w http.ResponseWriter, r *http.Request) {
 	solvencyRatio := totalAssets / totalLiabilities
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"solvency_ratio":    solvencyRatio,
-		"minimum_required":  1.0,
-		"status":            func() string { if solvencyRatio >= 1.0 { return "compliant" }; return "non_compliant" }(),
+		"solvency_ratio":   solvencyRatio,
+		"minimum_required": 1.0,
+		"status": func() string {
+			if solvencyRatio >= 1.0 {
+				return "compliant"
+			}
+			return "non_compliant"
+		}(),
 		"total_assets":      totalAssets,
 		"total_liabilities": totalLiabilities,
 		"surplus":           surplus,
@@ -258,9 +263,9 @@ func handleNdprConsent(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		var total, active, withdrawn int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ndpr_consents`).Scan(&total)
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ndpr_consents WHERE status = 'active'`).Scan(&active)
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ndpr_consents WHERE status = 'withdrawn'`).Scan(&withdrawn)
+		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ndpr_consents`).Scan(&total)
+		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ndpr_consents WHERE status = 'active'`).Scan(&active)
+		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ndpr_consents WHERE status = 'withdrawn'`).Scan(&withdrawn)
 
 		complianceScore := float64(0)
 		if total > 0 {
@@ -288,7 +293,7 @@ func handleNdprConsent(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Failed to record consent: %v", err)
 			return
 		}
-		db.ExecContext(ctx, `INSERT INTO audit_trail (action, actor, resource) VALUES ('ndpr.consent.granted', $1, $2)`, body.SubjectID, id)
+		_, _ = db.ExecContext(ctx, `INSERT INTO audit_trail (action, actor, resource) VALUES ('ndpr.consent.granted', $1, $2)`, body.SubjectID, id)
 		writeJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "status": "active"})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -300,7 +305,7 @@ func handleNdprDataSubjects(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var totalSubjects int
-	db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT subject_id) FROM ndpr_consents`).Scan(&totalSubjects)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT subject_id) FROM ndpr_consents`).Scan(&totalSubjects)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_subjects": totalSubjects,
@@ -316,7 +321,7 @@ func handleIfrs17Contracts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to query contracts: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var groups []map[string]interface{}
 	for rows.Next() {
 		var id, groupName, model string
@@ -342,17 +347,17 @@ func handleIfrs17CSM(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var totalCSM float64
-	db.QueryRowContext(ctx, `SELECT COALESCE(SUM(csm), 0) FROM ifrs17_contract_groups`).Scan(&totalCSM)
+	_ = db.QueryRowContext(ctx, `SELECT COALESCE(SUM(csm), 0) FROM ifrs17_contract_groups`).Scan(&totalCSM)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"opening_csm":          totalCSM,
 		"new_contracts":        totalCSM * 0.1,
 		"accretion":            totalCSM * 0.05,
 		"changes_in_estimates": totalCSM * -0.02,
-		"released_to_pnl":     totalCSM * -0.16,
-		"closing_csm":         totalCSM * 0.97,
-		"currency":            "NGN",
-		"period":              time.Now().Format("2006-01"),
+		"released_to_pnl":      totalCSM * -0.16,
+		"closing_csm":          totalCSM * 0.97,
+		"currency":             "NGN",
+		"period":               time.Now().Format("2006-01"),
 	})
 }
 
@@ -367,7 +372,7 @@ func handleAuditTrail(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Failed to query audit trail: %v", err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		var entries []map[string]interface{}
 		for rows.Next() {
 			var id int
@@ -411,8 +416,8 @@ func handleAuditTrail(w http.ResponseWriter, r *http.Request) {
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	count := atomic.LoadUint64(&requestCount)
-	fmt.Fprintf(w, "# TYPE compliance_http_requests_total counter\ncompliance_http_requests_total %d\n", count)
-	fmt.Fprintf(w, "# TYPE compliance_uptime_seconds gauge\ncompliance_uptime_seconds %.2f\n", time.Since(started).Seconds())
+	_, _ = fmt.Fprintf(w, "# TYPE compliance_http_requests_total counter\ncompliance_http_requests_total %d\n", count)
+	_, _ = fmt.Fprintf(w, "# TYPE compliance_uptime_seconds gauge\ncompliance_uptime_seconds %.2f\n", time.Since(started).Seconds())
 }
 
 func withMetrics(next http.HandlerFunc) http.HandlerFunc {

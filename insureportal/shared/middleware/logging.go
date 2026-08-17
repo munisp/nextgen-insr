@@ -45,7 +45,7 @@ func LoggingMiddleware(serviceName string) func(http.Handler) http.Handler {
 			fmt.Printf(
 				`{"timestamp":"%s","level":"INFO","service":"%s","message":"http_request",`+
 					`"fields":{"method":"%s","path":"%s","status":%d,"duration_ms":%d,`+
-					`"size":%d,"remote_addr":"%s","request_id":"%s","user_agent":"%s"}}` + "\n",
+					`"size":%d,"remote_addr":"%s","request_id":"%s","user_agent":"%s"}}`+"\n",
 				time.Now().UTC().Format(time.RFC3339),
 				serviceName,
 				r.Method,

@@ -58,8 +58,8 @@ func (a *APISixClient) CreateRoute(ctx context.Context, route Route) error {
 	if err != nil {
 		return fmt.Errorf("apisix create route: %w", err)
 	}
-	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.ReadAll(resp.Body)
 	return nil
 }
 

@@ -107,7 +107,7 @@ func (c *Client) Ping(ctx context.Context) string {
 	if err != nil {
 		return "unreachable"
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusOK {
 		return "ok"
 	}
@@ -148,7 +148,7 @@ func (c *Client) Produce(ctx context.Context, topic, key string, payload map[str
 			zap.Error(err))
 		return nil // fail-open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("fluvio produce error: %d", resp.StatusCode)
@@ -201,8 +201,8 @@ func (c *Client) ProduceBatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
-		"status":  "accepted",
-		"count":   len(req.Events),
+		"status": "accepted",
+		"count":  len(req.Events),
 	})
 }
 
@@ -239,10 +239,10 @@ func (c *Client) TopicStatsHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var stats TopicStats
-	json.NewDecoder(resp.Body).Decode(&stats)
+	_ = json.NewDecoder(resp.Body).Decode(&stats)
 	writeJSON(w, http.StatusOK, stats)
 }
 
@@ -271,10 +271,10 @@ func (c *Client) CreateTopicHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
@@ -352,7 +352,7 @@ func getEnv(key, fallback string) string {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

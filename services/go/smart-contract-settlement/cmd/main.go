@@ -24,22 +24,22 @@ import (
 // TigerBeetle (ledger transactions), Mojaloop (payout), Temporal (settlement workflows)
 
 type Config struct {
-	Port          string
-	DatabaseURL   string
-	KafkaURL      string
+	Port           string
+	DatabaseURL    string
+	KafkaURL       string
 	TigerBeetleURL string
-	MojaloopURL   string
-	Environment   string
+	MojaloopURL    string
+	Environment    string
 }
 
 func loadConfig() Config {
 	return Config{
-		Port:          envOr("PORT", "8115"),
-		DatabaseURL:   envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
-		KafkaURL:      envOr("KAFKA_REST_URL", "http://localhost:8082"),
+		Port:           envOr("PORT", "8115"),
+		DatabaseURL:    envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
+		KafkaURL:       envOr("KAFKA_REST_URL", "http://localhost:8082"),
 		TigerBeetleURL: envOr("TIGERBEETLE_URL", "http://localhost:3001"),
-		MojaloopURL:   envOr("MOJALOOP_URL", "http://localhost:3002"),
-		Environment:   envOr("ENVIRONMENT", "development"),
+		MojaloopURL:    envOr("MOJALOOP_URL", "http://localhost:3002"),
+		Environment:    envOr("ENVIRONMENT", "development"),
 	}
 }
 
@@ -115,7 +115,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"PC-003", "POL-QUAKE-001", "CUST-003", "seismic", "seismic_oracle", "Abuja", 4.0, 1000000, 5000000},
 	}
 	for _, c := range contracts {
-		s.db.ExecContext(ctx, `INSERT INTO parametric_contracts (id, policy_id, customer_id, trigger_type, threshold, payout_amount, max_payout, data_source, region)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO parametric_contracts (id, policy_id, customer_id, trigger_type, threshold, payout_amount, max_payout, data_source, region)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
 			c.id, c.policyID, c.custID, c.triggerType, c.threshold, c.payout, c.maxPayout, c.dataSource, c.region)
 	}
@@ -171,12 +171,12 @@ func (s *Store) Evaluate(ctx context.Context, contractID string, actualValue flo
 		status = "triggered"
 	}
 
-	s.db.ExecContext(ctx, `UPDATE parametric_contracts SET last_evaluated_at = NOW() WHERE id = $1`, contractID)
+	_, _ = s.db.ExecContext(ctx, `UPDATE parametric_contracts SET last_evaluated_at = NOW() WHERE id = $1`, contractID)
 
 	ledgerTxID := ""
 	if triggered {
 		ledgerTxID = fmt.Sprintf("TB-%d", time.Now().UnixNano()%1000000)
-		s.db.ExecContext(ctx, `INSERT INTO settlement_events (contract_id, trigger_value, threshold, triggered, payout_amount, ledger_tx_id, status)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO settlement_events (contract_id, trigger_value, threshold, triggered, payout_amount, ledger_tx_id, status)
 			VALUES ($1,$2,$3,$4,$5,$6,'settled')`, contractID, actualValue, threshold, triggered, calculatedPayout, ledgerTxID)
 	}
 
@@ -207,14 +207,14 @@ func (s *Store) ListContracts(ctx context.Context, status string) ([]map[string]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var id, polID, custID, trigType, dataSrc, st, region string
 		var threshold float64
 		var payout, maxPayout int64
 		var lastEval sql.NullTime
-		rows.Scan(&id, &polID, &custID, &trigType, &threshold, &payout, &maxPayout, &dataSrc, &st, &region, &lastEval)
+		_ = rows.Scan(&id, &polID, &custID, &trigType, &threshold, &payout, &maxPayout, &dataSrc, &st, &region, &lastEval)
 		entry := map[string]interface{}{
 			"id": id, "policy_id": polID, "customer_id": custID, "trigger_type": trigType,
 			"threshold": threshold, "payout_amount": payout, "max_payout": maxPayout,
@@ -244,7 +244,7 @@ func publishEvent(kafkaURL, topic string, event interface{}) {
 		if err != nil {
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 }
 
@@ -253,7 +253,7 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -264,7 +264,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -329,5 +329,5 @@ func main() {
 	<-quit
 	shutdownCtx, c := context.WithTimeout(ctx, 30*time.Second)
 	defer c()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

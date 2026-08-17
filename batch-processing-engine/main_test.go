@@ -19,7 +19,7 @@ func setupTestDB(t *testing.T) {
 		t.Skipf("Skipping (cannot open DB): %v", err)
 	}
 	if err := testDB.Ping(); err != nil {
-		testDB.Close()
+		_ = testDB.Close()
 		t.Skipf("Skipping (DB unreachable): %v", err)
 	}
 	prev := db

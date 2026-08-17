@@ -29,7 +29,7 @@ func Probe(url string) Result {
 		res.Error = err.Error()
 		return res
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	res.StatusCode = resp.StatusCode
 	res.OK = resp.StatusCode < http.StatusBadRequest

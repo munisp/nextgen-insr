@@ -155,7 +155,7 @@ func handlePolicies(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Failed to query policies: %v", err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		var policies []map[string]interface{}
 		for rows.Next() {
 			var id, pType, holder, status, currency string
@@ -175,7 +175,7 @@ func handlePolicies(w http.ResponseWriter, r *http.Request) {
 			policies = []map[string]interface{}{}
 		}
 		var total int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM policies`).Scan(&total)
+		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM policies`).Scan(&total)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"policies": policies, "total": total})
 
 	case http.MethodPost:
@@ -247,7 +247,7 @@ func handleQuote(w http.ResponseWriter, r *http.Request) {
 	premium := body.SumAssured * baseRate * float64(body.DurationYears)
 
 	var activePolicies int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM policies WHERE status != 'cancelled'`).Scan(&activePolicies)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM policies WHERE status != 'cancelled'`).Scan(&activePolicies)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"quote_id":        fmt.Sprintf("QT-%d", time.Now().UnixMilli()),
@@ -271,7 +271,7 @@ func handleClaims(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Failed to query claims: %v", err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		var claims []map[string]interface{}
 		for rows.Next() {
 			var id, claimType, description, status string
@@ -295,7 +295,7 @@ func handleClaims(w http.ResponseWriter, r *http.Request) {
 			claims = []map[string]interface{}{}
 		}
 		var total int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM claims`).Scan(&total)
+		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM claims`).Scan(&total)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"claims": claims, "total": total})
 
 	case http.MethodPost:
@@ -357,7 +357,7 @@ func handleAdjudicate(w http.ResponseWriter, r *http.Request) {
 		if amount > 1000000 {
 			decision = "review_required"
 		}
-		db.ExecContext(ctx, `UPDATE claims SET status = $1, updated_at = NOW() WHERE id = $2`, decision, body.ClaimID)
+		_, _ = db.ExecContext(ctx, `UPDATE claims SET status = $1, updated_at = NOW() WHERE id = $2`, decision, body.ClaimID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"claim_id":   body.ClaimID,
 			"decision":   decision,
@@ -389,7 +389,7 @@ func handleCustomers(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Failed to query customers: %v", err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		var customers []map[string]interface{}
 		for rows.Next() {
 			var id, name, email, phone, kycStatus string
@@ -407,7 +407,7 @@ func handleCustomers(w http.ResponseWriter, r *http.Request) {
 			customers = []map[string]interface{}{}
 		}
 		var total int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM customers`).Scan(&total)
+		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM customers`).Scan(&total)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"customers": customers, "total": total})
 
 	case http.MethodPost:
@@ -442,9 +442,9 @@ func handleVerificationStatus(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var totalCustomers, pendingKYC, verifiedKYC int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM customers`).Scan(&totalCustomers)
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM customers WHERE kyc_status = 'pending'`).Scan(&pendingKYC)
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM customers WHERE kyc_status = 'verified'`).Scan(&verifiedKYC)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM customers`).Scan(&totalCustomers)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM customers WHERE kyc_status = 'pending'`).Scan(&pendingKYC)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM customers WHERE kyc_status = 'verified'`).Scan(&verifiedKYC)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_customers": totalCustomers,
@@ -462,8 +462,8 @@ func handleVerificationStatus(w http.ResponseWriter, r *http.Request) {
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	count := atomic.LoadUint64(&requestCount)
-	fmt.Fprintf(w, "# TYPE core_services_http_requests_total counter\ncore_services_http_requests_total %d\n", count)
-	fmt.Fprintf(w, "# TYPE core_services_uptime_seconds gauge\ncore_services_uptime_seconds %.2f\n", time.Since(started).Seconds())
+	_, _ = fmt.Fprintf(w, "# TYPE core_services_http_requests_total counter\ncore_services_http_requests_total %d\n", count)
+	_, _ = fmt.Fprintf(w, "# TYPE core_services_uptime_seconds gauge\ncore_services_uptime_seconds %.2f\n", time.Since(started).Seconds())
 }
 
 func withMetrics(next http.HandlerFunc) http.HandlerFunc {

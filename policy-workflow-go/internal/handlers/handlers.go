@@ -72,7 +72,7 @@ func (h *Handlers) GetPolicy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(pol)
+	_ = json.NewEncoder(w).Encode(pol)
 }
 
 func (h *Handlers) GetPolicyByNumber(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +86,7 @@ func (h *Handlers) GetPolicyByNumber(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(pol)
+	_ = json.NewEncoder(w).Encode(pol)
 }
 
 func (h *Handlers) ListPolicies(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +94,9 @@ func (h *Handlers) ListPolicies(w http.ResponseWriter, r *http.Request) {
 	productType := r.URL.Query().Get("product_type")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit == 0 || limit > 100 { limit = 20 }
+	if limit == 0 || limit > 100 {
+		limit = 20
+	}
 
 	policies, err := h.policy.ListPolicies(r.Context(), status, productType, limit, offset)
 	if err != nil {
@@ -134,13 +136,13 @@ func (h *Handlers) TransitionPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":     true,
-		"policy_id":   body.PolicyID,
-		"from_state":  body.FromState,
-		"to_state":    body.ToState,
-		"actor":       body.Actor,
-		"timestamp":   time.Now().Format(time.RFC3339),
-		"valid":       true,
+		"success":    true,
+		"policy_id":  body.PolicyID,
+		"from_state": body.FromState,
+		"to_state":   body.ToState,
+		"actor":      body.Actor,
+		"timestamp":  time.Now().Format(time.RFC3339),
+		"valid":      true,
 	})
 }
 
@@ -183,9 +185,9 @@ func (h *Handlers) StartUnderwriting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":    true,
-		"policy_id":  body.PolicyID,
-		"message":    "Underwriting started",
+		"success":   true,
+		"policy_id": body.PolicyID,
+		"message":   "Underwriting started",
 	})
 }
 
@@ -200,7 +202,7 @@ func (h *Handlers) GetUnderwritingRecord(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(rec)
+	_ = json.NewEncoder(w).Encode(rec)
 }
 
 // --- Renewal ---
@@ -228,8 +230,8 @@ func (h *Handlers) CreateRenewal(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) ProcessRenewal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		PolicyID    string  `json:"policy_id"`
-		NewPremium  float64 `json:"new_premium"`
+		PolicyID      string  `json:"policy_id"`
+		NewPremium    float64 `json:"new_premium"`
 		NewSumAssured float64 `json:"new_sum_assured"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -285,7 +287,7 @@ func (h *Handlers) CreateEndorsement(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":     true,
 		"endorsement": end,
 	})
 }
@@ -343,9 +345,9 @@ func (h *Handlers) CancelPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":   true,
 		"policy_id": body.PolicyID,
-		"message": "Policy cancelled successfully",
+		"message":   "Policy cancelled successfully",
 	})
 }
 
@@ -356,5 +358,5 @@ func (h *Handlers) GetDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(dash)
+	_ = json.NewEncoder(w).Encode(dash)
 }

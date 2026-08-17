@@ -17,9 +17,9 @@ import (
 
 // PostgresStore provides persistent storage for all KYC/KYB data.
 type PostgresStore struct {
-	db      *gorm.DB
-	log     *zap.Logger
-	cfg     *config.Config
+	db  *gorm.DB
+	log *zap.Logger
+	cfg *config.Config
 }
 
 // NewPostgresStore initializes a connection pool and auto-migrates schemas.
@@ -83,8 +83,8 @@ func (s *PostgresStore) GetIndividualKYC(customerID string) (*models.IndividualK
 
 func (s *PostgresStore) UpdateKYCStatus(customerID string, status models.KYCStatus, details ...string) error {
 	updates := map[string]interface{}{
-		"status":      status,
-		"updated_at":  time.Now(),
+		"status":     status,
+		"updated_at": time.Now(),
 	}
 	if len(details) > 0 {
 		updates["risk_level"] = details[0]

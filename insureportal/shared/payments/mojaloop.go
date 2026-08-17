@@ -35,12 +35,12 @@ type PartyLookup struct {
 }
 
 type QuoteRequest struct {
-	QuoteID        string      `json:"quoteId"`
-	TransactionID  string      `json:"transactionId"`
-	Payer          PartyInfo   `json:"payer"`
-	Payee          PartyInfo   `json:"payee"`
-	AmountType     string      `json:"amountType"`
-	Amount         MoneyAmount `json:"amount"`
+	QuoteID       string      `json:"quoteId"`
+	TransactionID string      `json:"transactionId"`
+	Payer         PartyInfo   `json:"payer"`
+	Payee         PartyInfo   `json:"payee"`
+	AmountType    string      `json:"amountType"`
+	Amount        MoneyAmount `json:"amount"`
 }
 
 type PartyInfo struct {
@@ -59,12 +59,12 @@ type MoneyAmount struct {
 }
 
 type TransferRequest struct {
-	TransferID     string      `json:"transferId"`
-	PayerFsp       string      `json:"payerFsp"`
-	PayeeFsp       string      `json:"payeeFsp"`
-	Amount         MoneyAmount `json:"amount"`
-	Condition      string      `json:"condition"`
-	Expiration     string      `json:"expiration"`
+	TransferID string      `json:"transferId"`
+	PayerFsp   string      `json:"payerFsp"`
+	PayeeFsp   string      `json:"payeeFsp"`
+	Amount     MoneyAmount `json:"amount"`
+	Condition  string      `json:"condition"`
+	Expiration string      `json:"expiration"`
 }
 
 func (m *MojalloopClient) PartyLookup(ctx context.Context, idType, id string) (map[string]interface{}, error) {
@@ -81,10 +81,10 @@ func (m *MojalloopClient) PartyLookup(ctx context.Context, idType, id string) (m
 	if err != nil {
 		return nil, fmt.Errorf("mojaloop party lookup: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(respBody, &result)
+	_ = json.Unmarshal(respBody, &result)
 	return result, nil
 }
 
@@ -103,10 +103,10 @@ func (m *MojalloopClient) RequestQuote(ctx context.Context, quote QuoteRequest) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(respBody, &result)
+	_ = json.Unmarshal(respBody, &result)
 	return result, nil
 }
 
@@ -125,10 +125,10 @@ func (m *MojalloopClient) ExecuteTransfer(ctx context.Context, transfer Transfer
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(respBody, &result)
+	_ = json.Unmarshal(respBody, &result)
 	return result, nil
 }
 

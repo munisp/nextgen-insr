@@ -254,7 +254,7 @@ func (c *Client) EmitKYCEvent(ctx context.Context, evt KYCEvent) error {
 		"ocr_score":    evt.OCRScore,
 		"face_match":   evt.FaceMatch,
 		"liveness":     evt.Liveness,
-		"doc_verified":  evt.DocVerified,
+		"doc_verified": evt.DocVerified,
 		"status":       evt.Status,
 		"timestamp":    time.Now().Unix(),
 	}
@@ -376,7 +376,7 @@ func (c *Client) sendBatch(batch []Event) error {
 			lastErr = err
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			c.stats.mu.Lock()

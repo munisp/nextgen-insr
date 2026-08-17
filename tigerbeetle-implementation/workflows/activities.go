@@ -91,14 +91,14 @@ func (a *Activities) CalculateRiskAndPremiumActivity(ctx context.Context, policy
 	premiumPerPayment := finalPremium / frequencyDivisor
 
 	premiumDetails := &models.PremiumDetails{
-		Amount:            premiumPerPayment,
-		AnnualAmount:      finalPremium,
-		RiskScore:         riskScore,
-		BasePremium:       basePremium,
-		RiskMultiplier:    riskMultiplier,
+		Amount:             premiumPerPayment,
+		AnnualAmount:       finalPremium,
+		RiskScore:          riskScore,
+		BasePremium:        basePremium,
+		RiskMultiplier:     riskMultiplier,
 		DurationMultiplier: durationMultiplier,
-		Frequency:         policy.PremiumFrequency,
-		Currency:          "NGN",
+		Frequency:          policy.PremiumFrequency,
+		Currency:           "NGN",
 	}
 
 	log.Printf("Activity: CalculateRiskAndPremiumActivity completed. Premium: %.2f NGN, Risk Score: %.2f",
@@ -246,11 +246,11 @@ func (a *Activities) SchedulePremiumRemindersActivity(ctx context.Context, polic
 func calculateBasePremium(policyType models.PolicyType, sumAssured float64) float64 {
 	// Base premium rates (percentage of sum assured per year)
 	rates := map[models.PolicyType]float64{
-		models.PolicyTypeLife:     0.02,  // 2% of sum assured
-		models.PolicyTypeHealth:   0.05,  // 5% of sum assured
-		models.PolicyTypeMotor:    0.08,  // 8% of sum assured
-		models.PolicyTypeProperty: 0.03,  // 3% of sum assured
-		models.PolicyTypeTravel:   0.04,  // 4% of sum assured
+		models.PolicyTypeLife:     0.02, // 2% of sum assured
+		models.PolicyTypeHealth:   0.05, // 5% of sum assured
+		models.PolicyTypeMotor:    0.08, // 8% of sum assured
+		models.PolicyTypeProperty: 0.03, // 3% of sum assured
+		models.PolicyTypeTravel:   0.04, // 4% of sum assured
 	}
 
 	rate, exists := rates[policyType]

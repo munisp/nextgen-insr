@@ -14,25 +14,25 @@ import (
 // Integrations: Kafka, Redis, Temporal, Dapr, OpenSearch
 
 type Config struct {
-	Port            string
-	KafkaBrokers    string
-	RedisURL        string
-	WhatsAppURL     string
-	SMSProviderURL  string
-	SMTPHost        string
-	PushServiceURL  string
-	TemporalURL     string
+	Port           string
+	KafkaBrokers   string
+	RedisURL       string
+	WhatsAppURL    string
+	SMSProviderURL string
+	SMTPHost       string
+	PushServiceURL string
+	TemporalURL    string
 }
 
 type NotificationRequest struct {
 	UserID      string                 `json:"user_id"`
-	Type        string                 `json:"type"` // claim_update, payment_confirm, policy_renewal, kyc_status
+	Type        string                 `json:"type"`     // claim_update, payment_confirm, policy_renewal, kyc_status
 	Priority    string                 `json:"priority"` // critical, high, medium, low
 	Title       string                 `json:"title"`
 	Body        string                 `json:"body"`
 	Data        map[string]interface{} `json:"data"`
 	Channels    []string               `json:"channels,omitempty"` // Override default routing
-	Language    string                 `json:"language"` // en, ha, yo, ig
+	Language    string                 `json:"language"`           // en, ha, yo, ig
 	ScheduledAt string                 `json:"scheduled_at,omitempty"`
 }
 
@@ -79,9 +79,9 @@ func main() {
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":   "healthy",
-			"service":  "notification-orchestrator",
-			"channels": []string{"push", "whatsapp", "sms", "email"},
+			"status":    "healthy",
+			"service":   "notification-orchestrator",
+			"channels":  []string{"push", "whatsapp", "sms", "email"},
 			"languages": []string{"en", "ha", "yo", "ig"},
 		})
 	})
@@ -112,10 +112,10 @@ func main() {
 
 	mux.HandleFunc("/api/v1/notifications/preferences", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"quiet_hours":  map[string]string{"start": "22:00", "end": "07:00"},
-			"channels":     []string{"push", "whatsapp", "email"},
-			"digest_mode":  "daily",
-			"language":     "en",
+			"quiet_hours": map[string]string{"start": "22:00", "end": "07:00"},
+			"channels":    []string{"push", "whatsapp", "email"},
+			"digest_mode": "daily",
+			"language":    "en",
 		})
 	})
 
@@ -125,6 +125,8 @@ func main() {
 }
 
 func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" { return v }
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return def
 }

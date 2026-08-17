@@ -31,11 +31,11 @@ type Check struct {
 
 // HealthResponse represents the overall health response
 type HealthResponse struct {
-	Status      Status            `json:"status"`
-	Version     string            `json:"version"`
-	Uptime      time.Duration     `json:"uptime_seconds"`
-	Checks      map[string]*Check `json:"checks"`
-	Timestamp   time.Time         `json:"timestamp"`
+	Status    Status            `json:"status"`
+	Version   string            `json:"version"`
+	Uptime    time.Duration     `json:"uptime_seconds"`
+	Checks    map[string]*Check `json:"checks"`
+	Timestamp time.Time         `json:"timestamp"`
 }
 
 // Checker is a function that performs a health check
@@ -138,7 +138,7 @@ func (h *HealthService) HTTPHandler() http.HandlerFunc {
 			w.WriteHeader(http.StatusOK)
 		}
 
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}
 }
 
@@ -148,7 +148,7 @@ func (h *HealthService) LivenessHandler() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{
-			"status": "alive",
+			"status":  "alive",
 			"service": h.serviceName,
 		})
 	}
@@ -270,7 +270,7 @@ func HTTPServiceChecker(name, url string, timeout time.Duration) Checker {
 			check.Message = fmt.Sprintf("request failed: %v", err)
 			return check
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode >= 500 {
 			check.Status = StatusUnhealthy

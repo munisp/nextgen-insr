@@ -43,7 +43,7 @@ func WriteError(w http.ResponseWriter, status int, code, message string, details
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // WriteBadRequest writes a 400 error

@@ -110,7 +110,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"dom-agents", "Agents", "distribution-team", "Agent performance data domain"},
 	}
 	for _, d := range domains {
-		s.db.ExecContext(ctx, `INSERT INTO data_domains (id, name, owner, description)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO data_domains (id, name, owner, description)
 			VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, d.id, d.name, d.owner, d.desc)
 	}
 	products := []struct {
@@ -122,7 +122,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"dp-revenue", "dom-payments", "Revenue Report", "SELECT date_trunc('month', created_at) as month, SUM(amount) as revenue FROM payments WHERE status = 'success' GROUP BY month ORDER BY month DESC", "restricted", 5000},
 	}
 	for _, p := range products {
-		s.db.ExecContext(ctx, `INSERT INTO data_products (id, domain_id, name, query_template, sla_ms, access_level)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO data_products (id, domain_id, name, query_template, sla_ms, access_level)
 			VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`, p.id, p.domID, p.name, p.query, p.sla, p.access)
 	}
 	return nil
@@ -134,12 +134,12 @@ func (s *Store) ListDomains(ctx context.Context) ([]map[string]interface{}, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var id, name, owner, desc string
 		var count int
-		rows.Scan(&id, &name, &owner, &desc, &count)
+		_ = rows.Scan(&id, &name, &owner, &desc, &count)
 		result = append(result, map[string]interface{}{
 			"id": id, "name": name, "owner": owner, "description": desc, "product_count": count,
 		})
@@ -169,7 +169,7 @@ func (s *Store) ExecuteQuery(ctx context.Context, domainID, queryText, requester
 	if err != nil {
 		return nil, 0, fmt.Errorf("query execution failed: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cols, _ := rows.Columns()
 	var results []map[string]interface{}
@@ -179,7 +179,7 @@ func (s *Store) ExecuteQuery(ctx context.Context, domainID, queryText, requester
 		for i := range values {
 			valuePtrs[i] = &values[i]
 		}
-		rows.Scan(valuePtrs...)
+		_ = rows.Scan(valuePtrs...)
 		entry := make(map[string]interface{})
 		for i, col := range cols {
 			entry[col] = values[i]
@@ -217,7 +217,7 @@ func publishEvent(kafkaURL, topic string, event interface{}) {
 		if err != nil {
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 }
 
@@ -226,7 +226,7 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -237,7 +237,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -302,5 +302,5 @@ func main() {
 	<-quit
 	shutdownCtx, c := context.WithTimeout(ctx, 30*time.Second)
 	defer c()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

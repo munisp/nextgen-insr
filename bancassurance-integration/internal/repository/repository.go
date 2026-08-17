@@ -1,8 +1,8 @@
 package repository
 
 import (
-	"github.com/unified-insurance/bancassurance-integration/internal/models"
 	"context"
+	"github.com/unified-insurance/bancassurance-integration/internal/models"
 	"time"
 
 	"github.com/google/uuid"

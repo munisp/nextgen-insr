@@ -219,7 +219,7 @@ func (r *PostgresRepository) GetUserVerifications(ctx context.Context, userID st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []*models.KYCVerification
 	for rows.Next() {
@@ -253,7 +253,7 @@ func (r *PostgresRepository) GetEvents(ctx context.Context, sessionID string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []models.VerificationEvent
 	for rows.Next() {

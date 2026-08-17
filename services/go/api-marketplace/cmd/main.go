@@ -20,7 +20,7 @@ type Partner struct {
 	Name         string   `json:"name"`
 	CompanyType  string   `json:"companyType"` // bank, fintech, ecommerce, telco
 	APIKey       string   `json:"apiKey"`
-	Tier         string   `json:"tier"` // sandbox, basic, premium, enterprise
+	Tier         string   `json:"tier"`      // sandbox, basic, premium, enterprise
 	RateLimit    int      `json:"rateLimit"` // requests/minute
 	Endpoints    []string `json:"endpoints"` // which APIs they have access to
 	WebhookURL   string   `json:"webhookUrl"`
@@ -32,19 +32,19 @@ type Partner struct {
 
 // APIProduct represents a white-label API product offering
 type APIProduct struct {
-	ID          int64   `json:"id"`
-	Name        string  `json:"name"`
-	Slug        string  `json:"slug"`
-	Description string  `json:"description"`
-	Category    string  `json:"category"` // embed, quote, issue, claim, verify
-	Version     string  `json:"version"`
-	Pricing     Pricing `json:"pricing"`
+	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
+	Slug        string     `json:"slug"`
+	Description string     `json:"description"`
+	Category    string     `json:"category"` // embed, quote, issue, claim, verify
+	Version     string     `json:"version"`
+	Pricing     Pricing    `json:"pricing"`
 	Endpoints   []Endpoint `json:"endpoints"`
 }
 
 type Pricing struct {
-	Model       string  `json:"model"` // per_call, per_policy, flat_monthly
-	BasePrice   float64 `json:"basePrice"`
+	Model          string  `json:"model"` // per_call, per_policy, flat_monthly
+	BasePrice      float64 `json:"basePrice"`
 	VolumeDiscount float64 `json:"volumeDiscount"` // percentage off at 1000+ calls
 }
 
@@ -116,7 +116,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	srv.Shutdown(ctx)
+	_ = srv.Shutdown(ctx)
 }
 
 func registerPartner(c *gin.Context) {
@@ -281,17 +281,17 @@ func getWebhookLogs(c *gin.Context) {
 
 func getMarketplaceOverview(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"activePartners":  12,
-		"totalAPICalls":   1250000,
-		"policiesIssued":  8500,
-		"monthlyRevenue":  3500000,
-		"topPartner":      "Paystack",
-		"topProduct":      "Embedded Insurance",
+		"activePartners": 12,
+		"totalAPICalls":  1250000,
+		"policiesIssued": 8500,
+		"monthlyRevenue": 3500000,
+		"topPartner":     "Paystack",
+		"topProduct":     "Embedded Insurance",
 	})
 }
 
 func generateAPIKey() string {
 	bytes := make([]byte, 32)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes)
 	return "ipk_" + hex.EncodeToString(bytes)
 }

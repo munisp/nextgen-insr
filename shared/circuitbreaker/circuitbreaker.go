@@ -36,9 +36,9 @@ var (
 
 // Config holds circuit breaker configuration
 type Config struct {
-	MaxFailures  int           // failures before opening (default: 5)
-	Timeout      time.Duration // how long to stay open (default: 30s)
-	HalfOpenMax  int           // max requests in half-open (default: 1)
+	MaxFailures int           // failures before opening (default: 5)
+	Timeout     time.Duration // how long to stay open (default: 30s)
+	HalfOpenMax int           // max requests in half-open (default: 1)
 }
 
 // DefaultConfig returns sensible defaults

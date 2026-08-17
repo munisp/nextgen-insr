@@ -120,7 +120,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"CP-003", "Mangrove Blue Carbon", "coastal", 0.04, 0.35, 80000000},
 	}
 	for _, p := range products {
-		s.db.ExecContext(ctx, `INSERT INTO carbon_products (id, name, coverage_type, premium_rate, max_coverage, ndvi_threshold)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO carbon_products (id, name, coverage_type, premium_rate, max_coverage, ndvi_threshold)
 			VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`, p.id, p.name, p.covType, p.rate, p.maxCov, p.ndvi)
 	}
 	projects := []struct {
@@ -133,7 +133,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"PRJ-002", "CP-002", "Kaduna Savanna Project", "Kaduna State, Nigeria", 1200.0, 0.45, 3000, 100000, 3000000},
 	}
 	for _, p := range projects {
-		s.db.ExecContext(ctx, `INSERT INTO carbon_projects (id, product_id, project_name, location, area_hectares, carbon_credits, credit_price, ndvi_baseline, insured_value)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO carbon_projects (id, product_id, project_name, location, area_hectares, carbon_credits, credit_price, ndvi_baseline, insured_value)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, p.id, p.prodID, p.name, p.loc, p.area, p.credits, p.price, p.ndviBl, p.insured)
 	}
 	return nil
@@ -144,14 +144,14 @@ func (s *Store) ListProducts(ctx context.Context) ([]map[string]interface{}, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var id, name, covType string
 		var rate, ndvi float64
 		var maxCov int64
 		var active bool
-		rows.Scan(&id, &name, &covType, &rate, &maxCov, &ndvi, &active)
+		_ = rows.Scan(&id, &name, &covType, &rate, &maxCov, &ndvi, &active)
 		result = append(result, map[string]interface{}{
 			"id": id, "name": name, "coverage_type": covType, "premium_rate": rate,
 			"max_coverage": maxCov, "ndvi_threshold": ndvi,
@@ -182,7 +182,7 @@ func (s *Store) VerifyClaim(ctx context.Context, projectID string, ndviCurrent f
 	}
 
 	claimID := fmt.Sprintf("CC-%d", time.Now().UnixNano()%100000)
-	s.db.ExecContext(ctx, `INSERT INTO carbon_claims (id, project_id, ndvi_current, ndvi_baseline, deficit, payout_amount, status)
+	_, _ = s.db.ExecContext(ctx, `INSERT INTO carbon_claims (id, project_id, ndvi_current, ndvi_baseline, deficit, payout_amount, status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)`, claimID, projectID, ndviCurrent, ndviBaseline, deficit, payoutAmount, claimStatus)
 
 	return map[string]interface{}{
@@ -213,7 +213,7 @@ func publishEvent(kafkaURL, topic string, event interface{}) {
 		if err != nil {
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 }
 
@@ -222,7 +222,7 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -233,7 +233,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -298,5 +298,5 @@ func main() {
 	<-quit
 	shutdownCtx, c := context.WithTimeout(ctx, 30*time.Second)
 	defer c()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

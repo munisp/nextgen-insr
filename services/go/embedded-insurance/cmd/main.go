@@ -30,7 +30,7 @@ type EmbeddedProduct struct {
 }
 
 type EmbeddedQuoteRequest struct {
-	Context     string                 `json:"context"`      // "checkout","ride","flight","purchase"
+	Context     string                 `json:"context"` // "checkout","ride","flight","purchase"
 	PartnerCode string                 `json:"partner_code"`
 	Amount      float64                `json:"amount"`
 	Currency    string                 `json:"currency"`

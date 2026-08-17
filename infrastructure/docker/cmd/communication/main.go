@@ -107,7 +107,7 @@ func initSchema() error {
 
 	// Seed notification templates if empty
 	var count int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_templates`).Scan(&count)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notification_templates`).Scan(&count)
 	if count == 0 {
 		templates := []struct {
 			id, name string
@@ -199,7 +199,7 @@ func handleNotificationTemplates(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to query templates: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var templates []map[string]interface{}
 	for rows.Next() {
 		var id, name string
@@ -275,7 +275,7 @@ func handleGamificationPoints(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		totalPoints = 0
 		level = "bronze"
-		db.ExecContext(ctx, `INSERT INTO gamification_points (user_id, total_points, level) VALUES ($1,$2,$3) ON CONFLICT (user_id) DO NOTHING`, userID, 0, "bronze")
+		_, _ = db.ExecContext(ctx, `INSERT INTO gamification_points (user_id, total_points, level) VALUES ($1,$2,$3) ON CONFLICT (user_id) DO NOTHING`, userID, 0, "bronze")
 	}
 
 	nextLevel := "silver"
@@ -293,10 +293,10 @@ func handleGamificationPoints(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"user_id":       userID,
-		"total_points":  totalPoints,
-		"level":         level,
-		"next_level":    nextLevel,
+		"user_id":        userID,
+		"total_points":   totalPoints,
+		"level":          level,
+		"next_level":     nextLevel,
 		"points_to_next": pointsToNext,
 	})
 }
@@ -310,7 +310,7 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to query leaderboard: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var topAgents []map[string]interface{}
 	rank := 1
 	for rows.Next() {
@@ -337,8 +337,8 @@ func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	count := atomic.LoadUint64(&requestCount)
-	fmt.Fprintf(w, "# TYPE communication_http_requests_total counter\ncommunication_http_requests_total %d\n", count)
-	fmt.Fprintf(w, "# TYPE communication_uptime_seconds gauge\ncommunication_uptime_seconds %.2f\n", time.Since(started).Seconds())
+	_, _ = fmt.Fprintf(w, "# TYPE communication_http_requests_total counter\ncommunication_http_requests_total %d\n", count)
+	_, _ = fmt.Fprintf(w, "# TYPE communication_uptime_seconds gauge\ncommunication_uptime_seconds %.2f\n", time.Since(started).Seconds())
 }
 
 func withMetrics(next http.HandlerFunc) http.HandlerFunc {

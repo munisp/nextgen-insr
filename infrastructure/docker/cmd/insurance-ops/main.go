@@ -120,7 +120,7 @@ func initSchema() error {
 
 	// Seed mortality table if empty
 	var count int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM mortality_tables`).Scan(&count)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM mortality_tables`).Scan(&count)
 	if count == 0 {
 		ages := []int{25, 30, 35, 40, 45, 50, 55, 60, 65}
 		rates := []float64{0.0012, 0.0015, 0.0020, 0.0028, 0.0040, 0.0058, 0.0085, 0.0125, 0.0180}
@@ -131,7 +131,7 @@ func initSchema() error {
 	}
 
 	// Seed underwriting rules if empty
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM underwriting_rules`).Scan(&count)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM underwriting_rules`).Scan(&count)
 	if count == 0 {
 		rules := []struct{ id, desc string }{
 			{"age-limit", "Max age 65 for new policies"},
@@ -139,15 +139,15 @@ func initSchema() error {
 			{"medical-required", "Medical exam required for sum > 10M NGN"},
 		}
 		for _, r := range rules {
-			db.ExecContext(ctx, `INSERT INTO underwriting_rules (id, description) VALUES ($1,$2)`, r.id, r.desc)
+			_, _ = db.ExecContext(ctx, `INSERT INTO underwriting_rules (id, description) VALUES ($1,$2)`, r.id, r.desc)
 		}
 	}
 
 	// Seed treaties if empty
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reinsurance_treaties`).Scan(&count)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reinsurance_treaties`).Scan(&count)
 	if count == 0 {
-		db.ExecContext(ctx, `INSERT INTO reinsurance_treaties (id, treaty_type, retention, cession_or_limit, reinsurer) VALUES ('QS-2024','quota_share',0.60,0.40,'Africa Re')`)
-		db.ExecContext(ctx, `INSERT INTO reinsurance_treaties (id, treaty_type, retention, cession_or_limit, reinsurer) VALUES ('XL-2024','excess_of_loss',5000000,50000000,'Swiss Re')`)
+		_, _ = db.ExecContext(ctx, `INSERT INTO reinsurance_treaties (id, treaty_type, retention, cession_or_limit, reinsurer) VALUES ('QS-2024','quota_share',0.60,0.40,'Africa Re')`)
+		_, _ = db.ExecContext(ctx, `INSERT INTO reinsurance_treaties (id, treaty_type, retention, cession_or_limit, reinsurer) VALUES ('XL-2024','excess_of_loss',5000000,50000000,'Swiss Re')`)
 	}
 
 	return nil
@@ -192,7 +192,7 @@ func handleMortalityTable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to query mortality table: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var ages []int
 	var rates []float64
 	for rows.Next() {
@@ -317,7 +317,7 @@ func handleUnderwritingRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to query rules: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var rules []map[string]interface{}
 	for rows.Next() {
 		var id, desc string
@@ -382,7 +382,7 @@ func handleReinsuranceTreaties(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to query treaties: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var treaties []map[string]interface{}
 	for rows.Next() {
 		var id, treatyType, reinsurer string
@@ -413,21 +413,21 @@ func handleReinsuranceCessions(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var treatyCount int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reinsurance_treaties WHERE active = true`).Scan(&treatyCount)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reinsurance_treaties WHERE active = true`).Scan(&treatyCount)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"period":         time.Now().Format("2006-01"),
+		"period":          time.Now().Format("2006-01"),
 		"active_treaties": treatyCount,
-		"total_ceded":    0,
-		"currency":       "NGN",
+		"total_ceded":     0,
+		"currency":        "NGN",
 	})
 }
 
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	count := atomic.LoadUint64(&requestCount)
-	fmt.Fprintf(w, "# TYPE insurance_ops_http_requests_total counter\ninsurance_ops_http_requests_total %d\n", count)
-	fmt.Fprintf(w, "# TYPE insurance_ops_uptime_seconds gauge\ninsurance_ops_uptime_seconds %.2f\n", time.Since(started).Seconds())
+	_, _ = fmt.Fprintf(w, "# TYPE insurance_ops_http_requests_total counter\ninsurance_ops_http_requests_total %d\n", count)
+	_, _ = fmt.Fprintf(w, "# TYPE insurance_ops_uptime_seconds gauge\ninsurance_ops_uptime_seconds %.2f\n", time.Since(started).Seconds())
 }
 
 func withMetrics(next http.HandlerFunc) http.HandlerFunc {

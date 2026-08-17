@@ -68,7 +68,7 @@ func (t *TemporalClient) StartWorkflow(ctx context.Context, req StartWorkflowReq
 	if err != nil {
 		return nil, fmt.Errorf("temporal start workflow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode >= 400 {
@@ -97,7 +97,7 @@ func (t *TemporalClient) GetWorkflowStatus(ctx context.Context, workflowID, runI
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode >= 400 {

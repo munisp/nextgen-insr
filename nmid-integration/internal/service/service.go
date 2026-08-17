@@ -102,9 +102,9 @@ func (s *NMIDService) VerifyCertificate(ctx context.Context, certNo string, veri
 	isValid := err == nil && policy.Status == "active" && policy.ExpiryDate.After(time.Now())
 
 	verification := &models.CertificateVerification{
-		CertificateNo:  certNo,
-		VerifiedBy:     verifiedBy,
-		IsValid:        isValid,
+		CertificateNo:   certNo,
+		VerifiedBy:      verifiedBy,
+		IsValid:         isValid,
 		VerificationRef: fmt.Sprintf("VRF-%d", time.Now().UnixNano()%1000000),
 	}
 	if policy != nil {
@@ -199,7 +199,7 @@ func (s *NMIDService) createRenewalTracking(ctx context.Context, policy *models.
 		ExpiryDate:     policy.ExpiryDate,
 		Status:         "pending",
 	}
-	s.repo.CreateRenewalTracking(ctx, rt)
+	_ = s.repo.CreateRenewalTracking(ctx, rt)
 }
 
 func calculateMotorPremium(coverType string, sumInsured float64, vehicleType string, year int) float64 {

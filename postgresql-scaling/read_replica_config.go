@@ -29,23 +29,23 @@ type ReplicaConfig struct {
 
 // PrimaryConfig holds configuration for the primary (write) database
 type PrimaryConfig struct {
-	Host        string
-	Port        int
-	Database    string
-	User        string
-	Password    string
-	SSLMode     string
-	MaxConns    int
-	HotStandby  *ReplicaConfig // For automatic failover
+	Host       string
+	Port       int
+	Database   string
+	User       string
+	Password   string
+	SSLMode    string
+	MaxConns   int
+	HotStandby *ReplicaConfig // For automatic failover
 }
 
 // WorkloadTier represents the priority tier for workload isolation
 type WorkloadTier string
 
 const (
-	TierHighPriority   WorkloadTier = "high"    // Customer-facing operations
-	TierMediumPriority WorkloadTier = "medium"  // Agent operations, underwriting
-	TierLowPriority    WorkloadTier = "low"     // Analytics, reporting, batch jobs
+	TierHighPriority   WorkloadTier = "high"     // Customer-facing operations
+	TierMediumPriority WorkloadTier = "medium"   // Agent operations, underwriting
+	TierLowPriority    WorkloadTier = "low"      // Analytics, reporting, batch jobs
 	TierIsolated       WorkloadTier = "isolated" // Fraud detection (Insurance Radar)
 )
 
@@ -81,7 +81,7 @@ type QueryMetrics struct {
 // Inspired by OpenAI's architecture: 1 primary + ~50 read replicas
 func NewReadReplicaPool(primaryConf PrimaryConfig, replicaConfs []ReplicaConfig) (*ReadReplicaPool, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	pool := &ReadReplicaPool{
 		replicaConfs: replicaConfs,
 		replicas:     make([]*sql.DB, 0, len(replicaConfs)),
@@ -96,23 +96,23 @@ func NewReadReplicaPool(primaryConf PrimaryConfig, replicaConfs []ReplicaConfig)
 		primaryConf.Host, primaryConf.Port, primaryConf.Database,
 		primaryConf.User, primaryConf.Password, primaryConf.SSLMode,
 	)
-	
+
 	primary, err := sql.Open("postgres", primaryDSN)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to connect to primary: %w", err)
 	}
-	
+
 	primary.SetMaxOpenConns(primaryConf.MaxConns)
 	primary.SetMaxIdleConns(primaryConf.MaxConns / 4)
 	primary.SetConnMaxLifetime(time.Hour)
 	primary.SetConnMaxIdleTime(10 * time.Minute)
-	
+
 	if err := primary.PingContext(ctx); err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to ping primary: %w", err)
 	}
-	
+
 	pool.primary = primary
 
 	// Connect to replicas
@@ -122,25 +122,25 @@ func NewReadReplicaPool(primaryConf PrimaryConfig, replicaConfs []ReplicaConfig)
 			conf.Host, conf.Port, conf.Database,
 			conf.User, conf.Password, conf.SSLMode,
 		)
-		
+
 		replica, err := sql.Open("postgres", replicaDSN)
 		if err != nil {
 			// Log error but continue - replicas are optional
 			fmt.Printf("Warning: failed to connect to replica %s: %v\n", conf.Host, err)
 			continue
 		}
-		
+
 		replica.SetMaxOpenConns(conf.MaxConns)
 		replica.SetMaxIdleConns(conf.MaxConns / 4)
 		replica.SetConnMaxLifetime(time.Hour)
 		replica.SetConnMaxIdleTime(10 * time.Minute)
-		
+
 		if err := replica.PingContext(ctx); err != nil {
 			fmt.Printf("Warning: failed to ping replica %s: %v\n", conf.Host, err)
-			replica.Close()
+			_ = replica.Close()
 			continue
 		}
-		
+
 		pool.replicas = append(pool.replicas, replica)
 	}
 
@@ -171,7 +171,7 @@ func (p *ReadReplicaPool) checkReplicaHealth() {
 	defer p.mu.Unlock()
 
 	healthyReplicas := make([]*sql.DB, 0, len(p.replicas))
-	
+
 	for _, replica := range p.replicas {
 		ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
 		if err := replica.PingContext(ctx); err == nil {
@@ -181,7 +181,7 @@ func (p *ReadReplicaPool) checkReplicaHealth() {
 		}
 		cancel()
 	}
-	
+
 	p.replicas = healthyReplicas
 }
 
@@ -249,23 +249,23 @@ func (p *ReadReplicaPool) ExecuteWrite(ctx context.Context, query string, args .
 // Close closes all database connections
 func (p *ReadReplicaPool) Close() error {
 	p.cancel()
-	
+
 	var errs []error
-	
+
 	if err := p.primary.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("failed to close primary: %w", err))
 	}
-	
+
 	for _, replica := range p.replicas {
 		if err := replica.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close replica: %w", err))
 		}
 	}
-	
+
 	if len(errs) > 0 {
 		return fmt.Errorf("errors closing connections: %v", errs)
 	}
-	
+
 	return nil
 }
 
@@ -288,12 +288,12 @@ func (r *WorkloadRouter) RegisterPool(tier WorkloadTier, pool *ReadReplicaPool) 
 func (r *WorkloadRouter) GetPool(tier WorkloadTier) (*ReadReplicaPool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	pool, ok := r.pools[tier]
 	if !ok {
 		return nil, fmt.Errorf("no pool registered for tier: %s", tier)
 	}
-	
+
 	return pool, nil
 }
 
@@ -319,18 +319,18 @@ func (r *WorkloadRouter) ExecuteWrite(ctx context.Context, tier WorkloadTier, qu
 func (r *WorkloadRouter) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	var errs []error
 	for tier, pool := range r.pools {
 		if err := pool.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close pool for tier %s: %w", tier, err))
 		}
 	}
-	
+
 	if len(errs) > 0 {
 		return fmt.Errorf("errors closing pools: %v", errs)
 	}
-	
+
 	return nil
 }
 

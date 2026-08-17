@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
+	"database/sql"
 	"github.com/gorilla/mux"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -57,11 +57,10 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -79,7 +78,7 @@ func main() {
 	if err != nil {
 		log.Printf("WARNING: Failed to connect to database: %v (running in degraded mode)", err)
 	} else {
-		db.AutoMigrate(&models.Customer{}, &models.CustomerInteraction{})
+		_ = db.AutoMigrate(&models.Customer{}, &models.CustomerInteraction{})
 	}
 
 	config := &service.Customer360Config{
@@ -116,7 +115,7 @@ func main() {
 
 	r.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	}).Methods("GET")
 
 	if svc != nil {
@@ -158,9 +157,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if svc != nil {
-		svc.Close()
+		_ = svc.Close()
 	}
-	srv.Shutdown(ctx)
+	_ = srv.Shutdown(ctx)
 }
 
 func envOrDefault(key, defaultVal string) string {
@@ -177,4 +176,3 @@ func requireEnv(key string) string {
 	}
 	return v
 }
-

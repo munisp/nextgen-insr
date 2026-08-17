@@ -153,7 +153,7 @@ func (e *Engine) ScoreClaim(ctx context.Context, claimID int64) (*FraudScore, er
 	e.cache.SetClaimScore(ctx, claimID, result, time.Hour)
 
 	// Persist to DB
-	e.db.SaveFraudScore(ctx, result)
+	_ = e.db.SaveFraudScore(ctx, result)
 
 	return result, nil
 }

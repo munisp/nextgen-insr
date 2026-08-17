@@ -32,7 +32,7 @@ func NewPostgresStore(dsn string) (*PostgresStore, error) {
 
 	// Validate the connection is actually alive.
 	if err := db.PingContext(context.Background()); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("postgres: ping failed: %w", err)
 	}
 
@@ -41,7 +41,7 @@ func NewPostgresStore(dsn string) (*PostgresStore, error) {
 	db.SetConnMaxLifetime(10 * time.Minute)
 
 	if err := store.runMigrations(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("postgres: migration failed: %w", err)
 	}
 
@@ -292,7 +292,7 @@ func (ps *PostgresStore) GetTransactionHistory(ctx context.Context, phone string
 	if err != nil {
 		return nil, fmt.Errorf("postgres: get transaction history: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var txns []models.TransactionRecord
 	for rows.Next() {

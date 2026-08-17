@@ -18,17 +18,17 @@ type MojaloopBridge struct {
 }
 
 type KYCGatedTransfer struct {
-	TransferID    string  `json:"transfer_id"`
-	PayerFSP      string  `json:"payer_fsp"`
-	PayeeFSP      string  `json:"payee_fsp"`
-	PayerID       string  `json:"payer_id"`
-	PayeeID       string  `json:"payee_id"`
-	Amount        float64 `json:"amount"`
-	Currency      string  `json:"currency"`
-	KYCSessionID  string  `json:"kyc_session_id"`
-	KYCLevel      int     `json:"kyc_level"`
-	KYCVerified   bool    `json:"kyc_verified"`
-	TransferType  string  `json:"transfer_type"`
+	TransferID   string  `json:"transfer_id"`
+	PayerFSP     string  `json:"payer_fsp"`
+	PayeeFSP     string  `json:"payee_fsp"`
+	PayerID      string  `json:"payer_id"`
+	PayeeID      string  `json:"payee_id"`
+	Amount       float64 `json:"amount"`
+	Currency     string  `json:"currency"`
+	KYCSessionID string  `json:"kyc_session_id"`
+	KYCLevel     int     `json:"kyc_level"`
+	KYCVerified  bool    `json:"kyc_verified"`
+	TransferType string  `json:"transfer_type"`
 }
 
 type TransferLimit struct {
@@ -50,9 +50,9 @@ type TransferResult struct {
 	TransferID string `json:"transfer_id"`
 	Status     string `json:"status"`
 	KYCCheck   struct {
-		Passed    bool   `json:"passed"`
-		Level     int    `json:"level"`
-		Reason    string `json:"reason"`
+		Passed bool   `json:"passed"`
+		Level  int    `json:"level"`
+		Reason string `json:"reason"`
 	} `json:"kyc_check"`
 	Timestamp time.Time `json:"timestamp"`
 }
@@ -143,7 +143,7 @@ func (b *MojaloopBridge) submitTransfer(ctx context.Context, transfer KYCGatedTr
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return nil
 }
@@ -161,7 +161,7 @@ func (b *MojaloopBridge) LookupParticipant(ctx context.Context, partyIDType, par
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {

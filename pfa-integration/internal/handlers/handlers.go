@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
-	"net/http"
 	"github.com/unified-insurance/pfa-integration/internal/service"
+	"net/http"
 
 	"github.com/google/uuid"
 )
@@ -38,109 +38,166 @@ func (h *PFAHandler) RegisterRoutes(mux *http.ServeMux) {
 func (h *PFAHandler) RegisterPartner(w http.ResponseWriter, r *http.Request) {
 	var req service.RegisterPFARequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error()); return
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	result, err := h.svc.RegisterPFAPartner(r.Context(), req)
-	if err != nil { writeError(w, http.StatusUnprocessableEntity, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, result)
 }
 
 func (h *PFAHandler) ListPartners(w http.ResponseWriter, r *http.Request) {
 	results, err := h.svc.GetPFAPartners(r.Context())
-	if err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, results)
 }
 
 func (h *PFAHandler) RegisterRSAHolder(w http.ResponseWriter, r *http.Request) {
 	var req service.RegisterRSAHolderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error()); return
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	result, err := h.svc.RegisterRSAHolder(r.Context(), req)
-	if err != nil { writeError(w, http.StatusUnprocessableEntity, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, result)
 }
 
 func (h *PFAHandler) ValidateRSAPIN(w http.ResponseWriter, r *http.Request) {
 	rsaPIN := r.PathValue("rsaPIN")
 	result, err := h.svc.ValidateRSAPIN(r.Context(), rsaPIN)
-	if err != nil { writeError(w, http.StatusNotFound, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *PFAHandler) CalculateAnnuityQuote(w http.ResponseWriter, r *http.Request) {
 	var req service.AnnuityQuoteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error()); return
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	result, err := h.svc.CalculateAnnuityQuote(r.Context(), req)
-	if err != nil { writeError(w, http.StatusUnprocessableEntity, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, result)
 }
 
 func (h *PFAHandler) AcceptQuote(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil { writeError(w, http.StatusBadRequest, "invalid quote ID"); return }
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid quote ID")
+		return
+	}
 	result, err := h.svc.AcceptAnnuityQuote(r.Context(), id)
-	if err != nil { writeError(w, http.StatusUnprocessableEntity, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *PFAHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	results, err := h.svc.GetAnnuityProducts(r.Context())
-	if err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, results)
 }
 
 func (h *PFAHandler) GetPoliciesByHolder(w http.ResponseWriter, r *http.Request) {
 	holderID, err := uuid.Parse(r.PathValue("holderId"))
-	if err != nil { writeError(w, http.StatusBadRequest, "invalid holder ID"); return }
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid holder ID")
+		return
+	}
 	results, err := h.svc.GetPoliciesByHolder(r.Context(), holderID)
-	if err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, results)
 }
 
 func (h *PFAHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	policyID, err := uuid.Parse(r.PathValue("policyId"))
-	if err != nil { writeError(w, http.StatusBadRequest, "invalid policy ID"); return }
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid policy ID")
+		return
+	}
 	result, err := h.svc.ProcessPensionPayment(r.Context(), policyID)
-	if err != nil { writeError(w, http.StatusUnprocessableEntity, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *PFAHandler) GetPayments(w http.ResponseWriter, r *http.Request) {
 	policyID, err := uuid.Parse(r.PathValue("policyId"))
-	if err != nil { writeError(w, http.StatusBadRequest, "invalid policy ID"); return }
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid policy ID")
+		return
+	}
 	results, err := h.svc.GetPaymentsByPolicy(r.Context(), policyID)
-	if err != nil { writeError(w, http.StatusInternalServerError, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, results)
 }
 
 func (h *PFAHandler) CalculateGroupLife(w http.ResponseWriter, r *http.Request) {
 	var req service.GroupLifeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error()); return
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	result, err := h.svc.CalculateGroupLifePremium(r.Context(), req)
-	if err != nil { writeError(w, http.StatusUnprocessableEntity, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, result)
 }
 
 func (h *PFAHandler) InitiateFundTransfer(w http.ResponseWriter, r *http.Request) {
 	var req service.FundTransferRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error()); return
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	result, err := h.svc.InitiateFundTransfer(r.Context(), req)
-	if err != nil { writeError(w, http.StatusUnprocessableEntity, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, result)
 }
 
 func (h *PFAHandler) ApproveFundTransfer(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil { writeError(w, http.StatusBadRequest, "invalid transfer ID"); return }
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid transfer ID")
+		return
+	}
 	if err := h.svc.ApproveFundTransfer(r.Context(), id); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, err.Error()); return
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "approved"})
 }
@@ -151,10 +208,14 @@ func (h *PFAHandler) GenerateReport(w http.ResponseWriter, r *http.Request) {
 		Period     string `json:"period"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error()); return
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	result, err := h.svc.GeneratePenComReport(r.Context(), req.ReportType, req.Period)
-	if err != nil { writeError(w, http.StatusUnprocessableEntity, err.Error()); return }
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, result)
 }
 
@@ -169,7 +230,7 @@ func (h *PFAHandler) ReadinessCheck(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

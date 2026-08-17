@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -122,4 +123,26 @@ func main() {
 		log.Error("Server forced shutdown", zap.Error(err))
 	}
 	log.Info("Notification server stopped")
+}
+
+// validateQueryParam returns a query parameter value, rejecting over-long input.
+func validateQueryParam(r *http.Request, key string, maxLen int) (string, error) {
+	val := r.URL.Query().Get(key)
+	if len(val) > maxLen {
+		return "", fmt.Errorf("parameter %s exceeds max length %d", key, maxLen)
+	}
+	return val, nil
+}
+
+// validateIntParam parses an optional integer query parameter.
+func validateIntParam(r *http.Request, key string) (int, error) {
+	val := r.URL.Query().Get(key)
+	if val == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("parameter %s must be an integer", key)
+	}
+	return n, nil
 }

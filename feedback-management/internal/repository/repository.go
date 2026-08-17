@@ -18,28 +18,40 @@ func (r *FeedbackRepository) AutoMigrate() error {
 }
 
 func (r *FeedbackRepository) CreateFeedback(ctx context.Context, f *models.FeedbackSubmission) error {
-	f.ID = uuid.New(); f.CreatedAt = time.Now(); f.UpdatedAt = time.Now()
+	f.ID = uuid.New()
+	f.CreatedAt = time.Now()
+	f.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(f).Error
 }
 
 func (r *FeedbackRepository) GetFeedback(ctx context.Context, id uuid.UUID) (*models.FeedbackSubmission, error) {
-	var f models.FeedbackSubmission; return &f, r.db.WithContext(ctx).First(&f, "id = ?", id).Error
+	var f models.FeedbackSubmission
+	return &f, r.db.WithContext(ctx).First(&f, "id = ?", id).Error
 }
 
 func (r *FeedbackRepository) ListFeedback(ctx context.Context, category, status, priority string) ([]models.FeedbackSubmission, error) {
-	var feedbacks []models.FeedbackSubmission; q := r.db.WithContext(ctx)
-	if category != "" { q = q.Where("category = ?", category) }
-	if status != "" { q = q.Where("status = ?", status) }
-	if priority != "" { q = q.Where("priority = ?", priority) }
+	var feedbacks []models.FeedbackSubmission
+	q := r.db.WithContext(ctx)
+	if category != "" {
+		q = q.Where("category = ?", category)
+	}
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
+	if priority != "" {
+		q = q.Where("priority = ?", priority)
+	}
 	return feedbacks, q.Order("created_at DESC").Limit(100).Find(&feedbacks).Error
 }
 
 func (r *FeedbackRepository) UpdateFeedback(ctx context.Context, f *models.FeedbackSubmission) error {
-	f.UpdatedAt = time.Now(); return r.db.WithContext(ctx).Save(f).Error
+	f.UpdatedAt = time.Now()
+	return r.db.WithContext(ctx).Save(f).Error
 }
 
 func (r *FeedbackRepository) CreateResponse(ctx context.Context, resp *models.FeedbackResponse) error {
-	resp.ID = uuid.New(); resp.CreatedAt = time.Now()
+	resp.ID = uuid.New()
+	resp.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(resp).Error
 }
 
@@ -49,7 +61,8 @@ func (r *FeedbackRepository) GetResponses(ctx context.Context, feedbackID uuid.U
 }
 
 func (r *FeedbackRepository) CreateSurvey(ctx context.Context, s *models.SurveyTemplate) error {
-	s.ID = uuid.New(); s.CreatedAt = time.Now()
+	s.ID = uuid.New()
+	s.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(s).Error
 }
 
@@ -59,7 +72,8 @@ func (r *FeedbackRepository) ListSurveys(ctx context.Context) ([]models.SurveyTe
 }
 
 func (r *FeedbackRepository) CreateSurveyResponse(ctx context.Context, sr *models.SurveyResponse) error {
-	sr.ID = uuid.New(); sr.CreatedAt = time.Now()
+	sr.ID = uuid.New()
+	sr.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(sr).Error
 }
 
@@ -79,11 +93,16 @@ func (r *FeedbackRepository) GetFeedbackCount(ctx context.Context, from, to time
 }
 
 func (r *FeedbackRepository) GetSentimentCounts(ctx context.Context, from, to time.Time) (map[string]int, error) {
-	type Result struct { Sentiment string; Count int }
+	type Result struct {
+		Sentiment string
+		Count     int
+	}
 	var results []Result
 	r.db.WithContext(ctx).Model(&models.FeedbackSubmission{}).Where("created_at BETWEEN ? AND ?", from, to).Select("sentiment, COUNT(*) as count").Group("sentiment").Scan(&results)
 	counts := make(map[string]int)
-	for _, r := range results { counts[r.Sentiment] = r.Count }
+	for _, r := range results {
+		counts[r.Sentiment] = r.Count
+	}
 	return counts, nil
 }
 
@@ -95,6 +114,7 @@ func (r *FeedbackRepository) GetNPSResponses(ctx context.Context, surveyID uuid.
 }
 
 func (r *FeedbackRepository) CreateAnalytics(ctx context.Context, a *models.FeedbackAnalytics) error {
-	a.ID = uuid.New(); a.CreatedAt = time.Now()
+	a.ID = uuid.New()
+	a.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(a).Error
 }

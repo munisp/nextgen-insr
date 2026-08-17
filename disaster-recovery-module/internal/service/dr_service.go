@@ -13,10 +13,10 @@ import (
 
 // DRService orchestrates disaster recovery operations
 type DRService struct {
-	pg   *db.PostgreSQL
-	rdb  *db.RedisCache
-	cfg  *config.Config
-	log  *zap.Logger
+	pg  *db.PostgreSQL
+	rdb *db.RedisCache
+	cfg *config.Config
+	log *zap.Logger
 }
 
 // NewDRService creates a new DR service instance
@@ -92,17 +92,17 @@ func (s *DRService) TriggerFailover(ctx context.Context, eventType, triggerBy, t
 
 	// Create failover event
 	fe := &models.FailoverEvent{
-		Type:              eventType,
-		FromDC:            s.cfg.PrimaryDC,
-		ToDC:              s.cfg.SecondaryDC,
-		TriggeredBy:       triggerBy,
-		TriggerReason:     triggerReason,
-		ServicesAffected:  servicesAffected,
-		NAICOMNotified:    false,
+		Type:             eventType,
+		FromDC:           s.cfg.PrimaryDC,
+		ToDC:             s.cfg.SecondaryDC,
+		TriggeredBy:      triggerBy,
+		TriggerReason:    triggerReason,
+		ServicesAffected: servicesAffected,
+		NAICOMNotified:   false,
 	}
 
 	if err := s.pg.CreateFailoverEvent(ctx, fe); err != nil {
-		s.rdb.ReleaseFailoverLock(ctx, triggerBy)
+		_ = s.rdb.ReleaseFailoverLock(ctx, triggerBy)
 		return nil, fmt.Errorf("failed to create failover event: %w", err)
 	}
 
@@ -171,7 +171,7 @@ func (s *DRService) CreateDRDrill(ctx context.Context, drill *models.DRDrill) er
 
 	// Cache the next drill schedule
 	nextDrillDate := drill.ScheduledAt.Format("2006-01-02")
-	s.rdb.SetDrillSchedule(ctx, nextDrillDate)
+	_ = s.rdb.SetDrillSchedule(ctx, nextDrillDate)
 
 	s.log.Info("DR drill scheduled",
 		zap.String("drill", drill.DrillNumber),
@@ -279,7 +279,7 @@ func (s *DRService) GetDashboard(ctx context.Context) (*models.DRDashboard, erro
 	}
 
 	// Cache the dashboard
-	s.rdb.CacheDashboard(ctx, dashboard)
+	_ = s.rdb.CacheDashboard(ctx, dashboard)
 
 	return dashboard, nil
 }

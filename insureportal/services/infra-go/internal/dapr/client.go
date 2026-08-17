@@ -23,25 +23,25 @@ import (
 const (
 	PubSubName = "insureportal-pubsub"
 
-	TopicPolicyCreated       = "policy.created"
-	TopicPolicyRenewed       = "policy.renewed"
-	TopicPolicyCancelled     = "policy.cancelled"
-	TopicClaimFiled          = "claim.filed"
-	TopicClaimApproved       = "claim.approved"
-	TopicClaimPaid           = "claim.paid"
-	TopicPremiumCollected    = "premium.collected"
+	TopicPolicyCreated        = "policy.created"
+	TopicPolicyRenewed        = "policy.renewed"
+	TopicPolicyCancelled      = "policy.cancelled"
+	TopicClaimFiled           = "claim.filed"
+	TopicClaimApproved        = "claim.approved"
+	TopicClaimPaid            = "claim.paid"
+	TopicPremiumCollected     = "premium.collected"
 	TopicUnderwritingDecision = "underwriting.decision"
-	TopicFraudAlert          = "fraud.alert"
-	TopicKYCCompleted        = "kyc.completed"
-	TopicComplianceReport    = "compliance.report"
-	TopicReinsuranceCession  = "reinsurance.cession"
+	TopicFraudAlert           = "fraud.alert"
+	TopicKYCCompleted         = "kyc.completed"
+	TopicComplianceReport     = "compliance.report"
+	TopicReinsuranceCession   = "reinsurance.cession"
 )
 
 // Dapr state store names
 const (
-	StateStoreDefault    = "insureportal-statestore"
-	StateStoreWorkflow   = "insureportal-workflow-state"
-	StateStoreSession    = "insureportal-session-state"
+	StateStoreDefault  = "insureportal-statestore"
+	StateStoreWorkflow = "insureportal-workflow-state"
+	StateStoreSession  = "insureportal-session-state"
 )
 
 // PublishRequest is the request body for Dapr pub/sub publish
@@ -54,11 +54,11 @@ type PublishRequest struct {
 
 // StateItem represents a Dapr state store item
 type StateItem struct {
-	Key      string      `json:"key"`
-	Value    interface{} `json:"value"`
-	ETag     string      `json:"etag,omitempty"`
+	Key      string            `json:"key"`
+	Value    interface{}       `json:"value"`
+	ETag     string            `json:"etag,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`
-	Options  *StateOptions `json:"options,omitempty"`
+	Options  *StateOptions     `json:"options,omitempty"`
 }
 
 // StateOptions configures state store operations
@@ -78,8 +78,8 @@ type Client struct {
 func NewClient(logger *zap.Logger) *Client {
 	daprPort := getEnv("DAPR_HTTP_PORT", "3500")
 	return &Client{
-		logger:   logger,
-		daprPort: daprPort,
+		logger:     logger,
+		daprPort:   daprPort,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -95,7 +95,7 @@ func (c *Client) Ping(ctx context.Context) string {
 	if err != nil {
 		return "unreachable"
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK {
 		return "ok"
 	}
@@ -125,7 +125,7 @@ func (c *Client) Publish(ctx context.Context, pubsubName, topic string, data map
 			zap.String("topic", topic), zap.Error(err))
 		return nil // fail-open
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -173,10 +173,10 @@ func (c *Client) InvokeHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
@@ -199,7 +199,7 @@ func (c *Client) SaveStateHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued_offline"})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	w.WriteHeader(resp.StatusCode)
 }
 
@@ -216,10 +216,10 @@ func (c *Client) GetStateHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, nil)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
@@ -236,7 +236,7 @@ func (c *Client) DeleteStateHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	w.WriteHeader(resp.StatusCode)
 }
 
@@ -244,7 +244,7 @@ func (c *Client) DeleteStateHandler(w http.ResponseWriter, r *http.Request) {
 func (c *Client) InvokeBindingHandler(w http.ResponseWriter, r *http.Request) {
 	bindingName := r.PathValue("bindingName")
 	var req map[string]interface{}
-	json.NewDecoder(r.Body).Decode(&req)
+	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	body, _ := json.Marshal(req)
 	url := fmt.Sprintf("http://localhost:%s/v1.0/bindings/%s", c.daprPort, bindingName)
@@ -256,10 +256,10 @@ func (c *Client) InvokeBindingHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued_offline"})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
@@ -276,10 +276,10 @@ func (c *Client) GetSecretHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "secret store unavailable")
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	writeJSON(w, resp.StatusCode, result)
 }
 
@@ -304,7 +304,7 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if v != nil {
-		json.NewEncoder(w).Encode(v)
+		_ = json.NewEncoder(w).Encode(v)
 	}
 }
 

@@ -16,30 +16,30 @@ import (
 
 // TelematicsEvent represents a single driving data point from mobile sensors
 type TelematicsEvent struct {
-	UserID      int64   `json:"userId"`
-	PolicyID    int64   `json:"policyId"`
-	Timestamp   int64   `json:"timestamp"`
-	Latitude    float64 `json:"latitude"`
-	Longitude   float64 `json:"longitude"`
-	Speed       float64 `json:"speed"`       // km/h
+	UserID       int64   `json:"userId"`
+	PolicyID     int64   `json:"policyId"`
+	Timestamp    int64   `json:"timestamp"`
+	Latitude     float64 `json:"latitude"`
+	Longitude    float64 `json:"longitude"`
+	Speed        float64 `json:"speed"`        // km/h
 	Acceleration float64 `json:"acceleration"` // m/s²
-	Braking     float64 `json:"braking"`     // m/s² (negative)
-	Cornering   float64 `json:"cornering"`   // lateral g-force
-	PhoneUsage  bool    `json:"phoneUsage"`  // screen active while driving
-	NightDrive  bool    `json:"nightDrive"`  // between 11pm-5am
-	TripID      string  `json:"tripId"`
+	Braking      float64 `json:"braking"`      // m/s² (negative)
+	Cornering    float64 `json:"cornering"`    // lateral g-force
+	PhoneUsage   bool    `json:"phoneUsage"`   // screen active while driving
+	NightDrive   bool    `json:"nightDrive"`   // between 11pm-5am
+	TripID       string  `json:"tripId"`
 }
 
 // DrivingScore represents the computed driving behavior score
 type DrivingScore struct {
 	UserID          int64   `json:"userId"`
 	PolicyID        int64   `json:"policyId"`
-	OverallScore    float64 `json:"overallScore"`    // 0-100, higher = better driver
-	SpeedScore      float64 `json:"speedScore"`      // penalized for speeding
-	BrakingScore    float64 `json:"brakingScore"`    // penalized for harsh braking
-	CorneringScore  float64 `json:"corneringScore"`  // penalized for aggressive cornering
-	PhoneScore      float64 `json:"phoneScore"`      // penalized for phone usage
-	NightScore      float64 `json:"nightScore"`      // penalized for excessive night driving
+	OverallScore    float64 `json:"overallScore"`   // 0-100, higher = better driver
+	SpeedScore      float64 `json:"speedScore"`     // penalized for speeding
+	BrakingScore    float64 `json:"brakingScore"`   // penalized for harsh braking
+	CorneringScore  float64 `json:"corneringScore"` // penalized for aggressive cornering
+	PhoneScore      float64 `json:"phoneScore"`     // penalized for phone usage
+	NightScore      float64 `json:"nightScore"`     // penalized for excessive night driving
 	TotalTrips      int     `json:"totalTrips"`
 	TotalKm         float64 `json:"totalKm"`
 	PremiumDiscount float64 `json:"premiumDiscount"` // percentage discount earned
@@ -87,7 +87,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	srv.Shutdown(ctx)
+	_ = srv.Shutdown(ctx)
 }
 
 func ingestEvents(c *gin.Context) {

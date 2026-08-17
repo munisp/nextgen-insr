@@ -26,7 +26,9 @@ func (r *PFARepository) AutoMigrate() error {
 }
 
 func (r *PFARepository) CreatePFAPartner(ctx context.Context, p *models.PFAPartner) error {
-	p.ID = uuid.New(); p.CreatedAt = time.Now(); p.UpdatedAt = time.Now()
+	p.ID = uuid.New()
+	p.CreatedAt = time.Now()
+	p.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(p).Error
 }
 
@@ -41,7 +43,9 @@ func (r *PFARepository) ListPFAPartners(ctx context.Context) ([]models.PFAPartne
 }
 
 func (r *PFARepository) CreateRSAHolder(ctx context.Context, h *models.RSAHolder) error {
-	h.ID = uuid.New(); h.CreatedAt = time.Now(); h.UpdatedAt = time.Now()
+	h.ID = uuid.New()
+	h.CreatedAt = time.Now()
+	h.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(h).Error
 }
 
@@ -56,7 +60,9 @@ func (r *PFARepository) GetRSAHolderByID(ctx context.Context, id uuid.UUID) (*mo
 }
 
 func (r *PFARepository) CreateAnnuityProduct(ctx context.Context, p *models.AnnuityProduct) error {
-	p.ID = uuid.New(); p.CreatedAt = time.Now(); p.UpdatedAt = time.Now()
+	p.ID = uuid.New()
+	p.CreatedAt = time.Now()
+	p.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(p).Error
 }
 
@@ -71,7 +77,8 @@ func (r *PFARepository) ListAnnuityProducts(ctx context.Context) ([]models.Annui
 }
 
 func (r *PFARepository) CreateAnnuityQuote(ctx context.Context, q *models.AnnuityQuote) error {
-	q.ID = uuid.New(); q.CreatedAt = time.Now()
+	q.ID = uuid.New()
+	q.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(q).Error
 }
 
@@ -85,7 +92,9 @@ func (r *PFARepository) UpdateQuoteStatus(ctx context.Context, id uuid.UUID, sta
 }
 
 func (r *PFARepository) CreateAnnuityPolicy(ctx context.Context, p *models.AnnuityPolicy) error {
-	p.ID = uuid.New(); p.CreatedAt = time.Now(); p.UpdatedAt = time.Now()
+	p.ID = uuid.New()
+	p.CreatedAt = time.Now()
+	p.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(p).Error
 }
 
@@ -100,7 +109,8 @@ func (r *PFARepository) GetPoliciesByHolder(ctx context.Context, holderID uuid.U
 }
 
 func (r *PFARepository) CreatePensionPayment(ctx context.Context, p *models.PensionPayment) error {
-	p.ID = uuid.New(); p.CreatedAt = time.Now()
+	p.ID = uuid.New()
+	p.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(p).Error
 }
 
@@ -110,7 +120,9 @@ func (r *PFARepository) GetPaymentsByPolicy(ctx context.Context, policyID uuid.U
 }
 
 func (r *PFARepository) CreateGroupLife(ctx context.Context, g *models.GroupLifeForPension) error {
-	g.ID = uuid.New(); g.CreatedAt = time.Now(); g.UpdatedAt = time.Now()
+	g.ID = uuid.New()
+	g.CreatedAt = time.Now()
+	g.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(g).Error
 }
 
@@ -120,19 +132,23 @@ func (r *PFARepository) GetGroupLifeByEmployer(ctx context.Context, employerRCNo
 }
 
 func (r *PFARepository) CreatePenComReport(ctx context.Context, rpt *models.PenComReport) error {
-	rpt.ID = uuid.New(); rpt.CreatedAt = time.Now()
+	rpt.ID = uuid.New()
+	rpt.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(rpt).Error
 }
 
 func (r *PFARepository) ListPenComReports(ctx context.Context, reportType string) ([]models.PenComReport, error) {
 	var reports []models.PenComReport
 	q := r.db.WithContext(ctx)
-	if reportType != "" { q = q.Where("report_type = ?", reportType) }
+	if reportType != "" {
+		q = q.Where("report_type = ?", reportType)
+	}
 	return reports, q.Order("created_at DESC").Find(&reports).Error
 }
 
 func (r *PFARepository) CreateFundTransfer(ctx context.Context, ft *models.FundTransfer) error {
-	ft.ID = uuid.New(); ft.CreatedAt = time.Now()
+	ft.ID = uuid.New()
+	ft.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(ft).Error
 }
 

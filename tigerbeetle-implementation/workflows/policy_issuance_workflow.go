@@ -30,7 +30,7 @@ func PolicyIssuanceWorkflow(ctx workflow.Context, input PolicyIssuanceInput) (*P
 
 	// Configure activity options with timeouts and retries
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute,
+		StartToCloseTimeout:    10 * time.Minute,
 		ScheduleToStartTimeout: 1 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
@@ -219,16 +219,16 @@ func PolicyIssuanceWorkflow(ctx workflow.Context, input PolicyIssuanceInput) (*P
 
 	// Workflow completed successfully
 	result := &PolicyIssuanceResult{
-		Success:         true,
-		PolicyID:        policyID,
-		PolicyNumber:    generatePolicyNumber(policyID),
-		TransactionID:   paymentResult.TransactionID,
-		PaymentID:       paymentResult.PaymentID,
-		DocumentURL:     documentURL,
-		Premium:         premiumDetails.Amount,
-		RiskScore:       premiumDetails.RiskScore,
-		CompletedSteps:  workflowState.CompletedSteps,
-		CompletedAt:     workflow.Now(ctx),
+		Success:        true,
+		PolicyID:       policyID,
+		PolicyNumber:   generatePolicyNumber(policyID),
+		TransactionID:  paymentResult.TransactionID,
+		PaymentID:      paymentResult.PaymentID,
+		DocumentURL:    documentURL,
+		Premium:        premiumDetails.Amount,
+		RiskScore:      premiumDetails.RiskScore,
+		CompletedSteps: workflowState.CompletedSteps,
+		CompletedAt:    workflow.Now(ctx),
 	}
 
 	logger.Info("PolicyIssuanceWorkflow completed successfully",
@@ -314,13 +314,13 @@ func generatePolicyNumber(policyID string) string {
 
 // PolicyIssuanceInput represents the input to the policy issuance workflow
 type PolicyIssuanceInput struct {
-	CustomerID       string                   `json:"customer_id"`
-	PolicyType       models.PolicyType        `json:"policy_type"`
-	SumAssured       float64                  `json:"sum_assured"`
-	PremiumFrequency models.PremiumFrequency  `json:"premium_frequency"`
-	DurationMonths   int                      `json:"duration_months"`
-	StartDate        time.Time                `json:"start_date"`
-	PaymentMethod    models.PaymentMethod     `json:"payment_method"`
+	CustomerID       string                  `json:"customer_id"`
+	PolicyType       models.PolicyType       `json:"policy_type"`
+	SumAssured       float64                 `json:"sum_assured"`
+	PremiumFrequency models.PremiumFrequency `json:"premium_frequency"`
+	DurationMonths   int                     `json:"duration_months"`
+	StartDate        time.Time               `json:"start_date"`
+	PaymentMethod    models.PaymentMethod    `json:"payment_method"`
 }
 
 // PolicyIssuanceResult represents the result of the policy issuance workflow
@@ -341,10 +341,10 @@ type PolicyIssuanceResult struct {
 
 // PolicyIssuanceState tracks the workflow state for saga compensation
 type PolicyIssuanceState struct {
-	CompletedSteps     []string                  `json:"completed_steps"`
-	PolicyID           string                    `json:"policy_id"`
+	CompletedSteps     []string                   `json:"completed_steps"`
+	PolicyID           string                     `json:"policy_id"`
 	VerificationResult *models.VerificationResult `json:"verification_result"`
 	PremiumDetails     *models.PremiumDetails     `json:"premium_details"`
 	PaymentResult      *models.PaymentResult      `json:"payment_result"`
-	DocumentURL        string                    `json:"document_url"`
+	DocumentURL        string                     `json:"document_url"`
 }

@@ -315,8 +315,8 @@ func (p *Postgres) GetConsent(ctx context.Context, consentID string) (*models.Co
 	if err != nil {
 		return nil, err
 	}
-	fromJSON(purposesJSON, &c.Purposes)
-	fromJSON(metadataJSON, &c.Metadata)
+	_ = fromJSON(purposesJSON, &c.Purposes)
+	_ = fromJSON(metadataJSON, &c.Metadata)
 	return c, nil
 }
 
@@ -346,8 +346,8 @@ func scanConsents(rows pgx.Rows) ([]*models.Consent, error) {
 		); err != nil {
 			return nil, err
 		}
-		fromJSON(purposesJSON, &c.Purposes)
-		fromJSON(metadataJSON, &c.Metadata)
+		_ = fromJSON(purposesJSON, &c.Purposes)
+		_ = fromJSON(metadataJSON, &c.Metadata)
 		consents = append(consents, c)
 	}
 	return consents, rows.Err()
@@ -395,8 +395,8 @@ func (p *Postgres) GetDSAR(ctx context.Context, dsarID string) (*models.DSAR, er
 	if err != nil {
 		return nil, err
 	}
-	fromJSON(dataSourcesJSON, &d.DataSources)
-	fromJSON(metadataJSON, &d.Metadata)
+	_ = fromJSON(dataSourcesJSON, &d.DataSources)
+	_ = fromJSON(metadataJSON, &d.Metadata)
 	return d, nil
 }
 
@@ -478,8 +478,8 @@ func scanDSARs(rows pgx.Rows) ([]*models.DSAR, error) {
 		); err != nil {
 			return nil, err
 		}
-		fromJSON(dataSourcesJSON, &d.DataSources)
-		fromJSON(metadataJSON, &d.Metadata)
+		_ = fromJSON(dataSourcesJSON, &d.DataSources)
+		_ = fromJSON(metadataJSON, &d.Metadata)
 		dsars = append(dsars, d)
 	}
 	return dsars, rows.Err()
@@ -504,11 +504,11 @@ func (p *Postgres) GetDSARReporting(ctx context.Context) (*models.DSARStats, err
 		return nil, err
 	}
 	return &models.DSARStats{
-		Total:   row.Total,
-		Received: row.Received,
+		Total:      row.Total,
+		Received:   row.Received,
 		InProgress: row.InProgress,
-		Completed: row.Completed,
-		Overdue: row.Overdue,
+		Completed:  row.Completed,
+		Overdue:    row.Overdue,
 	}, nil
 }
 
@@ -562,9 +562,9 @@ func (p *Postgres) GetBreach(ctx context.Context, breachID string) (*models.Brea
 	if err != nil {
 		return nil, err
 	}
-	fromJSON(dataTypesJSON, &b.DataTypes)
-	fromJSON(remediationJSON, &b.RemediationSteps)
-	fromJSON(metadataJSON, &b.Metadata)
+	_ = fromJSON(dataTypesJSON, &b.DataTypes)
+	_ = fromJSON(remediationJSON, &b.RemediationSteps)
+	_ = fromJSON(metadataJSON, &b.Metadata)
 	return b, nil
 }
 
@@ -644,9 +644,9 @@ func (p *Postgres) ListBreaches(ctx context.Context, status, severity string, li
 		); err != nil {
 			return nil, 0, err
 		}
-		fromJSON(dataTypesJSON, &b.DataTypes)
-		fromJSON(remediationJSON, &b.RemediationSteps)
-		fromJSON(metadataJSON, &b.Metadata)
+		_ = fromJSON(dataTypesJSON, &b.DataTypes)
+		_ = fromJSON(remediationJSON, &b.RemediationSteps)
+		_ = fromJSON(metadataJSON, &b.Metadata)
 		breaches = append(breaches, b)
 	}
 	return breaches, total, rows.Err()
@@ -721,11 +721,11 @@ func (p *Postgres) GetDPIA(ctx context.Context, dpiaID string) (*models.DPIA, er
 	if err != nil {
 		return nil, err
 	}
-	fromJSON(dataCatsJSON, &d.DataCategories)
-	fromJSON(subjectsJSON, &d.Subjects)
-	fromJSON(risksJSON, &d.Risks)
-	fromJSON(mitigationsJSON, &d.Mitigations)
-	fromJSON(metadataJSON, &d.Metadata)
+	_ = fromJSON(dataCatsJSON, &d.DataCategories)
+	_ = fromJSON(subjectsJSON, &d.Subjects)
+	_ = fromJSON(risksJSON, &d.Risks)
+	_ = fromJSON(mitigationsJSON, &d.Mitigations)
+	_ = fromJSON(metadataJSON, &d.Metadata)
 	return d, nil
 }
 
@@ -787,11 +787,11 @@ func (p *Postgres) ListDPIAs(ctx context.Context, status, riskLevel string, limi
 		); err != nil {
 			return nil, 0, err
 		}
-		fromJSON(dataCatsJSON, &d.DataCategories)
-		fromJSON(subjectsJSON, &d.Subjects)
-		fromJSON(risksJSON, &d.Risks)
-		fromJSON(mitigationsJSON, &d.Mitigations)
-		fromJSON(metadataJSON, &d.Metadata)
+		_ = fromJSON(dataCatsJSON, &d.DataCategories)
+		_ = fromJSON(subjectsJSON, &d.Subjects)
+		_ = fromJSON(risksJSON, &d.Risks)
+		_ = fromJSON(mitigationsJSON, &d.Mitigations)
+		_ = fromJSON(metadataJSON, &d.Metadata)
 		dpias = append(dpias, d)
 	}
 	return dpias, total, rows.Err()
@@ -843,7 +843,7 @@ func (p *Postgres) ListRetentionPolicies(ctx context.Context) ([]*models.Retenti
 		); err != nil {
 			return nil, err
 		}
-		fromJSON(exceptionsJSON, &p.Exceptions)
+		_ = fromJSON(exceptionsJSON, &p.Exceptions)
 		policies = append(policies, p)
 	}
 	return policies, rows.Err()
@@ -891,14 +891,14 @@ func (p *Postgres) GetLatestAuditReport(ctx context.Context, year int) (*models.
 	if err != nil {
 		return nil, err
 	}
-	fromJSON(recommendationsJSON, &report.Recommendations)
+	_ = fromJSON(recommendationsJSON, &report.Recommendations)
 	return report, nil
 }
 
 // GenerateAuditReportData computes all metrics needed for an audit report.
 func (p *Postgres) GenerateAuditReportData(ctx context.Context, year int) (*models.AuditReport, error) {
 	report := &models.AuditReport{
-		Year:      year,
+		Year:       year,
 		ReportDate: time.Now().UTC(),
 	}
 

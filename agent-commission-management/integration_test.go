@@ -31,7 +31,7 @@ func getTestDB(t *testing.T) *sql.DB {
 
 func TestIntegration_DBConnection(t *testing.T) {
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Verify table exists
 	var exists bool
@@ -46,10 +46,10 @@ func TestIntegration_DBConnection(t *testing.T) {
 
 func TestIntegration_InsertAndQuery(t *testing.T) {
 	testDB := getTestDB(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Clean up test data first
-	testDB.Exec("DELETE FROM agent_commissions WHERE id >= 99900")
+	_, _ = testDB.Exec("DELETE FROM agent_commissions WHERE id >= 99900")
 
 	// Insert test record
 	_, err := testDB.Exec("INSERT INTO agent_commissions (id, \"agentId\", \"commissionAmount\", \"commissionRate\", status) VALUES (99901, 1, 1500.00, 0.05, 'pending')")
@@ -68,7 +68,7 @@ func TestIntegration_InsertAndQuery(t *testing.T) {
 	}
 
 	// Clean up
-	testDB.Exec("DELETE FROM agent_commissions WHERE id >= 99900")
+	_, _ = testDB.Exec("DELETE FROM agent_commissions WHERE id >= 99900")
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {
@@ -183,7 +183,7 @@ func TestIntegration_APIEndpoint(t *testing.T) {
 	mux.HandleFunc("/api/v1/calculate", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		rw.WriteHeader(http.StatusOK)
-		json.NewEncoder(rw).Encode(map[string]string{"status": "processed"})
+		_ = json.NewEncoder(rw).Encode(map[string]string{"status": "processed"})
 	})
 	mux.ServeHTTP(w, req)
 

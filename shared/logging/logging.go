@@ -62,14 +62,14 @@ type Fields map[string]interface{}
 
 // LogEntry represents a single log entry
 type LogEntry struct {
-	Timestamp   time.Time              `json:"timestamp"`
-	Level       string                 `json:"level"`
-	Message     string                 `json:"message"`
-	Service     string                 `json:"service,omitempty"`
-	TraceID     string                 `json:"trace_id,omitempty"`
-	SpanID      string                 `json:"span_id,omitempty"`
-	Caller      string                 `json:"caller,omitempty"`
-	Fields      map[string]interface{} `json:"fields,omitempty"`
+	Timestamp time.Time              `json:"timestamp"`
+	Level     string                 `json:"level"`
+	Message   string                 `json:"message"`
+	Service   string                 `json:"service,omitempty"`
+	TraceID   string                 `json:"trace_id,omitempty"`
+	SpanID    string                 `json:"span_id,omitempty"`
+	Caller    string                 `json:"caller,omitempty"`
+	Fields    map[string]interface{} `json:"fields,omitempty"`
 }
 
 // Logger is the main logger interface
@@ -165,7 +165,7 @@ func (l *JSONLogger) log(level Level, msg string, fields ...Fields) {
 		return
 	}
 
-	l.output.Write(append(data, '\n'))
+	_, _ = l.output.Write(append(data, '\n'))
 
 	if level == LevelFatal {
 		os.Exit(1)

@@ -281,14 +281,21 @@ func (p *PostgreSQL) ListPolicies(ctx context.Context, status, productType strin
 		pos++
 	}
 	query += " ORDER BY created_at DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit); pos++ }
-	if offset > 0 { query += fmt.Sprintf(" OFFSET $%d", pos); args = append(args, offset) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+		pos++
+	}
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", pos)
+		args = append(args, offset)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanPolicies(rows)
 }
 
@@ -297,7 +304,7 @@ func (p *PostgreSQL) CountPoliciesByState(ctx context.Context) (map[string]int, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make(map[string]int)
 	for rows.Next() {
 		var status string
@@ -327,12 +334,14 @@ func (p *PostgreSQL) GetTransitions(ctx context.Context, policyID string, limit 
 		transition_at,duration_secs FROM policy_transitions WHERE policy_id=$1`
 	args := []interface{}{policyID}
 	pos := 2
-	if limit > 0 { query += fmt.Sprintf(" ORDER BY transition_at DESC LIMIT $%d", pos) }
+	if limit > 0 {
+		query += fmt.Sprintf(" ORDER BY transition_at DESC LIMIT $%d", pos)
+	}
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanTransitions(rows)
 }
 
@@ -396,7 +405,7 @@ func (p *PostgreSQL) GetRenewalRecords(ctx context.Context, policyID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanRenewals(rows)
 }
 
@@ -441,7 +450,7 @@ func (p *PostgreSQL) GetEndorsements(ctx context.Context, policyID, status strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanEndorsements(rows)
 }
 

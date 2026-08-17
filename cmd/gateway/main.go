@@ -39,12 +39,12 @@ import (
 	"syscall"
 	"time"
 
+	"database/sql"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"golang.org/x/time/rate"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -58,35 +58,35 @@ type ServiceDef struct {
 }
 
 var serviceRegistry = []ServiceDef{
-	{EnvKey: "SERVICE_CORE_BANKING_URL",   Default: "http://localhost:8101", Prefix: "/v1/core-banking"},
-	{EnvKey: "SERVICE_FLOAT_URL",          Default: "http://localhost:8107", Prefix: "/v1/float"},
-	{EnvKey: "SERVICE_KYC_URL",            Default: "http://localhost:8101", Prefix: "/v1/kyc"},
-	{EnvKey: "SERVICE_GEOFENCING_URL",     Default: "http://localhost:8105", Prefix: "/v1/geofencing"},
-	{EnvKey: "SERVICE_OFFLINE_URL",        Default: "http://localhost:8201", Prefix: "/v1/offline"},
-	{EnvKey: "SERVICE_LEDGER_URL",         Default: "http://localhost:8301", Prefix: "/v1/ledger"},
-	{EnvKey: "SERVICE_FRAUD_URL",          Default: "http://localhost:8103", Prefix: "/v1/fraud"},
-	{EnvKey: "SERVICE_NIBSS_URL",          Default: "http://localhost:8401", Prefix: "/v1/nibss"},
-	{EnvKey: "SERVICE_USSD_URL",           Default: "http://localhost:8501", Prefix: "/v1/ussd"},
-	{EnvKey: "SERVICE_COMMS_URL",          Default: "http://localhost:8601", Prefix: "/v1/comms"},
-	{EnvKey: "SERVICE_ANALYTICS_URL",      Default: "http://localhost:8109", Prefix: "/v1/analytics"},
-	{EnvKey: "SERVICE_ERP_URL",            Default: "http://localhost:8701", Prefix: "/v1/erp"},
-	{EnvKey: "SERVICE_STOREFRONT_URL",     Default: "http://localhost:8801", Prefix: "/v1/storefront"},
-	{EnvKey: "SERVICE_CROSS_BORDER_URL",   Default: "http://localhost:8901", Prefix: "/v1/cross-border"},
-	{EnvKey: "SERVICE_LOYALTY_URL",        Default: "http://localhost:8106", Prefix: "/v1/loyalty"},
-	{EnvKey: "SERVICE_COMPLIANCE_URL",     Default: "http://localhost:9001", Prefix: "/v1/compliance"},
-	{EnvKey: "SERVICE_MDM_URL",            Default: "http://localhost:9101", Prefix: "/v1/mdm"},
-	{EnvKey: "SERVICE_WALLET_URL",         Default: "http://localhost:9201", Prefix: "/v1/wallet"},
-	{EnvKey: "SERVICE_CONTRACTS_URL",      Default: "http://localhost:9301", Prefix: "/v1/contracts"},
-	{EnvKey: "SERVICE_BILLS_URL",          Default: "http://localhost:9401", Prefix: "/v1/bills"},
-	{EnvKey: "SERVICE_MULTI_SIM_URL",      Default: "http://localhost:9501", Prefix: "/v1/multi-sim"},
-	{EnvKey: "SERVICE_NFC_URL",            Default: "http://localhost:9601", Prefix: "/v1/nfc"},
-	{EnvKey: "SERVICE_FLAGS_URL",          Default: "http://localhost:9701", Prefix: "/v1/flags"},
-	{EnvKey: "SERVICE_RBAC_URL",           Default: "http://localhost:9801", Prefix: "/v1/rbac"},
-	{EnvKey: "SERVICE_WORKFLOWS_URL",      Default: "http://localhost:9901", Prefix: "/v1/workflows"},
-	{EnvKey: "SERVICE_EVENTS_URL",         Default: "http://localhost:9902", Prefix: "/v1/events"},
-	{EnvKey: "SERVICE_DAPR_URL",           Default: "http://localhost:3500",  Prefix: "/v1/dapr"},
-	{EnvKey: "SERVICE_SCALING_URL",        Default: "http://localhost:9903", Prefix: "/v1/scaling"},
-	{EnvKey: "SERVICE_MESH_URL",           Default: "http://localhost:9904", Prefix: "/v1/mesh"},
+	{EnvKey: "SERVICE_CORE_BANKING_URL", Default: "http://localhost:8101", Prefix: "/v1/core-banking"},
+	{EnvKey: "SERVICE_FLOAT_URL", Default: "http://localhost:8107", Prefix: "/v1/float"},
+	{EnvKey: "SERVICE_KYC_URL", Default: "http://localhost:8101", Prefix: "/v1/kyc"},
+	{EnvKey: "SERVICE_GEOFENCING_URL", Default: "http://localhost:8105", Prefix: "/v1/geofencing"},
+	{EnvKey: "SERVICE_OFFLINE_URL", Default: "http://localhost:8201", Prefix: "/v1/offline"},
+	{EnvKey: "SERVICE_LEDGER_URL", Default: "http://localhost:8301", Prefix: "/v1/ledger"},
+	{EnvKey: "SERVICE_FRAUD_URL", Default: "http://localhost:8103", Prefix: "/v1/fraud"},
+	{EnvKey: "SERVICE_NIBSS_URL", Default: "http://localhost:8401", Prefix: "/v1/nibss"},
+	{EnvKey: "SERVICE_USSD_URL", Default: "http://localhost:8501", Prefix: "/v1/ussd"},
+	{EnvKey: "SERVICE_COMMS_URL", Default: "http://localhost:8601", Prefix: "/v1/comms"},
+	{EnvKey: "SERVICE_ANALYTICS_URL", Default: "http://localhost:8109", Prefix: "/v1/analytics"},
+	{EnvKey: "SERVICE_ERP_URL", Default: "http://localhost:8701", Prefix: "/v1/erp"},
+	{EnvKey: "SERVICE_STOREFRONT_URL", Default: "http://localhost:8801", Prefix: "/v1/storefront"},
+	{EnvKey: "SERVICE_CROSS_BORDER_URL", Default: "http://localhost:8901", Prefix: "/v1/cross-border"},
+	{EnvKey: "SERVICE_LOYALTY_URL", Default: "http://localhost:8106", Prefix: "/v1/loyalty"},
+	{EnvKey: "SERVICE_COMPLIANCE_URL", Default: "http://localhost:9001", Prefix: "/v1/compliance"},
+	{EnvKey: "SERVICE_MDM_URL", Default: "http://localhost:9101", Prefix: "/v1/mdm"},
+	{EnvKey: "SERVICE_WALLET_URL", Default: "http://localhost:9201", Prefix: "/v1/wallet"},
+	{EnvKey: "SERVICE_CONTRACTS_URL", Default: "http://localhost:9301", Prefix: "/v1/contracts"},
+	{EnvKey: "SERVICE_BILLS_URL", Default: "http://localhost:9401", Prefix: "/v1/bills"},
+	{EnvKey: "SERVICE_MULTI_SIM_URL", Default: "http://localhost:9501", Prefix: "/v1/multi-sim"},
+	{EnvKey: "SERVICE_NFC_URL", Default: "http://localhost:9601", Prefix: "/v1/nfc"},
+	{EnvKey: "SERVICE_FLAGS_URL", Default: "http://localhost:9701", Prefix: "/v1/flags"},
+	{EnvKey: "SERVICE_RBAC_URL", Default: "http://localhost:9801", Prefix: "/v1/rbac"},
+	{EnvKey: "SERVICE_WORKFLOWS_URL", Default: "http://localhost:9901", Prefix: "/v1/workflows"},
+	{EnvKey: "SERVICE_EVENTS_URL", Default: "http://localhost:9902", Prefix: "/v1/events"},
+	{EnvKey: "SERVICE_DAPR_URL", Default: "http://localhost:3500", Prefix: "/v1/dapr"},
+	{EnvKey: "SERVICE_SCALING_URL", Default: "http://localhost:9903", Prefix: "/v1/scaling"},
+	{EnvKey: "SERVICE_MESH_URL", Default: "http://localhost:9904", Prefix: "/v1/mesh"},
 }
 
 // ── Prometheus metrics ────────────────────────────────────────────────────────
@@ -189,9 +189,9 @@ func (s *rateLimiterStore) get(key string) *rate.Limiter {
 // ── Proxy handler ─────────────────────────────────────────────────────────────
 
 type proxyHandler struct {
-	service   string
-	proxy     *httputil.ReverseProxy
-	limiter   *rateLimiterStore
+	service string
+	proxy   *httputil.ReverseProxy
+	limiter *rateLimiterStore
 }
 
 func newProxyHandler(service, targetURL string, transport http.RoundTripper, limiter *rateLimiterStore) *proxyHandler {
@@ -224,7 +224,7 @@ func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rateLimitHits.WithLabelValues(h.service).Inc()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
-		json.NewEncoder(w).Encode(map[string]string{"error": "rate_limit_exceeded"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "rate_limit_exceeded"})
 		return
 	}
 
@@ -268,7 +268,7 @@ func (g *gateway) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func (g *gateway) readyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -309,11 +309,10 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	gw := &gateway{startTime: time.Now(), services: serviceRegistry}
 	transport := buildMtlsTransport()
@@ -335,7 +334,7 @@ func main() {
 		handler := newProxyHandler(svc.EnvKey, targetURL, transport, limiter)
 		prefix := svc.Prefix
 		// Strip the prefix before forwarding so the upstream sees its own paths
-		r.PathPrefix(prefix + "/").Handler(
+		r.PathPrefix(prefix+"/").Handler(
 			http.StripPrefix(prefix, handler),
 		).Methods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 		log.Printf("[gateway] registered: %s → %s", prefix, targetURL)

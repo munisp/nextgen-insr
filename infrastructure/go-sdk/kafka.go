@@ -70,7 +70,7 @@ func (c *KafkaClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	_, err = client.Topics()
 	return err
 }
@@ -105,7 +105,7 @@ func (c *KafkaClient) Publish(ctx context.Context, topic string, key string, pay
 				{Key: []byte("error"), Value: []byte(err.Error())},
 			},
 		}
-		c.producer.SendMessage(dlqMsg)
+		_, _, _ = c.producer.SendMessage(dlqMsg)
 		return fmt.Errorf("publish to %s: %w", topic, err)
 	}
 	return nil
@@ -168,6 +168,6 @@ func (c *KafkaClient) PublishAuditEvent(ctx context.Context, service string, act
 
 func (c *KafkaClient) Close() {
 	if c.producer != nil {
-		c.producer.Close()
+		_ = c.producer.Close()
 	}
 }

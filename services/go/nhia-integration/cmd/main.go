@@ -123,7 +123,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"BEN-003", "NHIA-2024-003", "Yusuf Ibrahim", "22345678903", "child", "standard"},
 	}
 	for _, b := range bens {
-		s.db.ExecContext(ctx, `INSERT INTO nhia_beneficiaries (id, nhia_pin, full_name, bvn, relationship, status, plan_type, enrolled_at, expires_at)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO nhia_beneficiaries (id, nhia_pin, full_name, bvn, relationship, status, plan_type, enrolled_at, expires_at)
 			VALUES ($1,$2,$3,$4,$5,'active',$6,NOW(),NOW()+INTERVAL '1 year') ON CONFLICT (id) DO NOTHING`,
 			b.id, b.pin, b.name, b.bvn, b.rel, b.plan)
 	}
@@ -137,7 +137,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"EMP-002", "Lagos Trading Co", 45, 225000, "overdue"},
 	}
 	for _, e := range emps {
-		s.db.ExecContext(ctx, `INSERT INTO nhia_employers (id, name, employee_count, monthly_amount, status, last_paid_at)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO nhia_employers (id, name, employee_count, monthly_amount, status, last_paid_at)
 			VALUES ($1,$2,$3,$4,$5,'2026-05-01') ON CONFLICT (id) DO NOTHING`, e.id, e.name, e.count, e.amount, e.status)
 	}
 	return nil
@@ -155,12 +155,12 @@ func (s *Store) ListBeneficiaries(ctx context.Context, status string) ([]map[str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var id, pin, name, bvn, rel, st, plan string
 		var enrolled, expires time.Time
-		rows.Scan(&id, &pin, &name, &bvn, &rel, &st, &plan, &enrolled, &expires)
+		_ = rows.Scan(&id, &pin, &name, &bvn, &rel, &st, &plan, &enrolled, &expires)
 		result = append(result, map[string]interface{}{
 			"id": id, "nhia_pin": pin, "full_name": name, "bvn": bvn,
 			"relationship": rel, "status": st, "plan_type": plan,
@@ -206,13 +206,13 @@ func (s *Store) ListEmployers(ctx context.Context) ([]map[string]interface{}, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []map[string]interface{}
 	for rows.Next() {
 		var id, name, freq, lastPaid, status string
 		var count int
 		var amount int64
-		rows.Scan(&id, &name, &count, &amount, &freq, &lastPaid, &status)
+		_ = rows.Scan(&id, &name, &count, &amount, &freq, &lastPaid, &status)
 		result = append(result, map[string]interface{}{
 			"employer_id": id, "employer_name": name, "employee_count": count,
 			"monthly_amount": amount, "frequency": freq, "last_paid_at": lastPaid, "status": status,
@@ -240,7 +240,7 @@ func publishEvent(kafkaURL, topic string, event interface{}) {
 			log.Printf("[Kafka] error: %v", err)
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 }
 
@@ -249,7 +249,7 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -261,7 +261,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Database connection failed: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	mux := http.NewServeMux()
 
@@ -285,12 +285,12 @@ func main() {
 			return
 		}
 		var req struct {
-			EmployerID  string `json:"employer_id"`
-			FullName    string `json:"full_name"`
-			BVN         string `json:"bvn"`
-			DateOfBirth string `json:"date_of_birth"`
+			EmployerID   string `json:"employer_id"`
+			FullName     string `json:"full_name"`
+			BVN          string `json:"bvn"`
+			DateOfBirth  string `json:"date_of_birth"`
 			Relationship string `json:"relationship"`
-			PlanType    string `json:"plan_type"`
+			PlanType     string `json:"plan_type"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -381,5 +381,5 @@ func main() {
 	<-quit
 	shutdownCtx, c := context.WithTimeout(ctx, 30*time.Second)
 	defer c()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

@@ -107,12 +107,12 @@ func (h *Handlers) SendNotification(w http.ResponseWriter, r *http.Request) {
 		"status":          "queued",
 		"priority":        int(n.Priority),
 		"message":         "Notification queued for delivery",
-		"retry_policy":    map[string]interface{}{
+		"retry_policy": map[string]interface{}{
 			"max_attempts": 3,
 			"backoff":      "exponential",
 		},
 		"estimated_delivery": "< 30 seconds",
-		"naicom_approved":   n.TemplateName != "",
+		"naicom_approved":    n.TemplateName != "",
 	})
 }
 
@@ -157,7 +157,7 @@ func (h *Handlers) CreateTemplate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
+		"success":  true,
 		"template": t,
 	})
 }
@@ -170,11 +170,11 @@ func (h *Handlers) GetDeliveryStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"stats":      stats,
-		"channels":   []string{"sms", "email", "push", "whatsapp", "ussd"},
-		"period":     "last_24_hours",
+		"stats":    stats,
+		"channels": []string{"sms", "email", "push", "whatsapp", "ussd"},
+		"period":   "last_24_hours",
 		"summary": map[string]interface{}{
-			"total_sent":    len(stats),
+			"total_sent":      len(stats),
 			"channels_active": 4,
 		},
 	})
@@ -304,21 +304,21 @@ func (h *Handlers) GetNotificationsByCustomer(w http.ResponseWriter, r *http.Req
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"customer_id": customerID,
+		"customer_id":   customerID,
 		"notifications": notifs,
-		"count":       len(notifs),
-		"limit":       limit,
+		"count":         len(notifs),
+		"limit":         limit,
 	})
 }
 
 // --- Channel Status ---
 func (h *Handlers) GetChannelStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"sms":       map[string]interface{}{"enabled": true, "provider": "Termii", "rate_limit": 5, "unit": "per_day"},
-		"email":     map[string]interface{}{"enabled": true, "provider": "SendGrid", "rate_limit": 1000, "unit": "per_hour"},
-		"push":      map[string]interface{}{"enabled": true, "provider": "FCM", "rate_limit": 3, "unit": "per_hour"},
-		"whatsapp":  map[string]interface{}{"enabled": true, "provider": "WhatsApp Business API", "rate_limit": 0, "unit": "unlimited"},
-		"ussd":      map[string]interface{}{"enabled": true, "provider": "USSD Gateway", "rate_limit": 0, "unit": "unlimited"},
+		"sms":      map[string]interface{}{"enabled": true, "provider": "Termii", "rate_limit": 5, "unit": "per_day"},
+		"email":    map[string]interface{}{"enabled": true, "provider": "SendGrid", "rate_limit": 1000, "unit": "per_hour"},
+		"push":     map[string]interface{}{"enabled": true, "provider": "FCM", "rate_limit": 3, "unit": "per_hour"},
+		"whatsapp": map[string]interface{}{"enabled": true, "provider": "WhatsApp Business API", "rate_limit": 0, "unit": "unlimited"},
+		"ussd":     map[string]interface{}{"enabled": true, "provider": "USSD Gateway", "rate_limit": 0, "unit": "unlimited"},
 		"quiet_hours": map[string]string{
 			"start": "22:00", "end": "07:00",
 			"note": "Non-critical notifications suppressed during quiet hours",

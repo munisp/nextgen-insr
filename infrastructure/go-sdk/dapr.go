@@ -20,9 +20,9 @@ type DaprClient struct {
 }
 
 const (
-	DaprStateStore   = "statestore"
-	DaprPubSub       = "pubsub"
-	DaprSecretStore  = "secretstore"
+	DaprStateStore  = "statestore"
+	DaprPubSub      = "pubsub"
+	DaprSecretStore = "secretstore"
 )
 
 func NewDaprClient(logger *zap.Logger, httpPort int) *DaprClient {
@@ -50,7 +50,7 @@ func (c *DaprClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("dapr ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 204 && resp.StatusCode != 200 {
 		return fmt.Errorf("dapr unhealthy: %d", resp.StatusCode)
 	}
@@ -77,7 +77,7 @@ func (c *DaprClient) SaveState(ctx context.Context, storeName, key string, value
 	if err != nil {
 		return fmt.Errorf("save state: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("save state failed (%d): %s", resp.StatusCode, string(body))
@@ -95,7 +95,7 @@ func (c *DaprClient) GetState(ctx context.Context, storeName, key string) ([]byt
 	if err != nil {
 		return nil, "", fmt.Errorf("get state: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == 204 || resp.StatusCode == 404 {
 		return nil, "", nil
 	}
@@ -114,7 +114,7 @@ func (c *DaprClient) DeleteState(ctx context.Context, storeName, key string) err
 	if err != nil {
 		return fmt.Errorf("delete state: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -130,7 +130,7 @@ func (c *DaprClient) PublishEvent(ctx context.Context, pubsubName, topic string,
 	if err != nil {
 		return fmt.Errorf("publish event: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("publish failed (%d): %s", resp.StatusCode, string(body))
@@ -154,7 +154,7 @@ func (c *DaprClient) InvokeService(ctx context.Context, appID, method string, pa
 	if err != nil {
 		return nil, fmt.Errorf("invoke %s/%s: %w", appID, method, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("invoke failed (%d): %s", resp.StatusCode, string(body))
@@ -172,10 +172,10 @@ func (c *DaprClient) GetSecret(ctx context.Context, storeName, key string) (map[
 	if err != nil {
 		return nil, fmt.Errorf("get secret: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	var secrets map[string]string
-	json.Unmarshal(body, &secrets)
+	_ = json.Unmarshal(body, &secrets)
 	return secrets, nil
 }
 

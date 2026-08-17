@@ -17,14 +17,14 @@ import (
 type ReportType string
 
 const (
-	ReportQuarterlyReturn  ReportType = "quarterly_return"
-	ReportSolvencyMargin   ReportType = "solvency_margin"
+	ReportQuarterlyReturn   ReportType = "quarterly_return"
+	ReportSolvencyMargin    ReportType = "solvency_margin"
 	ReportTechnicalReserves ReportType = "technical_reserves"
-	ReportRiskBasedCapital ReportType = "risk_based_capital"
-	ReportAML             ReportType = "aml_str"
-	ReportPolicyRegister  ReportType = "policy_register"
-	ReportClaimsRegister  ReportType = "claims_register"
-	ReportInvestment      ReportType = "investment_reporting"
+	ReportRiskBasedCapital  ReportType = "risk_based_capital"
+	ReportAML               ReportType = "aml_str"
+	ReportPolicyRegister    ReportType = "policy_register"
+	ReportClaimsRegister    ReportType = "claims_register"
+	ReportInvestment        ReportType = "investment_reporting"
 )
 
 type ReportStatus string
@@ -39,37 +39,37 @@ const (
 )
 
 type Report struct {
-	ID           string       `json:"id"`
-	Type         ReportType   `json:"type"`
-	Period       string       `json:"period"` // 2026-Q1, 2026-Q2
-	Status       ReportStatus `json:"status"`
-	Regulator    string       `json:"regulator"` // NAICOM, CBN, SEC, NFIU
-	GeneratedAt  string       `json:"generated_at"`
-	SubmittedAt  string       `json:"submitted_at,omitempty"`
-	Deadline     string       `json:"deadline"`
-	Data         interface{}  `json:"data"`
-	Validations  []string     `json:"validations"`
+	ID          string       `json:"id"`
+	Type        ReportType   `json:"type"`
+	Period      string       `json:"period"` // 2026-Q1, 2026-Q2
+	Status      ReportStatus `json:"status"`
+	Regulator   string       `json:"regulator"` // NAICOM, CBN, SEC, NFIU
+	GeneratedAt string       `json:"generated_at"`
+	SubmittedAt string       `json:"submitted_at,omitempty"`
+	Deadline    string       `json:"deadline"`
+	Data        interface{}  `json:"data"`
+	Validations []string     `json:"validations"`
 }
 
 type SolvencyMargin struct {
-	TotalAssets         int64   `json:"total_assets"`
-	TotalLiabilities    int64   `json:"total_liabilities"`
-	AvailableCapital    int64   `json:"available_capital"`
-	RequiredCapital     int64   `json:"required_capital"`
-	SolvencyRatio       float64 `json:"solvency_ratio"`
-	Tier1Capital        int64   `json:"tier1_capital"`
-	Tier2Capital        int64   `json:"tier2_capital"`
-	RegulatoryMinimum   int64   `json:"regulatory_minimum"`
-	IsCompliant         bool    `json:"is_compliant"`
+	TotalAssets       int64   `json:"total_assets"`
+	TotalLiabilities  int64   `json:"total_liabilities"`
+	AvailableCapital  int64   `json:"available_capital"`
+	RequiredCapital   int64   `json:"required_capital"`
+	SolvencyRatio     float64 `json:"solvency_ratio"`
+	Tier1Capital      int64   `json:"tier1_capital"`
+	Tier2Capital      int64   `json:"tier2_capital"`
+	RegulatoryMinimum int64   `json:"regulatory_minimum"`
+	IsCompliant       bool    `json:"is_compliant"`
 }
 
 type FilingDeadline struct {
-	ReportType  ReportType `json:"report_type"`
-	Period      string     `json:"period"`
-	Deadline    string     `json:"deadline"`
-	DaysLeft    int        `json:"days_left"`
-	Status      string     `json:"status"`
-	AlertLevel  string     `json:"alert_level"` // green, yellow, red
+	ReportType ReportType `json:"report_type"`
+	Period     string     `json:"period"`
+	Deadline   string     `json:"deadline"`
+	DaysLeft   int        `json:"days_left"`
+	Status     string     `json:"status"`
+	AlertLevel string     `json:"alert_level"` // green, yellow, red
 }
 
 func main() {
@@ -79,9 +79,9 @@ func main() {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":     "healthy",
-			"service":    "regulatory-reporting",
-			"regulators": []string{"NAICOM", "CBN", "SEC", "NFIU"},
+			"status":       "healthy",
+			"service":      "regulatory-reporting",
+			"regulators":   []string{"NAICOM", "CBN", "SEC", "NFIU"},
 			"report_types": []string{"quarterly_return", "solvency_margin", "technical_reserves", "rbc", "aml", "policy_register", "claims_register"},
 		})
 	})
@@ -91,7 +91,7 @@ func main() {
 			Type   ReportType `json:"type"`
 			Period string     `json:"period"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		report := Report{
 			ID:          fmt.Sprintf("RPT-%d", time.Now().UnixNano()),
@@ -115,7 +115,7 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(report)
+		_ = json.NewEncoder(w).Encode(report)
 	})
 
 	mux.HandleFunc("/api/v1/regulatory/deadlines", func(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +126,7 @@ func main() {
 			{ReportType: ReportAML, Period: "2026-05", Deadline: now.AddDate(0, 0, 7).Format("2006-01-02"), DaysLeft: 7, Status: "overdue", AlertLevel: "red"},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"deadlines": deadlines})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"deadlines": deadlines})
 	})
 
 	mux.HandleFunc("/api/v1/regulatory/solvency", func(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +144,8 @@ func main() {
 }
 
 func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" { return v }
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
 	return def
 }

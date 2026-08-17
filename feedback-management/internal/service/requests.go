@@ -29,10 +29,10 @@ type RespondRequest struct {
 }
 
 type CreateSurveyRequest struct {
-	Name         string                   `json:"name"`
-	Description  string                   `json:"description"`
-	TriggerEvent string                   `json:"trigger_event"`
-	Questions    []models.SurveyQuestion  `json:"questions"`
+	Name         string                  `json:"name"`
+	Description  string                  `json:"description"`
+	TriggerEvent string                  `json:"trigger_event"`
+	Questions    []models.SurveyQuestion `json:"questions"`
 }
 
 type SurveyResponseRequest struct {

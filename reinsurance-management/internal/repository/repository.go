@@ -26,7 +26,9 @@ func (r *ReinsuranceRepository) AutoMigrate() error {
 }
 
 func (r *ReinsuranceRepository) CreateTreaty(ctx context.Context, t *models.Treaty) error {
-	t.ID = uuid.New(); t.CreatedAt = time.Now(); t.UpdatedAt = time.Now()
+	t.ID = uuid.New()
+	t.CreatedAt = time.Now()
+	t.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(t).Error
 }
 
@@ -38,7 +40,9 @@ func (r *ReinsuranceRepository) GetTreaty(ctx context.Context, id uuid.UUID) (*m
 func (r *ReinsuranceRepository) ListTreaties(ctx context.Context, lob string) ([]models.Treaty, error) {
 	var treaties []models.Treaty
 	q := r.db.WithContext(ctx)
-	if lob != "" { q = q.Where("line_of_business = ?", lob) }
+	if lob != "" {
+		q = q.Where("line_of_business = ?", lob)
+	}
 	return treaties, q.Where("status = ?", "active").Order("effective_date DESC").Find(&treaties).Error
 }
 
@@ -48,7 +52,8 @@ func (r *ReinsuranceRepository) UpdateTreaty(ctx context.Context, t *models.Trea
 }
 
 func (r *ReinsuranceRepository) CreateParticipation(ctx context.Context, p *models.ReinsurerParticipation) error {
-	p.ID = uuid.New(); p.CreatedAt = time.Now()
+	p.ID = uuid.New()
+	p.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(p).Error
 }
 
@@ -58,7 +63,9 @@ func (r *ReinsuranceRepository) GetParticipations(ctx context.Context, treatyID 
 }
 
 func (r *ReinsuranceRepository) CreateFacPlacement(ctx context.Context, f *models.FacultativePlacement) error {
-	f.ID = uuid.New(); f.CreatedAt = time.Now(); f.UpdatedAt = time.Now()
+	f.ID = uuid.New()
+	f.CreatedAt = time.Now()
+	f.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(f).Error
 }
 
@@ -70,7 +77,9 @@ func (r *ReinsuranceRepository) GetFacPlacement(ctx context.Context, id uuid.UUI
 func (r *ReinsuranceRepository) ListFacPlacements(ctx context.Context, status string) ([]models.FacultativePlacement, error) {
 	var placements []models.FacultativePlacement
 	q := r.db.WithContext(ctx)
-	if status != "" { q = q.Where("status = ?", status) }
+	if status != "" {
+		q = q.Where("status = ?", status)
+	}
 	return placements, q.Order("created_at DESC").Find(&placements).Error
 }
 
@@ -81,7 +90,8 @@ func (r *ReinsuranceRepository) UpdateFacPlacementStatus(ctx context.Context, id
 }
 
 func (r *ReinsuranceRepository) CreateCession(ctx context.Context, c *models.CessionRecord) error {
-	c.ID = uuid.New(); c.CreatedAt = time.Now()
+	c.ID = uuid.New()
+	c.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(c).Error
 }
 
@@ -91,7 +101,9 @@ func (r *ReinsuranceRepository) GetCessionsByTreaty(ctx context.Context, treatyI
 }
 
 func (r *ReinsuranceRepository) CreateClaimRecovery(ctx context.Context, cr *models.ClaimRecovery) error {
-	cr.ID = uuid.New(); cr.CreatedAt = time.Now(); cr.UpdatedAt = time.Now()
+	cr.ID = uuid.New()
+	cr.CreatedAt = time.Now()
+	cr.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(cr).Error
 }
 
@@ -112,19 +124,23 @@ func (r *ReinsuranceRepository) GetRecoveriesByTreaty(ctx context.Context, treat
 }
 
 func (r *ReinsuranceRepository) CreateBordereauxEntry(ctx context.Context, b *models.BordereauEntry) error {
-	b.ID = uuid.New(); b.CreatedAt = time.Now()
+	b.ID = uuid.New()
+	b.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(b).Error
 }
 
 func (r *ReinsuranceRepository) GetBordereauxByTreaty(ctx context.Context, treatyID uuid.UUID, period string) ([]models.BordereauEntry, error) {
 	var entries []models.BordereauEntry
 	q := r.db.WithContext(ctx).Where("treaty_id = ?", treatyID)
-	if period != "" { q = q.Where("period = ?", period) }
+	if period != "" {
+		q = q.Where("period = ?", period)
+	}
 	return entries, q.Order("created_at").Find(&entries).Error
 }
 
 func (r *ReinsuranceRepository) CreateAccount(ctx context.Context, a *models.ReinsuranceAccount) error {
-	a.ID = uuid.New(); a.CreatedAt = time.Now()
+	a.ID = uuid.New()
+	a.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(a).Error
 }
 
@@ -134,7 +150,8 @@ func (r *ReinsuranceRepository) GetAccountsByTreaty(ctx context.Context, treatyI
 }
 
 func (r *ReinsuranceRepository) CreateAnalytics(ctx context.Context, a *models.ReinsuranceAnalytics) error {
-	a.ID = uuid.New(); a.CreatedAt = time.Now()
+	a.ID = uuid.New()
+	a.CreatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(a).Error
 }
 

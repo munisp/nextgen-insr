@@ -73,7 +73,7 @@ func (h *Handlers) GetGoldenRecord(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(gr)
+	_ = json.NewEncoder(w).Encode(gr)
 }
 
 func (h *Handlers) ListGoldenRecords(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +81,9 @@ func (h *Handlers) ListGoldenRecords(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit == 0 || limit > 100 { limit = 20 }
+	if limit == 0 || limit > 100 {
+		limit = 20
+	}
 
 	records, err := h.mdm.ListGoldenRecords(r.Context(), entityType, status, limit, offset)
 	if err != nil {
@@ -148,12 +150,12 @@ func (h *Handlers) FindDuplicates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"duplicates_found":    len(candidates),
-		"merge_candidates":    len(candidates),
-		"review_required":     0,
-		"matching_algorithm":  "fuzzy_name_email_phone",
-		"threshold":           0.85,
-		"candidates":          candidates,
+		"duplicates_found":   len(candidates),
+		"merge_candidates":   len(candidates),
+		"review_required":    0,
+		"matching_algorithm": "fuzzy_name_email_phone",
+		"threshold":          0.85,
+		"candidates":         candidates,
 	})
 }
 
@@ -175,9 +177,9 @@ func (h *Handlers) ApproveMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":        true,
-		"candidate_id":   body.CandidateID,
-		"message":        "Merge candidate approved for processing",
+		"success":      true,
+		"candidate_id": body.CandidateID,
+		"message":      "Merge candidate approved for processing",
 	})
 }
 
@@ -240,9 +242,9 @@ func (h *Handlers) GetOpenIssues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"issues":  issues,
-		"count":   len(issues),
-		"open":    len(issues),
+		"issues":   issues,
+		"count":    len(issues),
+		"open":     len(issues),
 		"resolved": 0,
 	})
 }
@@ -265,9 +267,9 @@ func (h *Handlers) ResolveIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":   true,
-		"issue_id":  body.IssueID,
-		"message":   "Issue resolved",
+		"success":  true,
+		"issue_id": body.IssueID,
+		"message":  "Issue resolved",
 	})
 }
 
@@ -298,7 +300,9 @@ func (h *Handlers) StartSync(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetRecentSyncs(w http.ResponseWriter, r *http.Request) {
 	limit := 20
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 { limit = v }
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
 	}
 	syncs, err := h.mdm.GetRecentSyncs(r.Context(), limit)
 	if err != nil {
@@ -306,8 +310,8 @@ func (h *Handlers) GetRecentSyncs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"syncs":   syncs,
-		"count":   len(syncs),
+		"syncs": syncs,
+		"count": len(syncs),
 	})
 }
 
@@ -318,7 +322,7 @@ func (h *Handlers) GetDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(dash)
+	_ = json.NewEncoder(w).Encode(dash)
 }
 
 // --- Agent Records ---
@@ -355,13 +359,15 @@ func (h *Handlers) GetAgentRecord(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(ar)
+	_ = json.NewEncoder(w).Encode(ar)
 }
 
 func (h *Handlers) ListAgentRecords(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit == 0 || limit > 100 { limit = 20 }
+	if limit == 0 || limit > 100 {
+		limit = 20
+	}
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
 	agents, err := h.mdm.ListAgentRecords(r.Context(), status, limit, offset)
@@ -370,8 +376,8 @@ func (h *Handlers) ListAgentRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"agents":  agents,
-		"count":   len(agents),
+		"agents": agents,
+		"count":  len(agents),
 	})
 }
 
@@ -409,7 +415,7 @@ func (h *Handlers) GetProductRecord(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(pr)
+	_ = json.NewEncoder(w).Encode(pr)
 }
 
 func (h *Handlers) ListProductRecords(w http.ResponseWriter, r *http.Request) {

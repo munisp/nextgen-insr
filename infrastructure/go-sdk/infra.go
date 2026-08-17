@@ -22,23 +22,23 @@ type ComponentStatus struct {
 
 // Config holds connection strings for all infrastructure components.
 type Config struct {
-	PostgresURL       string
-	RedisAddr         string
-	KafkaBrokers      []string
-	TigerBeetleAddr   string
-	MojaloopURL       string
-	APISixAdminURL    string
-	KeycloakRealmURL  string
-	KeycloakClientID  string
-	KeycloakSecret    string
-	KeycloakAdminURL  string
-	OpenAppSecURL     string
-	PermifyURL        string
-	PermifyTenant     string
-	OpenSearchURL     string
-	FluvioEndpoint    string
-	DaprHTTPPort      string
-	DaprGRPCPort      string
+	PostgresURL      string
+	RedisAddr        string
+	KafkaBrokers     []string
+	TigerBeetleAddr  string
+	MojaloopURL      string
+	APISixAdminURL   string
+	KeycloakRealmURL string
+	KeycloakClientID string
+	KeycloakSecret   string
+	KeycloakAdminURL string
+	OpenAppSecURL    string
+	PermifyURL       string
+	PermifyTenant    string
+	OpenSearchURL    string
+	FluvioEndpoint   string
+	DaprHTTPPort     string
+	DaprGRPCPort     string
 }
 
 // DefaultConfig returns a Config with sensible local defaults.

@@ -18,7 +18,7 @@ func Test_Health(t *testing.T) {
 		t.Errorf("Expected 200, got %d", w.Code)
 	}
 	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["status"] == nil {
 		t.Errorf("Expected status in response")
 	}
@@ -33,7 +33,7 @@ func Test_Calculate(t *testing.T) {
 		t.Errorf("Expected 200, got %d", w.Code)
 	}
 	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["commission"] == nil {
 		t.Errorf("Expected commission in response")
 	}
@@ -47,7 +47,7 @@ func Test_PayoutSummary(t *testing.T) {
 	if err != nil {
 		t.Skipf("Skipping (cannot open DB): %v", err)
 	}
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 	if err := testDB.Ping(); err != nil {
 		t.Skipf("Skipping (DB unreachable): %v", err)
 	}

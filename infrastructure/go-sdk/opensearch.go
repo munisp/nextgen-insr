@@ -20,33 +20,33 @@ type OpenSearchClient struct {
 
 // Platform-wide index names
 const (
-	IndexAuditTrail  = "ngapp-audit-trail"
-	IndexKYCEvents   = "ngapp-kyc-events"
-	IndexCompliance  = "ngapp-compliance"
-	IndexMetrics     = "ngapp-metrics"
-	IndexPolicies    = "ngapp-policies"
-	IndexClaims      = "ngapp-claims"
-	IndexPayments    = "ngapp-payments"
-	IndexFraud       = "ngapp-fraud-alerts"
-	IndexSecurity    = "ngapp-security-events"
+	IndexAuditTrail = "ngapp-audit-trail"
+	IndexKYCEvents  = "ngapp-kyc-events"
+	IndexCompliance = "ngapp-compliance"
+	IndexMetrics    = "ngapp-metrics"
+	IndexPolicies   = "ngapp-policies"
+	IndexClaims     = "ngapp-claims"
+	IndexPayments   = "ngapp-payments"
+	IndexFraud      = "ngapp-fraud-alerts"
+	IndexSecurity   = "ngapp-security-events"
 )
 
 type AuditEntry struct {
-	ID            string                 `json:"id"`
-	Service       string                 `json:"service"`
-	Action        string                 `json:"action"`
-	EntityType    string                 `json:"entity_type,omitempty"`
-	EntityID      string                 `json:"entity_id,omitempty"`
-	Actor         string                 `json:"actor,omitempty"`
-	IPAddress     string                 `json:"ip_address,omitempty"`
-	UserAgent     string                 `json:"user_agent,omitempty"`
-	Method        string                 `json:"method,omitempty"`
-	Path          string                 `json:"path,omitempty"`
-	StatusCode    int                    `json:"status_code,omitempty"`
-	DurationMs    int                    `json:"duration_ms,omitempty"`
-	KYCLevel      int                    `json:"kyc_level,omitempty"`
-	Details       map[string]interface{} `json:"details,omitempty"`
-	Timestamp     time.Time              `json:"timestamp"`
+	ID         string                 `json:"id"`
+	Service    string                 `json:"service"`
+	Action     string                 `json:"action"`
+	EntityType string                 `json:"entity_type,omitempty"`
+	EntityID   string                 `json:"entity_id,omitempty"`
+	Actor      string                 `json:"actor,omitempty"`
+	IPAddress  string                 `json:"ip_address,omitempty"`
+	UserAgent  string                 `json:"user_agent,omitempty"`
+	Method     string                 `json:"method,omitempty"`
+	Path       string                 `json:"path,omitempty"`
+	StatusCode int                    `json:"status_code,omitempty"`
+	DurationMs int                    `json:"duration_ms,omitempty"`
+	KYCLevel   int                    `json:"kyc_level,omitempty"`
+	Details    map[string]interface{} `json:"details,omitempty"`
+	Timestamp  time.Time              `json:"timestamp"`
 }
 
 func NewOpenSearchClient(logger *zap.Logger, baseURL string) *OpenSearchClient {
@@ -66,7 +66,7 @@ func (c *OpenSearchClient) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("opensearch ping: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("opensearch unhealthy: %d", resp.StatusCode)
 	}
@@ -120,7 +120,7 @@ func (c *OpenSearchClient) createIndexIfNotExists(ctx context.Context, index str
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -165,7 +165,7 @@ func (c *OpenSearchClient) setupILMPolicy(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -184,7 +184,7 @@ func (c *OpenSearchClient) IndexDocument(ctx context.Context, index string, docI
 	if err != nil {
 		return fmt.Errorf("index document: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("index failed (%d): %s", resp.StatusCode, string(body))
@@ -211,7 +211,7 @@ func (c *OpenSearchClient) BulkIndex(ctx context.Context, index string, docs map
 	if err != nil {
 		return fmt.Errorf("bulk index: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("bulk index failed (%d): %s", resp.StatusCode, string(body))
@@ -245,10 +245,10 @@ func (c *OpenSearchClient) Search(ctx context.Context, index string, query map[s
 	if err != nil {
 		return nil, 0, fmt.Errorf("search: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(respBody, &result)
+	_ = json.Unmarshal(respBody, &result)
 
 	hits, ok := result["hits"].(map[string]interface{})
 	if !ok {
@@ -293,10 +293,10 @@ func (c *OpenSearchClient) GenerateComplianceReport(ctx context.Context, startDa
 	}
 	_ = docs
 	return map[string]interface{}{
-		"period_start":  startDate.Format(time.RFC3339),
-		"period_end":    endDate.Format(time.RFC3339),
-		"total_events":  total,
-		"generated_at":  time.Now().Format(time.RFC3339),
+		"period_start": startDate.Format(time.RFC3339),
+		"period_end":   endDate.Format(time.RFC3339),
+		"total_events": total,
+		"generated_at": time.Now().Format(time.RFC3339),
 	}, nil
 }
 

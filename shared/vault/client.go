@@ -111,7 +111,7 @@ func (c *Client) readKV(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("vault: %d", resp.StatusCode)

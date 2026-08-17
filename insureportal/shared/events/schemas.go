@@ -45,11 +45,11 @@ type LivenessCheckedEvent struct {
 }
 
 type KYCCompletedEvent struct {
-	ApplicationID string  `json:"application_id"`
-	CustomerID    string  `json:"customer_id"`
-	Status        string  `json:"status"`
-	RiskScore     float64 `json:"risk_score"`
-	RiskLevel     string  `json:"risk_level"`
+	ApplicationID string   `json:"application_id"`
+	CustomerID    string   `json:"customer_id"`
+	Status        string   `json:"status"`
+	RiskScore     float64  `json:"risk_score"`
+	RiskLevel     string   `json:"risk_level"`
 	Verifications []string `json:"verifications_passed"`
 }
 
@@ -64,27 +64,27 @@ type AMLScreeningEvent struct {
 // === Policy Events ===
 
 type PolicyCreatedEvent struct {
-	PolicyID     string  `json:"policy_id"`
-	CustomerID   string  `json:"customer_id"`
-	ProductType  string  `json:"product_type"`
-	Premium      float64 `json:"premium"`
-	Currency     string  `json:"currency"`
-	EffectiveDate string `json:"effective_date"`
-	ExpiryDate   string  `json:"expiry_date"`
+	PolicyID      string  `json:"policy_id"`
+	CustomerID    string  `json:"customer_id"`
+	ProductType   string  `json:"product_type"`
+	Premium       float64 `json:"premium"`
+	Currency      string  `json:"currency"`
+	EffectiveDate string  `json:"effective_date"`
+	ExpiryDate    string  `json:"expiry_date"`
 }
 
 type PolicyRenewedEvent struct {
-	PolicyID      string  `json:"policy_id"`
-	OldPolicyID   string  `json:"old_policy_id"`
-	CustomerID    string  `json:"customer_id"`
-	NewPremium    float64 `json:"new_premium"`
-	RenewalType   string  `json:"renewal_type"`
+	PolicyID    string  `json:"policy_id"`
+	OldPolicyID string  `json:"old_policy_id"`
+	CustomerID  string  `json:"customer_id"`
+	NewPremium  float64 `json:"new_premium"`
+	RenewalType string  `json:"renewal_type"`
 }
 
 type PolicyCancelledEvent struct {
-	PolicyID    string `json:"policy_id"`
-	CustomerID  string `json:"customer_id"`
-	Reason      string `json:"reason"`
+	PolicyID     string  `json:"policy_id"`
+	CustomerID   string  `json:"customer_id"`
+	Reason       string  `json:"reason"`
 	RefundAmount float64 `json:"refund_amount,omitempty"`
 }
 
@@ -110,14 +110,14 @@ type ClaimAdjudicatedEvent struct {
 // === Payment Events ===
 
 type PaymentProcessedEvent struct {
-	PaymentID    string  `json:"payment_id"`
-	PolicyID     string  `json:"policy_id"`
-	CustomerID   string  `json:"customer_id"`
-	Amount       float64 `json:"amount"`
-	Currency     string  `json:"currency"`
-	Method       string  `json:"method"`
-	Status       string  `json:"status"`
-	Reference    string  `json:"reference"`
+	PaymentID  string  `json:"payment_id"`
+	PolicyID   string  `json:"policy_id"`
+	CustomerID string  `json:"customer_id"`
+	Amount     float64 `json:"amount"`
+	Currency   string  `json:"currency"`
+	Method     string  `json:"method"`
+	Status     string  `json:"status"`
+	Reference  string  `json:"reference"`
 }
 
 // === Commission Events ===
@@ -134,12 +134,12 @@ type CommissionEarnedEvent struct {
 // === Fraud Events ===
 
 type FraudAlertEvent struct {
-	AlertID     string  `json:"alert_id"`
-	EntityType  string  `json:"entity_type"`
-	EntityID    string  `json:"entity_id"`
-	FraudScore  float64 `json:"fraud_score"`
-	Indicators  []string `json:"indicators"`
-	Severity    string  `json:"severity"`
+	AlertID    string   `json:"alert_id"`
+	EntityType string   `json:"entity_type"`
+	EntityID   string   `json:"entity_id"`
+	FraudScore float64  `json:"fraud_score"`
+	Indicators []string `json:"indicators"`
+	Severity   string   `json:"severity"`
 }
 
 // === Compliance Events ===

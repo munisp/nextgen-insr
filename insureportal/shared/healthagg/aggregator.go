@@ -120,7 +120,7 @@ func (a *Aggregator) checkService(ctx context.Context, ep ServiceEndpoint) Servi
 		result.Error = err.Error()
 		return result
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		result.Status = "healthy"
@@ -143,7 +143,7 @@ func (a *Aggregator) HTTPHandler() http.HandlerFunc {
 		if health.OverallStatus == "unhealthy" {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-		json.NewEncoder(w).Encode(health)
+		_ = json.NewEncoder(w).Encode(health)
 	}
 }
 

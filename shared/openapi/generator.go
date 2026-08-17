@@ -7,11 +7,11 @@ import (
 
 // Spec represents a minimal OpenAPI 3.0 specification
 type Spec struct {
-	OpenAPI    string                `json:"openapi"`
-	Info       Info                  `json:"info"`
-	Servers    []Server              `json:"servers,omitempty"`
-	Paths      map[string]PathItem   `json:"paths"`
-	Components *Components           `json:"components,omitempty"`
+	OpenAPI    string              `json:"openapi"`
+	Info       Info                `json:"info"`
+	Servers    []Server            `json:"servers,omitempty"`
+	Paths      map[string]PathItem `json:"paths"`
+	Components *Components         `json:"components,omitempty"`
 }
 
 // Info holds API metadata
@@ -146,6 +146,6 @@ func ServeSpec(spec *Spec) http.HandlerFunc {
 	data, _ := json.MarshalIndent(spec, "", "  ")
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(data)
+		_, _ = w.Write(data)
 	}
 }

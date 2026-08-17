@@ -36,10 +36,10 @@ func jsonPost(t *testing.T, url string, body interface{}) (*http.Response, map[s
 	if err != nil {
 		t.Fatalf("POST %s failed: %v", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(data, &result)
+	_ = json.Unmarshal(data, &result)
 	return resp, result
 }
 
@@ -49,10 +49,10 @@ func jsonGet(t *testing.T, url string) (*http.Response, map[string]interface{}) 
 	if err != nil {
 		t.Fatalf("GET %s failed: %v", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	json.Unmarshal(data, &result)
+	_ = json.Unmarshal(data, &result)
 	return resp, result
 }
 
@@ -260,7 +260,7 @@ func TestAuditTrail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Delete audit event: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	// In production, audit deletion should be restricted — for now we verify the event was created
 	t.Logf("Audit event created: %v", eventID)
 }
@@ -322,10 +322,10 @@ func TestTakafulPool(t *testing.T) {
 	resp, body := jsonPost(t, takafulURL+"/api/v1/pools/create", map[string]interface{}{
 		"pool_name":           "Family Takaful Pool 2026",
 		"pool_type":           "family",
-		"total_contributions":  5000000.00,
-		"participants":         150,
-		"wakala_fee_pct":       0.30,
-		"mudharaba_pct":        0.60,
+		"total_contributions": 5000000.00,
+		"participants":        150,
+		"wakala_fee_pct":      0.30,
+		"mudharaba_pct":       0.60,
 	})
 	if resp.StatusCode != 201 {
 		t.Fatalf("Create takaful pool: status %d, body: %v", resp.StatusCode, body)

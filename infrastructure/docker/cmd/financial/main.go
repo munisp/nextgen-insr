@@ -106,7 +106,7 @@ func initSchema() error {
 
 	// Seed currency rates if empty
 	var count int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM currency_rates`).Scan(&count)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM currency_rates`).Scan(&count)
 	if count == 0 {
 		rates := map[string]float64{
 			"USD": 0.00065, "GBP": 0.00052, "EUR": 0.00060,
@@ -114,12 +114,12 @@ func initSchema() error {
 			"XOF": 0.39, "XAF": 0.39,
 		}
 		for code, rate := range rates {
-			db.ExecContext(ctx, `INSERT INTO currency_rates (code, rate_to_ngn) VALUES ($1, $2) ON CONFLICT (code) DO UPDATE SET rate_to_ngn = $2, updated_at = NOW()`, code, rate)
+			_, _ = db.ExecContext(ctx, `INSERT INTO currency_rates (code, rate_to_ngn) VALUES ($1, $2) ON CONFLICT (code) DO UPDATE SET rate_to_ngn = $2, updated_at = NOW()`, code, rate)
 		}
 	}
 
 	// Seed premium finance plans if empty
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM premium_finance_plans`).Scan(&count)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM premium_finance_plans`).Scan(&count)
 	if count == 0 {
 		plans := []struct {
 			id   string
@@ -132,7 +132,7 @@ func initSchema() error {
 			{"biannual-2", 2, 0.02, 200000},
 		}
 		for _, p := range plans {
-			db.ExecContext(ctx, `INSERT INTO premium_finance_plans (id, installments, interest_rate, min_premium) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, p.id, p.inst, p.rate, p.min)
+			_, _ = db.ExecContext(ctx, `INSERT INTO premium_finance_plans (id, installments, interest_rate, min_premium) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, p.id, p.inst, p.rate, p.min)
 		}
 	}
 
@@ -180,7 +180,7 @@ func handlePayments(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Failed to query payments: %v", err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		var payments []map[string]interface{}
 		for rows.Next() {
 			var id, currency, method, status, ref string
@@ -199,7 +199,7 @@ func handlePayments(w http.ResponseWriter, r *http.Request) {
 			payments = []map[string]interface{}{}
 		}
 		var total int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payments`).Scan(&total)
+		_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payments`).Scan(&total)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"payments": payments, "total": total})
 
 	case http.MethodPost:
@@ -252,7 +252,7 @@ func handlePremiumFinancePlans(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to query plans: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var plans []map[string]interface{}
 	for rows.Next() {
 		var id string
@@ -281,7 +281,7 @@ func handleCurrencyRates(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to query rates: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	rates := make(map[string]float64)
 	var lastUpdated time.Time
 	for rows.Next() {
@@ -354,10 +354,10 @@ func handleReconciliationStatus(w http.ResponseWriter, r *http.Request) {
 
 	var total, matched, pending int
 	var totalAmount float64
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payments`).Scan(&total)
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payments WHERE status = 'completed'`).Scan(&matched)
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payments WHERE status = 'pending'`).Scan(&pending)
-	db.QueryRowContext(ctx, `SELECT COALESCE(SUM(amount), 0) FROM payments`).Scan(&totalAmount)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payments`).Scan(&total)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payments WHERE status = 'completed'`).Scan(&matched)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM payments WHERE status = 'pending'`).Scan(&pending)
+	_ = db.QueryRowContext(ctx, `SELECT COALESCE(SUM(amount), 0) FROM payments`).Scan(&totalAmount)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":           "balanced",
@@ -373,8 +373,8 @@ func handleReconciliationStatus(w http.ResponseWriter, r *http.Request) {
 func handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	count := atomic.LoadUint64(&requestCount)
-	fmt.Fprintf(w, "# TYPE financial_http_requests_total counter\nfinancial_http_requests_total %d\n", count)
-	fmt.Fprintf(w, "# TYPE financial_uptime_seconds gauge\nfinancial_uptime_seconds %.2f\n", time.Since(started).Seconds())
+	_, _ = fmt.Fprintf(w, "# TYPE financial_http_requests_total counter\nfinancial_http_requests_total %d\n", count)
+	_, _ = fmt.Fprintf(w, "# TYPE financial_uptime_seconds gauge\nfinancial_uptime_seconds %.2f\n", time.Since(started).Seconds())
 }
 
 func withMetrics(next http.HandlerFunc) http.HandlerFunc {

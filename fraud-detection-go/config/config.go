@@ -38,11 +38,11 @@ type RedisConfig struct {
 	Password string `json:"password"`
 	DB       int    `json:"db"`
 
-	MaxRetries int           `json:"max_retries"`
-	PoolSize   int           `json:"pool_size"`
-	MinConns   int           `json:"min_conns"`
-	DialTimeout time.Duration `json:"dial_timeout"`
-	ReadTimeout time.Duration `json:"read_timeout"`
+	MaxRetries   int           `json:"max_retries"`
+	PoolSize     int           `json:"pool_size"`
+	MinConns     int           `json:"min_conns"`
+	DialTimeout  time.Duration `json:"dial_timeout"`
+	ReadTimeout  time.Duration `json:"read_timeout"`
 	WriteTimeout time.Duration `json:"write_timeout"`
 }
 
@@ -104,27 +104,27 @@ func Load() Config {
 			Environment:  loadEnv("SERVER_ENV", "development"),
 		},
 		Database: DatabaseConfig{
-			Host:           loadEnv("DB_HOST", "localhost"),
-			Port:           loadEnvInt("DB_PORT", 5432),
-			User:           loadEnv("DB_USER", "postgres"),
-			Password:       loadEnv("DB_PASSWORD", ""),
-			DBName:         loadEnv("DB_NAME", "fraud_detection"),
-			SSLMode:        loadEnv("DB_SSLMODE", "disable"),
-			MaxOpenConns:   loadEnvInt("DB_MAX_OPEN_CONNS", 25),
-			MaxIdleConns:   loadEnvInt("DB_MAX_IDLE_CONNS", 5),
-			ConnMaxLife:    loadEnvDuration("DB_CONN_MAX_LIFE", 10*time.Minute),
+			Host:         loadEnv("DB_HOST", "localhost"),
+			Port:         loadEnvInt("DB_PORT", 5432),
+			User:         loadEnv("DB_USER", "postgres"),
+			Password:     loadEnv("DB_PASSWORD", ""),
+			DBName:       loadEnv("DB_NAME", "fraud_detection"),
+			SSLMode:      loadEnv("DB_SSLMODE", "disable"),
+			MaxOpenConns: loadEnvInt("DB_MAX_OPEN_CONNS", 25),
+			MaxIdleConns: loadEnvInt("DB_MAX_IDLE_CONNS", 5),
+			ConnMaxLife:  loadEnvDuration("DB_CONN_MAX_LIFE", 10*time.Minute),
 		},
 		Redis: RedisConfig{
-			Host:          loadEnv("REDIS_HOST", "localhost"),
-			Port:          loadEnvInt("REDIS_PORT", 6379),
-			Password:      loadEnv("REDIS_PASSWORD", ""),
-			DB:            loadEnvInt("REDIS_DB", 0),
-			MaxRetries:    loadEnvInt("REDIS_MAX_RETRIES", 3),
-			PoolSize:      loadEnvInt("REDIS_POOL_SIZE", 10),
-			MinConns:      loadEnvInt("REDIS_MIN_CONNS", 0),
-			DialTimeout:   loadEnvDuration("REDIS_DIAL_TIMEOUT", 5*time.Second),
-			ReadTimeout:   loadEnvDuration("REDIS_READ_TIMEOUT", 3*time.Second),
-			WriteTimeout:  loadEnvDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
+			Host:         loadEnv("REDIS_HOST", "localhost"),
+			Port:         loadEnvInt("REDIS_PORT", 6379),
+			Password:     loadEnv("REDIS_PASSWORD", ""),
+			DB:           loadEnvInt("REDIS_DB", 0),
+			MaxRetries:   loadEnvInt("REDIS_MAX_RETRIES", 3),
+			PoolSize:     loadEnvInt("REDIS_POOL_SIZE", 10),
+			MinConns:     loadEnvInt("REDIS_MIN_CONNS", 0),
+			DialTimeout:  loadEnvDuration("REDIS_DIAL_TIMEOUT", 5*time.Second),
+			ReadTimeout:  loadEnvDuration("REDIS_READ_TIMEOUT", 3*time.Second),
+			WriteTimeout: loadEnvDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
 		},
 		Fraud: FraudConfig{
 			STRThreshold:      float64(loadEnvInt("FRAUD_STR_THRESHOLD", 5000000)),

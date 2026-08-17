@@ -39,15 +39,15 @@ func (r *RedisCache) Close() error {
 }
 
 const (
-	PrefixConsent   = "ndpr:consent:"
-	PrefixDSAR      = "ndpr:dsar:"
-	PrefixBreach    = "ndpr:breach:"
-	PrefixDPIA      = "ndpr:dpia:"
-	PrefixMetrics   = "ndpr:metrics:"
-	PrefixLock      = "ndpr:lock:"
-	TCacheShort     = 10 * time.Minute
-	TCacheMedium    = 30 * time.Minute
-	TCacheLong      = 2 * time.Hour
+	PrefixConsent = "ndpr:consent:"
+	PrefixDSAR    = "ndpr:dsar:"
+	PrefixBreach  = "ndpr:breach:"
+	PrefixDPIA    = "ndpr:dpia:"
+	PrefixMetrics = "ndpr:metrics:"
+	PrefixLock    = "ndpr:lock:"
+	TCacheShort   = 10 * time.Minute
+	TCacheMedium  = 30 * time.Minute
+	TCacheLong    = 2 * time.Hour
 )
 
 func (r *RedisCache) CacheConsents(ctx context.Context, subjectID string, data []byte, ttl time.Duration) error {

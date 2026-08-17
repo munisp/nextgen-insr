@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/insureportal/nigerian-bank-integrations/config"
+	"github.com/redis/go-redis/v9"
 )
 
 type RedisCache struct {
@@ -33,14 +33,14 @@ func NewRedisCache(ctx context.Context, cfg *config.RedisConfig) (*RedisCache, e
 func (r *RedisCache) Close() error { return r.Client.Close() }
 
 const (
-	PrefixVerify = "nb:verify:"
-	PrefixTransfer = "nb:transfer:"
-	PrefixCallback = "nb:callback:"
+	PrefixVerify     = "nb:verify:"
+	PrefixTransfer   = "nb:transfer:"
+	PrefixCallback   = "nb:callback:"
 	PrefixSettlement = "nb:settlement:"
-	PrefixStats    = "nb:stats:"
-	PrefixLock     = "nb:lock:"
-	TCacheMedium   = 30 * time.Minute
-	TCacheLong     = 2 * time.Hour
+	PrefixStats      = "nb:stats:"
+	PrefixLock       = "nb:lock:"
+	TCacheMedium     = 30 * time.Minute
+	TCacheLong       = 2 * time.Hour
 )
 
 func (r *RedisCache) CacheVerification(ctx context.Context, key string, data []byte, ttl time.Duration) error {

@@ -344,8 +344,8 @@ func scanProducts(rows pgx.Rows) ([]*models.MicroProduct, error) {
 		); err != nil {
 			return nil, err
 		}
-		fromJSON(exclusionsJSON, &pd.Exclusions)
-		fromJSON(metadataJSON, &pd.Metadata)
+		_ = fromJSON(exclusionsJSON, &pd.Exclusions)
+		_ = fromJSON(metadataJSON, &pd.Metadata)
 		products = append(products, pd)
 	}
 	return products, rows.Err()
@@ -395,7 +395,7 @@ func (p *Postgres) GetEnrollment(ctx context.Context, id string) (*models.Enroll
 	if err != nil {
 		return nil, err
 	}
-	fromJSON(metadataJSON, &e.Metadata)
+	_ = fromJSON(metadataJSON, &e.Metadata)
 	return e, nil
 }
 
@@ -466,7 +466,7 @@ func scanEnrollments(rows pgx.Rows) ([]*models.Enrollment, error) {
 		); err != nil {
 			return nil, err
 		}
-		fromJSON(metadataJSON, &e.Metadata)
+		_ = fromJSON(metadataJSON, &e.Metadata)
 		enrollments = append(enrollments, e)
 	}
 	return enrollments, rows.Err()
@@ -699,7 +699,7 @@ func (p *Postgres) GetGroupPolicy(ctx context.Context, id string) (*models.Group
 	if err != nil {
 		return nil, err
 	}
-	fromJSON(metadataJSON, &g.Metadata)
+	_ = fromJSON(metadataJSON, &g.Metadata)
 	return g, nil
 }
 
@@ -751,7 +751,7 @@ func (p *Postgres) ListGroupPolicies(ctx context.Context, status string, limit, 
 		); err != nil {
 			return nil, 0, err
 		}
-		fromJSON(metadataJSON, &g.Metadata)
+		_ = fromJSON(metadataJSON, &g.Metadata)
 		groups = append(groups, g)
 	}
 	return groups, total, rows.Err()

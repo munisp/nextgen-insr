@@ -62,8 +62,10 @@ const majorityVotes = 4 // strict majority: > totalVotes/2
 // ─── Lua scripts ─────────────────────────────────────────────────────────────
 
 // acquireFenceLua atomically acquires the fence key only if:
-//   (a) the key does not exist (SET NX), AND
-//   (b) the global epoch key is at the expected epoch.
+//
+//	(a) the key does not exist (SET NX), AND
+//	(b) the global epoch key is at the expected epoch.
+//
 // Returns 1 on success, 0 if fence already held, -1 if epoch mismatch.
 const acquireFenceLua = `
 local epochKey = KEYS[1]
@@ -90,8 +92,10 @@ return 0
 `
 
 // renewFenceLua atomically extends the fence TTL only if:
-//   (a) the fence key still exists, AND
-//   (b) the stored value matches ownerID:epoch (prevents stale renewal).
+//
+//	(a) the fence key still exists, AND
+//	(b) the stored value matches ownerID:epoch (prevents stale renewal).
+//
 // Returns 1 on success, 0 on mismatch/expired.
 const renewFenceLua = `
 local fenceKey = KEYS[1]
@@ -127,18 +131,18 @@ type errHolder struct{ Err error }
 
 // LeaseGuard represents an active quorum lease with automatic renewal.
 type LeaseGuard struct {
-	FenceKey  string        // Redis key for the fence
-	EpochKey  string        // Redis key for the global epoch counter
-	OwnerID   string        // Cryptographically random owner token
-	Epoch     int64         // Epoch at acquisition time
-	TTL       time.Duration // Lease TTL
-	Region    string        // Acquiring region
-	Votes     int           // Votes held at acquisition time
+	FenceKey string        // Redis key for the fence
+	EpochKey string        // Redis key for the global epoch counter
+	OwnerID  string        // Cryptographically random owner token
+	Epoch    int64         // Epoch at acquisition time
+	TTL      time.Duration // Lease TTL
+	Region   string        // Acquiring region
+	Votes    int           // Votes held at acquisition time
 
 	// internal
 	fenceValue string        // ownerID:epoch stored in Redis
-	renewStop  chan struct{}  // closed to stop the renewal goroutine
-	renewDone  chan struct{}  // closed when renewal goroutine exits
+	renewStop  chan struct{} // closed to stop the renewal goroutine
+	renewDone  chan struct{} // closed when renewal goroutine exits
 	renewErr   atomic.Value  // stores the last renewal error (type error)
 	mu         sync.Mutex
 	released   bool
@@ -199,11 +203,12 @@ func RegionVotes(region string) int {
 // AcquireLease acquires a quorum-fenced distributed lease for the given resource.
 //
 // Parameters:
-//   ctx         — context (deadline respected)
-//   resource    — logical resource name (e.g., "primary-write")
-//   region      — acquiring region (e.g., "ng-lagos")
-//   liveRegions — all regions currently reachable (used for quorum check)
-//   ttl         — lease duration; renewal fires at TTL/3 intervals
+//
+//	ctx         — context (deadline respected)
+//	resource    — logical resource name (e.g., "primary-write")
+//	region      — acquiring region (e.g., "ng-lagos")
+//	liveRegions — all regions currently reachable (used for quorum check)
+//	ttl         — lease duration; renewal fires at TTL/3 intervals
 //
 // Returns a *LeaseGuard with an active background renewal goroutine, or an error.
 //
@@ -317,9 +322,10 @@ func (q *QuorumFencer) AcquireLease(
 // It stops when the guard is released or the renewStop channel is closed.
 //
 // Edge case — lease expiry during network partition:
-//   If Redis is unreachable for > TTL, the lease expires server-side.
-//   On reconnect, RenewLease returns ErrLeaseExpired and stores it in renewErr.
-//   Callers must check RenewalErr() before each write.
+//
+//	If Redis is unreachable for > TTL, the lease expires server-side.
+//	On reconnect, RenewLease returns ErrLeaseExpired and stores it in renewErr.
+//	Callers must check RenewalErr() before each write.
 func (g *LeaseGuard) renewLoop() {
 	defer close(g.renewDone)
 
@@ -337,21 +343,21 @@ func (g *LeaseGuard) renewLoop() {
 			return
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				err := g.RenewLease(ctx)
-				cancel()
-				// atomic.Value requires all stored values to be the same concrete type.
-				// We always store errHolder{Err: err}; Err is nil on success.
-				g.renewErr.Store(errHolder{Err: err})
-				if err != nil {
-					g.log.Error("quorum_fence: lease renewal failed",
-						zap.String("fence_key", g.FenceKey),
-						zap.String("region", g.Region),
-						zap.Int64("epoch", g.Epoch),
-						zap.Error(err),
-					)
-					// Do not stop the loop — keep retrying until TTL expires
-					// or the caller explicitly releases.
-				}
+			err := g.RenewLease(ctx)
+			cancel()
+			// atomic.Value requires all stored values to be the same concrete type.
+			// We always store errHolder{Err: err}; Err is nil on success.
+			g.renewErr.Store(errHolder{Err: err})
+			if err != nil {
+				g.log.Error("quorum_fence: lease renewal failed",
+					zap.String("fence_key", g.FenceKey),
+					zap.String("region", g.Region),
+					zap.Int64("epoch", g.Epoch),
+					zap.Error(err),
+				)
+				// Do not stop the loop — keep retrying until TTL expires
+				// or the caller explicitly releases.
+			}
 		}
 	}
 }
@@ -475,16 +481,16 @@ func (g *LeaseGuard) IsValid() bool {
 
 // FenceStatus describes the current state of a fence for a given resource.
 type FenceStatus struct {
-	Resource    string        `json:"resource"`
-	FenceKey    string        `json:"fence_key"`
-	EpochKey    string        `json:"epoch_key"`
-	Held        bool          `json:"held"`
-	OwnerID     string        `json:"owner_id,omitempty"`
-	Epoch       int64         `json:"epoch"`
+	Resource     string        `json:"resource"`
+	FenceKey     string        `json:"fence_key"`
+	EpochKey     string        `json:"epoch_key"`
+	Held         bool          `json:"held"`
+	OwnerID      string        `json:"owner_id,omitempty"`
+	Epoch        int64         `json:"epoch"`
 	TTLRemaining time.Duration `json:"ttl_remaining_ms"`
-	HasQuorum   bool          `json:"has_quorum"`
-	LiveRegions []string      `json:"live_regions"`
-	Votes       int           `json:"votes"`
+	HasQuorum    bool          `json:"has_quorum"`
+	LiveRegions  []string      `json:"live_regions"`
+	Votes        int           `json:"votes"`
 }
 
 // GetFenceStatus returns the current fence status for a resource.

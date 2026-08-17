@@ -8,34 +8,34 @@ import (
 )
 
 type Config struct {
-	Port               string
-	DBHost             string
-	DBPort             string
-	DBUser             string
-	DBPassword         string
-	DBName             string
-	DBMaxConns         int32
-	DBMinConns         int32
-	DBMaxLifetime      time.Duration
-	DBMaxIdleTime      time.Duration
-	RedisAddr          string
-	RedisPassword      string
-	RedisDB            int
-	NINAPIURL          string
-	NINAPIKey          string
-	BVNAPIURL          string
-	BVNAPIKey          string
-	NINRetryAttempts   int
-	BVNRetryAttempts   int
-	NINRetryDelay      time.Duration
-	BVNRetryDelay      time.Duration
-	KYCTTL             time.Duration
-	KYBTTT             time.Duration
-	AuditRetention     time.Duration
-	JWTSecret          string
-	RateLimitNIN       int
-	RateLimitBVN       int
-	RateLimitWindow    time.Duration
+	Port             string
+	DBHost           string
+	DBPort           string
+	DBUser           string
+	DBPassword       string
+	DBName           string
+	DBMaxConns       int32
+	DBMinConns       int32
+	DBMaxLifetime    time.Duration
+	DBMaxIdleTime    time.Duration
+	RedisAddr        string
+	RedisPassword    string
+	RedisDB          int
+	NINAPIURL        string
+	NINAPIKey        string
+	BVNAPIURL        string
+	BVNAPIKey        string
+	NINRetryAttempts int
+	BVNRetryAttempts int
+	NINRetryDelay    time.Duration
+	BVNRetryDelay    time.Duration
+	KYCTTL           time.Duration
+	KYBTTT           time.Duration
+	AuditRetention   time.Duration
+	JWTSecret        string
+	RateLimitNIN     int
+	RateLimitBVN     int
+	RateLimitWindow  time.Duration
 }
 
 func Load() *Config {

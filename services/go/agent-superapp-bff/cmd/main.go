@@ -116,7 +116,7 @@ func (s *Store) seed(ctx context.Context) error {
 		{"AGT-003", "Emeka Nwosu", "emeka@agents.ng", "Bronze", "Port Harcourt", 4.8156, 7.0498, 20.0, 12, 1200000, 60000, 180000},
 	}
 	for _, a := range agents {
-		s.db.ExecContext(ctx, `INSERT INTO agents (id, name, email, rank, territory, territory_lat, territory_lng, territory_radius_km, total_policies_sold, total_premium_collected, pending_commission, paid_commission)
+		_, _ = s.db.ExecContext(ctx, `INSERT INTO agents (id, name, email, rank, territory, territory_lat, territory_lng, territory_radius_km, total_policies_sold, total_premium_collected, pending_commission, paid_commission)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO NOTHING`,
 			a.id, a.name, a.email, a.rank, a.territory, a.lat, a.lng, a.radius, a.sold, a.premium, a.pendComm, a.paidComm)
 	}
@@ -138,12 +138,12 @@ func (s *Store) GetDashboard(ctx context.Context, agentID string) (map[string]in
 	rows, _ := s.db.QueryContext(ctx, `SELECT policy_id, customer_name, product, premium, commission, status, created_at FROM agent_sales WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 10`, agentID)
 	var recentSales []map[string]interface{}
 	if rows != nil {
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var pid, cname, prod, st string
 			var prem, comm int64
 			var at time.Time
-			rows.Scan(&pid, &cname, &prod, &prem, &comm, &st, &at)
+			_ = rows.Scan(&pid, &cname, &prod, &prem, &comm, &st, &at)
 			recentSales = append(recentSales, map[string]interface{}{
 				"policy_id": pid, "customer": cname, "product": prod, "premium": prem, "commission": comm, "status": st, "date": at.Format("2006-01-02"),
 			})
@@ -160,7 +160,7 @@ func (s *Store) GetDashboard(ctx context.Context, agentID string) (map[string]in
 func (s *Store) RecordSale(ctx context.Context, agentID, policyID, customer, product string, premium int64, lat, lng float64) (int64, error) {
 	commRate := 0.10
 	var rank string
-	s.db.QueryRowContext(ctx, `SELECT rank FROM agents WHERE id = $1`, agentID).Scan(&rank)
+	_ = s.db.QueryRowContext(ctx, `SELECT rank FROM agents WHERE id = $1`, agentID).Scan(&rank)
 	switch rank {
 	case "Gold":
 		commRate = 0.15
@@ -175,7 +175,7 @@ func (s *Store) RecordSale(ctx context.Context, agentID, policyID, customer, pro
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, `INSERT INTO agent_sales (agent_id, policy_id, customer_name, product, premium, commission, commission_rate, lat, lng) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
 		agentID, policyID, customer, product, premium, commission, commRate, lat, lng)
@@ -224,7 +224,7 @@ func publishEvent(kafkaURL, topic string, event interface{}) {
 		if err != nil {
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}()
 }
 
@@ -233,7 +233,7 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func main() {
@@ -244,7 +244,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Database: %v", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -335,5 +335,5 @@ func main() {
 	<-quit
 	shutdownCtx, c := context.WithTimeout(ctx, 30*time.Second)
 	defer c()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 }

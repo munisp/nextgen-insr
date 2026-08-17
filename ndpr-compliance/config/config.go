@@ -26,14 +26,14 @@ type ServerConfig struct {
 
 type PostgresConfig struct {
 	Host, Port, User, Password, DBName string
-	MaxIdleConns, MaxOpenConns          int
-	ConnMaxLifetime                     time.Duration
-	SSLMode                             string
+	MaxIdleConns, MaxOpenConns         int
+	ConnMaxLifetime                    time.Duration
+	SSLMode                            string
 }
 
 type RedisConfig struct {
-	Host, Port, Password string
-	DB, MaxRetries, PoolSize int
+	Host, Port, Password      string
+	DB, MaxRetries, PoolSize  int
 	ReadTimeout, WriteTimeout time.Duration
 }
 
@@ -48,56 +48,56 @@ type CORSConfig struct {
 type LoggingConfig struct{ Level, Format string }
 
 type NDPRConfig struct {
-	NITDAURL          string
-	ConsentVersion    string
-	DefaultSLADays    map[string]int
+	NITDAURL                string
+	ConsentVersion          string
+	DefaultSLADays          map[string]int
 	BreachNotificationHours int
-	AnnualAuditMonth  string
-	DPIAReviewMonths  int
-	MinComplianceScore float64
+	AnnualAuditMonth        string
+	DPIAReviewMonths        int
+	MinComplianceScore      float64
 }
 
 func NewConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Port: envOr("PORT", "8126"), Host: envOr("SERVER_HOST", "0.0.0.0"),
-			ReadTimeout: durationEnvOrDefault("SERVER_READ_TIMEOUT", 15*time.Second),
-			WriteTimeout: durationEnvOrDefault("SERVER_WRITE_TIMEOUT", 15*time.Second),
+			ReadTimeout:   durationEnvOrDefault("SERVER_READ_TIMEOUT", 15*time.Second),
+			WriteTimeout:  durationEnvOrDefault("SERVER_WRITE_TIMEOUT", 15*time.Second),
 			ShutdownGrace: durationEnvOrDefault("SERVER_SHUTDOWN_GRACE", 30*time.Second),
 		},
 		Postgres: PostgresConfig{
 			Host: envOr("DB_HOST", "localhost"), Port: envOr("DB_PORT", "5432"),
 			User: envOr("DB_USER", "postgres"), Password: envOr("DB_PASSWORD", ""),
 			DBName: envOr("DB_NAME", "ndpr_compliance"), MaxIdleConns: intOr("DB_MAX_IDLE_CONNS", 10),
-			MaxOpenConns: intOr("DB_MAX_OPEN_CONNS", 50),
+			MaxOpenConns:    intOr("DB_MAX_OPEN_CONNS", 50),
 			ConnMaxLifetime: durationEnvOrDefault("DB_CONN_MAX_LIFETIME", 10*time.Minute),
-			SSLMode: envOr("DB_SSL_MODE", "disable"),
+			SSLMode:         envOr("DB_SSL_MODE", "disable"),
 		},
 		Redis: RedisConfig{
 			Host: envOr("REDIS_HOST", "localhost"), Port: envOr("REDIS_PORT", "6379"),
 			Password: envOr("REDIS_PASSWORD", ""), DB: intOr("REDIS_DB", 0),
 			MaxRetries: intOr("REDIS_MAX_RETRIES", 3), PoolSize: intOr("REDIS_POOL_SIZE", 10),
-			ReadTimeout: durationEnvOrDefault("REDIS_READ_TIMEOUT", 3*time.Second),
+			ReadTimeout:  durationEnvOrDefault("REDIS_READ_TIMEOUT", 3*time.Second),
 			WriteTimeout: durationEnvOrDefault("REDIS_WRITE_TIMEOUT", 3*time.Second),
 		},
 		CORS: CORSConfig{
-			AllowedOrigins: parseCSV(envOr("CORS_ALLOWED_ORIGINS", "*")),
-			AllowedMethods: parseCSV(envOr("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")),
-			AllowedHeaders: parseCSV(envOr("CORS_ALLOWED_HEADERS", "Origin,Content-Type,Accept,Authorization,X-Request-ID")),
+			AllowedOrigins:   parseCSV(envOr("CORS_ALLOWED_ORIGINS", "*")),
+			AllowedMethods:   parseCSV(envOr("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")),
+			AllowedHeaders:   parseCSV(envOr("CORS_ALLOWED_HEADERS", "Origin,Content-Type,Accept,Authorization,X-Request-ID")),
 			AllowCredentials: boolOr("CORS_ALLOW_CREDENTIALS", false),
-			MaxAge: durationEnvOrDefault("CORS_MAX_AGE", 12*time.Hour),
+			MaxAge:           durationEnvOrDefault("CORS_MAX_AGE", 12*time.Hour),
 		},
 		Logging: LoggingConfig{Level: envOr("LOG_LEVEL", "info"), Format: envOr("LOG_FORMAT", "json")},
 		NDPR: NDPRConfig{
-			NITDAURL: envOr("NITDA_API_URL", "https://nitda.gov.ng/api"),
+			NITDAURL:       envOr("NITDA_API_URL", "https://nitda.gov.ng/api"),
 			ConsentVersion: envOr("CONSENT_VERSION", "v2.1"),
 			DefaultSLADays: map[string]int{
 				"access": 30, "rectification": 14, "erasure": 30, "portability": 30,
 			},
 			BreachNotificationHours: intOr("BREACH_NITDA_HOURS", 72),
-			AnnualAuditMonth: envOr("AUDIT_MONTH", "12"),
-			DPIAReviewMonths: intOr("DPIA_REVIEW_MONTHS", 12),
-			MinComplianceScore: floatOr("MIN_COMPLIANCE_SCORE", 80),
+			AnnualAuditMonth:        envOr("AUDIT_MONTH", "12"),
+			DPIAReviewMonths:        intOr("DPIA_REVIEW_MONTHS", 12),
+			MinComplianceScore:      floatOr("MIN_COMPLIANCE_SCORE", 80),
 		},
 	}
 }

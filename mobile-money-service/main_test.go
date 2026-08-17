@@ -26,7 +26,7 @@ func TestListOperators(t *testing.T) {
 		t.Errorf("Expected 200, got %d", w.Code)
 	}
 	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["operators"] == nil {
 		t.Error("Expected operators list")
 	}

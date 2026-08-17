@@ -47,42 +47,42 @@ import (
 // ══════════════════════════════════════════════════════════════════════════════
 
 type Config struct {
-	Port                  string
-	PaystackSecretKey     string
-	PaystackPublicKey     string
-	FlutterwaveSecretKey  string
-	FlutterwaveEncKey     string
-	KafkaBrokers          string
-	RedisURL              string
-	TigerBeetleURL        string
-	TemporalURL           string
-	DaprURL               string
-	MojaloopURL           string
-	OpenSearchURL         string
-	KeycloakURL           string
-	PermifyURL            string
-	WebhookSecret         string
-	Environment           string
+	Port                 string
+	PaystackSecretKey    string
+	PaystackPublicKey    string
+	FlutterwaveSecretKey string
+	FlutterwaveEncKey    string
+	KafkaBrokers         string
+	RedisURL             string
+	TigerBeetleURL       string
+	TemporalURL          string
+	DaprURL              string
+	MojaloopURL          string
+	OpenSearchURL        string
+	KeycloakURL          string
+	PermifyURL           string
+	WebhookSecret        string
+	Environment          string
 }
 
 func loadConfig() Config {
 	return Config{
-		Port:                  envOr("PORT", "8100"),
-		PaystackSecretKey:     envOr("PAYSTACK_SECRET_KEY", ""),
-		PaystackPublicKey:     envOr("PAYSTACK_PUBLIC_KEY", ""),
-		FlutterwaveSecretKey:  envOr("FLUTTERWAVE_SECRET_KEY", ""),
-		FlutterwaveEncKey:     envOr("FLUTTERWAVE_ENC_KEY", ""),
-		KafkaBrokers:          envOr("KAFKA_BROKERS", "localhost:9092"),
-		RedisURL:              envOr("REDIS_URL", "redis://localhost:6379/5"),
-		TigerBeetleURL:        envOr("TIGERBEETLE_URL", "http://localhost:3001"),
-		TemporalURL:           envOr("TEMPORAL_URL", "http://localhost:7233"),
-		DaprURL:               envOr("DAPR_HTTP_URL", "http://localhost:3500"),
-		MojaloopURL:           envOr("MOJALOOP_URL", "http://localhost:3002"),
-		OpenSearchURL:         envOr("OPENSEARCH_URL", "http://localhost:9200"),
-		KeycloakURL:           envOr("KEYCLOAK_URL", "http://localhost:8080"),
-		PermifyURL:            envOr("PERMIFY_URL", "http://localhost:3476"),
-		WebhookSecret:         envOr("WEBHOOK_SECRET", "whsec_test"),
-		Environment:           envOr("ENVIRONMENT", "development"),
+		Port:                 envOr("PORT", "8100"),
+		PaystackSecretKey:    envOr("PAYSTACK_SECRET_KEY", ""),
+		PaystackPublicKey:    envOr("PAYSTACK_PUBLIC_KEY", ""),
+		FlutterwaveSecretKey: envOr("FLUTTERWAVE_SECRET_KEY", ""),
+		FlutterwaveEncKey:    envOr("FLUTTERWAVE_ENC_KEY", ""),
+		KafkaBrokers:         envOr("KAFKA_BROKERS", "localhost:9092"),
+		RedisURL:             envOr("REDIS_URL", "redis://localhost:6379/5"),
+		TigerBeetleURL:       envOr("TIGERBEETLE_URL", "http://localhost:3001"),
+		TemporalURL:          envOr("TEMPORAL_URL", "http://localhost:7233"),
+		DaprURL:              envOr("DAPR_HTTP_URL", "http://localhost:3500"),
+		MojaloopURL:          envOr("MOJALOOP_URL", "http://localhost:3002"),
+		OpenSearchURL:        envOr("OPENSEARCH_URL", "http://localhost:9200"),
+		KeycloakURL:          envOr("KEYCLOAK_URL", "http://localhost:8080"),
+		PermifyURL:           envOr("PERMIFY_URL", "http://localhost:3476"),
+		WebhookSecret:        envOr("WEBHOOK_SECRET", "whsec_test"),
+		Environment:          envOr("ENVIRONMENT", "development"),
 	}
 }
 
@@ -98,11 +98,11 @@ func envOr(key, def string) string {
 type PaymentChannel string
 
 const (
-	ChannelCard        PaymentChannel = "card"
+	ChannelCard         PaymentChannel = "card"
 	ChannelBankTransfer PaymentChannel = "bank_transfer"
-	ChannelUSSD        PaymentChannel = "ussd"
-	ChannelMobileMoney PaymentChannel = "mobile_money"
-	ChannelQR          PaymentChannel = "qr"
+	ChannelUSSD         PaymentChannel = "ussd"
+	ChannelMobileMoney  PaymentChannel = "mobile_money"
+	ChannelQR           PaymentChannel = "qr"
 )
 
 type PaymentStatus string
@@ -124,31 +124,31 @@ const (
 )
 
 type InitiatePaymentRequest struct {
-	Amount       int64          `json:"amount"`       // In kobo (NGN smallest unit)
-	Currency     string         `json:"currency"`     // NGN, USD, GHS, KES
-	Channel      PaymentChannel `json:"channel"`
-	Provider     PaymentProvider `json:"provider"`
-	Email        string         `json:"email"`
-	Reference    string         `json:"reference"`    // Idempotency key
-	PolicyID     string         `json:"policy_id"`
-	Description  string         `json:"description"`
-	Metadata     map[string]interface{} `json:"metadata"`
-	CallbackURL  string         `json:"callback_url"`
-	SplitCode    string         `json:"split_code,omitempty"`    // For agent commission splits
-	CustomerID   string         `json:"customer_id"`
+	Amount      int64                  `json:"amount"`   // In kobo (NGN smallest unit)
+	Currency    string                 `json:"currency"` // NGN, USD, GHS, KES
+	Channel     PaymentChannel         `json:"channel"`
+	Provider    PaymentProvider        `json:"provider"`
+	Email       string                 `json:"email"`
+	Reference   string                 `json:"reference"` // Idempotency key
+	PolicyID    string                 `json:"policy_id"`
+	Description string                 `json:"description"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	CallbackURL string                 `json:"callback_url"`
+	SplitCode   string                 `json:"split_code,omitempty"` // For agent commission splits
+	CustomerID  string                 `json:"customer_id"`
 }
 
 type PaymentResponse struct {
-	Reference    string        `json:"reference"`
-	Status       PaymentStatus `json:"status"`
-	Provider     PaymentProvider `json:"provider"`
-	Channel      PaymentChannel `json:"channel"`
-	Amount       int64         `json:"amount"`
-	Currency     string        `json:"currency"`
-	AuthURL      string        `json:"authorization_url,omitempty"` // Redirect URL for card
-	USSDCode     string        `json:"ussd_code,omitempty"`         // USSD dial string
-	BankDetails  *BankTransferDetails `json:"bank_details,omitempty"`
-	CreatedAt    time.Time     `json:"created_at"`
+	Reference   string               `json:"reference"`
+	Status      PaymentStatus        `json:"status"`
+	Provider    PaymentProvider      `json:"provider"`
+	Channel     PaymentChannel       `json:"channel"`
+	Amount      int64                `json:"amount"`
+	Currency    string               `json:"currency"`
+	AuthURL     string               `json:"authorization_url,omitempty"` // Redirect URL for card
+	USSDCode    string               `json:"ussd_code,omitempty"`         // USSD dial string
+	BankDetails *BankTransferDetails `json:"bank_details,omitempty"`
+	CreatedAt   time.Time            `json:"created_at"`
 }
 
 type BankTransferDetails struct {
@@ -159,20 +159,20 @@ type BankTransferDetails struct {
 }
 
 type RecurringPaymentRequest struct {
-	PlanCode     string `json:"plan_code"`
+	PlanCode      string `json:"plan_code"`
 	CustomerEmail string `json:"customer_email"`
-	Amount       int64  `json:"amount"`
-	Interval     string `json:"interval"` // daily, weekly, monthly, annually
-	PolicyID     string `json:"policy_id"`
-	StartDate    string `json:"start_date"`
+	Amount        int64  `json:"amount"`
+	Interval      string `json:"interval"` // daily, weekly, monthly, annually
+	PolicyID      string `json:"policy_id"`
+	StartDate     string `json:"start_date"`
 }
 
 type SplitPaymentRequest struct {
-	Name         string       `json:"name"`
-	Type         string       `json:"type"` // percentage, flat
-	Currency     string       `json:"currency"`
-	Subaccounts  []Subaccount `json:"subaccounts"`
-	BearerType   string       `json:"bearer_type"` // subaccount, account, all-proportional
+	Name        string       `json:"name"`
+	Type        string       `json:"type"` // percentage, flat
+	Currency    string       `json:"currency"`
+	Subaccounts []Subaccount `json:"subaccounts"`
+	BearerType  string       `json:"bearer_type"` // subaccount, account, all-proportional
 }
 
 type Subaccount struct {
@@ -281,7 +281,7 @@ func (c *PaystackClient) InitializeTransaction(req InitiatePaymentRequest) (*Pay
 	if err != nil {
 		return nil, fmt.Errorf("paystack request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Status  bool   `json:"status"`
@@ -319,10 +319,10 @@ func (c *PaystackClient) VerifyTransaction(reference string) (*PaymentResponse, 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
-		Status bool   `json:"status"`
+		Status bool `json:"status"`
 		Data   struct {
 			Status    string `json:"status"`
 			Reference string `json:"reference"`
@@ -368,14 +368,14 @@ func (c *PaystackClient) CreatePlan(name string, amount int64, interval, currenc
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Data struct {
 			PlanCode string `json:"plan_code"`
 		} `json:"data"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Data.PlanCode, nil
 }
 
@@ -389,14 +389,14 @@ func (c *PaystackClient) CreateSplitPayment(req SplitPaymentRequest) (string, er
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Data struct {
 			SplitCode string `json:"split_code"`
 		} `json:"data"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 	return result.Data.SplitCode, nil
 }
 
@@ -416,7 +416,7 @@ func (c *PaystackClient) InitiateRefund(reference string, amount int64) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return nil
 }
 
@@ -445,7 +445,7 @@ func (c *FlutterwaveClient) InitiatePayment(req InitiatePaymentRequest) (*Paymen
 		"customer": map[string]string{
 			"email": req.Email,
 		},
-		"meta":           req.Metadata,
+		"meta":            req.Metadata,
 		"payment_options": channelToFlutterwave(req.Channel),
 	}
 
@@ -458,7 +458,7 @@ func (c *FlutterwaveClient) InitiatePayment(req InitiatePaymentRequest) (*Paymen
 	if err != nil {
 		return nil, fmt.Errorf("flutterwave request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Status  string `json:"status"`
@@ -491,7 +491,7 @@ func (c *FlutterwaveClient) VerifyTransaction(txRef string) (*PaymentResponse, e
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Data struct {
@@ -501,7 +501,7 @@ func (c *FlutterwaveClient) VerifyTransaction(txRef string) (*PaymentResponse, e
 			Currency string  `json:"currency"`
 		} `json:"data"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	_ = json.NewDecoder(resp.Body).Decode(&result)
 
 	status := StatusPending
 	if result.Data.Status == "successful" {
@@ -580,12 +580,12 @@ func (l *LedgerClient) RecordPayment(ref string, amount int64, debitLedger, cred
 // ── HTTP Handlers ───────────────────────────────────────────────────────────
 
 type Server struct {
-	config     Config
-	paystack   *PaystackClient
+	config      Config
+	paystack    *PaystackClient
 	flutterwave *FlutterwaveClient
-	store      *PaymentStore
-	events     *EventPublisher
-	ledger     *LedgerClient
+	store       *PaymentStore
+	events      *EventPublisher
+	ledger      *LedgerClient
 }
 
 func NewServer(cfg Config) *Server {
@@ -738,7 +738,7 @@ func (s *Server) handlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
 			Currency  string `json:"currency"`
 			Channel   string `json:"channel"`
 		}
-		json.Unmarshal(event.Data, &data)
+		_ = json.Unmarshal(event.Data, &data)
 
 		payment := &PaymentResponse{
 			Reference: data.Reference,
@@ -749,7 +749,7 @@ func (s *Server) handlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
 			Currency:  data.Currency,
 		}
 		s.store.Save(payment)
-		s.ledger.RecordPayment(data.Reference, data.Amount, 1, 2)
+		_ = s.ledger.RecordPayment(data.Reference, data.Amount, 1, 2)
 		s.events.Publish("payment.confirmed", map[string]interface{}{
 			"reference": data.Reference,
 			"amount":    data.Amount,
@@ -761,7 +761,7 @@ func (s *Server) handlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
 		var data struct {
 			Reference string `json:"reference"`
 		}
-		json.Unmarshal(event.Data, &data)
+		_ = json.Unmarshal(event.Data, &data)
 		if p := s.store.Get(data.Reference); p != nil {
 			p.Status = StatusFailed
 			s.store.Save(p)
@@ -800,7 +800,7 @@ func (s *Server) handleFlutterwaveWebhook(w http.ResponseWriter, r *http.Request
 			Currency string  `json:"currency"`
 		} `json:"data"`
 	}
-	json.Unmarshal(body, &event)
+	_ = json.Unmarshal(body, &event)
 
 	if event.Data.Status == "successful" {
 		payment := &PaymentResponse{
@@ -811,7 +811,7 @@ func (s *Server) handleFlutterwaveWebhook(w http.ResponseWriter, r *http.Request
 			Currency:  event.Data.Currency,
 		}
 		s.store.Save(payment)
-		s.ledger.RecordPayment(event.Data.TxRef, payment.Amount, 1, 2)
+		_ = s.ledger.RecordPayment(event.Data.TxRef, payment.Amount, 1, 2)
 		s.events.Publish("payment.confirmed", map[string]interface{}{
 			"reference": event.Data.TxRef,
 			"amount":    payment.Amount,
@@ -939,7 +939,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 var startTime = time.Now()

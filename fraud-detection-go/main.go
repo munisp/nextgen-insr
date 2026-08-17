@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -34,7 +34,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	// Configure logger level from env
 	if levelStr := os.Getenv("LOG_LEVEL"); levelStr != "" {
@@ -65,7 +65,7 @@ func main() {
 	if err != nil {
 		logger.Fatal("failed to connect to postgres", zap.Error(err))
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	// Connect to Redis
 	cache, err := db.NewRedisCache(cfg.Redis, logger)

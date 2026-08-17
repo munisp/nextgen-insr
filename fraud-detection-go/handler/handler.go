@@ -18,10 +18,10 @@ import (
 
 // Service holds all dependencies for HTTP handlers.
 type Service struct {
-	cfg     config.Config
-	store   *db.PostgresStore
-	cache   *db.RedisCache
-	logger  *zap.Logger
+	cfg    config.Config
+	store  *db.PostgresStore
+	cache  *db.RedisCache
+	logger *zap.Logger
 }
 
 // NewService creates a handler service from configuration and database/cache.
@@ -33,7 +33,7 @@ func NewService(cfg config.Config, store *db.PostgresStore, cache *db.RedisCache
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a standardized error response.
@@ -252,8 +252,8 @@ func (s *Service) HistoryHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Service) FraudCasesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var req struct {
-			TransactionID string `json:"transaction_id"`
-			AccountID     string `json:"account_id"`
+			TransactionID string  `json:"transaction_id"`
+			AccountID     string  `json:"account_id"`
 			Score         float64 `json:"score"`
 			Decision      string  `json:"decision"`
 			Evidence      string  `json:"evidence"`

@@ -1,10 +1,10 @@
 package service
 
 import (
-	"github.com/unified-insurance/bancassurance-integration/internal/models"
-	"github.com/unified-insurance/bancassurance-integration/internal/repository"
 	"context"
 	"fmt"
+	"github.com/unified-insurance/bancassurance-integration/internal/models"
+	"github.com/unified-insurance/bancassurance-integration/internal/repository"
 	"math"
 	"time"
 

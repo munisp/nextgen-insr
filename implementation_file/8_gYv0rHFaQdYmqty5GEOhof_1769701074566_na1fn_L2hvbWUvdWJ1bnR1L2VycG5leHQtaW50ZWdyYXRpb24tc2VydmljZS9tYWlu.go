@@ -9,10 +9,10 @@ import (
 	"os"
 	"time"
 
+	"database/sql"
 	dapr "github.com/dapr/go-sdk/client"
 	"github.com/dapr/go-sdk/service/common"
 	daprd "github.com/dapr/go-sdk/service/http"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -28,8 +28,8 @@ const (
 
 // EventPayload represents the structure of the event data
 type EventPayload struct {
-	OrderID string `json:"orderId"`
-	Item    string `json:"item"`
+	OrderID  string `json:"orderId"`
+	Item     string `json:"item"`
 	Quantity int    `json:"quantity"`
 }
 
@@ -187,11 +187,10 @@ func initDB() {
 	}
 }
 
-
 func main() {
 	initDB()
 	if db != nil {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 	}
 	// Dapr service setup
 	s := daprd.NewService(":8080") // Listen on port 8080

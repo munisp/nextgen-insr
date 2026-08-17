@@ -15,8 +15,8 @@ type SubmitDocumentRequest struct {
 }
 
 type SubmitSelfieRequest struct {
-	SessionID    string `json:"session_id" binding:"required"`
-	ImageBase64  string `json:"image_base64" binding:"required"`
+	SessionID     string `json:"session_id" binding:"required"`
+	ImageBase64   string `json:"image_base64" binding:"required"`
 	ChallengeType string `json:"challenge_type"`
 }
 

@@ -12,10 +12,10 @@ import (
 )
 
 type TakafulService struct {
-	pg   *db.PostgreSQL
-	rdb  *db.RedisCache
-	cfg  *config.Config
-	log  *zap.Logger
+	pg  *db.PostgreSQL
+	rdb *db.RedisCache
+	cfg *config.Config
+	log *zap.Logger
 }
 
 func NewTakafulService(pg *db.PostgreSQL, rdb *db.RedisCache, cfg *config.Config) *TakafulService {
@@ -155,10 +155,10 @@ func (s *TakafulService) MakeContribution(ctx context.Context, contrib *models.C
 	if err != nil {
 		s.log.Warn("Pool not found, creating default pool", zap.String("product_id", contrib.ProductID))
 		pool = &models.TabarruPool{
-			ID:        contrib.ProductID,
-			PoolName:  fmt.Sprintf("%s Pool", product.Name),
-			PoolType:  product.Category,
-			Status:    "active",
+			ID:          contrib.ProductID,
+			PoolName:    fmt.Sprintf("%s Pool", product.Name),
+			PoolType:    product.Category,
+			Status:      "active",
 			PeriodStart: time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.UTC),
 			PeriodEnd:   time.Date(time.Now().Year(), 12, 31, 23, 59, 59, 0, time.UTC),
 		}
@@ -268,13 +268,13 @@ func (s *TakafulService) CalculateSurplusDistribution(ctx context.Context, poolI
 	operatorShare := totalSurplus * (s.cfg.WakalaFeePercent / 100.0)
 
 	sd := &models.SurplusDistribution{
-		Period:           period,
-		PoolID:           poolID,
-		TotalSurplus:     totalSurplus,
-		ParticipantShare: participantShare,
-		OperatorShare:    operatorShare,
+		Period:            period,
+		PoolID:            poolID,
+		TotalSurplus:      totalSurplus,
+		ParticipantShare:  participantShare,
+		OperatorShare:     operatorShare,
 		DistributionRatio: "70/30",
-		ParticipantCount: pool.TotalParticipants,
+		ParticipantCount:  pool.TotalParticipants,
 		AvgParticipantShare: func() float64 {
 			if pool.TotalParticipants > 0 {
 				return participantShare / float64(pool.TotalParticipants)
@@ -357,12 +357,12 @@ func (s *TakafulService) CreatePoolSnapshot(ctx context.Context, poolID string) 
 		return err
 	}
 	snapshot := &models.PoolSnapshot{
-		PoolID:          poolID,
-		SnapshotDate:    time.Now(),
-		TotalBalance:    pool.CurrentBalance,
-		TotalClaims:     pool.TotalClaims,
+		PoolID:            poolID,
+		SnapshotDate:      time.Now(),
+		TotalBalance:      pool.CurrentBalance,
+		TotalClaims:       pool.TotalClaims,
 		TotalParticipants: pool.TotalParticipants,
-		InvestmentReturn: pool.InvestmentReturn,
+		InvestmentReturn:  pool.InvestmentReturn,
 	}
 	return s.pg.CreatePoolSnapshot(ctx, snapshot)
 }
@@ -370,18 +370,18 @@ func (s *TakafulService) CreatePoolSnapshot(ctx context.Context, poolID string) 
 // --- Pool Stats ---
 
 type PoolStats struct {
-	TotalPools          int       `json:"total_pools"`
-	TotalContributions  float64   `json:"total_contributions"`
-	TotalClaims         float64   `json:"total_claims"`
-	TotalParticipants   int       `json:"total_participants"`
-	TotalTabarru        float64   `json:"total_tabarru"`
-	TotalWakalaFee      float64   `json:"total_wakala_fee"`
-	InvestmentBalance   float64   `json:"investment_balance"`
-	InvestmentReturn    float64   `json:"investment_return"`
-	ActiveProducts      int       `json:"active_products"`
-	ActiveParticipants  int       `json:"active_participants"`
-	ContributionCount   int64     `json:"contribution_count"`
-	ShariahCompliant    bool      `json:"shariah_compliant"`
+	TotalPools         int     `json:"total_pools"`
+	TotalContributions float64 `json:"total_contributions"`
+	TotalClaims        float64 `json:"total_claims"`
+	TotalParticipants  int     `json:"total_participants"`
+	TotalTabarru       float64 `json:"total_tabarru"`
+	TotalWakalaFee     float64 `json:"total_wakala_fee"`
+	InvestmentBalance  float64 `json:"investment_balance"`
+	InvestmentReturn   float64 `json:"investment_return"`
+	ActiveProducts     int     `json:"active_products"`
+	ActiveParticipants int     `json:"active_participants"`
+	ContributionCount  int64   `json:"contribution_count"`
+	ShariahCompliant   bool    `json:"shariah_compliant"`
 }
 
 func (s *TakafulService) GetPoolStats(ctx context.Context) (*PoolStats, error) {

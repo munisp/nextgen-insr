@@ -38,16 +38,16 @@ type QueryStats struct {
 
 // QueryAnalysis contains the analysis results for a query
 type QueryAnalysis struct {
-	QueryHash    string
-	JoinCount    int
-	HasSubquery  bool
-	HasWildcard  bool
-	HasOrderBy   bool
-	HasLimit     bool
-	HasIndex     bool
-	Warnings     []string
-	Suggestions  []string
-	RiskLevel    string // "low", "medium", "high", "critical"
+	QueryHash   string
+	JoinCount   int
+	HasSubquery bool
+	HasWildcard bool
+	HasOrderBy  bool
+	HasLimit    bool
+	HasIndex    bool
+	Warnings    []string
+	Suggestions []string
+	RiskLevel   string // "low", "medium", "high", "critical"
 }
 
 // NewQueryOptimizer creates a new query optimizer
@@ -353,7 +353,7 @@ func (lw *LazyWriter) processWrites() {
 		}
 
 		if err := tx.Commit(); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 		}
 
 		batch = batch[:0]
@@ -385,11 +385,11 @@ func (lw *LazyWriter) Close() error {
 // RateLimiter implements rate limiting for batch operations
 // OpenAI enforces strict rate limits for backfills
 type RateLimiter struct {
-	rate     int           // Operations per second
-	burst    int           // Maximum burst size
-	tokens   chan struct{}
-	ctx      context.Context
-	cancel   context.CancelFunc
+	rate   int // Operations per second
+	burst  int // Maximum burst size
+	tokens chan struct{}
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewRateLimiter creates a new rate limiter

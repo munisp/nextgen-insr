@@ -61,8 +61,8 @@ func (t *TigerBeetleClient) CreateAccounts(ctx context.Context, accounts []Accou
 	if err != nil {
 		return fmt.Errorf("tigerbeetle create accounts: %w", err)
 	}
-	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.ReadAll(resp.Body)
 	return nil
 }
 
@@ -78,8 +78,8 @@ func (t *TigerBeetleClient) CreateTransfers(ctx context.Context, transfers []Tra
 	if err != nil {
 		return fmt.Errorf("tigerbeetle create transfers: %w", err)
 	}
-	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.ReadAll(resp.Body)
 	return nil
 }
 
@@ -95,9 +95,9 @@ func (t *TigerBeetleClient) LookupAccounts(ctx context.Context, ids []uint64) ([
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 	var accounts []Account
-	json.Unmarshal(respBody, &accounts)
+	_ = json.Unmarshal(respBody, &accounts)
 	return accounts, nil
 }

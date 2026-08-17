@@ -39,8 +39,8 @@ const (
 
 // Transfer flags
 const (
-	TransferFlagLinked    uint16 = 1 // Link to next transfer (atomic batch)
-	TransferFlagPending   uint16 = 2 // Two-phase pending
+	TransferFlagLinked      uint16 = 1 // Link to next transfer (atomic batch)
+	TransferFlagPending     uint16 = 2 // Two-phase pending
 	TransferFlagPostPending uint16 = 4 // Post a pending transfer
 	TransferFlagVoidPending uint16 = 8 // Void a pending transfer
 )
@@ -98,12 +98,12 @@ type InsuranceAccountsRequest struct {
 
 // PremiumPaymentRequest records a premium payment in the ledger
 type PremiumPaymentRequest struct {
-	PolicyID        string  `json:"policyId"`
-	TenantID        string  `json:"tenantId"`
-	AmountKobo      uint64  `json:"amountKobo"` // Amount in smallest currency unit
-	PaymentRef      string  `json:"paymentRef"`
-	AgentID         string  `json:"agentId,omitempty"`
-	CommissionRate  float64 `json:"commissionRate,omitempty"` // 0.0 - 1.0
+	PolicyID       string  `json:"policyId"`
+	TenantID       string  `json:"tenantId"`
+	AmountKobo     uint64  `json:"amountKobo"` // Amount in smallest currency unit
+	PaymentRef     string  `json:"paymentRef"`
+	AgentID        string  `json:"agentId,omitempty"`
+	CommissionRate float64 `json:"commissionRate,omitempty"` // 0.0 - 1.0
 }
 
 // ClaimPayoutRequest records a claim payout in the ledger
@@ -117,12 +117,12 @@ type ClaimPayoutRequest struct {
 
 // ReinsuranceCessionRequest records a reinsurance cession
 type ReinsuranceCessionRequest struct {
-	PolicyID       string  `json:"policyId"`
-	TreatyID       string  `json:"treatyId"`
-	TenantID       string  `json:"tenantId"`
-	CessionRate    float64 `json:"cessionRate"` // 0.0 - 1.0
-	PremiumKobo    uint64  `json:"premiumKobo"`
-	CessionRef     string  `json:"cessionRef"`
+	PolicyID    string  `json:"policyId"`
+	TreatyID    string  `json:"treatyId"`
+	TenantID    string  `json:"tenantId"`
+	CessionRate float64 `json:"cessionRate"` // 0.0 - 1.0
+	PremiumKobo uint64  `json:"premiumKobo"`
+	CessionRef  string  `json:"cessionRef"`
 }
 
 // Client is the TigerBeetle HTTP sidecar client
@@ -156,7 +156,7 @@ func (c *Client) Ping(ctx context.Context) string {
 	if err != nil {
 		return "unreachable"
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusOK {
 		return "ok"
 	}
@@ -325,11 +325,11 @@ func (c *Client) RecordClaimPayoutHandler(w http.ResponseWriter, r *http.Request
 // RecordCommissionHandler handles POST /tigerbeetle/transfers/commission
 func (c *Client) RecordCommissionHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AgentID     string `json:"agentId"`
-		TenantID    string `json:"tenantId"`
-		AmountKobo  uint64 `json:"amountKobo"`
-		PolicyID    string `json:"policyId"`
-		CommRef     string `json:"commRef"`
+		AgentID    string `json:"agentId"`
+		TenantID   string `json:"tenantId"`
+		AmountKobo uint64 `json:"amountKobo"`
+		PolicyID   string `json:"policyId"`
+		CommRef    string `json:"commRef"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
@@ -555,7 +555,7 @@ func (c *Client) forwardToSidecar(ctx context.Context, method, path string, body
 			"note":   "TigerBeetle sidecar unavailable",
 		}, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -581,7 +581,7 @@ func getEnv(key, fallback string) string {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

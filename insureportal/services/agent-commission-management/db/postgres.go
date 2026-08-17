@@ -298,14 +298,21 @@ func (p *PostgreSQL) GetCommissionByAgent(ctx context.Context, agentID, status s
 		pos++
 	}
 	query += " ORDER BY issued_at DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit); pos++ }
-	if offset > 0 { query += fmt.Sprintf(" OFFSET $%d", pos); args = append(args, offset) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+		pos++
+	}
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", pos)
+		args = append(args, offset)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanCommissions(rows)
 }
 
@@ -321,7 +328,7 @@ func (p *PostgreSQL) CountCommissionsByStatus(ctx context.Context) (map[string]i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make(map[string]int64)
 	for rows.Next() {
 		var status string
@@ -372,13 +379,16 @@ func (p *PostgreSQL) GetCommissionPeriods(ctx context.Context, agentID, status s
 		pos++
 	}
 	query += " ORDER BY period_end DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanPeriods(rows)
 }
 
@@ -429,14 +439,21 @@ func (p *PostgreSQL) ListAgentProfiles(ctx context.Context, status string, limit
 		pos++
 	}
 	query += " ORDER BY agent_name"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit); pos++ }
-	if offset > 0 { query += fmt.Sprintf(" OFFSET $%d", pos); args = append(args, offset) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+		pos++
+	}
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", pos)
+		args = append(args, offset)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanAgentProfiles(rows)
 }
 
@@ -464,7 +481,7 @@ func (p *PostgreSQL) GetAdjustments(ctx context.Context, commissionID string) ([
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanAdjustments(rows)
 }
 
@@ -512,13 +529,16 @@ func (p *PostgreSQL) GetCommissionReports(ctx context.Context, reportType, statu
 		pos++
 	}
 	query += " ORDER BY generated_at DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanReports(rows)
 }
 
@@ -550,13 +570,16 @@ func (p *PostgreSQL) GetPaymentRecords(ctx context.Context, agentID, status stri
 		pos++
 	}
 	query += " ORDER BY payment_date DESC"
-	if limit > 0 { query += fmt.Sprintf(" LIMIT $%d", pos); args = append(args, limit) }
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", pos)
+		args = append(args, limit)
+	}
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanPayments(rows)
 }
 
@@ -581,12 +604,14 @@ func (p *PostgreSQL) GetPendingClawbacks(ctx context.Context, limit int) ([]mode
 	query := `SELECT id,commission_id,agent_id,policy_id,policy_number,original_amount,
 		clawback_amount,clawback_reason,cancellation_date,is_within_clawback_period,
 		status,processed_at,created_at FROM clawbacks WHERE status='pending'`
-	if limit > 0 { query += fmt.Sprintf(" ORDER BY cancellation_date DESC LIMIT $%d", limit+1) }
+	if limit > 0 {
+		query += fmt.Sprintf(" ORDER BY cancellation_date DESC LIMIT $%d", limit+1)
+	}
 	rows, err := p.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanClawbacks(rows)
 }
 

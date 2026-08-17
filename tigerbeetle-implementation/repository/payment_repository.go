@@ -147,7 +147,7 @@ func (r *PaymentRepository) GetByPolicyID(ctx context.Context, policyID string) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query payments: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var payments []models.Payment
 	for rows.Next() {
@@ -222,7 +222,7 @@ func (r *PaymentRepository) GetPaymentsByCustomer(ctx context.Context, customerI
 	if err != nil {
 		return nil, fmt.Errorf("failed to query customer payments: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var payments []models.Payment
 	for rows.Next() {

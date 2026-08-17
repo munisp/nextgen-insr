@@ -45,8 +45,8 @@ func (l *LakehouseClient) Ingest(ctx context.Context, req IngestRequest) error {
 	if err != nil {
 		return fmt.Errorf("lakehouse ingest: %w", err)
 	}
-	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.ReadAll(resp.Body)
 	return nil
 }
 
@@ -68,12 +68,12 @@ func (l *LakehouseClient) Query(ctx context.Context, sql string, params map[stri
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Rows []map[string]interface{} `json:"rows"`
 	}
-	json.Unmarshal(respBody, &result)
+	_ = json.Unmarshal(respBody, &result)
 	return result.Rows, nil
 }
 
