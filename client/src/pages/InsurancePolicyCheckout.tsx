@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 export default function InsuranceCheckout() {
   const customerId = 1; // From auth context
@@ -70,9 +71,11 @@ export default function InsuranceCheckout() {
     );
   }
 
-  const subTotal = cart?.subTotal || 0;
-  const tax = subTotal * 0.075;
-  const shipping = subTotal >= 50000 ? 0 : 500;
+  // F-12 (wave-4b): the cart payload has no subTotal field — no honest
+  // basis for derived tax/shipping either.
+  const subTotal = 0;
+  const tax = 0;
+  const shipping = 0;
   const total = subTotal + tax + shipping;
 
   return (

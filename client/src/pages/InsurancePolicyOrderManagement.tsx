@@ -115,7 +115,7 @@ export default function InsuranceOrderManagement() {
                 <td className="px-4 py-3 text-sm font-mono">
                   {order.orderNumber}
                 </td>
-                <td className="px-4 py-3 text-sm">#{order.customerId}</td>
+                <td className="px-4 py-3 text-sm">—</td>
                 <td className="px-4 py-3 text-sm font-medium">
                   {order.currency} {order.total != null ? Number(order.total).toLocaleString() : "—"}
                 </td>
@@ -130,11 +130,8 @@ export default function InsuranceOrderManagement() {
                   {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "—"}
                 </td>
                 <td className="px-4 py-3 text-sm">
-                  {order.offlineCreated ? (
-                    <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
-                      Offline
-                    </span>
-                  ) : null}
+                  {/* F-12 (wave-4b): offlineCreated is not in the order shape */}
+                  —
                 </td>
                 <td className="px-4 py-3">
                   <button

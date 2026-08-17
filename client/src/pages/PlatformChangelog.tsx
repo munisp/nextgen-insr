@@ -34,14 +34,14 @@ export default function PlatformChangelog() {
         <div className="relative">
           <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-800" />
           <div className="space-y-6">
-            {changelogQ.data?.data.map((entry: { id: number | string; version?: string; title?: string; description?: string; highlights?: string[]; date?: string; type?: string }) => (
+            {((changelogQ.data as { data?: Array<{ id: number | string; version?: string; title?: string; description?: string; highlights?: string[]; date?: string; type?: string }> } | undefined)?.data ?? []).map((entry) => (
               <div key={entry.id} className="relative pl-14">
                 <div className="absolute left-4 top-4 w-4 h-4 rounded-full bg-gray-800 border-2 border-gray-600 z-10" />
                 <Card className="bg-gray-900 border-gray-800">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span className="text-lg">{typeIcon[entry.type]}</span>
+                        <span className="text-lg">{typeIcon[entry.type ?? "update"] ?? "•"}</span>
                         <CardTitle className="text-lg text-white">
                           {entry.title}
                         </CardTitle>
@@ -49,7 +49,7 @@ export default function PlatformChangelog() {
                           v{entry.version}
                         </Badge>
                         <Badge
-                          className={`${typeColor[entry.type]} text-white text-xs`}
+                          className={`${typeColor[entry.type ?? "update"] ?? ""} text-white text-xs`}
                         >
                           {entry.type}
                         </Badge>

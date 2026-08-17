@@ -496,7 +496,7 @@ function SidebarRatingBadge({ sectionId }: { sectionId: string }) {
   const { data: stats } = trpc.guideFeedback.stats.useQuery(undefined, {
     staleTime: 60000,
   });
-  const sectionData = stats?.[sectionId];
+  const sectionData = (stats as Record<string, { total: number; up: number }> | undefined)?.[sectionId];
   if (!sectionData || sectionData.total === 0) return null;
   const pct = Math.round((sectionData.up / sectionData.total) * 100);
   return (
@@ -544,11 +544,15 @@ function SectionFeedback({
 
   const handleSubmit = () => {
     if (!rating) return;
+    // F-12 (wave-4b): submitFeedback is the real generic mutation —
+    // the section payload travels in its data record.
     submitMutation.mutate({
-      sectionId,
-      subsectionId,
-      rating,
-      comment,
+      data: {
+        sectionId,
+        subsectionId,
+        rating,
+        comment,
+      },
     });
   };
 

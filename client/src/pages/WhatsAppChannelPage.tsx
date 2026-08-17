@@ -10,9 +10,9 @@ export default function WhatsAppChannelPage() {
   const [tab, setTab] = useState<"messages" | "templates" | "contacts">(
     "messages"
   );
-  const messages = trpc.whatsappChannel.messages.useQuery({ limit: 20 });
+  const messages = trpc.whatsappChannel.messages.useQuery();
   const templates = trpc.whatsappChannel.templates.useQuery();
-  const contacts = trpc.whatsappChannel.messages.useQuery({ limit: 20 });
+  const contacts = trpc.whatsappChannel.messages.useQuery();
   const analytics = trpc.whatsappChannel.analytics.useQuery();
 
   return (

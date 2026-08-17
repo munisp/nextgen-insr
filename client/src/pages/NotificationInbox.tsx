@@ -183,7 +183,8 @@ const channelConfig: Record<
 
 // ── Time Formatting ─────────────────────────────────────────────────────────
 
-function timeAgo(date: Date | string): string {
+function timeAgo(date: Date | string | null): string {
+  if (date == null) return "—";
   const d = typeof date === "string" ? new Date(date) : date;
   const now = Date.now();
   const diff = now - d.getTime();
@@ -625,7 +626,7 @@ export default function NotificationInbox() {
                                 className="h-8 w-8"
                                 onClick={e => {
                                   e.stopPropagation();
-                                  markRead.mutate({ id: notif.id });
+                                  markRead.mutate({ notificationId: notif.id });
                                 }}
                               >
                                 <CheckIcon className="w-4 h-4 text-muted-foreground" />
@@ -648,7 +649,7 @@ export default function NotificationInbox() {
                               className="h-8 w-8"
                               onClick={e => {
                                 e.stopPropagation();
-                                deleteNotif.mutate({ id: notif.id });
+                                deleteNotif.mutate({ notificationId: notif.id });
                               }}
                             >
                               <TrashIcon className="w-4 h-4 text-muted-foreground" />

@@ -44,7 +44,7 @@ export default function ReferralProgramPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {analytics.data?.conversionRate ?? 0}%
+                {summary.data?.conversionRate != null ? summary.data.conversionRate.toFixed(1) : "—"}%
               </p>
             </CardContent>
           </Card>
@@ -166,7 +166,7 @@ export default function ReferralProgramPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {referrals.data?.referrals?.map((r: any) => (
+                  {referrals.data?.data?.map((r: any) => (
                     <tr key={r.id} className="border-b">
                       <td className="p-2">{r.referrerName}</td>
                       <td className="p-2">{r.referredName}</td>

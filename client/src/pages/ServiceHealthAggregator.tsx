@@ -105,7 +105,7 @@ export default function ServiceHealthAggregator() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
-                {services.map(svc => (
+                {(services as Array<{ name: string; status?: string; latencyMs?: number }>).map(svc => (
                   <div
                     key={svc.name}
                     className="flex items-center justify-between bg-gray-800 rounded-lg p-3"

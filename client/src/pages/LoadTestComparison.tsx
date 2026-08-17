@@ -691,7 +691,6 @@ export default function LoadTestComparison() {
                 <DeltaCell label="P50 Latency" unit="ms" {...cmp.latency.p50} />
                 <DeltaCell label="P95 Latency" unit="ms" {...cmp.latency.p95} />
                 <DeltaCell label="P99 Latency" unit="ms" {...cmp.latency.p99} />
-                <DeltaCell label="Max Latency" unit="ms" {...cmp.latency.max} />
               </CardContent>
             </Card>
 
@@ -729,9 +728,9 @@ export default function LoadTestComparison() {
                   />
                   <DeltaCell
                     label="Throughput"
-                    unit=" MB/s"
+                    unit=" req/s"
                     higherBetter
-                    {...cmp.throughput.throughputMbps}
+                    {...cmp.throughput.actualRps}
                   />
                 </CardContent>
               </Card>
@@ -766,10 +765,10 @@ export default function LoadTestComparison() {
                     {...cmp.reliability.failedRequests}
                   />
                   <DeltaCell
-                    label="Success Rate"
+                    label="Error Rate"
                     unit="%"
                     higherBetter
-                    {...cmp.reliability.successRate}
+                    {...cmp.reliability.errorRate}
                   />
                 </CardContent>
               </Card>

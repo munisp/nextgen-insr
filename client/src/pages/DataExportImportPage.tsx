@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Download, Upload } from "lucide-react";
 
 export default function DataExportImportPage() {
-  const { data } = trpc.dataExportImport.dashboard.useQuery();
+  const { data } = trpc.dataExportImport.dashboard.useQuery({});
 
   return (
     <div className="p-6 space-y-6">
@@ -23,7 +23,7 @@ export default function DataExportImportPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(data?.recentExports ?? []).map((e: any, i: number) => (
+              {((data?.recentItems ?? []) as Array<Record<string, unknown>>).map((e: any, i: number) => (
                 <div
                   key={i}
                   className="flex items-center justify-between p-2 rounded bg-muted/50"
@@ -57,7 +57,7 @@ export default function DataExportImportPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(data?.recentImports ?? []).map((imp: any, i: number) => (
+              {([] as Array<Record<string, unknown>>).map((imp: any, i: number) => (
                 <div
                   key={i}
                   className="flex items-center justify-between p-2 rounded bg-muted/50"
