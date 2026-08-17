@@ -1108,7 +1108,7 @@ func daprPublish(topic string, data interface{}) {
 	req, _ := http.NewRequest("POST", daprBaseURL+"/v1.0/publish/insure-pubsub/"+topic, bytes.NewReader(body))
 	if req != nil {
 		req.Header.Set("Content-Type", "application/json")
-		go func() { daprClient.Do(req) }()
+		go func() { _, _ = daprClient.Do(req) }()
 	}
 }
 
@@ -1187,7 +1187,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
-	mux.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]map[string]string{}) })
+	mux.HandleFunc("/dapr/subscribe", func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode([]map[string]string{}) })
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/live", handleLive)
 	mux.HandleFunc("/stats", handleStats)

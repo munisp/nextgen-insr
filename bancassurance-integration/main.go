@@ -1279,7 +1279,7 @@ func handleBundleProducts(w http.ResponseWriter, r *http.Request) {
 	bankCommission := totalPremium * 0.30
 	bundleID := fmt.Sprintf("BND-%d", time.Now().UnixNano())
 	if db != nil {
-		db.Exec("INSERT INTO bancassurance_bundles (id, bank_product_id, insurance_product, customer_id, loan_amount, tenure_months, total_premium, bank_commission, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')",
+		_, _ = db.Exec("INSERT INTO bancassurance_bundles (id, bank_product_id, insurance_product, customer_id, loan_amount, tenure_months, total_premium, bank_commission, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')",
 			bundleID, req.BankProductID, req.InsuranceProduct, req.CustomerID, req.LoanAmount, req.TenureMonths, totalPremium, bankCommission)
 	}
 	if kafkaWriter != nil {
@@ -1307,7 +1307,7 @@ func handleReferralTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	refID := fmt.Sprintf("REF-%d", time.Now().UnixNano())
 	if db != nil {
-		db.Exec("INSERT INTO bancassurance_referrals (id, referral_code, bank_branch, agent_id, product_type, status, created_at) VALUES ($1,$2,$3,$4,$5,'pending',NOW())",
+		_, _ = db.Exec("INSERT INTO bancassurance_referrals (id, referral_code, bank_branch, agent_id, product_type, status, created_at) VALUES ($1,$2,$3,$4,$5,'pending',NOW())",
 			refID, req.ReferralCode, req.BankBranch, req.AgentID, req.ProductType)
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"referral_id": refID, "status": "tracked"})

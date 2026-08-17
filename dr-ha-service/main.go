@@ -865,7 +865,7 @@ func handleFailoverTrigger(w http.ResponseWriter, r *http.Request) {
 		status = "executing"
 	}
 	if db != nil {
-		db.Exec("INSERT INTO dr_failovers (id, source_region, target_region, reason, priority, status, initiated_at) VALUES ($1,$2,$3,$4,$5,$6,NOW())",
+		_, _ = db.Exec("INSERT INTO dr_failovers (id, source_region, target_region, reason, priority, status, initiated_at) VALUES ($1,$2,$3,$4,$5,$6,NOW())",
 			failoverID, req.SourceRegion, req.TargetRegion, req.Reason, req.Priority, status)
 	}
 	if kafkaWriter != nil {

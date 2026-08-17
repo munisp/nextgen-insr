@@ -26,6 +26,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// context keys (SA1029: typed keys to avoid collisions)
+type ctxKey string
+
+const (
+	ctxKeyRequestid ctxKey = "requestID"
+)
+
+
 // --- Response Helpers ---
 
 func jsonResponse(w http.ResponseWriter, status int, v interface{}) {
@@ -1206,7 +1214,7 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 			reqID = hex.EncodeToString(b)
 		}
 		w.Header().Set("X-Request-ID", reqID)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), "requestID", reqID)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKeyRequestid, reqID)))
 	})
 }
 

@@ -341,10 +341,8 @@ func (ps *PostgresStore) SaveSessionState(ctx context.Context, sessionID, phone,
 
 	// Marshal data map to JSON for storage.
 	jsonData := make(map[string]interface{})
-	if data != nil {
-		for k, v := range data {
-			jsonData[k] = v
-		}
+	for k, v := range data {
+		jsonData[k] = v
 	}
 
 	query := `INSERT INTO session_states (session_id, phone_number, state, data, expires_at)

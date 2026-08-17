@@ -23,6 +23,16 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// context keys (SA1029: typed keys to avoid collisions)
+type ctxKey string
+
+const (
+	ctxKeyRoles ctxKey = "roles"
+	ctxKeyTenantId ctxKey = "tenant_id"
+	ctxKeyUserId ctxKey = "user_id"
+)
+
+
 var db *sql.DB
 
 // Circuit breaker for external HTTP calls
@@ -838,9 +848,9 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 		}
 		// Dev bypass for local development
 		if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("ENVIRONMENT") != "production" {
-			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
-			ctx = context.WithValue(ctx, "tenant_id", "default")
-			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
+			ctx := context.WithValue(r.Context(), ctxKeyUserId, "dev-user")
+			ctx = context.WithValue(ctx, ctxKeyTenantId, "default")
+			ctx = context.WithValue(ctx, ctxKeyRoles, []string{"admin", "user"})
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -856,8 +866,8 @@ func keycloakAuthMiddleware(next http.Handler) http.Handler {
 		// For now, decode and pass through (validation handled by APISIX gateway)
 		tokenStr := strings.TrimPrefix(auth, "Bearer ")
 		_ = tokenStr
-		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
-		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
+		ctx := context.WithValue(r.Context(), ctxKeyUserId, r.Header.Get("X-User-ID"))
+		ctx = context.WithValue(ctx, ctxKeyTenantId, r.Header.Get("X-Tenant-ID"))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -875,7 +885,7 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 	}
 	data, _ := json.Marshal(payload)
 	tenantID := "default"
-	if tid, ok := ctx.Value("tenant_id").(string); ok && tid != "" {
+	if tid, ok := ctx.Value(ctxKeyTenantId).(string); ok && tid != "" {
 		tenantID = tid
 	}
 	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, tenantID)

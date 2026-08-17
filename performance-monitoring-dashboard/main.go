@@ -859,7 +859,7 @@ func handleCollectMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if db != nil {
-		db.Exec("INSERT INTO perf_metrics (service, endpoint, latency_ms, status_code, error_rate, created_at) VALUES ($1,$2,$3,$4,$5,NOW())",
+		_, _ = db.Exec("INSERT INTO perf_metrics (service, endpoint, latency_ms, status_code, error_rate, created_at) VALUES ($1,$2,$3,$4,$5,NOW())",
 			req.Service, req.Endpoint, req.LatencyMs, req.StatusCode, req.ErrorRate)
 	}
 	w.Header().Set("Content-Type", "application/json")

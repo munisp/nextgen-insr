@@ -701,7 +701,7 @@ func handleCalculateSCR(w http.ResponseWriter, r *http.Request) {
 	// Persist to DB
 	if db != nil {
 		data, _ := json.Marshal(result)
-		db.Exec("INSERT INTO naicom_filings (filing_type, period, status, data, filed_by) VALUES ($1, $2, $3, $4, $5)",
+		_, _ = db.Exec("INSERT INTO naicom_filings (filing_type, period, status, data, filed_by) VALUES ($1, $2, $3, $4, $5)",
 			"scr_calculation", time.Now().Format("2006-Q1"), "calculated", string(data), "system")
 	}
 	w.Header().Set("Content-Type", "application/json")
