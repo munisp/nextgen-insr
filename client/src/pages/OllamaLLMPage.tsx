@@ -26,20 +26,29 @@ export default function OllamaLLMPage() {
   const analytics: { data?: Record<string, never> } = {};
   const models = trpc.ollamaLLM.listModels.useQuery();
   const sessions: { data?: Array<Record<string, unknown>> } = {};
-  const chatMut = {
+  const chatMut: {
+    mutate: (input?: unknown) => void;
+    isPending: boolean;
+    data?: { content: string; model?: string; tokensUsed?: number; latencyMs?: number };
+  } = {
     mutate: (_input?: unknown) => toast.error("Ollama chat is not delivered on this deployment"),
     isPending: false,
-    data: undefined,
   };
-  const fraudMut = {
-    mutate: (_input?: unknown) => toast.error("Ollama explainFraud is not delivered on this deployment"),
+  const fraudMut: {
+    mutate: (input?: unknown) => void;
+    isPending: boolean;
+    data?: { fraudScore: number; source?: string; explanation: string };
+  } = {
+    mutate: (_input?: unknown) => toast.error("Ollama fraud explanation is not delivered on this deployment"),
     isPending: false,
-    data: undefined,
   };
-  const classifyMut = {
-    mutate: (_input?: unknown) => toast.error("Ollama classifyTransaction is not delivered on this deployment"),
+  const classifyMut: {
+    mutate: (input?: unknown) => void;
+    isPending: boolean;
+    data?: { category: string; riskLevel?: string; reasoning?: string; confidence?: number; tags?: string[] };
+  } = {
+    mutate: (_input?: unknown) => toast.error("Ollama transaction classification is not delivered on this deployment"),
     isPending: false,
-    data: undefined,
   };
 
   return (
