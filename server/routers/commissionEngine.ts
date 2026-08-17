@@ -878,8 +878,14 @@ export const commissionEngineRouter = router({
             .limit(100);
           splits = splitRows.map(formatSplit);
         } else {
-          tiers = memTiers.filter(t => t.isActive).map(formatTier);
-          splits = memSplits.filter(s => s.isActive).map(formatSplit);
+          // F-12 (verifier round 3): the noop-db branch served in-memory
+          // seed tiers/splits as live config — fail loud like every other
+          // noop-db path.
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "calculateCommission: no commission database is available on this deployment",
+          });
         }
 
         const tier = tiers.find(
