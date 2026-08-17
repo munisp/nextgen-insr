@@ -350,19 +350,12 @@ export const offlineSyncRouter = router({
     };
   }),
 
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   queue: protectedProcedure.query(async () => {
-    return {
-      items: [
-        {
-          id: "OQ-001",
-          type: "cash_in",
-          status: "pending",
-          amount: 50000,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "queue: no delivered store on this platform",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
     return { total: 25, queued: 3, synced: 20, conflicts: 2, avgSyncTime: 5.2 };

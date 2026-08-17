@@ -135,33 +135,19 @@ export const remittanceRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   partners: protectedProcedure.query(async () => {
-    return {
-      partners: [
-        {
-          id: "RP-001",
-          name: "WorldRemit",
-          insurance_region: "UK-NG",
-          status: "active",
-        },
-        { id: "RP-002", name: "Lemfi", insurance_region: "CA-NG", status: "active" },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "partners: no remittance-partner store is delivered",
+    });
   }),
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   history: protectedProcedure.query(async () => {
-    return {
-      transactions: [
-        {
-          id: "RM-001",
-          partnerId: "RP-001",
-          amount: 500,
-          currency: "GBP",
-          localAmount: 450000,
-          status: "completed",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "history: no remittance-history store is delivered",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
     return {

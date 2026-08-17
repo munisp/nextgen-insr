@@ -170,32 +170,19 @@ export const savingsProductsRouter = router({
   }),
 
   // ── Sprint 28 domain procedures ──
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   products: protectedProcedure.query(async () => {
-    return {
-      products: [
-        {
-          id: "SP-001",
-          name: "Agent Savings",
-          interestRate: 8,
-          minBalance: 10000,
-          status: "active",
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "products: no delivered store on this platform",
+    });
   }),
+  // F-12 (verifier round 3): fixture rows — no delivered store. Fail loud.
   list: protectedProcedure.query(async () => {
-    return {
-      accounts: [
-        {
-          id: "SA-001",
-          productId: "SP-001",
-          agentId: "AGT-001",
-          balance: 250000,
-          status: "active",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "list: no delivered store on this platform",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
     return {
