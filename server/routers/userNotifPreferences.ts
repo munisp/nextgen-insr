@@ -2,6 +2,7 @@ import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -98,13 +99,32 @@ export const userNotifPreferencesRouter = router({
 
       return results;
     }),
+  // F-12 (wave-4b): no user notification-preference store exists — these
+  // were fixture defaults (all-true prefs) and echo-facade mutations
+  // (returned the input as fake success). All fail loud until a store is
+  // delivered.
+  getPreferences: protectedProcedure.query(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "getPreferences: no notification-preference store is delivered",
+    });
+  }),
   updateQuietHours: protectedProcedure
     .input(z.object({ start: z.string(), end: z.string() }))
-    .mutation(async ({ input }) => ({ ...input, enabled: true })),
-  // Digest modes: "instant", "hourly", "daily"
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "updateQuietHours: no notification-preference store is delivered",
+      });
+    }),
   updateDigestMode: protectedProcedure
     .input(z.object({ mode: z.enum(["instant", "hourly", "daily"]) }))
-    .mutation(async ({ input }) => ({ mode: input.mode })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "updateDigestMode: no notification-preference store is delivered",
+      });
+    }),
   bulkUpdate: protectedProcedure
     .input(
       z.object({
@@ -117,29 +137,32 @@ export const userNotifPreferencesRouter = router({
         }),
       })
     )
-    .mutation(async ({ input }) => ({ updated: input.categories.length })),
-  resetToDefaults: protectedProcedure.mutation(async () => ({ reset: true })),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "bulkUpdate: no notification-preference store is delivered",
+      });
+    }),
+  resetToDefaults: protectedProcedure.mutation(async () => {
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "resetToDefaults: no notification-preference store is delivered",
+    });
+  }),
   enableAllForChannel: protectedProcedure
     .input(z.object({ channel: z.string() }))
-    .mutation(async ({ input }) => ({ channel: input.channel, enabled: true })),
-  getPreferences: protectedProcedure.query(async () => {
-    return {
-      email: true,
-      sms: true,
-      push: true,
-      inApp: true,
-      quietHoursEnabled: false,
-      quietHoursStart: 22,
-      quietHoursEnd: 7,
-    };
-  }),
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "enableAllForChannel: no notification-preference store is delivered",
+      });
+    }),
   updateCategory: protectedProcedure
     .input(z.object({ categoryId: z.string(), enabled: z.boolean() }))
-    .mutation(async ({ input }) => {
-      return {
-        success: true,
-        categoryId: input.categoryId,
-        enabled: input.enabled,
-      };
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "updateCategory: no notification-preference store is delivered",
+      });
     }),
 });
