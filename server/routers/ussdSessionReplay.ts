@@ -107,9 +107,13 @@ export const ussdSessionReplayRouter = router({
         .optional()
     )
     .query(async () => {
-      // No USSD session replay store exists in the schema — honest empty.
-      return { sessions: [] as any[], total: 0 };
-    }),
+    // F-12 (zero-payload sweep): unconditional zero-payload — no delivered
+    // store. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "listSessions: no USSD session store is delivered",
+    });
+  }),
 
   getSession: protectedProcedure
     .input(z.object({ sessionId: z.string() }))

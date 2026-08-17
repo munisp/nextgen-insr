@@ -130,7 +130,12 @@ export const falkordbGraphRouter = router({
   }),
   shortestPath: protectedProcedure
     .input(z.object({ from: z.string(), to: z.string() }))
-    .query(async ({ input }) => {
-      return { path: [] as string[], distance: 0, found: false };
+    .query(async () => {
+      // F-12 (zero-payload sweep): unconditional zero-payload — no graph
+      // database is provisioned on this deployment. Fail loud.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "shortestPath: no graph database is provisioned on this deployment",
+      });
     }),
 });

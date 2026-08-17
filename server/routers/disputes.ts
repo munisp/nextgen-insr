@@ -109,17 +109,38 @@ export const disputesRouter = router({
         limit: z.number().default(20),
       })
     )
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx, input }) => {
+      // F-12 (zero-payload sweep): returned {disputes: [], total: 0}
+      // unconditionally while the disputes table exists — REAL admin query.
       if (
         !ctx.user ||
         (ctx.user.role !== "admin" && ctx.user.role !== "supervisor")
       ) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "Unauthorized — admin or supervisor role required",
+          message: "admin or supervisor role required",
         });
       }
-      return { disputes: [], total: 0 };
+      const database = await getDb();
+      if (!database)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+      const where =
+        input.status === "all"
+          ? undefined
+          : eq(disputes.status, input.status);
+      const [tot] = await database
+        .select({ value: count() })
+        .from(disputes)
+        .where(where)
+        .limit(100);
+      const rows = await database
+        .select()
+        .from(disputes)
+        .where(where)
+        .orderBy(desc(disputes.id))
+        .limit(input.limit)
+        .offset((input.page - 1) * input.limit);
+      return { disputes: rows, total: Number(tot.value) };
     }),
   resolve: protectedProcedure
     .input(

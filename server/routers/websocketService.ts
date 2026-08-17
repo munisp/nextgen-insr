@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
@@ -95,12 +96,12 @@ export const websocketServiceRouter = router({
     }),
 
   dashboard: protectedProcedure.query(async () => {
-    return {
-      totalItems: 0,
-      activeItems: 0,
-      recentActivity: [],
-      lastUpdated: new Date().toISOString(),
-    };
+    // F-12 (zero-payload sweep): unconditional zero-payload — no delivered
+    // store. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dashboard: no WebSocket telemetry store is delivered",
+    });
   }),
   listConnections: protectedProcedure
     .input(z.object({ id: z.string().optional() }).default({}))

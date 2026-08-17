@@ -260,47 +260,14 @@ export const resilienceRouter = router({
   // ── Rust: dequeue (pop) one item from the offline queue ───────────────────
   dequeueOffline: protectedProcedure
     .input(z.object({ id: z.string().optional() }))
-    .mutation(async ({ input }) => {
-      try {
-        // If a specific id is provided, dequeue that item; otherwise list pending
-        // and dequeue the oldest one
-        if (input.id) {
-          const result = await safeFetch<{ success: boolean }>(
-            `${OFFLINE_URL}/queue/dequeue/${input.id}`,
-            { method: "POST" }
-          );
-          return { item: null, dequeued: result?.success ?? false };
-        }
-        // Pop the oldest pending item: list → take first → dequeue it
-        const pending = await safeFetch<
-          Array<{
-            id: string;
-            tx_type: string;
-            amount: number;
-            customer_name?: string;
-            customer_phone?: string;
-            destination_bank?: string;
-            destination_account?: string;
-            channel?: string;
-            payload_json?: string;
-          }>
-        >(`${OFFLINE_URL}/queue/pending`);
-        if (!pending || pending.length === 0)
-          return { item: null, dequeued: false };
-        const oldest = pending[0];
-        await safeFetch(`${OFFLINE_URL}/queue/dequeue/${oldest.id}`, {
-          method: "POST",
-        });
-        return { item: oldest, dequeued: true };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
-    }),
+    .mutation(async () => {
+    // F-12 (zero-payload sweep): unconditional zero-payload — no delivered
+    // store. Fail loud.
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message: "dequeueOffline: no offline queue store is delivered",
+    });
+  }),
 
   // ── Python: bulk per-agent success rates ────────────────────────────────────────────
   agentSuccessRates: protectedProcedure

@@ -229,17 +229,13 @@ export const billingInvoiceRouter = router({
 
   getInvoice: protectedProcedure
     .input(z.object({ invoiceId: z.string() }))
-    .query(async ({ input }) => {
-      try {
-        return { invoice: null, found: false };
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
-      }
+    .query(async () => {
+      // F-12 (zero-payload sweep): returned {invoice: null, found: false}
+      // unconditionally — no invoice store is delivered. Fail loud.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message: "getInvoice: no invoice store is delivered",
+      });
     }),
 
   markPaid: protectedProcedure
