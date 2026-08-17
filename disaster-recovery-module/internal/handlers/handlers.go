@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -574,7 +575,8 @@ func (h *Handlers) RecordRTOMetric(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.dr.RecordBackupStatus(r.Context(), &models.BackupStatus{}); err != nil {
-		// For now, just return success
+		// Endpoint still returns success by design, but the failure is no longer silent
+		log.Printf("warn: RecordBackupStatus failed: %v", err)
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{

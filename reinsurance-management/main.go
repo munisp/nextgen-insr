@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -882,7 +883,7 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 	if tid, ok := ctx.Value("tenant_id").(string); ok && tid != "" {
 		tenantID = tid
 	}
-	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, tenantID)
+	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, neturl.PathEscape(tenantID))
 	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
 	if err != nil {
 		return true

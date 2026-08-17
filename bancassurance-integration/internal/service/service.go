@@ -1,6 +1,7 @@
 package service
 
 import (
+	"log"
 	"context"
 	"fmt"
 	"math"
@@ -53,6 +54,7 @@ func NewBancassuranceService(repo *repository.BancassuranceRepository) *Bancassu
 func (s *BancassuranceService) RegisterBankPartner(ctx context.Context, req RegisterBankPartnerRequest) (*models.BankPartner, error) {
 	if _, ok := nigerianBanks[req.BankCode]; !ok && req.BankCode != "" {
 		// Allow custom bank codes but log warning
+		log.Printf("warn: bank code %q not in CBN registry; registering as custom partner bank", req.BankCode)
 	}
 
 	partner := &models.BankPartner{

@@ -670,7 +670,7 @@ func (app *Application) stateAgentRegisterState(sess *models.SessionData, input 
 			Action:       "continue",
 		}, nil
 	}
-	sess.Data["agent_state"] = strings.TrimSpace(strings.Title(strings.ToLower(input)))
+	sess.Data["agent_state"] = strings.TrimSpace(titleASCII(strings.ToLower(input)))
 	sess.State = "agent_register_lga"
 	return models.USSDResponse{
 		Text:         "Step 3/5\nEnter your LGA:",
@@ -1204,7 +1204,6 @@ func (app *Application) router() http.Handler {
 
 	// Standard middleware.
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Timeout(30 * time.Second))
@@ -1363,4 +1362,20 @@ func validateIntParam(r *http.Request, key string) (int, error) {
 		return 0, fmt.Errorf("parameter %s must be an integer", key)
 	}
 	return n, nil
+}
+
+// titleASCII replaces deprecated strings.Title for the ASCII-only USSD input path
+// (strings.Title mishandles Unicode punctuation; x/text/cases would be the
+// general replacement but is not yet a module dependency)
+func titleASCII(s string) string {
+	prevBoundary := true
+	b := []byte(s)
+	for i, ch := range b {
+		isLetter := (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+		if isLetter && prevBoundary && ch >= 'a' && ch <= 'z' {
+			b[i] = ch - 32
+		}
+		prevBoundary = !isLetter
+	}
+	return string(b)
 }
