@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,7 +8,6 @@ import { FileText, Search, CheckCircle, XCircle, Clock } from "lucide-react";
 
 export default function KycDocumentManagementPage() {
   const [search, setSearch] = useState("");
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const { data, isLoading } = trpc.kycDocumentManagement.list.useQuery();
   const approveMut = trpc.kycDocumentManagement.approve.useMutation({
     onSuccess: () => toast.success("KYC approved"),
@@ -17,7 +15,6 @@ export default function KycDocumentManagementPage() {
   const rejectMut = trpc.kycDocumentManagement.reject.useMutation({
     onSuccess: () => toast.success("KYC rejected"),
   });
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
   const docs = (data?.documents || []).filter(
     (d: any) =>
       !search || d.agentName?.toLowerCase().includes(search.toLowerCase())

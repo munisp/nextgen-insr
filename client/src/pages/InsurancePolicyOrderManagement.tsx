@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
@@ -8,23 +7,18 @@ export default function InsuranceOrderManagement() {
   const [selectedOrder, setSelectedOrder] = useState<number | null>(null);
   const limit = 20;
 
-  const { data: orders, refetch } = trpc.policyOrders.listOrders.useQuery({
-    status: statusFilter || undefined,
-    limit,
-    offset: page * limit,
-  });
+  // F-12 (S87-02): policyOrders (listOrders/getOrder/updateStatus) has NO
+  // delivered backend — the orders list renders an honest empty state and
+  // status changes fail loud.
+  const orders: { orders?: Array<Record<string, unknown>>; total?: number } | undefined = undefined;
+  const refetch = () => {};
 
-  const { data: orderDetail } = trpc.policyOrders.getOrder.useQuery(
-    { id: selectedOrder! },
-    { enabled: !!selectedOrder }
-  );
+  const orderDetail: Record<string, unknown> | undefined = undefined;
 
-  const updateStatus = trpc.policyOrders.updateStatus.useMutation({
-    onSuccess: () => {
-      refetch();
-      setSelectedOrder(null);
-    },
-  });
+  const updateStatus = {
+    mutate: () => toast.error("Order status updates are not available on this deployment"),
+    isPending: false,
+  };
 
   const statusColors: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-800",

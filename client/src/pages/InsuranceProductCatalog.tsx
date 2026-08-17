@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { trpc } from "@/lib/trpc";
@@ -10,7 +9,7 @@ export default function InsuranceProductCatalog() {
   const limit = 20;
 
   const { data: products, isLoading } =
-    trpc.insuranceCatalog.listProducts.useQuery({
+    trpc.insuranceProductCatalog.listProducts.useQuery({
       limit,
       offset: page * limit,
       categoryId,
@@ -18,8 +17,8 @@ export default function InsuranceProductCatalog() {
       active: true,
     });
 
-  const { data: categories } = trpc.insuranceCatalog.listCategories.useQuery();
-  const { data: lowStock } = trpc.insuranceCatalog.lowStockAlerts.useQuery({
+  const { data: categories } = trpc.insuranceProductCatalog.listCategories.useQuery();
+  const { data: lowStock } = trpc.insuranceProductCatalog.lowStockAlerts.useQuery({
     limit: 10,
   });
 

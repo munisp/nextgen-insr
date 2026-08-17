@@ -1,4 +1,3 @@
-// @ts-nocheck
 import DashboardLayout from "@/components/DashboardLayout";
 import {
   Card,
@@ -483,16 +482,12 @@ function exportComparisonPdf(data: any) {
 export default function LoadTestComparison() {
   const [runIdA, setRunIdA] = useState<string | null>(null);
   const [runIdB, setRunIdB] = useState<string | null>(null);
-
-  // @ts-ignore Sprint 85
   const runsQuery = trpc.loadTestMetrics.listRuns.useQuery({ limit: 50 });
   const runs = runsQuery.data ?? [];
 
   // Auto-select first two runs if available
   const effectiveA = runIdA ?? runs[0]?.id ?? null;
   const effectiveB = runIdB ?? runs[1]?.id ?? null;
-
-  // @ts-ignore Sprint 85
   const comparisonQuery = trpc.loadTestMetrics.compareRuns.useQuery(
     { runIdA: effectiveA!, runIdB: effectiveB! },
     { enabled: !!effectiveA && !!effectiveB && effectiveA !== effectiveB }
@@ -503,7 +498,6 @@ export default function LoadTestComparison() {
 
   const zipfData = useMemo(
     () =>
-      // @ts-ignore Sprint 85
       (cmp?.zipfComparison ?? []).map(d => ({
         label: `#${d.rank}`,
         reqA: d.requestsA,
@@ -513,22 +507,18 @@ export default function LoadTestComparison() {
   );
 
   const timelineRpsA = useMemo(
-    // @ts-ignore Sprint 85
     () => (cmp?.timelineOverlay ?? []).map(t => t.rpsA),
     [cmp]
   );
   const timelineRpsB = useMemo(
-    // @ts-ignore Sprint 85
     () => (cmp?.timelineOverlay ?? []).map(t => t.rpsB),
     [cmp]
   );
   const timelineLatA = useMemo(
-    // @ts-ignore Sprint 85
     () => (cmp?.timelineOverlay ?? []).map(t => t.latencyA),
     [cmp]
   );
   const timelineLatB = useMemo(
-    // @ts-ignore Sprint 85
     () => (cmp?.timelineOverlay ?? []).map(t => t.latencyB),
     [cmp]
   );

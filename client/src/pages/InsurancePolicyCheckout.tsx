@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 
@@ -17,14 +16,17 @@ export default function InsuranceCheckout() {
     phone: "",
   });
 
-  const { data: cart } = trpc.insuranceCart.getCart.useQuery({ customerId });
-  const createOrder = trpc.policyOrders.createFromCart.useMutation({
-    onSuccess: data => {
+  // F-12 (S87-02): insuranceCart.getCart and policyOrders.createFromCart have
+  // NO delivered backend (no cart/orders routers exist). The checkout renders
+  // an honest empty cart and the submit action fails loud.
+  const cart: { items?: Array<Record<string, unknown>> } | undefined = undefined;
+  const createOrder = {
+    mutate: () => {
       setSubmitting(false);
-      setOrderResult(data);
+      toast.error("Policy checkout is not available on this deployment (no orders backend delivered)");
     },
-    onError: () => setSubmitting(false),
-  });
+    isPending: false,
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
