@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { trpc } from "@/lib/trpc";
 import { PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 const COLORS = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#8b5cf6"];
@@ -8,10 +7,8 @@ import KpiCard from "@/components/KpiCard";
 
 export default function RealTimeDashboard() {
   const { user } = useAuth();
-  // @ts-ignore Sprint 85 — Sprint 85: pre-existing type mismatch from router/page interface
-  const { data: flow, isLoading } = trpc.realtime.transactionFlow.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
-  // @ts-ignore Sprint 85
-  const { data: vol } = trpc.realtime.volume.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
+  const { data: flow, isLoading } = trpc.realtimeDashboardWidgets.dashboard.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
+  const { data: vol } = trpc.realtimeDashboardWidgets.getStats.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
 
   const f = flow ?? {};
   const v = vol ?? {};
