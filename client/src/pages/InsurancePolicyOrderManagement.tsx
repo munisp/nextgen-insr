@@ -111,7 +111,7 @@ export default function InsuranceOrderManagement() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500">
-                  {new Date(order.createdAt).toLocaleDateString()}
+                  {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "—"}
                 </td>
                 <td className="px-4 py-3 text-sm">
                   {order.offlineCreated ? (
