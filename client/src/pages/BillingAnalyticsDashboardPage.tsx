@@ -61,8 +61,19 @@ export default function BillingAnalyticsDashboardPage() {
     { enabled: !!user }
   );
 
-  // Real data only — every series below comes from a query response.
-  const data: any = dashboardData.data ?? null;
+  // F-12 (S87-02): liveBillingDashboard.getSummary is deliberately fail-loud
+  // NOT_IMPLEMENTED today — the call stays for honest loading/error states and
+  // every KPI/series renders its empty state ("—" / empty chart) until the
+  // surface is delivered. No pre-existing `any`: typed partial only.
+  const data: Partial<{
+    mrr: number;
+    mrrChange: number;
+    arr: number;
+    revenueChurn: number;
+    avgLtv: number;
+    revenueByMonth: Array<Record<string, unknown>>;
+    mrrGrowth: Array<Record<string, unknown>>;
+  }> = dashboardData.data ?? {};
   const isLoading = dashboardData.isLoading;
 
   const revenueByMonth: any[] = Array.isArray(data?.revenueByMonth)
@@ -326,7 +337,7 @@ export default function BillingAnalyticsDashboardPage() {
     { name: "Premium", value: Number(data?.premium ?? 0) / 1e6 },
   ].filter(d => d.value > 0);
 
-  const kpiValue = (v: any, fmt: (n: number) => string) =>
+  const kpiValue = (v: number | undefined, fmt: (n: number) => string) =>
     v === null || v === undefined || Number.isNaN(Number(v))
       ? "—"
       : fmt(Number(v));

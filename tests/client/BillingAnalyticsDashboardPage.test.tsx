@@ -45,7 +45,7 @@ describe("BillingAnalyticsDashboardPage (client)", () => {
   afterEach(() => cleanup());
 
   it("loading state renders honest placeholders, not fabricated KPIs", () => {
-    setQuery("liveBillingDashboard.getMetrics", { isLoading: true });
+    setQuery("liveBillingDashboard.getSummary", { isLoading: true });
     setQuery("billingProduction.getCohortAnalytics", { isLoading: true });
     setQuery("billingProduction.getRevenueForecast", { isLoading: true });
     render(<BillingAnalyticsDashboardPage />);
@@ -60,7 +60,7 @@ describe("BillingAnalyticsDashboardPage (client)", () => {
   });
 
   it("error state renders the failure banner and no invented metrics", () => {
-    setQuery("liveBillingDashboard.getMetrics", {
+    setQuery("liveBillingDashboard.getSummary", {
       isError: true,
       error: { message: "metrics service offline" },
     });
@@ -80,7 +80,7 @@ describe("BillingAnalyticsDashboardPage (client)", () => {
   });
 
   it("empty state renders 'No data available yet' for empty charts", () => {
-    setQuery("liveBillingDashboard.getMetrics", { data: {} });
+    setQuery("liveBillingDashboard.getSummary", { data: {} });
     setQuery("billingProduction.getCohortAnalytics", { data: [] });
     setQuery("billingProduction.getRevenueForecast", { data: null });
     render(<BillingAnalyticsDashboardPage />);
@@ -93,7 +93,7 @@ describe("BillingAnalyticsDashboardPage (client)", () => {
   });
 
   it("renders real KPI values from the metrics query", () => {
-    setQuery("liveBillingDashboard.getMetrics", {
+    setQuery("liveBillingDashboard.getSummary", {
       data: {
         mrr: 2450000,
         arr: 29400000,
