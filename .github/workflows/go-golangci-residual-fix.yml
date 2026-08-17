@@ -19,6 +19,7 @@ jobs:
         run: |
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
           go install github.com/kisielk/errcheck@latest
+          go install golang.org/x/tools/cmd/goimports@latest
       - name: Stage deadcode-deleter
         run: |
           mkdir -p /tmp/dcd && cp scripts/deadcode-del.go /tmp/dcd/main.go
@@ -116,7 +117,12 @@ jobs:
               n=$( (cd "$d" && golangci-lint run --timeout=5m --enable=errcheck,gosimple,govet,staticcheck --out-format json ./... 2>/dev/null || true) | (cd "$d" && /tmp/dcd/dcd 2>>/tmp/dcd_err.log) | awk '{print $3}')
               [ "${n:-0}" = "0" ] && break
             done
-            (cd "$d" && go mod tidy && gofmt -l -w .) || true
+            (cd "$d" && go mod tidy && goimports -l -w . && gofmt -l -w .) || true
+            # per-module atomicity: never let a transform-broken module reach the commit
+            if ! (cd "$d" && go build ./... && go vet ./...) >/dev/null 2>&1; then
+              echo "REVERTED (transform broke build; needs manual pass): $d"
+              git checkout -- "$d"
+            fi
           done
           echo "--- dcd stderr (if any):"; tail -5 /tmp/dcd_err.log 2>/dev/null || true
       - name: Verify all matrix modules (gate-exact command)
