@@ -239,7 +239,7 @@ export const airtimeVendingRouter = router({
 
   getSummary: protectedProcedure
     .input(z.object({ periodDays: z.number().default(30) }))
-    .query(async ({ ctx, input }) => {
+    .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return { total: 0, volumeNGN: 0, commissionNGN: 0 };
       const since = new Date(Date.now() - input.periodDays * 86400000);
@@ -247,7 +247,7 @@ export const airtimeVendingRouter = router({
         total: count(),
         volume: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)`,
         commission: sql<string>`COALESCE(SUM(CAST(commission AS NUMERIC)), 0)`,
-      }).from(transactions).where(and(eq(transactions.type, "Airtime"), eq(transactions.agentId, ctx.user.id), gte(transactions.createdAt, since), eq(transactions.status, "success")));
+      }).from(transactions).where(and(eq(transactions.type, "Airtime"), gte(transactions.createdAt, since), eq(transactions.status, "success")));
       return { periodDays: input.periodDays, total: Number(stats?.total ?? 0), volumeNGN: Number(stats?.volume ?? 0), commissionNGN: Number(stats?.commission ?? 0) };
     }),
 });
