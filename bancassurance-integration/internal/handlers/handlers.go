@@ -2,9 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"github.com/unified-insurance/bancassurance-integration/internal/service"
 	"net/http"
 	"time"
+
+	"github.com/unified-insurance/bancassurance-integration/internal/service"
 
 	"github.com/google/uuid"
 )

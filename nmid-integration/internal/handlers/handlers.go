@@ -2,8 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
-	"github.com/unified-insurance/nmid-integration/internal/service"
 	"net/http"
+
+	"github.com/unified-insurance/nmid-integration/internal/service"
 
 	"github.com/google/uuid"
 )

@@ -15,6 +15,7 @@ import (
 	"github.com/unified-insurance/nmid-integration/internal/service"
 
 	"database/sql"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 

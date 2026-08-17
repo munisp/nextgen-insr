@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/unified-insurance/nmid-integration/internal/models"
 	"github.com/unified-insurance/nmid-integration/internal/repository"
-	"time"
 
 	"github.com/google/uuid"
 )
