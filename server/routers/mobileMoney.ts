@@ -181,6 +181,10 @@ export const mobileMoneyRouter = router({
           });
           return { idempotent: false, transaction: dispatched.transaction, status: dispatched.status, commission, tbTransferId: tbResult?.id ?? null };
           } catch (e) {
+            // Preserve the provider-safety contract: a DEFINITIVE rejection
+            // from dispatchMobileMoneyOp is a loud PRECONDITION_FAILED (row
+            // already marked failed) — never re-wrap it as a 500.
+            if (e instanceof TRPCError) throw e;
             // Fail-loud: the pending tx row is durable; retry with the same
             // reference resolves via the provider status lookup (idempotent).
             logger.error(`[MobileMoney] Cash-In provider dispatch failed (fail-closed): ${e instanceof Error ? e.message : String(e)}`);
@@ -276,6 +280,10 @@ export const mobileMoneyRouter = router({
           });
           return { idempotent: false, transaction: dispatched.transaction, status: dispatched.status, commission, tbTransferId: tbResult?.id ?? null };
           } catch (e) {
+            // Preserve the provider-safety contract: a DEFINITIVE rejection
+            // from dispatchMobileMoneyOp is a loud PRECONDITION_FAILED (row
+            // already marked failed) — never re-wrap it as a 500.
+            if (e instanceof TRPCError) throw e;
             // Fail-loud: the pending tx row is durable; retry with the same
             // reference resolves via the provider status lookup (idempotent).
             logger.error(`[MobileMoney] Cash-Out provider dispatch failed (fail-closed): ${e instanceof Error ? e.message : String(e)}`);
@@ -320,7 +328,6 @@ export const mobileMoneyRouter = router({
           limit: z.number().min(1).max(100).default(20),
           offset: z.number().min(0).default(0),
         })
-        .default({})
     )
     .query(async ({ input }) => {
       const db = await getDb();
@@ -379,7 +386,6 @@ export const mobileMoneyRouter = router({
           limit: z.number().min(1).max(100).default(20),
           offset: z.number().min(0).default(0),
         })
-        .default({})
     )
     .query(async ({ input }) => {
       const db = await getDb();

@@ -340,7 +340,6 @@ export const networkQualityHeatmapRouter = router({
             .enum(["failRate", "latency", "queueDepth", "agentCount"])
             .default("failRate"),
         })
-        .default({})
     )
     .query(async ({ input }) => {
       const database = await getDb();
@@ -369,7 +368,6 @@ export const networkQualityHeatmapRouter = router({
     .input(
       z
         .object({ limit: z.number().min(1).max(100).default(20) })
-        .default({})
     )
     .query(async ({ input }) => {
       const database = await getDb();
