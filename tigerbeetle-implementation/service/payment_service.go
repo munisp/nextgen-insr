@@ -385,13 +385,13 @@ func (s *PaymentService) getCustomerAccountID(ctx context.Context, customerID st
 
 // ProcessCommissionPayment processes a commission payment to an agent.
 func (s *PaymentService) ProcessCommissionPayment(ctx context.Context, req models.CommissionPaymentRequest) (*models.PaymentResponse, error) {
-	log.Printf("Processing commission payment: AgentID=%s, Amount=%.2f", req.AgentID, req.Amount)
+	log.Printf("Processing commission payment: AgentID=%d, Amount=%.2f", req.AgentID, req.Amount)
 
 	// 1. Get agent account ID
 	agentAccountID := ledger.GenerateAccountID("agent", req.AgentID)
 
 	// 2. Generate unique transfer ID
-	transferID := ledger.GenerateTransferID(fmt.Sprintf("commission-%s-%s", req.PolicyID, req.AgentID), 1)
+	transferID := ledger.GenerateTransferID(fmt.Sprintf("commission-%s-%d", req.PolicyID, req.AgentID), 1)
 
 	// 3. Convert amount to smallest currency unit
 	amountInKobo := ledger.AmountToSmallestUnit(req.Amount, 2)
