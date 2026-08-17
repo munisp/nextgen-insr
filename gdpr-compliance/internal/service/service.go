@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/munisp/NGApp/gdpr-compliance/internal/models"
 	"github.com/munisp/NGApp/gdpr-compliance/internal/repository"
-	"time"
 )
 
 type GDPRService struct{ repo *repository.GDPRRepository }

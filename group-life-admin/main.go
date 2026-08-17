@@ -23,45 +23,6 @@ import (
 )
 
 // Circuit breaker for external HTTP calls
-type circuitBreakerState int
-
-const (
-	cbClosed circuitBreakerState = iota
-	cbOpen
-	cbHalfOpen
-)
-
-type circuitBreaker struct {
-	state       circuitBreakerState
-	failures    int
-	threshold   int
-	resetAfter  time.Duration
-	lastFailure time.Time
-}
-
-var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
-
-func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed {
-		return true
-	}
-	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
-		c.state = cbHalfOpen
-		return true
-	}
-	return c.state == cbHalfOpen
-}
-func (c *circuitBreaker) recordSuccess() {
-	c.failures = 0
-	c.state = cbClosed
-}
-func (c *circuitBreaker) recordFailure() {
-	c.failures++
-	c.lastFailure = time.Now()
-	if c.failures >= c.threshold {
-		c.state = cbOpen
-	}
-}
 
 // GroupLifeService handles group life insurance administration
 type GroupLifeService struct{}
@@ -418,16 +379,6 @@ func validateQueryParam(r *http.Request, key string, maxLen int) (string, error)
 }
 
 // validateRequiredParam validates a required query parameter.
-func validateRequiredParam(r *http.Request, key string, maxLen int) (string, error) {
-	val, err := validateQueryParam(r, key, maxLen)
-	if err != nil {
-		return "", err
-	}
-	if val == "" {
-		return "", fmt.Errorf("parameter %q is required", key)
-	}
-	return val, nil
-}
 
 // validateIntParam validates and converts an integer query parameter.
 func validateIntParam(r *http.Request, key string) (int, error) {
@@ -483,104 +434,8 @@ func initDB() {
 }
 
 // execInTransaction wraps a function in a database transaction.
-func execInTransaction(fn func(tx *sql.Tx) error) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		if p := recover(); p != nil {
-			_ = tx.Rollback()
-			panic(p)
-		}
-	}()
-	if err := fn(tx); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	return tx.Commit()
-}
 
 // otelMiddleware adds trace context propagation to requests.
-func otelMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traceID := r.Header.Get("X-Trace-ID")
-		if traceID == "" {
-			traceID = r.Header.Get("X-Request-Id")
-		}
-		spanID := fmt.Sprintf("span-%d", time.Now().UnixNano())
-		w.Header().Set("X-Trace-ID", traceID)
-		w.Header().Set("X-Span-ID", spanID)
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		duration := time.Since(start)
-		if duration > 500*time.Millisecond {
-			jsonLog("warn", "slow request", "path", r.URL.Path, "duration_ms", fmt.Sprintf("%.0f", float64(duration.Milliseconds())), "trace_id", traceID)
-		}
-	})
-}
-
-type rateLimiter struct {
-	mu       sync.Mutex
-	requests map[string][]time.Time
-	limit    int
-	window   time.Duration
-}
-
-func newRateLimiter(limit int, window time.Duration) *rateLimiter {
-	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
-}
-func (rl *rateLimiter) allow(ip string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	now := time.Now()
-	cutoff := now.Add(-rl.window)
-	var valid []time.Time
-	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) {
-			valid = append(valid, t)
-		}
-	}
-	if len(valid) >= rl.limit {
-		rl.requests[ip] = valid
-		return false
-	}
-	rl.requests[ip] = append(valid, now)
-	return true
-}
-func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-				ip = strings.Split(fwd, ",")[0]
-			}
-			if !rl.allow(strings.TrimSpace(ip)) {
-				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "*"
-		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id, X-Trace-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 func jsonLog(level, msg string, kvs ...string) {
 	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
@@ -589,11 +444,6 @@ func jsonLog(level, msg string, kvs ...string) {
 	}
 	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
 	log.Println(entry)
-}
-
-func isPQClientError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "(22") || strings.Contains(msg, "(23") || strings.Contains(msg, "(42703)") || strings.Contains(msg, "value too long")
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
@@ -1037,46 +887,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 }
 
 // Keycloak JWT authentication middleware
-type jwtClaims struct {
-	UserID   string   `json:"sub"`
-	Email    string   `json:"email"`
-	Username string   `json:"preferred_username"`
-	Roles    []string `json:"realm_access_roles"`
-	TenantID string   `json:"tenant_id"`
-}
 
-func keycloakAuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health/ready/live probes
-		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		// Dev bypass for local development
-		if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("ENVIRONMENT") != "production" {
-			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
-			ctx = context.WithValue(ctx, "tenant_id", "default")
-			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-		auth := r.Header.Get("Authorization")
-		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
-			w.Header().Set("Content-Type", "application/json")
-			jsonLog("warn", "auth_failure", "service", "group-life-admin", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
-			w.WriteHeader(401)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
-			return
-		}
-		// In production: validate JWT against Keycloak JWKS endpoint
-		// For now, decode and pass through (validation handled by APISIX gateway)
-		tokenStr := strings.TrimPrefix(auth, "Bearer ")
-		_ = tokenStr
-		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
-		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
+// Skip auth for health/ready/live probes
+
+// Dev bypass for local development
+
+// In production: validate JWT against Keycloak JWKS endpoint
+// For now, decode and pass through (validation handled by APISIX gateway)
 
 // Permify authorization check
 func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
@@ -1140,111 +957,18 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-func handleGroupEnroll(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
+// employee, spouse, child
 
-	var req struct {
-		GroupID     string  `json:"group_id"`
-		MemberID    string  `json:"member_id"`
-		MemberName  string  `json:"member_name"`
-		DateOfBirth string  `json:"date_of_birth"`
-		SumAssured  float64 `json:"sum_assured"`
-		Category    string  `json:"category"` // employee, spouse, child
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400)
-		return
-	}
-	// Business rule: max sum assured = ₦50M for employees, ₦25M for spouse, ₦10M for child
-	maxSA := map[string]float64{"employee": 50000000, "spouse": 25000000, "child": 10000000}
-	if max, ok := maxSA[req.Category]; ok && req.SumAssured > max {
-		http.Error(w, fmt.Sprintf(`{"error":"sum_assured exceeds max %.0f for %s"}`, max, req.Category), 400)
-		return
-	}
-	// Premium calculation: per-mille rate based on group experience
-	rate := 2.5 // base rate per ₦1000 sum assured per annum
-	var claimsRatio float64
-	if db != nil {
-		_ = db.QueryRow("SELECT COALESCE(SUM(claim_amount)/NULLIF(SUM(premium_paid),0), 0) FROM group_members WHERE group_id=$1", req.GroupID).Scan(&claimsRatio)
-	}
-	// Experience rating adjustment
-	if claimsRatio < 0.4 {
-		rate *= 0.85
-	} // Good experience discount
-	if claimsRatio > 0.8 {
-		rate *= 1.25
-	} // Bad experience loading
-	annualPremium := (req.SumAssured / 1000) * rate
-	enrollID := fmt.Sprintf("GE-%d", time.Now().UnixNano())
-	if db != nil {
-		db.Exec("INSERT INTO group_members (id, group_id, member_id, member_name, date_of_birth, sum_assured, category, annual_premium, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')",
-			enrollID, req.GroupID, req.MemberID, req.MemberName, req.DateOfBirth, req.SumAssured, req.Category, annualPremium)
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"enrollment_id": enrollID, "annual_premium": annualPremium, "rate_per_mille": rate, "experience_adjustment": claimsRatio})
-}
+// Business rule: max sum assured = ₦50M for employees, ₦25M for spouse, ₦10M for child
 
-func handleExperienceRating(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
+// Premium calculation: per-mille rate based on group experience
+// base rate per ₦1000 sum assured per annum
 
-	groupID := r.URL.Query().Get("group_id")
-	if groupID == "" {
-		http.Error(w, `{"error":"group_id required"}`, 400)
-		return
-	}
-	var memberCount int
-	var totalSA, totalPremium, totalClaims float64
-	if db != nil {
-		_ = db.QueryRow("SELECT COUNT(*), COALESCE(SUM(sum_assured),0), COALESCE(SUM(annual_premium),0), COALESCE(SUM(claim_amount),0) FROM group_members WHERE group_id=$1 AND status='active'", groupID).Scan(&memberCount, &totalSA, &totalPremium, &totalClaims)
-	}
-	claimsRatio := 0.0
-	if totalPremium > 0 {
-		claimsRatio = totalClaims / totalPremium
-	}
-	rating := "standard"
-	if claimsRatio < 0.4 {
-		rating = "preferred"
-	}
-	if claimsRatio > 0.8 {
-		rating = "substandard"
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"group_id": groupID, "member_count": memberCount, "total_sum_assured": totalSA, "total_premium": totalPremium, "total_claims": totalClaims, "claims_ratio": claimsRatio, "experience_rating": rating})
-}
+// Experience rating adjustment
 
-func handlePremiumSchedule(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
+// Good experience discount
 
-	groupID := r.URL.Query().Get("group_id")
-	var schedule []map[string]interface{}
-	if db != nil {
-		rows, _ := db.Query("SELECT category, COUNT(*) as members, SUM(sum_assured) as total_sa, SUM(annual_premium) as total_premium FROM group_members WHERE group_id=$1 AND status='active' GROUP BY category", groupID)
-		if rows != nil {
-			defer func() { _ = rows.Close() }()
-			for rows.Next() {
-				var cat string
-				var cnt int
-				var sa, prem float64
-				_ = rows.Scan(&cat, &cnt, &sa, &prem)
-				schedule = append(schedule, map[string]interface{}{"category": cat, "member_count": cnt, "total_sum_assured": sa, "annual_premium": prem, "monthly_premium": prem / 12})
-			}
-		}
-	}
-	if schedule == nil {
-		schedule = []map[string]interface{}{}
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"group_id": groupID, "schedule": schedule})
-}
+// Bad experience loading
 
 func bodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1256,19 +980,6 @@ func bodyLimitMiddleware(next http.Handler) http.Handler {
 }
 
 // Panic recovery middleware - catches panics and returns 500
-func prodRecoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
-				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
 
 func main() {
 	initDB()

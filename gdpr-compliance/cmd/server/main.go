@@ -15,6 +15,7 @@ import (
 	"github.com/munisp/NGApp/gdpr-compliance/internal/service"
 
 	"database/sql"
+
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 

@@ -23,45 +23,6 @@ import (
 )
 
 // Circuit breaker for external HTTP calls
-type circuitBreakerState int
-
-const (
-	cbClosed circuitBreakerState = iota
-	cbOpen
-	cbHalfOpen
-)
-
-type circuitBreaker struct {
-	state       circuitBreakerState
-	failures    int
-	threshold   int
-	resetAfter  time.Duration
-	lastFailure time.Time
-}
-
-var cb = &circuitBreaker{threshold: 5, resetAfter: 30 * time.Second}
-
-func (c *circuitBreaker) allow() bool {
-	if c.state == cbClosed {
-		return true
-	}
-	if c.state == cbOpen && time.Since(c.lastFailure) > c.resetAfter {
-		c.state = cbHalfOpen
-		return true
-	}
-	return c.state == cbHalfOpen
-}
-func (c *circuitBreaker) recordSuccess() {
-	c.failures = 0
-	c.state = cbClosed
-}
-func (c *circuitBreaker) recordFailure() {
-	c.failures++
-	c.lastFailure = time.Now()
-	if c.failures >= c.threshold {
-		c.state = cbOpen
-	}
-}
 
 // ReinsuranceService manages reinsurance operations
 type ReinsuranceService struct{}
@@ -388,16 +349,6 @@ func validateQueryParam(r *http.Request, key string, maxLen int) (string, error)
 }
 
 // validateRequiredParam validates a required query parameter.
-func validateRequiredParam(r *http.Request, key string, maxLen int) (string, error) {
-	val, err := validateQueryParam(r, key, maxLen)
-	if err != nil {
-		return "", err
-	}
-	if val == "" {
-		return "", fmt.Errorf("parameter %q is required", key)
-	}
-	return val, nil
-}
 
 // validateIntParam validates and converts an integer query parameter.
 func validateIntParam(r *http.Request, key string) (int, error) {
@@ -454,104 +405,8 @@ func initDB() {
 }
 
 // execInTransaction wraps a function in a database transaction.
-func execInTransaction(fn func(tx *sql.Tx) error) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		if p := recover(); p != nil {
-			_ = tx.Rollback()
-			panic(p)
-		}
-	}()
-	if err := fn(tx); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	return tx.Commit()
-}
 
 // otelMiddleware adds trace context propagation to requests.
-func otelMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traceID := r.Header.Get("X-Trace-ID")
-		if traceID == "" {
-			traceID = r.Header.Get("X-Request-Id")
-		}
-		spanID := fmt.Sprintf("span-%d", time.Now().UnixNano())
-		w.Header().Set("X-Trace-ID", traceID)
-		w.Header().Set("X-Span-ID", spanID)
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		duration := time.Since(start)
-		if duration > 500*time.Millisecond {
-			jsonLog("warn", "slow request", "path", r.URL.Path, "duration_ms", fmt.Sprintf("%.0f", float64(duration.Milliseconds())), "trace_id", traceID)
-		}
-	})
-}
-
-type rateLimiter struct {
-	mu       sync.Mutex
-	requests map[string][]time.Time
-	limit    int
-	window   time.Duration
-}
-
-func newRateLimiter(limit int, window time.Duration) *rateLimiter {
-	return &rateLimiter{requests: make(map[string][]time.Time), limit: limit, window: window}
-}
-func (rl *rateLimiter) allow(ip string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	now := time.Now()
-	cutoff := now.Add(-rl.window)
-	var valid []time.Time
-	for _, t := range rl.requests[ip] {
-		if t.After(cutoff) {
-			valid = append(valid, t)
-		}
-	}
-	if len(valid) >= rl.limit {
-		rl.requests[ip] = valid
-		return false
-	}
-	rl.requests[ip] = append(valid, now)
-	return true
-}
-func rateLimitMiddleware(rl *rateLimiter) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := r.RemoteAddr
-			if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-				ip = strings.Split(fwd, ",")[0]
-			}
-			if !rl.allow(strings.TrimSpace(ip)) {
-				http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "*"
-		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id, X-Trace-ID")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 
 func jsonLog(level, msg string, kvs ...string) {
 	entry := fmt.Sprintf(`{"level":"%s","msg":"%s"`, level, msg)
@@ -560,11 +415,6 @@ func jsonLog(level, msg string, kvs ...string) {
 	}
 	entry += `,"ts":"` + time.Now().Format(time.RFC3339) + `"}`
 	log.Println(entry)
-}
-
-func isPQClientError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "(22") || strings.Contains(msg, "(23") || strings.Contains(msg, "(42703)") || strings.Contains(msg, "value too long")
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
@@ -1008,46 +858,13 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 }
 
 // Keycloak JWT authentication middleware
-type jwtClaims struct {
-	UserID   string   `json:"sub"`
-	Email    string   `json:"email"`
-	Username string   `json:"preferred_username"`
-	Roles    []string `json:"realm_access_roles"`
-	TenantID string   `json:"tenant_id"`
-}
 
-func keycloakAuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health/ready/live probes
-		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		// Dev bypass for local development
-		if os.Getenv("DEV_AUTH_BYPASS") == "true" && os.Getenv("ENVIRONMENT") != "production" {
-			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
-			ctx = context.WithValue(ctx, "tenant_id", "default")
-			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-		auth := r.Header.Get("Authorization")
-		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
-			w.Header().Set("Content-Type", "application/json")
-			jsonLog("warn", "auth_failure", "service", "reinsurance-management", "remote_addr", r.RemoteAddr, "path", r.URL.Path, "method", r.Method)
-			w.WriteHeader(401)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
-			return
-		}
-		// In production: validate JWT against Keycloak JWKS endpoint
-		// For now, decode and pass through (validation handled by APISIX gateway)
-		tokenStr := strings.TrimPrefix(auth, "Bearer ")
-		_ = tokenStr
-		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
-		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
+// Skip auth for health/ready/live probes
+
+// Dev bypass for local development
+
+// In production: validate JWT against Keycloak JWKS endpoint
+// For now, decode and pass through (validation handled by APISIX gateway)
 
 // Permify authorization check
 func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
@@ -1111,69 +928,12 @@ func initMiddleware() {
 	jsonLog("info", "opensearch_client_initialized", "url", osURL)
 }
 
-func handleTreatyApply(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
+// quota_share, surplus, excess_of_loss
 
-	var req struct {
-		PolicyID     string  `json:"policy_id"`
-		SumInsured   float64 `json:"sum_insured"`
-		Premium      float64 `json:"premium"`
-		TreatyType   string  `json:"treaty_type"` // quota_share, surplus, excess_of_loss
-		RetentionPct float64 `json:"retention_pct"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, 400)
-		return
-	}
-	cessionID := fmt.Sprintf("CES-%d", time.Now().UnixNano())
-	var cededPremium, retainedPremium, cededSI float64
-	switch req.TreatyType {
-	case "quota_share":
-		cessionPct := 1.0 - req.RetentionPct/100.0
-		cededPremium = req.Premium * cessionPct
-		retainedPremium = req.Premium * (req.RetentionPct / 100.0)
-		cededSI = req.SumInsured * cessionPct
-	case "surplus":
-		retention := req.SumInsured * (req.RetentionPct / 100.0)
-		if req.SumInsured > retention {
-			cededSI = req.SumInsured - retention
-			cededPremium = req.Premium * (cededSI / req.SumInsured)
-		}
-		retainedPremium = req.Premium - cededPremium
-	case "excess_of_loss":
-		// XL: flat premium ceded
-		cededPremium = req.Premium * 0.05 // 5% XL rate
-		retainedPremium = req.Premium - cededPremium
-		cededSI = req.SumInsured // full exposure ceded above attachment point
-	}
-	if db != nil {
-		db.Exec("INSERT INTO reinsurance_cessions (id, policy_id, treaty_type, sum_insured, gross_premium, ceded_premium, retained_premium, ceded_si, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())",
-			cessionID, req.PolicyID, req.TreatyType, req.SumInsured, req.Premium, cededPremium, retainedPremium, cededSI)
-	}
-	if kafkaWriter != nil {
-		kafkaWriter.PublishEvent(r.Context(), "cession_created", cessionID, nil)
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"cession_id": cessionID, "treaty_type": req.TreatyType, "gross_premium": req.Premium, "ceded_premium": cededPremium, "retained_premium": retainedPremium, "ceded_sum_insured": cededSI})
-}
+// XL: flat premium ceded
+// 5% XL rate
 
-func handleTreatySummary(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-
-	var quotaCeded, surplusCeded, xlCeded float64
-	var totalCessions int
-	if db != nil {
-		_ = db.QueryRow("SELECT COUNT(*), COALESCE(SUM(CASE WHEN treaty_type='quota_share' THEN ceded_premium END),0), COALESCE(SUM(CASE WHEN treaty_type='surplus' THEN ceded_premium END),0), COALESCE(SUM(CASE WHEN treaty_type='excess_of_loss' THEN ceded_premium END),0) FROM reinsurance_cessions").Scan(&totalCessions, &quotaCeded, &surplusCeded, &xlCeded)
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"total_cessions": totalCessions, "quota_share_ceded": quotaCeded, "surplus_ceded": surplusCeded, "xl_ceded": xlCeded, "total_ceded": quotaCeded + surplusCeded + xlCeded})
-}
+// full exposure ceded above attachment point
 
 func bodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1185,19 +945,6 @@ func bodyLimitMiddleware(next http.Handler) http.Handler {
 }
 
 // Panic recovery middleware - catches panics and returns 500
-func prodRecoveryMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err := recover(); err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusInternalServerError)
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "internal server error", "recovered": true})
-				log.Printf(`{"level":"error","msg":"panic recovered","error":"%v","path":"%s","method":"%s"}`, err, r.URL.Path, r.Method)
-			}
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
 
 func main() {
 	initDB()

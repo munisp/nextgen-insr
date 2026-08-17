@@ -84,10 +84,6 @@ func (rc *RedisCache) GetSession(ctx context.Context, sessionID string) (*models
 }
 
 // deleteSession removes a session from Redis.
-func (rc *RedisCache) deleteSession(ctx context.Context, sessionID string) error {
-	key := sessionKeyPrefix + sessionID
-	return rc.client.Del(ctx, key).Err()
-}
 
 // --- Rate limiting ---
 
@@ -110,38 +106,10 @@ func (rc *RedisCache) IsRateLimited(ctx context.Context, phone string) bool {
 
 // saveMenuState caches the USSDMenuState for a session so that a quick
 // reconnect can resume exactly where the user left off.
-func (rc *RedisCache) saveMenuState(ctx context.Context, sessionID string, state *models.USSDMenuState) error {
-	key := sessionKeyPrefix + sessionID + ":menu_state"
-	data, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("redis: marshal menu state: %w", err)
-	}
-	return rc.client.Set(ctx, key, data, sessionTTL).Err()
-}
 
 // getMenuState retrieves the cached USSDMenuState.
-func (rc *RedisCache) getMenuState(ctx context.Context, sessionID string) (*models.USSDMenuState, error) {
-	key := sessionKeyPrefix + sessionID + ":menu_state"
-	raw, err := rc.client.Get(ctx, key).Result()
-	if err == redis.Nil {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("redis: get menu state: %w", err)
-	}
-
-	var state models.USSDMenuState
-	if err := json.Unmarshal([]byte(raw), &state); err != nil {
-		return nil, fmt.Errorf("redis: unmarshal menu state: %w", err)
-	}
-	return &state, nil
-}
 
 // deleteMenuState removes the cached menu state for a session.
-func (rc *RedisCache) deleteMenuState(ctx context.Context, sessionID string) error {
-	key := sessionKeyPrefix + sessionID + ":menu_state"
-	return rc.client.Del(ctx, key).Err()
-}
 
 // --- Convenience helpers for atomic session updates ---
 

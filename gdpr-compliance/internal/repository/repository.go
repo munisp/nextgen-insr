@@ -2,10 +2,11 @@ package repository
 
 import (
 	"context"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/munisp/NGApp/gdpr-compliance/internal/models"
 	"gorm.io/gorm"
-	"time"
 )
 
 type GDPRRepository struct{ db *gorm.DB }

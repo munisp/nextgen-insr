@@ -2,8 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
-	"github.com/unified-insurance/group-life-admin/internal/service"
 	"net/http"
+
+	"github.com/unified-insurance/group-life-admin/internal/service"
 
 	"github.com/google/uuid"
 )

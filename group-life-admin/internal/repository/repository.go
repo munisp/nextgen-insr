@@ -2,8 +2,9 @@ package repository
 
 import (
 	"context"
-	"github.com/unified-insurance/group-life-admin/internal/models"
 	"time"
+
+	"github.com/unified-insurance/group-life-admin/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
