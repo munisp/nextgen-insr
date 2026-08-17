@@ -13,8 +13,8 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// db holds the package-level connection used by the legacy integration tests below.
-var db *sql.DB
+// testConn holds the package-level connection used by the legacy integration tests below.
+var testConn *sql.DB
 
 func getTestDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -81,20 +81,20 @@ func TestIntegration_HealthEndpoint(t *testing.T) {
 		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
 	}
 	var err error
-	db, err = sql.Open("postgres", dbURL)
+	testConn, err = sql.Open("postgres", dbURL)
 	if err != nil {
 		t.Skipf("Skipping: %v", err)
 	}
-	if err = db.Ping(); err != nil {
+	if err = testConn.Ping(); err != nil {
 		t.Skipf("Skipping (DB unreachable): %v", err)
 	}
-	defer func() { db = nil }()
+	defer func() { testConn = nil }()
 
 	// Health check via DB ping (inline handler pattern)
-	if db == nil {
+	if testConn == nil {
 		t.Fatal("Expected db to be initialized")
 	}
-	if err := db.Ping(); err != nil {
+	if err := testConn.Ping(); err != nil {
 		t.Fatalf("Expected DB ping to succeed, got %v", err)
 	}
 	t.Log("Health check passed: database connected")
@@ -106,14 +106,14 @@ func TestIntegration_ReadyEndpoint(t *testing.T) {
 		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
 	}
 	var err error
-	db, err = sql.Open("postgres", dbURL)
+	testConn, err = sql.Open("postgres", dbURL)
 	if err != nil {
 		t.Skipf("Skipping: %v", err)
 	}
-	if err = db.Ping(); err != nil {
+	if err = testConn.Ping(); err != nil {
 		t.Skipf("Skipping (DB unreachable): %v", err)
 	}
-	defer func() { db = nil }()
+	defer func() { testConn = nil }()
 
 	req := httptest.NewRequest("GET", "/ready", nil)
 	w := httptest.NewRecorder()
@@ -156,14 +156,14 @@ func TestIntegration_APIEndpoint(t *testing.T) {
 		dbURL = "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"
 	}
 	var err error
-	db, err = sql.Open("postgres", dbURL)
+	testConn, err = sql.Open("postgres", dbURL)
 	if err != nil {
 		t.Skipf("Skipping: %v", err)
 	}
-	if err = db.Ping(); err != nil {
+	if err = testConn.Ping(); err != nil {
 		t.Skipf("Skipping (DB unreachable): %v", err)
 	}
-	defer func() { db = nil }()
+	defer func() { testConn = nil }()
 
 	body := `{"userId":"USR-GAM-INT-001","action":"policy_purchase","points":50}`
 	req := httptest.NewRequest("POST", "/api/v1/award", bytes.NewBufferString(body))
