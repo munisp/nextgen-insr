@@ -864,13 +864,13 @@ func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID s
 		tenantID = tid
 	}
 	url := fmt.Sprintf("http://%s/v1/tenants/%s/permissions/check", permifyAddr, neturl.PathEscape(tenantID))
-	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data)))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(data))) // #nosec G704 -- safe-by-construction: scheme+host come from operator-controlled PERMIFY_ADDR env (not attacker-influenced); the only request-derived component (tenantID) is url-escaped via neturl.PathEscape before path interpolation, so host/port/scheme cannot be manipulated
 	if err != nil {
 		return true
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- safe-by-construction: scheme+host come from operator-controlled PERMIFY_ADDR env (not attacker-influenced); the only request-derived component (tenantID) is url-escaped via neturl.PathEscape before path interpolation, so host/port/scheme cannot be manipulated
 	if err != nil {
 		jsonLog("warn", "permify_check_failed", "error", err.Error())
 		return true // Fail open
