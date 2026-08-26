@@ -14,7 +14,7 @@
  */
 import crypto from "crypto";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import Stripe from "stripe";
 
@@ -165,6 +165,27 @@ export async function handleStripeWebhook(req: Request, res: Response) {
   }
 
   try {
+    // Durable exactly-once gate (F5): Stripe delivery is at-least-once, so
+    // duplicate deliveries are NORMAL. The webhook_events row keyed by the
+    // Stripe event id is inserted BEFORE any side effect (audit rows,
+    // ledger writes, event publishes, notifications); a conflict means a
+    // prior delivery already ran them — acknowledge without re-running.
+    // The marker is deleted on processing failure (see catch) so Stripe's
+    // automatic redelivery is retried rather than silently dropped.
+    const dedupe = await db.execute(sql`
+      INSERT INTO webhook_events (event_id, provider, event_type, processed_at)
+      VALUES (${event.id}, 'stripe', ${event.type}, NOW())
+      ON CONFLICT (event_id) DO NOTHING
+      RETURNING event_id
+    `);
+    if (dedupe.rows.length === 0) {
+      logger.info(
+        { eventId: event.id, eventType: event.type },
+        "[Stripe Webhook] Duplicate delivery — already processed, skipping side effects (idempotent)"
+      );
+      return res.json({ received: true, duplicate: true });
+    }
+
     switch (event.type) {
       // ─── Invoice Paid ─────────────────────────────────────────────────
       case "invoice.paid": {
@@ -462,6 +483,16 @@ export async function handleStripeWebhook(req: Request, res: Response) {
     return res.json({ received: true });
   } catch (err: any) {
     logger.error({ eventType: event.type, err: err.message }, "[Stripe Webhook] Error processing event");
+    // Roll back the dedupe marker: processing failed, so Stripe's automatic
+    // redelivery of this event MUST be allowed to run the side effects.
+    try {
+      await db.execute(sql`DELETE FROM webhook_events WHERE event_id = ${event.id}`);
+    } catch (cleanupErr) {
+      logger.error(
+        { eventId: event.id, err: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr) },
+        "[Stripe Webhook] Failed to roll back dedupe marker after processing error"
+      );
+    }
     await publishBillingEvent("billing.webhook.error", {
       eventId: event.id,
       eventType: event.type,

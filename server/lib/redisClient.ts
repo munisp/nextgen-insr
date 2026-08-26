@@ -86,8 +86,13 @@ export async function pingRedis(): Promise<number | null> {
 }
 
 /**
- * Acquire a distributed lock. Returns true if lock was acquired.
+ * Acquire a distributed lock. Returns true ONLY if the lock was acquired.
  * Lock expires after ttlMs milliseconds.
+ *
+ * FAIL-CLOSED (F4): a Redis error means mutual exclusion cannot be
+ * guaranteed, so the lock is reported as NOT acquired and every caller
+ * refuses the money operation. The previous fail-open behavior let
+ * concurrent duplicate debits through exactly when Redis degraded.
  */
 export async function acquireLock(
   key: string,
@@ -97,8 +102,11 @@ export async function acquireLock(
     const client = getRedisClient();
     const result = await client.set(`lock:${key}`, "1", "PX", ttlMs, "NX");
     return result === "OK";
-  } catch {
-    return true; // fail-open: allow operation if Redis is down
+  } catch (err) {
+    logger.warn(
+      `[Redis] Lock acquisition failed for '${key}' — refusing operation (fail-closed): ${err instanceof Error ? err.message : String(err)}`
+    );
+    return false;
   }
 }
 

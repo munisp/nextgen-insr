@@ -52,10 +52,17 @@ export const merchantPaymentsRouter = router({
       const [{ dailyTotal }] = await db.select({ dailyTotal: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)` })
         .from(transactions).where(and(eq(transactions.agentId, input.agentId), sql`${transactions.metadata}->>'category' = 'merchant_payment'`, gte(transactions.createdAt, today), eq(transactions.status, "success")));
       if (Number(dailyTotal ?? 0) + input.amountNGN > DAILY_LIMIT) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Daily limit ₦${DAILY_LIMIT.toLocaleString()} exceeded` });
-      const lockKey = `merchant-pay:${input.agentId}:${input.reference}`;
+      // Lock per AGENT (not per reference): the balance mutation must be
+      // serialized against ALL concurrent payments for this agent, not just
+      // same-reference retries.
+      const lockKey = `merchant-pay:${input.agentId}`;
       const locked = await acquireLock(lockKey, 15_000);
-      if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Payment in progress" });
+      if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Another payment is in progress for this agent" });
       try {
+        // Re-check idempotency inside the lock: the pre-check above ran
+        // outside it, so a same-reference twin could have committed since.
+        const existingLocked = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
+        if (existingLocked.length > 0) return { idempotent: true, transaction: existingLocked[0] };
         await tbEnsureAgentAccount(agent.agentId);
         const mdrFee = Math.round(input.amountNGN * MDR * 100) / 100;
         const merchantAmount = input.amountNGN - mdrFee;
@@ -64,17 +71,43 @@ export const merchantPaymentsRouter = router({
           amount: Math.round(merchantAmount * 100), ledger: 2000, code: 300,
           ref: input.reference, txType: "Merchant Payment", agentId: agent.agentId,
         });
-        const newBalance = agentBalance - input.amountNGN;
-        await db.update(agents).set({ premiumReserve: String(newBalance), updatedAt: new Date() }).where(eq(agents.id, input.agentId));
         const txType = input.paymentMethod === "card" ? "Card Payment" as const
           : input.paymentMethod === "qr" ? "QR Payment" as const : "Transfer" as const;
-        const [tx] = await db.insert(transactions).values({
-          ref: input.reference, agentId: input.agentId, type: txType,
-          amount: String(input.amountNGN), fee: String(mdrFee), commission: "0",
-          channel: ({ card: "Card", transfer: "Internal", qr: "QR", ussd: "USSD" } as const)[input.paymentMethod], status: "success", fraudScore: "0.00",
-          metadata: { tbSyncStatus: tbResult ? "synced" : "pending", category: "merchant_payment", merchantRef: input.reference, merchantId: input.merchantId, mdrFee, merchantAmount, description: input.description ?? null, tbTransferId: tbResult?.id ?? null },
-        }).returning();
-        await db.insert(auditLog).values({ action: "MERCHANT_PAYMENT", resource: "merchant_payment", resourceId: input.reference, status: "success", metadata: { merchantId: input.merchantId, amountNGN: input.amountNGN } }).catch(() => {});
+        // Atomic multi-write (F4): guarded balance debit + transaction row +
+        // audit row in ONE transaction. The debit is a single guarded
+        // statement (SET balance = balance - amount WHERE balance >= amount)
+        // with row-count verification — no stale-read blind write, and a
+        // concurrent balance change fails closed instead of losing updates.
+        let committed: { row: typeof transactions.$inferSelect; newBalance: number };
+        try {
+          committed = await db.transaction(async tx => {
+            const debited = await tx.update(agents)
+              .set({ premiumReserve: sql`${agents.premiumReserve} - ${input.amountNGN}`, updatedAt: new Date() })
+              .where(and(eq(agents.id, input.agentId), sql`${agents.premiumReserve} >= ${input.amountNGN}`))
+              .returning({ premiumReserve: agents.premiumReserve });
+            if (debited.length === 0) {
+              throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Insufficient float (balance changed concurrently)" });
+            }
+            const [row] = await tx.insert(transactions).values({
+              ref: input.reference, agentId: input.agentId, type: txType,
+              amount: String(input.amountNGN), fee: String(mdrFee), commission: "0",
+              channel: ({ card: "Card", transfer: "Internal", qr: "QR", ussd: "USSD" } as const)[input.paymentMethod], status: "success", fraudScore: "0.00",
+              metadata: { tbSyncStatus: tbResult ? "synced" : "pending", category: "merchant_payment", merchantRef: input.reference, merchantId: input.merchantId, mdrFee, merchantAmount, description: input.description ?? null, tbTransferId: tbResult?.id ?? null },
+            }).returning();
+            await tx.insert(auditLog).values({ action: "MERCHANT_PAYMENT", resource: "merchant_payment", resourceId: input.reference, status: "success", metadata: { merchantId: input.merchantId, amountNGN: input.amountNGN } });
+            return { row, newBalance: Number(debited[0].premiumReserve) };
+          });
+        } catch (err) {
+          // Unique violation on transactions.ref: a same-reference twin
+          // committed between the in-lock re-check and our insert. The
+          // transaction rolled back (no debit); return the winner's row.
+          if (typeof err === "object" && err !== null && "code" in err && err.code === "23505") {
+            const [winner] = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
+            if (winner) return { idempotent: true, transaction: winner };
+          }
+          throw err;
+        }
+        const { row: tx, newBalance } = committed;
         // Sprint 44 wiring (F-12): event fan-out + status cache. Best-effort
         // AFTER the funds effect is durable (TB transfer + Postgres row).
         try {
