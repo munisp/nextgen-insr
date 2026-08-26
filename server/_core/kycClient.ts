@@ -1,15 +1,18 @@
 /**
  * KYC Client — HTTP proxy helpers for KYC/KYB microservices
  *
- * Services proxied:
- *  1. Biometric Verification Orchestrator  (BIOMETRIC_SERVICE_URL, default: http://localhost:8046)
- *  2. Liveness Detection Service           (LIVENESS_SERVICE_URL, default: http://localhost:8104)
- *  3. Face Matching Service                (FACE_MATCHING_SERVICE_URL, default: http://localhost:8105)
- *  4. Deepfake Detection Service           (DEEPFAKE_SERVICE_URL, default: http://localhost:8106)
- *  5. Video-KYC liveness (legacy)          (KYC_SERVICE_URL, default: https://videokyc.insureportal.io)
- *  6. PaddleOCR document service           (PADDLEOCR_SERVICE_URL, default: https://ocr.insureportal.io)
- *  7. Compliance-KYC record store          (COMPLIANCE_KYC_URL, default: https://kyc.insureportal.io)
- *  8. DeepFace Service                     (DEEPFACE_SERVICE_URL, default: http://localhost:8133)
+ * Services proxied (DD-LEGACY #18: all URLs are env-required — the previous
+ * defaults pointed at nonexistent services/ports and fabricated public
+ * hosts such as videokyc.insureportal.io / ocr.insureportal.io /
+ * kyc.insureportal.io):
+ *  1. Biometric Verification Orchestrator  (BIOMETRIC_SERVICE_URL)
+ *  2. Liveness Detection Service           (LIVENESS_SERVICE_URL)
+ *  3. Face Matching Service                (FACE_MATCHING_SERVICE_URL)
+ *  4. Deepfake Detection Service           (DEEPFAKE_SERVICE_URL)
+ *  5. Video-KYC liveness (legacy)          (KYC_SERVICE_URL)
+ *  6. PaddleOCR document service           (PADDLEOCR_SERVICE_URL)
+ *  7. Compliance-KYC record store          (COMPLIANCE_KYC_URL)
+ *  8. DeepFace Service                     (DEEPFACE_SERVICE_URL)
  *
  * All calls are fail-safe: if the downstream service is unavailable the
  * function returns a structured error object rather than throwing, so the
@@ -18,23 +21,16 @@
 
 import { ENV } from "./env.js";
 
-// ── Service URLs ────────────────────────────────────────────────────────────
-const BIOMETRIC_SERVICE_URL =
-  (ENV as any).BIOMETRIC_SERVICE_URL ?? "http://localhost:8046";
-const LIVENESS_SERVICE_URL =
-  (ENV as any).LIVENESS_SERVICE_URL ?? "http://localhost:8104";
+// ── Service URLs (no fabricated defaults — unconfigured means unavailable) ──
+const BIOMETRIC_SERVICE_URL = (ENV as any).BIOMETRIC_SERVICE_URL ?? "";
+const LIVENESS_SERVICE_URL = (ENV as any).LIVENESS_SERVICE_URL ?? "";
 const FACE_MATCHING_SERVICE_URL =
-  (ENV as any).FACE_MATCHING_SERVICE_URL ?? "http://localhost:8105";
-const DEEPFAKE_SERVICE_URL =
-  (ENV as any).DEEPFAKE_SERVICE_URL ?? "http://localhost:8106";
-const KYC_SERVICE_URL =
-  (ENV as any).KYC_SERVICE_URL ?? "https://videokyc.insureportal.io";
-const PADDLEOCR_URL =
-  (ENV as any).PADDLEOCR_SERVICE_URL ?? "https://ocr.insureportal.io";
-const COMPLIANCE_KYC_URL =
-  (ENV as any).COMPLIANCE_KYC_URL ?? "https://kyc.insureportal.io";
-const DEEPFACE_SERVICE_URL =
-  (ENV as any).DEEPFACE_SERVICE_URL ?? "http://localhost:8133";
+  (ENV as any).FACE_MATCHING_SERVICE_URL ?? "";
+const DEEPFAKE_SERVICE_URL = (ENV as any).DEEPFACE_SERVICE_URL ?? "";
+const KYC_SERVICE_URL = (ENV as any).KYC_SERVICE_URL ?? "";
+const PADDLEOCR_URL = (ENV as any).PADDLEOCR_SERVICE_URL ?? "";
+const COMPLIANCE_KYC_URL = (ENV as any).COMPLIANCE_KYC_URL ?? "";
+const DEEPFACE_SERVICE_URL = (ENV as any).DEEPFACE_SERVICE_URL ?? "";
 
 const TIMEOUT_MS = 30_000;
 
@@ -44,6 +40,15 @@ async function kycFetch(
   init: RequestInit = {},
   timeoutMs = TIMEOUT_MS
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
+  // DD-LEGACY: an unconfigured service (empty base URL) is reported as
+  // unavailable instead of attempting a fetch against a fabricated host.
+  if (url.startsWith("/")) {
+    return {
+      ok: false,
+      status: 0,
+      data: { error: "KYC service URL not configured" },
+    };
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

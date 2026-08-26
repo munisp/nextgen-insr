@@ -20,8 +20,12 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="InsurePortal Dynamic Pricing Engine", version="1.0.0")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/insureportal")
-CLIMATE_RISK_URL = os.getenv("CLIMATE_RISK_URL", "http://climate-risk-service:8107")
-TELEMATICS_URL = os.getenv("TELEMATICS_ENGINE_URL", "http://telematics-engine:8097")
+# DD-LEGACY (F2 #15): phantom/wrong-host defaults removed (climate-risk-service
+# does not exist; 8097 is not the telematics engine). Each factor source is
+# used only when explicitly configured; a configured-but-failed source fails
+# the quote loudly instead of silently zeroing the factor.
+CLIMATE_RISK_URL = os.getenv("CLIMATE_RISK_URL", "")
+TELEMATICS_URL = os.getenv("TELEMATICS_ENGINE_URL", "")
 
 
 class PricingRequest(BaseModel):
@@ -42,6 +46,9 @@ class PricingResponse(BaseModel):
     discount_pct: float
     net_adjustment_pct: float
     factors: Dict[str, float]
+    # DD-LEGACY: factors whose data source is not wired in this deployment —
+    # omitted from `factors` rather than silently zeroed.
+    factors_unavailable: list[str] = []
     valid_until: str
     pricing_model: str
 
@@ -58,6 +65,7 @@ async def calculate_price(req: PricingRequest):
     Returns the adjusted premium with a breakdown of all loading/discount factors.
     """
     factors: Dict[str, float] = {}
+    factors_unavailable: list[str] = []
     total_loading = 0.0
     total_discount = 0.0
 
@@ -76,7 +84,10 @@ async def calculate_price(req: PricingRequest):
             factors["time_of_day"] = 0.0
 
     # ── 2. Climate/weather risk factor ───────────────────────────────────────
-    if req.latitude and req.longitude:
+    if req.latitude and req.longitude and not CLIMATE_RISK_URL:
+        # No climate-risk source wired — omit the factor honestly.
+        factors_unavailable.append("climate_risk")
+    elif req.latitude and req.longitude:
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.post(f"{CLIMATE_RISK_URL}/api/v1/score", json={
@@ -97,8 +108,21 @@ async def calculate_price(req: PricingRequest):
                         climate_loading = 0.0
                     factors["climate_risk"] = climate_loading
                     total_loading += climate_loading
-        except Exception:
-            factors["climate_risk"] = 0.0
+                elif resp.status_code:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"climate-risk service returned HTTP {resp.status_code} — premium cannot be computed honestly (fail-closed)",
+                    )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            # DD-LEGACY: was silently zeroed — premiums priced without the
+            # climate loading. Fail loud instead.
+            logger.error("climate-risk service failed: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail="climate-risk service unavailable — premium cannot be computed honestly (fail-closed)",
+            )
 
     # ── 3. Portfolio concentration factor ────────────────────────────────────
     try:
@@ -128,7 +152,9 @@ async def calculate_price(req: PricingRequest):
         factors["portfolio_concentration"] = 0.0
 
     # ── 4. Telematics/UBI factor (motor only) ────────────────────────────────
-    if req.product_type == "motor" and req.policy_id:
+    if req.product_type == "motor" and req.policy_id and not TELEMATICS_URL:
+        factors_unavailable.append("ubi_telematics")
+    elif req.product_type == "motor" and req.policy_id:
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(
@@ -147,8 +173,15 @@ async def calculate_price(req: PricingRequest):
                         ubi_loading = (70 - driving_score) * 0.5
                         factors["ubi_telematics"] = ubi_loading
                         total_loading += ubi_loading
-        except Exception:
-            factors["ubi_telematics"] = 0.0
+        except HTTPException:
+            raise
+        except Exception as exc:
+            # DD-LEGACY: was silently zeroed. Fail loud instead.
+            logger.error("telematics service failed: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail="telematics service unavailable — premium cannot be computed honestly (fail-closed)",
+            )
 
     # ── 5. Customer loyalty factor ────────────────────────────────────────────
     if req.customer_id:
@@ -215,6 +248,7 @@ async def calculate_price(req: PricingRequest):
         discount_pct=round(total_discount, 2),
         net_adjustment_pct=round(net_adjustment, 2),
         factors=factors,
+        factors_unavailable=factors_unavailable,
         valid_until=valid_until.isoformat(),
         pricing_model="dynamic-v2",
     )

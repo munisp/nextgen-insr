@@ -9,6 +9,9 @@ services:
     ports:
       - "5002:5002"
     environment:
+      # DD-LEGACY (F2 #30): app defaults to PORT 3000 — pin 5002 so the
+      # published port and healthcheck actually reach the server.
+      - PORT=5002
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/ngapp
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production

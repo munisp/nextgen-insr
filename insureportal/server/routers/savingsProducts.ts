@@ -168,42 +168,28 @@ export const savingsProductsRouter = router({
   }),
 
   // ── Sprint 28 domain procedures ──
+  // DD-LEGACY: previously returned a fabricated savings product, a fake
+  // account with a ₦250,000 balance, and invented ₦50M/₦750M analytics.
+  // Money-path reads must be real or loud — these fail loud.
   products: protectedProcedure.query(async () => {
-    return {
-      products: [
-        {
-          id: "SP-001",
-          name: "Agent Savings",
-          interestRate: 8,
-          minBalance: 10000,
-          status: "active",
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "savingsProducts.products is not implemented: no savings product catalog is persisted in this service. Previously returned a fabricated demo product.",
+    });
   }),
   list: protectedProcedure.query(async () => {
-    return {
-      accounts: [
-        {
-          id: "SA-001",
-          productId: "SP-001",
-          agentId: "AGT-001",
-          balance: 250000,
-          status: "active",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "savingsProducts.list is not implemented: no savings account store exists in this service. Previously returned a fabricated account balance.",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalAccounts: 200,
-      activeAccounts: 180,
-      totalBalance: 50000000,
-      avgBalance: 250000,
-      interestPaid: 4000000,
-      totalDeposits: 750000000,
-      totalInterestPaid: 4000000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "savingsProducts.analytics is not implemented: no savings analytics pipeline exists in this service. Previously returned fabricated balance/deposit figures.",
+    });
   }),
 });

@@ -10,12 +10,18 @@ import { getDb } from "../db";
 
 
 const LAKEHOUSE_URL = process.env.LAKEHOUSE_SERVICE_URL ?? "http://localhost:8156";
-const LAKEHOUSE_TOKEN = process.env.LAKEHOUSE_SERVICE_TOKEN ?? "dev-token";
+// DD-LEGACY (#26): no "dev-token" default — the Authorization header is only
+// sent when a real token is configured.
+const LAKEHOUSE_TOKEN = process.env.LAKEHOUSE_SERVICE_TOKEN ?? "";
 
 async function lakehouseFetch(path: string, opts: RequestInit = {}): Promise<unknown> {
   const res = await fetch(`${LAKEHOUSE_URL}${path}`, {
     ...opts,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${LAKEHOUSE_TOKEN}`, ...(opts.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(LAKEHOUSE_TOKEN ? { Authorization: `Bearer ${LAKEHOUSE_TOKEN}` } : {}),
+      ...(opts.headers ?? {}),
+    },
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) throw new Error(`Lakehouse ${res.status}: ${await res.text().catch(() => "")}`);
@@ -68,7 +74,13 @@ export const lakehouseAiIntegrationRouter = router({
   // Real analytics from PostgreSQL + lakehouse service
   analytics: protectedProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return { totalQueries: 0, avgLatencyMs: 0, storageUsedGb: 0, tablesCount: 0 };
+    if (!db) {
+      // DD-LEGACY: zeroed stats on DB outage would fabricate "no activity".
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "lakehouse stats unavailable: database is not reachable",
+      });
+    }
     // Count AI audit events as proxy for queries
     const [{ total: totalQueries }] = await db.select({ total: count() }).from(auditLog)
       .where(sql`action LIKE 'AI_%' OR action LIKE 'ML_%'`);
@@ -82,7 +94,9 @@ export const lakehouseAiIntegrationRouter = router({
     } catch { /* lakehouse service may be offline */ }
     return {
       totalQueries: Number(totalQueries),
-      avgLatencyMs: 42, // From monitoring
+      // DD-LEGACY (#26): was a hardcoded 42 presented as a monitored metric.
+      // No latency source exists here — report honest null.
+      avgLatencyMs: null as number | null,
       storageUsedGb,
       tablesCount,
     };

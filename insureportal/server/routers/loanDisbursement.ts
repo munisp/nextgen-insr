@@ -93,40 +93,28 @@ export const loanDisbursementRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
+  // DD-LEGACY: these endpoints previously returned hardcoded demo data
+  // (a fabricated ₦500,000 "disbursed" loan, a fake product catalog, and
+  // invented portfolio analytics). They now fail loud.
   list: protectedProcedure.query(async () => {
-    return {
-      applications: [
-        {
-          id: "LA-001",
-          agentId: "AGT-001",
-          amount: 500000,
-          status: "disbursed",
-          productId: "LP-001",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "loanDisbursement.list is not implemented: use agentLoanFacility.list, which queries the real agentLoans table. Previously returned fabricated demo applications.",
+    });
   }),
   products: protectedProcedure.query(async () => {
-    return {
-      products: [
-        {
-          id: "LP-001",
-          name: "Agent Working Capital",
-          maxAmount: 2000000,
-          interestRate: 15,
-          tenorMonths: 12,
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "loanDisbursement.products is not implemented: no loan product catalog is persisted in this service. Previously returned a fabricated demo product.",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalApplications: 200,
-      totalDisbursed: 50000000,
-      activeLoans: 120,
-      defaultRate: 2.5,
-      avgLoanSize: 400000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "loanDisbursement.analytics is not implemented: use agentLoanFacility.portfolioSummary for real portfolio figures. Previously returned fabricated analytics.",
+    });
   }),
 });

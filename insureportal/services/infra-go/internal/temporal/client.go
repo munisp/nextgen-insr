@@ -152,16 +152,13 @@ func (c *Client) StartWorkflow(ctx context.Context, req StartWorkflowRequest) (*
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		// Fail-open: return a mock status when Temporal is unavailable
-		c.logger.Warn("Temporal unavailable, returning mock workflow status",
+		// FAIL-LOUD (DD-LEGACY): previously returned a fabricated
+		// "QUEUED_OFFLINE" workflow status when Temporal was unreachable.
+		// The error now propagates so no phantom workflow state is reported.
+		c.logger.Error("Temporal unavailable — refusing to fabricate workflow status",
 			zap.String("workflowType", req.WorkflowType),
 			zap.Error(err))
-		return &WorkflowStatus{
-			WorkflowID:   req.WorkflowID,
-			Status:       "QUEUED_OFFLINE",
-			WorkflowType: req.WorkflowType,
-			StartTime:    time.Now(),
-		}, nil
+		return nil, fmt.Errorf("temporal unavailable (workflow %s): %w", req.WorkflowID, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

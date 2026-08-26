@@ -147,30 +147,21 @@ export const taxCollectionRouter = router({
       ],
     };
   }),
+  // DD-LEGACY: history/analytics previously returned a fabricated "remitted"
+  // ₦75,000 payment and invented ₦15M collection analytics. Money-path reads
+  // must be real or loud — these fail loud.
   history: protectedProcedure.query(async () => {
-    return {
-      payments: [
-        {
-          id: "TC-001",
-          taxType: "VAT",
-          amount: 75000,
-          status: "remitted",
-          paidAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "taxCollection.history is not implemented: no tax payment store exists in this service. Previously returned a fabricated 'remitted' payment.",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalPayments: 15000,
-      totalVolume: 15000000,
-      totalCommission: 750000,
-      totalCollected: 15000000,
-      totalRemitted: 14500000,
-      pending: 500000,
-      byType: { VAT: 10000000, WHT: 5000000 },
-      successRate: 97.5,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "taxCollection.analytics is not implemented: no tax analytics pipeline exists in this service. Previously returned fabricated collection/remittance figures.",
+    });
   }),
 });

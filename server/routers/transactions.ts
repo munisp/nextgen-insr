@@ -576,7 +576,16 @@ export const transactionsRouter = router({
           }
         } catch (geoErr) {
           if (geoErr instanceof TRPCError) throw geoErr;
-          logger.error("[Geofence] Check error (fail-open):: " + geoErr);
+          // DD-LEGACY (#31): was fail-open — any storage hiccup silently
+          // disabled the location restriction on a money path. Fail-closed:
+          // when the geofence check cannot be evaluated, the transaction is
+          // refused.
+          logger.error("[Geofence] Check error — FAILING CLOSED, transaction refused:: " + geoErr);
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Transaction refused — geofence verification is unavailable. The location restriction cannot be evaluated, so the transaction cannot proceed.",
+          });
         }
 
         // ── Core processing ────────────────────────────────────────────────────
@@ -730,48 +739,55 @@ export const transactionsRouter = router({
           idempotencyKey: input.idempotencyKey ?? null,
         });
 
-        // ── Float update: local (authoritative) + platform sync (best-effort) ──
+        // ── Float update: local (authoritative) + platform sync (only when wired) ──
+        // DD-LEGACY (F2): the platform float service previously defaulted to a
+        // phantom host (float-manager:8075) and every sync silently failed.
+        // The mirror is now attempted ONLY when PLATFORM_FLOAT_URL is
+        // explicitly configured; a configured-but-failing mirror is logged as
+        // an error (books diverge loudly, never silently).
         if (FLOAT_CREDIT_TYPES.has(input.type)) {
           await updateAgentFloat(agent.id, input.amount);
-          // Sync credit to platform float service (fail-open)
-          try {
-            const token = ctx.req?.cookies?.["kc_access_token"] ?? "";
-            if (token) {
-              await floatPlatform.settle(
-                {
-                  agent_id: String(agent.id),
-                  amount: input.amount,
-                  reference: ref,
-                  transaction_type: input.type,
-                  description: `${input.type} — ₦${input.amount.toLocaleString()}`,
-                },
-                token
+          if (ENV.PLATFORM_FLOAT_URL) {
+            try {
+              const token = ctx.req?.cookies?.["kc_access_token"] ?? "";
+              if (token) {
+                await floatPlatform.settle(
+                  {
+                    agent_id: String(agent.id),
+                    amount: input.amount,
+                    reference: ref,
+                    transaction_type: input.type,
+                    description: `${input.type} — ₦${input.amount.toLocaleString()}`,
+                  },
+                  token
+                );
+              }
+            } catch (floatErr) {
+              logger.error("[float] Configured platform float mirror FAILED — books diverge until reconciled:: " + (floatErr as Error).message
               );
             }
-          } catch (floatErr) {
-            logger.warn("[float] Platform settle sync failed (fail-open):: " + (floatErr as Error).message
-            );
           }
         } else if (FLOAT_DEBIT_TYPES.has(input.type)) {
           await updateAgentFloat(agent.id, -input.amount);
-          // Sync debit to platform float service (fail-open)
-          try {
-            const token = ctx.req?.cookies?.["kc_access_token"] ?? "";
-            if (token) {
-              await floatPlatform.utilize(
-                {
-                  agent_id: String(agent.id),
-                  amount: input.amount,
-                  reference: ref,
-                  transaction_type: input.type,
-                  description: `${input.type} — ₦${input.amount.toLocaleString()}`,
-                },
-                token
+          if (ENV.PLATFORM_FLOAT_URL) {
+            try {
+              const token = ctx.req?.cookies?.["kc_access_token"] ?? "";
+              if (token) {
+                await floatPlatform.utilize(
+                  {
+                    agent_id: String(agent.id),
+                    amount: input.amount,
+                    reference: ref,
+                    transaction_type: input.type,
+                    description: `${input.type} — ₦${input.amount.toLocaleString()}`,
+                  },
+                  token
+                );
+              }
+            } catch (floatErr) {
+              logger.error("[float] Configured platform float mirror FAILED — books diverge until reconciled:: " + (floatErr as Error).message
               );
             }
-          } catch (floatErr) {
-            logger.warn("[float] Platform utilize sync failed (fail-open):: " + (floatErr as Error).message
-            );
           }
         }
 

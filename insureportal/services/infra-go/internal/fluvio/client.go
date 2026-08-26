@@ -229,14 +229,10 @@ func (c *Client) TopicStatsHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// Return mock stats when Fluvio is unavailable
-		writeJSON(w, http.StatusOK, TopicStats{
-			Topic:             topic,
-			MessagesPerSecond: 0,
-			TotalMessages:     0,
-			ConsumerLag:       0,
-			Partitions:        3,
-		})
+		// FAIL-LOUD (DD-LEGACY): previously returned fabricated zero stats
+		// with 200 OK when Fluvio was unreachable.
+		writeError(w, http.StatusServiceUnavailable,
+			"fluvio unavailable: "+err.Error())
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -265,10 +261,10 @@ func (c *Client) CreateTopicHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		writeJSON(w, http.StatusCreated, map[string]string{
-			"status": "mock",
-			"name":   req.Name,
-		})
+		// FAIL-LOUD (DD-LEGACY): previously returned a fabricated 201
+		// {"status":"mock"} when Fluvio was unreachable.
+		writeError(w, http.StatusServiceUnavailable,
+			"fluvio unavailable: "+err.Error())
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()

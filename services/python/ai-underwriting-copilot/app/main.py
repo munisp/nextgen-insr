@@ -24,8 +24,11 @@ app = FastAPI(title="InsurePortal AI Underwriting Copilot", version="1.0.0")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/insureportal")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
-IFRS17_URL = os.getenv("IFRS17_URL", "http://ifrs17-engine:8095")
-ML_FRAUD_URL = os.getenv("ML_FRAUD_URL", "http://ml-fraud-scoring:8090")
+# DD-LEGACY (F2 #16): phantom-service defaults removed (ifrs17-engine does not
+# exist; 8095 is the sms service; ml-fraud-scoring has no runnable entrypoint).
+# Each integration is used only when explicitly configured.
+IFRS17_URL = os.getenv("IFRS17_URL", "")
+ML_FRAUD_URL = os.getenv("ML_FRAUD_URL", "")
 
 
 class UnderwritingRequest(BaseModel):
@@ -161,21 +164,30 @@ async def evaluate_application(req: UnderwritingRequest):
         exclusions.append("Occupational hazard exclusion applies for work-related incidents")
 
     # ── 3. Get ML fraud/risk score ────────────────────────────────────────────
-    ml_risk_score = 50.0
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(f"{ML_FRAUD_URL}/predict", json={
-                "customer_id": req.applicant_id,
-                "amount": req.sum_insured,
-                "transaction_type": "underwriting",
-                "features": req.application_data,
-            })
-            if resp.status_code == 200:
-                ml_risk_score = resp.json().get("risk_score", 50) * 100
-    except Exception:
-        pass
+    # DD-LEGACY (#16): was a fabricated neutral 50.0 whenever the ML service
+    # was absent/down. Now None = unavailable, and an unavailable ML score
+    # forces a manual-review decision (fail-closed) below.
+    ml_risk_score: Optional[float] = None
+    if ML_FRAUD_URL:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(f"{ML_FRAUD_URL}/predict", json={
+                    "customer_id": req.applicant_id,
+                    "amount": req.sum_insured,
+                    "transaction_type": "underwriting",
+                    "features": req.application_data,
+                })
+                if resp.status_code == 200:
+                    ml_risk_score = resp.json().get("risk_score", 50) * 100
+                else:
+                    logger.error("ML fraud scoring returned HTTP %s", resp.status_code)
+        except Exception as exc:
+            logger.error("ML fraud scoring unavailable: %s", exc)
 
-    if ml_risk_score > 70:
+    if ml_risk_score is None:
+        risk_factors.append(RiskFactor(factor="ml_risk_unavailable", impact="neutral", weight=0.0,
+            description="ML risk scoring unavailable — automated accept is disabled; manual review required"))
+    elif ml_risk_score > 70:
         risk_factors.append(RiskFactor(factor="ml_risk_score", impact="negative", weight=0.8,
             description=f"ML risk model score: {ml_risk_score:.1f}/100 — elevated risk"))
         loading_pct += 15
@@ -218,28 +230,38 @@ async def evaluate_application(req: UnderwritingRequest):
         pass
 
     # ── 5. Get IFRS17 reserve impact ──────────────────────────────────────────
+    # DD-LEGACY (#16): the fallback previously FABRICATED reserve figures
+    # (csm = 1% of sum insured, ra = 0.5%). Now None = unavailable; no
+    # invented IFRS17 numbers are ever presented.
     reserve_impact = None
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(f"{IFRS17_URL}/api/v1/reserve-impact", json={
-                "product_type": req.product_type,
-                "sum_insured": req.sum_insured,
-                "premium": req.sum_insured * 0.02,  # estimated
-            })
-            if resp.status_code == 200:
-                reserve_impact = resp.json()
-    except Exception:
-        reserve_impact = {"csm": req.sum_insured * 0.01, "ra": req.sum_insured * 0.005}
+    if IFRS17_URL:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(f"{IFRS17_URL}/api/v1/reserve-impact", json={
+                    "product_type": req.product_type,
+                    "sum_insured": req.sum_insured,
+                    "premium": req.sum_insured * 0.02,  # estimated
+                })
+                if resp.status_code == 200:
+                    reserve_impact = resp.json()
+                else:
+                    logger.error("IFRS17 reserve-impact returned HTTP %s", resp.status_code)
+        except Exception as exc:
+            logger.error("IFRS17 reserve-impact unavailable: %s", exc)
 
     # ── 6. Generate AI narrative with Ollama ──────────────────────────────────
+    # DD-LEGACY (#16): the fallback previously fabricated a template narrative
+    # presented as the AI assessment. Now the narrative is honestly empty when
+    # the model is unavailable.
     ai_narrative = ""
     try:
         risk_summary = "; ".join([f"{rf.factor}: {rf.impact}" for rf in risk_factors[:5]])
-        prompt = f"""You are an insurance underwriter at InsurePortal Nigeria. 
+        ml_display = f"{ml_risk_score:.0f}/100" if ml_risk_score is not None else "unavailable"
+        prompt = f"""You are an insurance underwriter at InsurePortal Nigeria.
 Evaluate this {req.product_type} insurance application:
 - Sum insured: ₦{req.sum_insured:,.0f}
 - Risk factors: {risk_summary}
-- ML risk score: {ml_risk_score:.0f}/100
+- ML risk score: {ml_display}
 - Prior claims: {len(recent_claims)}
 
 Provide a concise 2-3 sentence underwriting assessment and recommendation.
@@ -255,18 +277,22 @@ Be specific about the key risk drivers and any conditions to apply."""
             if resp.status_code == 200:
                 ai_narrative = resp.json().get("response", "")
     except Exception:
-        ai_narrative = (
-            f"Application assessment: {req.product_type.title()} insurance for ₦{req.sum_insured:,.0f}. "
-            f"ML risk score: {ml_risk_score:.0f}/100. "
-            f"{'High-risk profile — loading recommended.' if loading_pct > 20 else 'Standard risk profile — proceed with standard terms.'}"
-        )
+        ai_narrative = ""
+        logger.error("Ollama narrative generation unavailable — returning empty narrative (no template fabrication)")
 
     # ── 7. Final decision ─────────────────────────────────────────────────────
-    risk_score = min(100, max(0, 50 + (loading_pct * 0.5) + (ml_risk_score * 0.3)))
+    # DD-LEGACY: an unavailable ML score fails CLOSED — the application is
+    # referred for manual review instead of being scored with a fabricated
+    # neutral 50.
+    ml_component = (ml_risk_score * 0.3) if ml_risk_score is not None else 0.0
+    risk_score = min(100, max(0, 50 + (loading_pct * 0.5) + ml_component))
     base_premium = req.sum_insured * 0.02  # 2% base rate
     recommended_premium = base_premium * (1 + loading_pct / 100)
 
-    if risk_score > 80 or loading_pct > 50:
+    if ml_risk_score is None:
+        decision = "refer"
+        confidence = 0.50
+    elif risk_score > 80 or loading_pct > 50:
         decision = "decline"
         confidence = 0.85
     elif risk_score > 65 or loading_pct > 30:

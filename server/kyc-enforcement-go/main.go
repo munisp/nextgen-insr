@@ -105,6 +105,14 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+// orNotConfigured renders an unset integration URL honestly in health output.
+func orNotConfigured(v string) string {
+	if v == "" {
+		return "not_configured"
+	}
+	return v
+}
+
 func requireEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
@@ -984,8 +992,10 @@ func (s *AppState) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime_sec": time.Since(s.startTime).Seconds(),
 		"design":     "fail-closed",
 		"integrations": map[string]string{
-			"kyc_engine":     s.config.KYCEngineURL,
-			"sanctions":      s.config.SanctionsURL,
+			"kyc_engine":     orNotConfigured(s.config.KYCEngineURL),
+			// DD-LEGACY (F2 #6): no sanctions engine is wired in this service —
+			// report honestly instead of advertising a phantom integration.
+			"sanctions":      orNotConfigured(s.config.SanctionsURL),
 			"kafka":          s.config.KafkaBrokers,
 			"tigerbeetle":    s.config.TigerBeetleURL,
 			"permify":        s.config.PermifyURL,

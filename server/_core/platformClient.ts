@@ -49,11 +49,19 @@ export class PlatformError extends Error {
 
 async function platformFetch<T>(
   service: string,
-  baseUrl: string,
+  baseUrl: string | undefined,
   path: string,
   options: RequestInit & { token?: string } = {}
 ): Promise<T> {
   const { token, ...fetchOptions } = options;
+
+  if (!baseUrl) {
+    throw new PlatformError(
+      service,
+      503,
+      "not configured: platform service URL is not set for this deployment"
+    );
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

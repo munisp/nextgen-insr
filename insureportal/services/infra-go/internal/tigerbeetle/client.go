@@ -546,14 +546,14 @@ func (c *Client) forwardToSidecar(ctx context.Context, method, path string, body
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// Return a mock response when sidecar is unavailable (fail-open for dev)
-		c.logger.Warn("TigerBeetle sidecar unavailable, returning mock response",
+		// FAIL-CLOSED (DD-LEGACY): previously returned a mock
+		// {"status":"mock"} success map when the sidecar was unreachable,
+		// letting money transfers "succeed" against nothing. Ledger failures
+		// now propagate as errors so callers refuse the operation.
+		c.logger.Error("TigerBeetle sidecar unavailable — refusing to fabricate a ledger result",
 			zap.String("path", path),
 			zap.Error(err))
-		return map[string]interface{}{
-			"status": "mock",
-			"note":   "TigerBeetle sidecar unavailable",
-		}, nil
+		return nil, fmt.Errorf("tigerbeetle sidecar unavailable (%s %s): %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

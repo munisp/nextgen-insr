@@ -134,47 +134,29 @@ export const remittanceRouter = router({
     }),
 
   // ── Sprint 28 domain procedures ──
+  // DD-LEGACY: previously advertised fabricated "active" remittance partners
+  // (WorldRemit/Lemfi), a fake completed ₦450,000 transfer, and invented
+  // ₦500M volume analytics. Money-path reads must be real or loud — these
+  // fail loud.
   partners: protectedProcedure.query(async () => {
-    return {
-      partners: [
-        {
-          id: "RP-001",
-          name: "WorldRemit",
-          insurance_region: "UK-NG",
-          status: "active",
-        },
-        { id: "RP-002", name: "Lemfi", insurance_region: "CA-NG", status: "active" },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "remittance.partners is not implemented: no remittance partner integrations exist in this service. Previously advertised fabricated 'active' partners.",
+    });
   }),
   history: protectedProcedure.query(async () => {
-    return {
-      transactions: [
-        {
-          id: "RM-001",
-          partnerId: "RP-001",
-          amount: 500,
-          currency: "GBP",
-          localAmount: 450000,
-          status: "completed",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "remittance.history is not implemented: no remittance transaction store exists in this service. Previously returned a fabricated completed transfer.",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalTransactions: 2000,
-      totalRemittances: 2000,
-      totalVolume: 500000000,
-      totalFees: 5000000,
-      totalCommission: 2500000,
-      avgAmount: 250000,
-      topInsuranceRegions: [{ insurance_region: "UK-NG", volume: 200000000 }],
-      byPartner: [
-        { partner: "WorldRemit", volume: 300000000, count: 1200 },
-        { partner: "Flutterwave", volume: 200000000, count: 800 },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "remittance.analytics is not implemented: no remittance analytics pipeline exists in this service. Previously returned fabricated volume/fee figures.",
+    });
   }),
 });

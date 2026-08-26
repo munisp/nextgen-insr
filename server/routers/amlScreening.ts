@@ -31,18 +31,27 @@ import {
   complianceFilings,
   auditLog,
 } from "../../drizzle/schema";
+import { TRPCError } from "@trpc/server";
+
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { publishToFluvio } from "../fluvio";
 import { writeAuditLog } from "../lib/auditLogger";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const NFIU_API_URL = process.env.NFIU_API_URL ?? "https://nfiu.gov.ng/api/v1";
-const CBN_AML_URL = process.env.CBN_AML_URL ?? "https://cbn.gov.ng/aml/api/v1";
+// DD-LEGACY: no fabricated regulator endpoints or placeholder API keys.
+// These integrations are active ONLY when explicitly configured.
+const NFIU_API_URL = process.env.NFIU_API_URL ?? "";
+const NFIU_API_KEY = process.env.NFIU_API_KEY ?? "";
+const CBN_AML_URL = process.env.CBN_AML_URL ?? "";
+const CBN_API_KEY = process.env.CBN_API_KEY ?? "";
+// Optional external sanctions-screening provider (e.g. an OFAC/UN/EU list
+// service). When unset, no screening result may be marked "cleared".
+const SANCTIONS_SCREENING_URL = process.env.SANCTIONS_SCREENING_URL ?? "";
 const CTR_THRESHOLD = 5_000_000; // ₦5,000,000 — CBN CTR threshold
 const SAR_DEADLINE_HOURS = 24; // 24-hour SAR filing deadline after detection
 
-// ── Sanctions Watchlist (embedded subset; production uses OFAC/UN/EU feeds) ──
+// ── Name-keyword heuristic (NOT a watchlist — indicators only) ───────────────
 const SANCTIONS_KEYWORDS = [
   "al-qaeda", "isis", "boko haram", "ansaru", "iswap",
   "hezbollah", "hamas", "taliban", "al-shabaab",
@@ -175,12 +184,19 @@ async function submitCtrToCbn(ctrData: {
   transactionDate: string;
   transactionType: string;
 }): Promise<{ success: boolean; cbnReference?: string; error?: string }> {
+  if (!CBN_AML_URL || !CBN_API_KEY) {
+    return {
+      success: false,
+      error:
+        "CBN CTR submission is not configured (CBN_AML_URL/CBN_API_KEY unset) — CTR queued for manual submission",
+    };
+  }
   try {
     const res = await fetch(`${CBN_AML_URL}/ctr/submit`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": process.env.CBN_API_KEY ?? "cbn-key",
+        "X-API-Key": CBN_API_KEY,
         "X-Institution-Code": process.env.CBN_INSTITUTION_CODE ?? "INSUREPORTAL",
       },
       body: JSON.stringify({
@@ -214,14 +230,21 @@ export const amlScreeningRouter = router({
     .input(z.object({
       limit: z.number().min(1).max(100).default(20),
       offset: z.number().min(0).default(0),
-      status: z.enum(["pending", "cleared", "flagged", "sar_filed", "ctr_filed"]).optional(),
+      status: z.enum(["pending", "pending_review", "screening_unavailable", "cleared", "flagged", "sar_filed", "ctr_filed"]).optional(),
       riskLevel: z.enum(["low", "medium", "high", "critical"]).optional(),
       startDate: z.string().optional(),
       endDate: z.string().optional(),
     }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { items: [], total: 0 };
+      // DD-LEGACY (#27): fail loud — an empty list on DB outage would falsely
+      // report "no AML filings exist".
+      if (!db) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "AML screening list unavailable: database is not reachable",
+        });
+      }
 
       const conditions = [];
       if (input.status) conditions.push(eq(complianceFilings.status, input.status));
@@ -248,7 +271,12 @@ export const amlScreeningRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return null;
+      if (!db) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "AML record lookup unavailable: database is not reachable",
+        });
+      }
       const [record] = await db.select().from(complianceFilings)
         .where(eq(complianceFilings.id, input.id));
       return record ?? null;
@@ -287,15 +315,50 @@ export const amlScreeningRouter = router({
         isPep: input.isPep,
       });
 
-      const requiresSar = level === "critical" || (level === "high" && score >= 70);
+      // DD-LEGACY (#3): real sanctions screening via configured provider.
+      // The embedded keyword list is only an internal indicator — absence of
+      // a keyword hit must NEVER produce a "cleared" compliance pass.
+      const sanctionsOutcome = await screenAgainstSanctionsProvider({
+        entityName: input.entityName,
+        entityType: input.entityType,
+        country: input.country,
+      });
+      let finalScore = score;
+      let finalLevel = level;
+      const finalFlags = [...flags];
+      if (sanctionsOutcome.provider === "external" && sanctionsOutcome.matched) {
+        finalScore = 100;
+        finalLevel = "critical";
+        finalFlags.push(
+          `sanctions_provider_match${sanctionsOutcome.lists.length ? `: ${sanctionsOutcome.lists.join(",")}` : ""}`
+        );
+      }
+      if (sanctionsOutcome.provider === "unavailable") {
+        finalFlags.push("sanctions_provider_unavailable");
+      }
+
+      const requiresSar = finalLevel === "critical" || (finalLevel === "high" && finalScore >= 70);
       const requiresCtr = (input.amount ?? 0) >= CTR_THRESHOLD;
       const referenceNumber = `AML-${Date.now()}-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+
+      // Honest outcome vocabulary:
+      //  - "cleared" ONLY when a real external provider screened and found no match
+      //  - "flagged" when risk indicators require SAR review
+      //  - "screening_unavailable" when a configured provider failed (queued)
+      //  - "pending_review" when no provider is configured (queued — never pass-by-default)
+      const screeningStatus = requiresSar
+        ? "flagged"
+        : sanctionsOutcome.provider === "external"
+          ? "cleared"
+          : sanctionsOutcome.provider === "unavailable"
+            ? "screening_unavailable"
+            : "pending_review";
 
       // Record the screening result
       const [filing] = await db.insert(complianceFilings).values({
         filingType: "AML_SCREENING",
         referenceNumber,
-        status: requiresSar ? "flagged" : "cleared",
+        status: screeningStatus,
         reportingPeriod: new Date().toISOString().slice(0, 7),
         submittedTo: "INTERNAL",
         totalTransactions: 1,
@@ -306,11 +369,17 @@ export const amlScreeningRouter = router({
           entityType: input.entityType,
           country: input.country,
           amount: input.amount,
-          riskScore: score,
-          riskLevel: level,
-          flags,
+          riskScore: finalScore,
+          riskLevel: finalLevel,
+          flags: finalFlags,
           requiresSar,
           requiresCtr,
+          sanctionsScreening:
+            sanctionsOutcome.provider === "external"
+              ? { provider: "external", matched: sanctionsOutcome.matched, lists: sanctionsOutcome.lists }
+              : sanctionsOutcome.provider === "unavailable"
+                ? { provider: "unavailable", error: sanctionsOutcome.error }
+                : { provider: "not_configured", note: "no external sanctions provider configured — keyword heuristic only, result queued for review" },
           velocity24h: velocityResult?.count ?? 0,
           transactionId: input.transactionId,
           screenedAt: new Date().toISOString(),
@@ -352,13 +421,13 @@ export const amlScreeningRouter = router({
       await publishToFluvio("aml.screening.results", {
         filingId: filing.id,
         entityName: input.entityName,
-        riskScore: score,
-        riskLevel: level,
-        flags,
+        riskScore: finalScore,
+        riskLevel: finalLevel,
+        flags: finalFlags,
         requiresSar,
         requiresCtr,
         timestamp: new Date().toISOString(),
-      }).catch(() => {}); // fail-open
+      }).catch(() => {}); // eventing is best-effort; the filing row above is authoritative
 
       await writeAuditLog({
         action: "AML_SCREENING",
@@ -366,17 +435,23 @@ export const amlScreeningRouter = router({
         resourceId: String(filing.id),
         agentId: ctx.user?.id,
         status: "success",
-        metadata: { entityName: input.entityName, riskScore: score, riskLevel: level, flags },
+        metadata: { entityName: input.entityName, riskScore: finalScore, riskLevel: finalLevel, flags: finalFlags, screeningStatus },
       });
 
       return {
         id: filing.id,
         referenceNumber,
         entityName: input.entityName,
-        riskScore: score,
-        riskLevel: level,
-        flags,
-        status: requiresSar ? "flagged" : "cleared",
+        riskScore: finalScore,
+        riskLevel: finalLevel,
+        flags: finalFlags,
+        status: screeningStatus,
+        sanctionsScreening:
+          sanctionsOutcome.provider === "external"
+            ? "external_provider"
+            : sanctionsOutcome.provider === "unavailable"
+              ? "provider_unavailable"
+              : "not_configured",
         requiresSar,
         requiresCtr,
         ctrReference,
@@ -448,10 +523,15 @@ export const amlScreeningRouter = router({
         createdAt: new Date(),
       }).returning();
 
-      // Update original screening status
-      await db.update(complianceFilings)
-        .set({ status: "sar_filed", updatedAt: new Date() } as Record<string, unknown>)
-        .where(eq(complianceFilings.id, input.filingId));
+      // Update original screening status — DD-LEGACY (#4): only mark
+      // "sar_filed" when the SAR actually reached NFIU. On failure the
+      // screening keeps its current status and the SAR stays "pending" for
+      // the retry cron / manual submission.
+      if (nfiuResult.success) {
+        await db.update(complianceFilings)
+          .set({ status: "sar_filed", updatedAt: new Date() } as Record<string, unknown>)
+          .where(eq(complianceFilings.id, input.filingId));
+      }
 
       // Publish event
       await publishToFluvio("aml.sar.filed", {
@@ -551,7 +631,7 @@ export const amlScreeningRouter = router({
             totalTransactions: 1,
             totalAmount: String(amount),
             flaggedCount: 1,
-            filingData: JSON.stringify({ transactionId: txn.id, riskScore: score, riskLevel: level, flags }),
+            filingData: JSON.stringify({ transactionId: txn.id, riskScore: score, riskLevel: level, flags, sanctionsScreening: { provider: "not_configured", note: "bulk sweep uses internal heuristic indicators only — no external watchlist" } }),
             preparedBy: ctx.user?.id ?? null,
             createdAt: new Date(),
           });
@@ -577,7 +657,12 @@ export const amlScreeningRouter = router({
   // ── Dashboard summary ──────────────────────────────────────────────────────
   getDashboard: protectedProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return { total: 0, flagged: 0, sarsFiled: 0, ctrs: 0, overdueSars: 0 };
+    if (!db) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "AML dashboard unavailable: database is not reachable",
+      });
+    }
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);

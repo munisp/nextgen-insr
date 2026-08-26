@@ -186,8 +186,15 @@ async function runDailySettlement(): Promise<SettlementResult> {
     errors.push(`Float unlock failed: ${String(err)}`);
   }
 
-  // ── Platform settlement trigger (fail-open: local settlement is authoritative) ──
-  try {
+  // ── Platform settlement trigger (only when wired; local settlement is authoritative) ──
+  // DD-LEGACY (F2): previously attempted against a phantom default host on
+  // every run and failed silently-ish into a warn. Now attempted only when
+  // PLATFORM_SETTLEMENT_URL is explicitly configured.
+  if (!ENV.PLATFORM_SETTLEMENT_URL) {
+    logger.info(
+      "[settlement] Platform settlement trigger not configured — local settlement is authoritative"
+    );
+  } else try {
     const systemToken = ENV.platformServiceToken;
     if (systemToken) {
       const settlementDate = new Date().toISOString().slice(0, 10);

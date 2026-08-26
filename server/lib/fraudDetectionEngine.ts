@@ -28,6 +28,10 @@ import { getDb } from "../db";
 export const fraudAlertBus = new EventEmitter();
 fraudAlertBus.setMaxListeners(100); // Allow many concurrent SSE connections
 
+// Throttle for fraud-gate outage logging (one error log per interval)
+const FRAUD_GATE_OUTAGE_LOG_INTERVAL_MS = 60_000;
+let lastFraudGateOutageLog = 0;
+
 // ── Rule Processor ────────────────────────────────────────────────────────────
 export interface TransactionContext {
   id: number;
@@ -111,7 +115,10 @@ export async function detectFraud(
   // ── Rust fraud-gate: enhanced velocity + pattern scoring ─────────────────
   // Calls the Rust fraud-gate service (port 8090) for rules that require
   // in-memory velocity tracking across the last 60 minutes.
-  // Fail-open: if fraud-gate is unavailable, use TypeScript-only score.
+  // DD-LEGACY (#5): was silently fail-open. Gate outages are now surfaced
+  // loudly: the result carries a `fraud_gate_unavailable` flag and a
+  // throttled error log is emitted (see below) so a degraded control is
+  // never invisible.
   const FRAUD_GATE_URL = process.env.FRAUD_GATE_URL || "http://localhost:8090";
   try {
     const rustResult = await fetch(`${FRAUD_GATE_URL}/check`, {
