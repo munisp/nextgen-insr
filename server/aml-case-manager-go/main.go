@@ -76,8 +76,8 @@ func loadConfig() Config {
 		RedisURL:     envOr("REDIS_URL", "redis://localhost:6379/12"),
 		KeycloakURL:  envOr("KEYCLOAK_URL", "http://localhost:8080"),
 		TemporalURL:  envOr("TEMPORAL_URL", "http://localhost:7233"),
-		DaprURL:      envOr("DAPR_HTTP_URL", "http://localhost:3500"),
-		FluvioURL:    envOr("FLUVIO_URL", "http://localhost:9003"),
+		DaprURL:      envOr("DAPR_HTTP_URL", ""), // no Dapr sidecar is deployed by default; empty = eventing honestly unavailable
+		FluvioURL:    envOr("FLUVIO_URL", ""),    // 9003 is the Fluvio binary protocol port; an HTTP bridge must be configured explicitly
 		PermifyURL:   envOr("PERMIFY_URL", "http://localhost:3476"),
 		GoAMLURL:     envOr("GOAML_SERVICE_URL", "http://localhost:8210"),
 		Environment:  envOr("ENVIRONMENT", "development"),
@@ -206,43 +206,82 @@ func NewAppState(cfg Config) *AppState {
 
 // ── Middleware: Kafka / Dapr / Fluvio ────────────────────────────────────────
 
-func (s *AppState) publishKafka(topic string, event map[string]interface{}) {
+// publishKafka publishes via a configured Dapr sidecar and returns an
+// HONEST error on any failure. Compliance events must never be silently
+// dropped into the void.
+func (s *AppState) publishKafka(topic string, event map[string]interface{}) error {
 	event["timestamp"] = time.Now().UTC().Format(time.RFC3339)
 	event["source"] = "aml-case-manager"
-	payload, _ := json.Marshal(event)
-	if s.config.DaprURL != "" {
-		go func() {
-			url := fmt.Sprintf("%s/v1.0/publish/kafka-pubsub/%s", s.config.DaprURL, topic)
-			_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
-		}()
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
 	}
-}
-
-func (s *AppState) streamToFluvio(data interface{}) {
-	if s.config.FluvioURL == "" {
-		return
-	}
-	payload, _ := json.Marshal(data)
-	go func() {
-		url := fmt.Sprintf("%s/api/v1/produce/aml-cases", s.config.FluvioURL)
-		_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
-	}()
-}
-
-func (s *AppState) notifyDapr(channel, message string, metadata map[string]interface{}) {
 	if s.config.DaprURL == "" {
-		return
+		return fmt.Errorf("eventing unavailable: DAPR_HTTP_URL is not configured (no Dapr sidecar is deployed in this environment)")
 	}
-	payload, _ := json.Marshal(map[string]interface{}{
+	url := fmt.Sprintf("%s/v1.0/publish/kafka-pubsub/%s", s.config.DaprURL, topic)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("publish to %s failed: %w", topic, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("publish to %s returned HTTP %d", topic, resp.StatusCode)
+	}
+	return nil
+}
+
+// streamToFluvio streams via a configured HTTP→Fluvio bridge and returns an
+// HONEST error on any failure. fluvio-sc:9003 speaks the Fluvio binary
+// protocol; an HTTP bridge must be explicitly configured via FLUVIO_URL.
+func (s *AppState) streamToFluvio(data interface{}) error {
+	if s.config.FluvioURL == "" {
+		return fmt.Errorf("streaming unavailable: FLUVIO_URL is not configured (fluvio-sc:9003 is the binary protocol port; an HTTP bridge is required)")
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("encode stream payload: %w", err)
+	}
+	url := fmt.Sprintf("%s/api/v1/produce/aml-cases", s.config.FluvioURL)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("fluvio stream failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("fluvio stream returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// notifyDapr delivers a compliance notification via a configured Dapr
+// sidecar and returns an HONEST error on any failure.
+func (s *AppState) notifyDapr(channel, message string, metadata map[string]interface{}) error {
+	if s.config.DaprURL == "" {
+		return fmt.Errorf("notification unavailable: DAPR_HTTP_URL is not configured (no Dapr sidecar is deployed in this environment)")
+	}
+	payload, err := json.Marshal(map[string]interface{}{
 		"type":     "aml_case_notification",
 		"channel":  channel,
 		"message":  message,
 		"metadata": metadata,
 	})
-	go func() {
-		url := fmt.Sprintf("%s/v1.0/publish/notifications/compliance-alerts", s.config.DaprURL)
-		_, _ = http.Post(url, "application/json", strings.NewReader(string(payload)))
-	}()
+	if err != nil {
+		return fmt.Errorf("encode notification: %w", err)
+	}
+	url := fmt.Sprintf("%s/v1.0/publish/notifications/compliance-alerts", s.config.DaprURL)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("dapr notification failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("dapr notification returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func (s *AppState) startTemporalTimer(caseID string, slaDeadline time.Time) {
@@ -348,18 +387,24 @@ func (s *AppState) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	s.startTemporalTimer(id, sla)
 
 	// Kafka event
-	s.publishKafka("aml.case.created", map[string]interface{}{
+	if err := s.publishKafka("aml.case.created", map[string]interface{}{
 		"case_id": id, "case_number": caseNum, "priority": priority,
 		"alert_type": req.AlertType, "risk_score": req.RiskScore,
 		"subject_name": req.Subject.Name,
-	})
+	}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	// Fluvio stream
-	s.streamToFluvio(amlCase)
+	if err := s.streamToFluvio(amlCase); err != nil {
+		log.Printf("[Fluvio] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	// Notify compliance team via Dapr
-	s.notifyDapr("compliance-alerts", fmt.Sprintf("New AML case %s (%s priority): %s", caseNum, priority, req.Subject.Name),
-		map[string]interface{}{"case_id": id, "priority": string(priority)})
+	if err := s.notifyDapr("compliance-alerts", fmt.Sprintf("New AML case %s (%s priority): %s", caseNum, priority, req.Subject.Name),
+		map[string]interface{}{"case_id": id, "priority": string(priority)}); err != nil {
+		log.Printf("[Dapr] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -444,8 +489,12 @@ func (s *AppState) handleAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.publishKafka("aml.case.assigned", map[string]interface{}{"case_id": id, "assigned_to": req.AssignedTo})
-	s.notifyDapr("compliance-alerts", fmt.Sprintf("Case %s assigned to %s", c.CaseNumber, req.AssignedTo), nil)
+	if err := s.publishKafka("aml.case.assigned", map[string]interface{}{"case_id": id, "assigned_to": req.AssignedTo}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
+	if err := s.notifyDapr("compliance-alerts", fmt.Sprintf("Case %s assigned to %s", c.CaseNumber, req.AssignedTo), nil); err != nil {
+		log.Printf("[Dapr] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(c)
@@ -464,7 +513,9 @@ func (s *AppState) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.publishKafka("aml.case.investigation_started", map[string]interface{}{"case_id": id})
+	if err := s.publishKafka("aml.case.investigation_started", map[string]interface{}{"case_id": id}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(c)
 }
@@ -486,8 +537,12 @@ func (s *AppState) handleEscalate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.publishKafka("aml.case.escalated", map[string]interface{}{"case_id": id, "escalated_to": req.EscalatedTo, "reason": req.Reason})
-	s.notifyDapr("compliance-alerts", fmt.Sprintf("ESCALATION: Case %s escalated to %s — %s", c.CaseNumber, req.EscalatedTo, req.Reason), nil)
+	if err := s.publishKafka("aml.case.escalated", map[string]interface{}{"case_id": id, "escalated_to": req.EscalatedTo, "reason": req.Reason}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
+	if err := s.notifyDapr("compliance-alerts", fmt.Sprintf("ESCALATION: Case %s escalated to %s — %s", c.CaseNumber, req.EscalatedTo, req.Reason), nil); err != nil {
+		log.Printf("[Dapr] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(c)
@@ -506,50 +561,84 @@ func (s *AppState) handleFileSAR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Trigger goAML service to create SAR
-	go func() {
-		if s.config.GoAMLURL == "" {
-			return
-		}
-		sarReq := map[string]interface{}{
-			"subject": map[string]interface{}{
-				"subject_type": c.Subject.SubjectType,
-				"full_name":    c.Subject.Name,
-				"bvn":          c.Subject.BVN,
-				"nationality":  "Nigeria",
-				"risk_level":   c.Subject.RiskLevel,
-			},
-			"indicators":        []string{string(c.AlertType)},
-			"narrative":         fmt.Sprintf("AML Case %s: %s alert with risk score %.1f", c.CaseNumber, c.AlertType, c.RiskScore),
-			"risk_score":        c.RiskScore,
-			"reporting_officer": req.Actor,
-		}
-		payload, _ := json.Marshal(sarReq)
-		resp, err := http.Post(s.config.GoAMLURL+"/api/v1/sar/create", "application/json", strings.NewReader(string(payload)))
-		if err != nil {
-			log.Printf("[AML-Case] Failed to create SAR via goAML: %v", err)
-			return
-		}
-		defer func() { _ = resp.Body.Close() }()
-		var sarResp struct {
-			ID string `json:"id"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&sarResp)
+	// REAL goAML leg, SYNCHRONOUS and fail-CLOSED: the case is marked
+	// sar_filed ONLY when the goAML service accepts the SAR creation with a
+	// 2xx response carrying a filing id. Any failure leaves the case in
+	// pending_sar with an honest timeline entry.
+	if s.config.GoAMLURL == "" {
+		s.recordSARFilingFailure(c, "goAML service URL is not configured")
+		http.Error(w, `{"error":"goaml_not_configured","message":"goAML service is not configured; SAR NOT filed"}`, http.StatusPreconditionFailed)
+		return
+	}
+	sarReq := map[string]interface{}{
+		"subject": map[string]interface{}{
+			"subject_type": c.Subject.SubjectType,
+			"full_name":    c.Subject.Name,
+			"bvn":          c.Subject.BVN,
+			"nationality":  "Nigeria",
+			"risk_level":   c.Subject.RiskLevel,
+		},
+		"indicators":        []string{string(c.AlertType)},
+		"narrative":         fmt.Sprintf("AML Case %s: %s alert with risk score %.1f", c.CaseNumber, c.AlertType, c.RiskScore),
+		"risk_score":        c.RiskScore,
+		"reporting_officer": req.Actor,
+	}
+	payload, err := json.Marshal(sarReq)
+	if err != nil {
+		http.Error(w, `{"error":"sar_encode_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Post(s.config.GoAMLURL+"/api/v1/sar/create", "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		log.Printf("[AML-Case] Failed to create SAR via goAML: %v", err)
+		s.recordSARFilingFailure(c, fmt.Sprintf("goAML service unreachable: %v", err))
+		http.Error(w, `{"error":"goaml_unreachable","message":"goAML service unreachable; SAR NOT filed, case remains pending_sar"}`, http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		s.recordSARFilingFailure(c, fmt.Sprintf("goAML service returned HTTP %d", resp.StatusCode))
+		http.Error(w, fmt.Sprintf(`{"error":"goaml_rejected","message":"goAML service returned HTTP %d; SAR NOT filed, case remains pending_sar"}`, resp.StatusCode), http.StatusBadGateway)
+		return
+	}
+	var sarResp struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&sarResp); err != nil || sarResp.ID == "" {
+		s.recordSARFilingFailure(c, "goAML service response carried no filing id")
+		http.Error(w, `{"error":"goaml_invalid_response","message":"goAML service response carried no filing id; SAR NOT confirmed as filed"}`, http.StatusBadGateway)
+		return
+	}
 
-		s.mu.Lock()
-		c.SARFilingID = sarResp.ID
-		c.Status = StatusSARFiled
-		c.Timeline = append(c.Timeline, TimelineEntry{
-			Action: "sar_filed", Actor: "system",
-			Details:   fmt.Sprintf("SAR filed via goAML, filing ID: %s", sarResp.ID),
-			OldStatus: "pending_sar", NewStatus: "sar_filed", Timestamp: time.Now(),
-		})
-		s.mu.Unlock()
-	}()
+	s.mu.Lock()
+	c.SARFilingID = sarResp.ID
+	c.Status = StatusSARFiled
+	c.Timeline = append(c.Timeline, TimelineEntry{
+		Action: "sar_filed", Actor: "system",
+		Details:   fmt.Sprintf("SAR filed via goAML, filing ID: %s", sarResp.ID),
+		OldStatus: "pending_sar", NewStatus: "sar_filed", Timestamp: time.Now(),
+	})
+	s.mu.Unlock()
 
-	s.publishKafka("aml.case.sar_initiated", map[string]interface{}{"case_id": id})
+	if err := s.publishKafka("aml.case.sar_initiated", map[string]interface{}{"case_id": id}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(c)
+}
+
+// recordSARFilingFailure appends an HONEST timeline entry for a failed SAR
+// filing attempt. The case status is never mutated on failure.
+func (s *AppState) recordSARFilingFailure(c *AMLCase, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c.Timeline = append(c.Timeline, TimelineEntry{
+		Action: "sar_filing_failed", Actor: "system",
+		Details:   "SAR filing failed: " + reason,
+		OldStatus: string(c.Status), NewStatus: string(c.Status), Timestamp: time.Now(),
+	})
+	c.UpdatedAt = time.Now()
 }
 
 func (s *AppState) handleClose(w http.ResponseWriter, r *http.Request) {
@@ -570,7 +659,9 @@ func (s *AppState) handleClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.publishKafka("aml.case.closed", map[string]interface{}{"case_id": id, "resolution": req.Resolution})
+	if err := s.publishKafka("aml.case.closed", map[string]interface{}{"case_id": id, "resolution": req.Resolution}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(c)
 }
@@ -593,7 +684,9 @@ func (s *AppState) handleFalsePositive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.publishKafka("aml.case.false_positive", map[string]interface{}{"case_id": id, "reason": req.Reason})
+	if err := s.publishKafka("aml.case.false_positive", map[string]interface{}{"case_id": id, "reason": req.Reason}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(c)
 }

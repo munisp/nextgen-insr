@@ -36,7 +36,7 @@ func loadConfig() Config {
 	return Config{
 		Port:        envOr("PORT", "8112"),
 		DatabaseURL: envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
-		KafkaURL:    envOr("KAFKA_REST_URL", "http://localhost:8082"),
+		KafkaURL:    envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
 		RedisURL:    envOr("REDIS_URL", "redis://localhost:6379/3"),
 		JWTSecret:   envOr("JWT_SECRET", ""),
 		Environment: envOr("ENVIRONMENT", "development"),
@@ -299,27 +299,38 @@ func NewEventPublisher(kafkaURL string) *EventPublisher {
 	return &EventPublisher{kafkaURL: kafkaURL}
 }
 
-func (ep *EventPublisher) Publish(topic string, event interface{}) {
-	data, _ := json.Marshal(event)
+// Publish performs a REAL produce via the Kafka REST proxy and returns an
+// honest error on any failure. It never claims publication into the void.
+func (ep *EventPublisher) Publish(topic string, event interface{}) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
+	}
 	log.Printf("[Kafka] topic=%s payload=%s", topic, string(data))
 	if ep.kafkaURL == "" {
-		return
+		return fmt.Errorf("eventing unavailable: KAFKA_REST_URL is not configured")
 	}
-	go func() {
-		body, _ := json.Marshal(map[string]interface{}{
-			"records": []map[string]interface{}{
-				{"value": event},
-			},
-		})
-		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/topics/%s", ep.kafkaURL, topic), strings.NewReader(string(body)))
-		req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			log.Printf("[Kafka] publish error: %v", err)
-			return
-		}
-		_ = resp.Body.Close()
-	}()
+	body, _ := json.Marshal(map[string]interface{}{
+		"records": []map[string]interface{}{
+			{"value": event},
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/topics/%s", ep.kafkaURL, topic), strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("kafka rest proxy unreachable: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("kafka rest proxy returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // ── JWT Auth Middleware ─────────────────────────────────────────────────────
@@ -468,20 +479,28 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 
 	activationMs := time.Since(start).Milliseconds()
 
-	s.events.Publish("micro.policy.activated", map[string]interface{}{
+	eventPublished := true
+	eventErr := ""
+	if err := s.events.Publish("micro.policy.activated", map[string]interface{}{
 		"policy_id":   policy.ID,
 		"product_id":  policy.ProductID,
 		"customer_id": policy.CustomerID,
 		"premium":     policy.Premium,
 		"trigger":     policy.TriggerType,
 		"timestamp":   now.Format(time.RFC3339),
-	})
+	}); err != nil {
+		log.Printf("[Kafka] CRITICAL: micro.policy.activated not published: %v", err)
+		eventPublished = false
+		eventErr = err.Error()
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"policy":        policy,
-		"activation_ms": activationMs,
-		"message":       "Policy activated successfully",
+		"policy":          policy,
+		"activation_ms":   activationMs,
+		"message":         "Policy activated successfully",
+		"event_published": eventPublished,
+		"event_error":     eventErr,
 	})
 }
 
@@ -517,17 +536,25 @@ func (s *Server) handleDeactivate(w http.ResponseWriter, r *http.Request) {
 	}
 	refundAmount := int64(float64(policy.Premium) * refundPct)
 
-	s.events.Publish("micro.policy.deactivated", map[string]interface{}{
+	eventPublished := true
+	eventErr := ""
+	if err := s.events.Publish("micro.policy.deactivated", map[string]interface{}{
 		"policy_id":     policy.ID,
 		"refund_amount": refundAmount,
 		"timestamp":     time.Now().Format(time.RFC3339),
-	})
+	}); err != nil {
+		log.Printf("[Kafka] CRITICAL: micro.policy.deactivated not published: %v", err)
+		eventPublished = false
+		eventErr = err.Error()
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"policy_id":     policy.ID,
-		"status":        policy.Status,
-		"refund_amount": refundAmount,
-		"message":       fmt.Sprintf("Policy canceled. Pro-rata refund of ₦%d initiated.", refundAmount/100),
+		"policy_id":       policy.ID,
+		"status":          policy.Status,
+		"refund_amount":   refundAmount,
+		"event_published": eventPublished,
+		"event_error":     eventErr,
+		"message":         fmt.Sprintf("Policy canceled. Pro-rata refund of ₦%d initiated.", refundAmount/100),
 	})
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"io"
 	"net"
 
 	"crypto/hmac"
@@ -84,8 +85,8 @@ func loadConfig() Config {
 		KeycloakURL:       envOr("KEYCLOAK_URL", "http://localhost:8080"),
 		TigerBeetleURL:    envOr("TIGERBEETLE_URL", "http://localhost:3001"),
 		TemporalURL:       envOr("TEMPORAL_URL", "http://localhost:7233"),
-		DaprURL:           envOr("DAPR_HTTP_URL", "http://localhost:3500"),
-		FluvioURL:         envOr("FLUVIO_URL", "http://localhost:9003"),
+		DaprURL:           envOr("DAPR_HTTP_URL", ""), // no Dapr sidecar is deployed by default; empty = eventing honestly unavailable
+		FluvioURL:         envOr("FLUVIO_URL", ""),    // 9003 is the Fluvio binary protocol port; an HTTP bridge must be configured explicitly
 		APISIXAdminURL:    envOr("APISIX_ADMIN_URL", "http://localhost:9180"),
 		HMACSecret:        envOr("GOAML_HMAC_SECRET", ""),
 		Environment:       envOr("ENVIRONMENT", "development"),
@@ -340,46 +341,61 @@ func (s *AppState) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 // ── Middleware: Kafka Event Publishing ───────────────────────────────────────
 
-func (s *AppState) publishKafkaEvent(topic string, event map[string]interface{}) {
+// publishKafkaEvent publishes via a configured Dapr sidecar (which routes to
+// Kafka) and returns an HONEST error on any failure. Compliance events must
+// never be silently dropped.
+func (s *AppState) publishKafkaEvent(topic string, event map[string]interface{}) error {
 	event["timestamp"] = time.Now().UTC().Format(time.RFC3339)
 	event["source"] = "goaml-integration"
 	event["institution_id"] = s.config.NFIUInstitutionID
 
-	payload, _ := json.Marshal(event)
-
-	// Publish via Dapr sidecar (which routes to Kafka)
-	if s.config.DaprURL != "" {
-		go func() {
-			url := fmt.Sprintf("%s/v1.0/publish/kafka-pubsub/%s", s.config.DaprURL, topic)
-			resp, err := http.Post(url, "application/json", strings.NewReader(string(payload)))
-			if err != nil {
-				log.Printf("[Kafka] Failed to publish to %s: %v", topic, err)
-				return
-			}
-			defer func() { _ = resp.Body.Close() }()
-			if resp.StatusCode >= 300 {
-				log.Printf("[Kafka] Publish to %s returned %d", topic, resp.StatusCode)
-			}
-		}()
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
 	}
+
+	if s.config.DaprURL == "" {
+		return fmt.Errorf("eventing unavailable: DAPR_HTTP_URL is not configured (no Dapr sidecar is deployed in this environment)")
+	}
+	url := fmt.Sprintf("%s/v1.0/publish/kafka-pubsub/%s", s.config.DaprURL, topic)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("publish to %s failed: %w", topic, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("publish to %s returned HTTP %d", topic, resp.StatusCode)
+	}
+	return nil
 }
 
 // ── Middleware: Fluvio Streaming ─────────────────────────────────────────────
 
-func (s *AppState) streamToFluvio(topic string, data interface{}) {
+// streamToFluvio streams via a configured HTTP→Fluvio bridge and returns an
+// HONEST error on any failure. NOTE: fluvio-sc:9003 speaks the Fluvio binary
+// protocol — an HTTP produce endpoint only exists when a real bridge
+// (e.g. fluvio-integration/fluvio-kafka-bridge.go) is deployed and
+// FLUVIO_URL points at it.
+func (s *AppState) streamToFluvio(topic string, data interface{}) error {
 	if s.config.FluvioURL == "" {
-		return
+		return fmt.Errorf("streaming unavailable: FLUVIO_URL is not configured (fluvio-sc:9003 is the binary protocol port; an HTTP bridge is required)")
 	}
-	payload, _ := json.Marshal(data)
-	go func() {
-		url := fmt.Sprintf("%s/api/v1/produce/%s", s.config.FluvioURL, topic)
-		resp, err := http.Post(url, "application/json", strings.NewReader(string(payload)))
-		if err != nil {
-			log.Printf("[Fluvio] Stream to %s failed: %v", topic, err)
-			return
-		}
-		defer func() { _ = resp.Body.Close() }()
-	}()
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("encode stream payload: %w", err)
+	}
+	url := fmt.Sprintf("%s/api/v1/produce/%s", s.config.FluvioURL, topic)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(url, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("stream to %s failed: %w", topic, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("stream to %s returned HTTP %d", topic, resp.StatusCode)
+	}
+	return nil
 }
 
 // ── Middleware: Temporal Workflow ─────────────────────────────────────────────
@@ -479,16 +495,20 @@ func (s *AppState) handleCreateSTR(w http.ResponseWriter, r *http.Request) {
 	s.startTemporalWorkflow("str_filing_sla", filing)
 
 	// Publish Kafka event
-	s.publishKafkaEvent("aml.str.created", map[string]interface{}{
+	if err := s.publishKafkaEvent("aml.str.created", map[string]interface{}{
 		"filing_id":    filing.ID,
 		"subject_name": filing.Subject.FullName,
 		"risk_score":   filing.RiskScore,
 		"amount":       filing.TotalAmount,
 		"indicators":   filing.Indicators,
-	})
+	}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	// Stream to Fluvio lakehouse
-	s.streamToFluvio("goaml-filings", filing)
+	if err := s.streamToFluvio("goaml-filings", filing); err != nil {
+		log.Printf("[Fluvio] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -523,14 +543,18 @@ func (s *AppState) handleCreateSAR(w http.ResponseWriter, r *http.Request) {
 
 	s.startTemporalWorkflow("sar_filing_sla", filing)
 
-	s.publishKafkaEvent("aml.sar.created", map[string]interface{}{
+	if err := s.publishKafkaEvent("aml.sar.created", map[string]interface{}{
 		"filing_id":    filing.ID,
 		"subject_name": filing.Subject.FullName,
 		"risk_score":   filing.RiskScore,
 		"indicators":   filing.Indicators,
-	})
+	}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 
-	s.streamToFluvio("goaml-filings", filing)
+	if err := s.streamToFluvio("goaml-filings", filing); err != nil {
+		log.Printf("[Fluvio] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -561,13 +585,17 @@ func (s *AppState) handleCreateCTR(w http.ResponseWriter, r *http.Request) {
 
 	s.startTemporalWorkflow("ctr_filing_sla", filing)
 
-	s.publishKafkaEvent("aml.ctr.created", map[string]interface{}{
+	if err := s.publishKafkaEvent("aml.ctr.created", map[string]interface{}{
 		"filing_id": filing.ID,
 		"amount":    filing.TotalAmount,
 		"subject":   filing.Subject.FullName,
-	})
+	}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 
-	s.streamToFluvio("goaml-filings", filing)
+	if err := s.streamToFluvio("goaml-filings", filing); err != nil {
+		log.Printf("[Fluvio] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -586,19 +614,18 @@ func (s *AppState) handleAutoGenerateCTR(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Simulate TigerBeetle aggregation query
-	// In production: GET {TigerBeetleURL}/accounts/{id}/transfers?since=24h&aggregate=true
-	response := map[string]interface{}{
-		"account_id":      req.AccountID,
-		"period":          req.Period,
-		"auto_generated":  true,
-		"message":         "CTR auto-generation queued — will file when TigerBeetle confirms threshold breach",
-		"threshold":       s.config.CTRThreshold,
-		"tigerbeetle_url": s.config.TigerBeetleURL,
-	}
-
+	// NOT IMPLEMENTED — honestly. CTR auto-generation requires a real
+	// transaction-aggregation source. TigerBeetle exposes no HTTP query API
+	// and no aggregation leg is integrated in-tree, so this endpoint cannot
+	// detect threshold breaches and refuses to pretend one was queued.
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusNotImplemented)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":      "ctr_auto_generation_not_implemented",
+		"message":    "CTR auto-generation is not implemented: no transaction aggregation source (TigerBeetle or otherwise) is integrated with this service; no CTR has been queued or filed",
+		"threshold":  s.config.CTRThreshold,
+		"account_id": req.AccountID,
+	})
 }
 
 func (s *AppState) handleSubmitToNFIU(w http.ResponseWriter, r *http.Request) {
@@ -619,15 +646,69 @@ func (s *AppState) handleSubmitToNFIU(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fail CLOSED: without configured NFIU credentials no submission is even
+	// attempted, and the filing status is never mutated.
+	if s.config.NFIUEndpoint == "" || s.config.NFIUAPIKey == "" {
+		http.Error(w, `{"error":"nfiu_not_configured","message":"NFIU goAML endpoint/credentials are not configured (set NFIU_GOAML_ENDPOINT and NFIU_API_KEY); filing NOT submitted and no reference was invented"}`, http.StatusPreconditionFailed)
+		return
+	}
+
 	// Build goAML report
 	goamlReport := s.buildGoAMLReport(filing)
-	payload, _ := json.Marshal(goamlReport)
+	payload, err := json.Marshal(goamlReport)
+	if err != nil {
+		http.Error(w, `{"error":"report_encode_failed"}`, http.StatusInternalServerError)
+		return
+	}
 
 	// Sign payload with HMAC
 	signature := s.signPayload(payload)
 
-	// Submit to NFIU (in production, this calls the real NFIU goAML API)
-	nfiuRef := fmt.Sprintf("NFIU-%s-%s-%d", s.config.NFIUInstitutionID, strings.ToUpper(reportType), time.Now().Unix())
+	// REAL submission leg to the configured NFIU goAML endpoint. The filing
+	// is marked submitted ONLY when this leg completes with a 2xx response;
+	// the NFIU reference is taken from the regulator's response — never invented.
+	submitURL := strings.TrimRight(s.config.NFIUEndpoint, "/") + "/reports"
+	req, err := http.NewRequest(http.MethodPost, submitURL, strings.NewReader(string(payload)))
+	if err != nil {
+		http.Error(w, `{"error":"submission_request_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.config.NFIUAPIKey)
+	if signature != "" {
+		req.Header.Set("X-Payload-Signature", signature)
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		s.recordSubmissionFailure(filing, fmt.Sprintf("NFIU endpoint unreachable: %v", err))
+		http.Error(w, fmt.Sprintf(`{"error":"nfiu_unreachable","message":"NFIU submission failed (endpoint unreachable); filing remains %s"}`, filing.Status), http.StatusBadGateway)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		s.recordSubmissionFailure(filing, fmt.Sprintf("NFIU returned HTTP %d: %s", resp.StatusCode, string(respBody)))
+		http.Error(w, fmt.Sprintf(`{"error":"nfiu_rejected","message":"NFIU submission failed (HTTP %d); filing remains %s"}`, resp.StatusCode, filing.Status), http.StatusBadGateway)
+		return
+	}
+
+	// Extract the regulator-issued reference from the real response.
+	nfiuRef := ""
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(respBody, &parsed); err == nil {
+		for _, key := range []string{"reference", "reference_id", "ref", "id", "submission_id"} {
+			if v, ok := parsed[key].(string); ok && v != "" {
+				nfiuRef = v
+				break
+			}
+		}
+	}
+
+	sigPreview := signature
+	if len(sigPreview) > 16 {
+		sigPreview = sigPreview[:16]
+	}
 
 	s.mu.Lock()
 	now := time.Now()
@@ -635,28 +716,38 @@ func (s *AppState) handleSubmitToNFIU(w http.ResponseWriter, r *http.Request) {
 	filing.SubmissionDate = &now
 	filing.NFIUReferenceID = nfiuRef
 	filing.UpdatedAt = now
+	auditDetails := fmt.Sprintf("Submitted to %s with signature %s", submitURL, sigPreview)
+	if nfiuRef != "" {
+		auditDetails += fmt.Sprintf(", NFIU ref: %s", nfiuRef)
+	} else {
+		auditDetails += ", NFIU returned no reference id"
+	}
 	filing.AuditTrail = append(filing.AuditTrail, AuditEntry{
 		Action:    "submitted_to_nfiu",
 		Actor:     "system",
-		Details:   fmt.Sprintf("Submitted with signature %s, NFIU ref: %s", signature[:16], nfiuRef),
+		Details:   auditDetails,
 		Timestamp: now,
 	})
 	s.stats.Submitted++
 	s.mu.Unlock()
 
 	// Kafka event
-	s.publishKafkaEvent(fmt.Sprintf("aml.%s.submitted", strings.ToLower(reportType)), map[string]interface{}{
+	if err := s.publishKafkaEvent(fmt.Sprintf("aml.%s.submitted", strings.ToLower(reportType)), map[string]interface{}{
 		"filing_id":    filing.ID,
 		"nfiu_ref":     nfiuRef,
 		"submitted_at": now.Format(time.RFC3339),
-	})
+	}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	// Fluvio stream
-	s.streamToFluvio("goaml-submissions", map[string]interface{}{
+	if err := s.streamToFluvio("goaml-submissions", map[string]interface{}{
 		"filing_id": filing.ID,
 		"nfiu_ref":  nfiuRef,
 		"status":    "submitted",
-	})
+	}); err != nil {
+		log.Printf("[Fluvio] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -664,8 +755,22 @@ func (s *AppState) handleSubmitToNFIU(w http.ResponseWriter, r *http.Request) {
 		"nfiu_reference":  nfiuRef,
 		"status":          "submitted_to_nfiu",
 		"submission_time": now.Format(time.RFC3339),
-		"signature":       signature[:16] + "...",
+		"signature":       sigPreview + "...",
 	})
+}
+
+// recordSubmissionFailure appends an HONEST audit entry for a failed NFIU
+// submission attempt. The filing status is never mutated on failure.
+func (s *AppState) recordSubmissionFailure(filing *Filing, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	filing.AuditTrail = append(filing.AuditTrail, AuditEntry{
+		Action:    "nfiu_submission_failed",
+		Actor:     "system",
+		Details:   reason,
+		Timestamp: time.Now(),
+	})
+	filing.UpdatedAt = time.Now()
 }
 
 func (s *AppState) handleListFilings(w http.ResponseWriter, r *http.Request) {
@@ -749,12 +854,14 @@ func (s *AppState) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	// Kafka notification
-	s.publishKafkaEvent("aml.filing.status_changed", map[string]interface{}{
+	if err := s.publishKafkaEvent("aml.filing.status_changed", map[string]interface{}{
 		"filing_id":  id,
 		"old_status": string(oldStatus),
 		"new_status": req.Status,
 		"reason":     req.Reason,
-	})
+	}); err != nil {
+		log.Printf("[Kafka] CRITICAL: compliance event not delivered: %v", err)
+	}
 
 	// Dapr notification to compliance team
 	go func() {

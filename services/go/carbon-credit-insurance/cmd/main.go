@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -20,8 +22,12 @@ import (
 // Carbon Credit Insurance — Parametric insurance for carbon credit projects
 // Port: 8126
 //
-// Middleware: PostgreSQL (project store), Kafka (verification events),
-// TigerBeetle (credit ledger), Temporal (verification workflows), Keycloak (JWT auth)
+// Backing: PostgreSQL (product/project/claim store — REAL).
+// HONEST CONTRACT: no satellite/NDVI data provider is integrated in-tree, so
+// caller-supplied NDVI readings are UNVERIFIED. Claims are recorded as
+// "pending_verification" and are NEVER auto-approved; no payout amount is
+// authorized without a verified satellite data source. Events are published
+// via a real Kafka REST proxy leg that reports honest errors.
 
 type Config struct {
 	Port        string
@@ -34,7 +40,7 @@ func loadConfig() Config {
 	return Config{
 		Port:        envOr("PORT", "8126"),
 		DatabaseURL: envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
-		KafkaURL:    envOr("KAFKA_REST_URL", "http://localhost:8082"),
+		KafkaURL:    envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
 		Environment: envOr("ENVIRONMENT", "development"),
 	}
 }
@@ -160,7 +166,11 @@ func (s *Store) ListProducts(ctx context.Context) ([]map[string]interface{}, err
 	return result, nil
 }
 
-func (s *Store) VerifyClaim(ctx context.Context, projectID string, ndviCurrent float64) (map[string]interface{}, error) {
+// IntakeClaim records a claim against a real project. The NDVI reading is
+// caller-supplied and UNVERIFIED (no satellite provider is integrated), so
+// the claim is always "pending_verification" with zero authorized payout —
+// never auto-approved.
+func (s *Store) IntakeClaim(ctx context.Context, projectID string, ndviCurrent float64) (map[string]interface{}, error) {
 	var projName, loc, status string
 	var ndviBaseline float64
 	var insuredValue int64
@@ -174,16 +184,18 @@ func (s *Store) VerifyClaim(ctx context.Context, projectID string, ndviCurrent f
 	}
 
 	deficit := math.Max(0, (ndviBaseline-ndviCurrent)/ndviBaseline)
-	payoutAmount := int64(0)
-	claimStatus := "no_trigger"
-	if deficit > 0.1 {
-		payoutAmount = int64(float64(insuredValue) * deficit)
-		claimStatus = "approved"
-	}
 
-	claimID := fmt.Sprintf("CC-%d", time.Now().UnixNano()%100000)
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO carbon_claims (id, project_id, ndvi_current, ndvi_baseline, deficit, payout_amount, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`, claimID, projectID, ndviCurrent, ndviBaseline, deficit, payoutAmount, claimStatus)
+	randBytes := make([]byte, 8)
+	if _, err := rand.Read(randBytes); err != nil {
+		return nil, fmt.Errorf("claim id generation: %w", err)
+	}
+	claimID := fmt.Sprintf("CC-%s", hex.EncodeToString(randBytes))
+
+	// Fail CLOSED: if the claim cannot be persisted, no claim is claimed.
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO carbon_claims (id, project_id, ndvi_current, ndvi_baseline, deficit, payout_amount, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`, claimID, projectID, ndviCurrent, ndviBaseline, deficit, 0, "pending_verification"); err != nil {
+		return nil, fmt.Errorf("persist claim: %w", err)
+	}
 
 	return map[string]interface{}{
 		"claim_id":      claimID,
@@ -192,29 +204,40 @@ func (s *Store) VerifyClaim(ctx context.Context, projectID string, ndviCurrent f
 		"ndvi_baseline": ndviBaseline,
 		"ndvi_current":  ndviCurrent,
 		"deficit":       math.Round(deficit*10000) / 10000,
-		"payout_amount": payoutAmount,
-		"status":        claimStatus,
+		"payout_amount": 0,
+		"status":        "pending_verification",
+		"verification":  "unverified: ndvi_current is caller-supplied; no satellite data provider is integrated, so this claim cannot be approved or paid by this service",
 	}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
-func publishEvent(kafkaURL, topic string, event interface{}) {
-	data, _ := json.Marshal(event)
-	log.Printf("[Kafka] topic=%s payload=%s", topic, string(data))
+// publishEvent performs a REAL produce via the Kafka REST proxy and returns
+// an honest error on any failure. It never claims publication into the void.
+func publishEvent(kafkaURL, topic string, event interface{}) error {
 	if kafkaURL == "" {
-		return
+		return fmt.Errorf("eventing unavailable: KAFKA_REST_URL is not configured")
 	}
-	go func() {
-		body, _ := json.Marshal(map[string]interface{}{"records": []map[string]interface{}{{"value": event}}})
-		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/topics/%s", kafkaURL, topic), strings.NewReader(string(body)))
-		req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return
-		}
-		_ = resp.Body.Close()
-	}()
+	body, err := json.Marshal(map[string]interface{}{"records": []map[string]interface{}{{"value": event}}})
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/topics/%s", kafkaURL, topic), strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("kafka rest proxy unreachable: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("kafka rest proxy returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
@@ -271,17 +294,23 @@ func main() {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "project_id and ndvi_current are required"})
 			return
 		}
-		result, err := store.VerifyClaim(r.Context(), req.ProjectID, req.NDVICurrent)
+		result, err := store.IntakeClaim(r.Context(), req.ProjectID, req.NDVICurrent)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "verification failed"})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "claim intake failed"})
 			return
 		}
 		if result == nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
 			return
 		}
-		if result["status"].(string) == "approved" {
-			publishEvent(cfg.KafkaURL, "carbon.claim.approved", result)
+		// Honest eventing: publish the intake event via the real REST proxy
+		// leg; surface failure instead of pretending the event flowed.
+		if err := publishEvent(cfg.KafkaURL, "carbon.claim.submitted", result); err != nil {
+			log.Printf("[Kafka] CRITICAL: carbon.claim.submitted not published: %v", err)
+			result["event_published"] = false
+			result["event_error"] = err.Error()
+		} else {
+			result["event_published"] = true
 		}
 		writeJSON(w, http.StatusOK, result)
 	})

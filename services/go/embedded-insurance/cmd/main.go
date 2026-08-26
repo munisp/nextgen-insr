@@ -214,28 +214,38 @@ func bindEmbeddedPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	partnerID := r.Context().Value("partner_id").(int)
-	policyNumber := fmt.Sprintf("EMB-%s-%d-%s", req.PartnerCode, partnerID, uuid.New().String()[:8])
 
-	// Record the embedded policy in PostgreSQL
-	_, err := db.ExecContext(r.Context(), `
-		INSERT INTO bancassurance_referrals (partner_id, referral_code, product_type, status, converted_at)
-		VALUES ($1, $2, $3, 'bound', NOW())
-	`, partnerID, policyNumber, req.ProductID)
-	if err != nil {
-		log.Printf("Failed to record embedded policy: %v", err)
-	}
-
-	// Determine product details
-	products := getProductsForContextType("checkout", "")
+	// Resolve the product across all contexts; never invent a product.
 	var product *EmbeddedProduct
-	for _, p := range products {
-		if p.ID == req.ProductID {
-			product = &p
+	for _, ctx := range []string{"checkout", "ride", "flight", "loan", ""} {
+		for _, p := range getProductsForContextType(ctx, "") {
+			if p.ID == req.ProductID {
+				cp := p
+				product = &cp
+				break
+			}
+		}
+		if product != nil {
 			break
 		}
 	}
 	if product == nil {
-		product = &EmbeddedProduct{ID: req.ProductID, Name: "Insurance Policy", Premium: 500, Cover: 50000, Currency: "NGN"}
+		http.Error(w, `{"error":"unknown product_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	policyNumber := fmt.Sprintf("EMB-%s-%d-%s", req.PartnerCode, partnerID, uuid.New().String()[:8])
+
+	// Record the embedded policy in PostgreSQL — fail CLOSED: if the record
+	// cannot be persisted, no policy is claimed to exist.
+	_, err := db.ExecContext(r.Context(), `
+		INSERT INTO bancassurance_referrals (partner_id, referral_code, product_type, premium_amount, status, converted_at)
+		VALUES ($1, $2, $3, $4, 'bound', NOW())
+	`, partnerID, policyNumber, req.ProductID, product.Premium)
+	if err != nil {
+		log.Printf("Failed to record embedded policy: %v", err)
+		http.Error(w, `{"error":"policy binding failed: could not persist policy record"}`, http.StatusServiceUnavailable)
+		return
 	}
 
 	certURL := fmt.Sprintf("%s/api/v1/certificate/%s",
@@ -268,13 +278,44 @@ func getCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return a simple JSON certificate (in production: generate PDF)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	// Real lookup: a certificate is only "valid" when a real bound policy
+	// record exists for this policy number.
+	var status, productType string
+	var premium sql.NullFloat64
+	var issuedAt sql.NullTime
+	err := db.QueryRowContext(r.Context(), `
+		SELECT status, product_type, premium_amount, converted_at
+		FROM bancassurance_referrals WHERE referral_code = $1
+	`, policyNumber).Scan(&status, &productType, &premium, &issuedAt)
+	if err == sql.ErrNoRows {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"policy_number": policyNumber,
+			"valid":         false,
+			"reason":        "policy not found",
+		})
+		return
+	}
+	if err != nil {
+		log.Printf("Certificate lookup failed: %v", err)
+		http.Error(w, `{"error":"certificate lookup unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	cert := map[string]interface{}{
 		"policy_number": policyNumber,
 		"issued_by":     "InsurePortal Embedded Insurance",
-		"issued_at":     time.Now().Format(time.RFC3339),
-		"valid":         true,
-	})
+		"product_type":  productType,
+		"status":        status,
+		"valid":         status == "bound",
+	}
+	if premium.Valid {
+		cert["premium_amount"] = premium.Float64
+	}
+	if issuedAt.Valid {
+		cert["issued_at"] = issuedAt.Time.Format(time.RFC3339)
+	}
+	json.NewEncoder(w).Encode(cert)
 }
 
 // handleWebhook processes partner webhook events
