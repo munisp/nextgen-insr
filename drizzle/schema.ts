@@ -330,6 +330,10 @@ export const agents = pgTable(
     tier: agentTierEnum("tier").default("Bronze").notNull(),
     role: varchar("role", { length: 32 }).default("agent").notNull(),
     pinHash: varchar("pinHash", { length: 128 }).notNull(),
+    // DD-AUTH (F6-5): durable PIN brute-force lockout. Counter resets on
+    // success; 5 consecutive failures lock PIN login for 15 minutes.
+    failedPinAttempts: integer("failedPinAttempts").default(0).notNull(),
+    pinLockedUntil: timestamp("pinLockedUntil"),
     premiumReserve: numeric("premiumReserve", { precision: 15, scale: 2 })
       .default("0.00")
       .notNull(),
@@ -2394,6 +2398,8 @@ export const commissionPayouts = pgTable(
     requestedBy: integer("requested_by"),
     approvedBy: integer("approved_by"),
     rejectedBy: integer("rejected_by"),
+    // DD-AUTH (F7-2): maker-checker — who ran the final processing leg.
+    processedBy: integer("processed_by"),
     rejectionReason: text("rejection_reason"),
     bankCode: varchar("bank_code", { length: 10 }),
     accountNumber: varchar("account_number", { length: 20 }),

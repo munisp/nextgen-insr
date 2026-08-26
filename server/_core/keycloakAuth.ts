@@ -8,9 +8,18 @@
  *  GET  /api/auth/logout   → clear session cookie, redirect to Keycloak end-session
  *  GET  /api/auth/me       → return current user info from session (JSON)
  *
- * Session cookie: `kc_session` — HttpOnly, SameSite=None, Secure in production.
+ * Session cookie: `kc_session` — HttpOnly, SameSite=Lax, Secure when https.
  * The cookie value is a server-signed JWT containing:
- *   { sub, name, email, role, accessToken, refreshToken, idToken, exp }
+ *   { sub, name, email, role, accessToken, jti, acr?, amr?, exp }
+ *
+ * F6-2: the Keycloak refresh_token and id_token are NO LONGER stored in the
+ * client cookie. They live in the server-side session store (Redis), keyed by
+ * the session JWT's `jti`, with the same TTL as the session — a stolen cookie
+ * can no longer mint fresh Keycloak tokens after the session expires.
+ *
+ * F6-1: logout blacklists the session token (and destroys the server-side
+ * token entry); session validation checks the blacklist, so a logged-out or
+ * revoked token is rejected before its natural expiry.
  *
  * The access_token is stored in the session so it can be forwarded to
  * downstream services that accept Bearer tokens (e.g. API Gateway).
@@ -32,7 +41,13 @@ import { users } from "../../drizzle/schema";
 import { getDb } from "../db";
 import { logger } from './logger';
 import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
-import { blacklistToken, isTokenBlacklisted, revokeAllUserTokens } from "../lib/redisClient";
+import {
+  blacklistToken,
+  getRedisClient,
+  isTokenBlacklisted,
+  isUserTokenRevoked,
+} from "../lib/redisClient";
+import { hashSessionToken } from "../middleware/agentAuth";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -56,23 +71,108 @@ export interface SessionPayload {
   email: string;
   role: "admin" | "supervisor" | "user";
   accessToken: string;
-  refreshToken: string;
-  idToken: string;
+  /** Session ID — key of the server-side (Redis) token entry. */
+  jti?: string;
+  /** Authentication Context Class Reference from the Keycloak token (MFA). */
+  acr?: string;
+  /** Authentication Methods References from the Keycloak token (MFA). */
+  amr?: string[];
 }
 
 async function createSessionJwt(payload: SessionPayload): Promise<string> {
-  return new SignJWT({ ...payload })
+  const { jti, ...claims } = payload;
+  return new SignJWT({ ...claims })
     .setProtectedHeader({ alg: "HS256" })
+    .setJTI(jti ?? crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE_SECONDS}s`)
     .sign(getJwtSecret());
 }
 
+// ── Server-side session token store (F6-2) ────────────────────────────────────
+// The Keycloak refresh_token/id_token never touch the client. They are stored
+// server-side in Redis under the session's jti with the session TTL.
+
+interface StoredSessionTokens {
+  refreshToken: string;
+  idToken: string;
+}
+
+const sessionTokenKey = (jti: string): string => `session:tokens:${jti}`;
+
+/**
+ * Persist the Keycloak tokens for a new session. FAIL-CLOSED: if the store
+ * write fails the login is aborted — a session without its server-side token
+ * entry could not be refreshed or cleanly logged out.
+ */
+async function storeSessionTokens(
+  jti: string,
+  tokens: StoredSessionTokens
+): Promise<void> {
+  const client = getRedisClient();
+  await client.set(
+    sessionTokenKey(jti),
+    JSON.stringify(tokens),
+    "EX",
+    SESSION_MAX_AGE_SECONDS
+  );
+}
+
+async function getSessionTokens(
+  jti: string
+): Promise<StoredSessionTokens | null> {
+  try {
+    const client = getRedisClient();
+    const raw = await client.get(sessionTokenKey(jti));
+    if (!raw) return null;
+    return JSON.parse(raw) as StoredSessionTokens;
+  } catch (err) {
+    logger.warn("[Keycloak] Session token store read failed:: " + String(err));
+    return null;
+  }
+}
+
+async function deleteSessionTokens(jti: string): Promise<void> {
+  try {
+    const client = getRedisClient();
+    await client.del(sessionTokenKey(jti));
+  } catch (err) {
+    logger.warn("[Keycloak] Session token store delete failed:: " + String(err));
+  }
+}
+
+/** Stable Redis key namespace for per-user session revocation (F6-1). */
+export function kcSessionRevocationKey(sub: string): string {
+  return `kc:${sub}`;
+}
+
+/**
+ * Verify a session JWT and enforce the revocation lists (F6-1):
+ *  1. per-token blacklist (logout)
+ *  2. per-user revocation timestamp (force logout-all)
+ * Revocation checks fail CLOSED in production: an unreachable revocation
+ * store rejects the session instead of letting a killed session live on.
+ */
 export async function verifySessionJwt(
   token: string
 ): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
+    const failClosed = process.env.NODE_ENV === "production";
+    if (await isTokenBlacklisted(hashSessionToken(token), failClosed)) {
+      return null;
+    }
+    if (
+      payload.sub &&
+      typeof payload.iat === "number" &&
+      (await isUserTokenRevoked(
+        kcSessionRevocationKey(payload.sub),
+        payload.iat,
+        failClosed
+      ))
+    ) {
+      return null;
+    }
     return payload as unknown as SessionPayload;
   } catch {
     return null;
@@ -94,7 +194,9 @@ function sessionCookieOptions(req: Request) {
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none" as const,
+    // F6-2 hardening: Lax (not None) — the session cookie is never needed
+    // cross-site, and Lax blocks cross-site POST/websocket credentialed sends.
+    sameSite: "lax" as const,
     secure: isSecure(req),
     maxAge: SESSION_MAX_AGE_SECONDS * 1000,
   };
@@ -212,14 +314,31 @@ export function registerKeycloakAuthRoutes(app: Express): void {
       const payload = await verifyKeycloakToken(tokens.access_token);
       const role = mapKeycloakRoleToPlatformRole(payload);
 
+      // Real Keycloak claims: acr/amr indicate the authentication context
+      // (MFA step-up). Carried into the session so privileged operations can
+      // verify the login actually used a second factor.
+      const tokenClaims = payload as typeof payload & {
+        acr?: string;
+        amr?: string[];
+      };
+
+      const jti = crypto.randomUUID();
+      // F6-2: refresh/id tokens go to the server-side store, never the cookie.
+      // Fail-closed: a login that cannot persist its token entry is aborted.
+      await storeSessionTokens(jti, {
+        refreshToken: tokens.refresh_token ?? "",
+        idToken: tokens.id_token ?? "",
+      });
+
       const session: SessionPayload = {
         sub: payload.sub,
         name: payload.name ?? payload.preferred_username ?? "",
         email: payload.email ?? "",
         role,
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token ?? "",
-        idToken: tokens.id_token ?? "",
+        jti,
+        ...(tokenClaims.acr ? { acr: tokenClaims.acr } : {}),
+        ...(Array.isArray(tokenClaims.amr) ? { amr: tokenClaims.amr } : {}),
       };
 
       // Upsert user in DB
@@ -253,8 +372,25 @@ export function registerKeycloakAuthRoutes(app: Express): void {
 
     let idTokenHint: string | undefined;
     if (sessionToken) {
-      const session = await verifySessionJwt(sessionToken);
-      idTokenHint = session?.idToken;
+      // Decode directly (not verifySessionJwt) so even an already-blacklisted
+      // or expired session is revoked again — logout must be idempotent.
+      try {
+        const { payload } = await jwtVerify(sessionToken, getJwtSecret());
+        // F6-1: revoke the session server-side. A cleared cookie alone left
+        // the 8h JWT valid to anyone holding it.
+        const exp =
+          typeof payload.exp === "number"
+            ? payload.exp
+            : Math.floor(Date.now() / 1000);
+        await blacklistToken(hashSessionToken(sessionToken), exp);
+        if (typeof payload.jti === "string") {
+          const stored = await getSessionTokens(payload.jti);
+          idTokenHint = stored?.idToken || undefined;
+          await deleteSessionTokens(payload.jti);
+        }
+      } catch {
+        // Unverifiable token — nothing server-side to revoke.
+      }
     }
 
     // Clear session cookie

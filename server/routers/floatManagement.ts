@@ -21,6 +21,7 @@ import { z } from "zod";
 
 import { agents, transactions, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { acquireLock, releaseLock } from "../lib/redisClient";
@@ -87,7 +88,9 @@ export const floatManagementRouter = router({
     }),
 
   // ── Top up float ─────────────────────────────────────────────────────────────
-  topUp: protectedProcedure
+  // DD-AUTH: financialProcedure — minting float is role + Permify gated
+  // (float_topup: admin/supervisor), not any-authenticated-user.
+  topUp: financialProcedure
     .input(z.object({
       agentId: z.number(),
       amountNGN: z.number().positive().max(DAILY_TOP_UP_LIMIT),

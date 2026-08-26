@@ -23,16 +23,14 @@ import { logger } from './logger';
 const isDev = process.env.NODE_ENV === "development";
 const isTest = process.env.NODE_ENV === "test";
 
-// CRITICAL: DEV_AUTH_BYPASS must NEVER activate in production.
-// We explicitly block it when NODE_ENV !== "development" even if the
-// env var is set — this prevents accidental leaks from CI/staging.
-// The HTTP E2E suite sets DEV_AUTH_BYPASS=false explicitly so anonymous
-// requests exercise the real UNAUTHORIZED path even under NODE_ENV=test.
+// CRITICAL: DEV_AUTH_BYPASS must NEVER activate outside an explicit local
+// development opt-in. F6-9: NODE_ENV=test previously enabled the admin
+// fallback user SILENTLY — any staging/preview deployed with NODE_ENV=test
+// served every tRPC call as admin id=1. That leg is removed: the bypass now
+// requires BOTH NODE_ENV=development AND DEV_AUTH_BYPASS=true. Tests must
+// authenticate explicitly (build contexts with a real user or session).
 const devBypassEnabled =
-  process.env.DEV_AUTH_BYPASS === "false"
-    ? false
-    : isTest ||
-      (isDev && process.env.DEV_AUTH_BYPASS === "true");
+  isDev && process.env.DEV_AUTH_BYPASS === "true";
 
 if (
   !isDev &&

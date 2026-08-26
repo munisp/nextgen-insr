@@ -64,6 +64,7 @@ import {
   createFraudAlert,
   getDb,
 } from "../db";
+import { enforceCustomerKycLimits } from "../lib/kycEnforcement";
 import {
   transactionsTotal,
   transactionErrorsTotal,
@@ -379,6 +380,18 @@ export const transactionsRouter = router({
               return existing[0];
             }
           }
+        }
+
+        // ── Gate 0a: KYC tier limits on the customer leg (DD-AUTH) ────────────
+        // checkKycLimits was previously dead code; it is now enforced on every
+        // customer-identified transfer initiation. Fail-closed: unregistered
+        // customers are held to the CBN Tier-0 floor. Runs after the
+        // idempotency replay so retried keys are not double-counted.
+        if (input.customerPhone) {
+          await enforceCustomerKycLimits({
+            customerPhone: input.customerPhone,
+            amount: input.amount,
+          });
         }
 
         // ── Gate 0: Remote kill-switch (terminal disabled by admin) ──────────────

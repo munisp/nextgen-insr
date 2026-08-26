@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -19,8 +21,11 @@ import (
 // NHIA Integration Service — National Health Insurance Authority
 // Port: 8120
 //
-// Middleware: PostgreSQL (beneficiary store), Kafka (enrollment events),
-// Redis (session cache), Keycloak (JWT auth), Temporal (enrollment workflows)
+// Backing: PostgreSQL (beneficiary/employer/preauth store — REAL).
+// HONEST CONTRACT: no NHIA adjudication API is integrated in-tree, so
+// pre-authorizations are recorded as "pending" with zero approved amount —
+// they are NEVER auto-approved by this service. Approval requires a real
+// adjudication leg that does not exist here.
 
 type Config struct {
 	Port        string
@@ -34,7 +39,7 @@ func loadConfig() Config {
 	return Config{
 		Port:        envOr("PORT", "8120"),
 		DatabaseURL: envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
-		KafkaURL:    envOr("KAFKA_REST_URL", "http://localhost:8082"),
+		KafkaURL:    envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
 		JWTSecret:   envOr("JWT_SECRET", ""),
 		Environment: envOr("ENVIRONMENT", "development"),
 	}
@@ -171,8 +176,11 @@ func (s *Store) ListBeneficiaries(ctx context.Context, status string) ([]map[str
 }
 
 func (s *Store) Enroll(ctx context.Context, name, bvn, dob, rel, plan, empID string) (string, error) {
-	pin := "NHIA-2026-" + bvn[len(bvn)-4:]
-	id := fmt.Sprintf("BEN-%d", time.Now().UnixNano()%100000)
+	if len(bvn) < 4 {
+		return "", fmt.Errorf("bvn must be at least 4 characters")
+	}
+	pin := fmt.Sprintf("NHIA-%d-%s", time.Now().Year(), bvn[len(bvn)-4:])
+	id := "BEN-" + randomHex(6)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO nhia_beneficiaries (id, nhia_pin, full_name, bvn, date_of_birth, relationship, plan_type, employer_id, enrolled_at, expires_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),NOW()+INTERVAL '1 year')`, id, pin, name, bvn, dob, rel, plan, empID)
 	if err != nil {
@@ -181,23 +189,23 @@ func (s *Store) Enroll(ctx context.Context, name, bvn, dob, rel, plan, empID str
 	return pin, nil
 }
 
+// CreatePreAuth records a pre-authorization REQUEST. No NHIA adjudication
+// API is integrated, so the request is always "pending" with zero approved
+// amount — it is never auto-approved by this service.
 func (s *Store) CreatePreAuth(ctx context.Context, benID, provID, proc, diag string, cost int64) (map[string]interface{}, error) {
-	status := "approved"
-	approved := cost
-	if cost > 50000000 {
-		status = "pending_review"
-		approved = 50000000
-	}
-	id := fmt.Sprintf("AUTH-%s-%03d", time.Now().Format("20060102"), time.Now().UnixNano()%1000)
+	id := "AUTH-" + randomHex(8)
 	validUntil := time.Now().AddDate(0, 0, 30)
 	_, err := s.db.ExecContext(ctx, `INSERT INTO nhia_preauth (id, beneficiary_id, provider_id, procedure_name, diagnosis_code, estimated_cost, approved_amount, status, valid_until, conditions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Valid at registered NHIA providers only')`, id, benID, provID, proc, diag, cost, approved, status, validUntil)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, id, benID, provID, proc, diag, cost, 0, "pending", validUntil, "Awaiting adjudication — no NHIA adjudication endpoint is integrated with this service")
 	if err != nil {
 		return nil, err
 	}
 	return map[string]interface{}{
-		"authorization_id": id, "status": status, "approved_amount": approved,
-		"valid_until": validUntil.Format(time.RFC3339), "conditions": "Valid at registered NHIA providers only",
+		"authorization_id": id, "status": "pending", "approved_amount": 0,
+		"estimated_cost": cost,
+		"valid_until":    validUntil.Format(time.RFC3339),
+		"conditions":     "Awaiting adjudication — no NHIA adjudication endpoint is integrated with this service",
+		"adjudication":   "unavailable: this pre-authorization has NOT been approved and authorizes no expenditure",
 	}, nil
 }
 
@@ -225,23 +233,42 @@ func (s *Store) Close() error { return s.db.Close() }
 
 // ── Event Publisher ─────────────────────────────────────────────────────────
 
-func publishEvent(kafkaURL, topic string, event interface{}) {
-	data, _ := json.Marshal(event)
-	log.Printf("[Kafka] topic=%s payload=%s", topic, string(data))
+// publishEvent performs a REAL produce via the Kafka REST proxy and returns
+// an honest error on any failure. It never claims publication into the void.
+func publishEvent(kafkaURL, topic string, event interface{}) error {
 	if kafkaURL == "" {
-		return
+		return fmt.Errorf("eventing unavailable: KAFKA_REST_URL is not configured")
 	}
-	go func() {
-		body, _ := json.Marshal(map[string]interface{}{"records": []map[string]interface{}{{"value": event}}})
-		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/topics/%s", kafkaURL, topic), strings.NewReader(string(body)))
-		req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			log.Printf("[Kafka] error: %v", err)
-			return
-		}
-		_ = resp.Body.Close()
-	}()
+	body, err := json.Marshal(map[string]interface{}{"records": []map[string]interface{}{{"value": event}}})
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/topics/%s", kafkaURL, topic), strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("kafka rest proxy unreachable: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("kafka rest proxy returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// randomHex returns n cryptographically random bytes hex-encoded (2n chars).
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		// Fail loud rather than fall back to predictable ids.
+		panic(fmt.Sprintf("crypto/rand unavailable: %v", err))
+	}
+	return hex.EncodeToString(b)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
@@ -306,13 +333,21 @@ func main() {
 			log.Printf("Enroll error: %v", err)
 			return
 		}
-		publishEvent(cfg.KafkaURL, "nhia.enrollment.created", map[string]string{"nhia_pin": pin, "name": req.FullName})
-		writeJSON(w, http.StatusCreated, map[string]interface{}{
+		resp := map[string]interface{}{
 			"nhia_pin": pin, "status": "active", "plan_type": req.PlanType,
 			"enrolled_at": time.Now().Format(time.RFC3339),
 			"expires_at":  time.Now().AddDate(1, 0, 0).Format(time.RFC3339),
 			"message":     "Successfully enrolled in NHIA scheme",
-		})
+		}
+		// Honest eventing: surface publication failure instead of pretending.
+		if err := publishEvent(cfg.KafkaURL, "nhia.enrollment.created", map[string]string{"nhia_pin": pin, "name": req.FullName}); err != nil {
+			log.Printf("[Kafka] CRITICAL: nhia.enrollment.created not published: %v", err)
+			resp["event_published"] = false
+			resp["event_error"] = err.Error()
+		} else {
+			resp["event_published"] = true
+		}
+		writeJSON(w, http.StatusCreated, resp)
 	})
 
 	mux.HandleFunc("/api/v1/nhia/pre-authorize", func(w http.ResponseWriter, r *http.Request) {
@@ -340,7 +375,13 @@ func main() {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "pre-authorization failed"})
 			return
 		}
-		publishEvent(cfg.KafkaURL, "nhia.preauth."+result["status"].(string), result)
+		if err := publishEvent(cfg.KafkaURL, "nhia.preauth."+result["status"].(string), result); err != nil {
+			log.Printf("[Kafka] CRITICAL: nhia.preauth event not published: %v", err)
+			result["event_published"] = false
+			result["event_error"] = err.Error()
+		} else {
+			result["event_published"] = true
+		}
 		writeJSON(w, http.StatusOK, result)
 	})
 

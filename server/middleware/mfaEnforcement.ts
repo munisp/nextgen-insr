@@ -19,7 +19,11 @@ import { TRPCError } from "@trpc/server";
 import type { Request, Response, NextFunction } from "express";
 
 import type { TrpcContext } from "../_core/context";
-import { verifySessionJwt, KC_SESSION_COOKIE } from "../_core/keycloakAuth";
+import {
+  hasMfaCompleted,
+  verifySessionJwt,
+  KC_SESSION_COOKIE,
+} from "../_core/keycloakAuth";
 import { logger } from '../_core/logger';
 
 /**
@@ -53,9 +57,30 @@ export const requireMfa = async ({
     });
   }
 
-  // Check Keycloak session AMR claim to verify MFA was actually used in this session
+  // Check Keycloak session AMR claim to verify MFA was actually used in this
+  // session. FAIL-CLOSED: an unreadable/absent session or a session without a
+  // real MFA marker denies the operation — there is no DB-flag-only fallback.
+  const session = await readKcSession(ctx.req);
+  if (!session || !hasMfaCompleted(session)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "This operation requires MFA authentication. Please re-login with MFA.",
+    });
+  }
+
+  return next({ ctx });
+};
+
+/**
+ * Read and verify the kc_session JWT from the request cookies.
+ * Returns null when absent/invalid/revoked.
+ */
+async function readKcSession(
+  req: TrpcContext["req"]
+): Promise<{ acr?: string; amr?: string[] } | null> {
   try {
-    const cookieHeader = String((ctx.req as any).headers?.cookie ?? "");
+    const cookieHeader = String(req.headers?.cookie ?? "");
     const cookies = new Map(
       cookieHeader.split(";").map((p: string) => {
         const [k, ...v] = p.trim().split("=");
@@ -63,28 +88,46 @@ export const requireMfa = async ({
       })
     );
     const sessionToken = cookies.get(KC_SESSION_COOKIE);
-    if (sessionToken) {
-      const session = await verifySessionJwt(sessionToken);
-      const amr: string[] = (session as any)?.amr ?? [];
-      const mfaUsed = amr.some(m =>
-        ["otp", "mfa", "totp", "webauthn"].includes(m)
-      );
-      if (!mfaUsed) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message:
-            "This operation requires MFA authentication. Please re-login with MFA.",
-        });
-      }
-    }
+    if (!sessionToken) return null;
+    const session = await verifySessionJwt(sessionToken);
+    if (!session) return null;
+    return { acr: session.acr, amr: session.amr };
   } catch (err) {
-    if (err instanceof TRPCError) throw err;
-    // If we can't verify the session AMR, fall back to the DB flag only
-    logger.warn("[MFA] Could not verify AMR claim, relying on DB mfaEnabled flag:: " + err);
+    logger.warn("[MFA] Could not read session for step-up check:: " + err);
+    return null;
   }
+}
 
-  return next({ ctx });
-};
+/**
+ * F7 step-up for high-risk financial operations (payout approve/process).
+ *
+ * Honest capability statement: MFA is NOT enrollable in this deployment —
+ * the mfaManager router fails loud NOT_IMPLEMENTED and the production
+ * Keycloak realm has no MFA flow — so the primary controls on these
+ * operations are the role gate and maker-checker enforced by the callers.
+ * This assertion is the MFA leg: when a user IS flagged `mfaEnabled` in the
+ * DB, the current session MUST carry a real second-factor marker (acr/amr
+ * copied from the Keycloak token at login). Anything else fails CLOSED —
+ * an enrolled account can never approve/move payouts on a password-only
+ * session, and a session that cannot be verified is treated as factor-less.
+ */
+export async function assertFinancialStepUp(ctx: TrpcContext): Promise<void> {
+  if (!ctx.user) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Authentication required",
+    });
+  }
+  if (!ctx.user.mfaEnabled) return;
+  const session = await readKcSession(ctx.req);
+  if (!session || !hasMfaCompleted(session)) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message:
+        "MFA-enrolled account: this operation requires a session authenticated with a second factor. Re-authenticate with MFA before approving or processing payouts.",
+    });
+  }
+}
 
 /**
  * Express middleware variant for REST routes that require MFA.
@@ -109,10 +152,7 @@ export async function requireMfaExpress(
     }
 
     const session = await verifySessionJwt(sessionToken);
-    const amr: string[] = (session as any)?.amr ?? [];
-    const mfaUsed = amr.some(m =>
-      ["otp", "mfa", "totp", "webauthn"].includes(m)
-    );
+    const mfaUsed = session ? hasMfaCompleted(session) : false;
 
     if (!mfaUsed) {
       res.status(403).json({

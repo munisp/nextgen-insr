@@ -3,11 +3,16 @@
 // or adminProcedure (admin-only). Financial mutations additionally use
 // financialProcedure (Permify RBAC) from server/_core/permifyMiddleware.ts.
 // Unauthenticated access to any procedure results in HTTP 401 UNAUTHORIZED.
+import { jwtVerify } from "jose";
+
 import { KC_SESSION_COOKIE } from "./_core/keycloakAuth";
 // Sprint 98: Missing router imports
 // Insurance policy purchase orders
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { getJwtSecret } from "./lib/envValidation";
+import { blacklistToken } from "./lib/redisClient";
+import { hashSessionToken } from "./middleware/agentAuth";
 import { agentRouter } from "./routers/agent";
 import { goServiceBridgeRouter } from "./routers/goServiceBridge";
 import { transactionsRouter } from "./routers/transactions";
@@ -528,7 +533,26 @@ export const appRouter = router({
     // Keycloak logout is handled by GET /api/auth/logout (redirect to end-session).
     // This tRPC mutation clears the session cookie for API clients that cannot
     // follow redirects (e.g. mobile apps using the tRPC client directly).
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      // F6-1: revoke the session token server-side before clearing the cookie,
+      // so a captured kc_session JWT dies at logout instead of at exp.
+      const cookieHeader = ctx.req.headers.cookie ?? "";
+      const match = cookieHeader.match(
+        new RegExp(`${KC_SESSION_COOKIE}=([^;]+)`)
+      );
+      if (match?.[1]) {
+        try {
+          const secret = new TextEncoder().encode(getJwtSecret());
+          const { payload } = await jwtVerify(match[1], secret);
+          const exp =
+            typeof payload.exp === "number"
+              ? payload.exp
+              : Math.floor(Date.now() / 1000);
+          await blacklistToken(hashSessionToken(match[1]), exp);
+        } catch {
+          // Unverifiable token — already unusable, nothing to revoke.
+        }
+      }
       ctx.res.clearCookie(KC_SESSION_COOKIE, {
         path: "/",
         maxAge: -1,

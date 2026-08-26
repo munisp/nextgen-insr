@@ -3,10 +3,11 @@
  * Batch payouts, settlement cycles, reconciliation, payout tracking
  */
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, gte, count, sum, sql } from "drizzle-orm";
+import { eq, desc, and, gte, count, isNull, ne, or, sum, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { merchantPayouts } from "../../drizzle/schema";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -54,7 +55,7 @@ export const merchantPayoutSettlementRouter = router({
       }
     }),
 
-  initiatePayout: protectedProcedure
+  initiatePayout: financialProcedure
     .input(
       z.object({
         merchantId: z.number(),
@@ -85,7 +86,7 @@ export const merchantPayoutSettlementRouter = router({
             settlementCycle: input.settlementCycle,
             settlementDate,
             status: "pending",
-            initiatedBy: ctx.user?.id,
+            initiatedBy: ctx.user.id,
           } as any)
           .returning();
         return { payout };
@@ -99,18 +100,50 @@ export const merchantPayoutSettlementRouter = router({
       }
     }),
 
-  approvePayout: protectedProcedure
+  // F7-3: expected-state guards + maker-checker. Every transition is a
+  // DB-guarded update: zero claimed rows means wrong state or self-approval,
+  // and the honest reason is reported after a follow-up read.
+  approvePayout: financialProcedure
     .input(z.object({ payoutId: z.number() }))
     .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
+        const claimed = await db
           .update(merchantPayouts)
           .set({
             status: "approved",
           })
-          .where(eq(merchantPayouts.id, input.payoutId));
+          .where(
+            and(
+              eq(merchantPayouts.id, input.payoutId),
+              eq(merchantPayouts.status, "pending"),
+              or(
+                isNull(merchantPayouts.initiatedBy),
+                ne(merchantPayouts.initiatedBy, ctx.user.id)
+              )
+            )
+          )
+          .returning({ id: merchantPayouts.id });
+        if (claimed.length === 0) {
+          const [current] = await db
+            .select()
+            .from(merchantPayouts)
+            .where(eq(merchantPayouts.id, input.payoutId))
+            .limit(1);
+          if (!current)
+            throw new TRPCError({ code: "NOT_FOUND", message: "Payout not found" });
+          if (current.initiatedBy === ctx.user.id)
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Maker-checker violation: the payout initiator cannot approve their own payout",
+            });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Payout is not in pending state (current: ${current.status})`,
+          });
+        }
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -122,19 +155,48 @@ export const merchantPayoutSettlementRouter = router({
       }
     }),
 
-  processPayout: protectedProcedure
+  processPayout: financialProcedure
     .input(z.object({ payoutId: z.number(), transferRef: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
+        const claimed = await db
           .update(merchantPayouts)
           .set({
             status: "processing",
             processedAt: new Date(),
           })
-          .where(eq(merchantPayouts.id, input.payoutId));
+          .where(
+            and(
+              eq(merchantPayouts.id, input.payoutId),
+              eq(merchantPayouts.status, "approved"),
+              or(
+                isNull(merchantPayouts.initiatedBy),
+                ne(merchantPayouts.initiatedBy, ctx.user.id)
+              )
+            )
+          )
+          .returning({ id: merchantPayouts.id });
+        if (claimed.length === 0) {
+          const [current] = await db
+            .select()
+            .from(merchantPayouts)
+            .where(eq(merchantPayouts.id, input.payoutId))
+            .limit(1);
+          if (!current)
+            throw new TRPCError({ code: "NOT_FOUND", message: "Payout not found" });
+          if (current.initiatedBy === ctx.user.id)
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Maker-checker violation: the payout initiator cannot process their own payout",
+            });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Payout is not in approved state (current: ${current.status})`,
+          });
+        }
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -146,18 +208,37 @@ export const merchantPayoutSettlementRouter = router({
       }
     }),
 
-  completePayout: protectedProcedure
+  completePayout: financialProcedure
     .input(z.object({ payoutId: z.number() }))
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
+        const claimed = await db
           .update(merchantPayouts)
           .set({
             status: "completed",
           })
-          .where(eq(merchantPayouts.id, input.payoutId));
+          .where(
+            and(
+              eq(merchantPayouts.id, input.payoutId),
+              eq(merchantPayouts.status, "processing")
+            )
+          )
+          .returning({ id: merchantPayouts.id });
+        if (claimed.length === 0) {
+          const [current] = await db
+            .select()
+            .from(merchantPayouts)
+            .where(eq(merchantPayouts.id, input.payoutId))
+            .limit(1);
+          if (!current)
+            throw new TRPCError({ code: "NOT_FOUND", message: "Payout not found" });
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Payout is not in processing state (current: ${current.status})`,
+          });
+        }
         return { success: true };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

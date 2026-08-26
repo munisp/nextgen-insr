@@ -181,6 +181,21 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       CLUSTER_ID: InsurePortalKafkaCluster2026
 
+  # Kafka REST proxy — the REAL HTTP produce/consume front-end for the
+  # broker above. Go services publish via KAFKA_REST_URL=http://kafka-rest:8082
+  # (previously they defaulted to a phantom localhost:8082 with no proxy
+  # deployed anywhere — every produce went into the void).
+  kafka-rest:
+    image: confluentinc/cp-kafka-rest:7.6.0
+    environment:
+      KAFKA_REST_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
+      KAFKA_REST_HOST_NAME: kafka-rest
+    # No host port published: reachable on the compose network as kafka-rest:8082.
+    # (Host port 8082 is already published by ussd-gateway.)
+    depends_on:
+      - kafka
+
   opensearch:
     image: opensearchproject/opensearch:2.13.0
     ports:

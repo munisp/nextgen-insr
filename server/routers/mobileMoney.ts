@@ -16,6 +16,7 @@ import { z } from "zod";
 import { transactions, agents, customers, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { permifyCheck } from "../_core/permify";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
@@ -24,6 +25,7 @@ import {
   dispatchProviderOperation,
   type ProviderClientConfig,
 } from "../lib/providerDispatch";
+import { enforceCustomerKycLimits } from "../lib/kycEnforcement";
 import { resolveProviderTx } from "../lib/providerResolution";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { cacheSet } from "../redisClient";
@@ -98,7 +100,7 @@ async function dispatchMobileMoneyOp(opts: {
 }
 
 export const mobileMoneyRouter = router({
-  cashIn: protectedProcedure
+  cashIn: financialProcedure
     .input(z.object({
       agentId: z.number(), provider: z.enum(PROVIDERS),
       customerPhone: z.string(), amountNGN: z.number().min(MIN_AMOUNT).max(MAX_AMOUNT),
@@ -125,6 +127,13 @@ export const mobileMoneyRouter = router({
           resolution: resolved.resolution,
         };
       }
+      // DD-AUTH: KYC tier limits on the customer leg (fail-closed; unregistered
+      // customers are held to the CBN Tier-0 floor). Runs after the idempotency
+      // replay so retried references are not double-counted.
+      await enforceCustomerKycLimits({
+        customerPhone: input.customerPhone,
+        amount: input.amountNGN,
+      });
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });
@@ -196,7 +205,7 @@ export const mobileMoneyRouter = router({
       } finally { await releaseLock(lockKey); }
     }),
 
-  cashOut: protectedProcedure
+  cashOut: financialProcedure
     .input(z.object({
       agentId: z.number(), provider: z.enum(PROVIDERS),
       customerPhone: z.string(), amountNGN: z.number().min(MIN_AMOUNT).max(MAX_AMOUNT),
@@ -223,6 +232,13 @@ export const mobileMoneyRouter = router({
           resolution: resolved.resolution,
         };
       }
+      // DD-AUTH: KYC tier limits on the customer leg (fail-closed; unregistered
+      // customers are held to the CBN Tier-0 floor). Runs after the idempotency
+      // replay so retried references are not double-counted.
+      await enforceCustomerKycLimits({
+        customerPhone: input.customerPhone,
+        amount: input.amountNGN,
+      });
       const [agent] = await db.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (!agent.isActive || agent.floatLocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Agent not available" });

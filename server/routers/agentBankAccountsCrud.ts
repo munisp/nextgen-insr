@@ -7,6 +7,7 @@ import { z } from "zod";
 import { agentBankAccounts } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { resolveAgentScope } from "../middleware/agentAuth";
 
 const NIGERIAN_BANKS = [
   "044",
@@ -47,9 +48,26 @@ export const agentBankAccountsRouter = router({
     .query(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
-        const conditions = input.agentId
-          ? [eq(agentBankAccounts.agentId, input.agentId)]
-          : [];
+        // F7-1/F8: non-admin callers only ever see their OWN accounts; an
+        // agent session pins the filter and an omitted agentId can no longer
+        // dump every agent's bank details.
+        const scope = await resolveAgentScope(
+          ctx.req,
+          ctx.user.role,
+          input.agentId ?? null
+        );
+        if (!scope.ok && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: scope.code, message: scope.message });
+        }
+        const conditions =
+          ctx.user.role === "admin" && !scope.ok
+            ? []
+            : [
+                eq(
+                  agentBankAccounts.agentId,
+                  scope.ok ? scope.agentId : (input.agentId ?? -1)
+                ),
+              ];
         const rows = await db
           .select()
           .from(agentBankAccounts)
@@ -106,7 +124,9 @@ export const agentBankAccountsRouter = router({
   create: protectedProcedure
     .input(
       z.object({
-        agentId: z.number(),
+        // F7-1: optional legacy hint ONLY — ownership is resolved from the
+        // session; a mismatching value is rejected, never trusted.
+        agentId: z.number().optional(),
         bankName: z.string().min(2),
         bankCode: z.string().min(3),
         accountNumber: z.string(),
@@ -114,16 +134,16 @@ export const agentBankAccountsRouter = router({
         isDefault: z.boolean().default(false),
       })
     )
-    .mutation(async ({ input }) => {
-      try {
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Internal server error",
-        });
+    .mutation(async ({ input, ctx }) => {
+      const scope = await resolveAgentScope(
+        ctx.req,
+        ctx.user.role,
+        input.agentId
+      );
+      if (!scope.ok) {
+        throw new TRPCError({ code: scope.code, message: scope.message });
       }
+      const agentId = scope.agentId;
       const db = (await getDb())!;
       // NUBAN validation
       if (!validateNUBAN(input.accountNumber))
@@ -143,7 +163,7 @@ export const agentBankAccountsRouter = router({
         .from(agentBankAccounts)
         .where(
           and(
-            eq(agentBankAccounts.agentId, input.agentId),
+            eq(agentBankAccounts.agentId, agentId),
             eq(agentBankAccounts.accountNumber, input.accountNumber),
             eq(agentBankAccounts.bankCode, input.bankCode)
           )
@@ -158,7 +178,7 @@ export const agentBankAccountsRouter = router({
       const [{ total }] = await db
         .select({ total: count() })
         .from(agentBankAccounts)
-        .where(eq(agentBankAccounts.agentId, input.agentId))
+        .where(eq(agentBankAccounts.agentId, agentId))
         .limit(100);
       if (total >= 5)
         throw new TRPCError({
@@ -171,18 +191,39 @@ export const agentBankAccountsRouter = router({
         await db
           .update(agentBankAccounts)
           .set({ isDefault: false })
-          .where(eq(agentBankAccounts.agentId, input.agentId));
+          .where(eq(agentBankAccounts.agentId, agentId));
       }
       const [row] = await db
         .insert(agentBankAccounts)
-        .values(input as any)
+        .values({
+          agentId,
+          bankName: input.bankName,
+          bankCode: input.bankCode,
+          accountNumber: input.accountNumber,
+          accountName: input.accountName,
+          isDefault: input.isDefault,
+        })
         .returning();
       return { ...row, maskedAccount: maskAccountNumber(row.accountNumber) };
     }),
   setPrimary: protectedProcedure
-    .input(z.object({ id: z.number(), agentId: z.number() }))
-    .mutation(async ({ input }) => {
+    .input(
+      z.object({
+        id: z.number(),
+        // Legacy hint only — ownership comes from the session (F7-1).
+        agentId: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
       try {
+        const scope = await resolveAgentScope(
+          ctx.req,
+          ctx.user.role,
+          input.agentId
+        );
+        if (!scope.ok) {
+          throw new TRPCError({ code: scope.code, message: scope.message });
+        }
         const db = (await getDb())!;
         const [account] = await db
           .select()
@@ -194,7 +235,7 @@ export const agentBankAccountsRouter = router({
             code: "NOT_FOUND",
             message: "Bank account not found",
           });
-        if (account.agentId !== input.agentId)
+        if (account.agentId !== scope.agentId)
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "Account does not belong to this agent",
@@ -202,7 +243,7 @@ export const agentBankAccountsRouter = router({
         await db
           .update(agentBankAccounts)
           .set({ isDefault: false })
-          .where(eq(agentBankAccounts.agentId, input.agentId));
+          .where(eq(agentBankAccounts.agentId, scope.agentId));
         await db
           .update(agentBankAccounts)
           .set({ isDefault: true })
@@ -219,7 +260,7 @@ export const agentBankAccountsRouter = router({
     }),
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         const [account] = await db
@@ -231,6 +272,17 @@ export const agentBankAccountsRouter = router({
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Bank account not found",
+          });
+        // F7-1: ownership from session, not from caller input.
+        const scope = await resolveAgentScope(
+          ctx.req,
+          ctx.user.role,
+          account.agentId
+        );
+        if (!scope.ok || scope.agentId !== account.agentId)
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Account does not belong to this agent",
           });
         await db
           .delete(agentBankAccounts)

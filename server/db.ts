@@ -8,7 +8,7 @@ import { eq, desc, and, lt, sql, type ExtractTablesWithRelations, type ColumnBas
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { NodePgQueryResultHKT } from "drizzle-orm/node-postgres";
 import type { PgTable, PgTransaction, TableConfig, PgColumn } from "drizzle-orm/pg-core";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 
 import { logger } from "./_core/logger";
 import { AUDIT_CHAIN_LOCK_KEY, computeEntryHash } from "./lib/auditChain";
@@ -199,6 +199,47 @@ export const db = {
     return { rows: res.rows as Record<string, unknown>[], rowCount: res.rowCount };
   },
 };
+
+/**
+ * Runs `fn` inside a REAL transaction on a single dedicated pool client.
+ *
+ * Unlike `db.execute` (which acquires a pooled connection per call, so
+ * `BEGIN`/`COMMIT` issued through it can land on different connections),
+ * every statement issued through the client handed to `fn` is guaranteed to
+ * run on the SAME connection. Any throw rolls the whole transaction back;
+ * the client is always released. Money mutations composed of multiple
+ * statements MUST use this (or drizzle `db.transaction`) — never pooled
+ * `db.execute('BEGIN')`.
+ */
+export async function withClientTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  const pool = await getPool();
+  if (!pool) {
+    throw new DatabaseError(
+      "Cannot start a transaction: database pool is unavailable",
+      "DATABASE_UNAVAILABLE"
+    );
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      logger.error(
+        `[DB] Rollback failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`
+      );
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 export function getDbStatus(): {
   connected: boolean;

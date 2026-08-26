@@ -40,6 +40,8 @@ import {
 import {
   callerFor,
   adminUser,
+  approverUser,
+  regularUser,
   expectCounted as expect,
   expectTrpcError,
   resetAssertionCount,
@@ -159,15 +161,17 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
   // ── 1. Commission happy path ───────────────────────────────────────────────
   it("commission payout: request → approve → process deducts exactly once", async () => {
     const caller = callerFor(adminUser);
+    // F7-2 maker-checker: approve/process run under a DIFFERENT staff user.
+    const staff = callerFor(approverUser);
     const payout = await caller.commissionPayouts.request({
       agentId: COMM_AGENT_CODE, amount: 1000, bankCode: "044", accountNumber: "0123456789", accountName: "FFX Agent",
     });
     expect(payout.status).toBe("pending");
 
-    const approved = await caller.commissionPayouts.approve({ id: payout.id });
+    const approved = await staff.commissionPayouts.approve({ id: payout.id });
     expect(approved.status).toBe("approved");
 
-    const processed = await caller.commissionPayouts.process({ id: payout.id });
+    const processed = await staff.commissionPayouts.process({ id: payout.id });
     expect(processed.status).toBe("completed");
     expect(processed.nubanRef).toBe(`COMM-PAYOUT-${payout.id}`); // deterministic ref
     expect(await commBalance(commAgentPk)).toBe(COMM_START - 1000);
@@ -181,8 +185,8 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
       .limit(1);
     const before = await commBalance(commAgentPk);
 
-    const caller = callerFor(adminUser);
-    const replay = await caller.commissionPayouts.process({ id: row!.id });
+    const staff = callerFor(approverUser);
+    const replay = await staff.commissionPayouts.process({ id: row!.id });
     expect(replay.status).toBe("completed");
     expect(await commBalance(commAgentPk)).toBe(before); // no second deduction
   });
@@ -190,14 +194,15 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
   // ── 3. Commission process race ─────────────────────────────────────────────
   it("commission payout race: 5 parallel process calls deduct exactly once", async () => {
     const caller = callerFor(adminUser);
+    const staff = callerFor(approverUser);
     const payout = await caller.commissionPayouts.request({
       agentId: COMM_AGENT_CODE, amount: 500,
     });
-    await caller.commissionPayouts.approve({ id: payout.id });
+    await staff.commissionPayouts.approve({ id: payout.id });
     const before = await commBalance(commAgentPk);
 
     const settled = await Promise.allSettled(
-      Array.from({ length: 5 }, () => caller.commissionPayouts.process({ id: payout.id }))
+      Array.from({ length: 5 }, () => staff.commissionPayouts.process({ id: payout.id }))
     );
     const fulfilled = settled.filter((s) => s.status === "fulfilled").length;
     expect(fulfilled).toBe(5); // losers replay the winner, nobody errors
@@ -209,32 +214,57 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
   // ── 4. Process before approve ──────────────────────────────────────────────
   it("commission payout order violation: process before approve moves nothing", async () => {
     const caller = callerFor(adminUser);
+    const staff = callerFor(approverUser);
     const payout = await caller.commissionPayouts.request({ agentId: COMM_AGENT_CODE, amount: 500 });
     const before = await commBalance(commAgentPk);
 
-    await expectTrpcError(caller.commissionPayouts.process({ id: payout.id }), "BAD_REQUEST");
+    await expectTrpcError(staff.commissionPayouts.process({ id: payout.id }), "BAD_REQUEST");
     expect(await commBalance(commAgentPk)).toBe(before);
     expect((await payoutRow(payout.id))!.status).toBe("pending");
+  });
+
+  // ── 4b. Maker-checker (F7-2): requester can never approve/process their own ─
+  it("commission payout maker-checker: self-approval and self-processing are refused", async () => {
+    const caller = callerFor(adminUser);
+    const staff = callerFor(approverUser);
+    const payout = await caller.commissionPayouts.request({ agentId: COMM_AGENT_CODE, amount: 250 });
+    const before = await commBalance(commAgentPk);
+
+    // The requester (adminUser, id 91001) cannot approve their own payout…
+    await expectTrpcError(caller.commissionPayouts.approve({ id: payout.id }), "FORBIDDEN");
+    expect((await payoutRow(payout.id))!.status).toBe("pending");
+
+    // …but a different staff user can.
+    await staff.commissionPayouts.approve({ id: payout.id });
+    // …and the requester still cannot run the processing leg.
+    await expectTrpcError(caller.commissionPayouts.process({ id: payout.id }), "FORBIDDEN");
+    expect((await payoutRow(payout.id))!.status).toBe("approved");
+    expect(await commBalance(commAgentPk)).toBe(before);
+
+    // Non-staff roles cannot approve at all.
+    const outsider = callerFor(regularUser);
+    await expectTrpcError(outsider.commissionPayouts.approve({ id: payout.id }), "FORBIDDEN");
   });
 
   // ── 5. Constraint guard + rollback at process time ─────────────────────────
   it("commission overdraft guard: insufficient balance at process time rolls back the claim", async () => {
     // Agent has 3500 left. Two approved payouts of 3000 + 1000 exceed it.
     const caller = callerFor(adminUser);
+    const staff = callerFor(approverUser);
     const p1 = await caller.commissionPayouts.request({ agentId: COMM_AGENT_CODE, amount: 3000 });
     const p2 = await caller.commissionPayouts.request({ agentId: COMM_AGENT_CODE, amount: 1000 });
-    await caller.commissionPayouts.approve({ id: p1.id });
-    await caller.commissionPayouts.approve({ id: p2.id });
+    await staff.commissionPayouts.approve({ id: p1.id });
+    await staff.commissionPayouts.approve({ id: p2.id });
     const before = await commBalance(commAgentPk); // 3500
 
-    const done = await caller.commissionPayouts.process({ id: p1.id });
+    const done = await staff.commissionPayouts.process({ id: p1.id });
     expect(done.status).toBe("completed");
     expect(await commBalance(commAgentPk)).toBe(before - 3000);
 
     // Second payout now exceeds the remaining 500: guarded deduction finds
     // zero rows → PRECONDITION_FAILED, and the approved→completed claim must
     // roll back inside the same transaction (no partial durable state).
-    await expectTrpcError(caller.commissionPayouts.process({ id: p2.id }), "PRECONDITION_FAILED");
+    await expectTrpcError(staff.commissionPayouts.process({ id: p2.id }), "PRECONDITION_FAILED");
     expect((await payoutRow(p2.id))!.status).toBe("approved"); // claim rolled back
     expect(await commBalance(commAgentPk)).toBe(before - 3000); // balance untouched
   });

@@ -14,7 +14,7 @@
  *   provider says pending   -> row stays pending (no effect, no fabrication)
  *   lookup inconclusive     -> row stays pending / unknown_outcome
  */
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import {
   lookupProviderStatus,
@@ -39,6 +39,22 @@ export interface ResolveResult {
 
 function metadataOf(tx: Transaction): Record<string, unknown> {
   return (tx.metadata as Record<string, unknown> | null) ?? {};
+}
+
+type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+/**
+ * Re-read the row after an expected-state guarded transition matched 0 rows
+ * (a concurrent resolver won the race). Returns the fresh row so callers
+ * never act on the stale in-memory status.
+ */
+async function currentRow(db: Db, tx: Transaction): Promise<Transaction> {
+  const [fresh] = await db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.ref, tx.ref))
+    .limit(1);
+  return fresh ?? tx;
 }
 
 /**
@@ -86,12 +102,18 @@ export async function resolveProviderTx(opts: {
         },
         updatedAt: new Date(),
       })
-      .where(eq(transactions.ref, tx.ref))
+      // Expected-state guard (F4): only a still-pending row may transition.
+      // A concurrent conflicting resolution (completion vs failure) matches
+      // 0 rows on the loser's UPDATE instead of last-writer-wins.
+      .where(and(eq(transactions.ref, tx.ref), eq(transactions.status, "pending")))
       .returning();
+    if (!updated) {
+      return { transaction: await currentRow(db, tx), resolution: "already_resolved" };
+    }
     logger.info(
       `[ProviderResolution] ${tx.ref} resolved completed via status lookup`
     );
-    return { transaction: updated ?? tx, resolution: "completed" };
+    return { transaction: updated, resolution: "completed" };
   }
 
   if (lookup.status === "failed") {
@@ -109,12 +131,16 @@ export async function resolveProviderTx(opts: {
         },
         updatedAt: new Date(),
       })
-      .where(eq(transactions.ref, tx.ref))
+      // Expected-state guard (F4): see the completed branch above.
+      .where(and(eq(transactions.ref, tx.ref), eq(transactions.status, "pending")))
       .returning();
+    if (!updated) {
+      return { transaction: await currentRow(db, tx), resolution: "already_resolved" };
+    }
     logger.warn(
       `[ProviderResolution] ${tx.ref} resolved failed via status lookup`
     );
-    return { transaction: updated ?? tx, resolution: "failed" };
+    return { transaction: updated, resolution: "failed" };
   }
 
   if (lookup.status === "pending") {

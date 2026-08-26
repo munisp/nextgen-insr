@@ -473,6 +473,11 @@ export const customerRouter = router({
         });
       }
     }),
+    // F6-10: passkey registration previously stored caller-supplied public
+    // keys with NO attestation verification — a decorative control that let
+    // any session register any "passkey". Attestation verification is not
+    // wired in this deployment, so registration fails LOUD instead of
+    // asserting an unverified authenticator.
     registerCredential: customerProcedure
       .input(
         z.object({
@@ -482,31 +487,12 @@ export const customerRouter = router({
           transports: z.array(z.string()).default([]),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        try {
-          const db = (await getDb())!;
-          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-          const [row] = await db
-            .insert(fido2Credentials)
-            .values({
-              userId: Number(ctx.user.id),
-              credentialId: input.credentialId,
-              publicKey: input.publicKey,
-              deviceType: input.deviceType,
-              transports: input.transports,
-              counter: 0,
-              status: "active",
-            })
-            .returning();
-          return row;
-        } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message:
-              error instanceof Error ? error.message : "Internal server error",
-          });
-        }
+      .mutation(() => {
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "Passkey registration is unavailable: server-side WebAuthn attestation verification is not wired in this deployment, so credentials cannot be verified or trusted. Passkey sign-in is not offered.",
+        });
       }),
     revokeCredential: customerProcedure
       .input(z.object({ credentialId: z.string() }))
@@ -533,6 +519,9 @@ export const customerRouter = router({
           });
         }
       }),
+    // F6-10: challenges exist only to bootstrap registration/authentication
+    // ceremonies that this deployment cannot verify — issuing them pretends a
+    // passkey flow exists. Fail loud instead.
     createChallenge: protectedProcedure
       .input(
         z.object({
@@ -540,30 +529,12 @@ export const customerRouter = router({
           userId: z.number().optional(),
         })
       )
-      .mutation(async ({ input }) => {
-        try {
-          const db = (await getDb())!;
-          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-          const challenge = crypto.randomBytes(32).toString("base64url");
-          const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min TTL
-          const [row] = await db
-            .insert(fido2Challenges)
-            .values({
-              challenge,
-              userId: input.userId,
-              type: input.type,
-              expiresAt,
-            })
-            .returning();
-          return { challenge: row.challenge, expiresAt: row.expiresAt };
-        } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message:
-              error instanceof Error ? error.message : "Internal server error",
-          });
-        }
+      .mutation(() => {
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "WebAuthn challenges are unavailable: no WebAuthn registration or authentication ceremony is implemented server-side in this deployment.",
+        });
       }),
     verifyChallenge: protectedProcedure
       .input(z.object({ challenge: z.string() }))
