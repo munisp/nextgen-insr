@@ -97,8 +97,10 @@ export const splitPaymentsRouter = router({
         if (!partyAgents[i].isActive) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Party agent ${input.parties[i].agentId} is not active` });
       }
 
-      // Acquire lock on source
-      const lockKey = `split-payment:${input.sourceAgentId}:${input.reference}`;
+      // Acquire lock on the SOURCE AGENT (not the split reference): all
+      // balance mutations for one agent must serialize against each other,
+      // including splits with different references.
+      const lockKey = `split-payment:${input.sourceAgentId}`;
       const locked = await acquireLock(lockKey, 30_000);
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Split payment in progress" });
 
@@ -106,6 +108,12 @@ export const splitPaymentsRouter = router({
       const legs: Array<{ agentId: number; amountNGN: number; tbId: string | null }> = [];
 
       try {
+        // Re-check idempotency inside the lock (the pre-check above ran
+        // outside it — a same-reference twin could have committed since).
+        const existingLocked = await db.select().from(transactions)
+          .where(eq(transactions.ref, input.reference)).limit(1);
+        if (existingLocked.length > 0) return { idempotent: true, splitRef: input.reference };
+
         // Ensure all TB accounts exist
         await Promise.all([
           tbEnsureAgentAccount(sourceAgent.agentId),
@@ -134,63 +142,95 @@ export const splitPaymentsRouter = router({
           if (tbResult?.id) tbTransferIds.push(tbResult.id);
         }
 
-        // Update all balances
-        const newSourceBalance = sourceBalance - input.totalAmountNGN;
-        await db.update(agents)
-          .set({ premiumReserve: String(newSourceBalance), updatedAt: new Date() })
-          .where(eq(agents.id, input.sourceAgentId));
+        // Atomic multi-write (F4): source debit + every party credit + all
+        // transaction rows + audit in ONE transaction. Any leg failure rolls
+        // back ALL legs — partial splits are impossible. Balance mutations
+        // are guarded single statements with row-count verification (no
+        // stale-read blind writes; the source debit carries a floor guard).
+        let parentTx: typeof transactions.$inferSelect;
+        try {
+          parentTx = await db.transaction(async tx => {
+          const debited = await tx.update(agents)
+            .set({ premiumReserve: sql`${agents.premiumReserve} - ${input.totalAmountNGN}`, updatedAt: new Date() })
+            .where(and(
+              eq(agents.id, input.sourceAgentId),
+              sql`${agents.premiumReserve} >= ${input.totalAmountNGN}`
+            ))
+            .returning({ id: agents.id });
+          if (debited.length === 0) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "Insufficient float (balance changed concurrently)",
+            });
+          }
 
-        for (let i = 0; i < input.parties.length; i++) {
-          const partyAgent = partyAgents[i];
-          const newBalance = Number(partyAgent.premiumReserve ?? 0) + legs[i].amountNGN;
-          await db.update(agents)
-            .set({ premiumReserve: String(newBalance), updatedAt: new Date() })
-            .where(eq(agents.id, input.parties[i].agentId));
-        }
+          for (let i = 0; i < input.parties.length; i++) {
+            const credited = await tx.update(agents)
+              .set({ premiumReserve: sql`${agents.premiumReserve} + ${legs[i].amountNGN}`, updatedAt: new Date() })
+              .where(eq(agents.id, input.parties[i].agentId))
+              .returning({ id: agents.id });
+            if (credited.length === 0) {
+              throw new TRPCError({
+                code: "NOT_FOUND",
+                message: `Party agent ${input.parties[i].agentId} disappeared concurrently — split rolled back`,
+              });
+            }
+          }
 
-        // Record parent transaction
-        const [parentTx] = await db.insert(transactions).values({
-          ref: input.reference,
-          agentId: input.sourceAgentId,
-          type: "Transfer",
-          amount: String(input.totalAmountNGN),
-          fee: "0",
-          commission: "0",
-          channel: "Internal",
-          status: "success",
-          fraudScore: "0.00",
-          metadata: {
-            tbSyncStatus: tbTransferIds.length > 0 ? "synced" : "pending",
-            category: "split_payment",
-            parties: legs,
-            description: input.description ?? null,
-            tbTransferIds,
-          },
-        }).returning();
-
-        // Record leg transactions
-        for (let i = 0; i < input.parties.length; i++) {
-          await db.insert(transactions).values({
-            ref: `${input.reference}-LEG${i + 1}`,
-            agentId: input.parties[i].agentId,
-            type: "Float Transfer Received",
-            amount: String(legs[i].amountNGN),
+          // Record parent transaction
+          const [parent] = await tx.insert(transactions).values({
+            ref: input.reference,
+            agentId: input.sourceAgentId,
+            type: "Transfer",
+            amount: String(input.totalAmountNGN),
             fee: "0",
             commission: "0",
             channel: "Internal",
             status: "success",
             fraudScore: "0.00",
-            metadata: { category: "split_payment", parentRef: input.reference, tbTransferId: legs[i].tbId, tbSyncStatus: legs[i].tbId ? "synced" : "pending" },
-          });
-        }
+            metadata: {
+              tbSyncStatus: tbTransferIds.length > 0 ? "synced" : "pending",
+              category: "split_payment",
+              parties: legs,
+              description: input.description ?? null,
+              tbTransferIds,
+            },
+          }).returning();
 
-        await db.insert(auditLog).values({
-          action: "SPLIT_PAYMENT",
-          resource: "split_payment",
-          resourceId: input.reference,
-          status: "success",
-          metadata: { totalAmountNGN: input.totalAmountNGN, parties: legs.length, tbTransferIds },
-        }).catch(() => {});
+          // Record leg transactions
+          for (let i = 0; i < input.parties.length; i++) {
+            await tx.insert(transactions).values({
+              ref: `${input.reference}-LEG${i + 1}`,
+              agentId: input.parties[i].agentId,
+              type: "Float Transfer Received",
+              amount: String(legs[i].amountNGN),
+              fee: "0",
+              commission: "0",
+              channel: "Internal",
+              status: "success",
+              fraudScore: "0.00",
+              metadata: { category: "split_payment", parentRef: input.reference, tbTransferId: legs[i].tbId, tbSyncStatus: legs[i].tbId ? "synced" : "pending" },
+            });
+          }
+
+          await tx.insert(auditLog).values({
+            action: "SPLIT_PAYMENT",
+            resource: "split_payment",
+            resourceId: input.reference,
+            status: "success",
+            metadata: { totalAmountNGN: input.totalAmountNGN, parties: legs.length, tbTransferIds },
+          });
+          return parent;
+          });
+        } catch (err) {
+          // Unique violation on transactions.ref: a same-reference twin
+          // committed between the in-lock re-check and our insert. The whole
+          // split rolled back (no leg debited/credited); report idempotent.
+          if (typeof err === "object" && err !== null && "code" in err && err.code === "23505") {
+            return { idempotent: true, splitRef: input.reference };
+          }
+          throw err;
+        }
 
         logger.info(`[SplitPayment] ₦${input.totalAmountNGN} split ${input.parties.length} ways | ref: ${input.reference}`);
 

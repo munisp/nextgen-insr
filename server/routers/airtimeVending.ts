@@ -18,7 +18,7 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
 
-import { transactions, agents, auditLog } from "../../drizzle/schema";
+import { transactions, agents, auditLog, type Transaction } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -57,6 +57,16 @@ function airtimeProviderClient(): ProviderClientConfig | null {
     apiKey: process.env.AIRTIME_PROVIDER_API_KEY,
     timeoutMs: Number(process.env.AIRTIME_PROVIDER_TIMEOUT_MS ?? 10_000),
   };
+}
+
+/** Postgres unique-violation detection without a driver-specific import. */
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    err.code === "23505"
+  );
 }
 
 export const airtimeVendingRouter = router({
@@ -122,12 +132,64 @@ export const airtimeVendingRouter = router({
       if (!locked) throw new TRPCError({ code: "CONFLICT", message: "Transaction in progress" });
 
       try {
-        await tbEnsureAgentAccount(agent.agentId);
         // Commission is only earned once the provider fulfils the vend; it
         // is not credited at initiation time.
         const commission = 0;
 
+        // INSERT-FIRST (F4/F5): the stable identity — a PENDING row keyed by
+        // the unique `ref` — is persisted BEFORE any external side effect
+        // (TB hold, provider dispatch). If the process dies after this point,
+        // any retry resolves against this record instead of re-creating it.
+        // A unique violation means a concurrent same-reference request won
+        // the insert race — this request has NOT dispatched anything; it
+        // resolves the winner's row via provider status lookup and returns
+        // it idempotently.
+        let tx: Transaction;
+        try {
+          const [inserted] = await db.insert(transactions).values({
+            ref: input.reference,
+            agentId: input.agentId,
+            type: "Airtime",
+            amount: String(input.amountNGN),
+            fee: "0",
+            commission: String(commission),
+            customerPhone: input.phoneNumber,
+            channel: "App",
+            // Never synchronous success: fulfilment is confirmed asynchronously
+            // by the airtime provider.
+            status: "pending",
+            fraudScore: "0.00",
+            metadata: { tbSyncStatus: "pending",
+              network: input.network,
+              phoneNumber: input.phoneNumber,
+              providerStatus: "pending_provider",
+              tbTransferId: null,
+            },
+          }).returning();
+          tx = inserted;
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            const [winner] = await db.select().from(transactions).where(eq(transactions.ref, input.reference)).limit(1);
+            if (winner) {
+              const resolved = await resolveProviderTx({
+                transaction: winner,
+                client: airtimeProviderClient(),
+                commissionOnCompletion: input.amountNGN * COMMISSION_RATE,
+              });
+              const winnerMeta = resolved.transaction.metadata as Record<string, unknown> | null;
+              return {
+                idempotent: true,
+                transaction: resolved.transaction,
+                status: (winnerMeta?.providerStatus as string | undefined) ?? resolved.transaction.status,
+                resolution: resolved.resolution,
+              };
+            }
+          }
+          throw err;
+        }
+
         // TigerBeetle: hold the vend amount against the agent float
+        await tbEnsureAgentAccount(agent.agentId);
         const tbResult = await tbCreateTransfer({
           debitAccountId: `float-${agent.agentId}`,
           creditAccountId: `network-${input.network.toLowerCase()}`,
@@ -139,33 +201,12 @@ export const airtimeVendingRouter = router({
           agentId: agent.agentId,
         });
 
-        // Stable identity persisted BEFORE the provider call: the unique
-        // `ref` row exists even if the process dies mid-dispatch, so any
-        // retry resolves against this record instead of re-creating it.
-        const [tx] = await db.insert(transactions).values({
-          ref: input.reference,
-          agentId: input.agentId,
-          type: "Airtime",
-          amount: String(input.amountNGN),
-          fee: "0",
-          commission: String(commission),
-          customerPhone: input.phoneNumber,
-          channel: "App",
-          // Never synchronous success: fulfilment is confirmed asynchronously
-          // by the airtime provider.
-          status: "pending",
-          fraudScore: "0.00",
-          metadata: { tbSyncStatus: tbResult ? "synced" : "pending",
-            network: input.network,
-            phoneNumber: input.phoneNumber,
-            providerStatus: "pending_provider",
-            tbTransferId: tbResult?.id ?? null,
-          },
-        }).returning();
-
         // Dispatch to the provider when a real base URL is configured. The
         // tri-state outcome is persisted honestly; "unknown" is NEVER
-        // surfaced as success and is resolved later via status lookup.
+        // surfaced as success and is resolved later via status lookup. All
+        // transitions carry an expected-state guard (`AND status='pending'`)
+        // + row-count verification so a concurrently settled row is never
+        // overwritten.
         const client = airtimeProviderClient();
         if (client) {
           const dispatch = await dispatchProviderOperation({
@@ -180,34 +221,42 @@ export const airtimeVendingRouter = router({
           });
           if (dispatch.outcome === "accepted") {
             const [updated] = await db.update(transactions).set({
-              metadata: { ...(tx.metadata as object), providerStatus: "submitted", providerRef: dispatch.providerRef ?? null },
+              metadata: { ...(tx.metadata as object), tbSyncStatus: tbResult ? "synced" : "pending", tbTransferId: tbResult?.id ?? null, providerStatus: "submitted", providerRef: dispatch.providerRef ?? null },
               updatedAt: new Date(),
-            }).where(eq(transactions.ref, input.reference)).returning();
+            }).where(and(eq(transactions.ref, input.reference), eq(transactions.status, "pending"))).returning();
+            if (!updated) throw new TRPCError({ code: "CONFLICT", message: "Vend record transitioned concurrently — not overwriting" });
             logger.info(`[Airtime] ₦${input.amountNGN} ${input.network} to ${input.phoneNumber} | ref ${input.reference} submitted to provider`);
-            return { idempotent: false, transaction: updated ?? tx, status: "submitted", commission, tbTransferId: tbResult?.id ?? null };
+            return { idempotent: false, transaction: updated, status: "submitted", commission, tbTransferId: tbResult?.id ?? null };
           }
           if (dispatch.outcome === "rejected") {
             const [updated] = await db.update(transactions).set({
               status: "failed",
               failureReason: dispatch.reason ?? "provider rejected vend",
-              metadata: { ...(tx.metadata as object), providerStatus: "rejected", providerError: dispatch.reason ?? null },
+              metadata: { ...(tx.metadata as object), tbSyncStatus: tbResult ? "synced" : "pending", tbTransferId: tbResult?.id ?? null, providerStatus: "rejected", providerError: dispatch.reason ?? null },
               updatedAt: new Date(),
-            }).where(eq(transactions.ref, input.reference)).returning();
+            }).where(and(eq(transactions.ref, input.reference), eq(transactions.status, "pending"))).returning();
+            if (!updated) throw new TRPCError({ code: "CONFLICT", message: "Vend record transitioned concurrently — not overwriting" });
             logger.warn(`[Airtime] vend ${input.reference} rejected by provider: ${dispatch.reason}`);
             throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Airtime provider rejected the vend: ${dispatch.reason}` });
           }
           // Unknown outcome: stays pending, resolved via status lookup on
           // retry or by the reconciler. NO blind re-dispatch.
           const [updated] = await db.update(transactions).set({
-            metadata: { ...(tx.metadata as object), providerStatus: "unknown_outcome", providerError: dispatch.reason ?? null },
+            metadata: { ...(tx.metadata as object), tbSyncStatus: tbResult ? "synced" : "pending", tbTransferId: tbResult?.id ?? null, providerStatus: "unknown_outcome", providerError: dispatch.reason ?? null },
             updatedAt: new Date(),
-          }).where(eq(transactions.ref, input.reference)).returning();
+          }).where(and(eq(transactions.ref, input.reference), eq(transactions.status, "pending"))).returning();
+          if (!updated) throw new TRPCError({ code: "CONFLICT", message: "Vend record transitioned concurrently — not overwriting" });
           logger.error(`[Airtime] vend ${input.reference} outcome UNKNOWN (${dispatch.reason}) — held pending for status lookup, NOT re-sent`);
-          return { idempotent: false, transaction: updated ?? tx, status: "unknown_outcome", commission, tbTransferId: tbResult?.id ?? null };
+          return { idempotent: false, transaction: updated, status: "unknown_outcome", commission, tbTransferId: tbResult?.id ?? null };
         }
 
+        // No dispatch URL: record the TB hold on the pending row (guarded).
+        const [held] = await db.update(transactions).set({
+          metadata: { ...(tx.metadata as object), tbSyncStatus: tbResult ? "synced" : "pending", tbTransferId: tbResult?.id ?? null },
+          updatedAt: new Date(),
+        }).where(and(eq(transactions.ref, input.reference), eq(transactions.status, "pending"))).returning();
         logger.info(`[Airtime] ₦${input.amountNGN} ${input.network} to ${input.phoneNumber} | agent ${agent.agentId} | status pending_provider | TB: ${tbResult?.id ?? "pending"}`);
-        return { idempotent: false, transaction: tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
+        return { idempotent: false, transaction: held ?? tx, status: "pending_provider", commission, tbTransferId: tbResult?.id ?? null };
       } finally {
         await releaseLock(lockKey);
       }

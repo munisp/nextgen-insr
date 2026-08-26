@@ -576,3 +576,29 @@ export const insurance_portalAds = pgTable("insurance_portal_ads", {
 
 export type InsurancePortalAd = typeof insurance_portalAds.$inferSelect;
 export type InsertInsurancePortalAd = typeof insurance_portalAds.$inferInsert;
+
+// ─── Durable Event Dedupe (DD-TSMONEY, F4/F5) ────────────────────────────────
+// Kafka consumer exactly-once marker: inserted in the SAME transaction as the
+// event handler's effects; a redelivery conflicts and skips all side effects.
+export const processedEvents = pgTable("processed_events", {
+  eventId: varchar("event_id", { length: 255 }).primaryKey(),
+  eventType: varchar("event_type", { length: 200 }).notNull(),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+});
+
+export type ProcessedEvent = typeof processedEvents.$inferSelect;
+export type InsertProcessedEvent = typeof processedEvents.$inferInsert;
+
+// Webhook exactly-once marker (Stripe): inserted BEFORE any webhook side
+// effect; duplicate deliveries conflict and are acknowledged without
+// re-running side effects. Deleted on processing failure so redelivery
+// retries.
+export const webhookEvents = pgTable("webhook_events", {
+  eventId: varchar("event_id", { length: 255 }).primaryKey(),
+  provider: varchar("provider", { length: 50 }).notNull(),
+  eventType: varchar("event_type", { length: 200 }).notNull(),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+});
+
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
+export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
