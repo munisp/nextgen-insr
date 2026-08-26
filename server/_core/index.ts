@@ -326,6 +326,33 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
   });
   app.use("/api/auth", authLimiter);
 
+  // F6-5: agent PIN endpoints live under /api/trpc, outside the /api/auth
+  // limiter above. A 4–8 digit PIN space is brute-forceable at the global
+  // limit (1000 req/15min/IP), so credential-verifying procedures get their
+  // own strict limiter (20 req/15min/IP). tRPC batch URLs share the same
+  // /api/trpc/<procedure> path prefix, so batched calls are covered too.
+  const pinAuthLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: isDev ? 200 : 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: makeRedisStore("pin-auth"),
+    message: {
+      error: "Too many PIN attempts, please try again later.",
+    },
+  });
+  const PIN_AUTH_PATHS = [
+    "/api/trpc/agent.login",
+    "/api/trpc/agent.register",
+    "/api/trpc/pinReset.requestOtp",
+    "/api/trpc/pinReset.resetPin",
+    "/api/v1/trpc/agent.login",
+    "/api/v1/trpc/agent.register",
+    "/api/v1/trpc/pinReset.requestOtp",
+    "/api/v1/trpc/pinReset.resetPin",
+  ];
+  app.use(PIN_AUTH_PATHS, pinAuthLimiter);
+
   // ── Stripe Webhook (must be BEFORE express.json() for signature verification) ──
   app.post(
     "/api/stripe/webhook",
@@ -455,10 +482,9 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
         email: "admin@insureportal.dev",
         role: "admin",
         accessToken: "dev-access-token",
-        refreshToken: "dev-refresh-token",
-        idToken: "dev-id-token",
       })
         .setProtectedHeader({ alg: "HS256" })
+        .setJTI(crypto.randomUUID())
         .setIssuedAt()
         .setExpirationTime("8h")
         .sign(jwtSecret);

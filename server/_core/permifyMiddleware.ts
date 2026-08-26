@@ -30,8 +30,8 @@ import { TRPCError } from "@trpc/server";
 
 import logger from "./logger";
 import { permifyCheck } from "./permify";
-import { t } from "./trpc";
-import { acquireLock, releaseLock, isTokenBlacklisted } from "../lib/redisClient";
+import { adminProcedure, protectedProcedure } from "./trpc";
+import { acquireLock, releaseLock } from "../lib/redisClient";
 
 // ── Role-Permission Matrix ─────────────────────────────────────────────────────
 
@@ -99,7 +99,17 @@ export const ROUTER_OPERATION_MAP: Record<string, FinancialOperation> = {
   // Commissions
   "commissionPayouts.process": "commission_pay",
   "commissionPayouts.approve": "commission_pay",
+  "commissionPayouts.reject": "commission_pay",
   "commissionEngine.payout": "commission_pay",
+  // Merchant payout settlement (DD-AUTH: wired onto financialProcedure)
+  "merchantPayoutSettlement.initiatePayout": "transfer",
+  "merchantPayoutSettlement.approvePayout": "commission_pay",
+  "merchantPayoutSettlement.processPayout": "commission_pay",
+  "merchantPayoutSettlement.completePayout": "commission_pay",
+  // Wallet / savings transfers
+  "agentFloatTransfer.transfer": "float_debit",
+  "savingsProducts.deposit": "transfer",
+  "savingsProducts.withdraw": "transfer",
   // Billing
   "billingLedger.record": "billing_record",
   "billingLedger.reconcile": "billing_reconcile",
@@ -193,103 +203,105 @@ async function checkFinancialPermission(
 // ── Financial Procedure Builder ────────────────────────────────────────────────
 
 /**
- * financialProcedure — wraps all financial mutations with:
- *   1. Token blacklist check (revoked session detection)
- *   2. Role-based permission check (fast, local)
- *   3. Permify RBAC check (fail-closed for mutations)
- *   4. Audit log entry
+ * financialProcedure — wraps financial mutations with the FULL base chain
+ * (observability → requireUser → requirePermify) plus:
+ *   1. Role-based financial permission check (fast, local, fail-closed)
+ *   2. Permify RBAC check (fail-closed for mutations)
+ *   3. Audit log entry
+ * Revoked-session detection happens upstream in session validation
+ * (server/_core/keycloakAuth.verifySessionJwt checks the token blacklist and
+ * per-user revocation on every request — F6-1), so a session that reaches
+ * this middleware is already revocation-clean.
  */
-export const financialProcedure = t.procedure.use(async ({ ctx, next, path }) => {
-  const user = (ctx as any).user;
-  if (!user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required" });
-  }
-
-  // 1. Check token blacklist (revoked session)
-  if (user.jti) {
-    const blacklisted = await isTokenBlacklisted(user.jti);
-    if (blacklisted) {
+export const financialProcedure = protectedProcedure.use(
+  async ({ ctx, next, path }) => {
+    const user = ctx.user;
+    if (!user) {
       throw new TRPCError({
         code: "UNAUTHORIZED",
-        message: "Session has been revoked — please log in again",
+        message: "Authentication required",
       });
     }
-  }
 
-  // 2. Determine the operation for this procedure path
-  const operation = ROUTER_OPERATION_MAP[path] ?? "read";
-  const tenantId = user.tenantId ?? process.env.PERMIFY_TENANT_ID ?? "insureportal";
+    // 1. Determine the operation for this procedure path
+    const operation = ROUTER_OPERATION_MAP[path] ?? "read";
+    const tenantId =
+      user.tenantId != null
+        ? String(user.tenantId)
+        : (process.env.PERMIFY_TENANT_ID ?? "insureportal");
 
-  // 3. Check financial permission (role + Permify)
-  const { allowed, reason } = await checkFinancialPermission(
-    String(user.id ?? user.sub),
-    user.role ?? "agent",
-    operation,
-    tenantId
-  );
+    // 2. Check financial permission (role + Permify, both fail-closed)
+    const { allowed, reason } = await checkFinancialPermission(
+      String(user.id),
+      user.role ?? "user",
+      operation,
+      tenantId
+    );
 
-  if (!allowed) {
-    logger.warn({
+    if (!allowed) {
+      logger.warn({
+        userId: user.id,
+        role: user.role,
+        path,
+        operation,
+        tenantId,
+        reason,
+      }, "[FinancialProcedure] Access denied");
+
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `Access denied: ${reason}`,
+      });
+    }
+
+    logger.debug({
       userId: user.id,
       role: user.role,
       path,
       operation,
-      tenantId,
-      reason,
-    }, "[FinancialProcedure] Access denied");
+    }, "[FinancialProcedure] Access granted");
 
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: `Access denied: ${reason}`,
-    });
+    return next();
   }
-
-  logger.debug({
-    userId: user.id,
-    role: user.role,
-    path,
-    operation,
-  }, "[FinancialProcedure] Access granted");
-
-  return next();
-});
+);
 
 /**
  * adminFinancialProcedure — admin-only financial operations
  * (billing reconciliation, bulk reversals, commission overrides)
  */
-export const adminFinancialProcedure = t.procedure.use(async ({ ctx, next, path }) => {
-  const user = (ctx as any).user;
-  if (!user) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required" });
-  }
+export const adminFinancialProcedure = adminProcedure.use(
+  async ({ ctx, next, path }) => {
+    const user = ctx.user;
+    if (!user) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Authentication required",
+      });
+    }
 
-  if (user.role !== "admin" && user.role !== "super_admin") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: `Admin role required for ${path}. Current role: ${user.role}`,
+    // Permify check for admin operations (fail-closed)
+    const tenantId =
+      user.tenantId != null
+        ? String(user.tenantId)
+        : (process.env.PERMIFY_TENANT_ID ?? "insureportal");
+    const allowed = await permifyCheck({
+      subjectType: "user",
+      subjectId: String(user.id),
+      entityType: "billing_ledger",
+      entityId: tenantId,
+      permission: "reconcile",
     });
+
+    if (!allowed) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `Permify denied admin financial access for user ${user.id} in tenant ${tenantId}`,
+      });
+    }
+
+    return next();
   }
-
-  // Permify check for admin operations
-  const tenantId = user.tenantId ?? process.env.PERMIFY_TENANT_ID ?? "insureportal";
-  const allowed = await permifyCheck({
-    subjectType: "user",
-    subjectId: String(user.id ?? user.sub),
-    entityType: "billing_ledger",
-    entityId: tenantId,
-    permission: "reconcile",
-  });
-
-  if (!allowed) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: `Permify denied admin financial access for user ${user.id} in tenant ${tenantId}`,
-    });
-  }
-
-  return next();
-});
+);
 
 /**
  * idempotentFinancialProcedure — financial procedure with Redis idempotency lock

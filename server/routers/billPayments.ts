@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { transactions, agents, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import {
@@ -57,7 +58,7 @@ function billProviderClient(): ProviderClientConfig | null {
 }
 
 export const billPaymentsRouter = router({
-  pay: protectedProcedure
+  pay: financialProcedure
     .input(z.object({
       agentId: z.number(), biller: z.string().min(2), customerNumber: z.string().min(5),
       amountNGN: z.number().min(MIN_AMOUNT).max(MAX_AMOUNT), reference: z.string().min(5),

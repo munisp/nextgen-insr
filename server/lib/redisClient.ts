@@ -93,6 +93,7 @@ export async function pingRedis(): Promise<number | null> {
  * guaranteed, so the lock is reported as NOT acquired and every caller
  * refuses the money operation. The previous fail-open behavior let
  * concurrent duplicate debits through exactly when Redis degraded.
+ * (Superset merge with fix/dd-tsmoney — keep both changes on merge.)
  */
 export async function acquireLock(
   key: string,
@@ -146,15 +147,26 @@ export async function blacklistToken(
 
 /**
  * Check if a JWT token has been blacklisted.
- * Returns false (not blacklisted) if Redis is unavailable — fail-open to avoid
- * locking out users during Redis outages.
+ * When `failClosedOnError` is true (production session validation), a Redis
+ * error is treated as REVOKED — an authz control-plane dependency failure
+ * stops the operation. Otherwise it fails open (dev/test without Redis).
  */
-export async function isTokenBlacklisted(tokenId: string): Promise<boolean> {
+export async function isTokenBlacklisted(
+  tokenId: string,
+  failClosedOnError: boolean = false
+): Promise<boolean> {
   try {
     const client = getRedisClient();
     const result = await client.get(`blacklist:token:${tokenId}`);
     return result !== null;
-  } catch {
+  } catch (err) {
+    if (failClosedOnError) {
+      logger.error(
+        "[Redis] Token blacklist check failed — denying request (fail-closed):: " +
+          String(err)
+      );
+      return true;
+    }
     // fail-open: allow request if Redis is down
     logger.warn('[Redis] Token blacklist check failed — allowing request (fail-open)');
     return false;
@@ -183,13 +195,24 @@ export async function revokeAllUserTokens(
  * Check if a token was issued before the user's revocation timestamp.
  * Returns false if Redis is unavailable (fail-open).
  */
-export async function isUserTokenRevoked(userId: string, issuedAt: number): Promise<boolean> {
+export async function isUserTokenRevoked(
+  userId: string,
+  issuedAt: number,
+  failClosedOnError: boolean = false
+): Promise<boolean> {
   try {
     const client = getRedisClient();
     const revokedAtStr = await client.get(`blacklist:user:${userId}:revoked_at`);
     if (!revokedAtStr) return false;
     return issuedAt < parseInt(revokedAtStr, 10);
-  } catch {
+  } catch (err) {
+    if (failClosedOnError) {
+      logger.error(
+        "[Redis] User revocation check failed — denying request (fail-closed):: " +
+          String(err)
+      );
+      return true;
+    }
     return false; // fail-open
   }
 }

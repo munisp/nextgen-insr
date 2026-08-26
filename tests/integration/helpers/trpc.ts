@@ -94,6 +94,17 @@ export const regularUser: TestUser = {
 };
 
 /**
+ * Second staff identity for maker-checker flows (F7-2): payout approve /
+ * process must be executed by a DIFFERENT staff user than the requester.
+ */
+export const approverUser: TestUser = {
+  id: 91003,
+  email: "approver@integration.local",
+  name: "Integration Approver",
+  role: "admin",
+};
+
+/**
  * Build a caller for the given user (null = anonymous). The context matches
  * server/_core/context.ts: { req, res, user }.
  */

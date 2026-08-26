@@ -4,14 +4,30 @@
  * Integrates with agent commissionBalance and email notifications.
  */
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, count, gte, lte, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { commissionPayouts, agents } from "../../drizzle/schema";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb , writeAuditLog } from "../db";
 import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
 import { dispatchWebhookEvent } from "../lib/webhookDelivery";
+import { getAgentFromCookie } from "../middleware/agentAuth";
+import { assertFinancialStepUp } from "../middleware/mfaEnforcement";
+
+// F7-2: payout approval/processing is a staff function. The role gate plus
+// maker-checker below replaces the previous any-authenticated-user posture.
+const PAYOUT_STAFF_ROLES = new Set(["admin", "supervisor"]);
+
+function requirePayoutStaff(role: string): void {
+  if (!PAYOUT_STAFF_ROLES.has(role)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Payout approval/processing requires one of roles: ${[...PAYOUT_STAFF_ROLES].join(", ")}`,
+    });
+  }
+}
 
 export const commissionPayoutsRouter = router({
   // ── List payouts (admin/supervisor) ──────────────────────────────────────
@@ -105,6 +121,30 @@ export const commissionPayoutsRouter = router({
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
+        // F7-2: identity from session only. An agent session holder may
+        // request payouts ONLY for their own agent code; staff (admin) may
+        // request on behalf of an agent for ops tooling; anything else is
+        // denied. The caller-supplied agentId is never trusted on its own.
+        const sessionAgent = await getAgentFromCookie(ctx.req);
+        if (sessionAgent) {
+          const [sessAgent] = await db
+            .select({ agentId: agents.agentId })
+            .from(agents)
+            .where(eq(agents.id, sessionAgent.id))
+            .limit(1);
+          if (!sessAgent || sessAgent.agentId !== input.agentId) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Cannot request a payout for another agent",
+            });
+          }
+        } else if (ctx.user.role !== "admin") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Agent session required to request a payout",
+          });
+        }
+
         // Verify agent and check commission balance
         const [agent] = await db
           .select()
@@ -164,36 +204,62 @@ export const commissionPayoutsRouter = router({
       }
     }),
 
-  // ── Approve a payout (supervisor/admin) ──────────────────────────────────
-  approve: protectedProcedure
+  // ── Approve a payout (supervisor/admin, maker-checker) ───────────────────
+  approve: financialProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [payout] = await db
-          .select()
-          .from(commissionPayouts)
-          .where(eq(commissionPayouts.id, input.id))
-          .limit(1);
-        if (!payout) throw new TRPCError({ code: "NOT_FOUND" });
-        if (payout.status !== "pending") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Payout is not in pending state",
-          });
-        }
+        // F7-2: staff role gate + step-up for MFA-enrolled accounts.
+        requirePayoutStaff(ctx.user.role);
+        await assertFinancialStepUp(ctx);
 
-        const [updated] = await db
+        // F7-2 maker-checker + expected-state guard, enforced by the database
+        // in ONE statement: the row must be pending AND requested by someone
+        // ELSE. Zero rows means either wrong state or self-approval — the
+        // update can never self-approve regardless of read-then-write races.
+        const claimed = await db
           .update(commissionPayouts)
           .set({
             status: "approved",
             approvedBy: ctx.user.id,
             updatedAt: new Date(),
           })
-          .where(eq(commissionPayouts.id, input.id))
+          .where(
+            and(
+              eq(commissionPayouts.id, input.id),
+              eq(commissionPayouts.status, "pending"),
+              or(
+                isNull(commissionPayouts.requestedBy),
+                ne(commissionPayouts.requestedBy, ctx.user.id)
+              )
+            )
+          )
           .returning();
+
+        if (claimed.length === 0) {
+          // Honest error: distinguish self-approval from wrong state.
+          const [current] = await db
+            .select()
+            .from(commissionPayouts)
+            .where(eq(commissionPayouts.id, input.id))
+            .limit(1);
+          if (!current) throw new TRPCError({ code: "NOT_FOUND" });
+          if (current.requestedBy === ctx.user.id) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Maker-checker violation: the payout requester cannot approve their own payout",
+            });
+          }
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Payout is not in pending state (current: ${current.status})`,
+          });
+        }
+        const [updated] = claimed;
 
         await dispatchWebhookEvent("commission.payout.approved", {
           payoutId: updated.id,
@@ -212,15 +278,19 @@ export const commissionPayoutsRouter = router({
       }
     }),
 
-  // ── Reject a payout ───────────────────────────────────────────────────────
-  reject: protectedProcedure
+  // ── Reject a payout (supervisor/admin) ────────────────────────────────────
+  reject: financialProcedure
     .input(z.object({ id: z.number(), reason: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const [updated] = await db
+        requirePayoutStaff(ctx.user.role);
+
+        // Expected-state guard: only a pending payout can be rejected, and a
+        // requester cannot reject-to-rebook their own payout either.
+        const claimed = await db
           .update(commissionPayouts)
           .set({
             status: "rejected",
@@ -228,8 +298,37 @@ export const commissionPayoutsRouter = router({
             rejectionReason: input.reason,
             updatedAt: new Date(),
           })
-          .where(eq(commissionPayouts.id, input.id))
+          .where(
+            and(
+              eq(commissionPayouts.id, input.id),
+              eq(commissionPayouts.status, "pending"),
+              or(
+                isNull(commissionPayouts.requestedBy),
+                ne(commissionPayouts.requestedBy, ctx.user.id)
+              )
+            )
+          )
           .returning();
+        if (claimed.length === 0) {
+          const [current] = await db
+            .select()
+            .from(commissionPayouts)
+            .where(eq(commissionPayouts.id, input.id))
+            .limit(1);
+          if (!current) throw new TRPCError({ code: "NOT_FOUND" });
+          if (current.requestedBy === ctx.user.id) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Maker-checker violation: the payout requester cannot reject their own payout",
+            });
+          }
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Payout is not in pending state (current: ${current.status})`,
+          });
+        }
+        const [updated] = claimed;
 
         return updated;
       } catch (error) {
@@ -243,12 +342,16 @@ export const commissionPayoutsRouter = router({
     }),
 
   // ── Process a payout (deduct from agent balance + mark completed) ────────
-  process: protectedProcedure
+  process: financialProcedure
     .input(z.object({ id: z.number(), nubanRef: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+        // F7-2: staff role gate + step-up for MFA-enrolled accounts.
+        requirePayoutStaff(ctx.user.role);
+        await assertFinancialStepUp(ctx);
 
         const [payout] = await db
           .select()
@@ -256,6 +359,15 @@ export const commissionPayoutsRouter = router({
           .where(eq(commissionPayouts.id, input.id))
           .limit(1);
         if (!payout) throw new TRPCError({ code: "NOT_FOUND" });
+        // Maker-checker on the money-moving leg: the requester can never run
+        // the final processing step of their own payout.
+        if (payout.requestedBy === ctx.user.id) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Maker-checker violation: the payout requester cannot process their own payout",
+          });
+        }
         // Idempotency: already completed — replay the durable row, no re-deduction
         if (payout.status === "completed") return payout;
         if (payout.status !== "approved") {
@@ -306,6 +418,7 @@ export const commissionPayoutsRouter = router({
               .set({
                 status: "completed",
                 nubanRef: payRef,
+                processedBy: ctx.user.id,
                 processedAt: new Date(),
                 updatedAt: new Date(),
               })
@@ -336,7 +449,7 @@ export const commissionPayoutsRouter = router({
                 message: "Insufficient commission balance at processing time",
               });
             }
-            return { replay: false, row: claimed[0]! };
+            return { replay: false, row: claimed[0] };
           });
 
           if (outcome.replay) {

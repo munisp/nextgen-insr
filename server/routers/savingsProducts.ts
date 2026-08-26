@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { transactions, auditLog } from "../../drizzle/schema";
 import { permifyCheck } from "../_core/permify";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -46,7 +47,7 @@ export const savingsProductsRouter = router({
         });
       }
     }),
-  deposit: protectedProcedure
+  deposit: financialProcedure
     .input(
       z.object({
         accountId: z.number(),
@@ -97,7 +98,7 @@ export const savingsProductsRouter = router({
         });
       }
     }),
-  withdraw: protectedProcedure
+  withdraw: financialProcedure
     .input(
       z.object({
         accountId: z.number(),

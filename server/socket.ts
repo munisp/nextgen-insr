@@ -15,10 +15,18 @@ import {
   getChatSession,
   getDb,
 } from "./db";
+import { getJwtSecret } from "./lib/envValidation";
 import { initRealtimeNotifications } from "./lib/realtimeNotifications";
+import {
+  isTokenBlacklisted,
+  isUserTokenRevoked,
+} from "./lib/redisClient";
+import {
+  agentSessionRevocationKey,
+  hashSessionToken,
+} from "./middleware/agentAuth";
 import { setIO } from "./socketSingleton";
 import { fraudAlerts } from "../drizzle/schema";
-import { getJwtSecret } from "./lib/envValidation";
 
 // ─── Support chat: LLM-powered auto-reply ────────────────────────────────────
 async function generateSupportReply(
@@ -145,23 +153,53 @@ export function initSocketIO(httpServer: HttpServer) {
   const chatNs = io.of("/chat");
 
   chatNs.use(async (socket, next) => {
+    // F6-8: fail-CLOSED. The support channel carries customer PII — there is
+    // no unauthenticated mode. The only bypass is an explicit, non-production
+    // demo flag that defaults OFF.
     const cookie = socket.handshake.headers.cookie ?? "";
     const match = cookie.match(/agent_session=([^;]+)/);
     if (match) {
       try {
         const secret = new TextEncoder().encode(getJwtSecret());
         const { payload } = await jwtVerify(match[1], secret);
-        (socket as any).agentId = Number(payload.sub);
-        (socket as any).agentName = payload.name;
+        // Enforce the same revocation lists as HTTP agent requests (F6-1).
+        const failClosed = process.env.NODE_ENV === "production";
+        const blacklisted = await isTokenBlacklisted(
+          hashSessionToken(match[1]),
+          failClosed
+        );
+        const revoked =
+          payload.sub && typeof payload.iat === "number"
+            ? await isUserTokenRevoked(
+                agentSessionRevocationKey(Number(payload.sub)),
+                payload.iat,
+                failClosed
+              )
+            : false;
+        if (!blacklisted && !revoked) {
+          socket.data.agentId = Number(payload.sub);
+          socket.data.agentName = payload.name;
+          return next();
+        }
       } catch {
-        // Allow unauthenticated for demo
+        // fall through to deny
       }
     }
-    next();
+    if (
+      process.env.CHAT_ALLOW_UNAUTHENTICATED_DEMO === "true" &&
+      process.env.NODE_ENV !== "production"
+    ) {
+      logger.warn(
+        { socketId: socket.id },
+        "[Chat] UNAUTHENTICATED demo connection accepted (CHAT_ALLOW_UNAUTHENTICATED_DEMO=true, non-production)"
+      );
+      return next();
+    }
+    return next(new Error("Authentication required"));
   });
 
   chatNs.on("connection", socket => {
-    const agentName = (socket as any).agentName ?? "Agent";
+    const agentName = (socket.data.agentName as string | undefined) ?? "Agent";
     logger.info({ socketId: socket.id, agentName }, "[Chat] Agent connected");
 
     socket.on("chat:join", (sessionRef: string) => {

@@ -21,6 +21,7 @@ import { z } from "zod";
 
 import { agents, transactions, auditLog } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { acquireLock, releaseLock } from "../lib/redisClient";
@@ -44,7 +45,7 @@ function isUniqueViolation(err: unknown): boolean {
 
 export const agentFloatTransferRouter = router({
   // ── Initiate transfer ────────────────────────────────────────────────────────
-  transfer: protectedProcedure
+  transfer: financialProcedure
     .input(z.object({
       senderAgentId: z.number(),
       receiverAgentId: z.number(),
