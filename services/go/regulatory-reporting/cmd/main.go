@@ -11,8 +11,14 @@ import (
 
 // Regulatory Reporting Automation — NAICOM + CBN + SEC
 // Port: 8107
-// Features: Auto-generate quarterly returns, solvency monitoring, AML reports
-// Integrations: Kafka, Temporal (scheduled), PostgreSQL, OpenSearch, Lakehouse
+//
+// HONEST REPORTING CONTRACT: this service has no access to ledger,
+// balance-sheet, policy, or claims data sources (no database driver or
+// upstream data service is integrated in-tree). It therefore CANNOT and
+// DOES NOT produce solvency figures, capital ratios, or compliance
+// postures — endpoints that would require such data fail loudly with
+// 501/503 instead of returning fabricated numbers. The deadlines endpoint
+// computes statutory-calendar dates from the real clock only.
 
 type ReportType string
 
@@ -27,42 +33,6 @@ const (
 	ReportInvestment        ReportType = "investment_reporting"
 )
 
-type ReportStatus string
-
-const (
-	StatusDraft     ReportStatus = "draft"
-	StatusGenerated ReportStatus = "generated"
-	StatusValidated ReportStatus = "validated"
-	StatusSubmitted ReportStatus = "submitted"
-	StatusAccepted  ReportStatus = "accepted"
-	StatusRejected  ReportStatus = "rejected"
-)
-
-type Report struct {
-	ID          string       `json:"id"`
-	Type        ReportType   `json:"type"`
-	Period      string       `json:"period"` // 2026-Q1, 2026-Q2
-	Status      ReportStatus `json:"status"`
-	Regulator   string       `json:"regulator"` // NAICOM, CBN, SEC, NFIU
-	GeneratedAt string       `json:"generated_at"`
-	SubmittedAt string       `json:"submitted_at,omitempty"`
-	Deadline    string       `json:"deadline"`
-	Data        interface{}  `json:"data"`
-	Validations []string     `json:"validations"`
-}
-
-type SolvencyMargin struct {
-	TotalAssets       int64   `json:"total_assets"`
-	TotalLiabilities  int64   `json:"total_liabilities"`
-	AvailableCapital  int64   `json:"available_capital"`
-	RequiredCapital   int64   `json:"required_capital"`
-	SolvencyRatio     float64 `json:"solvency_ratio"`
-	Tier1Capital      int64   `json:"tier1_capital"`
-	Tier2Capital      int64   `json:"tier2_capital"`
-	RegulatoryMinimum int64   `json:"regulatory_minimum"`
-	IsCompliant       bool    `json:"is_compliant"`
-}
-
 type FilingDeadline struct {
 	ReportType ReportType `json:"report_type"`
 	Period     string     `json:"period"`
@@ -70,6 +40,36 @@ type FilingDeadline struct {
 	DaysLeft   int        `json:"days_left"`
 	Status     string     `json:"status"`
 	AlertLevel string     `json:"alert_level"` // green, yellow, red
+	Basis      string     `json:"basis"`       // statutory_calendar — computed from filing rules, not from filing data
+}
+
+// quarterEnd returns the last day of the calendar quarter containing t.
+func quarterEnd(t time.Time) time.Time {
+	qEndMonth := ((int(t.Month())-1)/3)*3 + 3
+	return time.Date(t.Year(), time.Month(qEndMonth)+1, 0, 0, 0, 0, 0, time.UTC)
+}
+
+func currentQuarterPeriod(t time.Time) string {
+	q := (int(t.Month())-1)/3 + 1
+	return fmt.Sprintf("%d-Q%d", t.Year(), q)
+}
+
+func alertLevel(daysLeft int) string {
+	switch {
+	case daysLeft < 0:
+		return "red"
+	case daysLeft <= 14:
+		return "yellow"
+	default:
+		return "green"
+	}
+}
+
+func deadlineStatus(daysLeft int) string {
+	if daysLeft < 0 {
+		return "overdue"
+	}
+	return "pending" // nothing is filed by this service; deadlines are only tracked
 }
 
 func main() {
@@ -82,64 +82,66 @@ func main() {
 			"status":       "healthy",
 			"service":      "regulatory-reporting",
 			"regulators":   []string{"NAICOM", "CBN", "SEC", "NFIU"},
-			"report_types": []string{"quarterly_return", "solvency_margin", "technical_reserves", "rbc", "aml", "policy_register", "claims_register"},
+			"data_sources": "unavailable",
 		})
 	})
 
+	// Report generation requires real ledger/policy/claims source data, which
+	// this service does not have. Fail loudly rather than fabricate a report.
 	mux.HandleFunc("/api/v1/regulatory/reports/generate", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Type   ReportType `json:"type"`
-			Period string     `json:"period"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-
-		report := Report{
-			ID:          fmt.Sprintf("RPT-%d", time.Now().UnixNano()),
-			Type:        req.Type,
-			Period:      req.Period,
-			Status:      StatusGenerated,
-			Regulator:   "NAICOM",
-			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-			Deadline:    time.Now().AddDate(0, 0, 30).Format("2006-01-02"),
-			Validations: []string{"data_completeness:passed", "format_compliance:passed", "cross_reference:passed"},
-		}
-
-		switch req.Type {
-		case ReportSolvencyMargin:
-			report.Data = SolvencyMargin{
-				TotalAssets: 50000000000, TotalLiabilities: 30000000000,
-				AvailableCapital: 20000000000, RequiredCapital: 15000000000,
-				SolvencyRatio: 1.33, Tier1Capital: 15000000000, Tier2Capital: 5000000000,
-				RegulatoryMinimum: 10000000000, IsCompliant: true,
-			}
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(report)
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":  "regulatory report generation is not implemented: no ledger, policy, or claims data source is integrated with this service; refusing to fabricate regulator-facing figures",
+			"status": "unavailable",
+		})
 	})
 
+	// Solvency margin requires real balance-sheet data. Fail loudly rather
+	// than fabricate capital adequacy figures for the regulator.
+	mux.HandleFunc("/api/v1/regulatory/solvency", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":  "solvency computation unavailable: no balance-sheet/ledger data source is integrated with this service; refusing to fabricate solvency figures",
+			"status": "unavailable",
+		})
+	})
+
+	// Deadlines are statutory-calendar computations (quarter-end + filing
+	// window) derived from the real clock — no filing data is invented.
 	mux.HandleFunc("/api/v1/regulatory/deadlines", func(w http.ResponseWriter, r *http.Request) {
-		now := time.Now()
-		deadlines := []FilingDeadline{
-			{ReportType: ReportQuarterlyReturn, Period: "2026-Q2", Deadline: now.AddDate(0, 0, 14).Format("2006-01-02"), DaysLeft: 14, Status: "pending", AlertLevel: "yellow"},
-			{ReportType: ReportSolvencyMargin, Period: "2026-H1", Deadline: now.AddDate(0, 0, 30).Format("2006-01-02"), DaysLeft: 30, Status: "pending", AlertLevel: "green"},
-			{ReportType: ReportAML, Period: "2026-05", Deadline: now.AddDate(0, 0, 7).Format("2006-01-02"), DaysLeft: 7, Status: "overdue", AlertLevel: "red"},
+		now := time.Now().UTC()
+		qe := quarterEnd(now)
+		period := currentQuarterPeriod(now)
+		type rule struct {
+			reportType ReportType
+			daysAfter  int
+		}
+		rules := []rule{
+			{ReportQuarterlyReturn, 30},
+			{ReportSolvencyMargin, 30},
+			{ReportAML, 30},
+		}
+		deadlines := make([]FilingDeadline, 0, len(rules))
+		for _, rl := range rules {
+			dl := qe.AddDate(0, 0, rl.daysAfter)
+			daysLeft := int(dl.Sub(now).Hours() / 24)
+			deadlines = append(deadlines, FilingDeadline{
+				ReportType: rl.reportType,
+				Period:     period,
+				Deadline:   dl.Format("2006-01-02"),
+				DaysLeft:   daysLeft,
+				Status:     deadlineStatus(daysLeft),
+				AlertLevel: alertLevel(daysLeft),
+				Basis:      "statutory_calendar",
+			})
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"deadlines": deadlines})
 	})
 
-	mux.HandleFunc("/api/v1/regulatory/solvency", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(SolvencyMargin{
-			TotalAssets: 50000000000, TotalLiabilities: 30000000000,
-			AvailableCapital: 20000000000, RequiredCapital: 15000000000,
-			SolvencyRatio: 1.33, Tier1Capital: 15000000000, Tier2Capital: 5000000000,
-			RegulatoryMinimum: 10000000000, IsCompliant: true,
-		})
-	})
-
-	log.Printf("Regulatory Reporting starting on port %s", port)
+	log.Printf("Regulatory Reporting starting on port %s (data sources: unavailable — figure endpoints fail loudly)", port)
 	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 

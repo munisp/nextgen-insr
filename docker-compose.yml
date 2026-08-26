@@ -517,7 +517,12 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-insureportal}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-insureportal_dev}
       OLLAMA_URL: http://ollama:11434
-      DAPR_URL: http://dapr-placement:3500
+      # DAPR_URL removed: it pointed at http://dapr-placement:3500, but the
+      # dapr-placement service only speaks placement gossip on :50006 and NO
+      # daprd sidecar (HTTP :3500) exists in this stack — every publish call
+      # failed silently. No Dapr HTTP endpoint exists to point at; consumers
+      # must treat Dapr pub/sub as unavailable (fail-loud) until a real daprd
+      # sidecar is deployed.
       APISIX_ADMIN_URL: http://apisix:9180
       FRAUD_GATE_URL: http://insureportal-fraud-gate:8090
       ML_FRAUD_URL: http://insureportal-ml-fraud:8000

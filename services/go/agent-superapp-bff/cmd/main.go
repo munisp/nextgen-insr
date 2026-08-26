@@ -34,7 +34,7 @@ func loadConfig() Config {
 	return Config{
 		Port:        envOr("PORT", "8116"),
 		DatabaseURL: envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
-		KafkaURL:    envOr("KAFKA_REST_URL", "http://localhost:8082"),
+		KafkaURL:    envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
 		Environment: envOr("ENVIRONMENT", "development"),
 	}
 }
@@ -210,22 +210,32 @@ func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-func publishEvent(kafkaURL, topic string, event interface{}) {
-	data, _ := json.Marshal(event)
-	log.Printf("[Kafka] topic=%s payload=%s", topic, string(data))
+// publishEvent performs a REAL produce via the Kafka REST proxy and returns
+// an honest error on any failure. It never claims publication into the void.
+func publishEvent(kafkaURL, topic string, event interface{}) error {
 	if kafkaURL == "" {
-		return
+		return fmt.Errorf("eventing unavailable: KAFKA_REST_URL is not configured")
 	}
-	go func() {
-		body, _ := json.Marshal(map[string]interface{}{"records": []map[string]interface{}{{"value": event}}})
-		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/topics/%s", kafkaURL, topic), strings.NewReader(string(body)))
-		req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return
-		}
-		_ = resp.Body.Close()
-	}()
+	body, err := json.Marshal(map[string]interface{}{"records": []map[string]interface{}{{"value": event}}})
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/topics/%s", kafkaURL, topic), strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/vnd.kafka.json.v2+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("kafka rest proxy unreachable: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("kafka rest proxy returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v interface{}) {
@@ -301,8 +311,15 @@ func main() {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "sale recording failed"})
 			return
 		}
-		publishEvent(cfg.KafkaURL, "agent.sale.recorded", map[string]interface{}{"agent_id": req.AgentID, "policy_id": req.PolicyID, "commission": commission})
-		writeJSON(w, http.StatusCreated, map[string]interface{}{"commission": commission, "status": "recorded", "in_territory": inTerritory})
+		resp := map[string]interface{}{"commission": commission, "status": "recorded", "in_territory": inTerritory}
+		if err := publishEvent(cfg.KafkaURL, "agent.sale.recorded", map[string]interface{}{"agent_id": req.AgentID, "policy_id": req.PolicyID, "commission": commission}); err != nil {
+			log.Printf("[Kafka] CRITICAL: agent.sale.recorded not published: %v", err)
+			resp["event_published"] = false
+			resp["event_error"] = err.Error()
+		} else {
+			resp["event_published"] = true
+		}
+		writeJSON(w, http.StatusCreated, resp)
 	})
 
 	mux.HandleFunc("/api/v1/agent/geofence", func(w http.ResponseWriter, r *http.Request) {

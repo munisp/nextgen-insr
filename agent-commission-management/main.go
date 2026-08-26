@@ -217,7 +217,7 @@ var kafkaRestURL string
 func initKafka() {
 	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
 	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
+		kafkaRestURL = "http://kafka-rest:8082"
 	}
 	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
 }

@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -112,7 +113,7 @@ func loadConfig() Config {
 		PostgresDSN:       getEnv("POSTGRES_DSN", "postgresql://insureportal:insureportal_dev@localhost:5432/insureportal"),
 		TigerBeetleURL:    getEnv("TIGERBEETLE_URL", "http://localhost:7070"),
 		RedisURL:          getEnv("REDIS_URL", "redis://localhost:6379"),
-		FluvioURL:         getEnv("FLUVIO_URL", "localhost:9003"),
+		FluvioURL:         getEnv("FLUVIO_URL", ""), // 9003 is the Fluvio binary protocol port; an HTTP bridge must be configured explicitly
 		ReconcileInterval: interval,
 		AutoCorrectLimit:  autoCorrectLimit,
 	}
@@ -174,12 +175,30 @@ func getTBBalance(ctx context.Context, agentCode string) (float64, error) {
 	return balance.Balance / 100.0, nil // TB stores in kobo, convert to NGN
 }
 
-// emitFluvioEvent sends a reconciliation event to Fluvio (best-effort)
-func emitFluvioEvent(event FluvioEvent) {
-	// In production: use Fluvio Go client to produce to float-reconciliation topic
-	// For now: log the event (Fluvio Go client integration would be added here)
-	data, _ := json.Marshal(event)
-	log.Printf("[FloatReconciler] Fluvio event: %s", string(data))
+// emitFluvioEvent streams a reconciliation event via a configured
+// HTTP→Fluvio bridge (FLUVIO_URL). Fluvio's native port (9003) speaks the
+// binary protocol, so unless FLUVIO_URL points at a real HTTP bridge the
+// event is NOT streamed — and this function says so honestly and returns an
+// error instead of pretending the event flowed.
+func emitFluvioEvent(event FluvioEvent) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
+	}
+	if cfg.FluvioURL == "" {
+		log.Printf("[FloatReconciler] event NOT streamed (no HTTP→Fluvio bridge configured): %s", string(data))
+		return fmt.Errorf("fluvio streaming unavailable: FLUVIO_URL does not point at an HTTP bridge (fluvio-sc:9003 is the binary protocol port)")
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(fmt.Sprintf("%s/api/v1/produce/float-reconciliation", cfg.FluvioURL), "application/json", strings.NewReader(string(data)))
+	if err != nil {
+		return fmt.Errorf("fluvio stream failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("fluvio stream returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // autoCorrectDiscrepancy creates a TB correction transfer for minor discrepancies
@@ -331,8 +350,8 @@ func runReconciliation(ctx context.Context) (*ReconciliationReport, error) {
 		report.MajorDiscrepancy, report.AutoCorrected, report.Escalated,
 		report.TBUnavailable, string(reportJSON))
 
-	// Emit Fluvio event
-	emitFluvioEvent(FluvioEvent{
+	// Emit Fluvio event — honest: failure is surfaced, never pretended away.
+	if err := emitFluvioEvent(FluvioEvent{
 		EventType:   "float.reconciliation_completed",
 		Timestamp:   time.Now(),
 		ServiceName: "float-reconciler",
@@ -343,7 +362,9 @@ func runReconciliation(ctx context.Context) (*ReconciliationReport, error) {
 			"major_discrepancy": report.MajorDiscrepancy,
 			"duration_ms":       report.DurationMs,
 		},
-	})
+	}); err != nil {
+		log.Printf("[FloatReconciler] WARN: reconciliation event not streamed: %v", err)
+	}
 	log.Printf("[FloatReconciler] Run %s complete: %d agents, %d matched, %d major discrepancies, %d auto-corrected in %dms",
 		runID, report.TotalAgents, report.Matched, report.MajorDiscrepancy, report.AutoCorrected, report.DurationMs)
 

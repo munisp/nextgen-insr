@@ -108,19 +108,20 @@ var kafkaRestURL string
 func initKafka() {
 	kafkaRestURL = os.Getenv("KAFKA_REST_URL")
 	if kafkaRestURL == "" {
-		kafkaRestURL = "http://localhost:8082"
+		kafkaRestURL = "http://kafka-rest:8082"
 	}
 	log.Printf("Kafka REST proxy configured at %s", kafkaRestURL)
 }
 
-func publishEvent(topic string, key string, payload interface{}) {
+// publishEvent performs a REAL produce via the Kafka REST proxy and returns
+// an honest error on any failure. It never claims publication into the void.
+func publishEvent(topic string, key string, payload interface{}) error {
 	if kafkaRestURL == "" {
-		return
+		return fmt.Errorf("eventing unavailable: KAFKA_REST_URL is not configured")
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("WARN: kafka marshal error: %v", err)
-		return
+		return fmt.Errorf("kafka marshal error: %w", err)
 	}
 	msg := map[string]interface{}{
 		"records": []map[string]interface{}{
@@ -128,12 +129,16 @@ func publishEvent(topic string, key string, payload interface{}) {
 		},
 	}
 	body, _ := json.Marshal(msg)
-	resp, err := http.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(kafkaRestURL+"/topics/"+topic, "application/vnd.kafka.json.v2+json", bytes.NewReader(body))
 	if err != nil {
-		log.Printf("WARN: kafka publish error: %v", err)
-		return
+		return fmt.Errorf("kafka rest proxy unreachable: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("kafka rest proxy returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 var (

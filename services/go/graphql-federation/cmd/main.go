@@ -33,7 +33,7 @@ func loadConfig() Config {
 	return Config{
 		Port:        envOr("PORT", "8125"),
 		DatabaseURL: envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
-		KafkaURL:    envOr("KAFKA_REST_URL", "http://localhost:8082"),
+		KafkaURL:    envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
 		Environment: envOr("ENVIRONMENT", "development"),
 	}
 }
