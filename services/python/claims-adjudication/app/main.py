@@ -19,10 +19,10 @@ Integrations:
 - TigerBeetle: payout ledger entries
 """
 
-import os
 import logging
+import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from fastapi import FastAPI
@@ -209,7 +209,7 @@ async def health():
 @app.post("/api/v1/claims/adjudicate", response_model=AdjudicationResponse)
 async def adjudicate_claim(req: AdjudicationRequest):
     """Auto-adjudicate a claim using rules + ML fraud scoring."""
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc).replace(tzinfo=None)  # naive-UTC, duration math unchanged (DTZ003)
     adjudication_id = str(uuid.uuid4())
 
     # Step 1: Rules evaluation
@@ -221,8 +221,8 @@ async def adjudicate_claim(req: AdjudicationRequest):
     # Step 3: Decision logic
     decision, reasons, approved_amount = _make_decision(req, rules_result, fraud_score)
 
-    processing_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-    sla_deadline = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+    processing_time = int((datetime.now(timezone.utc).replace(tzinfo=None) - start_time).total_seconds() * 1000)
+    sla_deadline = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=24)).isoformat()  # naive-UTC wire format preserved
 
     response = AdjudicationResponse(
         adjudication_id=adjudication_id,

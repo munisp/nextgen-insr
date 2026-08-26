@@ -74,7 +74,11 @@ describe("CONTRACT — real server, real middleware chain, real DB", () => {
     });
 
     it("success mutation answers 200 with the same envelope", async () => {
-      const raw = await rawTrpcPost("auth.logout", null, adminCookie);
+      // F6-1: auth.logout REVOKES the presented session token server-side
+      // (per-token blacklist). Use a disposable freshly-minted cookie so the
+      // shared adminCookie is not poisoned for the rest of the suite.
+      const disposableCookie = await sessionCookieFor(e2eAdmin);
+      const raw = await rawTrpcPost("auth.logout", null, disposableCookie);
       const json = expectSuccessEnvelope(raw);
       expect(json).toEqual({ success: true });
     });
@@ -267,8 +271,14 @@ describe("CONTRACT — real server, real middleware chain, real DB", () => {
     });
 
     it("auth.logout mutation answers {success:true}", async () => {
-      const raw = await rawTrpcPost("auth.logout", null, adminCookie);
+      // F6-1: logout blacklists the session token. Mint a disposable cookie
+      // (never the shared adminCookie) and prove the revoked token dies.
+      const disposableCookie = await sessionCookieFor(e2eAdmin);
+      const raw = await rawTrpcPost("auth.logout", null, disposableCookie);
       expect(expectSuccessEnvelope(raw)).toEqual({ success: true });
+      // The revoked token no longer resolves a session (auth.me → null).
+      const after = await rawTrpcGet("auth.me", undefined, disposableCookie);
+      expect(expectSuccessEnvelope(after)).toBeNull();
     });
   });
 

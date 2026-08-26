@@ -59,6 +59,10 @@ jobs:
         run: pnpm test:integration
         env:
           POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/insurance_portal_test
+          # Real Redis for the fail-closed distributed locks / token
+          # blacklists exercised by the money-path tests (mirrors the
+          # contract and e2e jobs).
+          REDIS_URL: redis://localhost:6379
 
   e2e:
     runs-on: ubuntu-latest

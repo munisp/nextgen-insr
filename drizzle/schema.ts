@@ -3350,6 +3350,10 @@ export const merchantPayouts = pgTable(
     accountName: text("account_name").notNull(),
     reference: text("reference").notNull(),
     status: text("status").notNull().default("pending"),
+    // DD-AUTH (F7-3): maker-checker attribution — who requested the payout.
+    // Nullable: rows created before this column existed have no initiator and
+    // are approvable/processable by any staff identity (legacy exemption).
+    initiatedBy: integer("initiated_by"),
     processedAt: timestamp("processed_at"),
     failureReason: text("failure_reason"),
     periodStart: timestamp("period_start").notNull(),

@@ -9,7 +9,9 @@
  * It implements exactly the command surface the app exercises in tests:
  *   PING, QUIT                       — health checks / shutdown
  *   SCRIPT LOAD, EVALSHA, EVAL       — rate-limit-redis sliding-window script
- *   GET, SET (PX), INCR, PTTL, PEXPIRE, DEL — primitives the script relies on
+ *   GET, SET (EX/PX/NX/XX), INCR, PTTL, PEXPIRE, DEL — rate-limit primitives
+ *     plus the distributed-lock (SET PX NX) and token-blacklist (SET EX)
+ *     surface the integration suite exercises (fail-closed locks, F6-1).
  *
  * The rate-limit Lua script semantics are re-implemented faithfully
  * (fixed-window counter with PX expiry), so rate limiting behaves the same
@@ -166,12 +168,22 @@ export async function startMiniRedis(port = 6380): Promise<MiniRedis> {
         return encodeBulk(entry ? entry.value : null);
       }
       case "SET": {
-        // SET key value [PX ms]
+        // SET key value [EX s | PX ms] [NX | XX]
         const key = args[1] ?? "";
         const value = args[2] ?? "";
         let expiresAt: number | null = null;
         const pxIdx = args.findIndex(a => a.toUpperCase() === "PX");
         if (pxIdx !== -1) expiresAt = now() + Number(args[pxIdx + 1] ?? "0");
+        const exIdx = args.findIndex(a => a.toUpperCase() === "EX");
+        if (exIdx !== -1) expiresAt = now() + Number(args[exIdx + 1] ?? "0") * 1000;
+        const nx = args.some(a => a.toUpperCase() === "NX");
+        const xx = args.some(a => a.toUpperCase() === "XX");
+        const existing = getEntry(key);
+        // NX: set only when absent (nil reply otherwise — ioredis maps nil to
+        // null, which acquireLock relies on for fail-closed lock semantics).
+        if (nx && existing) return encodeBulk(null);
+        // XX: set only when present.
+        if (xx && !existing) return encodeBulk(null);
         store.set(key, { value, expiresAt });
         return encodeSimple("OK");
       }

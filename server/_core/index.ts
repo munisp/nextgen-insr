@@ -484,7 +484,7 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
         accessToken: "dev-access-token",
       })
         .setProtectedHeader({ alg: "HS256" })
-        .setJTI(crypto.randomUUID())
+        .setJti(crypto.randomUUID())
         .setIssuedAt()
         .setExpirationTime("8h")
         .sign(jwtSecret);

@@ -227,7 +227,9 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
   it("commission payout maker-checker: self-approval and self-processing are refused", async () => {
     const caller = callerFor(adminUser);
     const staff = callerFor(approverUser);
-    const payout = await caller.commissionPayouts.request({ agentId: COMM_AGENT_CODE, amount: 250 });
+    // Amount honors the router's ₦500 minimum-payout floor so the request
+    // leg succeeds and the maker-checker guards are what the test exercises.
+    const payout = await caller.commissionPayouts.request({ agentId: COMM_AGENT_CODE, amount: 500 });
     const before = await commBalance(commAgentPk);
 
     // The requester (adminUser, id 91001) cannot approve their own payout…

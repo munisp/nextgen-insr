@@ -20,15 +20,15 @@ Integrations:
 - Dapr: pub/sub for cross-service notifications
 """
 
-import os
 import json
 import logging
+import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -103,7 +103,7 @@ class BVNVerificationRequest(BaseModel):
     first_name: str = Field(..., min_length=2)
     last_name: str = Field(..., min_length=2)
     date_of_birth: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
-    phone_number: Optional[str] = None
+    phone_number: str | None = None
     customer_id: str
 
 
@@ -137,7 +137,7 @@ class VerificationResponse(BaseModel):
     checks_failed: list[str]
     risk_flags: list[str]
     next_steps: list[str]
-    expires_at: Optional[str] = None
+    expires_at: str | None = None
     metadata: dict = {}
 
 
@@ -359,7 +359,7 @@ class EventPublisher:
         logger.info(f"EventPublisher initialized (brokers={brokers})")
 
     def publish(self, topic: str, event: dict):
-        event["timestamp"] = datetime.utcnow().isoformat()
+        event["timestamp"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()  # naive-UTC wire format preserved (DTZ003)
         event["service"] = "kyc-verification"
         logger.info(f"[KAFKA] → {topic}: {json.dumps(event)[:200]}")
 
@@ -433,7 +433,7 @@ async def verify_bvn(req: BVNVerificationRequest):
         checks_failed=checks_failed,
         risk_flags=risk_flags,
         next_steps=["submit_id_document", "complete_liveness"] if tier == VerificationTier.TIER2 else ["submit_bvn"],
-        expires_at=(datetime.utcnow() + timedelta(days=365)).isoformat(),
+        expires_at=(datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=365)).isoformat(),  # naive-UTC wire format preserved
         metadata={"method": result["method"]},
     )
 
@@ -466,7 +466,7 @@ async def verify_nin(req: NINVerificationRequest):
         checks_failed=checks_failed,
         risk_flags=[],
         next_steps=["complete_liveness"] if status == VerificationStatus.VERIFIED else ["retry_nin"],
-        expires_at=(datetime.utcnow() + timedelta(days=365)).isoformat(),
+        expires_at=(datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=365)).isoformat(),  # naive-UTC wire format preserved
         metadata={"method": result["method"]},
     )
 
@@ -475,7 +475,7 @@ async def verify_nin(req: NINVerificationRequest):
 async def verify_document(
     customer_id: str,
     document_type: DocumentType,
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File(...)],
 ):
     """Verify identity document using PaddleOCR + VLM (offline-capable)."""
     verification_id = str(uuid.uuid4())
@@ -561,8 +561,8 @@ async def liveness_check(req: LivenessCheckRequest):
 @app.post("/api/v1/kyc/full-verification")
 async def full_verification(
     customer_id: str,
-    bvn: Optional[str] = None,
-    nin: Optional[str] = None,
+    bvn: str | None = None,
+    nin: str | None = None,
     first_name: str = "",
     last_name: str = "",
     date_of_birth: str = "",

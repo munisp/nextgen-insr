@@ -18,12 +18,12 @@ Integrations:
 - Temporal: scheduled scoring jobs, intervention workflows
 """
 
-import os
 import logging
+import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
+from typing import ClassVar
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -76,7 +76,7 @@ class CustomerFeatures(BaseModel):
     payment_on_time_ratio: float = Field(default=1.0, ge=0, le=1)
     claims_filed_12m: int = 0
     claims_approved_ratio: float = Field(default=1.0, ge=0, le=1)
-    nps_score: Optional[int] = Field(default=None, ge=-100, le=100)
+    nps_score: int | None = Field(default=None, ge=-100, le=100)
     policy_count: int = 1
     tenure_months: int = 0
     premium_amount: int = 0
@@ -93,7 +93,7 @@ class ChurnPrediction(BaseModel):
     risk_tier: RiskTier
     top_factors: list[dict]
     recommended_interventions: list[dict]
-    predicted_lapse_date: Optional[str] = None
+    predicted_lapse_date: str | None = None
     lifetime_value_at_risk: int = 0
     confidence: float
     model_version: str = "gbm-v2.1"
@@ -111,8 +111,8 @@ class InterventionOutcome(BaseModel):
     customer_id: str
     intervention_type: InterventionType
     status: str
-    outcome: Optional[str] = None  # retained, lapsed, pending
-    days_to_outcome: Optional[int] = None
+    outcome: str | None = None  # retained, lapsed, pending
+    days_to_outcome: int | None = None
 
 
 # ── Churn Prediction Model ───────────────────────────────────────────────────
@@ -222,7 +222,7 @@ class ChurnModel:
 class InterventionEngine:
     """Automated intervention selection and execution."""
 
-    TIER_INTERVENTIONS = {
+    TIER_INTERVENTIONS: ClassVar[dict["RiskTier", list["InterventionType"]]] = {
         RiskTier.LOW: [InterventionType.STANDARD_COMMS],
         RiskTier.MEDIUM: [InterventionType.PERSONALIZED_DISCOUNT, InterventionType.LOYALTY_BOOST],
         RiskTier.HIGH: [InterventionType.AGENT_OUTREACH, InterventionType.PAYMENT_FLEXIBILITY],
@@ -311,7 +311,7 @@ async def predict_churn(features: CustomerFeatures):
 
     lapse_date = None
     if probability > 0.5 and features.renewal_date_days < 60:
-        lapse_date = (datetime.utcnow() + timedelta(days=features.renewal_date_days)).isoformat()
+        lapse_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=features.renewal_date_days)).isoformat()  # naive-UTC wire format preserved (DTZ003)
 
     return ChurnPrediction(
         customer_id=features.customer_id,

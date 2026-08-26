@@ -57,7 +57,10 @@ export default defineConfig({
       DB_POOL_MIN: "0",
       // Fire-and-forget middleware/sidecar clients: fail fast instead of
       // waiting on DNS/timeouts for nonexistent infra.
-      REDIS_URL: "redis://127.0.0.1:9",
+      // NOTE: REDIS_URL is deliberately NOT set here. Distributed locks and
+      // token blacklists are FAIL-CLOSED, so the suite needs a REAL Redis:
+      // CI provides the redis:7 service via REDIS_URL in the workflow env;
+      // locally globalSetup spawns an in-process mini-Redis fallback.
       KAFKA_BROKERS: "127.0.0.1:9",
       FLUVIO_HTTP_URL: "http://127.0.0.1:9",
       PLATFORM_BASE_URL: "http://127.0.0.1:9",

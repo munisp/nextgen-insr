@@ -7,7 +7,7 @@
  *   DB-backed idempotency (idempotency_records is the source of truth):
  *     1. reserve → execute → complete → replay returns the stored result
  *     2. same key + DIFFERENT payload → IdempotencyConflictError (CONFLICT)
- *     3. Redis outage (whole suite runs with Redis down) does NOT reopen the
+ *     3. Redis loss (write-through cache entry dropped) does NOT reopen the
  *        double-execution window — the old fail-open path returned null here
  *     4. a FRESH in_progress reservation blocks a concurrent executor
  *        (fail-closed: IdempotencyInProgressError, retryable by Temporal)
@@ -42,7 +42,7 @@ import {
   IdempotencyConflictError,
   IdempotencyInProgressError,
 } from "../../server/journey-activities";
-import { pingRedis } from "../../server/lib/redisClient";
+import { getRedisClient } from "../../server/lib/redisClient";
 import {
   expectCounted as expect,
   resetAssertionCount,
@@ -152,18 +152,23 @@ describe("journey idempotency (integration, real DB)", () => {
   });
 
   // ── 3. Redis loss must not reopen the execution window ─────────────────────
-  it("redis-down: completed key still replays from the DB (old code failed open)", async () => {
-    // Prove the harness really has no Redis: the whole suite runs with
-    // REDIS_URL pointing at a dead port.
-    expect(await pingRedis()).toBeNull();
-
+  it("redis-loss: completed key still replays from the DB (old code failed open)", async () => {
+    // The suite now runs with a REAL Redis (fail-closed locks need it — see
+    // vitest.integration.config.ts). Redis loss is simulated honestly at the
+    // exact layer the production code treats as a non-authoritative cache:
+    // drop the write-through cache entry so the read path must fall through
+    // to the DB, precisely what a Redis outage/eviction looks like.
     const payload = { payoutAmount: 500, customerId: 9 };
     expect(await checkIdempotency(K_REDIS, J, payload)).toBeNull();
     await recordIdempotency(K_REDIS, J, { status: "paid", n: 1 }, payload);
 
-    // The OLD implementation read ONLY Redis: with Redis down it returned
-    // null and the workflow re-executed the payout. The DB-backed check must
-    // return the recorded result.
+    // Sanity: the write-through cache really held the completed record.
+    expect(await getRedisClient().get(`idem:${J}:${K_REDIS}`)).not.toBeNull();
+    await getRedisClient().del(`idem:${J}:${K_REDIS}`);
+
+    // The OLD implementation read ONLY Redis: with the cache entry gone it
+    // returned null and the workflow re-executed the payout. The DB-backed
+    // check must return the recorded result.
     const replay = await checkIdempotency(K_REDIS, J, payload);
     expect(replay).toEqual({ status: "paid", n: 1 });
   });

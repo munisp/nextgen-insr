@@ -83,7 +83,7 @@ async function createSessionJwt(payload: SessionPayload): Promise<string> {
   const { jti, ...claims } = payload;
   return new SignJWT({ ...claims })
     .setProtectedHeader({ alg: "HS256" })
-    .setJTI(jti ?? crypto.randomUUID())
+    .setJti(jti ?? crypto.randomUUID())
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE_SECONDS}s`)
     .sign(getJwtSecret());

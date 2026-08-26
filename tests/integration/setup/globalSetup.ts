@@ -12,6 +12,7 @@
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { startMiniRedis, type MiniRedis } from "../../e2e/setup/miniRedis";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -20,6 +21,7 @@ const PG_PORT = Number(process.env.PGLITE_PORT ?? 54329);
 const PGLITE_URL = `postgresql://postgres:postgres@${PG_HOST}:${PG_PORT}/postgres`;
 
 let pgliteChild: ChildProcess | null = null;
+let miniRedis: MiniRedis | null = null;
 
 function runDrizzleKitPush(databaseUrl: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -75,13 +77,35 @@ function waitForReady(child: ChildProcess, timeoutMs = 60_000): Promise<void> {
 }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
+  // ── Redis (local fallback only) ──────────────────────────────────────────
+  // Distributed locks (acquireLock) and token blacklists are FAIL-CLOSED:
+  // with no reachable Redis every guarded money path refuses to run. CI jobs
+  // provide a real redis:7 service via REDIS_URL; locally we spawn the same
+  // in-process mini RESP server the e2e suite uses (faithful SET PX NX
+  // semantics) so the lock/idempotency tests exercise REAL lock behavior.
+  if (!process.env.REDIS_URL) {
+    miniRedis = await startMiniRedis(6381);
+    process.env.REDIS_URL = miniRedis.url;
+    console.log(
+      `[integration-setup] no REDIS_URL provided — mini-Redis at ${miniRedis.url}`
+    );
+  } else {
+    console.log("[integration-setup] using provided REDIS_URL (CI redis service)");
+  }
+  const closeMiniRedis = async () => {
+    if (miniRedis) {
+      await miniRedis.close();
+      miniRedis = null;
+    }
+  };
+
   if (process.env.POSTGRES_URL) {
     // CI path: real PostgreSQL provided by the environment.
     console.log(
       `[integration-setup] using provided POSTGRES_URL (${process.env.POSTGRES_URL.replace(/\/\/.*@/, "//***@")})`
     );
     await runDrizzleKitPush(process.env.POSTGRES_URL);
-    return async () => {};
+    return closeMiniRedis;
   }
 
   // Local path: spawn PGlite wire server as a child process.
@@ -104,5 +128,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   return async () => {
     pgliteChild?.kill("SIGTERM");
     pgliteChild = null;
+    await closeMiniRedis();
   };
 }
