@@ -424,27 +424,21 @@ export const biometricAuthRouter = router({
   }),
 
   // ── Sprint 28 domain procedures ──
+  // DD-LEGACY: previously returned fabricated enrollment records and a
+  // hardcoded 98.5% verification success rate. No biometric registry exists
+  // behind these endpoints — fail loud.
   list: protectedProcedure.query(async () => {
-    return {
-      records: [
-        {
-          id: "BIO-001",
-          agentId: "AGT-001",
-          type: "fingerprint",
-          status: "enrolled",
-          enrolledAt: "2024-06-01",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "biometricAuth.list is not implemented: no biometric enrollment registry is persisted in this service. Previously returned a fabricated demo record.",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      total: 150,
-      enrolled: 120,
-      totalVerifications: 5000,
-      successRate: 98.5,
-      totalFailedAttempts: 75,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "biometricAuth.analytics is not implemented: no verification telemetry exists in this service. Previously returned a fabricated 98.5% success rate.",
+    });
   }),
 });

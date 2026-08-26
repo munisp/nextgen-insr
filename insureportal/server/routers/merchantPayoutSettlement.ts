@@ -121,19 +121,26 @@ export const merchantPayoutSettlementRouter = router({
     }),
 
   processPayout: protectedProcedure
-    .input(z.object({ payoutId: z.number(), transferRef: z.string() }))
+    .input(z.object({ payoutId: z.number() }))
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
-          .update(merchantPayouts)
-          .set({
-            status: "processing",
-            processedAt: new Date(),
-          })
-          .where(eq(merchantPayouts.id, input.payoutId));
-        return { success: true };
+        // FAIL-LOUD (DD-LEGACY): this endpoint previously flipped a payout to
+        // "processing" on the strength of a caller-supplied transferRef, with
+        // no bank/rail call in the path. No payout rail is integrated in this
+        // service, so execution is refused; the payout is left untouched.
+        const [payout] = await db
+          .select()
+          .from(merchantPayouts)
+          .where(eq(merchantPayouts.id, input.payoutId))
+          .limit(1);
+        if (!payout) throw new TRPCError({ code: "NOT_FOUND" });
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "merchantPayoutSettlement.processPayout is not implemented: no bank payout rail is integrated in this service and a caller-supplied transfer reference is not accepted as proof of execution. No state was changed.",
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({
@@ -150,13 +157,21 @@ export const merchantPayoutSettlementRouter = router({
       try {
         const db = (await getDb())!;
         if (!db) throw new Error("Database unavailable");
-        await db
-          .update(merchantPayouts)
-          .set({
-            status: "completed",
-          })
-          .where(eq(merchantPayouts.id, input.payoutId));
-        return { success: true };
+        // FAIL-LOUD (DD-LEGACY): previously marked any payout "completed" on
+        // the caller's say-so with no evidence of a real transfer. Terminal
+        // status must only be written by a real rail callback, which does not
+        // exist in this service — refuse loudly.
+        const [payout] = await db
+          .select()
+          .from(merchantPayouts)
+          .where(eq(merchantPayouts.id, input.payoutId))
+          .limit(1);
+        if (!payout) throw new TRPCError({ code: "NOT_FOUND" });
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "merchantPayoutSettlement.completePayout is not implemented: no payout rail exists in this service to confirm execution, so a terminal 'completed' status cannot be written from a caller request. No state was changed.",
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

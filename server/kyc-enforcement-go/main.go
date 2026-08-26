@@ -78,9 +78,13 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:              envOr("PORT", "8211"),
-		KYCEngineURL:      envOr("KYC_ENGINE_URL", "http://localhost:8104"),
-		LivenessURL:       envOr("LIVENESS_SERVICE_URL", "http://localhost:8104"),
-		SanctionsURL:      envOr("SANCTIONS_ENGINE_URL", "http://localhost:8131"),
+		// DD-LEGACY (F2 #6/#7): wrong/phantom port defaults removed (8104 is
+		// realtime-events; nothing listens on 8131). Empty = not configured;
+		// KYC checks fail closed when the engine is unreachable, and health
+		// reports "not_configured" via orNotConfigured.
+		KYCEngineURL:      envOr("KYC_ENGINE_URL", ""),
+		LivenessURL:       envOr("LIVENESS_SERVICE_URL", ""),
+		SanctionsURL:      envOr("SANCTIONS_ENGINE_URL", ""),
 		KafkaBrokers:      requireEnv("KAFKA_BROKERS"),
 		RedisURL:          requireEnv("REDIS_URL"),
 		KeycloakURL:       envOr("KEYCLOAK_URL", "http://localhost:8080"),
@@ -103,6 +107,14 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// orNotConfigured renders an unset integration URL honestly in health output.
+func orNotConfigured(v string) string {
+	if v == "" {
+		return "not_configured"
+	}
+	return v
 }
 
 func requireEnv(key string) string {
@@ -984,8 +996,10 @@ func (s *AppState) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"uptime_sec": time.Since(s.startTime).Seconds(),
 		"design":     "fail-closed",
 		"integrations": map[string]string{
-			"kyc_engine":     s.config.KYCEngineURL,
-			"sanctions":      s.config.SanctionsURL,
+			"kyc_engine":     orNotConfigured(s.config.KYCEngineURL),
+			// DD-LEGACY (F2 #6): no sanctions engine is wired in this service —
+			// report honestly instead of advertising a phantom integration.
+			"sanctions":      orNotConfigured(s.config.SanctionsURL),
 			"kafka":          s.config.KafkaBrokers,
 			"tigerbeetle":    s.config.TigerBeetleURL,
 			"permify":        s.config.PermifyURL,

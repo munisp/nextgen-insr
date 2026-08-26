@@ -462,9 +462,11 @@ export async function callRustFraudGate(input: {
   );
 
   if (!res || !res.ok) {
-    // Fail-open: if fraud gate is down, allow with warning
-    logger.warn({ msg: "Rust fraud-gate unavailable — failing open", userId: input.userId });
-    return { allowed: true, riskScore: 0, riskLevel: "unknown", flags: ["fraud_gate_unavailable"], velocitySource: "none" };
+    // DD-LEGACY (#17): was fail-open (allowed:true, riskScore:0) — a money
+    // flow proceeded with no fraud check. Fail-closed: block and mark the
+    // control as unavailable so the workflow retries/escalates.
+    logger.error({ msg: "Rust fraud-gate unavailable — failing CLOSED (transaction not allowed)", userId: input.userId });
+    return { allowed: false, riskScore: 100, riskLevel: "unknown", flags: ["fraud_gate_unavailable"], velocitySource: "none" };
   }
 
   const data = await res.json() as {
@@ -629,10 +631,14 @@ export async function callPythonFraudScore(input: {
   );
 
   if (!res || !res.ok) {
+    // DD-LEGACY (#17): was a fabricated zero risk score consumed by workflow
+    // decisions. Fail-closed: report maximum caution with an explicit
+    // unavailable marker — never a fake "safe" score.
+    logger.error({ msg: "ML fraud scoring unavailable — returning fail-closed maximum-caution result" });
     return {
-      fraudProbability: 0,
-      riskScore: 0,
-      riskLevel: "unknown",
+      fraudProbability: 1,
+      riskScore: 100,
+      riskLevel: "unavailable",
       modelVersion: "unavailable",
       features: {},
     };
@@ -700,7 +706,7 @@ export async function callPythonKycVerification(input: {
       kycLevel: 0,
       score: 0,
       checks: [{ name: "kyc_service", passed: false, detail: "KYC service unavailable" }],
-      sessionId: `kyc-fallback-${Date.now()}`,
+      sessionId: "", // no real session exists — KYC service was unreachable (fail-closed)
     };
   }
 

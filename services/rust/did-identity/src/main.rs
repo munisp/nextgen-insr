@@ -327,8 +327,11 @@ async fn main() -> std::io::Result<()> {
     let port = env::var("PORT").unwrap_or_else(|_| "8113".to_string());
     let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://ngapp:ngapp@localhost:5432/ngapp".to_string());
 
-    // Generate a deterministic key pair from a seed (in production: load from HSM/Vault)
-    let seed_str = env::var("ED25519_SEED").unwrap_or_else(|_| "insureportal-did-identity-signing-key-v1-seed".to_string());
+    // DD-LEGACY (F2 #24): the hardcoded public fallback seed let anyone with
+    // repo access derive the VC signing key and forge credentials. The seed
+    // is now REQUIRED — the service refuses to start without it.
+    let seed_str = env::var("ED25519_SEED")
+        .expect("ED25519_SEED must be set — refusing to start with a well-known default signing key");
     let mut seed = [0u8; 32];
     let seed_hash = Sha256::digest(seed_str.as_bytes());
     seed.copy_from_slice(&seed_hash);

@@ -152,16 +152,13 @@ func (c *Client) StartWorkflow(ctx context.Context, req StartWorkflowRequest) (*
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		// Fail-open: return a mock status when Temporal is unavailable
-		c.logger.Warn("Temporal unavailable, returning mock workflow status",
+		// FAIL-LOUD (DD-LEGACY): previously returned a fabricated
+		// "QUEUED_OFFLINE" workflow status when Temporal was unreachable.
+		// The error now propagates so no phantom workflow state is reported.
+		c.logger.Error("Temporal unavailable — refusing to fabricate workflow status",
 			zap.String("workflowType", req.WorkflowType),
 			zap.Error(err))
-		return &WorkflowStatus{
-			WorkflowID:   req.WorkflowID,
-			Status:       "QUEUED_OFFLINE",
-			WorkflowType: req.WorkflowType,
-			StartTime:    time.Now(),
-		}, nil
+		return nil, fmt.Errorf("temporal unavailable (workflow %s): %w", req.WorkflowID, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -230,10 +227,20 @@ func (c *Client) SignalWorkflowHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued_offline"})
+		// FAIL-LOUD (DD-LEGACY): previously returned a fabricated
+		// 202 {"status":"queued_offline"} when Temporal was unreachable — a
+		// success echo for a signal that never happened. Report the failure
+		// honestly; nothing is queued.
+		writeError(w, http.StatusServiceUnavailable,
+			"temporal unavailable — signal NOT delivered: "+err.Error())
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		writeError(w, http.StatusBadGateway,
+			fmt.Sprintf("temporal signal failed: upstream HTTP %d", resp.StatusCode))
+		return
+	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "signaled"})
 }
 

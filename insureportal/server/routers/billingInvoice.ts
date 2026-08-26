@@ -250,12 +250,17 @@ export const billingInvoiceRouter = router({
     )
     .mutation(async ({ input }) => {
       try {
-        return {
-          success: true,
-          invoiceId: input.invoiceId,
-          status: "paid",
-          paymentRef: input.paymentRef,
-        };
+        // FAIL-LOUD (DD-LEGACY): this endpoint previously echoed
+        // `{ success: true, status: "paid" }` with no DB write and no payment
+        // verification — a phantom status flip. Invoices in this legacy app
+        // are not persisted (getById returns null) and no payment rail is
+        // wired here, so a real paid-transition cannot be performed. Refuse
+        // loudly instead of fabricating a payment.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "billingInvoice.markPaid is not implemented: invoices are not persisted and no payment rail verification exists in this service, so an invoice cannot be marked paid from a caller-supplied reference. Record the payment through the payment rail (e.g. nigeriaPaymentRails verify*) and reconcile via the billing ledger.",
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

@@ -248,7 +248,10 @@ async fn probe_all_services(state: &AppState) {
     }
 }
 
-async fn compute_uptime_from_db(db: &PgPool, service: &str) -> f64 {
+/// DD-LEGACY (F2 #23): previously reported 100% uptime on NULL/error —
+/// SLO dashboards showed perfect uptime during monitoring outages. Now
+/// returns None on any failure and the caller skips the measurement.
+async fn compute_uptime_from_db(db: &PgPool, service: &str) -> Option<f64> {
     let result = sqlx::query(
         r#"SELECT 
            COUNT(*) FILTER (WHERE status = 'healthy') * 100.0 / NULLIF(COUNT(*), 0) as uptime
@@ -261,8 +264,17 @@ async fn compute_uptime_from_db(db: &PgPool, service: &str) -> f64 {
     .await;
 
     match result {
-        Ok(row) => row.try_get::<f64, _>("uptime").unwrap_or(100.0),
-        Err(_) => 100.0,
+        Ok(row) => match row.try_get::<f64, _>("uptime") {
+            Ok(v) => Some(v),
+            Err(e) => {
+                warn!(service = service, error = %e, "uptime column NULL/unreadable — skipping SLO measurement (no fabricated 100%)");
+                None
+            }
+        },
+        Err(e) => {
+            warn!(service = service, error = %e, "uptime query failed — skipping SLO measurement (no fabricated 100%)");
+            None
+        }
     }
 }
 
@@ -290,7 +302,13 @@ async fn compute_slo_burn_rates(state: &AppState) {
 
         let current_value = match metric_type.as_str() {
             "availability" => {
-                compute_uptime_from_db(&state.db, &service_name).await
+                match compute_uptime_from_db(&state.db, &service_name).await {
+                    Some(v) => v,
+                    None => {
+                        // No fabricated measurement row — skip this SLO.
+                        continue;
+                    }
+                }
             }
             "latency_p99" => {
                 let result = sqlx::query(

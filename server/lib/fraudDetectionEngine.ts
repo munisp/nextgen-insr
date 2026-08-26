@@ -28,6 +28,10 @@ import { getDb } from "../db";
 export const fraudAlertBus = new EventEmitter();
 fraudAlertBus.setMaxListeners(100); // Allow many concurrent SSE connections
 
+// Throttle for fraud-gate outage logging (one error log per interval)
+const FRAUD_GATE_OUTAGE_LOG_INTERVAL_MS = 60_000;
+let lastFraudGateOutageLog = 0;
+
 // ── Rule Processor ────────────────────────────────────────────────────────────
 export interface TransactionContext {
   id: number;
@@ -111,7 +115,10 @@ export async function detectFraud(
   // ── Rust fraud-gate: enhanced velocity + pattern scoring ─────────────────
   // Calls the Rust fraud-gate service (port 8090) for rules that require
   // in-memory velocity tracking across the last 60 minutes.
-  // Fail-open: if fraud-gate is unavailable, use TypeScript-only score.
+  // DD-LEGACY (#5): was silently fail-open. Gate outages are now surfaced
+  // loudly: the result carries a `fraud_gate_unavailable` flag and a
+  // throttled error log is emitted (see below) so a degraded control is
+  // never invisible.
   const FRAUD_GATE_URL = process.env.FRAUD_GATE_URL || "http://localhost:8090";
   try {
     const rustResult = await fetch(`${FRAUD_GATE_URL}/check`, {
@@ -143,11 +150,26 @@ export async function detectFraud(
       if (rustData.risk_level === "critical") maxSeverity = "critical";
       else if (rustData.risk_level === "high" && maxSeverity !== "critical") maxSeverity = "high";
     }
-  } catch {
-    // Fraud-gate unavailable — proceed with TypeScript-only detection
+  } catch (gateErr) {
+    // Fraud-gate unavailable — surface the degradation explicitly instead of
+    // silently proceeding. The flag is returned to the caller and recorded
+    // on any resulting alert; a throttled error log marks the outage window.
+    rulesFired.push("fraud_gate_unavailable");
+    reason += "Fraud-gate service unavailable — velocity/pattern scoring was NOT performed for this transaction. ";
+    if (maxSeverity === "low") maxSeverity = "medium";
+    const now = Date.now();
+    if (now - lastFraudGateOutageLog > FRAUD_GATE_OUTAGE_LOG_INTERVAL_MS) {
+      lastFraudGateOutageLog = now;
+      // eslint-disable-next-line no-console
+      console.error(
+        `[Fraud] FRAUD GATE UNAVAILABLE — velocity/pattern checks degraded: ${gateErr instanceof Error ? gateErr.message : String(gateErr)}`
+      );
+    }
   }
 
-  const isFraud = rulesFired.length > 0;
+  // "fraud_gate_unavailable" alone must not condemn a transaction as fraud;
+  // it signals a degraded control, not guilt.
+  const isFraud = rulesFired.some(r => r !== "fraud_gate_unavailable");
   return {
     isFraud,
     severity: maxSeverity,

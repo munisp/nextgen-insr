@@ -17,19 +17,22 @@
 import { ENV } from "./env.js";
 import { getMtlsAgent } from "../lib/mtlsAgent.js";
 
-// ─── Service base URLs ────────────────────────────────────────────────────────
+// ─── Service base URLs (env-required; undefined = integration not wired) ────
+// DD-LEGACY (F2): the fabricated public-host fallbacks (*.insureportal.io)
+// are removed so an unconfigured service is genuinely `undefined` and the
+// 503 "not configured" guard in platformFetch actually fires.
 
 export const PLATFORM_URLS = {
-  kyc: ENV.PLATFORM_KYC_URL ?? "https://kyc.insureportal.io",
-  videoKyc: ENV.PLATFORM_VIDEO_KYC_URL ?? "https://videokyc.insureportal.io",
-  fraud: ENV.PLATFORM_FRAUD_URL ?? "https://fraud.insureportal.io",
-  settlement: ENV.PLATFORM_SETTLEMENT_URL ?? "https://settlement.insureportal.io",
-  geofencing: ENV.PLATFORM_GEOFENCING_URL ?? "https://geofencing.insureportal.io",
-  loyalty: ENV.PLATFORM_LOYALTY_URL ?? "https://loyalty.insureportal.io",
-  float: ENV.PLATFORM_FLOAT_URL ?? "https://float.insureportal.io",
-  dispute: ENV.PLATFORM_DISPUTE_URL ?? "https://disputes.insureportal.io",
-  analytics: ENV.PLATFORM_ANALYTICS_URL ?? "https://analytics.insureportal.io",
-  notification: ENV.PLATFORM_NOTIFICATION_URL ?? "https://notify.insureportal.io",
+  kyc: ENV.PLATFORM_KYC_URL,
+  videoKyc: ENV.PLATFORM_VIDEO_KYC_URL,
+  fraud: ENV.PLATFORM_FRAUD_URL,
+  settlement: ENV.PLATFORM_SETTLEMENT_URL,
+  geofencing: ENV.PLATFORM_GEOFENCING_URL,
+  loyalty: ENV.PLATFORM_LOYALTY_URL,
+  float: ENV.PLATFORM_FLOAT_URL,
+  dispute: ENV.PLATFORM_DISPUTE_URL,
+  analytics: ENV.PLATFORM_ANALYTICS_URL,
+  notification: ENV.PLATFORM_NOTIFICATION_URL,
 } as const;
 
 // ─── Error type ───────────────────────────────────────────────────────────────
@@ -49,11 +52,19 @@ export class PlatformError extends Error {
 
 async function platformFetch<T>(
   service: string,
-  baseUrl: string,
+  baseUrl: string | undefined,
   path: string,
   options: RequestInit & { token?: string } = {}
 ): Promise<T> {
   const { token, ...fetchOptions } = options;
+
+  if (!baseUrl) {
+    throw new PlatformError(
+      service,
+      503,
+      "not configured: platform service URL is not set for this deployment"
+    );
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

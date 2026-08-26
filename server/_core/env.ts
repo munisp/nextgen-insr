@@ -55,7 +55,9 @@ function requireEnv(name: string): string {
  * Returns the value of an optional environment variable with a safe default.
  * Use only for non-sensitive configuration (hostnames, ports, feature flags).
  */
-function optEnv(name: string, defaultValue: string): string {
+function optEnv(name: string, defaultValue: string): string;
+function optEnv(name: string): string | undefined;
+function optEnv(name: string, defaultValue?: string): string | undefined {
   return process.env[name] ?? defaultValue;
 }
 
@@ -128,21 +130,16 @@ export const ENV = {
     "MDM_COMPLIANCE_ENGINE_URL",
     "http://mdm-compliance-engine:8091"
   ),
-  mdmGeofenceServiceUrl: optEnv(
-    "MDM_GEOFENCE_SERVICE_URL",
-    "http://mdm-geofence-service:8092"
-  ),
+  // DD-LEGACY (F2): phantom default removed — no mdm-geofence-service:8092
+  // exists in any compose/k8s manifest. Undefined = not wired.
+  mdmGeofenceServiceUrl: optEnv("MDM_GEOFENCE_SERVICE_URL"),
 
   // ── Resilience / offline sub-services ──────────────────────────────────────
-  resilienceAgentUrl: optEnv(
-    "RESILIENCE_AGENT_URL",
-    "https://resilience.insureportal.io"
-  ),
-  offlineQueueUrl: optEnv("OFFLINE_QUEUE_URL", "https://queue.insureportal.io"),
-  analyticsServiceUrl: optEnv(
-    "ANALYTICS_SERVICE_URL",
-    "https://analytics.insureportal.io"
-  ),
+  // DD-LEGACY (F2): fabricated public-host defaults removed; consumers treat
+  // undefined as "service not wired" and report unavailability honestly.
+  resilienceAgentUrl: optEnv("RESILIENCE_AGENT_URL"),
+  offlineQueueUrl: optEnv("OFFLINE_QUEUE_URL"),
+  analyticsServiceUrl: optEnv("ANALYTICS_SERVICE_URL"),
 
   // ── POS Printer sidecar (Rust ESC/POS service) ──────────────────────────────
   posPrinterUrl: optEnv("POS_PRINTER_URL", "http://pos-printer:8085"),
@@ -170,43 +167,21 @@ export const ENV = {
   vapidSubject: optEnv("VAPID_SUBJECT", "mailto:admin@insureportal.io"),
 
   // ── Platform microservice URLs (override per deployment) ───────────────────
-  PLATFORM_KYC_URL: optEnv("PLATFORM_KYC_URL", "http://kyc-service:8070"),
-  PLATFORM_VIDEO_KYC_URL: optEnv(
-    "PLATFORM_VIDEO_KYC_URL",
-    "http://video-kyc-service:8071"
-  ),
-  PLATFORM_FRAUD_URL: optEnv(
-    "PLATFORM_FRAUD_URL",
-    "http://fraud-engine:8072"
-  ),
-  PLATFORM_SETTLEMENT_URL: optEnv(
-    "PLATFORM_SETTLEMENT_URL",
-    "http://settlement-service:8073"
-  ),
-  PLATFORM_GEOFENCING_URL: optEnv(
-    "PLATFORM_GEOFENCING_URL",
-    "http://mdm-geofence-service:8092"
-  ),
-  PLATFORM_LOYALTY_URL: optEnv(
-    "PLATFORM_LOYALTY_URL",
-    "http://loyalty-service:8074"
-  ),
-  PLATFORM_FLOAT_URL: optEnv(
-    "PLATFORM_FLOAT_URL",
-    "http://float-manager:8075"
-  ),
-  PLATFORM_DISPUTE_URL: optEnv(
-    "PLATFORM_DISPUTE_URL",
-    "http://dispute-service:8076"
-  ),
-  PLATFORM_ANALYTICS_URL: optEnv(
-    "PLATFORM_ANALYTICS_URL",
-    "http://analytics-service:8077"
-  ),
-  PLATFORM_NOTIFICATION_URL: optEnv(
-    "PLATFORM_NOTIFICATION_URL",
-    "http://notification-service:8078"
-  ),
+  // DD-LEGACY (F2): phantom default hosts on ports 8070-8078 removed — no
+  // such services exist in any compose/k8s manifest. Each integration is
+  // active ONLY when its URL is explicitly configured; consumers treat an
+  // unconfigured platform service as "not wired" and a configured-but-failed
+  // one as a loud error.
+  PLATFORM_KYC_URL: optEnv("PLATFORM_KYC_URL"),
+  PLATFORM_VIDEO_KYC_URL: optEnv("PLATFORM_VIDEO_KYC_URL"),
+  PLATFORM_FRAUD_URL: optEnv("PLATFORM_FRAUD_URL"),
+  PLATFORM_SETTLEMENT_URL: optEnv("PLATFORM_SETTLEMENT_URL"),
+  PLATFORM_GEOFENCING_URL: optEnv("PLATFORM_GEOFENCING_URL"),
+  PLATFORM_LOYALTY_URL: optEnv("PLATFORM_LOYALTY_URL"),
+  PLATFORM_FLOAT_URL: optEnv("PLATFORM_FLOAT_URL"),
+  PLATFORM_DISPUTE_URL: optEnv("PLATFORM_DISPUTE_URL"),
+  PLATFORM_ANALYTICS_URL: optEnv("PLATFORM_ANALYTICS_URL"),
+  PLATFORM_NOTIFICATION_URL: optEnv("PLATFORM_NOTIFICATION_URL"),
 
   // ── Fluvio streaming cluster ─────────────────────────────────────────────────
   fluvioEndpoint: optEnv("FLUVIO_ENDPOINT", "http://fluvio:9003"),

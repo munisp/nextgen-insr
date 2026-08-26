@@ -359,53 +359,36 @@ export const mobileMoneyRouter = router({
       }
     }),
 
+  // DD-LEGACY: the read endpoints below previously returned hardcoded demo
+  // records (fake wallets with ₦500,000 balances, fake completed
+  // transactions, fabricated analytics). No provider/wallet registry exists
+  // behind them, so they fail loud instead of fabricating.
   providers: protectedProcedure.query(async () => {
-    return {
-      providers: [
-        { id: "mtn_momo", name: "MTN MoMo", country: "NG", status: "active" },
-        {
-          id: "airtel_money",
-          name: "Airtel Money",
-          country: "NG",
-          status: "active",
-        },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "mobileMoney.providers is not implemented: no mobile-money provider registry is integrated in this service.",
+    });
   }),
   wallets: protectedProcedure.query(async () => {
-    return {
-      wallets: [
-        {
-          id: "W-001",
-          provider: "MTN MoMo",
-          balance: 500000,
-          currency: "NGN",
-          status: "active",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "mobileMoney.wallets is not implemented: no wallet store is integrated in this service. Previously returned fabricated demo wallets.",
+    });
   }),
   transactions: protectedProcedure.query(async () => {
-    return {
-      transactions: [
-        {
-          id: "MM-TX-001",
-          type: "transfer",
-          amount: 10000,
-          status: "completed",
-          provider: "MTN MoMo",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "mobileMoney.transactions is not implemented: use getTransactionHistory, which queries real transaction records. Previously returned fabricated demo transactions.",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalTransactions: 850,
-      totalVolume: 42500000,
-      activeWallets: 320,
-      avgTransactionSize: 50000,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "mobileMoney.analytics is not implemented: no analytics pipeline exists in this service. Previously returned fabricated figures.",
+    });
   }),
 });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { agents } from "@schema";
@@ -71,50 +72,45 @@ export const agentHierarchyRouter = router({
         .optional()
     )
     .query(async () => {
-      const data = [
-        {
-          id: "AGT-001",
-          name: "Adebayo Okonkwo",
-          role: "super_agent",
-          territory: "Lagos",
-          status: "active",
-          subAgents: 12,
-        },
-      ];
-      return { agents: data, items: data, total: 1 };
+      // DD-LEGACY: previously returned a fabricated agent record (with PII)
+      // through a PUBLIC procedure. No hierarchy view is backed by real
+      // role/territory data here — fail loud.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "agentHierarchy.list is not implemented: no role/territory hierarchy source exists in this service. Previously returned fabricated agent data via a public endpoint.",
+      });
     }),
   getTree: protectedProcedure.query(async () => {
-    return {
-      tree: {
-        id: "AGT-001",
-        name: "Adebayo",
-        role: "super_agent",
-        children: [
-          { id: "AGT-002", name: "Fatima", role: "agent", children: [] },
-        ],
-      },
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "agentHierarchy.getTree is not implemented: no hierarchy tree source exists in this service. Previously returned a fabricated tree.",
+    });
   }),
   territories: protectedProcedure.query(async () => {
-    return {
-      territories: [
-        { id: "T-001", name: "Lagos", agentCount: 45, status: "active" },
-        { id: "T-002", name: "Abuja", agentCount: 30, status: "active" },
-      ],
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "agentHierarchy.territories is not implemented: no territory registry exists in this service. Previously returned fabricated territories.",
+    });
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalAgents: 150,
-      byRole: { super_agent: 10, agent: 80, sub_agent: 60 },
-      byTerritory: { Lagos: 45, Abuja: 30, Kano: 25 },
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "agentHierarchy.analytics is not implemented: no hierarchy analytics pipeline exists in this service. Previously returned fabricated counts.",
+    });
   }),
   reassignParent: protectedProcedure
     .input(z.object({ agentId: z.number(), newParentId: z.number() }))
-    .mutation(async ({ input }) => ({
-      agentId: input.agentId,
-      newParentId: input.newParentId,
-      success: true,
-    })),
+    .mutation(async () => {
+      // DD-LEGACY: previously echoed success:true with NO DB write — a
+      // phantom hierarchy mutation. Fail loud.
+      throw new TRPCError({
+        code: "NOT_IMPLEMENTED",
+        message:
+          "agentHierarchy.reassignParent is not implemented: no hierarchy persistence exists in this service. Previously echoed success without writing anything.",
+      });
+    }),
 });

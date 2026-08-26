@@ -6,6 +6,9 @@
  * Processes in batches of 50 to avoid overwhelming NFIU API.
  * Exponential backoff per SAR: 100ms → 200ms → 400ms.
  * Fail-open: if NFIU is still down, SARs stay pending for next run.
+ * DD-LEGACY: no fabricated NFIU endpoint/placeholder key — when NFIU
+ * submission is not configured the cron logs loudly and leaves SARs pending
+ * for manual submission.
  */
 import { eq, and, inArray, lte } from "drizzle-orm";
 
@@ -14,7 +17,8 @@ import { publishToFluvio } from "./fluvio";
 import { complianceFilings } from "../drizzle/schema";
 import { writeAuditLog } from "./lib/auditLogger";
 
-const NFIU_API_URL = process.env.NFIU_API_URL ?? "https://nfiu.gov.ng/api/v1";
+const NFIU_API_URL = process.env.NFIU_API_URL ?? "";
+const NFIU_API_KEY = process.env.NFIU_API_KEY ?? "";
 const BATCH_SIZE = 50;
 const MAX_RETRIES = 3;
 const DLQ_THRESHOLD = 9; // After 9 total retries (3 cron runs × 3 attempts), route to DLQ
@@ -38,7 +42,7 @@ async function submitToNfiu(sarData: {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": process.env.NFIU_API_KEY ?? "nfiu-key",
+        "X-API-Key": NFIU_API_KEY,
         "X-Institution-Code": process.env.NFIU_INSTITUTION_CODE ?? "INSUREPORTAL",
       },
       body: JSON.stringify({
@@ -123,6 +127,14 @@ export async function runSarRetryCron(): Promise<{
   durationMs: number;
 }> {
   const start = Date.now();
+  if (!NFIU_API_URL || !NFIU_API_KEY) {
+    // DD-LEGACY: do not POST SARs to a fabricated endpoint with a placeholder
+    // key. Skip loudly; SARs remain "pending" for manual submission.
+    console.error(
+      "[SAR-CRON] NFIU submission is not configured (NFIU_API_URL/NFIU_API_KEY unset) — pending SARs require manual submission"
+    );
+    return { processed: 0, submitted: 0, failed: 0, skipped: 0, durationMs: Date.now() - start };
+  }
   const db = await getDb();
   if (!db) return { processed: 0, submitted: 0, failed: 0, skipped: 0, durationMs: 0 };
 

@@ -21,8 +21,9 @@ import { desc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog, agents, transactions } from "../../drizzle/schema";
+import { ENV } from "../_core/env";
 import logger from "../_core/logger";
-import { settlementPlatform, PlatformError } from "../_core/platformClient.js";
+import { settlementPlatform } from "../_core/platformClient.js";
 import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { getAgentFromCookie } from "../middleware/agentAuth";
@@ -198,25 +199,31 @@ export const settlementRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      // Try platform first
-      try {
-        const token = ctx.req?.cookies?.["kc_access_token"] ?? "";
-        if (token) {
-          const result = (await settlementPlatform.getHistory(
-            { limit: input.limit, offset: input.offset },
-            token
-          )) as { settlements?: unknown[] };
-          if (result?.settlements) {
-            return {
-              source: "platform" as const,
-              settlements: result.settlements,
-            };
+      // DD-LEGACY (F2): the platform settlement service is only consulted
+      // when explicitly wired (PLATFORM_SETTLEMENT_URL). When wired but
+      // unreachable, fail loud — silently falling back would present local
+      // data as if the configured platform were healthy.
+      if (ENV.PLATFORM_SETTLEMENT_URL) {
+        try {
+          const token = ctx.req?.cookies?.["kc_access_token"] ?? "";
+          if (token) {
+            const result = (await settlementPlatform.getHistory(
+              { limit: input.limit, offset: input.offset },
+              token
+            )) as { settlements?: unknown[] };
+            if (result?.settlements) {
+              return {
+                source: "platform" as const,
+                settlements: result.settlements,
+              };
+            }
           }
+        } catch (err) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Configured settlement platform is unreachable: ${(err as Error).message}`,
+          });
         }
-      } catch (err) {
-        logger.warn(
-          `[settlement] Platform getHistory failed, using local DB: ${(err as Error).message}`
-        );
       }
 
       // Fallback: local audit log
@@ -258,24 +265,28 @@ export const settlementRouter = router({
    * Returns agents with outstanding (unsettled) amounts for today.
    */
   getOutstanding: agentAdminProcedure.query(async ({ ctx }) => {
-    // Try platform first
-    try {
-      const token = ctx.req?.cookies?.["kc_access_token"] ?? "";
-      if (token) {
-        const result = (await settlementPlatform.getOutstanding(token)) as {
-          outstanding?: unknown[];
-        };
-        if (result?.outstanding) {
-          return {
-            source: "platform" as const,
-            outstanding: result.outstanding,
+    // DD-LEGACY (F2): consult the platform only when wired; fail loud when a
+    // wired platform is unreachable (this feeds settlement decisions).
+    if (ENV.PLATFORM_SETTLEMENT_URL) {
+      try {
+        const token = ctx.req?.cookies?.["kc_access_token"] ?? "";
+        if (token) {
+          const result = (await settlementPlatform.getOutstanding(token)) as {
+            outstanding?: unknown[];
           };
+          if (result?.outstanding) {
+            return {
+              source: "platform" as const,
+              outstanding: result.outstanding,
+            };
+          }
         }
+      } catch (err) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Configured settlement platform is unreachable: ${(err as Error).message}`,
+        });
       }
-    } catch (err) {
-      logger.warn(
-        `[settlement] Platform getOutstanding failed, using local DB: ${(err as Error).message}`
-      );
     }
 
     const db = (await getDb())!;

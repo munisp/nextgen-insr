@@ -8,8 +8,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { commissionPayouts, agents } from "@schema";
-import { eq, desc, and, count, gte, lte, sql } from "drizzle-orm";
-import { enqueueEmail, buildAlertEmail } from "../lib/emailQueue";
+import { eq, desc, and, count, gte, lte } from "drizzle-orm";
 import { dispatchWebhookEvent } from "../lib/webhookDelivery";
 import { writeAuditLog } from "../db";
 
@@ -243,7 +242,7 @@ export const commissionPayoutsRouter = router({
 
   // ── Process a payout (deduct from agent balance + mark completed) ────────
   process: protectedProcedure
-    .input(z.object({ id: z.number(), nubanRef: z.string().optional() }))
+    .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       try {
         const db = (await getDb())!;
@@ -257,54 +256,22 @@ export const commissionPayoutsRouter = router({
         if (!payout) throw new TRPCError({ code: "NOT_FOUND" });
         if (payout.status !== "approved") {
           throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Payout must be approved first",
+            code: "CONFLICT",
+            message: `Payout must be in approved state to process (current: ${payout.status})`,
           });
         }
 
-        // Deduct from agent commission balance
-        await db
-          .update(agents)
-          .set({
-            commissionBalance: sql`${agents.commissionBalance} - ${payout.amount}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(agents.id, payout.agentId));
-
-        const [updated] = await db
-          .update(commissionPayouts)
-          .set({
-            status: "completed",
-            nubanRef: input.nubanRef,
-            processedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(commissionPayouts.id, input.id))
-          .returning();
-
-        await dispatchWebhookEvent("commission.payout.completed", {
-          payoutId: updated.id,
-          agentId: updated.agentId,
-          amount: updated.amount,
-          nubanRef: updated.nubanRef,
+        // FAIL-LOUD (DD-LEGACY): this endpoint previously deducted the agent's
+        // commission balance and marked the payout "completed" using a
+        // caller-supplied `nubanRef` as "proof" of bank payout — no NIBSS /
+        // bank transfer call exists in this service. No real payout rail is
+        // integrated here, so refuse loudly BEFORE touching any balance. The
+        // payout stays in "approved" state for a real rail to execute.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "commissionPayouts.process is not implemented: no bank payout rail (NIBSS/Paystack transfer) is integrated in this service, so a payout cannot be executed and a caller-supplied reference is not accepted as proof of payment. The payout remains in 'approved' state; no balance was changed.",
         });
-
-        // Send email notification
-        const [agent] = await db
-          .select({ email: agents.email, name: agents.name })
-          .from(agents)
-          .where(eq(agents.id, payout.agentId))
-          .limit(1);
-        if (agent?.email) {
-          const { subject, html, text } = buildAlertEmail({
-            title: "Commission Payout Processed",
-            message: `Your commission payout of ₦${parseFloat(payout.amount as string).toLocaleString("en-NG", { minimumFractionDigits: 2 })} has been processed successfully.${input.nubanRef ? ` Reference: ${input.nubanRef}` : ""}`,
-            severity: "low",
-          });
-          enqueueEmail({ to: agent.email, subject, html, text });
-        }
-
-        return updated;
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

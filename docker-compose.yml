@@ -504,6 +504,9 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      # DD-LEGACY (F2 #30): server defaults to PORT 3000 — pin 5000 so the
+      # published 5000:5000 mapping reaches the app.
+      PORT: 5000
       DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
       TEMPORAL_ADDRESS: temporal:7233

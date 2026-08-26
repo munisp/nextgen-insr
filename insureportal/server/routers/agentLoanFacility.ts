@@ -175,23 +175,21 @@ export const agentLoanFacilityRouter = router({
           .limit(100);
         if (!loan) throw new Error("Loan not found");
         if (loan.status !== "approved")
-          throw new Error("Loan must be approved before disbursement");
-        // Credit agent float
-        await db
-          .update(agents)
-          .set({
-            premiumReserve: sql`"premiumReserve" + ${loan.principalAmount}`,
-          })
-          .where(eq(agents.id, loan.agentId));
-        await db
-          .update(agentLoans)
-          .set({
-            status: "disbursed",
-            disbursedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(agentLoans.id, input.loanId));
-        return { success: true, disbursedAmount: loan.principalAmount };
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Loan must be in approved state before disbursement (current: ${loan.status})`,
+          });
+        // FAIL-CLOSED (DD-LEGACY): this endpoint previously credited the
+        // agent's premiumReserve and flipped the loan to "disbursed" with NO
+        // funding debit leg and no ledger record — money created from
+        // nothing. No funding source / ledger integration exists in this
+        // service, so disbursement is refused and no value is created. The
+        // loan remains in "approved" state.
+        throw new TRPCError({
+          code: "NOT_IMPLEMENTED",
+          message:
+            "agentLoanFacility.disburse is not implemented: no funding source or double-entry ledger leg is integrated in this service, so disbursing would create unbacked float. The loan remains in 'approved' state; no balance was changed.",
+        });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({

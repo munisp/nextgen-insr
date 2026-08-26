@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { auditLog } from "@schema";
@@ -111,32 +112,21 @@ export const ussdGatewayRouter = router({
         end: false,
       };
     }),
+  // DD-LEGACY: previously returned a fabricated session (with a phone
+  // number) and a fake completed ₦50,000 premium_payment. Fail loud.
   activeSessions: protectedProcedure.query(async () => {
-    return {
-      sessions: [
-        {
-          sessionId: "USSD-001",
-          phoneNumber: "08012345678",
-          screen: "main_menu",
-          startedAt: new Date().toISOString(),
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "ussdGateway.activeSessions is not implemented: no USSD session store exists in this service. Previously returned a fabricated session.",
+    });
   }),
   transactions: protectedProcedure.query(async () => {
-    return {
-      transactions: [
-        {
-          id: "TX-001",
-          type: "premium_payment",
-          amount: 50000,
-          status: "completed",
-          agentId: "AGT001",
-        },
-      ],
-      total: 1,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "ussdGateway.transactions is not implemented: no USSD transaction store exists in this service. Previously returned a fabricated completed premium payment.",
+    });
   }),
   menuTree: protectedProcedure.query(async () => {
     return {
@@ -152,12 +142,10 @@ export const ussdGatewayRouter = router({
     };
   }),
   analytics: protectedProcedure.query(async () => {
-    return {
-      totalTransactions: 1250,
-      totalAmount: 25000000,
-      activeSessions: 15,
-      avgSessionDuration: 45,
-      completionRate: 85,
-    };
+    throw new TRPCError({
+      code: "NOT_IMPLEMENTED",
+      message:
+        "ussdGateway.analytics is not implemented: no USSD analytics pipeline exists in this service. Previously returned fabricated figures.",
+    });
   }),
 });
