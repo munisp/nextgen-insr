@@ -20,6 +20,8 @@ import { agents, otpTokens } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { revokeAllUserTokens } from "../lib/redisClient";
+import { agentSessionRevocationKey } from "../middleware/agentAuth";
 import { sendSms } from "../termii";
 const OTP_EXPIRY_MINUTES = 10;
 // SECURITY (THREAT_MODEL.md §7.6): online brute-force guard for the 6-digit
@@ -229,6 +231,11 @@ export const pinResetRouter = router({
           .update(agents)
           .set({ pinHash: hashedPin })
           .where(eq(agents.id, agent.id));
+
+        // F6-1: a PIN change must invalidate every outstanding agent_session
+        // JWT for this agent — otherwise a stolen 12h session keeps working
+        // after the credential it was minted from is gone.
+        await revokeAllUserTokens(agentSessionRevocationKey(agent.id));
 
         return {
           success: true,

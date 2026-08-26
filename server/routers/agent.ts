@@ -69,12 +69,20 @@ import {
   getDb,
 } from "../db";
 import { getJwtSecret } from "../lib/envValidation";
+import {
+  extractAgentSessionToken,
+  revokeAgentSessionToken,
+} from "../middleware/agentAuth";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 
 // ── CBN Insurance Limits ──────────────────────────────────────────────────
 const CBN_DAILY_TX_LIMIT = 3000000; // NGN 3M per day per agent
 const CBN_SINGLE_TX_LIMIT = 1000000; // NGN 1M per single transaction
 const CBN_MIN_FLOAT = 5000; // NGN 5K minimum float
+
+// F6-5: PIN brute-force lockout policy
+const MAX_PIN_FAILURES = 5;
+const PIN_LOCKOUT_MINUTES = 15;
 
 export const agentRouter = router({
   // ── Login ─────────────────────────────────────────────────────────────────
@@ -101,12 +109,56 @@ export const agentRouter = router({
           });
         }
 
-        const valid = await bcrypt.compare(input.pin, agent.pinHash);
-        if (!valid) {
+        // F6-5: durable PIN brute-force lockout. The counter lives in the
+        // agents table (survives restarts and multi-instance deployments);
+        // 5 consecutive failures lock PIN login for 15 minutes. The lockout
+        // write is part of the login path — if it fails, the login fails
+        // closed (an unlockable counter is a brute-force invitation).
+        const db = await getDb();
+        if (!db) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Authentication store unavailable",
+          });
+        }
+        if (agent.pinLockedUntil && agent.pinLockedUntil > new Date()) {
           await writeAuditLog({
             agentId: agent.id,
             metadata: { agentCode: agent.agentId },
-            action: "LOGIN_FAILED",
+            action: "LOGIN_LOCKED",
+            resource: "agent",
+            resourceId: String(agent.id),
+            ipAddress: ctx.req.ip ?? "unknown",
+            status: "failure",
+          });
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Too many failed PIN attempts. Account locked until ${agent.pinLockedUntil.toISOString()}.`,
+          });
+        }
+
+        const valid = await bcrypt.compare(input.pin, agent.pinHash);
+        if (!valid) {
+          const attempts = (agent.failedPinAttempts ?? 0) + 1;
+          const reachedLimit = attempts >= MAX_PIN_FAILURES;
+          await db
+            .update(agents)
+            .set(
+              reachedLimit
+                ? {
+                    failedPinAttempts: 0,
+                    pinLockedUntil: new Date(
+                      Date.now() + PIN_LOCKOUT_MINUTES * 60 * 1000
+                    ),
+                    updatedAt: new Date(),
+                  }
+                : { failedPinAttempts: attempts, updatedAt: new Date() }
+            )
+            .where(eq(agents.id, agent.id));
+          await writeAuditLog({
+            agentId: agent.id,
+            metadata: { agentCode: agent.agentId },
+            action: reachedLimit ? "LOGIN_LOCKED" : "LOGIN_FAILED",
             resource: "agent",
             resourceId: String(agent.id),
             ipAddress: ctx.req.ip ?? "unknown",
@@ -114,8 +166,22 @@ export const agentRouter = router({
           });
           throw new TRPCError({
             code: "UNAUTHORIZED",
-            message: "Invalid agent ID or PIN",
+            message: reachedLimit
+              ? `Too many failed PIN attempts. Account locked for ${PIN_LOCKOUT_MINUTES} minutes.`
+              : "Invalid agent ID or PIN",
           });
+        }
+
+        // Successful login clears any residual failure counter.
+        if ((agent.failedPinAttempts ?? 0) > 0 || agent.pinLockedUntil) {
+          await db
+            .update(agents)
+            .set({
+              failedPinAttempts: 0,
+              pinLockedUntil: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(agents.id, agent.id));
         }
 
         await updateAgentLastLogin(agent.id);
@@ -182,7 +248,13 @@ export const agentRouter = router({
     }),
 
   // ── Logout ────────────────────────────────────────────────────────────────
-  logout: protectedProcedure.mutation(({ ctx }) => {
+  logout: protectedProcedure.mutation(async ({ ctx }) => {
+    // F6-1: actually revoke the session token — clearing the cookie alone
+    // leaves the 12h JWT valid for anyone who captured it.
+    const token = extractAgentSessionToken(ctx.req);
+    if (token) {
+      await revokeAgentSessionToken(token);
+    }
     ctx.res.clearCookie("agent_session", { path: "/" });
     return { success: true };
   }),
