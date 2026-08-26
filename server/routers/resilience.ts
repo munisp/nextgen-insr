@@ -47,9 +47,13 @@ if (ENV.vapidPublicKey && ENV.vapidPrivateKey) {
   );
 }
 
-const RESILIENCE_URL = ENV.resilienceAgentUrl;
-const OFFLINE_URL = ENV.offlineQueueUrl;
-const ANALYTICS_URL = ENV.analyticsServiceUrl;
+// DD-LEGACY (F2): these are now optional — a phantom default host used to
+// make every bridge call fail against a fabricated public URL. When a
+// service is not wired the bridge reports it unavailable (null/fallback)
+// instead of pretending to reach it.
+const RESILIENCE_URL = ENV.resilienceAgentUrl ?? "";
+const OFFLINE_URL = ENV.offlineQueueUrl ?? "";
+const ANALYTICS_URL = ENV.analyticsServiceUrl ?? "";
 const TIMEOUT_MS = 3_000;
 
 async function safeFetch<T>(
@@ -57,6 +61,12 @@ async function safeFetch<T>(
   init?: RequestInit,
   fallback?: T
 ): Promise<T | null> {
+  if (!url) {
+    logger.warn(
+      "[Resilience] bridge URL not configured — reporting dependency unavailable (no phantom default)"
+    );
+    return fallback ?? null;
+  }
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);

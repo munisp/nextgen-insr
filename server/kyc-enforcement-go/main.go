@@ -78,9 +78,13 @@ type Config struct {
 func loadConfig() Config {
 	return Config{
 		Port:              envOr("PORT", "8211"),
-		KYCEngineURL:      envOr("KYC_ENGINE_URL", "http://localhost:8104"),
-		LivenessURL:       envOr("LIVENESS_SERVICE_URL", "http://localhost:8104"),
-		SanctionsURL:      envOr("SANCTIONS_ENGINE_URL", "http://localhost:8131"),
+		// DD-LEGACY (F2 #6/#7): wrong/phantom port defaults removed (8104 is
+		// realtime-events; nothing listens on 8131). Empty = not configured;
+		// KYC checks fail closed when the engine is unreachable, and health
+		// reports "not_configured" via orNotConfigured.
+		KYCEngineURL:      envOr("KYC_ENGINE_URL", ""),
+		LivenessURL:       envOr("LIVENESS_SERVICE_URL", ""),
+		SanctionsURL:      envOr("SANCTIONS_ENGINE_URL", ""),
 		KafkaBrokers:      requireEnv("KAFKA_BROKERS"),
 		RedisURL:          requireEnv("REDIS_URL"),
 		KeycloakURL:       envOr("KEYCLOAK_URL", "http://localhost:8080"),

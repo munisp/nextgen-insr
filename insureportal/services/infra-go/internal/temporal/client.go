@@ -227,10 +227,20 @@ func (c *Client) SignalWorkflowHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued_offline"})
+		// FAIL-LOUD (DD-LEGACY): previously returned a fabricated
+		// 202 {"status":"queued_offline"} when Temporal was unreachable — a
+		// success echo for a signal that never happened. Report the failure
+		// honestly; nothing is queued.
+		writeError(w, http.StatusServiceUnavailable,
+			"temporal unavailable — signal NOT delivered: "+err.Error())
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		writeError(w, http.StatusBadGateway,
+			fmt.Sprintf("temporal signal failed: upstream HTTP %d", resp.StatusCode))
+		return
+	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "signaled"})
 }
 

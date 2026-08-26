@@ -130,21 +130,16 @@ export const ENV = {
     "MDM_COMPLIANCE_ENGINE_URL",
     "http://mdm-compliance-engine:8091"
   ),
-  mdmGeofenceServiceUrl: optEnv(
-    "MDM_GEOFENCE_SERVICE_URL",
-    "http://mdm-geofence-service:8092"
-  ),
+  // DD-LEGACY (F2): phantom default removed — no mdm-geofence-service:8092
+  // exists in any compose/k8s manifest. Undefined = not wired.
+  mdmGeofenceServiceUrl: optEnv("MDM_GEOFENCE_SERVICE_URL"),
 
   // ── Resilience / offline sub-services ──────────────────────────────────────
-  resilienceAgentUrl: optEnv(
-    "RESILIENCE_AGENT_URL",
-    "https://resilience.insureportal.io"
-  ),
-  offlineQueueUrl: optEnv("OFFLINE_QUEUE_URL", "https://queue.insureportal.io"),
-  analyticsServiceUrl: optEnv(
-    "ANALYTICS_SERVICE_URL",
-    "https://analytics.insureportal.io"
-  ),
+  // DD-LEGACY (F2): fabricated public-host defaults removed; consumers treat
+  // undefined as "service not wired" and report unavailability honestly.
+  resilienceAgentUrl: optEnv("RESILIENCE_AGENT_URL"),
+  offlineQueueUrl: optEnv("OFFLINE_QUEUE_URL"),
+  analyticsServiceUrl: optEnv("ANALYTICS_SERVICE_URL"),
 
   // ── POS Printer sidecar (Rust ESC/POS service) ──────────────────────────────
   posPrinterUrl: optEnv("POS_PRINTER_URL", "http://pos-printer:8085"),

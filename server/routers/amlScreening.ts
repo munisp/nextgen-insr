@@ -1,13 +1,20 @@
 /**
  * amlScreening.ts — Anti-Money Laundering Screening & SAR Filing Router
  *
- * Full production implementation covering:
- *   - Real-time transaction screening against OFAC/UN/EU/NFIU watchlists
- *   - Suspicious Activity Report (SAR) filing to CBN/NFIU
- *   - Currency Transaction Report (CTR) for transactions > ₦5,000,000
- *   - AML risk scoring (velocity, geography, PEP, sanctions)
- *   - Automated SAR submission workflow with 24-hour deadline enforcement
- *   - NFIU reporting integration
+ * Honest capability statement (DD-LEGACY):
+ *   - AML risk scoring from real signals (amount, velocity, geography, PEP)
+ *     plus a small embedded name-keyword heuristic. This heuristic is NOT a
+ *     watchlist: no OFAC/UN/EU/NFIU list is bundled. A screening can only be
+ *     marked "cleared" when an external sanctions-screening provider
+ *     (SANCTIONS_SCREENING_URL) is configured AND responds with no match.
+ *     Without a provider the outcome is queued as "pending_review" — never
+ *     pass-by-default.
+ *   - SAR/CTR records are persisted locally with honest statuses. Submission
+ *     to NFIU/CBN only occurs when NFIU_API_URL/NFIU_API_KEY (resp.
+ *     CBN_AML_URL/CBN_API_KEY) are configured; otherwise filings stay
+ *     "pending" for manual submission and the original screening is NOT
+ *     marked sar_filed.
+ *   - Currency Transaction Report (CTR) tracking for transactions > ₦5,000,000
  */
 import { randomUUID } from "crypto";
 
@@ -46,8 +53,8 @@ const NFIU_API_KEY = process.env.NFIU_API_KEY ?? "";
 const CBN_AML_URL = process.env.CBN_AML_URL ?? "";
 const CBN_API_KEY = process.env.CBN_API_KEY ?? "";
 // Optional external sanctions-screening provider (e.g. an OFAC/UN/EU list
-// service). When unset, no screening result may be marked "cleared".
-const SANCTIONS_SCREENING_URL = process.env.SANCTIONS_SCREENING_URL ?? "";
+// service). Read at call time inside screenAgainstSanctionsProvider; when
+// unset, no screening result may be marked "cleared".
 const CTR_THRESHOLD = 5_000_000; // ₦5,000,000 — CBN CTR threshold
 const SAR_DEADLINE_HOURS = 24; // 24-hour SAR filing deadline after detection
 
@@ -127,6 +134,64 @@ function computeAmlRiskScore(params: {
   return { score: Math.min(score, 100), flags, level };
 }
 
+// ── External sanctions screening (real provider hook; fail-closed) ──────────
+type SanctionsScreenOutcome =
+  | { provider: "external"; matched: boolean; lists: string[] }
+  | { provider: "unavailable"; error: string }
+  | { provider: "not_configured" };
+
+/**
+ * Screen an entity against the configured external sanctions provider.
+ * No outcome from this function may ever default to "cleared":
+ *  - provider configured + responds match/no-match → real result
+ *  - provider configured + HTTP error/timeout → "unavailable"
+ *  - provider not configured → "not_configured"
+ * The URL is read at call time so deployments (and tests) can wire or
+ * rewire the provider without a process reload.
+ */
+async function screenAgainstSanctionsProvider(params: {
+  entityName: string;
+  entityType: string;
+  country?: string;
+}): Promise<SanctionsScreenOutcome> {
+  const url = process.env.SANCTIONS_SCREENING_URL ?? "";
+  if (!url) return { provider: "not_configured" };
+  try {
+    const res = await fetch(`${url}/screen`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: params.entityName,
+        entity_type: params.entityType,
+        country: params.country,
+      }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) {
+      return {
+        provider: "unavailable",
+        error: `sanctions provider returned HTTP ${res.status}`,
+      };
+    }
+    const data = (await res.json()) as {
+      match?: boolean;
+      matched?: boolean;
+      lists?: string[];
+      matched_lists?: string[];
+    };
+    return {
+      provider: "external",
+      matched: Boolean(data.match ?? data.matched),
+      lists: data.lists ?? data.matched_lists ?? [],
+    };
+  } catch (err: unknown) {
+    return {
+      provider: "unavailable",
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 // ── NFIU SAR Submission ───────────────────────────────────────────────────────
 async function submitSarToNfiu(sarData: {
   referenceNumber: string;
@@ -139,12 +204,22 @@ async function submitSarToNfiu(sarData: {
   riskScore: number;
   flags: string[];
 }): Promise<{ success: boolean; nfiuReference?: string; error?: string }> {
+  // DD-LEGACY: no placeholder key — mirrors the CBN-side pattern. Unconfigured
+  // NFIU integration returns an honest queued-for-manual-submission error; it
+  // never POSTs to a fabricated endpoint with a dummy credential.
+  if (!NFIU_API_URL || !NFIU_API_KEY) {
+    return {
+      success: false,
+      error:
+        "NFIU submission is not configured (NFIU_API_URL/NFIU_API_KEY unset) — SAR queued for manual submission",
+    };
+  }
   try {
     const res = await fetch(`${NFIU_API_URL}/sar/submit`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": process.env.NFIU_API_KEY ?? "nfiu-key",
+        "X-API-Key": NFIU_API_KEY,
         "X-Institution-Code": process.env.NFIU_INSTITUTION_CODE ?? "INSUREPORTAL",
       },
       body: JSON.stringify({
@@ -572,7 +647,12 @@ export const amlScreeningRouter = router({
   // ── Get pending SARs (overdue deadline check) ─────────────────────────────
   getPendingSars: protectedProcedure.query(async () => {
     const db = await getDb();
-    if (!db) return { pending: [], overdue: [] };
+    if (!db) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Pending SAR lookup unavailable: database is not reachable",
+      });
+    }
 
     const allPending = await db.select().from(complianceFilings)
       .where(and(

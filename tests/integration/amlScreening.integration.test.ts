@@ -2,20 +2,27 @@
  * amlScreening.integration.test.ts — real-DB integration tests for AML
  * screening, sanctions matching, velocity risk, and CTR filing honesty.
  *
+ * DD-LEGACY contract migration: a screening can only be "cleared" when a REAL
+ * external sanctions provider is configured and responds no-match. These
+ * tests therefore spin a REAL local HTTP stub (node:http on 127.0.0.1,
+ * ephemeral port) as the provider — no fetch mocking.
+ *
  * Proves:
- *   - clean entity screens to score 0 / low / cleared and persists a real
- *     AML_SCREENING compliance_filing
- *   - a sanctions-listed name ("Boko Haram…") scores 100 / critical / flagged
- *     and requires a SAR
+ *   - clean entity + provider no-match → score 0 / low / cleared + filing
+ *   - provider match → score 100 / critical / flagged (provider evidence)
+ *   - provider NOT configured → clean entity is queued as pending_review
+ *   - provider unreachable → screening_unavailable (never cleared)
+ *   - a sanctions-keyword name ("Boko Haram…") scores 100 / critical / flagged
  *   - a Cyrillic-lookalike bypass attempt ("Воko Наram") is also caught
  *   - 24h velocity from 12 seeded transactions stacks with PEP (score 45)
- *   - ₦6,000,000 requires a CTR, and the CTR filing is persisted honestly as
- *     "pending" because the CBN endpoint is unreachable (127.0.0.1:9)
+ *   - ₦6,000,000 requires a CTR, persisted honestly as "pending"
  *   - list reads filings with a status filter
  *   - anonymous callers write nothing
  */
 import { describe, it, beforeAll, afterAll } from "vitest";
-import { eq, and, count } from "drizzle-orm";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { eq, count } from "drizzle-orm";
 import { getDb } from "../../server/db";
 import { complianceFilings, transactions } from "../../drizzle/schema";
 import {
@@ -29,6 +36,11 @@ import {
 
 const FILE = "amlScreening";
 const VELOCITY_ENTITY = "Velocity Trader";
+
+// ── Real stub sanctions provider ─────────────────────────────────────────────
+let provider: Server;
+let providerUrl = "";
+let providerMode: "nomatch" | "match" = "nomatch";
 
 async function filingByReference(referenceNumber: string) {
   const db = (await getDb())!;
@@ -46,15 +58,38 @@ async function filingCount(): Promise<number> {
 }
 
 describe("amlScreening router (integration, real DB)", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     resetAssertionCount();
+    provider = createServer((req, res) => {
+      if (req.method === "POST" && req.url === "/screen") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify(
+            providerMode === "match"
+              ? { match: true, lists: ["STUB-SANCTIONS-LIST"] }
+              : { match: false }
+          )
+        );
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>(resolve =>
+      provider.listen(0, "127.0.0.1", resolve)
+    );
+    const { port } = provider.address() as AddressInfo;
+    providerUrl = `http://127.0.0.1:${port}`;
+    process.env.SANCTIONS_SCREENING_URL = providerUrl;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    delete process.env.SANCTIONS_SCREENING_URL;
+    await new Promise<void>(resolve => provider.close(() => resolve()));
     console.log(`[integration] ${FILE}: ${getAssertionCount()} assertions`);
   });
 
-  it("clean entity screens to score 0 / low / cleared and persists an AML_SCREENING filing", async () => {
+  it("clean entity + provider no-match screens to score 0 / low / cleared and persists an AML_SCREENING filing", async () => {
+    providerMode = "nomatch";
     const caller = callerFor(adminUser);
     const res = await caller.amlScreening.screen({
       entityName: "Adaeze Clean Customer",
@@ -65,6 +100,7 @@ describe("amlScreening router (integration, real DB)", () => {
     expect(res.riskScore).toBe(0);
     expect(res.riskLevel).toBe("low");
     expect(res.status).toBe("cleared");
+    expect(res.sanctionsScreening).toBe("external_provider");
     expect(res.requiresSar).toBe(false);
     expect(res.requiresCtr).toBe(false);
 
@@ -74,7 +110,75 @@ describe("amlScreening router (integration, real DB)", () => {
     expect(filing!.status).toBe("cleared");
   });
 
-  it("sanctions-listed name scores 100 / critical / flagged / requiresSar", async () => {
+  it("provider match → score 100 / critical / flagged with provider evidence", async () => {
+    providerMode = "match";
+    const caller = callerFor(adminUser);
+    const res = await caller.amlScreening.screen({
+      entityName: "Ordinary Looking Name",
+      entityType: "individual",
+      amount: 5000,
+    });
+
+    expect(res.riskScore).toBe(100);
+    expect(res.riskLevel).toBe("critical");
+    expect(res.status).toBe("flagged");
+    expect(res.requiresSar).toBe(true);
+    expect(
+      res.flags.some(f => f.startsWith("sanctions_provider_match"))
+    ).toBe(true);
+
+    const filing = await filingByReference(res.referenceNumber);
+    expect(filing!.status).toBe("flagged");
+    providerMode = "nomatch";
+  });
+
+  it("provider NOT configured → clean entity is queued as pending_review (never pass-by-default)", async () => {
+    const saved = process.env.SANCTIONS_SCREENING_URL;
+    delete process.env.SANCTIONS_SCREENING_URL;
+    try {
+      const caller = callerFor(adminUser);
+      const res = await caller.amlScreening.screen({
+        entityName: "Another Clean Customer",
+        entityType: "individual",
+        amount: 10000,
+      });
+
+      expect(res.riskScore).toBe(0);
+      expect(res.status).toBe("pending_review");
+      expect(res.sanctionsScreening).toBe("not_configured");
+      expect(res.requiresSar).toBe(false);
+
+      const filing = await filingByReference(res.referenceNumber);
+      expect(filing!.status).toBe("pending_review");
+    } finally {
+      process.env.SANCTIONS_SCREENING_URL = saved;
+    }
+  });
+
+  it("provider unreachable → screening_unavailable (never cleared)", async () => {
+    const saved = process.env.SANCTIONS_SCREENING_URL;
+    process.env.SANCTIONS_SCREENING_URL = "http://127.0.0.1:9"; // dead
+    try {
+      const caller = callerFor(adminUser);
+      const res = await caller.amlScreening.screen({
+        entityName: "Third Clean Customer",
+        entityType: "individual",
+        amount: 10000,
+      });
+
+      expect(res.status).toBe("screening_unavailable");
+      expect(res.sanctionsScreening).toBe("provider_unavailable");
+      expect(res.flags).toContain("sanctions_provider_unavailable");
+
+      const filing = await filingByReference(res.referenceNumber);
+      expect(filing!.status).toBe("screening_unavailable");
+    } finally {
+      process.env.SANCTIONS_SCREENING_URL = saved;
+    }
+  });
+
+  it("sanctions-keyword name scores 100 / critical / flagged / requiresSar", async () => {
+    providerMode = "nomatch";
     const caller = callerFor(adminUser);
     const res = await caller.amlScreening.screen({
       entityName: "Boko Haram Logistics Ltd",
@@ -145,8 +249,8 @@ describe("amlScreening router (integration, real DB)", () => {
     expect(res.requiresCtr).toBe(true);
     expect(res.ctrReference).toBeTruthy();
 
-    // The CBN endpoint is 127.0.0.1:9 (dead), so the filing must be queued
-    // as "pending" — never reported as submitted.
+    // The CBN endpoint is not configured with a reachable URL+key, so the
+    // filing must be queued as "pending" — never reported as submitted.
     const ctrFiling = await filingByReference(res.ctrReference!);
     expect(ctrFiling).toBeTruthy();
     expect(ctrFiling!.filingType).toBe("CTR");

@@ -150,11 +150,26 @@ export async function detectFraud(
       if (rustData.risk_level === "critical") maxSeverity = "critical";
       else if (rustData.risk_level === "high" && maxSeverity !== "critical") maxSeverity = "high";
     }
-  } catch {
-    // Fraud-gate unavailable — proceed with TypeScript-only detection
+  } catch (gateErr) {
+    // Fraud-gate unavailable — surface the degradation explicitly instead of
+    // silently proceeding. The flag is returned to the caller and recorded
+    // on any resulting alert; a throttled error log marks the outage window.
+    rulesFired.push("fraud_gate_unavailable");
+    reason += "Fraud-gate service unavailable — velocity/pattern scoring was NOT performed for this transaction. ";
+    if (maxSeverity === "low") maxSeverity = "medium";
+    const now = Date.now();
+    if (now - lastFraudGateOutageLog > FRAUD_GATE_OUTAGE_LOG_INTERVAL_MS) {
+      lastFraudGateOutageLog = now;
+      // eslint-disable-next-line no-console
+      console.error(
+        `[Fraud] FRAUD GATE UNAVAILABLE — velocity/pattern checks degraded: ${gateErr instanceof Error ? gateErr.message : String(gateErr)}`
+      );
+    }
   }
 
-  const isFraud = rulesFired.length > 0;
+  // "fraud_gate_unavailable" alone must not condemn a transaction as fraud;
+  // it signals a degraded control, not guilt.
+  const isFraud = rulesFired.some(r => r !== "fraud_gate_unavailable");
   return {
     isFraud,
     severity: maxSeverity,
