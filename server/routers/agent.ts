@@ -879,7 +879,7 @@ export const agentRouter = router({
           FROM transactions
           WHERE "agentId" = ${input.id}
             AND "createdAt" >= ${today}
-            AND status = 'completed'
+            AND status = 'success'
         `);
         const usedToday = parseFloat(
           (statsResult.rows[0] as Record<string, string>).used_today ?? "0"

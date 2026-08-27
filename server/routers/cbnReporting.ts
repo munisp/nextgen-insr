@@ -49,18 +49,18 @@ async function generateMonthlyReportFromDb(
   const to = new Date(year, month, 0, 23, 59, 59);
   const txStats = await db.execute(sql`
     SELECT COUNT(*) AS total_transactions,
-      COUNT(*) FILTER (WHERE status = 'completed') AS successful,
+      COUNT(*) FILTER (WHERE status = 'success') AS successful,
       COUNT(*) FILTER (WHERE status = 'failed') AS failed,
       COUNT(*) FILTER (WHERE status = 'reversed') AS reversed,
-      COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE status = 'completed'), 0) AS total_volume,
-      COALESCE(SUM(CAST(COALESCE(fee, '0') AS NUMERIC)) FILTER (WHERE status = 'completed'), 0) AS total_fees,
-      COALESCE(SUM(CAST(COALESCE(commission, '0') AS NUMERIC)) FILTER (WHERE status = 'completed'), 0) AS total_commission,
+      COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE status = 'success'), 0) AS total_volume,
+      COALESCE(SUM(CAST(COALESCE(fee, '0') AS NUMERIC)) FILTER (WHERE status = 'success'), 0) AS total_fees,
+      COALESCE(SUM(CAST(COALESCE(commission, '0') AS NUMERIC)) FILTER (WHERE status = 'success'), 0) AS total_commission,
       COUNT(DISTINCT "agentId") AS active_agents
     FROM transactions WHERE "createdAt" BETWEEN ${from} AND ${to}
   `);
   const byType = await db.execute(sql`
     SELECT type, COUNT(*) AS count, COALESCE(SUM(CAST(amount AS NUMERIC)), 0) AS volume
-    FROM transactions WHERE "createdAt" BETWEEN ${from} AND ${to} AND status = 'completed'
+    FROM transactions WHERE "createdAt" BETWEEN ${from} AND ${to} AND status = 'success'
     GROUP BY type ORDER BY volume DESC
   `);
   const r = txStats.rows[0] as Record<string, string>;
@@ -221,15 +221,15 @@ export const cbnReportingRouter = router({
         const yearEnd = new Date(input.year, 11, 31, 23, 59, 59);
         const monthlyStats = await db.execute(sql`
           SELECT EXTRACT(MONTH FROM "createdAt") AS month, COUNT(*) AS tx_count,
-            COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE status = 'completed'), 0) AS volume,
-            COUNT(*) FILTER (WHERE status = 'completed') AS successful
+            COALESCE(SUM(CAST(amount AS NUMERIC)) FILTER (WHERE status = 'success'), 0) AS volume,
+            COUNT(*) FILTER (WHERE status = 'success') AS successful
           FROM transactions WHERE "createdAt" BETWEEN ${yearStart} AND ${yearEnd}
           GROUP BY month ORDER BY month
         `);
         const sarCount = await db.execute(sql`
           SELECT COUNT(*) AS sar_count FROM transactions
           WHERE "createdAt" BETWEEN ${yearStart} AND ${yearEnd}
-            AND CAST(amount AS NUMERIC) >= 5000000 AND status = 'completed'
+            AND CAST(amount AS NUMERIC) >= 5000000 AND status = 'success'
         `);
         const sarRow = sarCount.rows[0] as Record<string, string>;
         return {

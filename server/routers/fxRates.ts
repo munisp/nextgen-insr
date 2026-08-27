@@ -61,16 +61,78 @@ export function validateFrankfurterRates(
   return true;
 }
 
+// ── F13-1 (DD-TSSTATE): ONE rate book, read and written under ONE key ────────
+// Previously refresh stored ECB rates under "fx_rates_ecb" while convert/
+// getRates/currencies read "fx_rates" (written only by the unvalidated
+// updateRates mutation) — refreshed market rates NEVER reached the converter.
+export const FX_RATES_CONFIG_KEY = "fx_rates";
+
+/** Stored-rate semantics: units of currency per 1 EUR (Frankfurter/ECB). */
+export const FX_RATES_BASE_CURRENCY = "EUR";
+
+/**
+ * Sane upper bound for a per-1-EUR rate. Real published rates are ≪ 10^5;
+ * 10^7 leaves headroom for high-inflation currencies while rejecting
+ * garbage/poisoned books (0, negatives, 1e300, …).
+ */
+export const FX_MAX_RATE = 10_000_000;
+
+/**
+ * Validated rate-book input for updateRates. Keys must be ISO-4217-style
+ * 3-letter codes; values finite, positive, and within sane bounds. Zod
+ * rejects unknown shapes at the boundary so arbitrary operator input can no
+ * longer poison the book the converter reads.
+ */
+export const fxRateBookSchema = z.record(
+  z.string().regex(/^[A-Z]{3}$/, "currency code must be 3 uppercase letters"),
+  z.number().positive().max(FX_MAX_RATE)
+);
+
+/**
+ * Pure conversion over a EUR-base rate book ("units per 1 EUR"):
+ *   amount(from) → EUR = amount / rates[from] → to = amount * rates[to] / rates[from]
+ * The previous implementation divided by toRate — INVERTED for this rate
+ * representation (off by ~6 orders of magnitude on USD→NGN).
+ * Throws on unknown currencies — a missing rate is never silently treated
+ * as 1 (which would price the currency at par with EUR).
+ */
+export function computeFxConversion(
+  rates: Record<string, number>,
+  from: string,
+  to: string,
+  amount: number
+): { convertedAmount: number; rate: number } {
+  const fromRate = rates[from];
+  if (typeof fromRate !== "number" || !Number.isFinite(fromRate) || fromRate <= 0) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `convert: no stored FX rate for '${from}' — refresh or update rates first`,
+    });
+  }
+  const toRate = rates[to];
+  if (typeof toRate !== "number" || !Number.isFinite(toRate) || toRate <= 0) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `convert: no stored FX rate for '${to}' — refresh or update rates first`,
+    });
+  }
+  const rate = toRate / fromRate;
+  return {
+    convertedAmount: Math.round(amount * rate * 100) / 100,
+    rate,
+  };
+}
+
 export const fxRatesRouter = router({
   getRates: protectedProcedure
-    .input(z.object({ baseCurrency: z.string().default("NGN") }).optional())
+    .input(z.object({ baseCurrency: z.string().default(FX_RATES_BASE_CURRENCY) }).optional())
     .query(async ({ input }) => {
       try {
         const db = (await getDb())!;
         const [config] = await db
           .select()
           .from(systemConfig)
-          .where(eq(systemConfig.key, "fx_rates"))
+          .where(eq(systemConfig.key, FX_RATES_CONFIG_KEY))
           .limit(1);
         // F-12 (wave-4b): removed the hardcoded fixture fallback rates — when
         // no stored rates exist the honest answer is an empty map + null
@@ -79,7 +141,7 @@ export const fxRatesRouter = router({
           ? JSON.parse(String(config.value))
           : {};
         return {
-          baseCurrency: input?.baseCurrency ?? "NGN",
+          baseCurrency: input?.baseCurrency ?? FX_RATES_BASE_CURRENCY,
           rates,
           lastUpdated: config?.updatedAt ?? null,
         };
@@ -95,8 +157,8 @@ export const fxRatesRouter = router({
   convert: protectedProcedure
     .input(
       z.object({
-        from: z.string(),
-        to: z.string(),
+        from: z.string().regex(/^[A-Z]{3}$/, "from must be a 3-letter currency code"),
+        to: z.string().regex(/^[A-Z]{3}$/, "to must be a 3-letter currency code"),
         amount: z.number().positive(),
       })
     )
@@ -106,7 +168,7 @@ export const fxRatesRouter = router({
         const [config] = await db
           .select()
           .from(systemConfig)
-          .where(eq(systemConfig.key, "fx_rates"))
+          .where(eq(systemConfig.key, FX_RATES_CONFIG_KEY))
           .limit(1);
         const rates: Record<string, number> | null = config
           ? JSON.parse(String(config.value))
@@ -118,15 +180,25 @@ export const fxRatesRouter = router({
             message: "convert: no FX rates are stored; refresh rates first",
           });
         }
-        const fromRate = input.from === "NGN" ? 1 : (rates[input.from] ?? 1);
-        const toRate = input.to === "NGN" ? 1 : (rates[input.to] ?? 1);
-        const converted = (input.amount * fromRate) / toRate;
+        if (!validateFrankfurterRates(rates)) {
+          // Fail closed on a poisoned rate book — never quote from garbage.
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "convert: stored FX rates are malformed; refresh rates before converting",
+          });
+        }
+        const { convertedAmount, rate } = computeFxConversion(
+          rates,
+          input.from,
+          input.to,
+          input.amount
+        );
         return {
           from: input.from,
           to: input.to,
           amount: input.amount,
-          convertedAmount: Math.round(converted * 100) / 100,
-          rate: fromRate / toRate,
+          convertedAmount,
+          rate,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -138,13 +210,21 @@ export const fxRatesRouter = router({
       }
     }),
   updateRates: protectedProcedure
-    .input(z.object({ rates: z.record(z.string(), z.number()) }))
+    // F13-1: validated rate book — 3-letter codes, finite positive rates
+    // within sane bounds (fxRateBookSchema); empty books rejected below.
+    .input(z.object({ rates: fxRateBookSchema }))
     .mutation(async ({ input }) => {
       try {
+        if (Object.keys(input.rates).length === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "updateRates: refusing to store an empty rate book",
+          });
+        }
         const db = (await getDb())!;
         await db
           .insert(systemConfig)
-          .values({ key: "fx_rates", value: JSON.stringify(input.rates) })
+          .values({ key: FX_RATES_CONFIG_KEY, value: JSON.stringify(input.rates) })
           .onConflictDoUpdate({
             target: systemConfig.key,
             set: { value: JSON.stringify(input.rates), updatedAt: new Date() },
@@ -227,19 +307,19 @@ export const fxRatesRouter = router({
   // have no delivered source).
   currencies: protectedProcedure.query(async () => {
     const db = await getDb();
-    const empty = { currencies: [] as Array<{ code: string; rate: number }>, baseCurrency: "NGN" };
+    const empty = { currencies: [] as Array<{ code: string; rate: number }>, baseCurrency: FX_RATES_BASE_CURRENCY };
     if (!db) return empty;
     const [config] = await db
       .select()
       .from(systemConfig)
-      .where(eq(systemConfig.key, "fx_rates"))
+      .where(eq(systemConfig.key, FX_RATES_CONFIG_KEY))
       .limit(1);
     const rates: Record<string, number> = config
       ? JSON.parse(String(config.value))
       : {};
     return {
       currencies: Object.entries(rates).map(([code, rate]) => ({ code, rate })),
-      baseCurrency: "NGN",
+      baseCurrency: FX_RATES_BASE_CURRENCY,
     };
   }),
   // Refresh pulls the latest published rates from Frankfurter (ECB) and
@@ -265,9 +345,11 @@ export const fxRatesRouter = router({
       });
     }
     const db = (await getDb())!;
+    // F13-1: persist under the SAME key the converter reads — previously
+    // "fx_rates_ecb", which convert/getRates never looked at.
     await db
       .insert(systemConfig)
-      .values({ key: "fx_rates_ecb", value: JSON.stringify(rates) })
+      .values({ key: FX_RATES_CONFIG_KEY, value: JSON.stringify(rates) })
       .onConflictDoUpdate({
         target: systemConfig.key,
         set: { value: JSON.stringify(rates), updatedAt: new Date() },

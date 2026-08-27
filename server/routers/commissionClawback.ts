@@ -149,7 +149,11 @@ export const commissionClawbackRouter = router({
     .input(
       z.object({
         agentId: z.number(),
-        amount: z.number(),
+        // F13 (DD-TSSTATE): a clawback of zero or a NEGATIVE amount is a
+        // money-minting/no-op entry — only positive amounts are valid
+        // (mirrored by the commission_clawbacks_amount_positive DB CHECK in
+        // migration 0052).
+        amount: z.number().positive(),
         reason: z.string(),
         transactionId: z.number().optional(),
       })

@@ -254,7 +254,8 @@ export const claimsPayments = pgTable(
   },
   t => ({
     paymentRefIdx: uniqueIndex("claims_pay_ref_idx").on(t.paymentRef),
-    claimIdx: index("claims_pay_claim_idx").on(t.claimId),
+    // F11-3 (DD-TSSTATE): one settlement payment per claim — migration 0052.
+    claimIdx: uniqueIndex("claims_pay_claimId_unique").on(t.claimId),
     statusIdx: index("claims_pay_status_idx").on(t.status),
     tenantIdx: index("claims_pay_tenant_idx").on(t.tenantId),
     createdAtIdx: index("claims_pay_created_idx").on(t.createdAt),

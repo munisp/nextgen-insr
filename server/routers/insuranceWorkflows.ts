@@ -15,7 +15,7 @@
  *  10. Admin: product management → system config → user management
  */
 import { TRPCError } from "@trpc/server";
-import { eq, desc, and, sql, count, sum, gte, lte, or, asc, isNull, isNotNull } from "drizzle-orm";
+import { eq, desc, and, sql, count, sum, gte, lte, or, asc, isNull, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -47,10 +47,35 @@ import {
 } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { publishInsuranceEvent } from "../daprClient";
-import { getDb } from "../db";
+import { getDb, withClientTransaction } from "../db";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { tbCreateTransfer } from "../tbClient";
 import { getTemporalClient } from "../temporal";
+
+// ─── Claim state-machine guards (F11-1/F11-3, DD-TSSTATE) ────────────────────
+/**
+ * Adjudication (approve / partially approve / reject) is only reachable from
+ * pre-decision states. Decided/terminal states (approved, partially_approved,
+ * rejected, paid, closed) are NOT re-enterable — a decided claim can only
+ * move forward via settlement.
+ */
+export const ADJUDICATABLE_FROM_STATUSES = [
+  "submitted",
+  "under_review",
+  "investigation",
+  "appealed",
+  "escalated",
+] as const;
+
+/**
+ * Settlement pays the recorded approvedAmount exactly once per claim and only
+ * from an approved decision state. Anything else (submitted/under_review/
+ * rejected/paid/closed/...) is rejected BEFORE any money moves.
+ */
+export const SETTLEABLE_CLAIM_STATUSES = [
+  "approved",
+  "partially_approved",
+] as const;
 
 // ─── Helper: Emit audit log entry ─────────────────────────────────────────────
 async function emitAuditLog(
@@ -528,12 +553,18 @@ export const insuranceWorkflowsRouter = router({
   /** CA-1: Assign claim to adjuster */
   assignClaim: protectedProcedure
     .input(z.object({
-      claimId: z.number(),
-      adjusterId: z.number(),
+      claimId: z.number().int().positive(),
+      adjusterId: z.number().int().positive(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // F11-2: read the claim so the workflow event records the REAL prior
+      // status instead of a fabricated "submitted".
+      const [claim] = await db.select().from(claims).where(eq(claims.id, input.claimId)).limit(1);
+      if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
+      const fromStatus = claim.status;
 
       await db.update(claims).set({
         assignedAdjusterId: input.adjusterId,
@@ -544,7 +575,7 @@ export const insuranceWorkflowsRouter = router({
       await db.insert(claimWorkflowEvents).values({
         claimId: input.claimId,
         eventType: "claim.assigned",
-        fromStatus: "submitted",
+        fromStatus,
         toStatus: "under_review",
         triggeredBy: ctx.user?.id ?? undefined,
         payload: { adjusterId: input.adjusterId },
@@ -556,9 +587,11 @@ export const insuranceWorkflowsRouter = router({
   /** CA-2: Adjudicate claim (approve/reject/partial) */
   adjudicateClaim: protectedProcedure
     .input(z.object({
-      claimId: z.number(),
+      claimId: z.number().int().positive(),
       decision: z.enum(["approved", "partially_approved", "rejected"]),
-      approvedAmount: z.number().optional(),
+      // Positive when present; REQUIRED (and > 0) for approvals — enforced in
+      // the handler because rejected decisions must not carry an amount.
+      approvedAmount: z.number().positive().optional(),
       rejectionReason: z.string().optional(),
       investigationNotes: z.string().optional(),
     }))
@@ -566,24 +599,59 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      const statusMap: Record<string, string> = {
+      const statusMap = {
         approved: "approved",
         partially_approved: "partially_approved",
         rejected: "rejected",
-      };
+      } as const;
 
-      await db.update(claims).set({
-        status: statusMap[input.decision] as any,
-        approvedAmount: input.approvedAmount ? String(input.approvedAmount) : null,
+      // Money integrity: an approval without a positive approvedAmount would
+      // be unsettleable — settleClaimPayment pays the recorded approvedAmount,
+      // never a caller-supplied figure.
+      if (
+        input.decision !== "rejected" &&
+        (input.approvedAmount === undefined ||
+          !Number.isFinite(input.approvedAmount) ||
+          input.approvedAmount <= 0)
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "approvedAmount must be a positive number for approved/partially_approved decisions",
+        });
+      }
+
+      const [claim] = await db.select().from(claims).where(eq(claims.id, input.claimId)).limit(1);
+      if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
+      const fromStatus = claim.status;
+
+      // F11-1: expected-state guard, applied ATOMICALLY in the UPDATE so a
+      // concurrent adjudication cannot both win; a claim in a decided/terminal
+      // state (approved/partially_approved/rejected/paid/closed) cannot be
+      // re-adjudicated.
+      const updated = await db.update(claims).set({
+        status: statusMap[input.decision],
+        approvedAmount: input.decision === "rejected" ? null : String(input.approvedAmount),
         rejectionReason: input.rejectionReason ?? null,
         investigationNotes: input.investigationNotes ?? null,
         updatedAt: new Date(),
-      }).where(eq(claims.id, input.claimId));
+      }).where(
+        and(
+          eq(claims.id, input.claimId),
+          inArray(claims.status, [...ADJUDICATABLE_FROM_STATUSES])
+        )
+      ).returning({ id: claims.id });
+      if (updated.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Claim ${input.claimId} cannot be adjudicated from status '${fromStatus}'`,
+        });
+      }
 
       await db.insert(claimWorkflowEvents).values({
         claimId: input.claimId,
         eventType: `claim.${input.decision}`,
-        toStatus: statusMap[input.decision] as any,
+        fromStatus,
+        toStatus: statusMap[input.decision],
         triggeredBy: ctx.user?.id ?? undefined,
         payload: { approvedAmount: input.approvedAmount, rejectionReason: input.rejectionReason },
       });
@@ -600,10 +668,9 @@ export const insuranceWorkflowsRouter = router({
   /** CA-3: Process claim settlement payment via TigerBeetle */
   settleClaimPayment: protectedProcedure
     .input(z.object({
-      claimId: z.number(),
-      amount: z.number(),
-      paymentMethod: z.string(),
-      paymentRef: z.string().optional(),
+      claimId: z.number().int().positive(),
+      paymentMethod: z.string().min(1),
+      paymentRef: z.string().max(128).optional(),
       beneficiaryName: z.string().optional(),
       beneficiaryAccount: z.string().optional(),
       beneficiaryBank: z.string().optional(),
@@ -612,21 +679,38 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      const payRef = input.paymentRef ?? `CLM-SETTLE-${input.claimId}-${Date.now()}`;
-
-      // Idempotency: check if payment already exists
       const { claimsPayments } = await import("../../drizzle/schema.additions");
+
+      // F11-3: idempotency is keyed on the CLAIM, not on a caller-supplied
+      // (or timestamped) paymentRef — a claim settles exactly once, no
+      // matter how many times the caller retries with fresh refs.
       const existingPayment = await db.select().from(claimsPayments)
-        .where(eq(claimsPayments.paymentRef, payRef)).limit(1);
+        .where(eq(claimsPayments.claimId, input.claimId)).limit(1);
       if (existingPayment.length > 0) return { idempotent: true, payment: existingPayment[0] };
 
       const [claim] = await db.select().from(claims).where(eq(claims.id, input.claimId)).limit(1);
       if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
-      if (!["approved", "partially_approved"].includes(claim.status ?? "")) {
+      // Expected-state guard: settlement is only reachable from an approved
+      // decision state, before any money moves.
+      if (!(SETTLEABLE_CLAIM_STATUSES as readonly string[]).includes(claim.status)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: `Claim status '${claim.status}' not approved for settlement` });
       }
+      // F11-3: the settled amount comes from the server-side adjudicated
+      // claim row — the client cannot name its own payout figure.
+      const approvedAmount = Number(claim.approvedAmount ?? NaN);
+      if (!Number.isFinite(approvedAmount) || approvedAmount <= 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Claim has no recorded approvedAmount — adjudicate the claim before settling it",
+        });
+      }
 
-      // Distributed lock to prevent double-payment
+      // Deterministic ref (no Date.now()): a retried settlement for the same
+      // claim converges on the same reference.
+      const payRef = input.paymentRef ?? `CLM-SETTLE-${input.claimId}`;
+
+      // Distributed lock to prevent double-payment (fail-closed on Redis
+      // outage — see server/lib/redisClient.ts)
       const { acquireLock, releaseLock } = await import("../lib/redisClient");
       const lockKey = `claim-settle:${input.claimId}`;
       const locked = await acquireLock(lockKey, 30_000);
@@ -637,50 +721,81 @@ export const insuranceWorkflowsRouter = router({
         const tbResult = await tbCreateTransfer({
           debitAccountId: "insurer-claims-pool",
           creditAccountId: `claimant-${claim.claimantId}`,
-          amount: Math.round(input.amount * 100),
+          amount: Math.round(approvedAmount * 100),
           ledger: 4000,
           code: 800,
           ref: payRef,
           txType: "claim_settlement",
         });
 
-        // Record in claims_payments table
-        const [payment] = await db.insert(claimsPayments).values({
-          claimId: input.claimId,
-          paymentRef: payRef,
-          amount: String(input.amount),
-          currency: "NGN",
-          paymentMethod: input.paymentMethod,
-          beneficiaryName: input.beneficiaryName ?? null,
-          beneficiaryAccount: input.beneficiaryAccount ?? null,
-          beneficiaryBank: input.beneficiaryBank ?? null,
-          status: "processed",
-          tbTransferId: tbResult?.id ?? null,
-          processedAt: new Date(),
-          approvedBy: ctx.user?.id ?? null,
-        }).returning();
-
-        // Update claim to paid
-        await db.update(claims).set({
-          status: "paid",
-          paidAmount: String(input.amount),
-          settlementDate: new Date(),
-          updatedAt: new Date(),
-        }).where(eq(claims.id, input.claimId));
-
-        await emitFluvioEvent(db, "payment-events", {
-          eventType: "payment.claim_settled",
-          claimId: input.claimId,
-          amount: input.amount,
-          paymentRef: payRef,
-          tigerBeetleRef: tbResult?.id,
+        // Payment record + claim state flip in ONE real transaction on a
+        // single connection (withClientTransaction). The claim flip carries
+        // the expected-state guard atomically; the claims_payments.claimId
+        // unique index (migration 0052) makes a lost race idempotent instead
+        // of a double-pay.
+        const settleResult = await withClientTransaction(async (client) => {
+          const ins = await client.query(
+            `INSERT INTO claims_payments
+               ("claimId", "paymentRef", amount, currency, "paymentMethod",
+                "beneficiaryName", "beneficiaryAccount", "beneficiaryBank",
+                status, "tbTransferId", "processedAt", "approvedBy")
+             VALUES ($1, $2, $3, 'NGN', $4, $5, $6, $7, 'processed', $8, now(), $9)
+             ON CONFLICT ("claimId") DO NOTHING
+             RETURNING *`,
+            [
+              input.claimId,
+              payRef,
+              String(approvedAmount),
+              input.paymentMethod,
+              input.beneficiaryName ?? null,
+              input.beneficiaryAccount ?? null,
+              input.beneficiaryBank ?? null,
+              tbResult?.id ?? null,
+              ctx.user?.id ?? null,
+            ]
+          );
+          if ((ins.rowCount ?? 0) === 0) {
+            // Lost the race: another request settled this claim first —
+            // return the winner's payment row (idempotent replay).
+            const winner = await client.query(
+              `SELECT * FROM claims_payments WHERE "claimId" = $1 LIMIT 1`,
+              [input.claimId]
+            );
+            return { payment: winner.rows[0], replayed: true };
+          }
+          const flip = await client.query(
+            `UPDATE claims
+                SET status = 'paid', "paidAmount" = $1, "settlementDate" = now(), "updatedAt" = now()
+              WHERE id = $2 AND status IN ('approved', 'partially_approved')
+              RETURNING id`,
+            [String(approvedAmount), input.claimId]
+          );
+          if ((flip.rowCount ?? 0) === 0) {
+            // Claim moved out of a settleable state between our read and the
+            // write — roll back the payment row with the whole transaction.
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `Claim ${input.claimId} is no longer in a settleable state (concurrent status change)`,
+            });
+          }
+          return { payment: ins.rows[0], replayed: false };
         });
 
-        await emitAuditLog(db, "CLAIM_SETTLED", "claim", input.claimId, ctx.user?.id, {
-          amount: input.amount, paymentRef: payRef, tbTransferId: tbResult?.id ?? null,
-        });
+        if (!settleResult.replayed) {
+          await emitFluvioEvent(db, "payment-events", {
+            eventType: "payment.claim_settled",
+            claimId: input.claimId,
+            amount: approvedAmount,
+            paymentRef: payRef,
+            tigerBeetleRef: tbResult?.id,
+          });
 
-        return { idempotent: false, payment, tigerBeetleRef: tbResult?.id ?? null, tbSyncStatus: tbResult?.syncStatus ?? "pending" };
+          await emitAuditLog(db, "CLAIM_SETTLED", "claim", input.claimId, ctx.user?.id, {
+            amount: approvedAmount, paymentRef: payRef, tbTransferId: tbResult?.id ?? null,
+          });
+        }
+
+        return { idempotent: settleResult.replayed, payment: settleResult.payment, tigerBeetleRef: tbResult?.id ?? null, tbSyncStatus: tbResult?.syncStatus ?? "pending" };
       } finally {
         await releaseLock(lockKey);
       }
