@@ -21,11 +21,11 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { enforceCustomerKycLimits } from "../lib/kycEnforcement";
 import {
   dispatchProviderOperation,
   type ProviderClientConfig,
 } from "../lib/providerDispatch";
-import { enforceCustomerKycLimits } from "../lib/kycEnforcement";
 import { resolveProviderTx } from "../lib/providerResolution";
 import { acquireLock, releaseLock } from "../lib/redisClient";
 import { cacheSet } from "../redisClient";

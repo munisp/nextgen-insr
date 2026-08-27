@@ -27,6 +27,7 @@ import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, and, count, sql, inArray, like } from "drizzle-orm";
 import { Pool } from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { TRPCError } from "@trpc/server";
 import { getDb } from "../../server/db";
 import { refunds, transactions, agents } from "../../drizzle/schema";
 import {
@@ -257,7 +258,11 @@ describe("funds-flow integrity (integration, real DB)", () => {
     const caller = callerFor(adminUser);
     const before = await balanceOf(senderId);
 
-    const results = await Promise.all(
+    // Fail-closed lock contract: the in-flight winner holds the per-agent
+    // lock, so concurrent duplicates are rejected CONFLICT (retryable)
+    // instead of double-executing; a caller that arrives after the winner
+    // commits replays idempotently. Exactly one durable effect either way.
+    const settled = await Promise.allSettled(
       Array.from({ length: 5 }, () =>
         caller.agentFloatTransfer.transfer({
           senderAgentId: senderId,
@@ -269,8 +274,16 @@ describe("funds-flow integrity (integration, real DB)", () => {
       )
     );
 
-    const effects = results.filter((r) => !r.idempotent).length;
+    const fulfilled = settled
+      .filter((s) => s.status === "fulfilled")
+      .map((s) => s.value);
+    const rejected = settled.filter((s) => s.status === "rejected");
+    const effects = fulfilled.filter((r) => !r.idempotent).length;
     expect(effects).toBe(1);
+    // Every rejection must be the fail-closed lock guard — never a partial failure.
+    for (const r of rejected) {
+      expect((r.reason as TRPCError).code).toBe("CONFLICT");
+    }
     expect((await txRowsByRef("FF-TR-RACE1")).length).toBe(2);
     expect(await balanceOf(senderId)).toBe(before - 4000);
   });

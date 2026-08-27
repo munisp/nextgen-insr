@@ -52,6 +52,18 @@ import {
 let adminCookie: string;
 let agentCookie: string;
 
+// Dedicated identity for the logout tests (F6-1): auth.logout blacklists the
+// PRESENTED token server-side. Two JWTs with identical claims minted within
+// the same second are byte-identical, so a disposable cookie for e2eAdmin
+// could collide with — and poison — the shared adminCookie. A distinct sub
+// makes the logout cookie disjoint by construction.
+const e2eLogoutUser = {
+  keycloakSub: "e2e-logout-sub-0003",
+  name: "E2E Logout",
+  email: "e2e-logout@e2e.local",
+  role: "admin" as const,
+};
+
 describe("CONTRACT — real server, real middleware chain, real DB", () => {
   beforeAll(async () => {
     await bootServer();
@@ -77,7 +89,7 @@ describe("CONTRACT — real server, real middleware chain, real DB", () => {
       // F6-1: auth.logout REVOKES the presented session token server-side
       // (per-token blacklist). Use a disposable freshly-minted cookie so the
       // shared adminCookie is not poisoned for the rest of the suite.
-      const disposableCookie = await sessionCookieFor(e2eAdmin);
+      const disposableCookie = await sessionCookieFor(e2eLogoutUser);
       const raw = await rawTrpcPost("auth.logout", null, disposableCookie);
       const json = expectSuccessEnvelope(raw);
       expect(json).toEqual({ success: true });
@@ -273,7 +285,7 @@ describe("CONTRACT — real server, real middleware chain, real DB", () => {
     it("auth.logout mutation answers {success:true}", async () => {
       // F6-1: logout blacklists the session token. Mint a disposable cookie
       // (never the shared adminCookie) and prove the revoked token dies.
-      const disposableCookie = await sessionCookieFor(e2eAdmin);
+      const disposableCookie = await sessionCookieFor(e2eLogoutUser);
       const raw = await rawTrpcPost("auth.logout", null, disposableCookie);
       expect(expectSuccessEnvelope(raw)).toEqual({ success: true });
       // The revoked token no longer resolves a session (auth.me → null).

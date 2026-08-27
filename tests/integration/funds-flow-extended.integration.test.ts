@@ -30,6 +30,7 @@ import { describe, it, beforeAll, afterAll } from "vitest";
 import { eq, and, count, sql, inArray, like } from "drizzle-orm";
 import { Pool } from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { TRPCError } from "@trpc/server";
 import { getDb } from "../../server/db";
 import { agents, policies, transactions, commissionPayouts } from "../../drizzle/schema";
 import { premiums, commissions } from "../../drizzle/schema.additions";
@@ -204,8 +205,16 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
     const settled = await Promise.allSettled(
       Array.from({ length: 5 }, () => staff.commissionPayouts.process({ id: payout.id }))
     );
+    // Fail-closed lock contract: the in-flight winner holds the payout lock,
+    // so concurrent losers are rejected CONFLICT (retryable) instead of
+    // double-deducting; a loser arriving after the winner commits replays
+    // without re-deducting. At least one winner, zero partial failures.
     const fulfilled = settled.filter((s) => s.status === "fulfilled").length;
-    expect(fulfilled).toBe(5); // losers replay the winner, nobody errors
+    const rejected = settled.filter((s) => s.status === "rejected");
+    expect(fulfilled).toBeGreaterThanOrEqual(1);
+    for (const r of rejected) {
+      expect((r.reason as TRPCError).code).toBe("CONFLICT");
+    }
     expect(await commBalance(commAgentPk)).toBe(before - 500);
     const final = await payoutRow(payout.id);
     expect(final!.status).toBe("completed");
@@ -377,15 +386,26 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
   // ── 12. Premium race ───────────────────────────────────────────────────────
   it("premium race: 6 parallel identical requests produce exactly one tx + one premium row", async () => {
     const caller = callerFor(adminUser);
-    const results = await Promise.all(
+    // Fail-closed lock contract (see float transfer race): concurrent
+    // duplicates are rejected CONFLICT while the winner is in flight, or
+    // replay idempotently after it commits. Exactly one durable effect.
+    const settled = await Promise.allSettled(
       Array.from({ length: 6 }, () =>
         caller.premiumTopUp.topUp({
           policyId: policyActiveId, amountNGN: 3000, paymentMethod: "card", reference: "FF-PM-RACE01",
         })
       )
     );
-    const effects = results.filter((r) => !r.idempotent).length;
+    const fulfilled = settled
+      .filter((s) => s.status === "fulfilled")
+      .map((s) => s.value);
+    const rejected = settled.filter((s) => s.status === "rejected");
+    const effects = fulfilled.filter((r) => !r.idempotent).length;
     expect(effects).toBe(1);
+    // Every rejection must be the fail-closed lock guard — never a partial failure.
+    for (const r of rejected) {
+      expect((r.reason as TRPCError).code).toBe("CONFLICT");
+    }
     expect(await txCountByRef("FF-PM-RACE01")).toBe(1);
     expect(await premCountByRef("FF-PM-RACE01")).toBe(1);
   });
