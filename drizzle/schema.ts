@@ -3766,6 +3766,16 @@ export const encryptedFields = pgTable(
     lastRotatedAt: timestamp("last_rotated_at"),
     isActive: boolean("is_active").default(true),
     createdAt: timestamp("created_at").defaultNow(),
+    // DD-TSSEC (A7-4/A7-6): per-record ciphertext + random salt/IV and the
+    // owning user for owner-or-admin access control. All additive/nullable so
+    // pre-existing metadata-only rows remain valid.
+    entityType: text("entity_type"),
+    entityId: integer("entity_id"),
+    encryptedValue: text("encrypted_value"),
+    iv: text("iv"),
+    authTag: text("auth_tag"),
+    salt: text("salt"),
+    createdBy: integer("created_by"),
   },
   t => ({
     ef_tableName_idx: index("ef_tableName_idx").on(t.tableName),

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
@@ -81,7 +82,10 @@ func loadConfig() Config {
 		OpenSearchURL:        envOr("OPENSEARCH_URL", "http://localhost:9200"),
 		KeycloakURL:          envOr("KEYCLOAK_URL", "http://localhost:8080"),
 		PermifyURL:           envOr("PERMIFY_URL", "http://localhost:3476"),
-		WebhookSecret:        envOr("WEBHOOK_SECRET", "whsec_test"),
+		// DD-TSSEC (A7-8): no default webhook secret — the publicly-known
+		// "whsec_test" previously let forged webhooks confirm payments. An
+		// unset secret fails CLOSED in the webhook handlers (503 reject).
+		WebhookSecret:        envOr("WEBHOOK_SECRET", ""),
 		Environment:          envOr("ENVIRONMENT", "development"),
 	}
 }
@@ -543,8 +547,18 @@ func verifyPaystackWebhook(body []byte, signature, secret string) bool {
 	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
-func verifyFlutterwaveWebhook(signature, secret string) bool {
-	return signature == secret
+// DD-TSSEC (A7-8): real HMAC verification — HMAC-SHA256 over the raw request
+// body keyed by the configured webhook secret, compared in constant time.
+// The previous implementation was a non-constant-time string compare of the
+// header against the secret itself (with a publicly-known default).
+func verifyFlutterwaveWebhook(body []byte, signature, secret string) bool {
+	if secret == "" || signature == "" {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
 // ── Kafka Event Publishing ──────────────────────────────────────────────────
@@ -711,6 +725,15 @@ func (s *Server) handleVerifyPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
+	// DD-TSSEC (A7-8): fail CLOSED when the secret key is unconfigured — with
+	// an empty key the expected HMAC-SHA512(body, "") is publicly computable,
+	// so "verification" would admit forged payment confirmations.
+	if s.config.PaystackSecretKey == "" {
+		log.Printf("[SECURITY] PAYSTACK_SECRET_KEY not configured — rejecting Paystack webhook (fail-closed)")
+		w.WriteHeader(503)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(400)
@@ -784,13 +807,27 @@ func (s *Server) handlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFlutterwaveWebhook(w http.ResponseWriter, r *http.Request) {
+	// DD-TSSEC (A7-8): fail CLOSED when no webhook secret is configured —
+	// an unverifiable webhook must never mark a payment successful.
+	if s.config.WebhookSecret == "" {
+		log.Printf("[SECURITY] WEBHOOK_SECRET not configured — rejecting Flutterwave webhook (fail-closed)")
+		w.WriteHeader(503)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(400)
+		return
+	}
+
 	signature := r.Header.Get("verif-hash")
-	if !verifyFlutterwaveWebhook(signature, s.config.WebhookSecret) {
+	if !verifyFlutterwaveWebhook(body, signature, s.config.WebhookSecret) {
+		log.Printf("[SECURITY] Invalid Flutterwave webhook signature")
 		w.WriteHeader(401)
 		return
 	}
 
-	body, _ := io.ReadAll(r.Body)
 	var event struct {
 		Event string `json:"event"`
 		Data  struct {

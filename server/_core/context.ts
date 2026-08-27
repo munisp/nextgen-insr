@@ -36,7 +36,9 @@ if (
   !isDev &&
   !isTest &&
   (!process.env.JWT_SECRET ||
-    process.env.JWT_SECRET === "posinsureportal-secret-change-in-production")
+    process.env.JWT_SECRET === "posinsureportal-secret-change-in-production" ||
+    // DD-TSSEC (A7-5): the repo's own published default must also hard-exit.
+    process.env.JWT_SECRET === "default-key-for-dev")
 ) {
   logger.error(
     "[SECURITY] FATAL: JWT_SECRET is not set or is using the default value. Set a strong secret in production."

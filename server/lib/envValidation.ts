@@ -129,6 +129,12 @@ const CRITICAL_ENV_VARS: EnvRule[] = [
     category: "security",
     description: "MinIO object storage access key",
   },
+  {
+    name: "FIELD_ENCRYPTION_KEY",
+    required: true,
+    category: "security",
+    description: "Master key for encrypted_fields AES-256-GCM records (no default allowed)",
+  },
 ];
 
 export interface ValidationResult {
@@ -208,6 +214,10 @@ export function validateEnvironment(): ValidationResult {
     "insureportal_admin",
     "change-in-prod",
     "change-in-production",
+    // DD-TSSEC (A7-5): the repo's own published defaults must not pass
+    // production validation either.
+    "default-key-for-dev",
+    "edd1c9f034335f136f87ad84b625c8f1", // published APISIX default admin key
   ];
 
   if (isProduction()) {
@@ -225,6 +235,7 @@ export function validateEnvironment(): ValidationResult {
       "TERMII_API_KEY",
       "FLUVIO_API_KEY",
       "MQTT_PASSWORD",
+      "FIELD_ENCRYPTION_KEY",
     ];
     for (const varName of secretVars) {
       const val = process.env[varName] ?? "";
@@ -278,8 +289,23 @@ export function enforceEnvironment(): void {
 }
 
 /**
+ * DD-TSSEC (A7-5): publicly-known default values that must never key
+ * anything in production — even when an operator copies them into env.
+ */
+const KNOWN_DEFAULT_SECRETS = new Set([
+  "default-key-for-dev",
+  "posinsureportal-secret-change-in-production",
+  "change-me-in-production",
+  "whsec_test",
+  "dev-token",
+  "edd1c9f034335f136f87ad84b625c8f1", // published APISIX default admin key
+]);
+
+/**
  * Get JWT secret — never returns hardcoded default in production.
  * In dev, returns generated ephemeral secret if JWT_SECRET env var is empty.
+ * DD-TSSEC (A7-5): a known public default is rejected in production even
+ * when explicitly set — it is equivalent to no secret at all.
  */
 export function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -292,7 +318,90 @@ export function getJwtSecret(): string {
     process.env.JWT_SECRET = ephemeral;
     return ephemeral;
   }
+  if (isProduction() && KNOWN_DEFAULT_SECRETS.has(secret)) {
+    throw new Error(
+      "JWT_SECRET is set to a publicly-known default value — refusing to start session signing with it in production"
+    );
+  }
   return secret;
+}
+
+/**
+ * Get the master key for encrypted_fields records (DD-TSSEC A7-4).
+ * REQUIRED from the environment in production — there is no default; the
+ * field-encryption surface fails loud at startup (via CRITICAL_ENV_VARS) and
+ * again here at first use if startup validation was skipped.
+ * Outside production an ephemeral process-local key is generated so dev/test
+ * keep working without a shared public constant.
+ */
+export function getFieldEncryptionKey(): string {
+  const secret = process.env.FIELD_ENCRYPTION_KEY;
+  if (!secret || secret.trim() === "") {
+    if (isProduction()) {
+      throw new Error(
+        "FIELD_ENCRYPTION_KEY is required in production — encrypted field storage has no default key"
+      );
+    }
+    const ephemeral = crypto.randomBytes(32).toString("hex");
+    process.env.FIELD_ENCRYPTION_KEY = ephemeral;
+    return ephemeral;
+  }
+  if (isProduction() && KNOWN_DEFAULT_SECRETS.has(secret)) {
+    throw new Error(
+      "FIELD_ENCRYPTION_KEY is set to a publicly-known default value — refusing to encrypt/decrypt with it in production"
+    );
+  }
+  return secret;
+}
+
+/**
+ * DD-TSSEC (phase-0 CONFIG MAP): service-to-service bearer tokens are
+ * env-gated. In production the token MUST come from the named env var — a
+ * missing value throws (fail-loud) instead of silently sending the
+ * publicly-known "dev-token" default. Outside production the dev fallback
+ * keeps local stacks working.
+ */
+export function getServiceToken(envName: string): string {
+  const token = process.env[envName];
+  if (token && token.trim() !== "") {
+    if (isProduction() && KNOWN_DEFAULT_SECRETS.has(token)) {
+      throw new Error(
+        `${envName} is set to a publicly-known default value — refusing to use it in production`
+      );
+    }
+    return token;
+  }
+  if (isProduction()) {
+    throw new Error(
+      `${envName} is required in production — no default service token is allowed`
+    );
+  }
+  return "dev-token";
+}
+
+/**
+ * DD-TSSEC (phase-0 CONFIG MAP): the APISIX admin key is REQUIRED from the
+ * environment. The published APISIX default key is never used as a fallback;
+ * in production a missing/default key throws, outside production an empty
+ * string is returned (the gateway call then fails auth honestly instead of
+ * succeeding with a public credential).
+ */
+export function getApisixAdminKey(): string {
+  const key = process.env.APISIX_ADMIN_KEY;
+  if (!key || key.trim() === "") {
+    if (isProduction()) {
+      throw new Error(
+        "APISIX_ADMIN_KEY is required in production — the publicly-known APISIX default is forbidden"
+      );
+    }
+    return "";
+  }
+  if (isProduction() && KNOWN_DEFAULT_SECRETS.has(key)) {
+    throw new Error(
+      "APISIX_ADMIN_KEY is set to the publicly-known APISIX default — refusing to use it in production"
+    );
+  }
+  return key;
 }
 
 /**
