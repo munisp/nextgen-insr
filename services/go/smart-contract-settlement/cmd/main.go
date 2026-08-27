@@ -97,6 +97,10 @@ func (s *Store) migrate(ctx context.Context) error {
 		);
 		CREATE INDEX IF NOT EXISTS idx_contracts_status ON parametric_contracts(status);
 		CREATE INDEX IF NOT EXISTS idx_settlements_contract ON settlement_events(contract_id);
+		-- Durable idempotency: a parametric contract settles at most once.
+		-- Insert-first dedupe in Evaluate relies on this partial unique index.
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_settlement_events_one_trigger_per_contract
+			ON settlement_events(contract_id) WHERE triggered;
 	`)
 	if err != nil {
 		return err
@@ -115,9 +119,11 @@ func (s *Store) seed(ctx context.Context) error {
 		{"PC-003", "POL-QUAKE-001", "CUST-003", "seismic", "seismic_oracle", "Abuja", 4.0, 1000000, 5000000},
 	}
 	for _, c := range contracts {
-		_, _ = s.db.ExecContext(ctx, `INSERT INTO parametric_contracts (id, policy_id, customer_id, trigger_type, threshold, payout_amount, max_payout, data_source, region)
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO parametric_contracts (id, policy_id, customer_id, trigger_type, threshold, payout_amount, max_payout, data_source, region)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
-			c.id, c.policyID, c.custID, c.triggerType, c.threshold, c.payout, c.maxPayout, c.dataSource, c.region)
+			c.id, c.policyID, c.custID, c.triggerType, c.threshold, c.payout, c.maxPayout, c.dataSource, c.region); err != nil {
+			return fmt.Errorf("seed contract %s: %w", c.id, err)
+		}
 	}
 	return nil
 }
@@ -171,16 +177,11 @@ func (s *Store) Evaluate(ctx context.Context, contractID string, actualValue flo
 		status = "triggered"
 	}
 
-	_, _ = s.db.ExecContext(ctx, `UPDATE parametric_contracts SET last_evaluated_at = NOW() WHERE id = $1`, contractID)
-
-	ledgerTxID := ""
-	if triggered {
-		ledgerTxID = fmt.Sprintf("TB-%d", time.Now().UnixNano()%1000000)
-		_, _ = s.db.ExecContext(ctx, `INSERT INTO settlement_events (contract_id, trigger_value, threshold, triggered, payout_amount, ledger_tx_id, status)
-			VALUES ($1,$2,$3,$4,$5,$6,'settled')`, contractID, actualValue, threshold, triggered, calculatedPayout, ledgerTxID)
+	if _, err := s.db.ExecContext(ctx, `UPDATE parametric_contracts SET last_evaluated_at = NOW() WHERE id = $1`, contractID); err != nil {
+		return nil, fmt.Errorf("mark evaluation: %w", err)
 	}
 
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"contract_id":   contractID,
 		"policy_id":     policyID,
 		"customer_id":   custID,
@@ -189,10 +190,55 @@ func (s *Store) Evaluate(ctx context.Context, contractID string, actualValue flo
 		"actual_value":  actualValue,
 		"triggered":     triggered,
 		"payout_amount": calculatedPayout,
-		"ledger_tx_id":  ledgerTxID,
 		"status":        status,
 		"evaluated_at":  time.Now().Format(time.RFC3339),
-	}, nil
+	}
+
+	if triggered {
+		// Insert-first durable idempotency: the partial unique index
+		// idx_settlement_events_one_trigger_per_contract guarantees at most one
+		// triggered settlement row per contract, even under concurrent
+		// evaluations, cron re-runs and API retries. The loser of the race gets
+		// sql.ErrNoRows from RETURNING and reads back the winner's row.
+		//
+		// Honest status: no ledger transfer and no payout rail call happen in
+		// this service, so the row is recorded as 'pending_settlement' with a
+		// NULL ledger reference — never 'settled' with a fabricated id.
+		var eventID int64
+		var eventStatus string
+		err := s.db.QueryRowContext(ctx, `INSERT INTO settlement_events (contract_id, trigger_value, threshold, triggered, payout_amount, ledger_tx_id, status)
+			VALUES ($1,$2,$3,true,$4,NULL,'pending_settlement')
+			ON CONFLICT (contract_id) WHERE triggered DO NOTHING
+			RETURNING id, status`, contractID, actualValue, threshold, calculatedPayout).
+			Scan(&eventID, &eventStatus)
+		if err == sql.ErrNoRows {
+			// Duplicate evaluation — return the settlement already on record.
+			var existingPayout int64
+			var ledgerTxID sql.NullString
+			qerr := s.db.QueryRowContext(ctx, `SELECT id, status, payout_amount, ledger_tx_id FROM settlement_events
+				WHERE contract_id = $1 AND triggered ORDER BY id LIMIT 1`, contractID).
+				Scan(&eventID, &eventStatus, &existingPayout, &ledgerTxID)
+			if qerr != nil {
+				return nil, fmt.Errorf("load existing settlement: %w", qerr)
+			}
+			result["duplicate"] = true
+			result["payout_amount"] = existingPayout
+			if ledgerTxID.Valid {
+				result["ledger_tx_id"] = ledgerTxID.String
+			} else {
+				result["ledger_tx_id"] = nil
+			}
+		} else if err != nil {
+			return nil, fmt.Errorf("record settlement event: %w", err)
+		} else {
+			result["duplicate"] = false
+			result["ledger_tx_id"] = nil
+		}
+		result["settlement_event_id"] = eventID
+		result["settlement_status"] = eventStatus
+	}
+
+	return result, nil
 }
 
 func (s *Store) ListContracts(ctx context.Context, status string) ([]map[string]interface{}, error) {

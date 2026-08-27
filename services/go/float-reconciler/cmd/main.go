@@ -201,8 +201,16 @@ func emitFluvioEvent(event FluvioEvent) error {
 	return nil
 }
 
-// autoCorrectDiscrepancy creates a TB correction transfer for minor discrepancies
-func autoCorrectDiscrepancy(ctx context.Context, agentCode string, discrepancy float64) error {
+// autoCorrectDiscrepancy posts a REAL correction transfer to the TB sidecar.
+//
+// Fail-closed + idempotent:
+//   - A durable per-(agent, amount, day) claim row is inserted FIRST
+//     (UNIQUE(correction_ref)); if the claim already exists the correction is
+//     skipped, so a persistent discrepancy cannot be "corrected" repeatedly
+//     every reconcile interval and stack duplicate transfers.
+//   - The HTTP call is actually performed and its status checked — a transfer
+//     that did not happen is reported as an error, never logged as applied.
+func autoCorrectDiscrepancy(ctx context.Context, agentID int, agentCode string, discrepancy float64) (applied bool, err error) {
 	type CorrectionRequest struct {
 		DebitAccountID  string `json:"debit_account_id"`
 		CreditAccountID string `json:"credit_account_id"`
@@ -213,25 +221,54 @@ func autoCorrectDiscrepancy(ctx context.Context, agentCode string, discrepancy f
 		TxType          string `json:"tx_type"`
 	}
 
+	amountKobo := int64(math.Abs(discrepancy) * 100)
+	// Deterministic idempotency ref: one correction per agent per amount per day.
+	correctionRef := fmt.Sprintf("RECON-CORR-%s-%d-%s", agentCode, amountKobo, time.Now().UTC().Format("2006-01-02"))
+
+	// Insert-first durable dedupe.
+	var claimed bool
+	err = db.QueryRowContext(ctx, `
+		INSERT INTO float_reconciliation_corrections (correction_ref, agent_id, agent_code, discrepancy, status, created_at)
+		VALUES ($1, $2, $3, $4, 'pending', NOW())
+		ON CONFLICT (correction_ref) DO NOTHING
+		RETURNING true
+	`, correctionRef, agentID, agentCode, discrepancy).Scan(&claimed)
+	if err == sql.ErrNoRows {
+		log.Printf("[FloatReconciler] Correction %s already claimed/applied — skipping duplicate", correctionRef)
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("claim correction: %w", err)
+	}
+
+	markCorrection := func(status string, cause string) {
+		if _, uerr := db.ExecContext(context.Background(), `
+			UPDATE float_reconciliation_corrections SET status = $2, error = $3, completed_at = NOW()
+			WHERE correction_ref = $1
+		`, correctionRef, status, cause); uerr != nil {
+			log.Printf("[FloatReconciler] WARN: could not mark correction %s as %s: %v", correctionRef, status, uerr)
+		}
+	}
+
 	var req CorrectionRequest
 	if discrepancy > 0 {
 		req = CorrectionRequest{
 			DebitAccountID:  "reconciliation-correction-pool",
 			CreditAccountID: fmt.Sprintf("float-%s", agentCode),
-			Amount:          int64(math.Abs(discrepancy) * 100),
+			Amount:          amountKobo,
 			Ledger:          999,
 			Code:            999,
-			Ref:             fmt.Sprintf("RECON-CORR-%s-%d", agentCode, time.Now().Unix()),
+			Ref:             correctionRef,
 			TxType:          "reconciliation_correction",
 		}
 	} else {
 		req = CorrectionRequest{
 			DebitAccountID:  fmt.Sprintf("float-%s", agentCode),
 			CreditAccountID: "reconciliation-correction-pool",
-			Amount:          int64(math.Abs(discrepancy) * 100),
+			Amount:          amountKobo,
 			Ledger:          999,
 			Code:            999,
-			Ref:             fmt.Sprintf("RECON-CORR-%s-%d", agentCode, time.Now().Unix()),
+			Ref:             correctionRef,
 			TxType:          "reconciliation_correction",
 		}
 	}
@@ -239,12 +276,24 @@ func autoCorrectDiscrepancy(ctx context.Context, agentCode string, discrepancy f
 	url := fmt.Sprintf("%s/transfers", cfg.TigerBeetleURL)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return err
+		markCorrection("failed", err.Error())
+		return false, err
 	}
-	_ = httpReq
-	// In production: make the HTTP call to TB sidecar
-	log.Printf("[FloatReconciler] Auto-correcting discrepancy of ₦%.2f for agent %s", discrepancy, agentCode)
-	return nil
+	httpReq.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		markCorrection("failed", err.Error())
+		return false, fmt.Errorf("TB sidecar correction transfer failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		markCorrection("failed", fmt.Sprintf("HTTP %d", resp.StatusCode))
+		return false, fmt.Errorf("TB sidecar correction transfer returned HTTP %d", resp.StatusCode)
+	}
+	markCorrection("applied", "")
+	log.Printf("[FloatReconciler] Auto-corrected discrepancy of ₦%.2f for agent %s (ref %s)", discrepancy, agentCode, correctionRef)
+	return true, nil
 }
 
 // runReconciliation performs a full reconciliation cycle
@@ -309,7 +358,12 @@ func runReconciliation(ctx context.Context) (*ReconciliationReport, error) {
 			case math.Abs(discrepancy) <= cfg.AutoCorrectLimit:
 				record.Status = "minor_discrepancy"
 				report.MinorDiscrepancy++
-				if err := autoCorrectDiscrepancy(ctx, agentCode, discrepancy); err == nil {
+				applied, err := autoCorrectDiscrepancy(ctx, agentID, agentCode, discrepancy)
+				if err != nil {
+					// Honest reporting: the correction did NOT happen.
+					log.Printf("[FloatReconciler] ERROR: auto-correction failed for agent %s: %v", agentCode, err)
+					record.Status = "minor_discrepancy_correction_failed"
+				} else if applied {
 					record.AutoCorrected = true
 					report.AutoCorrected++
 				}
@@ -469,6 +523,18 @@ func main() {
 			resolution_notes TEXT,
 			created_at TIMESTAMPTZ DEFAULT NOW(),
 			UNIQUE(agent_id, run_id)
+		);
+		-- Durable auto-correction dedupe: one correction per (agent, amount, day),
+		-- claimed insert-first before the TB transfer is attempted.
+		CREATE TABLE IF NOT EXISTS float_reconciliation_corrections (
+			correction_ref VARCHAR(128) PRIMARY KEY,
+			agent_id INT NOT NULL,
+			agent_code VARCHAR(64) NOT NULL,
+			discrepancy NUMERIC(18,2),
+			status VARCHAR(32) NOT NULL DEFAULT 'pending',
+			error TEXT,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			completed_at TIMESTAMPTZ
 		);
 	`)
 

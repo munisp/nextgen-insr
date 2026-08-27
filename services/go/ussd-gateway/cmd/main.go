@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -33,6 +34,87 @@ type MenuOption struct {
 	Key     string
 	Label   string
 	Handler func(session *USSDSession, input string) string
+}
+
+// sessionRegistry tracks real USSD sessions in process memory so the admin
+// session/stats endpoints report measured data (honestly labeled
+// "since process start") instead of fabricated constants.
+type sessionRegistry struct {
+	mu        sync.Mutex
+	sessions  map[string]*USSDSession
+	total     int64
+	completed int64
+	flows     map[string]int64
+	startedAt time.Time
+}
+
+var registry = &sessionRegistry{
+	sessions:  make(map[string]*USSDSession),
+	flows:     make(map[string]int64),
+	startedAt: time.Now(),
+}
+
+// activeWindow is how long since the last interaction a session counts as active.
+const activeWindow = 3 * time.Minute
+
+func (r *sessionRegistry) record(sessionID, phoneNumber, serviceCode, text string, completed bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.sessions[sessionID]
+	if !ok {
+		s = &USSDSession{SessionID: sessionID, PhoneNumber: phoneNumber, ServiceCode: serviceCode, CreatedAt: time.Now(), Data: map[string]string{}}
+		r.sessions[sessionID] = s
+		r.total++
+	}
+	s.Text = text
+	s.Data["last_seen"] = time.Now().Format(time.RFC3339)
+	if completed {
+		r.completed++
+	}
+	// Flow attribution by first menu choice (only when the session starts).
+	if len(text) >= 1 && !ok {
+		switch text[:1] {
+		case "1":
+			r.flows["policy_status"]++
+		case "2":
+			r.flows["file_claim"]++
+		case "3":
+			r.flows["pay_premium"]++
+		case "4":
+			r.flows["get_quote"]++
+		case "5":
+			r.flows["wallet_balance"]++
+		case "6":
+			r.flows["contact_support"]++
+		}
+	}
+	// opportunistic cleanup of stale sessions
+	if len(r.sessions) > 10000 {
+		cutoff := time.Now().Add(-activeWindow)
+		for id, sess := range r.sessions {
+			lastSeen, err := time.Parse(time.RFC3339, sess.Data["last_seen"])
+			if err != nil || lastSeen.Before(cutoff) {
+				delete(r.sessions, id)
+			}
+		}
+	}
+}
+
+func (r *sessionRegistry) snapshot() (total, active, completed int64, topFlows []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cutoff := time.Now().Add(-activeWindow)
+	for _, sess := range r.sessions {
+		if lastSeen, err := time.Parse(time.RFC3339, sess.Data["last_seen"]); err == nil && lastSeen.After(cutoff) {
+			active++
+		}
+	}
+	for name, count := range r.flows {
+		if count > 0 {
+			topFlows = append(topFlows, name)
+		}
+	}
+	return r.total, active, r.completed, topFlows
 }
 
 func main() {
@@ -85,6 +167,7 @@ func handleUSSDCallback(c *gin.Context) {
 	}
 
 	response := processUSSD(sessionID, phoneNumber, serviceCode, text)
+	registry.record(sessionID, phoneNumber, serviceCode, text, len(response) >= 3 && response[:3] == "END")
 	c.String(http.StatusOK, response)
 }
 
@@ -127,15 +210,18 @@ func processUSSD(sessionID, phoneNumber, serviceCode, text string) string {
 5. Property (from ₦20,000/yr)`
 
 	case text == "5":
-		return "END Your wallet balance is ₦45,000.00\nLast transaction: ₦5,000 premium payment (2 days ago)"
+		// FAIL-LOUD: this gateway has no connection to the wallet/ledger
+		// backend. It must never answer with a fabricated balance.
+		return "END Wallet balance lookup is temporarily unavailable via USSD.\nPlease check the InsurePortal app or call 0800-INSURE."
 
 	case text == "6":
 		return "END Contact InsurePortal Support:\nPhone: 0800-INSURE (0800-467873)\nWhatsApp: +234 800 123 4567\nEmail: support@insureportal.ng"
 
 	// Policy status flow
 	case len(text) > 2 && text[:2] == "1*":
-		policyNum := text[2:]
-		return "END Policy: " + policyNum + "\nStatus: Active\nExpiry: 2025-12-31\nPremium: ₦45,000/year\nCoverage: ₦5,000,000"
+		// FAIL-LOUD: no policy-store backend is wired to this service, so no
+		// policy status is ever invented.
+		return "END Policy lookup is temporarily unavailable via USSD.\nPlease use the InsurePortal app or call 0800-INSURE to verify policy " + text[2:] + "."
 
 	// Claim filing flow
 	case text == "2*1":
@@ -143,7 +229,9 @@ func processUSSD(sessionID, phoneNumber, serviceCode, text string) string {
 	case text == "2*2":
 		return "CON Health/Medical Claim\nEnter hospital name:"
 	case len(text) > 4 && text[:4] == "2*1*":
-		return "END Claim submitted successfully!\nClaim #: CLM-" + sessionID[:8] + "\nYou will receive an SMS with details.\nExpected processing: 3-5 business days"
+		// FAIL-LOUD: no claims backend exists behind this gateway. A claim is
+		// never claimed to be filed when nothing was persisted anywhere.
+		return "END USSD claim filing is temporarily unavailable.\nNo claim has been recorded.\nPlease file via the InsurePortal app or call 0800-INSURE (24/7 claims line)."
 
 	// Quote flow
 	case text == "4*1":
@@ -162,14 +250,24 @@ Vehicle value (₦):
 }
 
 func listActiveSessions(c *gin.Context) {
-	c.JSON(200, gin.H{"sessions": []interface{}{}, "count": 0})
+	_, active, _, _ := registry.snapshot()
+	c.JSON(200, gin.H{
+		"activeSessions": active,
+		"note":           "session identifiers withheld; counts measured in-memory since process start",
+	})
 }
 
 func getUSSDStats(c *gin.Context) {
+	total, active, completed, topFlows := registry.snapshot()
+	if topFlows == nil {
+		topFlows = []string{}
+	}
 	c.JSON(200, gin.H{
-		"totalSessions":  0,
-		"activeSessions": 0,
-		"completedToday": 0,
-		"topFlows":       []string{"policy_status", "file_claim", "get_quote"},
+		"totalSessions":     total,
+		"activeSessions":    active,
+		"completedSessions": completed,
+		"topFlows":          topFlows,
+		"window":            "in-memory since process start",
+		"processStartedAt":  registry.startedAt.Format(time.RFC3339),
 	})
 }

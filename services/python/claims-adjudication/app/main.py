@@ -10,21 +10,28 @@ Uses:
 - SLA timer with escalation: 24h → team lead, 48h → manager, 72h → director
 - CV damage estimation integration for motor claims
 
-Integrations:
-- Kafka: publishes claims.adjudicated, claims.escalated, claims.auto_approved
-- Temporal: ClaimAdjudicationWorkflow with SLA enforcement
-- Redis: caches fraud scores, rule configs
-- PostgreSQL: claims history, adjudication decisions
-- OpenSearch: claims analytics
-- TigerBeetle: payout ledger entries
+Integrations (honest):
+- ml-fraud-scoring (ML_FRAUD_SERVICE_URL): real HTTP fraud scoring when
+  configured. When unconfigured or unreachable the service FAILS CLOSED:
+  no claim is auto-approved — it is routed to manual review with the reason
+  recorded. Fraud scores are never invented.
+- cv-claims-adjuster (CV_SERVICE_URL): real HTTP damage estimation when
+  configured; otherwise damage estimation reports NOT_IMPLEMENTED.
+- Metrics are computed from real in-process counters (labeled as such).
+
+This service does NOT persist adjudication decisions to PostgreSQL and does
+NOT publish Kafka events — no such clients exist here. Decisions are returned
+synchronously to the caller only.
 """
 
 import logging
 import os
 import uuid
+import zlib
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -36,10 +43,9 @@ app = FastAPI(title="Claims Auto-Adjudication Engine", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 PORT = int(os.getenv("PORT", "8102"))
-KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "localhost:9092")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/7")
-TEMPORAL_URL = os.getenv("TEMPORAL_URL", "http://localhost:7233")
-ML_FRAUD_URL = os.getenv("ML_FRAUD_SERVICE_URL", "http://localhost:8087")
+# No fabricated localhost defaults: when unset, scoring/estimation fail CLOSED.
+ML_FRAUD_URL = os.getenv("ML_FRAUD_SERVICE_URL", "")
+CV_SERVICE_URL = os.getenv("CV_SERVICE_URL", "")
 
 
 # ── Domain Types ─────────────────────────────────────────────────────────────
@@ -117,7 +123,8 @@ class AdjudicationResponse(BaseModel):
     claim_id: str
     decision: AdjudicationDecision
     approved_amount: int = 0
-    fraud_score: float = 0.0
+    fraud_score: float | None = None  # None = scoring unavailable (fail-closed); never invented
+    fraud_scored: bool = False
     confidence: float = 0.0
     reasons: list[str]
     missing_documents: list[str]
@@ -164,25 +171,113 @@ class RulesEngine:
 
 
 class FraudScorer:
-    """ML-based fraud scoring (calls ml-fraud-scoring service)."""
+    """ML-based fraud scoring via the ml-fraud-scoring service (real HTTP).
 
-    async def score(self, req: AdjudicationRequest) -> float:
-        # In production: calls ml-fraud-scoring service via HTTP
-        # Features: claim frequency, amount anomaly, timing, document quality, customer history
-        import random
-        return random.uniform(0.05, 0.35)  # Most claims are legitimate
+    Fail-closed contract: returns a score in [0, 1] ONLY when the scoring
+    service actually answered. Any unavailability returns None — the decision
+    engine treats None as "unscored" and routes to manual review. A score is
+    never randomly generated.
+    """
+
+    async def score(self, req: AdjudicationRequest) -> float | None:
+        if not ML_FRAUD_URL:
+            logger.warning("ML_FRAUD_SERVICE_URL not configured — fraud scoring unavailable (fail-closed)")
+            return None
+        payload = {
+            # ml-fraud-scoring requires integer ids; derive stable ones so
+            # repeat scoring of the same claim is deterministic.
+            "claim_id": zlib.crc32(req.claim_id.encode()) % (2**31),
+            "user_id": zlib.crc32(req.customer_id.encode()) % (2**31),
+            "policy_id": zlib.crc32(req.policy_id.encode()) % (2**31),
+            "policy_type": req.claim_type.value,
+            "claim_amount": req.amount / 100.0,  # kobo → naira
+            "policy_start_date": req.metadata.get("policy_start_date", req.incident_date),
+            "claim_date": req.incident_date,
+            "description": req.description,
+            "previous_claims_count": int(req.metadata.get("previous_claims_count", 0)),
+            "police_report": "police_report" in req.documents_submitted,
+            "photos_submitted": sum(1 for d in req.documents_submitted if "photo" in d),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(f"{ML_FRAUD_URL.rstrip('/')}/api/v1/ml/score", json=payload)
+            if resp.status_code != 200:
+                logger.error("ml-fraud-scoring returned HTTP %s — fail-closed", resp.status_code)
+                return None
+            data = resp.json()
+            score = data.get("fraud_score")
+            if score is None:
+                logger.error("ml-fraud-scoring response missing fraud_score — fail-closed")
+                return None
+            # Service emits 0-100; normalize to 0-1.
+            return max(0.0, min(1.0, float(score) / 100.0))
+        except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+            logger.error("ml-fraud-scoring unreachable or unusable response: %s — fail-closed", exc)
+            return None
 
 
 class DamageEstimator:
-    """Integrates with CV claims adjuster for motor damage estimation."""
+    """Integrates with cv-claims-adjuster for motor damage estimation.
 
-    async def estimate(self, photos: list[str]) -> dict:
-        # In production: calls cv-claims-adjuster service
+    Fail-loud: raises when the CV service is unconfigured or errors. Never
+    returns a hardcoded estimate.
+    """
+
+    async def estimate(self, claim_id: int, photos: list[str]) -> dict:
+        if not CV_SERVICE_URL:
+            raise NotImplementedError(
+                "damage estimation unavailable: CV_SERVICE_URL is not configured"
+            )
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            files = []
+            for i, url in enumerate(photos[:10]):
+                img = await client.get(url)
+                img.raise_for_status()
+                files.append(("images", (f"photo_{i}.jpg", img.content, "image/jpeg")))
+            resp = await client.post(
+                f"{CV_SERVICE_URL.rstrip('/')}/api/v1/cv/assess",
+                params={"claim_id": claim_id},
+                files=files,
+            )
+        if resp.status_code != 200:
+            raise RuntimeError(f"cv-claims-adjuster returned HTTP {resp.status_code}")
+        return resp.json()
+
+
+# ── Metrics (real in-process counters — no fabricated dashboard numbers) ────
+
+class Metrics:
+    """Counts real adjudications since process start. Nothing here is a
+    constant; the window is honestly labeled in the response."""
+
+    def __init__(self):
+        self.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        self.total = 0
+        self.by_decision: dict[str, int] = {}
+        self.total_processing_ms = 0
+        self.fraud_score_sum = 0.0
+        self.fraud_scored_count = 0
+
+    def record(self, decision: AdjudicationDecision, processing_ms: int, fraud_score: float | None):
+        self.total += 1
+        self.by_decision[decision.value] = self.by_decision.get(decision.value, 0) + 1
+        self.total_processing_ms += processing_ms
+        if fraud_score is not None:
+            self.fraud_score_sum += fraud_score
+            self.fraud_scored_count += 1
+
+    def snapshot(self) -> dict:
+        auto = self.by_decision.get(AdjudicationDecision.AUTO_APPROVED.value, 0) + \
+            self.by_decision.get(AdjudicationDecision.AUTO_DENIED.value, 0)
         return {
-            "estimated_cost": 3500000,  # ₦35K
-            "confidence": 0.82,
-            "damage_areas": ["front_bumper", "headlight_left"],
-            "severity": "moderate",
+            "window": "in-memory since process start",
+            "process_started_at": self.started_at.isoformat(),
+            "claims_processed": self.total,
+            "stp_rate": (auto / self.total) if self.total else 0.0,
+            "avg_processing_time_ms": (self.total_processing_ms // self.total) if self.total else 0,
+            "decisions": dict(self.by_decision),
+            "avg_fraud_score": (self.fraud_score_sum / self.fraud_scored_count) if self.fraud_scored_count else None,
+            "fraud_scoring_available": bool(ML_FRAUD_URL),
         }
 
 
@@ -191,6 +286,7 @@ class DamageEstimator:
 rules_engine = RulesEngine()
 fraud_scorer = FraudScorer()
 damage_estimator = DamageEstimator()
+metrics = Metrics()
 
 
 # ── API Endpoints ────────────────────────────────────────────────────────────
@@ -215,7 +311,7 @@ async def adjudicate_claim(req: AdjudicationRequest):
     # Step 1: Rules evaluation
     rules_result = rules_engine.evaluate(req)
 
-    # Step 2: Fraud scoring
+    # Step 2: Fraud scoring (None = unavailable → fail-closed manual review)
     fraud_score = await fraud_scorer.score(req)
 
     # Step 3: Decision logic
@@ -230,7 +326,8 @@ async def adjudicate_claim(req: AdjudicationRequest):
         decision=decision,
         approved_amount=approved_amount,
         fraud_score=fraud_score,
-        confidence=1.0 - fraud_score,
+        fraud_scored=fraud_score is not None,
+        confidence=(1.0 - fraud_score) if fraud_score is not None else 0.0,
         reasons=reasons,
         missing_documents=rules_result["missing_documents"],
         escalation_level=EscalationLevel.NONE,
@@ -239,7 +336,13 @@ async def adjudicate_claim(req: AdjudicationRequest):
         auto_processed=decision in [AdjudicationDecision.AUTO_APPROVED, AdjudicationDecision.AUTO_DENIED],
     )
 
-    logger.info(f"Adjudicated claim {req.claim_id}: decision={decision.value} fraud={fraud_score:.2f} time={processing_time}ms")
+    metrics.record(decision, processing_time, fraud_score)
+    logger.info(
+        "Adjudicated claim %s: decision=%s fraud=%s time=%sms",
+        req.claim_id, decision.value,
+        f"{fraud_score:.2f}" if fraud_score is not None else "unavailable",
+        processing_time,
+    )
     return response
 
 
@@ -271,27 +374,24 @@ async def get_rules():
 
 @app.get("/api/v1/claims/metrics")
 async def get_metrics():
-    """Get adjudication performance metrics."""
-    return {
-        "stp_rate": 0.62,
-        "avg_processing_time_ms": 145,
-        "claims_today": 47,
-        "auto_approved_today": 29,
-        "manual_review_today": 15,
-        "denied_today": 3,
-        "avg_fraud_score": 0.18,
-    }
+    """Get adjudication performance metrics (real in-process counters)."""
+    return metrics.snapshot()
 
 
 # ── Decision Logic ───────────────────────────────────────────────────────────
 
-def _make_decision(req: AdjudicationRequest, rules: dict, fraud_score: float):
+def _make_decision(req: AdjudicationRequest, rules: dict, fraud_score: float | None):
     reasons = []
 
     # Missing documents → pending
     if not rules["documents_complete"]:
         reasons.append(f"Missing documents: {', '.join(rules['missing_documents'])}")
         return AdjudicationDecision.PENDING_DOCUMENTS, reasons, 0
+
+    # Fail-closed: without a real fraud score nothing is auto-approved.
+    if fraud_score is None:
+        reasons.append("Fraud scoring unavailable (service not configured or unreachable) — routed to manual review; no auto-approval without a real fraud score")
+        return AdjudicationDecision.MANUAL_REVIEW, reasons, 0
 
     # High fraud score → manual review
     if fraud_score >= rules["fraud_threshold"]:
