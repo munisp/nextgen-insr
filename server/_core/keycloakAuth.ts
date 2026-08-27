@@ -29,6 +29,15 @@ import { eq } from "drizzle-orm";
 import type { Express, Request, Response } from "express";
 import { SignJWT, jwtVerify } from "jose";
 
+import {
+  buildAuthorizationUrl,
+  buildLogoutUrl,
+  exchangeCodeForTokens,
+  verifyKeycloakToken,
+  mapKeycloakRoleToPlatformRole,
+  keycloakConfig,
+} from "./keycloak";
+import { logger } from './logger';
 import { users } from "../../drizzle/schema";
 import { getDb } from "../db";
 import { getJwtSecret as getJwtSecretString } from "../lib/envValidation";
@@ -39,15 +48,6 @@ import {
   isUserTokenRevoked,
 } from "../lib/redisClient";
 import { hashSessionToken } from "../middleware/agentAuth";
-import {
-  buildAuthorizationUrl,
-  buildLogoutUrl,
-  exchangeCodeForTokens,
-  verifyKeycloakToken,
-  mapKeycloakRoleToPlatformRole,
-  keycloakConfig,
-} from "./keycloak";
-import { logger } from './logger';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

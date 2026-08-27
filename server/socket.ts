@@ -6,7 +6,6 @@ import { eq, desc, gte } from "drizzle-orm";
 import { jwtVerify } from "jose";
 import { Server as SocketIOServer } from "socket.io";
 
-import { fraudAlerts } from "../drizzle/schema";
 import { invokeLLM } from "./_core/llm";
 import { logger } from "./_core/logger";
 import {
@@ -27,6 +26,7 @@ import {
   hashSessionToken,
 } from "./middleware/agentAuth";
 import { setIO } from "./socketSingleton";
+import { fraudAlerts } from "../drizzle/schema";
 
 // ─── Support chat: LLM-powered auto-reply ────────────────────────────────────
 async function generateSupportReply(
