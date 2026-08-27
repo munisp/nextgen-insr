@@ -18,6 +18,7 @@
  */
 import { randomUUID } from "crypto";
 
+import { TRPCError } from "@trpc/server";
 import {
   desc,
   eq,
@@ -38,8 +39,6 @@ import {
   complianceFilings,
   auditLog,
 } from "../../drizzle/schema";
-import { TRPCError } from "@trpc/server";
-
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { publishToFluvio } from "../fluvio";
