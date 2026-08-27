@@ -83,10 +83,12 @@ const baseRules = baseline.rules || {};
 let failed = false;
 const increased = [];
 const decreased = [];
+const increasedRules = new Set();
 for (const [rule, count] of Object.entries(perRule)) {
   const base = baseRules[rule] || 0;
   if (count > base) {
     increased.push(`  ${rule}: ${count} (baseline ${base}, +${count - base})`);
+    increasedRules.add(rule);
     failed = true;
   } else if (count < base) {
     decreased.push(`  ${rule}: ${count} (baseline ${base}, -${base - count})`);
@@ -101,6 +103,16 @@ if (decreased.length) {
 if (failed) {
   console.error("RATCHET VIOLATION — lint debt increased above baseline:");
   for (const line of increased) console.error(line);
+  // Diagnostics: pinpoint every violation of the over-baseline rules so the
+  // fixer does not have to reproduce the full type-aware run locally.
+  for (const file of results) {
+    for (const msg of file.messages || []) {
+      if (increasedRules.has(msg.ruleId)) {
+        const rel = (file.filePath || "").split("/server/").pop();
+        console.error(`  [${msg.ruleId}] server/${rel}:${msg.line}:${msg.column} — ${msg.message}`);
+      }
+    }
+  }
   console.error("Fix the new violations (or, with assurance-lead approval, regenerate the baseline). See LINT_DEBT.md.");
   process.exit(1);
 }
