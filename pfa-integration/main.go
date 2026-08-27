@@ -591,6 +591,10 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		if k == "id" || k == "created_at" {
 			continue
 		}
+		if !isSafeColumnName(k) {
+			http.Error(w, `{"error":"invalid field name"}`, http.StatusBadRequest)
+			return
+		}
 		cols = append(cols, k)
 		vals = append(vals, v)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
@@ -1017,4 +1021,26 @@ func main() {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 	log.Printf(`{"level":"info","msg":"server stopped","service":"pfa-integration"}`)
+}
+
+// isSafeColumnName enforces a strict whitelist on column names taken from
+// request JSON keys and interpolated into dynamically built INSERT statements
+// (values are always sent as $N bind parameters). Only [A-Za-z0-9_], starting
+// with a letter or underscore, up to 63 chars (Postgres identifier limit) is
+// accepted; callers reject anything else with HTTP 400. This closes SQL
+// injection via crafted request keys.
+func isSafeColumnName(name string) bool {
+	if len(name) == 0 || len(name) > 63 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_':
+		case c >= '0' && c <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }

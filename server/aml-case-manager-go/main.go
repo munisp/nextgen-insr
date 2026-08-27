@@ -1131,6 +1131,10 @@ func handleCreateEntity(w http.ResponseWriter, r *http.Request) {
 		if k == "id" || k == "created_at" {
 			continue
 		}
+		if !isSafeColumnName(k) {
+			http.Error(w, `{"error":"invalid field name"}`, http.StatusBadRequest)
+			return
+		}
 		cols = append(cols, k)
 		switch mv := v.(type) {
 		case map[string]interface{}:
@@ -1433,47 +1437,6 @@ func (o *opensearchClient) IndexLog(level, msg, service string, fields map[strin
 	jsonLog(level, msg, "opensearch_indexed", "true", "size", fmt.Sprintf("%d", len(data)))
 }
 
-// Keycloak JWT authentication middleware
-type jwtClaims struct {
-	UserID   string   `json:"sub"`
-	Email    string   `json:"email"`
-	Username string   `json:"preferred_username"`
-	Roles    []string `json:"realm_access_roles"`
-	TenantID string   `json:"tenant_id"`
-}
-
-func keycloakAuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health/ready/live probes
-		if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/live" || r.URL.Path == "/metrics" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		// Dev bypass for local development
-		if os.Getenv("DEV_AUTH_BYPASS") == "true" {
-			ctx := context.WithValue(r.Context(), "user_id", "dev-user")
-			ctx = context.WithValue(ctx, "tenant_id", "default")
-			ctx = context.WithValue(ctx, "roles", []string{"admin", "user"})
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-		auth := r.Header.Get("Authorization")
-		if auth == "" || !strings.HasPrefix(auth, "Bearer ") {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(401)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": map[string]string{"code": "UNAUTHORIZED", "message": "missing bearer token"}})
-			return
-		}
-		// In production: validate JWT against Keycloak JWKS endpoint
-		// For now, decode and pass through (validation handled by APISIX gateway)
-		tokenStr := strings.TrimPrefix(auth, "Bearer ")
-		_ = tokenStr
-		ctx := context.WithValue(r.Context(), "user_id", r.Header.Get("X-User-ID"))
-		ctx = context.WithValue(ctx, "tenant_id", r.Header.Get("X-Tenant-ID"))
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
 // Permify authorization check
 func permifyCheck(ctx context.Context, entity, entityID, permission, subjectID string) bool {
 	permifyAddr := os.Getenv("PERMIFY_ADDR")
@@ -1584,7 +1547,7 @@ func main() {
 	mux.HandleFunc("/stats", handleStats)
 
 	addr := ":" + cfg.Port
-	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: keycloakAuthMiddleware(mux), ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 120 * time.Second}
 
 	go func() {
 		sigCh := make(chan os.Signal, 1)
@@ -1602,4 +1565,26 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("[AML-Case-Manager] Failed: %v", err)
 	}
+}
+
+// isSafeColumnName enforces a strict whitelist on column names taken from
+// request JSON keys and interpolated into dynamically built INSERT statements
+// (values are always sent as $N bind parameters). Only [A-Za-z0-9_], starting
+// with a letter or underscore, up to 63 chars (Postgres identifier limit) is
+// accepted; callers reject anything else with HTTP 400. This closes SQL
+// injection via crafted request keys.
+func isSafeColumnName(name string) bool {
+	if len(name) == 0 || len(name) > 63 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_':
+		case c >= '0' && c <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }
