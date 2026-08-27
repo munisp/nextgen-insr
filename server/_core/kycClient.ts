@@ -19,18 +19,16 @@
  * tRPC procedure can decide how to handle it (fail-open vs fail-closed).
  */
 
-import { ENV } from "./env.js";
 
 // ── Service URLs (no fabricated defaults — unconfigured means unavailable) ──
-const BIOMETRIC_SERVICE_URL = (ENV as any).BIOMETRIC_SERVICE_URL ?? "";
-const LIVENESS_SERVICE_URL = (ENV as any).LIVENESS_SERVICE_URL ?? "";
-const FACE_MATCHING_SERVICE_URL =
-  (ENV as any).FACE_MATCHING_SERVICE_URL ?? "";
-const DEEPFAKE_SERVICE_URL = (ENV as any).DEEPFACE_SERVICE_URL ?? "";
-const KYC_SERVICE_URL = (ENV as any).KYC_SERVICE_URL ?? "";
-const PADDLEOCR_URL = (ENV as any).PADDLEOCR_SERVICE_URL ?? "";
-const COMPLIANCE_KYC_URL = (ENV as any).COMPLIANCE_KYC_URL ?? "";
-const DEEPFACE_SERVICE_URL = (ENV as any).DEEPFACE_SERVICE_URL ?? "";
+const BIOMETRIC_SERVICE_URL = process.env.BIOMETRIC_SERVICE_URL ?? "";
+const LIVENESS_SERVICE_URL = process.env.LIVENESS_SERVICE_URL ?? "";
+const FACE_MATCHING_SERVICE_URL = process.env.FACE_MATCHING_SERVICE_URL ?? "";
+const DEEPFAKE_SERVICE_URL = process.env.DEEPFAKE_SERVICE_URL ?? "";
+const KYC_SERVICE_URL = process.env.KYC_SERVICE_URL ?? "";
+const PADDLEOCR_URL = process.env.PADDLEOCR_SERVICE_URL ?? "";
+const COMPLIANCE_KYC_URL = process.env.COMPLIANCE_KYC_URL ?? "";
+const DEEPFACE_SERVICE_URL = process.env.DEEPFACE_SERVICE_URL ?? "";
 
 const TIMEOUT_MS = 30_000;
 
