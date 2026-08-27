@@ -256,7 +256,11 @@ describe("Sprint 46: Data Integrity", () => {
     // the full runtime schema (168 tables in drizzle/schema.ts + 20 re-exported
     // from drizzle/schema.additions.ts). Count-gate intent preserved; only the
     // number was corrected from the mockware-era 78.
-    expect(stats.totalTables).toBe(188);
+    // 2026-08-27: count updated 188 → 190 — the dd-tsmoney remediation branch
+    // added two REAL tables to drizzle/schema.additions.ts (processed_events,
+    // webhook_events) for durable event dedupe; CI measured 190 against a
+    // fresh `drizzle-kit push`. Count-gate intent unchanged.
+    expect(stats.totalTables).toBe(190);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

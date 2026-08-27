@@ -10,6 +10,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+// DD-LEGACY: kycClient honestly reports an UNCONFIGURED service as
+// unavailable (empty base URL → no fetch at all) instead of calling a
+// fabricated default host. Point every service URL the client reads at a
+// mock host BEFORE the module is first imported (URLs are captured at module
+// scope), so these tests exercise the real request/response mapping against
+// the mocked fetch.
+process.env.BIOMETRIC_SERVICE_URL ??= "http://biometric.test";
+process.env.LIVENESS_SERVICE_URL ??= "http://liveness.test";
+process.env.FACE_MATCHING_SERVICE_URL ??= "http://face-matching.test";
+process.env.DEEPFACE_SERVICE_URL ??= "http://deepface.test";
+process.env.DEEPFAKE_SERVICE_URL ??= "http://deepfake.test";
+process.env.KYC_SERVICE_URL ??= "http://kyc.test";
+process.env.PADDLEOCR_SERVICE_URL ??= "http://paddleocr.test";
+process.env.COMPLIANCE_KYC_URL ??= "http://compliance-kyc.test";
+
 // ── kycClient tests ─────────────────────────────────────────────────────────
 
 describe("kycClient — Biometric Service Integration", () => {
