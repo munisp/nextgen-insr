@@ -65,9 +65,85 @@ export type TranscriptionError = {
     | "INVALID_FORMAT"
     | "TRANSCRIPTION_FAILED"
     | "UPLOAD_FAILED"
-    | "SERVICE_ERROR";
+    | "SERVICE_ERROR"
+    | "URL_NOT_ALLOWED";
   details?: string;
 };
+
+/**
+ * DD-TSSEC (A7-15): SSRF guard for the audio download step. The server must
+ * never fetch an arbitrary caller-supplied URL — that is a textbook SSRF
+ * into internal services / cloud metadata endpoints.
+ *
+ * Policy (fail-closed):
+ *  - https: scheme only (no http:, file:, data:, gopher:, …)
+ *  - no embedded credentials (user:pass@host)
+ *  - hostname must appear in the VOICE_TRANSCRIPTION_ALLOWED_HOSTS env
+ *    allowlist (comma-separated; an entry also matches its subdomains)
+ *  - an EMPTY allowlist allows NOTHING — the fetch is refused
+ *  - IP-literal hosts in loopback/private/link-local/metadata ranges are
+ *    refused even if allowlisted, as defense-in-depth
+ */
+export function validateAudioUrl(raw: string): { ok: true } | { ok: false; reason: string } {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { ok: false, reason: "audioUrl is not a valid URL" };
+  }
+
+  if (url.protocol !== "https:") {
+    return { ok: false, reason: `scheme "${url.protocol}" is not allowed — only https:` };
+  }
+
+  if (url.username || url.password) {
+    return { ok: false, reason: "URLs with embedded credentials are not allowed" };
+  }
+
+  const hostname = url.hostname.toLowerCase();
+
+  // Refuse IP literals in non-public ranges even if an operator allowlists
+  // them by mistake (cloud metadata 169.254.169.254, loopback, RFC-1918…).
+  const literal = hostname.replace(/^\[|\]$/g, "");
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(literal)) {
+    const [a, b] = literal.split(".").map(Number);
+    const nonPublic =
+      a === 10 ||
+      a === 127 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      a === 0;
+    if (nonPublic) {
+      return { ok: false, reason: "IP-literal hosts in private/loopback/metadata ranges are not allowed" };
+    }
+  }
+  if (literal === "::1" || literal.startsWith("fe80:") || literal.startsWith("fc") || literal.startsWith("fd")) {
+    return { ok: false, reason: "IP-literal hosts in private/loopback/metadata ranges are not allowed" };
+  }
+
+  const allowlist = (process.env.VOICE_TRANSCRIPTION_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map(h => h.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (allowlist.length === 0) {
+    return {
+      ok: false,
+      reason:
+        "VOICE_TRANSCRIPTION_ALLOWED_HOSTS is not configured — refusing to fetch any URL (fail-closed)",
+    };
+  }
+
+  const allowed = allowlist.some(
+    entry => hostname === entry || hostname.endsWith(`.${entry}`)
+  );
+  if (!allowed) {
+    return { ok: false, reason: `host "${hostname}" is not in the allowed audio hosts list` };
+  }
+
+  return { ok: true };
+}
 
 /**
  * Transcribe audio to text using the internal Speech-to-Text service
@@ -95,11 +171,24 @@ export async function transcribeAudio(
       };
     }
 
-    // Step 2: Download audio from URL
+    // Step 2: Download audio from URL — DD-TSSEC (A7-15): the URL must pass
+    // the SSRF allowlist guard BEFORE any network fetch happens.
+    const urlCheck = validateAudioUrl(options.audioUrl);
+    if (!urlCheck.ok) {
+      return {
+        error: "Audio URL is not allowed",
+        code: "URL_NOT_ALLOWED",
+        details: urlCheck.reason,
+      };
+    }
+
     let audioBuffer: Buffer;
     let mimeType: string;
     try {
-      const response = await fetch(options.audioUrl);
+      // redirect: "manual" — an allowlisted host must not be able to bounce
+      // the fetch to an internal/metadata address via a 3xx (SSRF via
+      // redirect). Redirect responses are treated as download failures.
+      const response = await fetch(options.audioUrl, { redirect: "manual" });
       if (!response.ok) {
         return {
           error: "Failed to download audio file",

@@ -241,4 +241,39 @@ describe("generic webhook HMAC middleware (tigerbeetle/termii/partner routes)", 
     });
     expect(called).toBe(true);
   });
+
+  // DD-TSSEC (A7-10): failClosed routes (e.g. /webhooks/termii — a provider
+  // with no native HMAC signing scheme) reject unconfigured secrets in EVERY
+  // environment; no dev bypass exists for an unverifiable contract.
+  it("failClosed route rejects secret-UNSET even outside production (503)", () => {
+    delete process.env[SECRET_ENV];
+    process.env.NODE_ENV = "development";
+    const res = mockRes();
+    let called = false;
+    verifyWebhookHmac(SECRET_ENV, "x-webhook-signature", { failClosed: true })(
+      mwReq(sign("anything")),
+      res as any,
+      () => {
+        called = true;
+      }
+    );
+    expect(called).toBe(false);
+    expect(res.statusCode).toBe(503);
+    expect(String((res.body as any).error)).toMatch(/PRECONDITION_FAILED/);
+  });
+
+  it("failClosed route still verifies normally once the secret is configured", () => {
+    process.env[SECRET_ENV] = "generic-secret";
+    process.env.NODE_ENV = "development";
+    const res = mockRes();
+    let called = false;
+    verifyWebhookHmac(SECRET_ENV, "x-webhook-signature", { failClosed: true })(
+      mwReq(sign("generic-secret")),
+      res as any,
+      () => {
+        called = true;
+      }
+    );
+    expect(called).toBe(true);
+  });
 });

@@ -28,6 +28,7 @@ import { journeyExecutions, journeyStepEvents } from "../drizzle/schema.journeys
 import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
 import { acquireLock, releaseLock } from "./lib/redisClient";
+import { getApisixAdminKey } from "./lib/envValidation";
 
 // ── Service URLs ──────────────────────────────────────────────────────────────
 const FRAUD_GATE_URL = process.env.FRAUD_GATE_URL ?? "http://localhost:8090";
@@ -38,7 +39,9 @@ const KYC_SERVICE_URL = process.env.KYC_SERVICE_URL ?? "http://localhost:8002";
 const IFRS17_ENGINE_URL = process.env.IFRS17_ENGINE_URL ?? "http://localhost:8003";
 const PERMIFY_URL = process.env.PERMIFY_URL ?? "http://localhost:3476";
 const APISIX_ADMIN_URL = process.env.APISIX_ADMIN_URL ?? "http://localhost:9180";
-const APISIX_ADMIN_KEY = process.env.APISIX_ADMIN_KEY ?? "edd1c9f034335f136f87ad84b625c8f1";
+// DD-TSSEC: no fallback to the publicly-known APISIX default admin key —
+// required from env in production (throws), empty outside it.
+const APISIX_ADMIN_KEY = getApisixAdminKey();
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL ?? "http://localhost:8080";
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? "insureportal";
 const KEYCLOAK_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? "insureportal-api";

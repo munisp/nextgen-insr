@@ -6,15 +6,18 @@ import { fraudAlerts, auditLog, transactions } from "../../drizzle/schema";
 import logger from "../_core/logger";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { getServiceToken } from "../lib/envValidation";
 
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL ?? "http://localhost:8001";
-const ML_TOKEN = process.env.ML_SERVICE_TOKEN ?? "dev-token";
-
+// DD-TSSEC: no "dev-token" default in production — getServiceToken throws
+// (fail-loud) when ML_SERVICE_TOKEN is unset in production; the dev fallback
+// only applies outside production.
 async function mlFetch(path: string): Promise<unknown> {
+  const mlToken = getServiceToken("ML_SERVICE_TOKEN");
   try {
     const res = await fetch(`${ML_SERVICE_URL}${path}`, {
-      headers: { Authorization: `Bearer ${ML_TOKEN}` },
+      headers: { Authorization: `Bearer ${mlToken}` },
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;

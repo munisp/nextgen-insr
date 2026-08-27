@@ -62,6 +62,7 @@ import {
 import logger from "../_core/logger";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb , writeAuditLog } from "../db";
+import { getServiceToken } from "../lib/envValidation";
 import {
   uploadTransactionSnapshot,
   uploadFraudEvents,
@@ -74,18 +75,21 @@ import {
 // ── Python lakehouse-service proxy ────────────────────────────────────────────
 const LAKEHOUSE_SERVICE_URL =
   process.env.LAKEHOUSE_SERVICE_URL ?? "http://localhost:8156";
-const LAKEHOUSE_TOKEN = process.env.LAKEHOUSE_SERVICE_TOKEN ?? "dev-token";
 
 async function lakehouseFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<unknown> {
+  // DD-TSSEC: no "dev-token" default in production — getServiceToken throws
+  // (fail-loud) when LAKEHOUSE_SERVICE_TOKEN is unset in production; the dev
+  // fallback only applies outside production.
+  const lakehouseToken = getServiceToken("LAKEHOUSE_SERVICE_TOKEN");
   const url = `${LAKEHOUSE_SERVICE_URL}${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${LAKEHOUSE_TOKEN}`,
+      Authorization: `Bearer ${lakehouseToken}`,
       ...(options.headers ?? {}),
     },
     signal: AbortSignal.timeout(8_000),

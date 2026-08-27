@@ -268,15 +268,28 @@ export const agentKycRouter = router({
       if (!Number.isFinite(agentPk)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid agentId" });
       }
-      // Format validation only — the document is persisted as "pending" and
-      // requires human/system review before it can be marked verified.
-      const isValidNin =
-        input.docType === "nin" && /^\d{11}$/.test(input.docNumber);
-      const isValidBvn =
-        input.docType === "bvn" && /^\d{11}$/.test(input.docNumber);
-      const isValidPassport =
-        input.docType === "passport" && /^[A-Z]\d{8}$/.test(input.docNumber);
-      const isFormatValid = isValidNin || isValidBvn || isValidPassport;
+      // DD-TSSEC (A7-14): HONEST SEMANTICS — the only automated check that
+      // exists is a FORMAT check. There is no NIMC/BVN registry call anywhere
+      // in this flow, so:
+      //  1. A docNumber that fails the format check for its declared docType
+      //     is REJECTED (previously it was inserted anyway, with the failure
+      //     buried in audit metadata — any 11-digit string "passed" as a NIN).
+      //  2. An accepted document is explicitly labelled format-check-only;
+      //     nothing here is or claims to be an identity verification.
+      const FORMAT_RULES: Record<string, RegExp> = {
+        nin: /^\d{11}$/,
+        bvn: /^\d{11}$/,
+        passport: /^[A-Z]\d{8}$/,
+      };
+      const formatRule = FORMAT_RULES[input.docType];
+      // null = no format rule exists for this docType (nothing was checked).
+      const isFormatValid = formatRule ? formatRule.test(input.docNumber) : null;
+      if (formatRule && !isFormatValid) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Document number does not match the expected ${input.docType.toUpperCase()} format. Note: submission performs a format check only — no registry verification exists at this step.`,
+        });
+      }
       const [doc] = await db
         .insert(kycDocuments)
         .values({
@@ -298,6 +311,11 @@ export const agentKycRouter = router({
         agentId: input.agentId,
         docType: input.docType,
         status: "pending" as const,
+        // Honest contract: a REGEX FORMAT check ran (or none, for docTypes
+        // without a rule). No NIMC/BVN registry verification was performed;
+        // the document awaits human review.
+        verificationLevel:
+          isFormatValid === null ? "unchecked" : "format-check-only",
         confidenceScore: null, // no automated verification has run
         submittedAt: doc.createdAt?.toISOString?.() ?? new Date().toISOString(),
       };
