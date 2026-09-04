@@ -328,7 +328,7 @@ export default function SystemHealthDashboard() {
                         txVolumeQ.data!.byStatus.reduce((a, x) => a + x.count, 0) || 1;
                       const pct = ((count / total) * 100).toFixed(1);
                       const color =
-                        status === "completed"
+                        status === "success"
                           ? "#22c55e"
                           : status === "failed"
                             ? "#ef4444"
