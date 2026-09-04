@@ -1,23 +1,19 @@
 // @ts-check
+import { TRPCError } from "@trpc/server";
+import { eq, and, desc, gte, lte, sql, like } from "drizzle-orm";
 import { z } from "zod";
 
+import { billingAuditLog, tenantBillingConfig } from "../../drizzle/schema";
+import { logger } from '../_core/logger';
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { requireBillingPermission } from "./billingRbac";
 
 async function db() {
   const d = await getDb();
   if (!d) throw new Error("Database not available");
   return d;
 }
-import { billingAuditLog, tenantBillingConfig } from "../../drizzle/schema";
-
-import { eq, and, desc, gte, lte, sql, like } from "drizzle-orm";
-
-import { requireBillingPermission } from "./billingRbac";
-
-import { TRPCError } from "@trpc/server";
-
-import { logger } from '../_core/logger';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Audit Middleware — auto-logs all billing mutations

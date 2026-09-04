@@ -4,6 +4,9 @@
  * Circuit breaker, retry with exponential backoff, structured health checks,
  * graceful shutdown, and connection draining
  */
+import { Router } from "express";
+import type { Request, Response, NextFunction } from "express";
+
 import { logger } from "../_core/logger";
 
 // ── 1. Circuit Breaker ────────────────────────────────────────────────────────
@@ -394,7 +397,6 @@ export function setupGracefulShutdown(
 }
 
 // ── 5. Connection Draining Middleware ──────────────────────────────────────────
-import type { Request, Response, NextFunction } from "express";
 
 export function connectionDrainingMiddleware(
   req: Request,
@@ -410,7 +412,6 @@ export function connectionDrainingMiddleware(
 }
 
 // ── 6. Express Health Routes ──────────────────────────────────────────────────
-import { Router } from "express";
 
 export function createHealthRouter(): Router {
   const healthRouter = Router();

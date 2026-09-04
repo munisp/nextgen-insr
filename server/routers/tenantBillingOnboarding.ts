@@ -1,26 +1,3 @@
-import { z } from "zod";
-
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
-
-async function db() {
-  const d = await getDb();
-  if (!d) throw new Error("Database not available");
-  return d;
-}
-import {
-  tenantBillingConfig,
-  billingProvisioningHistory,
-  billingRoleAssignments,
-  billingAuditLog,
-  tenants,
-} from "../../drizzle/schema";
-
-import { eq, and, desc } from "drizzle-orm";
-
-import { requireBillingPermission } from "./billingRbac";
-import { recordBillingAudit } from "./billingAudit";
-
 // Type-only import: erased at compile time. The runtime import is lazy
 // (inside getTemporalClient) because @temporalio/client's module graph can
 // fail to load in environments where the Temporal/protobufjs dependency chain
@@ -29,8 +6,27 @@ import { recordBillingAudit } from "./billingAudit";
 // local execution.
 import type { Client } from "@temporalio/client";
 import { TRPCError } from "@trpc/server";
+import { eq, and, desc } from "drizzle-orm";
+import { z } from "zod";
 
+import {
+  tenantBillingConfig,
+  billingProvisioningHistory,
+  billingRoleAssignments,
+  billingAuditLog,
+  tenants,
+} from "../../drizzle/schema";
 import { logger } from '../_core/logger';
+import { protectedProcedure, router } from "../_core/trpc";
+import { getDb } from "../db";
+import { recordBillingAudit } from "./billingAudit";
+import { requireBillingPermission } from "./billingRbac";
+
+async function db() {
+  const d = await getDb();
+  if (!d) throw new Error("Database not available");
+  return d;
+}
 
 // Temporal client singleton for billing provisioning
 let temporalClient: Client | null = null;

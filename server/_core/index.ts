@@ -15,7 +15,6 @@
 
 import "dotenv/config";
 import crypto from "crypto";
-
 // NOTE: ../temporal-worker, ../tbClient and ../fluvio are imported lazily
 // inside startServer()'s listen callback. They pull in heavyweight optional
 // infra clients (protobufjs-based Temporal codecs etc.) that are only needed
@@ -29,22 +28,6 @@ import { pathToFileURL } from "url";
 
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import compression from "compression";
-
-
-import { serveStatic, setupVite } from "./vite";
-import { initSocketIO } from "../socket";
-import { registerSettlementCron } from "../settlementCron";
-import { registerLakehouseCron } from "../lakehouseCron";
-import { startErpRetryWorker } from "../lib/erpRetryWorker";
-import {
-  startArchivalCronWorker,
-  stopArchivalCronWorker,
-} from "../lib/archivalCronWorker";
-import { restBridgeRouter } from "../restBridge";
-import { registry, httpRequestDurationMs } from "../metrics";
-import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
-import { enforceEnvironment } from "../lib/envValidation";
-import { logger, requestLoggingMiddleware } from "./logger";
 import { sql } from "drizzle-orm";
 import express, { type Express, type Request } from "express";
 import rateLimit from "express-rate-limit";
@@ -52,16 +35,31 @@ import helmet from "helmet";
 import { SignJWT } from "jose";
 import cron from "node-cron";
 import { RedisStore } from "rate-limit-redis";
+
+import { logger, requestLoggingMiddleware } from "./logger";
+import { registerLakehouseCron } from "../lakehouseCron";
+import { registry, httpRequestDurationMs } from "../metrics";
 import { createContext } from "./context";
-import { appRouter } from "../routers";
 import { registerKeycloakAuthRoutes, KC_SESSION_COOKIE } from "./keycloakAuth";
+import { serveStatic, setupVite } from "./vite";
 import { loadVaultSecrets } from "../_core/vault";
 import { runDisputeAutoEscalation } from "../cron/disputeAutoEscalation";
 import { runKycExpiryCheck } from "../cron/kycExpiryCheck";
+import {
+  startArchivalCronWorker,
+  stopArchivalCronWorker,
+} from "../lib/archivalCronWorker";
 import { startPoolMonitor } from "../lib/dbPoolMonitor";
+import { enforceEnvironment } from "../lib/envValidation";
+import { startErpRetryWorker } from "../lib/erpRetryWorker";
 import { setupGracefulShutdown } from "../lib/gracefulShutdown";
 import { getRedisClient } from "../lib/redisClient";
+import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
+import { restBridgeRouter } from "../restBridge";
+import { appRouter } from "../routers";
 import { startSarRetryCronSchedule } from "../sar-retry-cron";
+import { registerSettlementCron } from "../settlementCron";
+import { initSocketIO } from "../socket";
 
 // ── Environment validation (must run before any service initialization) ────────
 enforceEnvironment();

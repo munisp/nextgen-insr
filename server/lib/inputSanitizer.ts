@@ -9,6 +9,8 @@
  * 4. Email/phone/URL validation
  * 5. Zod schema helpers for common patterns
  */
+import crypto from "crypto";
+
 import { z } from "zod";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -234,7 +236,6 @@ setInterval(() => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // CSRF Token Management
 // ═══════════════════════════════════════════════════════════════════════════════
-import crypto from "crypto";
 
 const csrfTokens = new Map<string, { token: string; expiresAt: number }>();
 

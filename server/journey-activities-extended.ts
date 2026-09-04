@@ -27,8 +27,8 @@ import { agents, customers, transactions, auditLog } from "../drizzle/schema";
 import { journeyExecutions, journeyStepEvents } from "../drizzle/schema.journeys";
 import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
-import { acquireLock, releaseLock } from "./lib/redisClient";
 import { getApisixAdminKey } from "./lib/envValidation";
+import { acquireLock, releaseLock } from "./lib/redisClient";
 
 // ── Service URLs ──────────────────────────────────────────────────────────────
 const FRAUD_GATE_URL = process.env.FRAUD_GATE_URL ?? "http://localhost:8090";

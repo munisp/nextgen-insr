@@ -17,7 +17,9 @@
  *   8. credit is idempotent on retry and under a 5-way race (one claim)
  *
  * PREMIUM COLLECTION (real premiumTopUp router):
- *   9. happy path: tx + premium ledger row, honest tbSyncStatus "pending"
+ *   9. happy path: tx + premium ledger row, tbSyncStatus "synced" with a
+ *      real transfer id, and the double-entry leg independently verified
+ *      against the live harness ledger (customer debit ↔ pool credit)
  *  10. duplicate request (same ref+payload) → replay, one row each
  *  11. same ref + DIFFERENT amount → CONFLICT, counts unchanged
  *  12. race: 6 parallel identical requests → exactly one tx + one premium row
@@ -341,8 +343,30 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
   });
 
   // ── 9. Premium happy path ──────────────────────────────────────────────────
-  it("premium collection: tx + ledger row persist, tbSyncStatus honestly pending", async () => {
+  it("premium collection: tx + ledger row persist, TB leg committed and verifiable on the ledger", async () => {
     const caller = callerFor(adminUser);
+    // The harness runs a LIVE protocol-faithful ledger (globalSetup spawns
+    // miniTigerBeetle unless TB_SIDECAR_URL points at a real tb-sidecar), so
+    // the TigerBeetle leg genuinely commits: premiumTopUp writes
+    // tbSyncStatus "synced" plus the real transfer id only when the ledger
+    // answered OK (server/routers/premiumTopUp.ts — `tbResult ? "synced" :
+    // "pending"`, `tbTransferId: tbResult?.id ?? null`). "pending" would now
+    // mean the leg did NOT happen; we assert the committed truth and then
+    // independently verify the double-entry on the ledger itself.
+    const ledgerUrl = process.env.TB_SIDECAR_URL;
+    if (!ledgerUrl) throw new Error("TB_SIDECAR_URL must be set by globalSetup for ledger verification");
+    const ledgerBalanceKobo = async (accountId: string): Promise<number> => {
+      const r = await fetch(`${ledgerUrl}/accounts/${encodeURIComponent(accountId)}`);
+      if (r.status === 404) return 0; // never provisioned → nothing posted
+      if (!r.ok) throw new Error(`ledger account lookup failed: HTTP ${r.status}`);
+      const a = (await r.json()) as { balanceKobo: number };
+      return a.balanceKobo;
+    };
+    const customerAccount = `customer-${PREM_CUSTOMER}`; // debit leg (premiumTopUp.ts)
+    const poolAccount = "insurer-premium-pool"; // credit leg
+    const customerBefore = await ledgerBalanceKobo(customerAccount);
+    const poolBefore = await ledgerBalanceKobo(poolAccount);
+
     const res = await caller.premiumTopUp.topUp({
       policyId: policyActiveId, amountNGN: 2500, paymentMethod: "mobile_money", reference: "FF-PM-00001",
     });
@@ -350,11 +374,17 @@ describe("funds-flow extended matrix: commission + premium (integration, real DB
     if (res.idempotent) throw new Error("expected fresh effect");
     expect(Number(res.transaction.amount)).toBe(2500);
     expect(res.premium.status).toBe("paid");
-    // TB is unreachable in the harness: the row must say "pending", never a
-    // fabricated "synced".
-    const meta = res.transaction.metadata as { tbSyncStatus?: string; premiumId?: number };
-    expect(meta.tbSyncStatus).toBe("pending");
+    const meta = res.transaction.metadata as { tbSyncStatus?: string; premiumId?: number; tbTransferId?: string | null };
+    expect(meta.tbSyncStatus).toBe("synced");
+    expect(typeof meta.tbTransferId).toBe("string");
+    expect((meta.tbTransferId as string).length).toBeGreaterThan(0);
     expect(meta.premiumId).toBe(res.premium.id);
+    // Independent ledger verification: the premium leg really posted as
+    // double-entry — customer debited, insurer pool credited, exactly the
+    // premium amount in kobo (₦2,500 = 250,000 kobo), nothing else moved.
+    const premiumKobo = 2500 * 100;
+    expect(await ledgerBalanceKobo(customerAccount)).toBe(customerBefore - premiumKobo);
+    expect(await ledgerBalanceKobo(poolAccount)).toBe(poolBefore + premiumKobo);
     expect(await txCountByRef("FF-PM-00001")).toBe(1);
     expect(await premCountByRef("FF-PM-00001")).toBe(1);
   });
