@@ -192,7 +192,7 @@ export default function CustomerWallet() {
                       <td className="px-3 py-2">
                         <Badge
                           variant="outline"
-                          className={`text-[10px] ${t.status === "completed" ? "border-green-600 text-green-400" : t.status === "pending" ? "border-yellow-600 text-yellow-400" : "border-red-600 text-red-400"}`}
+                          className={`text-[10px] ${t.status === "success" ? "border-green-600 text-green-400" : t.status === "pending" ? "border-yellow-600 text-yellow-400" : "border-red-600 text-red-400"}`}
                         >
                           {t.status}
                         </Badge>

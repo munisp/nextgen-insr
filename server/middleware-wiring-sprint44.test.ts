@@ -21,11 +21,16 @@ import * as path from "path";
 
 const ROUTERS_DIR = path.join(__dirname, "routers");
 
-// 26 newly wired routers (Sprint 44)
+// 25 newly wired routers (Sprint 44) — customerWalletSystem moved out (see NOTE above)
+// NOTE (DD-TSSTATE, F14-4): "customerWalletSystem" was REMOVED from this
+// blanket list. Its kafkaClient/redisClient/tbClient/fluvio/permify imports
+// were decorative (imported, never called — flagged in the F8 audit) and were
+// deleted when the router was remediated to session-scoped identity +
+// success-only balance derivation. Its honest contract is asserted in the
+// dedicated describe block below.
 const SPRINT_44_ROUTERS = [
   "premiumTopUp",
   "loanDisbursement",
-  "customerWalletSystem",
   "merchantPayments",
   "mobileMoney",
   "remittance",
@@ -77,7 +82,7 @@ function readRouter(name: string): string {
 }
 
 describe("Sprint 44: Middleware Wiring Verification", () => {
-  describe("All 26 Sprint 44 routers have core middleware imports", () => {
+  describe("All 25 Sprint 44 routers have core middleware imports", () => {
     for (const router of SPRINT_44_ROUTERS) {
       it(`${router} imports kafkaClient`, () => {
         const content = readRouter(router);
@@ -106,7 +111,7 @@ describe("Sprint 44: Middleware Wiring Verification", () => {
     }
   });
 
-  describe("All 26 Sprint 44 routers call core middleware functions", () => {
+  describe("All 25 Sprint 44 routers call core middleware functions", () => {
     for (const router of SPRINT_44_ROUTERS) {
       for (const mw of CORE_MIDDLEWARE) {
         it(`${router} calls ${mw.name}`, () => {
@@ -190,8 +195,32 @@ describe("Sprint 44: Middleware Wiring Verification", () => {
     });
 
     it("majority of Sprint 44 routers wrap middleware in try/catch", () => {
-      // At least 20 of 26 routers should have try/catch
+      // At least 20 of 25 routers should have try/catch
       expect(routersWithTryCatch.length).toBeGreaterThanOrEqual(13);
+    });
+  });
+
+  // ── DD-TSSTATE (F14-4): customerWalletSystem honest contract ─────────────
+  // The decorative kafka/redis/tb/fluvio/permify imports were removed during
+  // remediation. What the router MUST actually guarantee now:
+  describe("customerWalletSystem (F14-4 remediated): session-scoped + settled-only balance", () => {
+    it("resolves the wallet owner from the session (keycloakSub), never from client input", () => {
+      const content = readRouter("customerWalletSystem");
+      expect(content).toContain("keycloakSub");
+      expect(content).toContain("ctx.user.id");
+      // No procedure takes a caller-supplied customerId anymore.
+      expect(content).not.toMatch(/customerId:\s*z\.number\(\)/);
+    });
+
+    it("derives balance from settled ('success') Cash In/Cash Out rows only", () => {
+      const content = readRouter("customerWalletSystem");
+      expect(content).toContain('eq(transactions.status, "success")');
+    });
+
+    it("no longer carries decorative middleware imports", () => {
+      const content = readRouter("customerWalletSystem");
+      expect(content).not.toContain("fluvioProduce");
+      expect(content).not.toContain("cacheSet");
     });
   });
 

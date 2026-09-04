@@ -23,7 +23,9 @@ interface TransactionEvent {
   amount: number;
   currency: string;
   type: string;
-  status: "completed" | "pending" | "failed";
+  // DD-TSSTATE: mirrors txStatusEnum (drizzle/schema.ts:83-89) — the rows
+  // below come from the transactions table; 'completed' is not a real value.
+  status: "success" | "pending" | "failed" | "reversed" | "pending_reversal_approval";
   agentId: string;
   timestamp: number;
 }
@@ -156,7 +158,7 @@ export function initRealtimeStreaming(io: SocketServer) {
           amount: Number(tx.amount) || 0,
           currency: tx.currency || "KES",
           type: tx.type || "transfer",
-          status: (tx.status as TransactionEvent["status"]) || "completed",
+          status: (tx.status as TransactionEvent["status"]) || "success",
           agentId: tx.agentId ? String(tx.agentId) : "unknown",
           timestamp: tx.createdAt
             ? new Date(tx.createdAt).getTime()
@@ -223,7 +225,7 @@ async function sendRecentTransactions(socket: any) {
       amount: Number(tx.amount) || 0,
       currency: tx.currency || "KES",
       type: tx.type || "transfer",
-      status: (tx.status as TransactionEvent["status"]) || "completed",
+      status: (tx.status as TransactionEvent["status"]) || "success",
       agentId: tx.agentId ? String(tx.agentId) : "unknown",
       timestamp: tx.createdAt ? new Date(tx.createdAt).getTime() : Date.now(),
     }));

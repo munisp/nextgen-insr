@@ -82,7 +82,7 @@ export const analyticsRouter = router({
           .where(
             and(
               gte(transactions.createdAt, periodStart),
-              sql`${transactions.status} = 'completed'`
+              sql`${transactions.status} = 'success'`
             )
           );
 
@@ -103,7 +103,7 @@ export const analyticsRouter = router({
         const [allTx] = await db
           .select({
             total: sql<string>`COUNT(*)`,
-            success: sql<string>`COUNT(*) FILTER (WHERE status = 'completed')`,
+            success: sql<string>`COUNT(*) FILTER (WHERE status = 'success')`,
           })
           .from(transactions)
           .where(gte(transactions.createdAt, periodStart));
@@ -207,7 +207,7 @@ export const analyticsRouter = router({
             volume: sql<string>`COALESCE(SUM(CAST(amount AS NUMERIC)), 0)`,
             revenue: sql<string>`COALESCE(SUM(CAST(COALESCE(fee, '0') AS NUMERIC) + CAST(COALESCE(commission, '0') AS NUMERIC)), 0)`,
             txCount: sql<string>`COUNT(*)`,
-            successCount: sql<string>`COUNT(*) FILTER (WHERE status = 'completed')`,
+            successCount: sql<string>`COUNT(*) FILTER (WHERE status = 'success')`,
           })
           .from(transactions)
           .where(gte(transactions.createdAt, since))
@@ -251,7 +251,7 @@ export const analyticsRouter = router({
           .where(
             and(
               gte(transactions.createdAt, since),
-              sql`${transactions.status} = 'completed'`
+              sql`${transactions.status} = 'success'`
             )
           )
           .groupBy(transactions.type)
@@ -298,12 +298,12 @@ export const analyticsRouter = router({
             COALESCE(COUNT(t.id), 0)::int AS "txCount",
             COALESCE(SUM(CAST(t.amount AS NUMERIC)), 0)::float AS volume,
             COALESCE(SUM(CAST(COALESCE(t.commission, '0') AS NUMERIC)), 0)::float AS commission,
-            CASE WHEN COUNT(t.id) > 0 THEN ROUND(COUNT(t.id) FILTER (WHERE t.status = 'completed') * 100.0 / COUNT(t.id), 1) ELSE 0 END::float AS "successRate"
+            CASE WHEN COUNT(t.id) > 0 THEN ROUND(COUNT(t.id) FILTER (WHERE t.status = 'success') * 100.0 / COUNT(t.id), 1) ELSE 0 END::float AS "successRate"
           FROM agents a
           LEFT JOIN transactions t ON t."agentId" = a.id AND t."createdAt" >= ${since}
           WHERE a."deletedAt" IS NULL
           GROUP BY a.id
-          ORDER BY ${input.sortBy === "txCount" ? sql`COUNT(t.id) DESC` : input.sortBy === "commission" ? sql`COALESCE(SUM(CAST(COALESCE(t.commission, '0') AS NUMERIC)), 0) DESC` : input.sortBy === "successRate" ? sql`CASE WHEN COUNT(t.id) > 0 THEN COUNT(t.id) FILTER (WHERE t.status = 'completed') * 100.0 / COUNT(t.id) ELSE 0 END DESC` : sql`COALESCE(SUM(CAST(t.amount AS NUMERIC)), 0) DESC`}
+          ORDER BY ${input.sortBy === "txCount" ? sql`COUNT(t.id) DESC` : input.sortBy === "commission" ? sql`COALESCE(SUM(CAST(COALESCE(t.commission, '0') AS NUMERIC)), 0) DESC` : input.sortBy === "successRate" ? sql`CASE WHEN COUNT(t.id) > 0 THEN COUNT(t.id) FILTER (WHERE t.status = 'success') * 100.0 / COUNT(t.id) ELSE 0 END DESC` : sql`COALESCE(SUM(CAST(t.amount AS NUMERIC)), 0) DESC`}
           LIMIT ${input.limit} OFFSET ${offset}
         `);
         const [{ total }] = await db
@@ -360,7 +360,7 @@ export const analyticsRouter = router({
         const CBN_MIN_FLOAT = 5000;
 
         const txSla = await db.execute(
-          sql`SELECT COUNT(*) FILTER (WHERE status = 'completed') AS completed, COUNT(*) FILTER (WHERE status = 'completed' AND "approvedAt" IS NOT NULL AND EXTRACT(EPOCH FROM ("approvedAt" - "createdAt")) <= 60) AS within_sla, COUNT(*) AS total FROM transactions WHERE "createdAt" >= ${since}`
+          sql`SELECT COUNT(*) FILTER (WHERE status = 'success') AS completed, COUNT(*) FILTER (WHERE status = 'success' AND "approvedAt" IS NOT NULL AND EXTRACT(EPOCH FROM ("approvedAt" - "createdAt")) <= 60) AS within_sla, COUNT(*) AS total FROM transactions WHERE "createdAt" >= ${since}`
         );
         const dispStats = await db.execute(
           sql`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'resolved') AS resolved, AVG(CASE WHEN status = 'resolved' AND "resolvedAt" IS NOT NULL THEN EXTRACT(EPOCH FROM ("resolvedAt" - "createdAt")) / 86400.0 ELSE NULL END) AS avg_days FROM disputes WHERE "createdAt" >= ${since}`
@@ -390,7 +390,7 @@ export const analyticsRouter = router({
           ],
         };
         const sarStats = await db.execute(
-          sql`SELECT COUNT(*) AS sar_count FROM transactions WHERE "createdAt" >= ${since} AND CAST(amount AS NUMERIC) >= 5000000 AND status = 'completed'`
+          sql`SELECT COUNT(*) AS sar_count FROM transactions WHERE "createdAt" >= ${since} AND CAST(amount AS NUMERIC) >= 5000000 AND status = 'success'`
         );
 
         const r = txSla.rows[0] as Record<string, string>;

@@ -112,16 +112,50 @@ export const agentFloatInsuranceClaimsRouter = router({
       }
     }),
   approveClaim: protectedProcedure
-    .input(z.object({ claimId: z.number(), notes: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .input(z.object({ claimId: z.number().int().positive(), notes: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
+        // DD-TSSTATE: expected-state guard applied atomically — only a
+        // pending (or escalated) claim can transition to resolved; approving
+        // an already-resolved claim fails loudly instead of fabricating a
+        // second approval + duplicate audit row.
         const [updated] = await db
           .update(floatReconciliations)
-          .set({ status: "resolved", resolvedAt: new Date() })
-          .where(eq(floatReconciliations.id, input.claimId))
+          .set({
+            status: "resolved",
+            resolvedAt: new Date(),
+            resolvedBy: Number(ctx.user?.id) || null,
+            notes: input.notes ?? undefined,
+          })
+          .where(
+            and(
+              eq(floatReconciliations.id, input.claimId),
+              or(
+                eq(floatReconciliations.status, "pending"),
+                eq(floatReconciliations.status, "escalated")
+              )
+            )
+          )
           .returning();
+        if (!updated) {
+          const [existing] = await db
+            .select({ status: floatReconciliations.status })
+            .from(floatReconciliations)
+            .where(eq(floatReconciliations.id, input.claimId))
+            .limit(1);
+          if (!existing) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Claim not found",
+            });
+          }
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Claim ${input.claimId} cannot be approved from status '${existing.status}'`,
+          });
+        }
         await db.insert(auditLog).values({
           action: "float_claim_approved",
           resource: "float_claims",

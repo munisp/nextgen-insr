@@ -107,7 +107,9 @@ export const supervisorRouter = router({
           agentId: transactions.agentId,
           txCount: sql<number>`count(*)::int`,
           totalVolume: sql<number>`coalesce(sum(${transactions.amount}), 0)::numeric`,
-          successCount: sql<number>`count(*) filter (where ${transactions.status} = 'completed')::int`,
+          // DD-TSSTATE: txStatusEnum has no 'completed' — the real
+          // settled-state value is 'success' (drizzle/schema.ts:83-89).
+          successCount: sql<number>`count(*) filter (where ${transactions.status} = 'success')::int`,
         })
         .from(transactions)
         .where(

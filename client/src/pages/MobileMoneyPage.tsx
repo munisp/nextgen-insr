@@ -171,7 +171,7 @@ export default function MobileMoneyPage() {
                       <td className="p-2">
                         <Badge
                           variant={
-                            t.status === "completed" ? "default" : "destructive"
+                            t.status === "success" ? "default" : "destructive"
                           }
                         >
                           {t.status}

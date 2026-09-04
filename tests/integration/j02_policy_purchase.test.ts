@@ -246,7 +246,7 @@ describe("J02 Policy Purchase — Happy Path", () => {
       .limit(1);
 
     expect(txn.length).toBe(1);
-    expect(txn[0].status).toBe("completed");
+    expect(txn[0].status).toBe("success");
     expect(parseFloat(txn[0].amount)).toBe(50_000);
     console.log(`  → Transaction: ID=${txn[0].id}, amount=₦${txn[0].amount}, status=${txn[0].status}`);
   }, TEST_TIMEOUT);
@@ -305,7 +305,7 @@ describe("J02 Policy Purchase — TigerBeetle Ledger Verification", () => {
     const txn = await db.select().from(transactions)
       .where(and(
         eq(transactions.type, "premium_payment"),
-        eq(transactions.status, "completed")
+        eq(transactions.status, "success")
       ))
       .orderBy(desc(transactions.id))
       .limit(1);
@@ -323,7 +323,7 @@ describe("J02 Policy Purchase — TigerBeetle Ledger Verification", () => {
       console.warn("  ⚠ TB sidecar not running — transaction used PG-only fallback");
       console.log(`  → Transaction status: ${txn[0].status}, amount: ₦${txn[0].amount}`);
       // This is acceptable — the PG fallback is the designed behaviour when TB is down
-      expect(txn[0].status).toBe("completed");
+      expect(txn[0].status).toBe("success");
       return;
     }
 
@@ -446,7 +446,7 @@ describe("J02 Policy Purchase — Saga Compensation", () => {
 
       if (reversalTxn.length > 0) {
         console.log(`  → ✓ Saga compensation ran: refund transaction created`);
-        expect(reversalTxn[0].status).toBe("completed");
+        expect(reversalTxn[0].status).toBe("success");
       } else {
         // Compensation may have run via TB reversal — check audit log
         const compAudit = await db.select().from(auditLog)

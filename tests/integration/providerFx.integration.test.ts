@@ -34,12 +34,15 @@ const FILE = "providerFx";
 let sim: FrankfurterSimulator;
 let savedBase: string | undefined;
 
+// F13-1 (DD-TSSTATE): refresh now persists under the SAME key the converter
+// reads ("fx_rates" — FX_RATES_CONFIG_KEY) instead of the orphaned
+// "fx_rates_ecb" key; this helper reads the book the converter actually uses.
 async function storedEcbRates(): Promise<Record<string, number> | null> {
   const db = (await getDb())!;
   const [config] = await db
     .select()
     .from(systemConfig)
-    .where(eq(systemConfig.key, "fx_rates_ecb"))
+    .where(eq(systemConfig.key, "fx_rates"))
     .limit(1);
   return config ? JSON.parse(String(config.value)) : null;
 }
@@ -72,6 +75,30 @@ describe("frankfurter FX: fail-closed provider handling (protocol-faithful local
     expect(stored).not.toBeNull();
     expect(stored!.EUR).toBe(1);
     expect(stored!.USD).toBeCloseTo(1.0932, 4);
+  });
+
+  it("refresh -> convert quotes from the refreshed book (F13-1 key unification, correct direction)", async () => {
+    const caller = callerFor(adminUser);
+    await caller.fxRates.refresh();
+    // Simulator book (EUR base): USD 1.0932, GBP 0.8312, JPY 157.41 per EUR.
+    // Correct direction for "units per 1 EUR": amount * toRate / fromRate.
+    const usdToEur = await caller.fxRates.convert({ from: "USD", to: "EUR", amount: 100 });
+    expect(usdToEur.convertedAmount).toBeCloseTo(91.47, 2);
+    const eurToUsd = await caller.fxRates.convert({ from: "EUR", to: "USD", amount: 100 });
+    expect(eurToUsd.convertedAmount).toBeCloseTo(109.32, 2);
+    // Unknown currency fails loudly — never silently priced at rate 1.
+    await expectTrpcError(
+      caller.fxRates.convert({ from: "ZZZ", to: "EUR", amount: 100 }),
+      "PRECONDITION_FAILED"
+    );
+  });
+
+  it("updateRates rejects invalid/out-of-bounds rate books (F13-1)", async () => {
+    const caller = callerFor(adminUser);
+    await expectTrpcError(caller.fxRates.updateRates({ rates: { USD: 0 } }), "BAD_REQUEST");
+    await expectTrpcError(caller.fxRates.updateRates({ rates: { USD: -3 } }), "BAD_REQUEST");
+    await expectTrpcError(caller.fxRates.updateRates({ rates: { USD: 1e9 } }), "BAD_REQUEST");
+    await expectTrpcError(caller.fxRates.updateRates({ rates: {} }), "BAD_REQUEST");
   });
 
   it("(c) malformed provider reply -> loud failure, stored rates NOT poisoned", async () => {

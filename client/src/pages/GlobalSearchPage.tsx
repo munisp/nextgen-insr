@@ -65,7 +65,7 @@ const mockTransactions = [
     type: "cash_in",
     amount: 50000,
     customer: "Ade Johnson",
-    status: "completed",
+    status: "success",
     date: "2026-04-20",
   },
   {
@@ -74,7 +74,7 @@ const mockTransactions = [
     type: "transfer",
     amount: 125000,
     customer: "Bola Tinubu",
-    status: "completed",
+    status: "success",
     date: "2026-04-20",
   },
   {
@@ -92,7 +92,7 @@ const mockTransactions = [
     type: "airtime",
     amount: 5000,
     customer: "Dayo Adeleke",
-    status: "completed",
+    status: "success",
     date: "2026-04-19",
   },
 ];
@@ -273,7 +273,7 @@ export default function GlobalSearchPage() {
                         </span>
                         <Badge
                           variant={
-                            t.status === "completed" ? "default" : "destructive"
+                            t.status === "success" ? "default" : "destructive"
                           }
                           className="text-xs"
                         >
@@ -391,7 +391,7 @@ export default function GlobalSearchPage() {
                         <td className="text-center py-2 px-3">
                           <Badge
                             variant={
-                              t.status === "completed"
+                              t.status === "success"
                                 ? "default"
                                 : "destructive"
                             }
