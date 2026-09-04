@@ -46,6 +46,26 @@
  *   so the fail-closed money paths exercise REAL double-entry movement.
  *   Start with { autoProvision: false } for stock-TB strictness
  *   (unknown account → 404, nothing moves).
+ *
+ * READ ROUTES beyond the tbClient surface:
+ *   - GET /accounts/{id} — real account lookup from ledger state
+ *     (debits_posted / credits_posted / balanceKobo), 404 when unknown.
+ *     Mirrors the account-lookup endpoint of a TigerBeetle HTTP gateway;
+ *     used by tests to independently verify that double-entry legs posted.
+ *
+ * TEST-ONLY CONTROL ROUTES (never present in the real sidecar/gateway):
+ *   - POST /__test/down — simulate a ledger outage. While down, ALL
+ *     money-path routes (POST /transfers, /accounts, /accounts/batch)
+ *     return 503 with an honest "operation NOT committed" body and
+ *     GET /health returns 503 — faithfully mirroring the real tb-sidecar's
+ *     documented posture when its TigerBeetle upstream is unreachable
+ *     (502 Bad Gateway / 503 on /health; see tb-sidecar/main.go header).
+ *     Read routes keep serving real computed state. No state is lost or
+ *     mutated by the outage: balances are identical across a down/up cycle.
+ *   - POST /__test/up — end the simulated outage; 200s resume.
+ *   These exist so fail-closed boundary tests (e.g. journey-idempotency's
+ *   "TB sidecar down → throws, no phantom success") can exercise a REAL
+ *   unreachable-ledger condition instead of assuming a dead port.
  */
 import { createServer, type Server } from "node:http";
 import crypto from "node:crypto";
@@ -138,6 +158,10 @@ export async function startMiniTigerBeetle(
   const transfersByRef = new Map<string, LedgerTransfer>();
   const transferFingerprints = new Map<string, string>(); // id|ref -> fingerprint
   let rejectedTransfers = 0;
+  // Test-induced outage flag (POST /__test/down / /__test/up). While true,
+  // money-path writes and /health fail 503 — the real tb-sidecar's posture
+  // when its upstream is unreachable. Ledger state itself is untouched.
+  let ledgerDown = false;
 
   const json = (
     res: import("node:http").ServerResponse,
@@ -464,11 +488,69 @@ export async function startMiniTigerBeetle(
       upstream: "in-process-ledger (no TigerBeetle cluster; see header honesty note)",
     });
 
+  /** Real account lookup from ledger state (gateway-style read route). */
+  const handleGetAccount = (
+    accountId: string,
+    res: import("node:http").ServerResponse
+  ) => {
+    const account = accounts.get(accountId);
+    if (!account) {
+      return json(res, 404, errBody("account_not_found", `ledger account '${accountId}' does not exist`));
+    }
+    return json(res, 200, {
+      ...accountView(account),
+      balanceKobo: account.creditsPosted - account.debitsPosted,
+    });
+  };
+
   const route = (
     req: JsonRequest,
     res: import("node:http").ServerResponse
   ): void => {
     const { method, path: p, body } = req;
+
+    // ── Test-only outage controls (see header; not part of the real
+    // sidecar/gateway surface). Must stay reachable while "down". ─────────
+    if (method === "POST" && p === "/__test/down") {
+      ledgerDown = true;
+      return json(res, 200, {
+        status: "down",
+        message: "ledger outage simulated: money-path writes and /health now return 503 until POST /__test/up; ledger state unchanged",
+      });
+    }
+    if (method === "POST" && p === "/__test/up") {
+      ledgerDown = false;
+      return json(res, 200, { status: "up", message: "ledger outage ended; state preserved across the down cycle" });
+    }
+
+    // ── Outage gate: money-path writes and /health fail loud (503), exactly
+    // the real tb-sidecar's posture when its TigerBeetle upstream is
+    // unreachable (502/503 — see tb-sidecar/main.go). Nothing is committed
+    // while down; read routes keep serving real computed state. ───────────
+    const isMoneyWrite =
+      method === "POST" && (p === "/transfers" || p === "/accounts" || p === "/accounts/batch");
+    if (ledgerDown && isMoneyWrite) {
+      rejectedTransfers++;
+      return json(
+        res,
+        503,
+        errBody(
+          "ledger_unavailable",
+          "ledger is down (test-induced outage via POST /__test/down); operation NOT committed"
+        )
+      );
+    }
+    if (method === "GET" && p === "/health") {
+      if (ledgerDown) {
+        return json(res, 503, {
+          status: "unhealthy",
+          service: "mini-tigerbeetle",
+          error: "ledger is down (test-induced outage via POST /__test/down)",
+        });
+      }
+      return handleHealth(res);
+    }
+
     if (method === "POST" && p === "/accounts") return handleCreateAccount(body, res);
     if (method === "POST" && p === "/accounts/batch") return handleCreateAccountsBatch(body, res);
     if (method === "POST" && p === "/transfers") return handleCreateTransfer(body, res);
@@ -476,8 +558,11 @@ export async function startMiniTigerBeetle(
     if (method === "GET" && balanceMatch) {
       return handleAgentBalance(decodeURIComponent(balanceMatch[1]!), res);
     }
+    const accountMatch = p.match(/^\/accounts\/([^/]+)$/);
+    if (method === "GET" && accountMatch) {
+      return handleGetAccount(decodeURIComponent(accountMatch[1]!), res);
+    }
     if (method === "GET" && p === "/sync/status") return handleSyncStatus(res);
-    if (method === "GET" && p === "/health") return handleHealth(res);
     return json(res, 404, errBody("not_found", `unknown route: ${method} ${p}`));
   };
 

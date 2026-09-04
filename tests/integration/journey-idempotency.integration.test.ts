@@ -230,9 +230,20 @@ describe("journey idempotency (integration, real DB)", () => {
     const payload = { triggerId: 88, payoutAmount: 40000, customerId: 888 };
     expect(await checkIdempotency(K_TB, J, payload)).toBeNull(); // reserved
 
-    // The harness points TB_SIDECAR_URL at a dead port. The journey payout
-    // step must FAIL LOUDLY here — the old code returned a fabricated
-    // `OFFLINE-<ts>` transfer id and the journey recorded a phantom payout.
+    // The harness runs a LIVE ledger endpoint (globalSetup spawns the
+    // protocol-faithful miniTigerBeetle unless TB_SIDECAR_URL points at a
+    // real tb-sidecar). Take the ledger down through its test-only control
+    // route so the payout step faces a genuinely unreachable ledger — the
+    // exact 502/503 posture the real tb-sidecar documents when its
+    // TigerBeetle upstream is unreachable (see tb-sidecar/main.go). The
+    // journey payout step must FAIL LOUDLY here — the old code returned a
+    // fabricated `OFFLINE-<ts>` transfer id and the journey recorded a
+    // phantom payout.
+    const ledgerUrl = process.env.TB_SIDECAR_URL;
+    if (!ledgerUrl) throw new Error("TB_SIDECAR_URL must be set by globalSetup for this boundary test");
+    const downRes = await fetch(`${ledgerUrl}/__test/down`, { method: "POST" });
+    expect(downRes.ok).toBe(true);
+
     let threw: unknown = null;
     try {
       await createTigerBeetleTransfer({
@@ -243,6 +254,12 @@ describe("journey idempotency (integration, real DB)", () => {
         userData: 88,
       });
     } catch (err) { threw = err; }
+    finally {
+      // Restore the ledger for every other suite no matter how the
+      // assertions below land; ledger state is preserved across the cycle.
+      const upRes = await fetch(`${ledgerUrl}/__test/up`, { method: "POST" });
+      expect(upRes.ok).toBe(true);
+    }
     expect(threw).toBeInstanceOf(Error);
     expect((threw as Error).message).toContain("TigerBeetle");
     expect((threw as Error).message).not.toContain("OFFLINE");
