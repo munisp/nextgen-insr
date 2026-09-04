@@ -28,6 +28,14 @@ export default defineConfig({
   },
   test: {
     setupFiles: ["./vitest.setup.ts"],
+    // Money-path ledger writes are FAIL-CLOSED since dd-tb, so the unit
+    // suite needs a REAL ledger endpoint: globalSetup spawns the
+    // protocol-faithful in-process mini TigerBeetle (shared with the
+    // integration harness) and exports TB_SIDECAR_URL before workers fork.
+    // TB_SIDECAR_URL is deliberately NOT in the env block below — a config
+    // env entry would OVERRIDE the globalSetup assignment (same reasoning
+    // as REDIS_URL/TB_SIDECAR_URL in vitest.integration.config.ts).
+    globalSetup: ["./tests/unitGlobalSetup.ts"],
     environment: "node",
     env: {
       // Provide a well-formed test URL so Keycloak URL-construction tests

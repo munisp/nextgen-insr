@@ -8,43 +8,43 @@ data:
   POSTGRES_HOST: "postgresql-ha-pgpool.insurance-platform.svc.cluster.local"
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "insurance"
-  
+
   # Redis Configuration
   REDIS_HOST: "redis-cluster.middleware.svc.cluster.local"
   REDIS_PORT: "6379"
-  
+
   # Kafka Configuration
   KAFKA_BROKERS: "insurance-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
   KAFKA_SECURITY_PROTOCOL: "PLAINTEXT"
-  
+
   # Temporal Configuration
   TEMPORAL_ADDRESS: "temporal-frontend.middleware.svc.cluster.local:7233"
   TEMPORAL_NAMESPACE: "default"
-  
+
   # TigerBeetle Configuration
   TIGERBEETLE_ADDRESS: "tigerbeetle.middleware.svc.cluster.local:3000"
-  
+
   # Lakehouse Configuration
   LAKEHOUSE_URL: "http://iceberg-rest.middleware.svc.cluster.local:8181"
-  
+
   # Dapr Configuration
   DAPR_HTTP_PORT: "3500"
   DAPR_GRPC_PORT: "50001"
-  
+
   # Fluvio Configuration
   FLUVIO_ADDRESS: "fluvio-sc.middleware.svc.cluster.local:9003"
-  
+
   # OpenStack Swift Configuration
   SWIFT_AUTH_URL: "https://openstack.yourdomain.com:5000/v3"
   SWIFT_CONTAINER: "insurance-documents"
   SWIFT_REGION: "RegionOne"
-  
+
   # Application Configuration
   NODE_ENV: "production"
   GO_ENV: "production"
   PYTHON_ENV: "production"
   LOG_LEVEL: "info"
-  
+
   # Service URLs
   CUSTOMER_PORTAL_URL: "http://customer-portal.insurance-platform.svc.cluster.local:3000"
   CLAIMS_SERVICE_URL: "http://claims-adjudication.insurance-platform.svc.cluster.local:8001"
