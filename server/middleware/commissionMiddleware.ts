@@ -91,7 +91,14 @@ export async function publishCommissionEvent(params: {
 
 // ── Redis: Split Ratio + Hierarchy Cache ─────────────────────────────────
 const SPLIT_CACHE_TTL = 300;
-const HIERARCHY_CACHE_TTL = 600;
+// DD-RESIDUALS (M2): split-ratio writes (commissionEngine updateSplit/
+// createSplit) already call invalidateSplitCache(), but NO in-repo write
+// path exists for the agent-hierarchy chain (server/routers/agentHierarchy.ts
+// fails loud — no hierarchy store is delivered), so a hierarchy change made
+// out-of-band would be masked by this cache. TTL reduced 600s → 60s to bound
+// the stale-window honestly. Fail-open cache-miss→DB fallthrough semantics
+// are unchanged (accepted pattern).
+const HIERARCHY_CACHE_TTL = 60;
 
 export async function getCachedSplitRatios(
   txType: string

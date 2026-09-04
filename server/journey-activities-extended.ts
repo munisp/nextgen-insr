@@ -935,10 +935,16 @@ export async function topUpAgentFloat(input: {
       transactionId = txn.id;
     } else {
       // A crashed prior attempt left the durable row — resume it (the TB leg
-      // below is idempotent on the deterministic transfer id).
+      // below is idempotent on the deterministic transfer id). The resume
+      // lookup is scoped to THIS agent + type: a ref owned by another agent
+      // or endpoint must fail loud, not be mis-associated with this top-up.
       const [row] = await d.select({ id: transactions.id }).from(transactions)
-        .where(eq(transactions.ref, input.paymentRef)).limit(1);
-      if (!row) throw new Error("Float top-up durable row missing after conflict");
+        .where(and(
+          eq(transactions.ref, input.paymentRef),
+          eq(transactions.agentId, input.agentId),
+          eq(transactions.type, "Cash In")
+        )).limit(1);
+      if (!row) throw new Error("Float top-up ref conflict with a row not owned by this agent/type");
       transactionId = row.id;
     }
 
@@ -968,18 +974,27 @@ export async function topUpAgentFloat(input: {
       throw e;
     }
 
-    // Update PostgreSQL balance
-    await d.update(agents)
-      .set({
-        premiumReserve: sql`${agents.premiumReserve} + ${input.amount}`,
-        updatedAt: new Date(),
-      })
-      .where(eq(agents.id, input.agentId));
-
-    // Mark the durable row successful
-    await d.update(transactions)
-      .set({ status: "success", updatedAt: new Date() })
-      .where(eq(transactions.id, transactionId));
+    // Exactly-once balance increment (DD-RESIDUALS): the status flip and the
+    // agents.premiumReserve increment commit in ONE DB transaction, gated on
+    // the row not already being successful. A crash before commit rolls both
+    // back, so a retry re-applies exactly once; a retry after commit finds
+    // status="success", the conditional flip returns no row, and the
+    // increment is skipped. This closes the crash window between the
+    // increment and the success flip that previously double-incremented the
+    // DB float on retry (the TB ledger leg is already idempotent).
+    await d.transaction(async (tx) => {
+      const flipped = await tx.update(transactions)
+        .set({ status: "success", updatedAt: new Date() })
+        .where(and(eq(transactions.id, transactionId), ne(transactions.status, "success")))
+        .returning({ id: transactions.id });
+      if (flipped.length === 0) return; // increment already applied by a prior attempt
+      await tx.update(agents)
+        .set({
+          premiumReserve: sql`${agents.premiumReserve} + ${input.amount}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(agents.id, input.agentId));
+    });
 
     const agent = await d.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
 

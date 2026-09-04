@@ -926,7 +926,10 @@ export const transactionsRouter = router({
               type: input.type,
               amount: input.amount,
               agentId: agent.id,
-              status: "committed",
+              // Honest label: the transactions row was inserted with
+              // status "success" (see insert above); "committed" is not a
+              // value in the tx status vocabulary and mislabelled the event.
+              status: "success",
               channel: input.channel ?? "Cash",
               customerId: (input as any).customerId ?? undefined,
             })
