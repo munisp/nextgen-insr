@@ -691,9 +691,11 @@ export async function J04_AgentOnboardingWorkflow(input: J04Input) {
     // Step 6: APISIX — create agent API consumer
     await createApisixConsumer({ username: `agent-${agent.agentId}` });
 
-    // Step 7: Activate agent
+    // Step 7: Activate agent — DD-FINAL-SWEEP (B3): this is the single
+    // initial-float credit; its newBalance is the honest float figure used
+    // downstream (replaces the removed Step-4 topUpAgentFloat result).
     currentStep = "activate_agent";
-    await activateAgent({ agentId: agent.agentId, initialFloat: input.initialFloatAmount, activatedBy: input.triggeredBy });
+    const activation = await activateAgent({ agentId: agent.agentId, initialFloat: input.initialFloatAmount, activatedBy: input.triggeredBy });
 
     // Step 8: POS terminal provisioning
     currentStep = "provision_terminal";
@@ -705,7 +707,7 @@ export async function J04_AgentOnboardingWorkflow(input: J04Input) {
       data: {
         type: "agent_activated", to: input.email,
         subject: "Your InsurePortal Agent Account is Active",
-        body: `Dear ${input.firstName}, your agent code is ${agent.agentCode}. Float balance: ₦${floatResult.newBalance.toLocaleString()}`,
+        body: `Dear ${input.firstName}, your agent code is ${agent.agentCode}. Float balance: ₦${activation.newBalance.toLocaleString()}`,
       },
     });
 
@@ -723,12 +725,12 @@ export async function J04_AgentOnboardingWorkflow(input: J04Input) {
     });
 
     await recordJourneyComplete({ executionId, workflowId: `J04-${Date.now()}`, status: "completed",
-      resultSnapshot: { agentId: agent.agentId, agentCode: agent.agentCode, floatBalance: floatResult.newBalance } });
+      resultSnapshot: { agentId: agent.agentId, agentCode: agent.agentCode, floatBalance: activation.newBalance } });
 
     return {
       success: true, agentId: agent.agentId, agentCode: agent.agentCode,
       keycloakId: keycloakUser.keycloakId, kycLevel: kycResult.kycLevel,
-      floatBalance: floatResult.newBalance, terminalId: terminal.terminalId,
+      floatBalance: activation.newBalance, terminalId: terminal.terminalId,
     };
   } catch (err) {
     await recordJourneyComplete({ executionId, workflowId: `J04-${Date.now()}`,
