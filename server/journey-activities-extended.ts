@@ -204,9 +204,22 @@ export async function checkPermifyPermission(input: {
   );
 
   if (!res || !res.ok) {
-    // Fail-open: if Permify is unavailable, allow (APISIX gateway handles primary authz)
-    logger.warn({ msg: "Permify unavailable — failing open", input });
-    return { allowed: true, reason: "permify_unavailable_fail_open" };
+    // DD-FINAL-SWEEP (B4): default posture is FAIL-CLOSED — a Permify outage
+    // must NOT authorize money movements in the 9 journey call sites that
+    // gate on `permCheck.allowed`. This mirrors server/_core/permify.ts:66-99.
+    // PERMIFY_FAIL_OPEN=true is an explicit, loud, INSECURE opt-in intended
+    // only for short-lived disaster-recovery scenarios (and the unit-test
+    // harness, which sets it in vitest.config.ts).
+    if (process.env.PERMIFY_FAIL_OPEN === "true") {
+      logger.error(
+        { msg: "[Permify] FAIL-OPEN ACTIVE (PERMIFY_FAIL_OPEN=true) — allowing during outage", input },
+      );
+      return { allowed: true, reason: "permify_unavailable_fail_open" };
+    }
+    logger.error(
+      { msg: "[Permify] unavailable — failing CLOSED (denying)", input },
+    );
+    return { allowed: false, reason: "permify_unavailable_fail_closed" };
   }
 
   const data = await res.json() as { can: string };
@@ -877,12 +890,15 @@ export async function topUpAgentFloat(input: {
     const d = await getDb();
     if (!d) throw new Error("DB unavailable");
 
-    // Check idempotency
+    // Check idempotency — only a prior SUCCESSFUL top-up with this ref is a
+    // replay (DD-FINAL-SWEEP H3: pending/failed rows from a crashed attempt
+    // must be resumable, not mistaken for success).
     const existing = await d.select().from(transactions)
       .where(and(
         eq(transactions.agentId, input.agentId),
         eq(transactions.ref, input.paymentRef),
-        eq(transactions.type, "Cash In")
+        eq(transactions.type, "Cash In"),
+        eq(transactions.status, "success")
       )).limit(1);
 
     if (existing.length > 0) {
@@ -898,18 +914,59 @@ export async function topUpAgentFloat(input: {
     // Ensure TB account exists
     await tbEnsureAgentAccount(input.agentCode);
 
-    // TigerBeetle transfer: FLOAT_POOL → agent account
-    const tbResult = await tbCreateTransfer({
-      id: `float-topup-${input.agentId}-${Date.now()}`,
-      debitAccountId: process.env.TB_FLOAT_POOL_ID ?? "float-pool",
-      creditAccountId: `float-${input.agentCode}`,
-      amount: Math.round(input.amount * 100), // kobo
-      ledger: 2000,
-      code: 300, // WALLET_TOPUP
+    // DD-FINAL-SWEEP (H3): INSERT-FIRST idempotency. The durable transactions
+    // row is written BEFORE the TigerBeetle leg (previously the TB leg ran
+    // first — an activity failure in between + retry double-credited). The TB
+    // transfer id is now deterministic (`FLOAT-TOPUP-${agentId}-${paymentRef}`)
+    // instead of Date.now(), so TB ref/id-idempotency dedupes retries.
+    const tbTransferId = `FLOAT-TOPUP-${input.agentId}-${input.paymentRef}`;
+    const [txn] = await d.insert(transactions).values({
       ref: input.paymentRef,
-      txType: "float_topup",
-      agentId: input.agentCode,
-    });
+      agentId: input.agentId,
+      type: "Cash In",
+      amount: input.amount.toString(),
+      status: "pending",
+      metadata: { description: `Float top-up via ${input.fundingSource}`, tbTransferId, fundingSource: input.fundingSource },
+    }).onConflictDoNothing({ target: transactions.ref })
+      .returning({ id: transactions.id });
+
+    let transactionId: number;
+    if (txn) {
+      transactionId = txn.id;
+    } else {
+      // A crashed prior attempt left the durable row — resume it (the TB leg
+      // below is idempotent on the deterministic transfer id).
+      const [row] = await d.select({ id: transactions.id }).from(transactions)
+        .where(eq(transactions.ref, input.paymentRef)).limit(1);
+      if (!row) throw new Error("Float top-up durable row missing after conflict");
+      transactionId = row.id;
+    }
+
+    // TigerBeetle transfer: FLOAT_POOL → agent account
+    try {
+      await tbCreateTransfer({
+        id: tbTransferId,
+        debitAccountId: process.env.TB_FLOAT_POOL_ID ?? "float-pool",
+        creditAccountId: `float-${input.agentCode}`,
+        amount: Math.round(input.amount * 100), // kobo
+        ledger: 2000,
+        code: 300, // WALLET_TOPUP
+        ref: input.paymentRef,
+        txType: "float_topup",
+        agentId: input.agentCode,
+      });
+    } catch (e: unknown) {
+      // Fail loud and mark the durable row failed so the retry path resumes
+      // honestly instead of reporting success.
+      await d.update(transactions)
+        .set({
+          status: "failed",
+          failureReason: e instanceof Error ? e.message : String(e),
+          updatedAt: new Date(),
+        })
+        .where(eq(transactions.id, transactionId));
+      throw e;
+    }
 
     // Update PostgreSQL balance
     await d.update(agents)
@@ -919,15 +976,10 @@ export async function topUpAgentFloat(input: {
       })
       .where(eq(agents.id, input.agentId));
 
-    // Record transaction
-    const [txn] = await d.insert(transactions).values({
-      ref: input.paymentRef,
-      agentId: input.agentId,
-      type: "Cash In",
-      amount: input.amount.toString(),
-      status: "success",
-      metadata: { description: `Float top-up via ${input.fundingSource}`, tbTransferId: tbResult?.id ?? null, fundingSource: input.fundingSource },
-    }).returning({ id: transactions.id });
+    // Mark the durable row successful
+    await d.update(transactions)
+      .set({ status: "success", updatedAt: new Date() })
+      .where(eq(transactions.id, transactionId));
 
     const agent = await d.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
 
@@ -946,8 +998,8 @@ export async function topUpAgentFloat(input: {
     return {
       success: true,
       newBalance: parseFloat(agent[0]?.premiumReserve ?? "0"),
-      transactionId: txn.id.toString(),
-      tbTransferId: tbResult?.id ?? "tb-posted",
+      transactionId: transactionId.toString(),
+      tbTransferId,
     };
   } finally {
     await release(idempotencyKey);

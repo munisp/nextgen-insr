@@ -5,7 +5,8 @@
  * Provides a reliable, in-process email queue with:
  *   - Exponential backoff retry (up to 3 attempts)
  *   - SMTP via Nodemailer (configurable via env vars)
- *   - Fallback to console logging when SMTP is not configured (dev mode)
+ *   - Fallback to console logging when SMTP is not configured (dev mode ONLY;
+ *     production fails loud and never marks the job delivered — H2)
  *   - Template helpers for common notification types
  *
  * Environment variables:
@@ -165,9 +166,19 @@ async function deliverEmail(job: EmailJob): Promise<void> {
   const smtpHost = process.env.SMTP_HOST;
 
   if (!smtpHost) {
-    // Dev mode: log to console instead of sending
+    // DD-FINAL-SWEEP (H2): mirror termii.ts:37-55. In production an
+    // unconfigured SMTP must NOT silently mark the job delivered — throw so
+    // the worker retries and finally gives up with a loud error, rather than
+    // callers observing success while the email is dropped.
+    if (process.env.NODE_ENV === "production") {
+      logger.error(
+        `[EmailQueue] SMTP not configured — REFUSING to mark email delivered (job ${job.id}, to: ${Array.isArray(job.to) ? job.to.join(", ") : job.to}, subject: "${job.subject}")`
+      );
+      throw new Error("SMTP provider not configured — email NOT delivered");
+    }
+    // Development-only labeled bypass: logged, NOT a real delivery.
     logger.info(
-      `[EmailQueue/DEV] Would send email:\n  To: ${Array.isArray(job.to) ? job.to.join(", ") : job.to}\n  Subject: ${job.subject}\n  From: ${job.from}`
+      `[EmailQueue/DEV-BYPASS — email NOT sent, not marked delivered in prod] Would send email:\n  To: ${Array.isArray(job.to) ? job.to.join(", ") : job.to}\n  Subject: ${job.subject}\n  From: ${job.from}`
     );
     return;
   }

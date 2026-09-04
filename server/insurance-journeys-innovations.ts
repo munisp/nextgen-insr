@@ -187,13 +187,23 @@ export async function J22_UBIMonthlyAdjustmentWorkflow(input: J22Input): Promise
 
   // Step 1: Fetch telematics data
   currentStep = "fetch_telematics";
-  const telematicsData = (await ext.invokeDaprService({ appId: "telematics-engine", method: "get-score", data: {
+  const telematicsResult = await ext.invokeDaprService({ appId: "telematics-engine", method: "get-score", data: {
     policyId: input.policyId,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
-  }})).data as { drivingScore: number; events: number; hardBrakes: number; speedingEvents: number };
+  }});
+  const telematicsData = telematicsResult.data as { drivingScore?: number; events?: number; hardBrakes?: number; speedingEvents?: number } | null;
 
-  const drivingScore = telematicsData.drivingScore ?? 70;
+  // DD-FINAL-SWEEP (M1): previously `telematicsData.drivingScore ?? 70`
+  // FABRICATED a neutral score — suppressing surcharges and texting the
+  // customer a score that never existed. Fail closed: pricing on a missing
+  // score is a precondition failure, not an invention.
+  if (!telematicsResult.success || typeof telematicsData?.drivingScore !== "number") {
+    throw new Error(
+      `PRECONDITION_FAILED: telematics driving score unavailable for policy ${input.policyId} — UBI pricing requires a real score; no adjustment applied`
+    );
+  }
+  const drivingScore = telematicsData.drivingScore;
 
   // Step 2: Compute premium adjustment
   currentStep = "compute_adjustment";
@@ -202,7 +212,9 @@ export async function J22_UBIMonthlyAdjustmentWorkflow(input: J22Input): Promise
   // Step 3: Fetch current premium from DB
   currentStep = "fetch_policy";
   const policyData = await act.getPolicyData(input.policyId);
-  const currentPremium = policyData.premiumAmount ?? 50000;
+  // DD-FINAL-SWEEP: deleted dead `?? 50000` fallback — getPolicyData throws on
+  // a missing policy and always returns a number. No behavior change.
+  const currentPremium = policyData.premiumAmount;
   const newPremium = Math.round(currentPremium * (1 + premiumAdjustmentPct / 100));
 
   // Step 4: If discount, create TigerBeetle credit
