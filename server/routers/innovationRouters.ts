@@ -37,6 +37,7 @@ import {
   didIdentities, verifiableCredentials,
 } from "../../drizzle/schema.innovations";
 import { protectedProcedure, adminProcedure, publicProcedure, router } from "../_core/trpc";
+import { validateAudioUrl } from "../_core/voiceTranscription";
 import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
 import { writeAuditLog } from "../lib/auditLogger";

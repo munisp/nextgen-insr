@@ -18,7 +18,7 @@
  *   - Remittance order creation
  *   - Ollama risk narrative generation
  */
-import { eq, and, desc, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 
 import { getDb } from "./db";
 import { fluvioProduce } from "./fluvio";
