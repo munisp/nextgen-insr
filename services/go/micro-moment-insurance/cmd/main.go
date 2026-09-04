@@ -24,22 +24,24 @@ import (
 // TigerBeetle (premium ledger), Temporal (expiry workflows), Keycloak (JWT auth)
 
 type Config struct {
-	Port        string
-	DatabaseURL string
-	KafkaURL    string
-	RedisURL    string
-	JWTSecret   string
-	Environment string
+	Port              string
+	DatabaseURL       string
+	KafkaURL          string
+	RedisURL          string
+	JWTSecret         string
+	PaymentGatewayURL string
+	Environment       string
 }
 
 func loadConfig() Config {
 	return Config{
-		Port:        envOr("PORT", "8112"),
-		DatabaseURL: envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
-		KafkaURL:    envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
-		RedisURL:    envOr("REDIS_URL", "redis://localhost:6379/3"),
-		JWTSecret:   envOr("JWT_SECRET", ""),
-		Environment: envOr("ENVIRONMENT", "development"),
+		Port:              envOr("PORT", "8112"),
+		DatabaseURL:       envOr("DATABASE_URL", "postgres://ngapp:ngapp@localhost:5432/ngapp?sslmode=disable"),
+		KafkaURL:          envOr("KAFKA_REST_URL", "http://kafka-rest:8082"),
+		RedisURL:          envOr("REDIS_URL", "redis://localhost:6379/3"),
+		JWTSecret:         envOr("JWT_SECRET", ""),
+		PaymentGatewayURL: envOr("PAYMENT_GATEWAY_URL", ""),
+		Environment:       envOr("ENVIRONMENT", "development"),
 	}
 }
 
@@ -67,17 +69,18 @@ type Product struct {
 }
 
 type Policy struct {
-	ID            string     `json:"id"`
-	ProductID     string     `json:"product_id"`
-	CustomerID    string     `json:"customer_id"`
-	Status        string     `json:"status"`
-	Premium       int64      `json:"premium"`
-	Coverage      int64      `json:"coverage"`
-	TriggerType   string     `json:"trigger_type"`
-	ActivatedAt   time.Time  `json:"activated_at"`
-	ExpiresAt     time.Time  `json:"expires_at"`
-	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
-	Metadata      string     `json:"metadata,omitempty"`
+	ID               string     `json:"id"`
+	ProductID        string     `json:"product_id"`
+	CustomerID       string     `json:"customer_id"`
+	Status           string     `json:"status"`
+	Premium          int64      `json:"premium"`
+	Coverage         int64      `json:"coverage"`
+	TriggerType      string     `json:"trigger_type"`
+	PaymentReference string     `json:"payment_reference,omitempty"`
+	ActivatedAt      time.Time  `json:"activated_at"`
+	ExpiresAt        time.Time  `json:"expires_at"`
+	DeactivatedAt    *time.Time `json:"deactivated_at,omitempty"`
+	Metadata         string     `json:"metadata,omitempty"`
 }
 
 type ActivateRequest struct {
@@ -85,6 +88,12 @@ type ActivateRequest struct {
 	CustomerID  string `json:"customer_id"`
 	Duration    int    `json:"duration"`
 	TriggerType string `json:"trigger_type"`
+	// PaymentReference is the idempotency reference of a premium payment
+	// already confirmed through the payment gateway. When supplied it is
+	// verified before coverage is activated; when omitted the policy is
+	// created as 'pending_payment' (coverage NOT active — never fabricate
+	// unbilled active coverage).
+	PaymentReference string `json:"payment_reference"`
 }
 
 // ── Database Layer ──────────────────────────────────────────────────────────
@@ -147,6 +156,12 @@ func (s *Store) migrate(ctx context.Context) error {
 
 		CREATE INDEX IF NOT EXISTS idx_micro_policies_customer ON micro_policies(customer_id);
 		CREATE INDEX IF NOT EXISTS idx_micro_policies_status ON micro_policies(status);
+
+		-- Premium payment binding (additive). One confirmed payment reference
+		-- may activate at most one policy (durable dedupe against replay).
+		ALTER TABLE micro_policies ADD COLUMN IF NOT EXISTS payment_reference TEXT;
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_micro_policies_payment_reference
+			ON micro_policies(payment_reference) WHERE payment_reference IS NOT NULL;
 	`)
 	if err != nil {
 		return err
@@ -225,11 +240,22 @@ func (s *Store) GetProduct(ctx context.Context, id string) (*Product, error) {
 	return &p, nil
 }
 
+// errPaymentReferenceConflict is returned when a payment reference has already
+// activated a policy (unique partial index idx_micro_policies_payment_reference).
+var errPaymentReferenceConflict = fmt.Errorf("payment reference already used to activate a policy")
+
 func (s *Store) CreatePolicy(ctx context.Context, p *Policy) error {
+	var paymentRef interface{}
+	if p.PaymentReference != "" {
+		paymentRef = p.PaymentReference
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO micro_policies (id, product_id, customer_id, status, premium, coverage, trigger_type, activated_at, expires_at, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, p.ID, p.ProductID, p.CustomerID, p.Status, p.Premium, p.Coverage, p.TriggerType, p.ActivatedAt, p.ExpiresAt, p.Metadata)
+		INSERT INTO micro_policies (id, product_id, customer_id, status, premium, coverage, trigger_type, payment_reference, activated_at, expires_at, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, p.ID, p.ProductID, p.CustomerID, p.Status, p.Premium, p.Coverage, p.TriggerType, paymentRef, p.ActivatedAt, p.ExpiresAt, p.Metadata)
+	if err != nil && strings.Contains(err.Error(), "idx_micro_policies_payment_reference") {
+		return errPaymentReferenceConflict
+	}
 	return err
 }
 
@@ -238,9 +264,9 @@ func (s *Store) DeactivatePolicy(ctx context.Context, policyID string) (*Policy,
 	now := time.Now()
 	err := s.db.QueryRowContext(ctx, `
 		UPDATE micro_policies SET status = 'canceled', deactivated_at = $2
-		WHERE id = $1 AND status = 'active'
-		RETURNING id, product_id, customer_id, status, premium, coverage, trigger_type, activated_at, expires_at, deactivated_at
-	`, policyID, now).Scan(&p.ID, &p.ProductID, &p.CustomerID, &p.Status, &p.Premium, &p.Coverage, &p.TriggerType, &p.ActivatedAt, &p.ExpiresAt, &p.DeactivatedAt)
+		WHERE id = $1 AND status IN ('active', 'pending_payment')
+		RETURNING id, product_id, customer_id, status, premium, coverage, trigger_type, COALESCE(payment_reference, ''), activated_at, expires_at, deactivated_at
+	`, policyID, now).Scan(&p.ID, &p.ProductID, &p.CustomerID, &p.Status, &p.Premium, &p.Coverage, &p.TriggerType, &p.PaymentReference, &p.ActivatedAt, &p.ExpiresAt, &p.DeactivatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -352,6 +378,49 @@ func authMiddleware(jwtSecret string, next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// ── Premium Payment Verification ────────────────────────────────────────────
+
+// verifyPremiumPayment confirms through the payment gateway that the referenced
+// premium payment actually succeeded and covers the required premium (kobo).
+// Fail-closed: any doubt (gateway unconfigured, unreachable, non-success
+// status, underpayment) returns an error and no coverage is activated.
+func verifyPremiumPayment(ctx context.Context, gatewayURL, reference string, requiredAmount int64) error {
+	if gatewayURL == "" {
+		return fmt.Errorf("payment verification unavailable: PAYMENT_GATEWAY_URL is not configured")
+	}
+	url := fmt.Sprintf("%s/api/v1/payments/status/%s", strings.TrimRight(gatewayURL, "/"), reference)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("payment gateway unreachable: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("payment reference %s is unknown to the payment gateway", reference)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("payment gateway returned HTTP %d", resp.StatusCode)
+	}
+	var payment struct {
+		Status string `json:"status"`
+		Amount int64  `json:"amount"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payment); err != nil {
+		return fmt.Errorf("decode gateway response: %w", err)
+	}
+	if payment.Status != "success" {
+		return fmt.Errorf("payment %s has status %q, not success", reference, payment.Status)
+	}
+	if payment.Amount < requiredAmount {
+		return fmt.Errorf("payment %s amount %d is below the required premium %d", reference, payment.Amount, requiredAmount)
+	}
+	return nil
+}
+
 // ── Policy ID Generator ─────────────────────────────────────────────────────
 
 type IDGenerator struct {
@@ -458,20 +527,51 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 		triggerType = "manual"
 	}
 
+	// Premium gating — fail CLOSED for funds. Coverage only becomes 'active'
+	// when a confirmed premium payment is verified against the payment
+	// gateway. Without a payment reference the policy is honestly created as
+	// 'pending_payment' (no active coverage is fabricated).
+	status := "pending_payment"
+	if req.PaymentReference != "" {
+		if s.cfg.PaymentGatewayURL == "" {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"error": "premium payment verification is not configured on this service (PAYMENT_GATEWAY_URL unset) — coverage NOT activated",
+				"code":  "PAYMENT_VERIFICATION_UNAVAILABLE",
+			})
+			return
+		}
+		if err := verifyPremiumPayment(r.Context(), s.cfg.PaymentGatewayURL, req.PaymentReference, premium); err != nil {
+			writeJSON(w, http.StatusPaymentRequired, map[string]string{
+				"error": fmt.Sprintf("premium payment not confirmed: %v", err),
+				"code":  "PREMIUM_NOT_PAID",
+			})
+			return
+		}
+		status = "active"
+	}
+
 	policy := &Policy{
-		ID:          s.idGen.Next(),
-		ProductID:   req.ProductID,
-		CustomerID:  req.CustomerID,
-		Status:      "active",
-		Premium:     premium,
-		Coverage:    product.MaxCoverage,
-		TriggerType: triggerType,
-		ActivatedAt: now,
-		ExpiresAt:   expiresAt,
-		Metadata:    "{}",
+		ID:               s.idGen.Next(),
+		ProductID:        req.ProductID,
+		CustomerID:       req.CustomerID,
+		Status:           status,
+		Premium:          premium,
+		Coverage:         product.MaxCoverage,
+		TriggerType:      triggerType,
+		PaymentReference: req.PaymentReference,
+		ActivatedAt:      now,
+		ExpiresAt:        expiresAt,
+		Metadata:         "{}",
 	}
 
 	if err := s.store.CreatePolicy(r.Context(), policy); err != nil {
+		if err == errPaymentReferenceConflict {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error": "this payment reference has already activated a policy",
+				"code":  "DUPLICATE_PAYMENT_REFERENCE",
+			})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create policy"})
 		log.Printf("CreatePolicy error: %v", err)
 		return
@@ -479,17 +579,26 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 
 	activationMs := time.Since(start).Milliseconds()
 
+	eventTopic := "micro.policy.pending_payment"
+	message := "Policy created as pending_payment — coverage is NOT active until the premium is paid and verified."
+	if status == "active" {
+		eventTopic = "micro.policy.activated"
+		message = "Policy activated successfully (premium payment verified)."
+	}
+
 	eventPublished := true
 	eventErr := ""
-	if err := s.events.Publish("micro.policy.activated", map[string]interface{}{
-		"policy_id":   policy.ID,
-		"product_id":  policy.ProductID,
-		"customer_id": policy.CustomerID,
-		"premium":     policy.Premium,
-		"trigger":     policy.TriggerType,
-		"timestamp":   now.Format(time.RFC3339),
+	if err := s.events.Publish(eventTopic, map[string]interface{}{
+		"policy_id":         policy.ID,
+		"product_id":        policy.ProductID,
+		"customer_id":       policy.CustomerID,
+		"premium":           policy.Premium,
+		"status":            policy.Status,
+		"payment_reference": policy.PaymentReference,
+		"trigger":           policy.TriggerType,
+		"timestamp":         now.Format(time.RFC3339),
 	}); err != nil {
-		log.Printf("[Kafka] CRITICAL: micro.policy.activated not published: %v", err)
+		log.Printf("[Kafka] CRITICAL: %s not published: %v", eventTopic, err)
 		eventPublished = false
 		eventErr = err.Error()
 	}
@@ -498,7 +607,7 @@ func (s *Server) handleActivate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"policy":          policy,
 		"activation_ms":   activationMs,
-		"message":         "Policy activated successfully",
+		"message":         message,
 		"event_published": eventPublished,
 		"event_error":     eventErr,
 	})
@@ -527,21 +636,28 @@ func (s *Server) handleDeactivate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Calculate pro-rata refund
-	totalDuration := policy.ExpiresAt.Sub(policy.ActivatedAt).Hours()
-	usedDuration := policy.DeactivatedAt.Sub(policy.ActivatedAt).Hours()
-	refundPct := 1.0 - (usedDuration / totalDuration)
-	if refundPct < 0 {
-		refundPct = 0
+	// Pro-rata refund is only DUE when a premium was actually paid (payment
+	// reference bound at activation). This service has no disbursement rail,
+	// so it reports the amount due honestly — it never claims a refund was
+	// initiated or sent.
+	refundAmount := int64(0)
+	if policy.PaymentReference != "" {
+		totalDuration := policy.ExpiresAt.Sub(policy.ActivatedAt).Hours()
+		usedDuration := policy.DeactivatedAt.Sub(policy.ActivatedAt).Hours()
+		refundPct := 1.0 - (usedDuration / totalDuration)
+		if refundPct < 0 {
+			refundPct = 0
+		}
+		refundAmount = int64(float64(policy.Premium) * refundPct)
 	}
-	refundAmount := int64(float64(policy.Premium) * refundPct)
 
 	eventPublished := true
 	eventErr := ""
 	if err := s.events.Publish("micro.policy.deactivated", map[string]interface{}{
-		"policy_id":     policy.ID,
-		"refund_amount": refundAmount,
-		"timestamp":     time.Now().Format(time.RFC3339),
+		"policy_id":         policy.ID,
+		"refund_due":        refundAmount,
+		"payment_reference": policy.PaymentReference,
+		"timestamp":         time.Now().Format(time.RFC3339),
 	}); err != nil {
 		log.Printf("[Kafka] CRITICAL: micro.policy.deactivated not published: %v", err)
 		eventPublished = false
@@ -551,10 +667,11 @@ func (s *Server) handleDeactivate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"policy_id":       policy.ID,
 		"status":          policy.Status,
-		"refund_amount":   refundAmount,
+		"refund_due":      refundAmount,
+		"refund_status":   "not_disbursed",
 		"event_published": eventPublished,
 		"event_error":     eventErr,
-		"message":         fmt.Sprintf("Policy canceled. Pro-rata refund of ₦%d initiated.", refundAmount/100),
+		"message":         fmt.Sprintf("Policy canceled. Pro-rata refund due: ₦%d — NOT yet disbursed; it must be processed through the payment gateway.", refundAmount/100),
 	})
 }
 
