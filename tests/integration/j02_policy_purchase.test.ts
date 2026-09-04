@@ -301,10 +301,14 @@ describe("J02 Policy Purchase — TigerBeetle Ledger Verification", () => {
     const db = await getDb();
     if (!db) return;
 
-    // Find the most recent completed premium payment transaction
+    // Find the most recent completed premium payment transaction.
+    // The J02 premium writer (server/journey-activities.ts collectPremium)
+    // records transactions with type "Insurance" — no writer produces
+    // "premium_payment" (that string only appears as a TB transfer txType),
+    // so filtering on it made this query vacuous.
     const txn = await db.select().from(transactions)
       .where(and(
-        eq(transactions.type, "premium_payment"),
+        eq(transactions.type, "Insurance"),
         eq(transactions.status, "success")
       ))
       .orderBy(desc(transactions.id))

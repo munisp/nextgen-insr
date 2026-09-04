@@ -11,11 +11,13 @@ import {
   CheckCircle,
 } from "lucide-react";
 
+// Server vocabulary for data_export_jobs.status (server/routers/dataExportHub.ts):
+// pending / success / cancelled. The previous keys (completed/processing/…)
+// never matched any server-written value.
 const STATUS_COLORS: Record<string, string> = {
-  completed: "bg-emerald-500/20 text-emerald-400",
-  processing: "bg-blue-500/20 text-blue-400",
-  queued: "bg-yellow-500/20 text-yellow-400",
-  failed: "bg-red-500/20 text-red-400",
+  success: "bg-emerald-500/20 text-emerald-400",
+  pending: "bg-yellow-500/20 text-yellow-400",
+  cancelled: "bg-red-500/20 text-red-400",
 };
 
 export default function DataExportHubPage() {
@@ -202,7 +204,7 @@ export default function DataExportHubPage() {
                       >
                         <Eye className="h-4 w-4 text-zinc-400" />
                       </button>
-                      {ex.status === "completed" && ex.download_url && (
+                      {ex.status === "success" && ex.download_url && (
                         <a
                           href={ex.download_url}
                           target="_blank"

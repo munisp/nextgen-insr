@@ -51,9 +51,11 @@ export default defineConfig({
       // placeholder substrings as suspicious defaults). No real calls enabled.
       PLATFORM_API_KEY: "ci3f9a7b2e4d6f8a0c1e3b5a7d9f2c4e6a8b0d2f4",
       PLATFORM_SERVICE_TOKEN: "svc9f1e7d5c3b1a0987654321fedcba0987654321",
-      // 2026-08-16 (lead-approved): unit job has no Permify container; align
-      // with integration.yml which already runs PERMIFY_FAIL_OPEN=true. Unit
-      // tests then exercise role-middleware denials; Permify-policy-level
+      // 2026-08-16 (lead-approved): the unit job has no Permify container, so
+      // the unit env opts into fail-open here. NOTE: integration.yml does NOT
+      // set PERMIFY_FAIL_OPEN (an earlier version of this comment claimed it
+      // did) — integration runs therefore exercise the fail-closed default.
+      // Unit tests then exercise role-middleware denials; Permify-policy-level
       // coverage is a disclosed gap (see ci-evidence.md residual-risk note).
       PERMIFY_FAIL_OPEN: "true",
       KEYCLOAK_CLIENT_SECRET: "kc8e6d4c2a0f8e6d4c2a0f8e6d4c2a0f8e6d4c2a0",
@@ -128,7 +130,8 @@ export default defineConfig({
       "server/sprint12.test.ts",
       "server/sprint13.test.ts",
       "server/sprint16.test.ts",
-      "server/sprint20.test.ts",
+      // REMOVED (DD-RESIDUALS): server/sprint20.test.ts deleted together with
+      // the dead lib it fixtured (server/lib/dbHealthCheck.ts) — not real coverage.
       "server/sprint24.test.ts",
       "server/sprint25.test.ts",
       "server/sprint26.test.ts",

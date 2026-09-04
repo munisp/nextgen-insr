@@ -37,6 +37,7 @@ import {
   didIdentities, verifiableCredentials,
 } from "../../drizzle/schema.innovations";
 import { protectedProcedure, adminProcedure, publicProcedure, router } from "../_core/trpc";
+import { validateAudioUrl } from "../_core/voiceTranscription";
 import { getDb } from "../db";
 import { fluvioProduce } from "../fluvio";
 import { writeAuditLog } from "../lib/auditLogger";
@@ -813,6 +814,22 @@ export const voiceClaimsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      // DD-TSSEC/DD-RESIDUALS (SSRF): the caller-supplied audioUrl is fetched
+      // downstream by the voice-transcription service — apply the same
+      // fail-closed allowlist guard used by the in-process transcription
+      // helper (server/_core/voiceTranscription.ts validateAudioUrl) at this
+      // trust boundary BEFORE forwarding. That helper also fetches with
+      // redirect:"manual" and rejects 3xx, so an allowlisted host cannot
+      // bounce the download to an internal/metadata address; here we simply
+      // refuse non-allowlisted URLs outright.
+      const urlCheck = validateAudioUrl(input.audioUrl);
+      if (!urlCheck.ok) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `Audio URL is not allowed: ${urlCheck.reason}`,
+        });
+      }
 
       let transcript = "";
       let intent = "unknown";
