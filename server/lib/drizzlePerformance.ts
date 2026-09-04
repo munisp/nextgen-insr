@@ -16,9 +16,12 @@
  *  10.  Materialized View Refresher   — scheduled + on-demand refresh
  */
 
+import { createHash } from "crypto";
+
 import { sql, eq, and, inArray } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
+import { outboxMessages , idempotencyKeys } from "../../drizzle/schema.enhancements";
 import { logger } from "../_core/logger";
 import { getDb } from "../db";
 import { cacheGet, cacheSet, cacheDel } from "../redisClient";
@@ -569,8 +572,6 @@ export function getMaterializedViewStatus() {
 // 11. Outbox Relay Worker (Transactional Outbox Pattern)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { outboxMessages , idempotencyKeys } from "../../drizzle/schema.enhancements";
-
 let outboxWorkerTimer: ReturnType<typeof setInterval> | null = null;
 
 export async function processOutboxMessages(batchSize = 50): Promise<number> {
@@ -649,8 +650,6 @@ export function stopOutboxWorker(): void {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 12. Idempotency Middleware Helper
 // ═══════════════════════════════════════════════════════════════════════════════
-
-import { createHash } from "crypto";
 
 export async function checkIdempotency(
   key: string,

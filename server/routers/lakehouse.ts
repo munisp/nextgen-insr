@@ -62,7 +62,6 @@ import {
 import logger from "../_core/logger";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb , writeAuditLog } from "../db";
-import { getServiceToken } from "../lib/envValidation";
 import {
   uploadTransactionSnapshot,
   uploadFraudEvents,
@@ -71,6 +70,7 @@ import {
   getSnapshotDownloadUrl,
   BUCKETS,
 } from "../lakehouse";
+import { getServiceToken } from "../lib/envValidation";
 
 // ── Python lakehouse-service proxy ────────────────────────────────────────────
 const LAKEHOUSE_SERVICE_URL =

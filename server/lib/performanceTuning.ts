@@ -4,6 +4,8 @@
  * Response compression, query result caching, connection pool optimization,
  * and request metrics for P99 response times
  */
+import type { Request, Response, NextFunction } from "express";
+
 import { logger } from "../_core/logger";
 import { cacheGet, cacheSet } from "../redisClient";
 
@@ -209,7 +211,6 @@ class RequestMetricsCollector {
 export const requestMetrics = new RequestMetricsCollector();
 
 // ── 4. Express Middleware: Response Time Tracking ─────────────────────────────
-import type { Request, Response, NextFunction } from "express";
 
 export function responseTimeMiddleware(
   req: Request,
