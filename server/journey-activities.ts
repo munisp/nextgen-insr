@@ -766,10 +766,23 @@ export async function activateAgent(input: {
   const [agent] = await d.select().from(agents).where(eq(agents.id, input.agentId)).limit(1);
   if (!agent) throw new Error(`Agent ${input.agentId} not found`);
 
+  // DD-FINAL-SWEEP (B3): idempotent replay guard — an already-active agent
+  // must NOT be re-credited. Previously retries re-minted the initial float
+  // (non-deterministic Date.now() ref defeated TB ref-idempotency). No-op
+  // return rather than throw so Temporal activity retries stay safe.
+  if (agent.isActive) {
+    return { activated: true, newBalance: parseFloat(agent.premiumReserve ?? "0") };
+  }
+
   // Ensure TB account
   await tbEnsureAgentAccount(agent.agentId);
 
-  // Top up initial float
+  // Top up initial float — this is the SINGLE initial-float credit for both
+  // the legacy J04 flow (insurance-journeys.ts) and the v2 J04 flow
+  // (insurance-journeys-v2.ts no longer pre-credits in its float_topup step).
+  // DD-FINAL-SWEEP (B3): unified account key `float-${agent.agentId}` — the
+  // key every float reader (agentFloatTransfer, floatManagement, billPayments,
+  // …) uses — and a deterministic ref so TB ref-idempotency dedupes retries.
   if (input.initialFloat > 0) {
     await tbCreateTransfer({
       debitAccountId: "sys-bank-reserve",
@@ -777,7 +790,7 @@ export async function activateAgent(input: {
       amount: Math.round(input.initialFloat * 100),
       ledger: 2000,
       code: 100,
-      ref: `INIT-FLOAT-${agent.agentId}-${Date.now()}`,
+      ref: `INIT-FLOAT-${agent.agentId}`,
       txType: "Float Top-Up",
       agentId: agent.agentId,
     });

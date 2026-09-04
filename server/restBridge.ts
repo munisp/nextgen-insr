@@ -122,6 +122,16 @@ function err(res: Response, e: unknown, status = 500) {
   return res.status(status).json({ error: String(e) });
 }
 
+// DD-FINAL-SWEEP: fail-loud 501 for bridge endpoints whose backing pipeline is
+// not delivered (dd-legacy pattern; mirrors the routers' NOT_IMPLEMENTED
+// convention). Never fabricate an ack for a money/regulatory/ops action.
+function notImplementedRest(res: Response, feature: string) {
+  return res.status(501).json({
+    error: "NOT_IMPLEMENTED",
+    message: `${feature} is not implemented yet`,
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -848,20 +858,21 @@ router.get("/pos/transactions", async (req, res) => {
   }
 });
 
-router.post("/pos/transactions/payment", async (req, res) => {
-  ok(res, { status: "queued", ref: `TXN-${Date.now()}`, ...req.body });
+// DD-FINAL-SWEEP (B1): POS payment acceptance previously fabricated
+// `{ status: "queued", ref: TXN-${Date.now()} }` with no DB write and no
+// ledger leg. Fail loud instead of pretending to accept money.
+router.post("/pos/transactions/payment", async (_req, res) => {
+  return notImplementedRest(res, "POS payment acceptance");
 });
 
-router.post("/pos/transactions/:id/void", requireAdmin, async (req, res) => {
-  ok(res, { transactionId: req.params.id, status: "void_queued" });
+// DD-FINAL-SWEEP (B1): fake void ack converted to fail-loud 501.
+router.post("/pos/transactions/:id/void", requireAdmin, async (_req, res) => {
+  return notImplementedRest(res, "POS transaction void");
 });
 
-router.post("/pos/transactions/:id/refund", requireAdmin, async (req, res) => {
-  ok(res, {
-    transactionId: req.params.id,
-    status: "refund_queued",
-    ...req.body,
-  });
+// DD-FINAL-SWEEP (B1): fake refund ack converted to fail-loud 501.
+router.post("/pos/transactions/:id/refund", requireAdmin, async (_req, res) => {
+  return notImplementedRest(res, "POS transaction refund");
 });
 
 router.get("/pos/analytics", async (req, res) => {
@@ -1105,12 +1116,17 @@ router.get("/tigerbeetle/accounts", async (_req, res) => {
   ok(res, { accounts: [], source: "tigerbeetle-sidecar" });
 });
 
+// DD-FINAL-SWEEP (H1): the TB sidecar exposes only per-agent balance reads
+// (GET /agent/{id}/balance in tbClient.ts) — there is no all-balances route.
+// The previous hardcoded `{ balances: [], source: "tigerbeetle-sidecar" }`
+// fabricated sidecar truth; fail loud instead.
 router.get("/tigerbeetle/balances", async (_req, res) => {
-  ok(res, { balances: [], source: "tigerbeetle-sidecar" });
+  return notImplementedRest(res, "TigerBeetle aggregate balances");
 });
 
-router.post("/tigerbeetle/sync", requireAdmin, async (req, res) => {
-  ok(res, { status: "sync_queued", timestamp: new Date().toISOString() });
+// DD-FINAL-SWEEP (H1): fake `sync_queued` ack converted to fail-loud 501.
+router.post("/tigerbeetle/sync", requireAdmin, async (_req, res) => {
+  return notImplementedRest(res, "TigerBeetle sync");
 });
 
 // SSE endpoint: GET /api/v1/fluvio/sse/:topic
@@ -1289,12 +1305,18 @@ router.get("/fluvio/test-connection", requireAdmin, async (_req, res) => {
   }
 });
 
+// DD-FINAL-SWEEP (B2): the CBN reporting pipeline is not delivered — the
+// tRPC cbnReporting router fails loud for every procedure, and there is no
+// cbn/report table to query. The previous hardcoded `{ reports: [] }`
+// masqueraded as a real source; fail loud instead.
 router.get("/cbn/reports", async (_req, res) => {
-  ok(res, { reports: [], period: "current" });
+  return notImplementedRest(res, "CBN regulatory reports");
 });
 
-router.post("/cbn/submit", requireAdmin, async (req, res) => {
-  ok(res, { status: "submitted", ref: `CBN-${Date.now()}`, ...req.body });
+// DD-FINAL-SWEEP (B2): a fabricated regulatory submission (`CBN-${Date.now()}`)
+// is worse than none — fail loud.
+router.post("/cbn/submit", requireAdmin, async (_req, res) => {
+  return notImplementedRest(res, "CBN regulatory submission");
 });
 
 router.get("/vat/records", async (req, res) => {
@@ -1424,16 +1446,14 @@ router.get("/erp/sync-log", async (req, res) => {
   }
 });
 
-router.post("/erp/sync", requireAdmin, async (req, res) => {
-  ok(res, { status: "sync_queued", timestamp: new Date().toISOString() });
+// DD-FINAL-SWEEP (H1): fake `sync_queued` ack converted to fail-loud 501.
+router.post("/erp/sync", requireAdmin, async (_req, res) => {
+  return notImplementedRest(res, "ERP sync");
 });
 
-router.post("/communication/send", async (req, res) => {
-  ok(res, {
-    status: "queued",
-    channel: req.body.channel ?? "sms",
-    timestamp: new Date().toISOString(),
-  });
+// DD-FINAL-SWEEP (H1): fake queued ack converted to fail-loud 501.
+router.post("/communication/send", async (_req, res) => {
+  return notImplementedRest(res, "Communication dispatch");
 });
 
 router.get("/multi-sim/profiles", async (req, res) => {
@@ -1447,8 +1467,9 @@ router.get("/multi-sim/profiles", async (req, res) => {
   }
 });
 
-router.post("/multi-sim/failover", async (req, res) => {
-  ok(res, { status: "failover_initiated", ...req.body });
+// DD-FINAL-SWEEP (H1): fake `failover_initiated` ack converted to fail-loud 501.
+router.post("/multi-sim/failover", async (_req, res) => {
+  return notImplementedRest(res, "Multi-SIM failover");
 });
 
 router.get("/reversals", async (req, res) => {
@@ -1485,8 +1506,9 @@ router.get("/nfc/tags", async (_req, res) => {
   ok(res, { tags: [], source: "nfc-service" });
 });
 
-router.post("/nfc/write", async (req, res) => {
-  ok(res, { status: "write_queued", ...req.body });
+// DD-FINAL-SWEEP (H1): fake `write_queued` ack converted to fail-loud 501.
+router.post("/nfc/write", async (_req, res) => {
+  return notImplementedRest(res, "NFC tag write");
 });
 
 router.get("/finance/summary", async (_req, res) => {

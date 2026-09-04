@@ -77,7 +77,7 @@ const {
   callRustFraudGate, callGoFloatReconciler, callGoHealthWorker,
   callPythonFraudScore, callPythonKycVerification, callIfrs17Engine,
   checkApisixRateLimit, createApisixConsumer,
-  topUpAgentFloat, createRemittanceOrder, generateOllamaRiskNarrative,
+  createRemittanceOrder, generateOllamaRiskNarrative,
   invokeDaprService,
 } = proxyActivities<typeof exts>({
   startToCloseTimeout: "5 minutes",
@@ -669,16 +669,17 @@ export async function J04_AgentOnboardingWorkflow(input: J04Input) {
       metadata: { agentId: agent.agentId, agentCode: agent.agentCode } });
 
     // Step 4: TigerBeetle — initial float top-up
+    // DD-FINAL-SWEEP (B3): this step previously called topUpAgentFloat AND
+    // Step 7's activateAgent performed a SECOND credit of the same amount —
+    // one J04 run minted 2× initialFloat while Postgres showed 1× (the
+    // activateAgent premiumReserve overwrite masked the divergence).
+    // activateAgent is now the single initial-float credit (the legacy J04
+    // flow calls it alone), with an isActive no-op guard and a deterministic
+    // INIT-FLOAT ref. This step records intent only — no money moves here.
     currentStep = "float_topup";
     await recordJourneyStep({ executionId, stepName: currentStep, status: "started", service: "tigerbeetle" });
-    const floatResult = await topUpAgentFloat({
-      agentId: agent.agentId, agentCode: agent.agentCode,
-      amount: input.initialFloatAmount,
-      paymentRef: `INIT-FLOAT-${agent.agentId}-${Date.now()}`,
-      fundingSource: "corporate",
-    });
     await recordJourneyStep({ executionId, stepName: currentStep, status: "completed", service: "tigerbeetle",
-      metadata: { newBalance: floatResult.newBalance } });
+      metadata: { initialFloatAmount: input.initialFloatAmount, creditedAt: "activate_agent" } });
 
     // Step 5: Permify — set agent permissions
     currentStep = "set_permissions";
