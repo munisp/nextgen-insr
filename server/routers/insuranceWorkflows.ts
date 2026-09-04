@@ -731,7 +731,7 @@ export const insuranceWorkflowsRouter = router({
         // Payment record + claim state flip in ONE real transaction on a
         // single connection (withClientTransaction). The claim flip carries
         // the expected-state guard atomically; the claims_payments.claimId
-        // unique index (migration 0052) makes a lost race idempotent instead
+        // unique index (migration 0053) makes a lost race idempotent instead
         // of a double-pay.
         const settleResult = await withClientTransaction(async (client) => {
           const ins = await client.query(
