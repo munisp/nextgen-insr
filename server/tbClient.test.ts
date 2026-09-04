@@ -7,12 +7,14 @@
  *  3. tbIsHealthy returns false when sidecar returns non-OK status
  *  4. tbIsHealthy returns false on timeout (abort signal)
  *  5. submitTransfer returns a TBTransferResponse on success
- *  6. submitTransfer returns null when sidecar is unreachable
- *  7. submitTransfer returns null on non-OK HTTP response
+ *  6. submitTransfer THROWS TBLedgerUnavailableError when sidecar is unreachable (fail-closed)
+ *  7. submitTransfer THROWS TBLedgerUnavailableError on non-OK HTTP response (fail-closed)
+ *  7b. submitTransfer THROWS TBLedgerUnavailableError on timeout/abort (fail-closed)
  *  8. ensureAgentAccount returns true when account is created
- *  9. ensureAgentAccount returns false when sidecar is unreachable
+ *  9. ensureAgentAccount THROWS TBLedgerUnavailableError when sidecar is unreachable (fail-closed)
+ *  9b. ensureAgentAccount returns false on non-OK HTTP response (honest ledger answer)
  * 10. getAgentBalance returns balance object on success
- * 11. getAgentBalance returns null when sidecar is unreachable
+ * 11. getAgentBalance returns null when sidecar is unreachable (read path may fall back, labeled)
  * 12. getSyncStatus returns sync stats on success
  * 13. getSyncStatus returns null when sidecar is unreachable
  */
@@ -23,6 +25,7 @@ import {
   tbEnsureAgentAccount as ensureAgentAccount,
   tbGetAgentBalance as getAgentBalance,
   tbGetSyncStatus as getSyncStatus,
+  TBLedgerUnavailableError,
 } from "./tbClient";
 
 // ── Helper: mock a successful fetch ──────────────────────────────────────────
@@ -104,16 +107,24 @@ describe("submitTransfer", () => {
     expect(result?.amount).toBe(500000);
   });
 
-  it("returns null when sidecar is unreachable", async () => {
+  it("throws TBLedgerUnavailableError when sidecar is unreachable (fail-closed)", async () => {
     mockFetchError(new Error("ECONNREFUSED"));
-    const result = await submitTransfer(transferReq);
-    expect(result).toBeNull();
+    await expect(submitTransfer(transferReq)).rejects.toBeInstanceOf(TBLedgerUnavailableError);
+    await expect(submitTransfer(transferReq)).rejects.toThrow(/NOT committed/);
   });
 
-  it("returns null on non-OK HTTP response", async () => {
+  it("throws TBLedgerUnavailableError on non-OK HTTP response (fail-closed)", async () => {
     mockFetchNotOk(422);
-    const result = await submitTransfer(transferReq);
-    expect(result).toBeNull();
+    await expect(submitTransfer(transferReq)).rejects.toBeInstanceOf(TBLedgerUnavailableError);
+    await expect(submitTransfer(transferReq)).rejects.toThrow(/HTTP 422/);
+  });
+
+  it("throws TBLedgerUnavailableError on timeout/abort (fail-closed)", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      Object.assign(new Error("The operation was aborted"), { name: "AbortError" })
+    );
+    await expect(submitTransfer(transferReq)).rejects.toBeInstanceOf(TBLedgerUnavailableError);
+    await expect(submitTransfer(transferReq)).rejects.toThrow(/timed out/);
   });
 });
 
@@ -125,10 +136,9 @@ describe("ensureAgentAccount", () => {
     expect(result).toBe(true);
   });
 
-  it("returns false when sidecar is unreachable", async () => {
+  it("throws TBLedgerUnavailableError when sidecar is unreachable (fail-closed)", async () => {
     mockFetchError(new Error("ECONNREFUSED"));
-    const result = await ensureAgentAccount("AGT001");
-    expect(result).toBe(false);
+    await expect(ensureAgentAccount("AGT001")).rejects.toBeInstanceOf(TBLedgerUnavailableError);
   });
 
   it("returns false on non-OK HTTP response", async () => {

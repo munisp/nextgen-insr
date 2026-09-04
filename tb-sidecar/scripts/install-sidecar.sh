@@ -46,7 +46,7 @@ fi
 
 section "3. Install sidecar binary"
 if [[ ! -f "${SIDECAR_BINARY}" ]]; then
-  error "Sidecar binary not found at ${SIDECAR_BINARY}. Build it first: cd tb-sidecar && go build ./cmd/sidecar"
+  error "Sidecar binary not found at ${SIDECAR_BINARY}. Build it first: cd tb-sidecar && go build -o tb-sidecar ."
 fi
 install -m 0755 "${SIDECAR_BINARY}" /usr/local/bin/insureportal-tb-sidecar
 info "Sidecar binary installed at /usr/local/bin/insureportal-tb-sidecar"

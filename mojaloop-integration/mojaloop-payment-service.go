@@ -39,6 +39,9 @@ type Payment struct {
 	ILPPacket             string
 	Condition             string
 	Fulfilment            string
+	// LedgerStatus honestly records the TigerBeetle leg outcome:
+	// "recorded" | "failed" | "not_configured". Empty until completion.
+	LedgerStatus          string
 	ErrorCode             string
 	ErrorDescription      string
 	CreatedAt             time.Time
@@ -95,7 +98,9 @@ func (s *MojaloopPaymentService) InitiatePayment(ctx context.Context, customerID
 		log.Printf("Failed to publish payment initiated event: %v", err)
 	}
 
-	go s.processPaymentAsync(ctx, payment)
+	// Detach from the request-scoped context: the payment lifecycle
+	// (quote → prepare → await switch fulfilment) outlives the HTTP call.
+	go s.processPaymentAsync(context.Background(), payment)
 
 	return payment, nil
 }
@@ -116,12 +121,17 @@ func (s *MojaloopPaymentService) processPaymentAsync(ctx context.Context, paymen
 		return
 	}
 
-	if err := s.fulfillTransfer(ctx, payment); err != nil {
+	if err := s.awaitSwitchFulfilment(ctx, payment); err != nil {
 		s.failPayment(payment, "TRANSFER_FULFIL_FAILED", err.Error())
 		return
 	}
 
-	s.completePayment(payment)
+	if err := s.completePayment(payment); err != nil {
+		// Money moved at the switch but the ledger leg failed. The payment
+		// is left in "ledger_error" for ops reconciliation — NOT "completed".
+		log.Printf("Payment %s ledger recording failed: %v", payment.ID, err)
+		_ = s.publishEvent("payment.ledger_error", payment)
+	}
 }
 
 func (s *MojaloopPaymentService) lookupParties(ctx context.Context, payment *Payment) error {
@@ -235,64 +245,120 @@ func (s *MojaloopPaymentService) prepareTransfer(ctx context.Context, payment *P
 	return nil
 }
 
-func (s *MojaloopPaymentService) fulfillTransfer(ctx context.Context, payment *Payment) error {
-	payment.Status = "transfer_fulfil"
+// awaitSwitchFulfilment waits for the Mojaloop switch to report the transfer
+// as COMMITTED and validates the revealed ILP fulfilment cryptographically
+// against the quote condition.
+//
+// HONESTY (DD-TB remediation): the previous implementation fabricated the
+// fulfilment locally ("fulfilment_<condition>") and PUT it to the switch,
+// then marked the transfer fulfilled. A payer DFSP cannot know the ILP
+// preimage — only the payee DFSP reveals it on commit. This function never
+// invents a fulfilment: it polls the switch, and any fulfilment that fails
+// validation is treated as an error, not a success.
+func (s *MojaloopPaymentService) awaitSwitchFulfilment(ctx context.Context, payment *Payment) error {
+	payment.Status = "awaiting_fulfilment"
 	s.db.Save(payment)
 
-	fulfilment := GenerateFulfilment(payment.Condition)
+	const pollInterval = 5 * time.Second
+	// Cap the wait at the transfer window (30 minutes, matching
+	// prepareTransfer's expiration).
+	deadline := time.Now().Add(30 * time.Minute)
 
-	if err := s.mojaloopClient.FulfillTransfer(ctx, payment.MojaloopTransferID, fulfilment); err != nil {
-		return fmt.Errorf("transfer fulfil failed: %w", err)
-	}
-
-	payment.Fulfilment = fulfilment
-	payment.Status = "transfer_fulfilled"
-	s.db.Save(payment)
-
-	_ = s.publishEvent("payment.transfer_fulfilled", payment)
-	return nil
-}
-
-func (s *MojaloopPaymentService) completePayment(payment *Payment) {
-	now := time.Now()
-	payment.Status = "completed"
-	payment.CompletedAt = &now
-	payment.UpdatedAt = now
-
-	// Record the transfer in TigerBeetle for double-entry ledger
-	if s.tigerBeetleClient != nil {
-		amountFloat, err := strconv.ParseFloat(payment.Amount, 64)
-		if err == nil {
-			amountSmallest := ledger.AmountToSmallestUnit(amountFloat, 2)
-			transferID := ledger.GenerateTransferID(
-				fmt.Sprintf("mojaloop-%s", payment.MojaloopTransferID), 1,
-			)
-			customerAccountID := ledger.GenerateAccountID("customer", payment.CustomerID.ID())
-			companyAccountID := ledger.GenerateAccountID("company", 1)
-
-			transfer := tigerbeetle_go.Transfer{
-				ID:              transferID,
-				DebitAccountID:  customerAccountID,
-				CreditAccountID: companyAccountID,
-				Amount:          ledger.Uint128FromUint64(amountSmallest),
-				Ledger:          1,
-				Code:            100, // Premium payment
-			}
-
-			if _, err := s.tigerBeetleClient.CreateTransfer(
-				context.Background(), transfer,
-			); err != nil {
-				log.Printf("TigerBeetle transfer failed for payment %s: %v", payment.ID, err)
-			} else {
-				payment.TigerBeetleTransferID = fmt.Sprintf("%v", transferID)
-				log.Printf("TigerBeetle transfer recorded for payment %s", payment.ID)
+	for {
+		transferResp, err := s.mojaloopClient.GetTransferStatus(ctx, payment.MojaloopTransferID)
+		if err != nil {
+			log.Printf("Transfer status poll failed for payment %s: %v", payment.ID, err)
+		} else {
+			switch transferResp.TransferState {
+			case "COMMITTED":
+				if transferResp.Fulfilment == "" {
+					return fmt.Errorf("switch reported COMMITTED without a fulfilment — refusing to mark fulfilled")
+				}
+				if err := ValidateFulfilment(transferResp.Fulfilment, payment.Condition); err != nil {
+					return fmt.Errorf("switch fulfilment failed ILP validation: %w", err)
+				}
+				payment.Fulfilment = transferResp.Fulfilment
+				payment.Status = "transfer_fulfilled"
+				s.db.Save(payment)
+				_ = s.publishEvent("payment.transfer_fulfilled", payment)
+				return nil
+			case "REJECTED", "ABORTED":
+				return fmt.Errorf("switch reported transfer state %s", transferResp.TransferState)
 			}
 		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("switch did not commit transfer %s within 30m — NOT marking payment completed", payment.MojaloopTransferID)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("fulfilment wait cancelled: %w", ctx.Err())
+		case <-time.After(pollInterval):
+		}
+	}
+}
+
+// completePayment records the ledger leg and marks the payment completed.
+// FAIL-CLOSED: if the TigerBeetle ledger write fails, the payment is moved
+// to "ledger_error" (money moved at the switch; ledger leg missing — ops
+// must reconcile) and an error is returned. "completed" is only ever
+// persisted when the ledger leg succeeded or is explicitly not configured
+// (LedgerStatus records which).
+func (s *MojaloopPaymentService) completePayment(payment *Payment) error {
+	now := time.Now()
+	payment.UpdatedAt = now
+
+	if s.tigerBeetleClient == nil {
+		// Honest labeling: no ledger is wired; do not claim a ledger record.
+		payment.LedgerStatus = "not_configured"
+		log.Printf("WARN: payment %s completing without a ledger record (TigerBeetle client not configured)", payment.ID)
+	} else {
+		amountFloat, err := strconv.ParseFloat(payment.Amount, 64)
+		if err != nil {
+			payment.Status = "ledger_error"
+			payment.LedgerStatus = "failed"
+			payment.ErrorCode = "LEDGER_AMOUNT_PARSE_FAILED"
+			payment.ErrorDescription = err.Error()
+			s.db.Save(payment)
+			return fmt.Errorf("failed to parse payment amount for ledger: %w", err)
+		}
+		amountSmallest := ledger.AmountToSmallestUnit(amountFloat, 2)
+		transferID := ledger.GenerateTransferID(
+			fmt.Sprintf("mojaloop-%s", payment.MojaloopTransferID), 1,
+		)
+		customerAccountID := ledger.GenerateAccountID("customer", payment.CustomerID.ID())
+		companyAccountID := ledger.GenerateAccountID("company", 1)
+
+		transfer := tigerbeetle_go.Transfer{
+			ID:              transferID,
+			DebitAccountID:  customerAccountID,
+			CreditAccountID: companyAccountID,
+			Amount:          ledger.Uint128FromUint64(amountSmallest),
+			Ledger:          1,
+			Code:            100, // Premium payment
+		}
+
+		if _, err := s.tigerBeetleClient.CreateTransfer(
+			context.Background(), transfer,
+		); err != nil {
+			payment.Status = "ledger_error"
+			payment.LedgerStatus = "failed"
+			payment.ErrorCode = "LEDGER_RECORD_FAILED"
+			payment.ErrorDescription = err.Error()
+			s.db.Save(payment)
+			return fmt.Errorf("TigerBeetle ledger write failed for payment %s: %w", payment.ID, err)
+		}
+		payment.TigerBeetleTransferID = fmt.Sprintf("%v", transferID)
+		payment.LedgerStatus = "recorded"
+		log.Printf("TigerBeetle transfer recorded for payment %s", payment.ID)
 	}
 
+	payment.Status = "completed"
+	payment.CompletedAt = &now
 	s.db.Save(payment)
 	_ = s.publishEvent("payment.completed", payment)
-	log.Printf("Payment completed: %s", payment.ID)
+	log.Printf("Payment completed: %s (ledger: %s)", payment.ID, payment.LedgerStatus)
+	return nil
 }
 
 func (s *MojaloopPaymentService) failPayment(payment *Payment, errorCode, errorDescription string) {
@@ -312,13 +378,22 @@ func (s *MojaloopPaymentService) GetPaymentStatus(ctx context.Context, paymentID
 		return nil, fmt.Errorf("payment not found: %w", err)
 	}
 
-	if payment.MojaloopTransferID != "" && payment.Status != "completed" && payment.Status != "failed" {
+	if payment.MojaloopTransferID != "" && payment.Status != "completed" && payment.Status != "failed" && payment.Status != "ledger_error" {
 		transferResp, err := s.mojaloopClient.GetTransferStatus(ctx, payment.MojaloopTransferID)
 		if err != nil {
 			log.Printf("Failed to get transfer status: %v", err)
-		} else {
-			if transferResp.TransferState == "COMMITTED" && payment.Status != "completed" {
-				s.completePayment(&payment)
+		} else if transferResp.TransferState == "COMMITTED" && payment.Status != "completed" {
+			// Only complete on a cryptographically valid fulfilment — never
+			// on the switch's say-so alone.
+			if transferResp.Fulfilment == "" {
+				log.Printf("Switch reported COMMITTED without fulfilment for payment %s — not completing", payment.ID)
+			} else if verr := ValidateFulfilment(transferResp.Fulfilment, payment.Condition); verr != nil {
+				s.failPayment(&payment, "FULFILMENT_INVALID", verr.Error())
+			} else {
+				payment.Fulfilment = transferResp.Fulfilment
+				if cerr := s.completePayment(&payment); cerr != nil {
+					log.Printf("Ledger recording failed during status sync for payment %s: %v", payment.ID, cerr)
+				}
 			}
 		}
 	}

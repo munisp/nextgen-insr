@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/hex"
@@ -855,6 +856,15 @@ func (s *Server) handleVerifyPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
+	// DD-TSSEC (A7-8): fail CLOSED when the secret key is unconfigured — with
+	// an empty key the expected HMAC-SHA512(body, "") is publicly computable,
+	// so "verification" would admit forged payment confirmations.
+	if s.config.PaystackSecretKey == "" {
+		log.Printf("[SECURITY] PAYSTACK_SECRET_KEY not configured — rejecting Paystack webhook (fail-closed)")
+		w.WriteHeader(503)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(400)
@@ -965,6 +975,20 @@ func (s *Server) handlePaystackWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFlutterwaveWebhook(w http.ResponseWriter, r *http.Request) {
+	// DD-TSSEC (A7-8): fail CLOSED when no webhook secret is configured —
+	// an unverifiable webhook must never mark a payment successful.
+	if s.config.WebhookSecret == "" {
+		log.Printf("[SECURITY] WEBHOOK_SECRET not configured — rejecting Flutterwave webhook (fail-closed)")
+		w.WriteHeader(503)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(400)
+		return
+	}
+
 	signature := r.Header.Get("verif-hash")
 	if s.config.WebhookSecret == "" {
 		// Fail CLOSED when unconfigured — a shared-secret default must never
@@ -978,7 +1002,6 @@ func (s *Server) handleFlutterwaveWebhook(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	body, _ := io.ReadAll(r.Body)
 	var event struct {
 		Event string `json:"event"`
 		Data  struct {

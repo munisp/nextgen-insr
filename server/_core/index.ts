@@ -46,7 +46,7 @@ import { verifyWebhookHmac, captureRawBody } from "../middleware/webhookHmac";
 import { enforceEnvironment } from "../lib/envValidation";
 import { logger, requestLoggingMiddleware } from "./logger";
 import { sql } from "drizzle-orm";
-import express, { type Express } from "express";
+import express, { type Express, type Request } from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { SignJWT } from "jose";
@@ -370,9 +370,82 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
     }
   );
 
+  // ── P1-A: Inbound Webhooks with HMAC-SHA256 verification ────────────────────
+  // DD-TSSEC (A7-9): these routes MUST be registered BEFORE the global
+  // express.json() below — captureRawBody can only read the request stream
+  // while it is unconsumed. Registered after the global parser, the stream is
+  // already ended and verification never ran (requests hung or 400'd).
+  // Handlers parse JSON from the verified raw body themselves; payload
+  // contents are never logged — only the event type.
+  const parseWebhookJson = (req: Request): Record<string, unknown> => {
+    const raw = (req as { rawBody?: Buffer }).rawBody;
+    if (!raw || raw.length === 0) return {};
+    return JSON.parse(raw.toString("utf8")) as Record<string, unknown>;
+  };
+
+  app.post(
+    "/webhooks/tigerbeetle",
+    captureRawBody,
+    verifyWebhookHmac("TIGERBEETLE_WEBHOOK_SECRET"),
+    async (req, res) => {
+      try {
+        const { event } = parseWebhookJson(req);
+        logger.info(`[Webhook/TB] event=${String(event)}`);
+        res.json({ received: true });
+      } catch (err) {
+        logger.error("[Webhook/TB] Handler error:: " + String(err));
+        res.status(400).json({ error: "Invalid webhook payload" });
+      }
+    }
+  );
+
+  // DD-TSSEC (A7-10): Termii delivery-report webhooks have NO native HMAC
+  // signing scheme — the previous "x-termii-signature" contract was invented.
+  // The route is therefore fail-closed in EVERY environment: until an
+  // operator provisions TERMII_WEBHOOK_SECRET (e.g. an edge proxy that signs
+  // verified Termii deliveries) no delivery is accepted, and no dev bypass
+  // exists to pretend otherwise.
+  app.post(
+    "/webhooks/termii",
+    captureRawBody,
+    verifyWebhookHmac("TERMII_WEBHOOK_SECRET", "x-termii-signature", {
+      failClosed: true,
+    }),
+    async (req, res) => {
+      try {
+        const { event } = parseWebhookJson(req);
+        logger.info(`[Webhook/Termii] event=${String(event)}`);
+        res.json({ received: true });
+      } catch (err) {
+        logger.error("[Webhook/Termii] Handler error:: " + String(err));
+        res.status(400).json({ error: "Invalid webhook payload" });
+      }
+    }
+  );
+
+  app.post(
+    "/webhooks/partner",
+    captureRawBody,
+    verifyWebhookHmac("PARTNER_WEBHOOK_SECRET"),
+    async (req, res) => {
+      try {
+        const { event } = parseWebhookJson(req);
+        logger.info(`[Webhook/Partner] event=${String(event)}`);
+        res.json({ received: true });
+      } catch (err) {
+        logger.error("[Webhook/Partner] Handler error:: " + String(err));
+        res.status(400).json({ error: "Invalid webhook payload" });
+      }
+    }
+  );
+
   // ── Body parsers ─────────────────────────────────────────────────
   // SECURITY: Limit request body size to 10MB (was 50MB) to prevent DoS via large payloads.
   // File uploads should use multipart/form-data with streaming, not JSON body.
+  // Webhook routes above are registered before this parser intentionally (see
+  // the DD-TSSEC note on the webhook block); their bodies were buffered by
+  // express.raw inside captureRawBody, which marks the request as parsed so
+  // this global parser passes them through untouched.
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
@@ -555,58 +628,9 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
   // Maps GET/POST/PUT/DELETE /api/v1/* to tRPC procedures and DB helpers.
   app.use("/api/v1", restBridgeRouter);
 
-  // ── P1-A: Inbound Webhooks with HMAC-SHA256 verification ────────────────────
-  // captureRawBody must run BEFORE express.json() on each webhook route.
-  app.post(
-    "/webhooks/tigerbeetle",
-    captureRawBody,
-    express.json(),
-    verifyWebhookHmac("TIGERBEETLE_WEBHOOK_SECRET"),
-    async (req, res) => {
-      try {
-        const { event, data } = req.body ?? {};
-        logger.info(`[Webhook/TB] event=${event}: ` + data);
-        res.json({ received: true });
-      } catch (err) {
-        logger.error("[Webhook/TB] Handler error:: " + String(err));
-        res.status(500).json({ error: "Webhook processing failed" });
-      }
-    }
-  );
-
-  app.post(
-    "/webhooks/termii",
-    captureRawBody,
-    express.json(),
-    verifyWebhookHmac("TERMII_WEBHOOK_SECRET", "x-termii-signature"),
-    async (req, res) => {
-      try {
-        const { event, data } = req.body ?? {};
-        logger.info(`[Webhook/Termii] event=${event}: ` + data);
-        res.json({ received: true });
-      } catch (err) {
-        logger.error("[Webhook/Termii] Handler error:: " + String(err));
-        res.status(500).json({ error: "Webhook processing failed" });
-      }
-    }
-  );
-
-  app.post(
-    "/webhooks/partner",
-    captureRawBody,
-    express.json(),
-    verifyWebhookHmac("PARTNER_WEBHOOK_SECRET"),
-    async (req, res) => {
-      try {
-        const { event, data } = req.body ?? {};
-        logger.info(`[Webhook/Partner] event=${event}: ` + data);
-        res.json({ received: true });
-      } catch (err) {
-        logger.error("[Webhook/Partner] Handler error:: " + String(err));
-        res.status(500).json({ error: "Webhook processing failed" });
-      }
-    }
-  );
+  // NOTE (DD-TSSEC A7-9): the /webhooks/* routes formerly registered here —
+  // AFTER the global express.json() — have moved above the body parsers so
+  // captureRawBody sees an unconsumed stream and HMAC verification can run.
 
   // ── Scheduled cron handlers ──────────────────────────────────────────────────
   const { handleMonthlyInvoiceCron } = await import(

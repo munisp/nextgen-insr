@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -216,6 +218,12 @@ func (c *MojaloopClient) PrepareTransfer(ctx context.Context, req TransferReques
 	return &transferResp, nil
 }
 
+// FulfillTransfer sends PUT /transfers/{id} with transferState COMMITTED.
+// This is a PAYEE-DFSP-side operation: the fulfilment must be the real ILP
+// preimage revealed by the payee. The payer-side payment flow in this
+// module deliberately does NOT call it (it awaits the switch's commit
+// notification and validates the revealed fulfilment instead). Callers must
+// never pass a locally invented fulfilment.
 func (c *MojaloopClient) FulfillTransfer(ctx context.Context, transferID, fulfilment string) error {
 	url := fmt.Sprintf("%s/transfers/%s", c.baseURL, transferID)
 
@@ -452,14 +460,54 @@ func (c *MojaloopClient) GetSettlement(ctx context.Context, settlementID int64) 
 	return &settlement, nil
 }
 
-func GenerateILPPacket(amount Money, payee Party, transactionID string) string {
-	return fmt.Sprintf("ilp_packet_%s_%s_%s", amount.Amount, payee.PartyIdentifier, transactionID)
+// ── ILP fulfilment validation ────────────────────────────────────────────────
+//
+// HONESTY (DD-TB remediation): the previous implementation FABRICATED ILP
+// packets, conditions and fulfilments as string concatenations
+// ("fulfilment_<condition>"). Those helpers are removed. In the Mojaloop
+// FSPIOP protocol:
+//   - the ILP packet and condition are produced by the PAYEE DFSP and arrive
+//     in the quote response (quoteResp.ILPPacket / quoteResp.Condition);
+//   - the fulfilment is the cryptographic preimage of the condition, known
+//     only to the payee DFSP, and is revealed via the switch's transfer
+//     commit notification (GET /transfers/{id} → TransferResponse.Fulfilment).
+// A payer DFSP can NEVER generate a fulfilment — it can only validate one.
+
+// ValidateFulfilment cryptographically verifies an ILP fulfilment against a
+// condition: base64url-decode both and check SHA-256(fulfilment) == condition.
+// Returns nil only when the proof holds. Any deviation (bad encoding, wrong
+// length, hash mismatch) is an error — callers must treat it as "transfer
+// NOT validly fulfilled".
+func ValidateFulfilment(fulfilmentB64, conditionB64 string) error {
+	fulfilment, err := decodeILPBase64(fulfilmentB64)
+	if err != nil {
+		return fmt.Errorf("invalid fulfilment encoding: %w", err)
+	}
+	condition, err := decodeILPBase64(conditionB64)
+	if err != nil {
+		return fmt.Errorf("invalid condition encoding: %w", err)
+	}
+	if len(fulfilment) != 32 {
+		return fmt.Errorf("invalid fulfilment length %d (ILP requires 32 bytes)", len(fulfilment))
+	}
+	if len(condition) != 32 {
+		return fmt.Errorf("invalid condition length %d (ILP requires 32 bytes)", len(condition))
+	}
+	digest := sha256.Sum256(fulfilment)
+	if !bytes.Equal(digest[:], condition) {
+		return fmt.Errorf("fulfilment does not satisfy condition (SHA-256 preimage mismatch)")
+	}
+	return nil
 }
 
-func GenerateCondition(ilpPacket string) string {
-	return fmt.Sprintf("condition_%s", ilpPacket)
-}
-
-func GenerateFulfilment(condition string) string {
-	return fmt.Sprintf("fulfilment_%s", condition)
+// decodeILPBase64 decodes ILP base64url, tolerating padded/unpadded and
+// standard-alphabet variants seen across DFSP implementations.
+func decodeILPBase64(s string) ([]byte, error) {
+	if b, err := base64.RawURLEncoding.DecodeString(s); err == nil {
+		return b, nil
+	}
+	if b, err := base64.URLEncoding.DecodeString(s); err == nil {
+		return b, nil
+	}
+	return base64.StdEncoding.DecodeString(s)
 }

@@ -6,6 +6,7 @@ import { auditLog, fraudAlerts, transactions, agents, claims, policies } from ".
 import logger from "../_core/logger";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { getServiceToken } from "../lib/envValidation";
 
 
 
@@ -149,7 +150,8 @@ export const lakehouseAiIntegrationRouter = router({
   listModels: protectedProcedure.query(async () => {
     try {
       const res = await fetch(`${process.env.ML_SERVICE_URL ?? "http://localhost:8001"}/models`, {
-        headers: { Authorization: `Bearer ${process.env.ML_SERVICE_TOKEN ?? "dev-token"}` },
+        // DD-TSSEC: env-gated token — throws (fail-loud) when unset in production.
+        headers: { Authorization: `Bearer ${getServiceToken("ML_SERVICE_TOKEN")}` },
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {
@@ -189,7 +191,7 @@ export const lakehouseAiIntegrationRouter = router({
       try {
         await fetch(`${process.env.ML_SERVICE_URL ?? "http://localhost:8001"}/models/${input.modelId}/promote`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.ML_SERVICE_TOKEN ?? "dev-token"}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getServiceToken("ML_SERVICE_TOKEN")}` },
           body: JSON.stringify({ target_env: input.targetEnv }),
           signal: AbortSignal.timeout(10000),
         });

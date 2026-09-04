@@ -218,7 +218,11 @@ describe("agentKycRouter", () => {
     expect(result.confidenceScore).toBe(95);
   });
 
-  it("should submit and verify a NIN document", async () => {
+  // DD-TSSEC (A7-14): honest NIN/BVN semantics — submission performs a FORMAT
+  // check only. There is no NIMC/BVN registry verification in this flow, so a
+  // well-formed document is persisted as "pending" with confidenceScore null
+  // (never "verified"), and a malformed number is rejected outright.
+  it("should accept a well-formed NIN as pending (format-check-only, never auto-verified)", async () => {
     const { agentKycRouter } = await import("./routers/agentKyc");
     const caller = agentKycRouter.createCaller({});
     const result = await caller.submitDocument({
@@ -232,26 +236,27 @@ describe("agentKycRouter", () => {
       issuingAuthority: "NIMC",
       country: "NG",
     });
-    expect(result.status).toBe("verified");
-    expect(result.confidenceScore).toBe(95);
+    expect(result.status).toBe("pending");
+    expect(result.confidenceScore).toBeNull();
+    expect(result.verificationLevel).toBe("format-check-only");
   });
 
-  it("should reject invalid document number", async () => {
+  it("should reject a malformed document number (BAD_REQUEST)", async () => {
     const { agentKycRouter } = await import("./routers/agentKyc");
     const caller = agentKycRouter.createCaller({});
-    const result = await caller.submitDocument({
-      agentId: "AGT-005",
-      docType: "nin",
-      docNumber: "INVALID",
-      fullName: "Test User",
-      dateOfBirth: "1990-01-01",
-      issueDate: "2023-01-01",
-      expiryDate: null,
-      issuingAuthority: "NIMC",
-      country: "NG",
-    });
-    expect(result.status).toBe("manual_review");
-    expect(result.confidenceScore).toBeLessThan(95);
+    await expect(
+      caller.submitDocument({
+        agentId: "AGT-005",
+        docType: "nin",
+        docNumber: "INVALID",
+        fullName: "Test User",
+        dateOfBirth: "1990-01-01",
+        issueDate: "2023-01-01",
+        expiryDate: null,
+        issuingAuthority: "NIMC",
+        country: "NG",
+      })
+    ).rejects.toThrow(/does not match the expected NIN format/);
   });
 
   it("should return KYC dashboard stats", async () => {

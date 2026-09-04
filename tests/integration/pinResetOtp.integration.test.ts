@@ -16,11 +16,16 @@
 import { describe, it, beforeAll, afterAll } from "vitest";
 import bcrypt from "bcryptjs";
 import { eq, like } from "drizzle-orm";
+import { SignJWT } from "jose";
 import { getDb } from "../../server/db";
 import { agents, otpTokens } from "../../drizzle/schema";
+import type { User } from "../../drizzle/schema";
+import type { TrpcContext } from "../../server/_core/context";
+import { getJwtSecret } from "../../server/lib/envValidation";
 import {
   callerFor,
   regularUser,
+  integrationRouter,
   expectCounted as expect,
   expectTrpcError,
   resetAssertionCount,
@@ -193,5 +198,81 @@ describe("pinReset OTP attempt limiting (integration, real DB)", () => {
       }),
       "BAD_REQUEST"
     );
+  });
+
+  // ── DD-TSSEC (A7-12): identity binding ────────────────────────────────────
+  // A caller holding an agent_session may only drive the reset flow for its
+  // OWN agent code; callers without an agent session are bound by the OTP
+  // itself (it is only sent to the phone on file).
+
+  async function agentSessionCookie(agentPkForSub: number, agentCode: string) {
+    const jwt = await new SignJWT({
+      agentId: agentCode,
+      name: "Binding Test Agent",
+      tier: "1",
+      role: "agent",
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject(String(agentPkForSub))
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(getJwtSecret()));
+    return `agent_session=${jwt}`;
+  }
+
+  function callerWithCookie(cookie: string) {
+    const ctx = {
+      user: regularUser as User | null,
+      req: {
+        headers: { cookie },
+      } as unknown as TrpcContext["req"],
+      res: {
+        cookie: () => undefined,
+        clearCookie: () => undefined,
+      } as unknown as TrpcContext["res"],
+      requestId: "integration-test-request",
+    };
+    return integrationRouter.createCaller(ctx);
+  }
+
+  it("an agent session for a DIFFERENT agent cannot request an OTP (FORBIDDEN)", async () => {
+    const cookie = await agentSessionCookie(999999, "AGT-OTP-OTHER");
+    const caller = callerWithCookie(cookie);
+    await expectTrpcError(
+      caller.pinReset.requestOtp({ agentCode: AGENT_CODE, phone: "08099990001" }),
+      "FORBIDDEN"
+    );
+  });
+
+  it("an agent session for a DIFFERENT agent cannot reset the PIN even with a valid OTP (FORBIDDEN)", async () => {
+    const db = (await getDb())!;
+    await db.delete(otpTokens).where(eq(otpTokens.agentId, agentPk));
+    await seedOtpToken("121212");
+    const baselineHash = await agentPinHash();
+
+    const cookie = await agentSessionCookie(999999, "AGT-OTP-OTHER");
+    const caller = callerWithCookie(cookie);
+    await expectTrpcError(
+      caller.pinReset.resetPin({ agentCode: AGENT_CODE, otp: "121212", newPin: "1111" }),
+      "FORBIDDEN"
+    );
+    // The PIN was untouched and the OTP was NOT consumed by the rejected call.
+    expect(await agentPinHash()).toBe(baselineHash);
+  });
+
+  it("a matching agent session may reset its own PIN (positive control)", async () => {
+    const db = (await getDb())!;
+    await db.delete(otpTokens).where(eq(otpTokens.agentId, agentPk));
+    await seedOtpToken("343434");
+
+    const cookie = await agentSessionCookie(agentPk, AGENT_CODE);
+    const caller = callerWithCookie(cookie);
+    const res = await caller.pinReset.resetPin({
+      agentCode: AGENT_CODE,
+      otp: "343434",
+      newPin: "5151",
+    });
+    expect(res.success).toBe(true);
+    expect(await bcrypt.compare("5151", await agentPinHash())).toBe(true);
   });
 });

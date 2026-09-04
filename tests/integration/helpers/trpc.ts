@@ -27,6 +27,7 @@ import { insuranceWorkflowsRouter } from "../../../server/routers/insuranceWorkf
 import { agentRouter } from "../../../server/routers/agent";
 import { multiTenantIsolationRouter } from "../../../server/routers/multiTenantIsolation";
 import { pinResetRouter } from "../../../server/routers/pinReset";
+import { encryptedFieldsRouter } from "../../../server/routers/encryptedFieldsCrud";
 import { tenantAdminRouter } from "../../../server/routers/tenantAdmin";
 import { commissionPayoutsRouter } from "../../../server/routers/commissionPayouts";
 import { premiumTopUpRouter } from "../../../server/routers/premiumTopUp";
@@ -55,6 +56,9 @@ export const integrationRouter = router({
   agent: agentRouter,
   multiTenantIsolation: multiTenantIsolationRouter,
   pinReset: pinResetRouter,
+  // DD-TSSEC (A7-6): mounted under the production path so the owner-or-admin
+  // contract is exercised through the real middleware chain.
+  encryptedFields: encryptedFieldsRouter,
   tenantAdmin: tenantAdminRouter,
   // F-02: additional money paths under the real middleware chain.
   commissionPayouts: commissionPayoutsRouter,
