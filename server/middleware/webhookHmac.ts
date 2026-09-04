@@ -11,7 +11,7 @@
  */
 import { createHmac, timingSafeEqual } from "crypto";
 
-import type { Request, Response, NextFunction } from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 
 import { logger } from '../_core/logger';
 
@@ -24,7 +24,8 @@ import { logger } from '../_core/logger';
  */
 export function verifyWebhookHmac(
   secretEnvKey: string,
-  headerName = "x-webhook-signature"
+  headerName = "x-webhook-signature",
+  options: { failClosed?: boolean } = {}
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     const secret = process.env[secretEnvKey];
@@ -32,9 +33,12 @@ export function verifyWebhookHmac(
       // FAIL-CLOSED (THREAT_MODEL.md §7.4): in production an unconfigured
       // signing secret is a deployment error, not a reason to accept
       // unverified webhooks. Answer 503 loudly so monitoring fires.
-      if (process.env.NODE_ENV === "production") {
+      // options.failClosed (DD-TSSEC A7-10) applies the same rule in EVERY
+      // environment — used for providers with no native signing scheme where
+      // a dev bypass would only ever admit unverifiable deliveries.
+      if (process.env.NODE_ENV === "production" || options.failClosed) {
         logger.error(
-          `[WebhookHmac] ${secretEnvKey} NOT SET in production — rejecting webhook (fail-closed). Set the secret or remove the route.`
+          `[WebhookHmac] ${secretEnvKey} NOT SET${process.env.NODE_ENV === "production" ? " in production" : " (fail-closed route)"} — rejecting webhook. Set the secret or remove the route.`
         );
         res.status(503).json({
           error: `Webhook signing secret ${secretEnvKey} is not configured (PRECONDITION_FAILED)`,
@@ -91,21 +95,35 @@ export function verifyWebhookHmac(
 
 /**
  * Express middleware that captures the raw body buffer before JSON parsing.
- * Mount this BEFORE express.json() on webhook routes.
+ * Mount this BEFORE any JSON parser on webhook routes.
+ *
+ * DD-TSSEC (A7-9): the previous implementation attached data/end listeners
+ * to the request stream. Any express.json() mounted upstream left the stream
+ * already-ended (the listeners never fired and the request hung), and any
+ * express.json() mounted downstream then failed with "stream is not
+ * readable" — so HMAC verification could never execute either way. This
+ * implementation uses express.raw(): the body is buffered exactly once,
+ * exposed as req.rawBody for signature verification, and req._body is set so
+ * downstream JSON parsers skip the request instead of erroring.
  *
  * Example:
- *   app.use("/webhooks", captureRawBody, express.json());
+ *   app.post("/webhooks/x", captureRawBody, verifyWebhookHmac("X_SECRET"), handler);
  */
+const rawBodyParser = express.raw({ type: "*/*", limit: "1mb" });
+
 export function captureRawBody(
   req: Request,
-  _res: Response,
+  res: Response,
   next: NextFunction
 ) {
-  const chunks: Buffer[] = [];
-  req.on("data", (chunk: Buffer) => chunks.push(chunk));
-  req.on("end", () => {
-    (req as any).rawBody = Buffer.concat(chunks);
+  rawBodyParser(req, res, (err?: unknown) => {
+    if (err) {
+      next(err);
+      return;
+    }
+    (req as { rawBody?: Buffer }).rawBody = Buffer.isBuffer(req.body)
+      ? req.body
+      : Buffer.alloc(0);
     next();
   });
-  req.on("error", next);
 }

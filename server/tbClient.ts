@@ -15,14 +15,22 @@ import { logger } from './_core/logger';
 /**
  * TigerBeetle Sidecar Client
  *
- * The insurance service runs a local Go sidecar (tb-sidecar) on port 7070 that:
- *   1. Commits double-entry transfers to PostgreSQL immediately (offline-safe)
- *   2. Syncs those transfers to the TigerBeetle Zig cluster when online
- *   3. Writes metadata to PostgreSQL as a secondary record
+ * The insurance service runs a Go sidecar (tb-sidecar) that is a transparent
+ * proxy to the configured TigerBeetle upstream (TIGERBEETLE_ADDRESS). The
+ * sidecar never fabricates ledger responses: if the upstream ledger is
+ * unreachable it returns 5xx and this client throws.
  *
  * This module provides a thin HTTP client for the sidecar.
- * All calls are wrapped with a 2-second timeout and fall back gracefully
- * when the sidecar is not running (e.g., in CI or cloud deployments).
+ *
+ * FAIL-CLOSED POSTURE (DD-TB remediation):
+ * Ledger WRITES (tbCreateTransfer, tbEnsureAgentAccount) THROW when the
+ * sidecar is unreachable, times out, or rejects the request. There is no
+ * silent "fall back to direct PG" path — a money mutation whose ledger leg
+ * cannot be committed must surface as an error to the caller, never as a
+ * quietly degraded success. Ledger READS (tbGetAgentBalance, tbGetSyncStatus,
+ * tbIsHealthy) still return null/false on failure; read-path callers that
+ * fall back to PostgreSQL must label that source honestly (e.g.
+ * `source: "postgresql"`).
  */
 
 const TB_SIDECAR_URL = ENV.tbSidecarUrl;
@@ -62,54 +70,83 @@ export interface TBSyncStatus {
 }
 
 /**
+ * Error thrown when a ledger WRITE cannot be committed because the
+ * TigerBeetle sidecar is unreachable, timed out, or rejected the request.
+ * Callers must NOT treat this as "write happened in PG only" — the ledger
+ * leg did not happen.
+ */
+export class TBLedgerUnavailableError extends Error {
+  readonly cause?: unknown;
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "TBLedgerUnavailableError";
+    this.cause = cause;
+  }
+}
+
+/**
  * Submit a double-entry transfer to the local TB sidecar.
- * Returns null if the sidecar is unreachable (caller should fall back to direct PG write).
+ *
+ * FAIL-CLOSED: throws TBLedgerUnavailableError if the sidecar is
+ * unreachable, times out, or rejects the transfer. Funds-path callers must
+ * let this error propagate (tRPC will surface it as a 5xx) — a transfer
+ * whose ledger leg failed must never be reported as committed.
  */
 export async function tbCreateTransfer(
   req: TBTransferRequest
-): Promise<TBTransferResponse | null> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TB_TIMEOUT_MS);
+): Promise<TBTransferResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TB_TIMEOUT_MS);
 
-    const res = await fetch(`${TB_SIDECAR_URL}/transfers`, {
+  let res: Response;
+  try {
+    res = await fetch(`${TB_SIDECAR_URL}/transfers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
       signal: controller.signal,
     });
-
-    clearTimeout(timer);
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      logger.warn("[tbClient] transfer rejected:: " + body);
-      return null;
-    }
-
-    return (await res.json()) as TBTransferResponse;
   } catch (err: unknown) {
-    if (err instanceof Error && err.name === "AbortError") {
-      logger.warn("[tbClient] sidecar timeout — falling back to direct PG");
-    } else {
-      logger.warn("[tbClient] sidecar unreachable — falling back to direct PG:: " + err);
-    }
-    return null;
+    clearTimeout(timer);
+    const reason = err instanceof Error && err.name === "AbortError"
+      ? `timed out after ${TB_TIMEOUT_MS}ms`
+      : `unreachable (${String(err)})`;
+    logger.error(`[tbClient] FAIL-CLOSED: ledger transfer aborted — sidecar ${reason}; ref=${req.ref ?? "n/a"}`);
+    throw new TBLedgerUnavailableError(
+      `TigerBeetle ledger unavailable: sidecar ${reason}. Transfer NOT committed (ref=${req.ref ?? "n/a"}).`,
+      err
+    );
   }
+  clearTimeout(timer);
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    logger.error(`[tbClient] FAIL-CLOSED: ledger transfer rejected HTTP ${res.status}; ref=${req.ref ?? "n/a"} body=${body.slice(0, 300)}`);
+    throw new TBLedgerUnavailableError(
+      `TigerBeetle ledger rejected transfer (HTTP ${res.status}). Transfer NOT committed (ref=${req.ref ?? "n/a"}).`
+    );
+  }
+
+  return (await res.json()) as TBTransferResponse;
 }
 
 /**
  * Ensure an agent float account exists in the sidecar ledger.
  * Called once on agent login / first transaction.
+ *
+ * FAIL-CLOSED: throws TBLedgerUnavailableError when the sidecar is
+ * unreachable or times out. Returns false only when the sidecar answered
+ * with a non-OK status (an honest ledger answer the caller may inspect).
  */
 export async function tbEnsureAgentAccount(
   agentId: string
 ): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TB_TIMEOUT_MS);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TB_TIMEOUT_MS);
 
-    const res = await fetch(`${TB_SIDECAR_URL}/accounts`, {
+  let res: Response;
+  try {
+    res = await fetch(`${TB_SIDECAR_URL}/accounts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -120,12 +157,19 @@ export async function tbEnsureAgentAccount(
       }),
       signal: controller.signal,
     });
-
+  } catch (err: unknown) {
     clearTimeout(timer);
-    return res.ok;
-  } catch {
-    return false;
+    const reason = err instanceof Error && err.name === "AbortError"
+      ? `timed out after ${TB_TIMEOUT_MS}ms`
+      : `unreachable (${String(err)})`;
+    logger.error(`[tbClient] FAIL-CLOSED: ensure-agent-account aborted — sidecar ${reason}; agent=${agentId}`);
+    throw new TBLedgerUnavailableError(
+      `TigerBeetle ledger unavailable: sidecar ${reason}. Account provisioning NOT confirmed (agent=${agentId}).`,
+      err
+    );
   }
+  clearTimeout(timer);
+  return res.ok;
 }
 
 /**

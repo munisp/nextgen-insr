@@ -61,10 +61,17 @@ export default defineConfig({
       // token blacklists are FAIL-CLOSED, so the suite needs a REAL Redis:
       // CI provides the redis:7 service via REDIS_URL in the workflow env;
       // locally globalSetup spawns an in-process mini-Redis fallback.
+      // NOTE: TB_SIDECAR_URL is deliberately NOT set here either. Ledger
+      // writes (tbCreateTransfer / tbEnsureAgentAccount) are FAIL-CLOSED
+      // since dd-tb, so the suite needs a REAL ledger endpoint: pointing at
+      // a dead port made 27 money-path tests throw during seeding. Unless
+      // TB_SIDECAR_URL is provided (a real tb-sidecar + TigerBeetle stack),
+      // globalSetup spawns the protocol-faithful in-process mini ledger
+      // (tests/integration/setup/miniTigerBeetle.ts) and exports its URL
+      // before workers fork — an env entry here would OVERRIDE that.
       KAFKA_BROKERS: "127.0.0.1:9",
       FLUVIO_HTTP_URL: "http://127.0.0.1:9",
       PLATFORM_BASE_URL: "http://127.0.0.1:9",
-      TB_SIDECAR_URL: "http://127.0.0.1:9",
       RUST_BRIDGE_URL: "http://127.0.0.1:9",
       GO_LEDGER_URL: "http://127.0.0.1:9",
       PYTHON_ML_URL: "http://127.0.0.1:9",

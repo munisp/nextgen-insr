@@ -63,6 +63,7 @@ import {
 import logger from "../_core/logger";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
+import { getServiceToken } from "../lib/envValidation";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysAgo(n: number): Date {
@@ -88,12 +89,15 @@ async function fetchPythonAnalytics(
 ) {
   const url =
     (process.env.PYTHON_ANALYTICS_URL ?? "http://localhost:8157") + path;
+  // DD-TSSEC: env-gated token — throws (fail-loud) when unset in production
+  // instead of sending the publicly-known "dev-token" default.
+  const analyticsToken = getServiceToken("PYTHON_ANALYTICS_TOKEN");
   try {
     const res = await fetch(url, {
       method: body ? "POST" : "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.PYTHON_ANALYTICS_TOKEN ?? "dev-token"}`,
+        Authorization: `Bearer ${analyticsToken}`,
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(5000),

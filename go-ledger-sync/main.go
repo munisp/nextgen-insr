@@ -1,37 +1,46 @@
 // pos-ledger-sync — Go sidecar for 54Link POS Shell
 //
 // Provides:
-// 1. TigerBeetle ledger sync (double-entry accounting)
+// 1. Durable double-entry ledger persisted to PostgreSQL
 // 2. Health aggregator (checks all sidecars + main app)
-// 3. mTLS proxy for inter-service communication
-// 4. Transaction lifecycle management
-// 5. Settlement batch processor
-// 6. Float balance tracker
-// 7. Reconciliation engine
+// 3. Transaction lifecycle tracking (in-memory, ephemeral orchestration state)
+// 4. Settlement batch creation (status pending_settlement — batches are only
+//    marked "settled" after an external settlement rail confirms; this
+//    service performs no rail calls and never claims a settlement that did
+//    not happen)
+// 5. Float balance tracking (derived from the persisted ledger)
+// 6. Reconciliation (account_balances vs. recomputation from ledger_entries)
+//
+// DURABILITY POSTURE (DD-TB remediation):
+// Every money record is written to PostgreSQL inside a transaction before a
+// "committed" response is returned. If the database is not connected, all
+// money-path endpoints fail LOUD with 503 — nothing is reported committed
+// from volatile memory. Only stats counters and lifecycle tracking remain
+// in-memory (ephemeral, non-money state).
 //
 // Listens on port 9200 (configurable via GO_LEDGER_PORT).
 
 package main
 
 import (
+	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
-	"context"
 	_ "github.com/lib/pq"
-	"os/signal"
-	"syscall"
 )
 
 // ── Data Structures ──────────────────────────────────────────────────────────
@@ -61,13 +70,13 @@ type AccountBalance struct {
 }
 
 type SettlementBatch struct {
-	ID            string        `json:"id"`
-	Status        string        `json:"status"`
-	TotalAmount   int64         `json:"total_amount"`
-	TransferCount int           `json:"transfer_count"`
-	Transfers     []LedgerEntry `json:"transfers"`
-	CreatedAt     int64         `json:"created_at"`
-	SettledAt     int64         `json:"settled_at,omitempty"`
+	ID            string   `json:"id"`
+	Status        string   `json:"status"` // "pending_settlement" until a rail confirms
+	TotalAmount   int64    `json:"total_amount"`
+	TransferCount int      `json:"transfer_count"`
+	TransferIDs   []string `json:"transfer_ids"`
+	CreatedAt     int64    `json:"created_at"`
+	SettledAt     int64    `json:"settled_at,omitempty"`
 }
 
 type HealthCheck struct {
@@ -119,13 +128,11 @@ type StatsResponse struct {
 }
 
 // ── Application State ────────────────────────────────────────────────────────
+// Only ephemeral, non-money state lives here: lifecycle tracking and
+// operational counters. Money records live exclusively in PostgreSQL.
 
 type AppState struct {
 	mu               sync.RWMutex
-	ledger           []LedgerEntry
-	accounts         map[string]*AccountBalance
-	settlements      []SettlementBatch
-	reconciliations  []ReconciliationResult
 	lifecycles       map[string]*TransactionLifecycle
 	transferCount    atomic.Int64
 	reconcileCount   atomic.Int64
@@ -136,16 +143,124 @@ type AppState struct {
 
 func NewAppState() *AppState {
 	return &AppState{
-		ledger:          make([]LedgerEntry, 0, 10000),
-		accounts:        make(map[string]*AccountBalance),
-		settlements:     make([]SettlementBatch, 0),
-		reconciliations: make([]ReconciliationResult, 0),
-		lifecycles:      make(map[string]*TransactionLifecycle),
-		startTime:       time.Now(),
+		lifecycles: make(map[string]*TransactionLifecycle),
+		startTime:  time.Now(),
 	}
 }
 
 var state *AppState
+
+// ── Persistence ──────────────────────────────────────────────────────────────
+
+var db *sql.DB
+
+// dbRequired fails loud when persistence is unavailable. Returns false after
+// writing a 503 — the handler must return immediately.
+func dbRequired(w http.ResponseWriter) bool {
+	if db == nil {
+		jsonError(w, "ledger persistence unavailable (PostgreSQL not connected) — money operation REFUSED, nothing was recorded", http.StatusServiceUnavailable)
+		return false
+	}
+	return true
+}
+
+// newTxnID generates a collision-resistant transaction ID from crypto/rand.
+func newTxnID(prefix string) string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand failure is fatal for ID generation — do not fall back
+		// to clock-derived IDs.
+		panic(fmt.Sprintf("crypto/rand unavailable: %v", err))
+	}
+	return fmt.Sprintf("%s_%s", prefix, hex.EncodeToString(b[:]))
+}
+
+// applyEntryTx inserts a ledger entry and updates both account balances
+// inside tx. Idempotent on entry ID: returns false when the ID already
+// exists (no state mutated).
+func applyEntryTx(tx *sql.Tx, e *LedgerEntry) (bool, error) {
+	meta, err := json.Marshal(e.Metadata)
+	if err != nil {
+		return false, fmt.Errorf("marshal metadata: %w", err)
+	}
+	res, err := tx.Exec(`INSERT INTO ledger_entries
+		(id, debit_account_id, credit_account_id, amount, currency, ledger_code, transfer_code, pending, ts, metadata)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		ON CONFLICT (id) DO NOTHING`,
+		e.ID, e.DebitAccountID, e.CreditAccountID, e.Amount, e.Currency,
+		e.LedgerCode, e.TransferCode, e.Pending, e.Timestamp, string(meta))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n == 0 {
+		return false, nil // duplicate ID — idempotent no-op
+	}
+	if err := upsertBalanceTx(tx, e.DebitAccountID, e.Currency, -e.Amount, e.Pending); err != nil {
+		return false, err
+	}
+	if err := upsertBalanceTx(tx, e.CreditAccountID, e.Currency, e.Amount, e.Pending); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// upsertBalanceTx applies a signed amount to an account balance inside tx.
+func upsertBalanceTx(tx *sql.Tx, accountID, currency string, amount int64, pending bool) error {
+	var d, c int64
+	if amount > 0 {
+		c = amount
+	} else {
+		d = -amount
+	}
+	if pending {
+		_, err := tx.Exec(`INSERT INTO account_balances (account_id, currency, debits_pending, credits_pending, updated_at)
+			VALUES ($1,$2,$3,$4,NOW())
+			ON CONFLICT (account_id, currency) DO UPDATE SET
+			  debits_pending  = account_balances.debits_pending  + EXCLUDED.debits_pending,
+			  credits_pending = account_balances.credits_pending + EXCLUDED.credits_pending,
+			  updated_at = NOW()`, accountID, currency, d, c)
+		return err
+	}
+	_, err := tx.Exec(`INSERT INTO account_balances (account_id, currency, debits_posted, credits_posted, updated_at)
+		VALUES ($1,$2,$3,$4,NOW())
+		ON CONFLICT (account_id, currency) DO UPDATE SET
+		  debits_posted  = account_balances.debits_posted  + EXCLUDED.debits_posted,
+		  credits_posted = account_balances.credits_posted + EXCLUDED.credits_posted,
+		  updated_at = NOW()`, accountID, currency, d, c)
+	return err
+}
+
+func validateEntry(e *LedgerEntry) error {
+	if e.DebitAccountID == "" || e.CreditAccountID == "" {
+		return fmt.Errorf("debit_account_id and credit_account_id are required")
+	}
+	if e.DebitAccountID == e.CreditAccountID {
+		return fmt.Errorf("debit and credit accounts must differ")
+	}
+	if e.Amount <= 0 {
+		return fmt.Errorf("amount must be positive")
+	}
+	return nil
+}
+
+func normalizeEntry(e *LedgerEntry) {
+	if e.ID == "" {
+		e.ID = newTxnID("txn")
+	}
+	if e.Timestamp == 0 {
+		e.Timestamp = time.Now().UnixMilli()
+	}
+	if e.Currency == "" {
+		e.Currency = "NGN"
+	}
+	if e.Metadata == nil {
+		e.Metadata = map[string]interface{}{}
+	}
+}
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -154,34 +269,51 @@ func transferHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !dbRequired(w) {
+		return
+	}
 	var entry LedgerEntry
 	if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
 		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	if entry.ID == "" {
-		entry.ID = fmt.Sprintf("txn_%d_%d", time.Now().UnixMilli(), rand.Intn(99999))
-	}
-	if entry.Timestamp == 0 {
-		entry.Timestamp = time.Now().UnixMilli()
-	}
-	if entry.Currency == "" {
-		entry.Currency = "NGN"
+	normalizeEntry(&entry)
+	if err := validateEntry(&entry); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
-	state.mu.Lock()
-	state.ledger = append(state.ledger, entry)
-	// Update debit account
-	updateAccount(entry.DebitAccountID, entry.Currency, -entry.Amount, entry.Pending)
-	// Update credit account
-	updateAccount(entry.CreditAccountID, entry.Currency, entry.Amount, entry.Pending)
-	state.mu.Unlock()
+	tx, err := db.BeginTx(r.Context(), nil)
+	if err != nil {
+		jsonError(w, "failed to begin ledger transaction: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	inserted, err := applyEntryTx(tx, &entry)
+	if err != nil {
+		_ = tx.Rollback()
+		jsonError(w, "ledger write FAILED — nothing committed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		jsonError(w, "ledger commit FAILED — nothing committed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if !inserted {
+		jsonResponse(w, map[string]interface{}{
+			"status": "duplicate",
+			"id":     entry.ID,
+			"amount": entry.Amount,
+			"detail": "an entry with this ID is already committed; no state changed",
+		})
+		return
+	}
 
 	state.transferCount.Add(1)
 	state.totalVolume.Add(entry.Amount)
 
 	jsonResponse(w, map[string]interface{}{
-		"status": "committed",
+		"status": "committed", // durable: row + balance updates committed to PostgreSQL
 		"id":     entry.ID,
 		"amount": entry.Amount,
 	})
@@ -192,47 +324,80 @@ func batchTransferHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !dbRequired(w) {
+		return
+	}
 	var entries []LedgerEntry
 	if err := json.NewDecoder(r.Body).Decode(&entries); err != nil {
 		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-
-	state.mu.Lock()
+	if len(entries) == 0 {
+		jsonError(w, "empty batch", http.StatusBadRequest)
+		return
+	}
 	for i := range entries {
-		if entries[i].ID == "" {
-			entries[i].ID = fmt.Sprintf("txn_%d_%d", time.Now().UnixMilli(), rand.Intn(99999))
+		normalizeEntry(&entries[i])
+		if err := validateEntry(&entries[i]); err != nil {
+			jsonError(w, fmt.Sprintf("entry %d: %v", i, err), http.StatusBadRequest)
+			return
 		}
-		if entries[i].Timestamp == 0 {
-			entries[i].Timestamp = time.Now().UnixMilli()
+	}
+
+	tx, err := db.BeginTx(r.Context(), nil)
+	if err != nil {
+		jsonError(w, "failed to begin ledger transaction: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	inserted := 0
+	duplicates := 0
+	for i := range entries {
+		ok, err := applyEntryTx(tx, &entries[i])
+		if err != nil {
+			_ = tx.Rollback()
+			jsonError(w, fmt.Sprintf("batch ledger write FAILED at entry %d — entire batch rolled back, nothing committed: %v", i, err), http.StatusInternalServerError)
+			return
 		}
-		if entries[i].Currency == "" {
-			entries[i].Currency = "NGN"
+		if ok {
+			inserted++
+		} else {
+			duplicates++
 		}
-		state.ledger = append(state.ledger, entries[i])
-		updateAccount(entries[i].DebitAccountID, entries[i].Currency, -entries[i].Amount, entries[i].Pending)
-		updateAccount(entries[i].CreditAccountID, entries[i].Currency, entries[i].Amount, entries[i].Pending)
-		state.transferCount.Add(1)
+	}
+	if err := tx.Commit(); err != nil {
+		jsonError(w, "batch ledger commit FAILED — nothing committed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	state.transferCount.Add(int64(inserted))
+	for i := range entries {
 		state.totalVolume.Add(entries[i].Amount)
 	}
-	state.mu.Unlock()
 
 	jsonResponse(w, map[string]interface{}{
-		"status": "batch_committed",
-		"count":  len(entries),
+		"status":     "batch_committed", // durable: all rows committed to PostgreSQL atomically
+		"count":      len(entries),
+		"inserted":   inserted,
+		"duplicates": duplicates,
 	})
 }
 
 func balanceHandler(w http.ResponseWriter, r *http.Request) {
+	if !dbRequired(w) {
+		return
+	}
 	accountID := r.URL.Query().Get("account_id")
 	if accountID == "" {
 		jsonError(w, "account_id required", http.StatusBadRequest)
 		return
 	}
-	state.mu.RLock()
-	acc, exists := state.accounts[accountID]
-	state.mu.RUnlock()
-	if !exists {
+	row := db.QueryRowContext(r.Context(), `SELECT account_id, currency, debits_posted, credits_posted, debits_pending, credits_pending,
+		EXTRACT(EPOCH FROM updated_at)*1000
+		FROM account_balances WHERE account_id = $1 ORDER BY updated_at DESC LIMIT 1`, accountID)
+	var acc AccountBalance
+	var lastUpdated float64
+	err := row.Scan(&acc.AccountID, &acc.Currency, &acc.DebitsPosted, &acc.CreditsPosted, &acc.DebitsPending, &acc.CreditsPending, &lastUpdated)
+	if err == sql.ErrNoRows {
 		jsonResponse(w, map[string]interface{}{
 			"account_id": accountID,
 			"balance":    0,
@@ -240,90 +405,205 @@ func balanceHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if err != nil {
+		jsonError(w, "balance query failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	acc.Balance = acc.CreditsPosted - acc.DebitsPosted
+	acc.LastUpdated = int64(lastUpdated)
 	jsonResponse(w, acc)
 }
 
 func allBalancesHandler(w http.ResponseWriter, r *http.Request) {
-	state.mu.RLock()
-	balances := make([]*AccountBalance, 0, len(state.accounts))
-	for _, acc := range state.accounts {
-		balances = append(balances, acc)
+	if !dbRequired(w) {
+		return
 	}
-	state.mu.RUnlock()
+	rows, err := db.QueryContext(r.Context(), `SELECT account_id, currency, debits_posted, credits_posted, debits_pending, credits_pending,
+		EXTRACT(EPOCH FROM updated_at)*1000 FROM account_balances ORDER BY account_id`)
+	if err != nil {
+		jsonError(w, "balances query failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	balances := make([]*AccountBalance, 0)
+	for rows.Next() {
+		var acc AccountBalance
+		var lastUpdated float64
+		if err := rows.Scan(&acc.AccountID, &acc.Currency, &acc.DebitsPosted, &acc.CreditsPosted, &acc.DebitsPending, &acc.CreditsPending, &lastUpdated); err != nil {
+			jsonError(w, "balances scan failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		acc.Balance = acc.CreditsPosted - acc.DebitsPosted
+		acc.LastUpdated = int64(lastUpdated)
+		balances = append(balances, &acc)
+	}
 	jsonResponse(w, map[string]interface{}{
 		"accounts": balances,
 		"count":    len(balances),
 	})
 }
 
+// settlementHandler creates a settlement batch over pending entries.
+// HONESTY: no settlement rail is called here, so the batch is created with
+// status "pending_settlement" and entries REMAIN pending. A batch may only
+// transition to "settled" via an external rail confirmation (not implemented
+// in this service). This endpoint never reports a settlement that did not
+// happen.
 func settlementHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	state.mu.Lock()
-	pending := make([]LedgerEntry, 0)
-	for _, e := range state.ledger {
-		if e.Pending {
-			pending = append(pending, e)
-		}
+	if !dbRequired(w) {
+		return
 	}
+
+	rows, err := db.QueryContext(r.Context(), `SELECT id, amount FROM ledger_entries WHERE pending = TRUE ORDER BY ts`)
+	if err != nil {
+		jsonError(w, "pending query failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	ids := make([]string, 0)
 	var totalAmt int64
-	for _, e := range pending {
-		totalAmt += e.Amount
-	}
-	batch := SettlementBatch{
-		ID:            fmt.Sprintf("stl_%d", time.Now().UnixMilli()),
-		Status:        "settled",
-		TotalAmount:   totalAmt,
-		TransferCount: len(pending),
-		Transfers:     pending,
-		CreatedAt:     time.Now().UnixMilli(),
-		SettledAt:     time.Now().UnixMilli(),
-	}
-	// Mark pending as settled
-	for i := range state.ledger {
-		if state.ledger[i].Pending {
-			state.ledger[i].Pending = false
+	for rows.Next() {
+		var id string
+		var amt int64
+		if err := rows.Scan(&id, &amt); err != nil {
+			_ = rows.Close()
+			jsonError(w, "pending scan failed: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
+		ids = append(ids, id)
+		totalAmt += amt
 	}
-	state.settlements = append(state.settlements, batch)
-	state.mu.Unlock()
+	_ = rows.Close()
+
+	batch := SettlementBatch{
+		ID:            newTxnID("stl"),
+		Status:        "pending_settlement", // NOT settled — no rail call was made
+		TotalAmount:   totalAmt,
+		TransferCount: len(ids),
+		TransferIDs:   ids,
+		CreatedAt:     time.Now().UnixMilli(),
+	}
+
+	idsJSON, _ := json.Marshal(ids)
+	_, err = db.ExecContext(r.Context(), `INSERT INTO settlement_batches (id, status, total_amount, transfer_count, transfer_ids)
+		VALUES ($1,$2,$3,$4,$5)`, batch.ID, batch.Status, batch.TotalAmount, batch.TransferCount, string(idsJSON))
+	if err != nil {
+		jsonError(w, "settlement batch insert FAILED — nothing recorded: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	jsonResponse(w, batch)
 }
 
+// reconcileHandler recomputes posted balances from ledger_entries and
+// compares them against account_balances. The result is persisted.
 func reconcileHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	state.mu.RLock()
-	var totalDebits, totalCredits int64
-	for _, e := range state.ledger {
-		totalDebits += e.Amount
-		totalCredits += e.Amount
+	if !dbRequired(w) {
+		return
 	}
-	matched := len(state.ledger)
-	state.mu.RUnlock()
+	ctx := r.Context()
 
-	state.reconcileCount.Add(1)
+	recomputed := make(map[string][2]int64) // account|currency -> [debits, credits]
+	rows, err := db.QueryContext(ctx, `SELECT debit_account_id, credit_account_id, amount, currency FROM ledger_entries WHERE pending = FALSE`)
+	if err != nil {
+		jsonError(w, "reconcile query failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for rows.Next() {
+		var debit, credit, currency string
+		var amt int64
+		if err := rows.Scan(&debit, &credit, &amt, &currency); err != nil {
+			_ = rows.Close()
+			jsonError(w, "reconcile scan failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		dk := debit + "|" + currency
+		ck := credit + "|" + currency
+		d := recomputed[dk]
+		d[0] += amt
+		recomputed[dk] = d
+		c := recomputed[ck]
+		c[1] += amt
+		recomputed[ck] = c
+	}
+	_ = rows.Close()
+
+	stored := make(map[string][2]int64)
+	srows, err := db.QueryContext(ctx, `SELECT account_id, currency, debits_posted, credits_posted FROM account_balances`)
+	if err != nil {
+		jsonError(w, "reconcile balances query failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for srows.Next() {
+		var id, currency string
+		var d, c int64
+		if err := srows.Scan(&id, &currency, &d, &c); err != nil {
+			_ = srows.Close()
+			jsonError(w, "reconcile balances scan failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		stored[id+"|"+currency] = [2]int64{d, c}
+	}
+	_ = srows.Close()
+
+	matched := 0
+	unmatched := 0
+	var discrepancy int64
+	seen := make(map[string]bool)
+	for k, want := range recomputed {
+		seen[k] = true
+		if got, ok := stored[k]; ok && got == want {
+			matched++
+		} else {
+			unmatched++
+			discrepancy += abs64(want[0] - stored[k][0]) + abs64(want[1] - stored[k][1])
+		}
+	}
+	for k := range stored {
+		if !seen[k] {
+			unmatched++
+			discrepancy += abs64(stored[k][0]) + abs64(stored[k][1])
+		}
+	}
+
+	status := "balanced"
+	if unmatched > 0 {
+		status = "discrepancy"
+	}
 	result := ReconciliationResult{
-		ID:             fmt.Sprintf("rec_%d", time.Now().UnixMilli()),
-		Status:         "balanced",
+		ID:             newTxnID("rec"),
+		Status:         status,
 		MatchedCount:   matched,
-		UnmatchedCount: 0,
-		DiscrepancyAmt: 0,
+		UnmatchedCount: unmatched,
+		DiscrepancyAmt: discrepancy,
 		Timestamp:      time.Now().UnixMilli(),
 	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO reconciliations (id, status, matched_count, unmatched_count, discrepancy_amount, ts)
+		VALUES ($1,$2,$3,$4,$5,$6)`, result.ID, result.Status, result.MatchedCount, result.UnmatchedCount, result.DiscrepancyAmt, result.Timestamp); err != nil {
+		jsonError(w, "reconciliation insert FAILED: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-	state.mu.Lock()
-	state.reconciliations = append(state.reconciliations, result)
-	state.mu.Unlock()
-
+	state.reconcileCount.Add(1)
 	jsonResponse(w, result)
 }
 
+func abs64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// lifecycleHandler tracks transaction state transitions. This is ephemeral
+// orchestration state (not a money record) and is intentionally in-memory.
 func lifecycleHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -444,79 +724,66 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, map[string]interface{}{
 		"status": "healthy", "database": fmt.Sprintf("%v", db != nil),
 		"service":        "pos-ledger-sync",
-		"version":        "1.0.0",
+		"version":        "1.1.0",
 		"uptime_seconds": int64(time.Since(state.startTime).Seconds()),
 		"transfers":      state.transferCount.Load(),
-		"accounts":       len(state.accounts),
 		"timestamp":      time.Now().UnixMilli(),
 	})
 }
 
 func statsHandler(w http.ResponseWriter, r *http.Request) {
-	state.mu.RLock()
-	pendingCount := 0
-	for _, e := range state.ledger {
-		if e.Pending {
-			pendingCount++
-		}
+	accounts := 0
+	batches := 0
+	pending := 0
+	if db != nil {
+		_ = db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM account_balances`).Scan(&accounts)
+		_ = db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM settlement_batches`).Scan(&batches)
+		_ = db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM ledger_entries WHERE pending = TRUE`).Scan(&pending)
 	}
-	state.mu.RUnlock()
-
 	jsonResponse(w, StatsResponse{
 		TransfersProcessed: state.transferCount.Load(),
-		AccountsTracked:    len(state.accounts),
-		SettlementBatches:  len(state.settlements),
+		AccountsTracked:    accounts,
+		SettlementBatches:  batches,
 		ReconciliationsRun: state.reconcileCount.Load(),
 		HealthChecksRun:    state.healthCheckCount.Load(),
 		TotalLedgerVolume:  state.totalVolume.Load(),
-		PendingTransfers:   pendingCount,
+		PendingTransfers:   pending,
 		UptimeSeconds:      int64(time.Since(state.startTime).Seconds()),
 	})
 }
 
 func ledgerQueryHandler(w http.ResponseWriter, r *http.Request) {
-	state.mu.RLock()
-	limit := 100
-	start := 0
-	if len(state.ledger) > limit {
-		start = len(state.ledger) - limit
+	if !dbRequired(w) {
+		return
 	}
-	entries := state.ledger[start:]
-	state.mu.RUnlock()
+	rows, err := db.QueryContext(r.Context(), `SELECT id, debit_account_id, credit_account_id, amount, currency, ledger_code, transfer_code, pending, ts, metadata
+		FROM ledger_entries ORDER BY ts DESC LIMIT 100`)
+	if err != nil {
+		jsonError(w, "ledger query failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	entries := make([]LedgerEntry, 0)
+	for rows.Next() {
+		var e LedgerEntry
+		var meta string
+		if err := rows.Scan(&e.ID, &e.DebitAccountID, &e.CreditAccountID, &e.Amount, &e.Currency, &e.LedgerCode, &e.TransferCode, &e.Pending, &e.Timestamp, &meta); err != nil {
+			jsonError(w, "ledger scan failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.Unmarshal([]byte(meta), &e.Metadata)
+		entries = append(entries, e)
+	}
+	var total int
+	_ = db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM ledger_entries`).Scan(&total)
 	jsonResponse(w, map[string]interface{}{
 		"entries":  entries,
-		"total":    len(state.ledger),
+		"total":    total,
 		"returned": len(entries),
 	})
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-func updateAccount(accountID, currency string, amount int64, pending bool) {
-	acc, exists := state.accounts[accountID]
-	if !exists {
-		acc = &AccountBalance{
-			AccountID: accountID,
-			Currency:  currency,
-		}
-		state.accounts[accountID] = acc
-	}
-	if pending {
-		if amount > 0 {
-			acc.CreditsPending += amount
-		} else {
-			acc.DebitsPending += -amount
-		}
-	} else {
-		if amount > 0 {
-			acc.CreditsPosted += amount
-		} else {
-			acc.DebitsPosted += -amount
-		}
-	}
-	acc.Balance = acc.CreditsPosted - acc.DebitsPosted
-	acc.LastUpdated = time.Now().UnixMilli()
-}
 
 func jsonResponse(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -531,8 +798,6 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-var db *sql.DB
-
 func initDB() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -541,30 +806,74 @@ func initDB() {
 	var err error
 	db, err = sql.Open("postgres", dsn)
 	if err != nil {
-		log.Printf("WARN: database connection failed: %v (running in degraded mode)", err)
+		log.Printf("ERROR: database connection failed: %v — money endpoints will return 503", err)
+		db = nil
 		return
 	}
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(5)
 	if err = db.Ping(); err != nil {
-		log.Printf("WARN: database ping failed: %v (running in degraded mode)", err)
+		log.Printf("ERROR: database ping failed: %v — money endpoints will return 503", err)
 		db = nil
 		return
 	}
 	log.Printf("Connected to PostgreSQL for go_ledger_sync")
 
-	// Create table if not exists
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS go_ledger_sync (
-		id SERIAL PRIMARY KEY,
-		data JSONB NOT NULL DEFAULT '{}',
-		status VARCHAR(50) DEFAULT 'active',
-		created_at TIMESTAMPTZ DEFAULT NOW(),
-		updated_at TIMESTAMPTZ DEFAULT NOW(),
-		tenant_id INTEGER DEFAULT 1
-	)`)
-	if err != nil {
-		log.Printf("WARN: table creation failed: %v", err)
+	// Durable ledger schema (additive, idempotent).
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS ledger_entries (
+			id TEXT PRIMARY KEY,
+			debit_account_id TEXT NOT NULL,
+			credit_account_id TEXT NOT NULL,
+			amount BIGINT NOT NULL CHECK (amount > 0),
+			currency TEXT NOT NULL DEFAULT 'NGN',
+			ledger_code INTEGER NOT NULL DEFAULT 0,
+			transfer_code INTEGER NOT NULL DEFAULT 0,
+			pending BOOLEAN NOT NULL DEFAULT FALSE,
+			ts BIGINT NOT NULL,
+			metadata JSONB NOT NULL DEFAULT '{}',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS account_balances (
+			account_id TEXT NOT NULL,
+			currency TEXT NOT NULL,
+			debits_posted BIGINT NOT NULL DEFAULT 0,
+			credits_posted BIGINT NOT NULL DEFAULT 0,
+			debits_pending BIGINT NOT NULL DEFAULT 0,
+			credits_pending BIGINT NOT NULL DEFAULT 0,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			PRIMARY KEY (account_id, currency)
+		)`,
+		`CREATE TABLE IF NOT EXISTS settlement_batches (
+			id TEXT PRIMARY KEY,
+			status TEXT NOT NULL,
+			total_amount BIGINT NOT NULL,
+			transfer_count INTEGER NOT NULL,
+			transfer_ids JSONB NOT NULL DEFAULT '[]',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			settled_at TIMESTAMPTZ
+		)`,
+		`CREATE TABLE IF NOT EXISTS reconciliations (
+			id TEXT PRIMARY KEY,
+			status TEXT NOT NULL,
+			matched_count INTEGER NOT NULL,
+			unmatched_count INTEGER NOT NULL,
+			discrepancy_amount BIGINT NOT NULL,
+			ts BIGINT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ledger_entries_pending ON ledger_entries (pending)`,
+		`CREATE INDEX IF NOT EXISTS idx_ledger_entries_debit ON ledger_entries (debit_account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_ledger_entries_credit ON ledger_entries (credit_account_id)`,
 	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			log.Printf("ERROR: schema statement failed: %v — money endpoints will return 503", err)
+			db = nil
+			return
+		}
+	}
+	log.Printf("Ledger schema ensured (ledger_entries, account_balances, settlement_batches, reconciliations)")
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -652,20 +961,20 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Ledger endpoints
+	// Ledger endpoints (durable, PG-backed; 503 when DB unavailable)
 	mux.HandleFunc("/transfer", transferHandler)
 	mux.HandleFunc("/transfer/batch", batchTransferHandler)
 	mux.HandleFunc("/balance", balanceHandler)
 	mux.HandleFunc("/balances", allBalancesHandler)
 	mux.HandleFunc("/ledger/query", ledgerQueryHandler)
 
-	// Settlement
+	// Settlement (creates pending_settlement batches only — no rail call)
 	mux.HandleFunc("/settlement/create", settlementHandler)
 
-	// Reconciliation
+	// Reconciliation (recomputed from the persisted ledger)
 	mux.HandleFunc("/reconcile", reconcileHandler)
 
-	// Transaction lifecycle
+	// Transaction lifecycle (ephemeral, in-memory)
 	mux.HandleFunc("/lifecycle", lifecycleHandler)
 
 	// Health aggregator (checks all services)

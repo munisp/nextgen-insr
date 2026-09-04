@@ -13,6 +13,7 @@ import { spawn, execFile, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startMiniRedis, type MiniRedis } from "../../e2e/setup/miniRedis";
+import { startMiniTigerBeetle, type MiniTigerBeetle } from "./miniTigerBeetle";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -22,6 +23,7 @@ const PGLITE_URL = `postgresql://postgres:postgres@${PG_HOST}:${PG_PORT}/postgre
 
 let pgliteChild: ChildProcess | null = null;
 let miniRedis: MiniRedis | null = null;
+let miniTB: MiniTigerBeetle | null = null;
 
 function runDrizzleKitPush(databaseUrl: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -92,10 +94,32 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   } else {
     console.log("[integration-setup] using provided REDIS_URL (CI redis service)");
   }
-  const closeMiniRedis = async () => {
+  // ── TigerBeetle ledger (local fallback only) ────────────────────────────
+  // Ledger WRITES (tbCreateTransfer, tbEnsureAgentAccount) are FAIL-CLOSED
+  // since dd-tb: with no reachable sidecar every money path throws
+  // TBLedgerUnavailableError during test seeding. CI does not run a
+  // tb-sidecar+TigerBeetle stack, so unless TB_SIDECAR_URL is provided we
+  // spawn an in-process, protocol-faithful mini ledger (REAL double-entry,
+  // ref idempotency, constraint enforcement — see miniTigerBeetle.ts). The
+  // forks/singleFork pool means this process.env mutation reaches workers;
+  // TB_SIDECAR_URL must therefore stay OUT of the vitest config env block.
+  if (!process.env.TB_SIDECAR_URL) {
+    miniTB = await startMiniTigerBeetle(17071);
+    process.env.TB_SIDECAR_URL = miniTB.url;
+    console.log(
+      `[integration-setup] no TB_SIDECAR_URL provided — mini-TigerBeetle ledger at ${miniTB.url}`
+    );
+  } else {
+    console.log("[integration-setup] using provided TB_SIDECAR_URL (real tb-sidecar + TigerBeetle)");
+  }
+  const closeMiniServers = async () => {
     if (miniRedis) {
       await miniRedis.close();
       miniRedis = null;
+    }
+    if (miniTB) {
+      await miniTB.close();
+      miniTB = null;
     }
   };
 
@@ -105,7 +129,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       `[integration-setup] using provided POSTGRES_URL (${process.env.POSTGRES_URL.replace(/\/\/.*@/, "//***@")})`
     );
     await runDrizzleKitPush(process.env.POSTGRES_URL);
-    return closeMiniRedis;
+    return closeMiniServers;
   }
 
   // Local path: spawn PGlite wire server as a child process.
@@ -128,6 +152,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   return async () => {
     pgliteChild?.kill("SIGTERM");
     pgliteChild = null;
-    await closeMiniRedis();
+    await closeMiniServers();
   };
 }

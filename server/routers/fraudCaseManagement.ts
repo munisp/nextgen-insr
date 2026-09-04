@@ -6,7 +6,6 @@ import { fraudAlerts } from "../../drizzle/schema";
 import { permifyCheck } from "../_core/permify";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-
 // ── Middleware Integration (Sprint 44) ──────────────────────────────
 import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";

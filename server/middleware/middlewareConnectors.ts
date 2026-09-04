@@ -10,6 +10,8 @@
  * - Graceful fallback
  */
 
+import { getApisixAdminKey } from "../lib/envValidation";
+
 // ─── Circuit Breaker ─────────────────────────────────────────────────────────
 interface CircuitState {
   failures: number;
@@ -666,8 +668,9 @@ export class APISIXConnector {
 
   constructor() {
     this.adminUrl = process.env.APISIX_ADMIN_URL ?? "http://localhost:9180";
-    this.apiKey =
-      process.env.APISIX_ADMIN_KEY ?? "edd1c9f034335f136f87ad84b625c8f1";
+    // DD-TSSEC: no fallback to the publicly-known APISIX default admin key —
+    // required from env in production (throws), empty outside it.
+    this.apiKey = getApisixAdminKey();
   }
 
   async createRoute(route: {

@@ -291,6 +291,12 @@ services:
       - insureportal
 
   # ── TigerBeetle Sidecar (Go) ───────────────────────────────────────────────
+  # DD-TB: real transparent proxy (no canned responses). /health probes the
+  # upstream; money paths fail loud (501/502) when no HTTP-speaking TB gateway
+  # is configured. EXTERNAL: provision a TigerBeetle HTTP gateway and set
+  # TB_GATEWAY_URL for live ledger writes; with the default bare
+  # tigerbeetle:3000 (binary VSR) the sidecar health-probes via TCP and
+  # honestly refuses ledger operations.
   insureportal-tb-sidecar:
     build:
       context: ./tb-sidecar
@@ -298,13 +304,23 @@ services:
     container_name: insureportal-tb-sidecar
     restart: unless-stopped
     environment:
+      TIGERBEETLE_ADDRESS: ${TB_GATEWAY_URL:-tigerbeetle:3000}
       TB_ADDRESS: tigerbeetle:3000
+      TB_REQUIRE_UPSTREAM: "false"
       POSTGRES_DSN: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev}@redis:6379
       PORT: "7070"
     depends_on:
-      - tigerbeetle
-      - postgres
+      tigerbeetle:
+        condition: service_started
+      postgres:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:7070/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     ports:
       - "7070:7070"
     networks:
@@ -515,6 +531,9 @@ services:
       KEYCLOAK_REALM: insureportal
       PERMIFY_URL: http://permify:3476
       TIGERBEETLE_URL: http://insureportal-tb-sidecar:7070
+      # DD-TB: server/_core/env.ts reads TB_SIDECAR_URL (tbClient) — point it
+      # at the sidecar. Writes fail closed when the sidecar/ledger is down.
+      TB_SIDECAR_URL: http://insureportal-tb-sidecar:7070
       FLUVIO_URL: fluvio-sc:9003
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-insureportal}
@@ -556,6 +575,8 @@ services:
       TEMPORAL_NAMESPACE: insureportal
       TEMPORAL_TASK_QUEUE: insureportal-journeys
       TIGERBEETLE_URL: http://insureportal-tb-sidecar:7070
+      # DD-TB: temporal-activities.ts uses server/tbClient.ts (TB_SIDECAR_URL).
+      TB_SIDECAR_URL: http://insureportal-tb-sidecar:7070
       FLUVIO_URL: fluvio-sc:9003
       OLLAMA_URL: http://ollama:11434
       FRAUD_GATE_URL: http://insureportal-fraud-gate:8090

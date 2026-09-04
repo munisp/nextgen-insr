@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { validateEnvironment, getJwtSecret } from "../envValidation";
+import {
+  validateEnvironment,
+  getJwtSecret,
+  getFieldEncryptionKey,
+  getServiceToken,
+  getApisixAdminKey,
+} from "../envValidation";
 
 describe("envValidation", () => {
   const originalEnv = { ...process.env };
@@ -81,11 +87,44 @@ describe("envValidation", () => {
       process.env.TERMII_API_KEY = "prod-termii-api-key-value";
       process.env.FLUVIO_API_KEY = "prod-fluvio-api-key-value";
       process.env.MQTT_PASSWORD = "prod-mqtt-password-value";
+      process.env.FIELD_ENCRYPTION_KEY = "prod-field-encryption-key-value";
 
       const result = validateEnvironment();
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
+    });
+
+    it("should fail in production when FIELD_ENCRYPTION_KEY is missing", () => {
+      process.env.NODE_ENV = "production";
+      delete process.env.FIELD_ENCRYPTION_KEY;
+
+      const result = validateEnvironment();
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes("FIELD_ENCRYPTION_KEY"))).toBe(
+        true
+      );
+    });
+
+    it("should fail in production when JWT_SECRET is the repo's own published default", () => {
+      process.env.NODE_ENV = "production";
+      process.env.JWT_SECRET = "default-key-for-dev";
+
+      const result = validateEnvironment();
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes("dev placeholder"))).toBe(true);
+    });
+
+    it("should fail in production when APISIX_ADMIN_KEY is the published APISIX default", () => {
+      process.env.NODE_ENV = "production";
+      process.env.APISIX_ADMIN_KEY = "edd1c9f034335f136f87ad84b625c8f1";
+
+      const result = validateEnvironment();
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes("dev placeholder"))).toBe(true);
     });
   });
 
@@ -113,6 +152,90 @@ describe("envValidation", () => {
       expect(() => getJwtSecret()).toThrow(
         "JWT_SECRET is required in production"
       );
+    });
+
+    it("should throw in production when set to a known public default", () => {
+      process.env.NODE_ENV = "production";
+      process.env.JWT_SECRET = "default-key-for-dev";
+
+      expect(() => getJwtSecret()).toThrow(/publicly-known default/);
+    });
+  });
+
+  describe("getFieldEncryptionKey", () => {
+    it("should return the env var when set", () => {
+      process.env.FIELD_ENCRYPTION_KEY = "field-key-12345678901234567890";
+      expect(getFieldEncryptionKey()).toBe("field-key-12345678901234567890");
+    });
+
+    it("should throw in production when not set (no default key exists)", () => {
+      process.env.NODE_ENV = "production";
+      delete process.env.FIELD_ENCRYPTION_KEY;
+
+      expect(() => getFieldEncryptionKey()).toThrow(
+        "FIELD_ENCRYPTION_KEY is required in production"
+      );
+    });
+
+    it("should generate an ephemeral key outside production", () => {
+      delete process.env.FIELD_ENCRYPTION_KEY;
+      delete process.env.NODE_ENV;
+
+      const key = getFieldEncryptionKey();
+      expect(key).toBeDefined();
+      expect(key.length).toBe(64);
+      expect(getFieldEncryptionKey()).toBe(key);
+    });
+  });
+
+  describe("getServiceToken", () => {
+    it("should return the configured token", () => {
+      process.env.ML_SERVICE_TOKEN = "real-ml-token";
+      expect(getServiceToken("ML_SERVICE_TOKEN")).toBe("real-ml-token");
+    });
+
+    it("should fall back to dev-token outside production", () => {
+      delete process.env.ML_SERVICE_TOKEN;
+      delete process.env.NODE_ENV;
+      expect(getServiceToken("ML_SERVICE_TOKEN")).toBe("dev-token");
+    });
+
+    it("should throw in production when unset instead of sending dev-token", () => {
+      process.env.NODE_ENV = "production";
+      delete process.env.ML_SERVICE_TOKEN;
+
+      expect(() => getServiceToken("ML_SERVICE_TOKEN")).toThrow(
+        "ML_SERVICE_TOKEN is required in production"
+      );
+    });
+  });
+
+  describe("getApisixAdminKey", () => {
+    it("should return the configured key", () => {
+      process.env.APISIX_ADMIN_KEY = "real-apisix-key";
+      expect(getApisixAdminKey()).toBe("real-apisix-key");
+    });
+
+    it("should never fall back to the published APISIX default", () => {
+      delete process.env.APISIX_ADMIN_KEY;
+      delete process.env.NODE_ENV;
+      expect(getApisixAdminKey()).toBe("");
+    });
+
+    it("should throw in production when unset", () => {
+      process.env.NODE_ENV = "production";
+      delete process.env.APISIX_ADMIN_KEY;
+
+      expect(() => getApisixAdminKey()).toThrow(
+        "APISIX_ADMIN_KEY is required in production"
+      );
+    });
+
+    it("should throw in production when set to the published APISIX default", () => {
+      process.env.NODE_ENV = "production";
+      process.env.APISIX_ADMIN_KEY = "edd1c9f034335f136f87ad84b625c8f1";
+
+      expect(() => getApisixAdminKey()).toThrow(/publicly-known APISIX default/);
     });
   });
 });

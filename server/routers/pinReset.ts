@@ -21,7 +21,10 @@ import { logger } from "../_core/logger";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { revokeAllUserTokens } from "../lib/redisClient";
-import { agentSessionRevocationKey } from "../middleware/agentAuth";
+import {
+  agentSessionRevocationKey,
+  getAgentFromCookie,
+} from "../middleware/agentAuth";
 import { sendSms } from "../termii";
 const OTP_EXPIRY_MINUTES = 10;
 // SECURITY (THREAT_MODEL.md §7.6): online brute-force guard for the 6-digit
@@ -33,6 +36,30 @@ export const MAX_OTP_ATTEMPTS = 5;
 function generateOtp(): string {
   // Generates a 6-digit OTP using CSPRNG (crypto.randomInt is uniform in [100000, 999999])
   return crypto.randomInt(100000, 1000000).toString();
+}
+
+/**
+ * DD-TSSEC (A7-12): bind the reset flow to the caller's identity. When the
+ * caller holds an agent_session, it may ONLY request/reset for its own agent
+ * code — a session for agent A must never drive a reset for agent B (even
+ * with a phished OTP). Callers WITHOUT an agent session (the actual
+ * forgot-PIN case, or staff) are bound by the OTP itself: the code is only
+ * ever sent to the phone on file and the reset only ever touches the agent
+ * the OTP token was issued to.
+ */
+async function assertSessionMatchesAgentCode(
+  req: unknown,
+  agentCode: string
+): Promise<void> {
+  const session = await getAgentFromCookie(
+    req as Parameters<typeof getAgentFromCookie>[0]
+  );
+  if (session && session.agentId !== agentCode) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Session agent does not match the supplied agentCode",
+    });
+  }
 }
 
 export const pinResetRouter = router({
@@ -47,8 +74,9 @@ export const pinResetRouter = router({
         phone: z.string().min(10).max(15),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
+        await assertSessionMatchesAgentCode(ctx.req, input.agentCode);
         const db = (await getDb())!;
         if (!db)
           throw new TRPCError({
@@ -144,8 +172,9 @@ export const pinResetRouter = router({
         newPin: z.string().min(4).max(6),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
+        await assertSessionMatchesAgentCode(ctx.req, input.agentCode);
         const db = (await getDb())!;
         if (!db)
           throw new TRPCError({
@@ -225,17 +254,19 @@ export const pinResetRouter = router({
           .set({ used: true, usedAt: new Date() })
           .where(eq(otpTokens.id, token.id));
 
-        // Hash and update PIN
+        // Hash and update PIN — DD-TSSEC (A7-12): the reset binds to the
+        // VERIFIED identity, i.e. the agent the OTP token was issued to
+        // (token.agentId), never to a caller-supplied identity alone.
         const hashedPin = await bcrypt.hash(input.newPin, 12);
         await db
           .update(agents)
           .set({ pinHash: hashedPin })
-          .where(eq(agents.id, agent.id));
+          .where(eq(agents.id, token.agentId));
 
         // F6-1: a PIN change must invalidate every outstanding agent_session
         // JWT for this agent — otherwise a stolen 12h session keeps working
         // after the credential it was minted from is gone.
-        await revokeAllUserTokens(agentSessionRevocationKey(agent.id));
+        await revokeAllUserTokens(agentSessionRevocationKey(token.agentId));
 
         return {
           success: true,

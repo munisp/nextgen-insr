@@ -23,6 +23,9 @@
  *  - PLATFORM_BASE_URL    APISix gateway base URL (proxy mode fallback)
  *  - PLATFORM_API_KEY     Bearer token for the gateway
  */
+import type { Kafka as KafkaType, Producer } from "kafkajs";
+
+import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
 
 // Default: local Kafka broker from docker-compose.production.yml
@@ -32,9 +35,6 @@ const PLATFORM_BASE_URL = ENV.platformBaseUrl;
 const PLATFORM_API_KEY = ENV.platformApiKey;
 
 // ── KafkaJS producer (optional direct mode) ───────────────────────────────────
-import type { Kafka as KafkaType, Producer } from "kafkajs";
-
-import { ENV } from "./_core/env";
 let _kafka: KafkaType | null = null;
 let _producer: Producer | null = null;
 

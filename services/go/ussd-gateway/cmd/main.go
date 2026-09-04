@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"log"
 	"net/http"
 	"os"
@@ -39,9 +40,13 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	// USSD callback endpoint (AfricasTalking/Hubtel format)
-	router.POST("/ussd/callback", handleUSSDCallback)
-	router.POST("/ussd/africastalking", handleUSSDCallback)
+	// USSD callback endpoint (AfricasTalking/Hubtel format).
+	// DD-TSSEC (A7-16): telco callbacks were completely unauthenticated —
+	// anyone who could reach this port could inject/drive USSD sessions as
+	// any phone number. Callbacks now require a shared-secret token, and an
+	// unconfigured token fails CLOSED (503) rather than accepting traffic.
+	router.POST("/ussd/callback", ussdCallbackAuth(), handleUSSDCallback)
+	router.POST("/ussd/africastalking", ussdCallbackAuth(), handleUSSDCallback)
 
 	// Admin endpoints
 	router.GET("/health", func(c *gin.Context) {
@@ -71,6 +76,28 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
+}
+
+// ussdCallbackAuth authenticates telco callback requests with a shared-secret
+// token (X-Callback-Token header, e.g. injected by an edge proxy after
+// source-IP allowlisting). Fail-closed: when USSD_CALLBACK_TOKEN is not
+// configured every callback is rejected with 503 — unauthenticated session
+// injection is never silently accepted.
+func ussdCallbackAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := os.Getenv("USSD_CALLBACK_TOKEN")
+		if token == "" {
+			log.Printf("[SECURITY] USSD_CALLBACK_TOKEN not configured — rejecting USSD callback (fail-closed)")
+			c.AbortWithStatus(http.StatusServiceUnavailable)
+			return
+		}
+		provided := c.GetHeader("X-Callback-Token")
+		if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		c.Next()
+	}
 }
 
 func handleUSSDCallback(c *gin.Context) {
