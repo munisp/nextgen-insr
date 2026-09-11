@@ -3,7 +3,7 @@ module github.com/insureportal/ussd_gateway
 go 1.24
 
 require (
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/chi/v5 v5.3.2
 	github.com/lib/pq v1.12.3
 	github.com/redis/go-redis/v9 v9.21.0
 	go.uber.org/zap v1.28.0
