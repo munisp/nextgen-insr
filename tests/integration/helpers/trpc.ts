@@ -40,8 +40,9 @@ import { billingLedgerRouter } from "../../../server/routers/billingLedger";
 import { dbSchemaPushRouter } from "../../../server/routers/dbSchemaPush";
 import { securityAuditRouter } from "../../../server/routers/securityAudit";
 import { actuarialEngineRouter } from "../../../server/routers/actuarialEngine";
-import { weeklyReportsRouter } from "../../../server/routers/weeklyReports";
+import { analyticsDashboardRouter } from "../../../server/routers/analyticsDashboard";
 import { agentFloatForecastingRouter } from "../../../server/routers/agentFloatForecasting";
+import { weeklyReportsRouter } from "../../../server/routers/weeklyReports";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -79,6 +80,8 @@ export const integrationRouter = router({
   securityAudit: securityAuditRouter,
   // F-11: actuarial pricing engine (admin-gated, advisory, read-only).
   actuarialEngine: actuarialEngineRouter,
+  // F-12 (wave-5, B16): real-aggregate analytics surfaces.
+  analyticsDashboard: analyticsDashboardRouter,
   // B17 (zero-undelivered-scope): real trailing-average float forecasting.
   agentFloatForecasting: agentFloatForecastingRouter,
   // B7: weekly report document engine — same mount path as production.

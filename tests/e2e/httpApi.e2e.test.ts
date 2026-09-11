@@ -320,15 +320,19 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
 
   // ── 8. NOT_IMPLEMENTED endpoint → truthful 501 ─────────────────────────────
   it("NOT_IMPLEMENTED procedure returns 501 with a truthful message", async () => {
+    // Sentinel target retargeted (F-12 wave-5): analyticsDashboard.kpiSummary
+    // is now DELIVERED (real aggregates, B16). securityAudit.getFileIntegrity
+    // remains genuinely undelivered (no FIM store) — same 501 + truthful
+    // message contract, assertion shape unchanged.
     const res = await trpcGet(
-      "analyticsDashboard.kpiSummary",
-      undefined,
+      "securityAudit.getFileIntegrity",
+      {}, // all-optional list input — must validate so the 501 is the resolver's
       adminCookie
     );
     expect(res.status).toBe(501);
     expect(res.error!.data.code).toBe("NOT_IMPLEMENTED");
     expect(res.error!.data.httpStatus).toBe(501);
-    expect(res.error!.message).toMatch(/not implemented/i);
+    expect(res.error!.message).toMatch(/not (implemented|delivered)/i);
   });
 
   // ── 9. Cross-check: the seeded disputes are visible through the wire ──────

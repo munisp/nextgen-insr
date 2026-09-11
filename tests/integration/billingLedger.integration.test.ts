@@ -144,11 +144,46 @@ describe("billingLedger (F-12 wave-3, real PG)", () => {
     expect(after.totals.totalTransactions).not.toBe(150);
   });
 
-  it("aggregateRevenue with tenantId fails loud (no tenant column)", async () => {
+  it("aggregateRevenue with tenantId is tenant-scoped (F-12 wave-5, B15)", async () => {
+    // Tenant scoping is now DELIVERED (platform_billing_ledger.tenant_id,
+    // migration 0055) — the old NOT_IMPLEMENTED assertion is replaced by a
+    // known-answer scoping assertion: an admin asking for a specific tenant
+    // sees only that tenant's rows.
     const caller = callerFor(adminUser);
-    await expect(
-      caller.billingLedger.aggregateRevenue({ period: "daily", tenantId: 1 })
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+    const tenantId = 987100;
+    const before = await caller.billingLedger.aggregateRevenue({
+      period: "daily",
+      tenantId,
+    });
+    const db = (await getDb())!;
+    await db.insert(platformBillingLedger).values({
+      transactionId: Math.floor(Math.random() * 1e9),
+      transactionRef: REF_PREFIX + "TEN-AGG-1",
+      transactionType: "cash_out",
+      agentId: 1,
+      grossAmount: "1000",
+      grossFee: "100",
+      agentCommission: "0",
+      switchFee: "0",
+      aggregatorFee: "0",
+      platformNetFee: "30",
+      billingModel: "revenue_share",
+      clientRevenue: "70",
+      platformRevenue: "30",
+      tenantId,
+    });
+    const after = await caller.billingLedger.aggregateRevenue({
+      period: "daily",
+      tenantId,
+    });
+    expect(after.totals.totalGrossFees - before.totals.totalGrossFees).toBe(100);
+    expect(after.totals.totalTransactions - before.totals.totalTransactions).toBe(1);
+    // A different tenant does not see the row.
+    const other = await caller.billingLedger.aggregateRevenue({
+      period: "daily",
+      tenantId: 987101,
+    });
+    expect(other.totals.totalTransactions).toBe(0);
   });
 
   it("getLiveSplitMetrics reflects today's seeded rows", async () => {
