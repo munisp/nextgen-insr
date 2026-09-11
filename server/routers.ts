@@ -31,6 +31,7 @@ import { accountOpeningRouter } from "./routers/accountOpening";
 // Sprint 96: POS Enhancement Routers
 // Sprint 97: Frontend-Backend Gap Closure
 import { activityAuditLogRouter } from "./routers/activityAuditLog";
+import { actuarialEngineRouter } from "./routers/actuarialEngine";
 import { adminDashboardRouter } from "./routers/adminDashboard";
 import { advancedAuditLogViewerRouter } from "./routers/advancedAuditLogViewer";
 import { advancedBiReportingRouter } from "./routers/advancedBiReporting";
@@ -600,6 +601,8 @@ export const appRouter = router({
   auditLog: auditLogRouter,
   // F-08: admin-gated audit chain verify/export/retention
   auditCompliance: auditComplianceRouter,
+  // F-11: admin-gated actuarial pricing engine v1 (advisory, read-only)
+  actuarialEngine: actuarialEngineRouter,
   agentMgmt: agentManagementRouter,
   premiumTopUp: premiumTopUpRouter,
   smsReceipt: smsReceiptRouter,
