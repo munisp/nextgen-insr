@@ -209,9 +209,25 @@ describe("billingLedger (F-12 wave-3, real PG)", () => {
     await expect(caller.securityAudit.getDDoSStatus({})).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
     });
-    await expect(caller.securityAudit.getBackupStatus({})).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
+    // B5 (zero-undelivered-scope): getBackupStatus is now DELIVERED against
+    // the real backup_jobs catalog — it must never again answer
+    // NOT_IMPLEMENTED. Order-independent contract: it either returns a real
+    // latest job row (when backupCatalog.integration.test.ts seeded the
+    // shared database first) or fails loud PRECONDITION_FAILED with the
+    // honest 'no backups recorded' message on an empty catalog.
+    const backupStatus = await caller.securityAudit
+      .getBackupStatus({})
+      .then(
+        r => ({ resolved: true as const, latest: r.latest }),
+        (e: { code?: string }) => ({ resolved: false as const, code: e.code })
+      );
+    if (backupStatus.resolved) {
+      expect(["running", "success", "failed"]).toContain(
+        backupStatus.latest.status
+      );
+    } else {
+      expect(backupStatus.code).toBe("PRECONDITION_FAILED");
+    }
     await expect(caller.securityAudit.getFileIntegrity({})).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
     });
