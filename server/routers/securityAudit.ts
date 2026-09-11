@@ -5,16 +5,22 @@
 // concepts requested. Remediation:
 //   - getAuditChain is WIRED to the real tamper-evident audit_log hash chain
 //     (F-08, server/lib/auditChain.ts).
+//   - getBackupStatus / listBackupJobs are WIRED to the real backup_jobs
+//     catalog (B5, migration 0054 + server/lib/backupCatalog.ts).
 //   - All other procedures have NO delivered data source (no DDoS telemetry,
-//     no backup catalog, no file-integrity store, no PBAC policy table, no
-//     mitigation tracker) and now FAIL LOUD with NOT_IMPLEMENTED instead of
-//     returning agent-registry rows. Runtime-honest beats stub-honest.
+//     no file-integrity store, no PBAC policy table, no mitigation tracker)
+//     and now FAIL LOUD with NOT_IMPLEMENTED instead of returning
+//     agent-registry rows. Runtime-honest beats stub-honest.
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { verifyAuditChain } from "../lib/auditChain";
+import {
+  getLatestBackupJob,
+  listBackupJobsPage,
+} from "../lib/backupCatalog";
 
 const notDelivered = (name: string, detail: string) =>
   new TRPCError({
@@ -79,12 +85,49 @@ const getFileIntegrity = protectedProcedure.input(listInput).query(() => {
   );
 });
 
-const getBackupStatus = protectedProcedure.input(listInput).query(() => {
-  throw notDelivered(
-    "getBackupStatus",
-    "no backup catalog/job table exists in the runtime schema"
-  );
-});
+// B5: REAL — latest row from the backup_jobs catalog (migration 0054),
+// recorded by scripts/backup/pg_backup.sh / server/lib/backupCatalog.ts.
+// Fails loud only when the catalog is EMPTY (honest 'no backups recorded').
+const getBackupStatus = protectedProcedure
+  .input(listInput)
+  .query(async () => {
+    const db = await getDb();
+    if (!db) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "getBackupStatus: database unavailable",
+      });
+    }
+    const latest = await getLatestBackupJob(db);
+    if (!latest) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "getBackupStatus: no backups recorded — the backup_jobs catalog is empty (run scripts/backup/pg_backup.sh or record via server/lib/backupCatalog.ts)",
+      });
+    }
+    return { latest, asOf: new Date().toISOString() };
+  });
+
+// B5: REAL — paginated backup_jobs catalog listing, most recent first.
+const listBackupJobs = protectedProcedure
+  .input(
+    z.object({
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+    })
+  )
+  .query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "listBackupJobs: database unavailable",
+      });
+    }
+    const page = await listBackupJobsPage(db, input.limit, input.offset);
+    return { ...page, limit: input.limit, offset: input.offset };
+  });
 
 const getDDoSStatus = protectedProcedure.input(listInput).query(() => {
   throw notDelivered(
@@ -131,6 +174,7 @@ export const securityAuditRouter = router({
   getMitigations,
   getFileIntegrity,
   getBackupStatus,
+  listBackupJobs,
   getDDoSStatus,
   getAuditChain,
 });

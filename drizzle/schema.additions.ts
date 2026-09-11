@@ -5,6 +5,7 @@
  * Imported by routers that need them.
  */
 import {
+  bigint,
   pgTable,
   serial,
   integer,
@@ -603,3 +604,59 @@ export const webhookEvents = pgTable("webhook_events", {
 
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
 export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
+
+// ─── B7: Generated Weekly Reports ────────────────────────────────────────────
+// Persisted weekly report documents. sectionsJson holds the computed section
+// payload produced by server/lib/weeklyReport.ts from REAL rows
+// (transactions / premiums / claims / policies / agents) — sections whose
+// data source does not exist are recorded with a 'no_data_source' marker,
+// never with invented numbers.
+export const generatedReports = pgTable(
+  "generated_reports",
+  {
+    id: serial("id").primaryKey(),
+    weekStart: timestamp("week_start").notNull(),
+    weekEnd: timestamp("week_end").notNull(),
+    generatedAt: timestamp("generated_at").defaultNow().notNull(),
+    // users.id of the admin who triggered generation; NULL = system run.
+    generatedBy: integer("generated_by"),
+    sectionsJson: json("sections_json").notNull(),
+    // 'completed' | 'failed' — a report row is only inserted once section
+    // computation has run against the real database.
+    status: varchar("status", { length: 32 }).default("completed").notNull(),
+  },
+  t => ({
+    weekStartIdx: index("gr_week_start_idx").on(t.weekStart),
+    generatedAtIdx: index("gr_generated_at_idx").on(t.generatedAt),
+  })
+);
+export type GeneratedReport = typeof generatedReports.$inferSelect;
+export type InsertGeneratedReport = typeof generatedReports.$inferInsert;
+
+// ─── B5: Backup Job Catalog ──────────────────────────────────────────────────
+// Runtime catalog of backup runs. Rows are recorded by the real backup
+// tooling (scripts/backup/pg_backup.sh records via psql against DATABASE_URL;
+// server-side callers use server/lib/backupCatalog.ts). sizeBytes is NULL
+// when the producing tool did not measure it — never defaulted.
+export const backupJobs = pgTable(
+  "backup_jobs",
+  {
+    id: serial("id").primaryKey(),
+    startedAt: timestamp("started_at").notNull(),
+    finishedAt: timestamp("finished_at"),
+    // 'running' | 'success' | 'failed'
+    status: varchar("status", { length: 32 }).notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    location: text("location"),
+    // e.g. 'cron:pg_backup.sh' or a users.id label — who/what ran the backup.
+    triggeredBy: varchar("triggered_by", { length: 128 }).notNull(),
+    // 'verified' | 'unverified' | 'failed' — NULL while still running.
+    verificationStatus: varchar("verification_status", { length: 32 }),
+  },
+  t => ({
+    startedAtIdx: index("bj_started_at_idx").on(t.startedAt),
+    statusIdx: index("bj_status_idx").on(t.status),
+  })
+);
+export type BackupJob = typeof backupJobs.$inferSelect;
+export type InsertBackupJob = typeof backupJobs.$inferInsert;
