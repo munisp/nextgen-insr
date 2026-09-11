@@ -28,10 +28,15 @@ const AGENT_CODE = "AGT-W5-AN1";
 
 let agentPk = 0;
 
+// SEED-SCOPING (suite-shared PGlite, isolate:false): never seed
+// type='Airtime' — airtimeVending's money-honesty guards count ALL
+// type='Airtime' rows across the shared database (absolute, not delta).
+// "QR Payment" has no cross-file absolute-count guard (verified by grep
+// of tests/integration for transactions.type filters).
 async function seedTx(
   ref: string,
   opts: {
-    type: "Cash In" | "Cash Out" | "Airtime";
+    type: "Cash In" | "Cash Out" | "QR Payment";
     amount: number;
     fee: number;
     commission: number;
@@ -164,29 +169,29 @@ describe("analyticsDashboard (F-12 wave-5, B16, real PG)", () => {
     const caller = callerFor(adminUser);
     const before = await caller.analyticsDashboard.revenueBreakdown();
     await seedTx("W5-REV-1", {
-      type: "Airtime",
+      type: "QR Payment",
       amount: 500,
       fee: 5,
       commission: 2,
       status: "success",
     });
     await seedTx("W5-REV-2", {
-      type: "Airtime",
+      type: "QR Payment",
       amount: 300,
       fee: 3,
       commission: 1,
       status: "success",
     });
     await seedTx("W5-REV-3", {
-      type: "Airtime",
+      type: "QR Payment",
       amount: 999,
       fee: 9,
       commission: 9,
       status: "failed",
     });
     const after = await caller.analyticsDashboard.revenueBreakdown();
-    const bAir = before.byType.find((t) => t.type === "Airtime");
-    const aAir = after.byType.find((t) => t.type === "Airtime");
+    const bAir = before.byType.find((t) => t.type === "QR Payment");
+    const aAir = after.byType.find((t) => t.type === "QR Payment");
     expect((aAir?.count ?? 0) - (bAir?.count ?? 0)).toBe(2);
     expect((aAir?.fees ?? 0) - (bAir?.fees ?? 0)).toBe(8);
     expect((aAir?.commission ?? 0) - (bAir?.commission ?? 0)).toBe(3);
