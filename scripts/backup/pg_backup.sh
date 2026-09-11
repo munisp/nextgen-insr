@@ -9,6 +9,13 @@
 #   BACKUP_RETENTION_DAYS — Days to retain backups (default: 30)
 #   BACKUP_ENCRYPTION_KEY — GPG key ID for encryption (optional)
 #   SLACK_WEBHOOK_URL   — Slack webhook for notifications (optional)
+#
+# Catalog recording (B5): every run — success or failure — is recorded as a
+# real row in the backup_jobs table (migration 0054) via psql against
+# DATABASE_URL. Recording is best-effort by design: if the catalog insert
+# itself fails (e.g. migration not yet applied) the backup still proceeds and
+# a WARNING is logged; the run is simply absent from the catalog, which
+# getBackupStatus then reports honestly as "no backups recorded".
 
 set -euo pipefail
 
@@ -35,6 +42,39 @@ notify() {
             -d "{\"attachments\":[{\"color\":\"${color}\",\"text\":\"${message}\"}]}" || true
     fi
 }
+
+# ─── B5: backup_jobs catalog recording ───────────────────────────────────────
+# Best-effort real INSERT into backup_jobs (see header). Never aborts the
+# backup itself when the catalog is unreachable.
+BACKUP_STARTED_AT="$(date -u '+%Y-%m-%d %H:%M:%S+00')"
+record_backup_job() {
+    local status="$1"                # 'success' | 'failed'
+    local size_bytes="${2:-NULL}"    # integer bytes, or NULL when unmeasured
+    local location="${3:-}"          # dump path / s3 uri, '' → NULL
+    local verification="${4:-unverified}"  # 'verified' | 'unverified' | 'failed'
+    if [ -z "${DATABASE_URL:-}" ]; then
+        return 0
+    fi
+    local location_sql="NULL"
+    if [ -n "${location}" ]; then
+        location_sql="'$(printf '%s' "${location}" | sed "s/'/''/g")'"
+    fi
+    psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -q -c \
+        "INSERT INTO backup_jobs (started_at, finished_at, status, size_bytes, location, triggered_by, verification_status)
+         VALUES ('${BACKUP_STARTED_AT}', NOW(), '${status}', ${size_bytes}, ${location_sql}, 'cron:pg_backup.sh', '${verification}')" \
+        2>>"${LOG_FILE}" \
+        || log "WARNING: backup_jobs catalog insert failed (migration 0054 applied?) — run continues uncatalogued"
+}
+
+# On any unhandled failure after this point, record the failed run before
+# exiting (set -e aborts; this trap records first).
+record_failure() {
+    local rc=$?
+    if [ "${rc}" -ne 0 ] && [ "${CATALOG_RECORDED:-0}" != "1" ]; then
+        record_backup_job "failed"
+    fi
+}
+trap record_failure EXIT
 
 # ─── Pre-flight Checks ───────────────────────────────────────────────────────
 
@@ -139,5 +179,20 @@ log "Backup complete: ${BACKUP_NAME}"
 log "  Size: ${DUMP_SIZE}"
 log "  Tables: ${TABLE_COUNT}"
 log "  Retention: ${RETENTION_DAYS} days"
+
+# ─── B5: record the successful run in the backup_jobs catalog ────────────────
+FINAL_DUMP="${BACKUP_DIR}/${BACKUP_NAME}.dump"
+[ -f "${FINAL_DUMP}.gpg" ] && FINAL_DUMP="${FINAL_DUMP}.gpg"
+DUMP_SIZE_BYTES="NULL"
+[ -f "${FINAL_DUMP}" ] && DUMP_SIZE_BYTES=$(stat -c%s "${FINAL_DUMP}")
+BACKUP_LOCATION="${FINAL_DUMP}"
+if [ -n "${BACKUP_S3_BUCKET:-}" ]; then
+    BACKUP_LOCATION="s3://${BACKUP_S3_BUCKET}/backups/${BACKUP_NAME}/"
+fi
+# The TOC listing above is a real integrity check: >=10 tables ⇒ verified.
+VERIFICATION="failed"
+[ "${TABLE_COUNT}" -ge 10 ] && VERIFICATION="verified"
+record_backup_job "success" "${DUMP_SIZE_BYTES}" "${BACKUP_LOCATION}" "${VERIFICATION}"
+CATALOG_RECORDED=1
 
 notify "✅ InsurePortal backup successful: ${BACKUP_NAME} (${DUMP_SIZE}, ${TABLE_COUNT} tables)" "good"

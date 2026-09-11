@@ -42,6 +42,7 @@ import { securityAuditRouter } from "../../../server/routers/securityAudit";
 import { actuarialEngineRouter } from "../../../server/routers/actuarialEngine";
 import { analyticsDashboardRouter } from "../../../server/routers/analyticsDashboard";
 import { agentFloatForecastingRouter } from "../../../server/routers/agentFloatForecasting";
+import { weeklyReportsRouter } from "../../../server/routers/weeklyReports";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -83,6 +84,8 @@ export const integrationRouter = router({
   analyticsDashboard: analyticsDashboardRouter,
   // B17 (zero-undelivered-scope): real trailing-average float forecasting.
   agentFloatForecasting: agentFloatForecastingRouter,
+  // B7: weekly report document engine — same mount path as production.
+  weeklyReports: weeklyReportsRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

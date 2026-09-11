@@ -264,7 +264,11 @@ describe("Sprint 46: Data Integrity", () => {
     // added the REAL security_mitigations table (migration 0056) to
     // drizzle/schema.additions.ts; CI measured 191. Honest-count drift, not a
     // weakening — the gate still counts information_schema at runtime.
-    expect(stats.totalTables).toBe(191);
+    // 2026-09-14: count updated 191 → 193 — W1a (zero-undelivered-scope B7+B5)
+    // added two REAL tables to drizzle/schema.additions.ts (generated_reports,
+    // backup_jobs) via migration 0054; CI measured 193. Honest-count drift,
+    // not a weakening — the gate still counts information_schema at runtime.
+    expect(stats.totalTables).toBe(193);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();
