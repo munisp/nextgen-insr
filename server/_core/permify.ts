@@ -248,3 +248,132 @@ export default {
   canApproveTopUp,
   canUpdateFraudAlert,
 };
+
+// ── Detailed check (B1 access-evaluation viewer) ────────────────────────────
+// permifyCheck collapses "denied" and "Permify unreachable" into the same
+// `false`, which is correct for enforcement but unusable for an audit viewer:
+// the viewer must show the REAL verdict and fail loud (not "denied") when
+// Permify itself is down. permifyCheckDetailed keeps the two outcomes
+// distinct. The PERMIFY_FAIL_OPEN semantics are identical to permifyCheck
+// (fail-open only via the explicit insecure opt-in, loud alert logs), with
+// the flag surfaced as source='permify_fail_open' instead of a silent boolean.
+
+export interface PermifyCheckDetailedResult {
+  /** The real Permify verdict; null when Permify was unreachable. */
+  allowed: boolean | null;
+  /** false when the check could not reach Permify (network/HTTP/circuit). */
+  reachable: boolean;
+  /** How the answer was produced: real check vs insecure fail-open opt-in. */
+  source: "permify" | "permify_fail_open";
+  /** Exact reason the service was unreachable (when reachable=false). */
+  error?: string;
+}
+
+export async function permifyCheckDetailed(params: {
+  subjectType: string;
+  subjectId: string;
+  entityType: string;
+  entityId: string;
+  permission: string;
+}): Promise<PermifyCheckDetailedResult> {
+  // Read at call time (same opt-in semantics as the module-level flag above)
+  // so an incident-time toggle takes effect on this code path too.
+  const failOpen = process.env.PERMIFY_FAIL_OPEN === "true";
+  const body: PermifyCheckRequest = {
+    tenantId: PERMIFY_TENANT_ID,
+    metadata: { schemaVersion: "", snapToken: "", depth: 20 },
+    entity: { type: params.entityType, id: params.entityId },
+    permission: params.permission,
+    subject: { type: params.subjectType, id: params.subjectId },
+  };
+
+  if (isCircuitOpen()) {
+    if (failOpen) {
+      logger.error(
+        "[Permify] ALERT: circuit breaker open but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)"
+      );
+      return {
+        allowed: true,
+        reachable: false,
+        source: "permify_fail_open",
+        error: "permify circuit breaker open (repeated check failures)",
+      };
+    }
+    logger.error(
+      "[Permify] ALERT: circuit breaker open — access evaluation unavailable (fail-closed)"
+    );
+    return {
+      allowed: null,
+      reachable: false,
+      source: "permify",
+      error: "permify circuit breaker open (repeated check failures)",
+    };
+  }
+
+  try {
+    const res = await fetch(
+      `${PERMIFY_URL}/v1/tenants/${PERMIFY_TENANT_ID}/permissions/check`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(2_000),
+      }
+    );
+    if (!res.ok) {
+      recordFailure();
+      const reason = `permify check returned HTTP ${res.status}`;
+      if (failOpen) {
+        logger.error(
+          `[Permify] ALERT: ${reason} but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)`
+        );
+        return {
+          allowed: true,
+          reachable: false,
+          source: "permify_fail_open",
+          error: reason,
+        };
+      }
+      logger.error(
+        `[Permify] ALERT: ${reason} — access evaluation unavailable (fail-closed)`
+      );
+      return {
+        allowed: null,
+        reachable: false,
+        source: "permify",
+        error: reason,
+      };
+    }
+    const json = (await res.json()) as PermifyCheckResponse;
+    recordSuccess();
+    return {
+      allowed: json.can === "CHECK_RESULT_ALLOWED",
+      reachable: true,
+      source: "permify",
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (failOpen) {
+      logger.error(
+        { err: message },
+        "[Permify] ALERT: service unreachable but PERMIFY_FAIL_OPEN=true — allowing request (INSECURE)"
+      );
+      return {
+        allowed: true,
+        reachable: false,
+        source: "permify_fail_open",
+        error: message,
+      };
+    }
+    logger.error(
+      { err: message },
+      "[Permify] ALERT: service unreachable — access evaluation unavailable (fail-closed)"
+    );
+    return {
+      allowed: null,
+      reachable: false,
+      source: "permify",
+      error: message,
+    };
+  }
+}

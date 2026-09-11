@@ -12,9 +12,20 @@
 //     WIRED to the real backup_jobs catalog (migration 0054 +
 //     server/lib/backupCatalog.ts).
 //   - The remaining procedures have NO delivered data source (no DDoS
-//     telemetry, no file-integrity store, no PBAC policy table) and now FAIL
-//     LOUD with NOT_IMPLEMENTED instead of returning agent-registry rows.
-//     Runtime-honest beats stub-honest.
+//     telemetry, no file-integrity store) and FAIL LOUD with NOT_IMPLEMENTED
+//     instead of returning agent-registry rows. Runtime-honest beats
+//     stub-honest.
+//   - B1 (zero-undelivered-scope, wave-2a): evaluateAccess / getPolicies are
+//     now REAL — Permify permissions/check via permifyCheckDetailed (fail-
+//     closed PRECONDITION_FAILED when Permify is unreachable, same
+//     PERMIFY_FAIL_OPEN semantics as _core/permify.ts), a pbac_policies
+//     store seeded by parsing the real schema file (migration 0057), and a
+//     pbac_access_evaluations verdict log.
+//   - B2 (zero-undelivered-scope, wave-2a): runSecurityScan is now REAL —
+//     call-time scanner probing (trivy/semgrep), real bounded scan of the
+//     repo tree, real parsed findings in security_scan_runs /
+//     security_scan_findings (migration 0057); PRECONDITION_FAILED listing
+//     the exact probes when no scanner is available.
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -23,6 +34,7 @@ import {
   securityMitigations,
   type SecurityMitigation,
 } from "../../drizzle/schema.additions";
+import { permifyCheckDetailed } from "../_core/permify";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
 import { verifyAuditChain } from "../lib/auditChain";
@@ -30,6 +42,25 @@ import {
   getLatestBackupJob,
   listBackupJobsPage,
 } from "../lib/backupCatalog";
+import {
+  countPolicies,
+  listAccessEvaluations,
+  listPolicies,
+  recordAccessEvaluation,
+  syncPoliciesFromSchema,
+} from "../lib/pbacPolicies";
+import {
+  executeScan,
+  insertFindings,
+  listScanFindings,
+  listScanRuns,
+  probeScanners,
+  recordRunFinish,
+  recordRunStart,
+  REPO_ROOT,
+  selectScanner,
+  severityCounts,
+} from "../lib/securityScanner";
 
 const notDelivered = (name: string, detail: string) =>
   new TRPCError({
@@ -43,28 +74,109 @@ const listInput = z.object({
   limit: z.number().optional(),
 });
 
+// ── B1: REAL PBAC access evaluation + policy store ──────────────────────────
+// evaluateAccess performs a REAL Permify permissions/check via
+// permifyCheckDetailed (server/_core/permify.ts) and appends the verdict to
+// the pbac_access_evaluations log. Permify unreachable + fail-closed (the
+// default) → PRECONDITION_FAILED with the exact connection reason (a viewer
+// must NEVER present "denied" when the engine itself is down). The insecure
+// PERMIFY_FAIL_OPEN=true opt-in is honoured identically to _core/permify.ts
+// and the verdict is labelled source='permify_fail_open'.
 const evaluateAccess = protectedProcedure
   .input(
     z.object({
-      page: z.number().optional(),
-      limit: z.number().optional(),
-      search: z.string().optional(),
+      subjectType: z.string().min(1).max(128),
+      subjectId: z.string().min(1).max(256),
+      entityType: z.string().min(1).max(128),
+      entityId: z.string().min(1).max(256),
+      permission: z.string().min(1).max(128),
     })
   )
-  .query(() => {
-    throw notDelivered(
-      "evaluateAccess",
-      "no PBAC policy store exists (the previous revision listed agent-registry rows as 'access evaluations')"
-    );
+  .mutation(async ({ input, ctx }) => {
+    const db = await requireDb();
+    const verdict = await permifyCheckDetailed({
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      permission: input.permission,
+    });
+    if (!verdict.reachable && verdict.source === "permify") {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          `evaluateAccess: Permify is unreachable and PERMIFY_FAIL_OPEN is not set ` +
+          `(fail-closed) — no access verdict can be given. Reason: ${verdict.error ?? "unknown"}`,
+      });
+    }
+    const row = await recordAccessEvaluation(db, {
+      ...input,
+      allowed: verdict.allowed === true,
+      source: verdict.source,
+      evaluatedBy: ctx.user?.id ?? null,
+    });
+    await writeAuditLog({
+      action: "PBAC_ACCESS_EVALUATED",
+      resource: "pbac_access_evaluations",
+      resourceId: String(row.id),
+      metadata: { ...input, allowed: row.allowed, source: row.source },
+    });
+    return {
+      evaluationId: row.id,
+      allowed: row.allowed,
+      source: row.source,
+      degraded: verdict.source === "permify_fail_open",
+      evaluatedAt: row.createdAt.toISOString(),
+    };
   });
 
-const getPolicies = protectedProcedure.input(listInput).query(() => {
-  throw notDelivered(
-    "getPolicies",
-    "no security-policy table exists in the runtime schema"
-  );
+// Paginated read of the REAL evaluation log (B1 viewer history).
+const getAccessEvaluations = protectedProcedure
+  .input(listInput)
+  .query(async ({ input }) => {
+    const db = await requireDb();
+    return listAccessEvaluations(db, { page: input.page, limit: input.limit });
+  });
+
+// B1: REAL — rows from the pbac_policies store (migration 0057), seeded by
+// parsing the actual Permify schema file (infra/permify/schema.perm) via
+// syncPbacPolicies. Fails loud with the exact reason when the store is empty
+// (sync never ran) — never an invented policy list.
+const getPolicies = protectedProcedure
+  .input(listInput)
+  .query(async ({ input }) => {
+    const db = await requireDb();
+    const total = await countPolicies(db);
+    if (total === 0) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "getPolicies: the pbac_policies store is empty — run securityAudit.syncPbacPolicies " +
+          "(admin) to seed it from the real Permify schema file (infra/permify/schema.perm)",
+      });
+    }
+    return listPolicies(db, { page: input.page, limit: input.limit });
+  });
+
+// B1: admin-only sync of the policy store from the REAL in-repo Permify
+// schema file. Re-parses on every call; upserts by (entity, permission).
+const syncPbacPolicies = adminProcedure.mutation(async ({ ctx }) => {
+  const db = await requireDb();
+  const result = await syncPoliciesFromSchema(db);
+  await writeAuditLog({
+    action: "PBAC_POLICIES_SYNCED",
+    resource: "pbac_policies",
+    metadata: { ...result, syncedBy: ctx.user?.id ?? null },
+  });
+  return result;
 });
 
+// ── B2: REAL security scanner integration ────────────────────────────────────
+// runSecurityScan probes scanner availability AT CALL TIME (trivy / semgrep
+// binaries on PATH; SEMGREP_APP_TOKEN is reported in the probe). No scanner
+// → PRECONDITION_FAILED listing exactly what was probed. A scanner → a REAL
+// bounded scan of the repo working tree, real JSON parsed into
+// security_scan_runs/security_scan_findings, real summary returned.
 const runSecurityScan = protectedProcedure
   .input(
     z.object({
@@ -72,12 +184,103 @@ const runSecurityScan = protectedProcedure
       data: z.record(z.string(), z.any()).optional(),
     })
   )
-  .mutation(() => {
-    // Was a facade: returned {success:true} without scanning anything.
-    throw notDelivered(
-      "runSecurityScan",
-      "no scanner integration is delivered; the previous revision echoed success without performing any scan"
-    );
+  .mutation(async ({ ctx }) => {
+    const report = probeScanners();
+    const scanner = selectScanner(report);
+    if (!scanner) {
+      const detail = report.probes
+        .map(p => `${p.scanner}: ${p.error ?? "unavailable"}`)
+        .join("; ");
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "runSecurityScan: no security scanner is available — probed " +
+          `[${detail}]; SEMGREP_APP_TOKEN ${report.semgrepAppTokenPresent ? "present" : "absent"}; ` +
+          "install trivy or semgrep on PATH to enable real scans. " +
+          "No scan was run and no findings were recorded.",
+      });
+    }
+    const db = await requireDb();
+    const run = await recordRunStart(db, {
+      scanner: scanner.scanner,
+      scannerVersion: scanner.version ?? "unknown",
+      targetPath: REPO_ROOT,
+      startedAt: new Date(),
+      triggeredBy: ctx.user?.id ?? null,
+    });
+    try {
+      const result = await executeScan(scanner, REPO_ROOT);
+      const counts = severityCounts(result.findings);
+      const inserted = await insertFindings(db, run.id, result.findings);
+      const closed = await recordRunFinish(db, run.id, {
+        finishedAt: result.finishedAt,
+        status: "completed",
+        totalFindings: result.findings.length,
+        severityCounts: counts,
+      });
+      await writeAuditLog({
+        action: "SECURITY_SCAN_COMPLETED",
+        resource: "security_scan_runs",
+        resourceId: String(run.id),
+        metadata: {
+          scanner: result.scanner,
+          scannerVersion: result.scannerVersion,
+          targetPath: result.targetPath,
+          totalFindings: result.findings.length,
+          severityCounts: counts,
+          durationMs: result.durationMs,
+        },
+      });
+      return {
+        runId: closed.id,
+        scanner: result.scanner,
+        scannerVersion: result.scannerVersion,
+        targetPath: result.targetPath,
+        status: closed.status,
+        totalFindings: result.findings.length,
+        findingsRecorded: inserted,
+        severityCounts: counts,
+        startedAt: result.startedAt.toISOString(),
+        finishedAt: result.finishedAt.toISOString(),
+        durationMs: result.durationMs,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await recordRunFinish(db, run.id, {
+        finishedAt: new Date(),
+        status: "failed",
+        error: message,
+      });
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `runSecurityScan: real ${scanner.scanner} scan failed — ${message}`,
+      });
+    }
+  });
+
+// B2: REAL — paginated security_scan_runs history, newest first.
+const getSecurityScanHistory = protectedProcedure
+  .input(listInput)
+  .query(async ({ input }) => {
+    const db = await requireDb();
+    return listScanRuns(db, { page: input.page, limit: input.limit });
+  });
+
+// B2: REAL — paginated security_scan_findings, filterable by run/severity.
+const getSecurityScanFindings = protectedProcedure
+  .input(
+    z.object({
+      runId: z.number().int().positive().optional(),
+      severity: z
+        .enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"])
+        .optional(),
+      page: z.number().optional(),
+      limit: z.number().optional(),
+    })
+  )
+  .query(async ({ input }) => {
+    const db = await requireDb();
+    return listScanFindings(db, input);
   });
 
 // ── B3 (F-11 Class-2): real mitigation tracker ──────────────────────────────
@@ -393,8 +596,12 @@ const getAuditChain = protectedProcedure
 
 export const securityAuditRouter = router({
   evaluateAccess,
+  getAccessEvaluations,
   getPolicies,
+  syncPbacPolicies,
   runSecurityScan,
+  getSecurityScanHistory,
+  getSecurityScanFindings,
   getMitigations,
   listMitigations,
   createMitigation,
