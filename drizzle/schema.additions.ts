@@ -17,6 +17,7 @@ import {
   json,
   index,
   uniqueIndex,
+  pgEnum,
 } from "drizzle-orm/pg-core";
 
 // ─── E-Commerce: Insurance Categories ────────────────────────────────────────
@@ -603,3 +604,47 @@ export const webhookEvents = pgTable("webhook_events", {
 
 export type WebhookEvent = typeof webhookEvents.$inferSelect;
 export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
+
+// ─── Security Mitigation Tracker (B3, F-11 Class-2) ──────────────────────────
+// Real store behind securityAudit.getMitigations / listMitigations /
+// createMitigation / updateMitigationStatus / getMitigationStats. Status
+// transitions are guarded in the router (invalid transition → fail loud);
+// the valid set is: open → in_progress/resolved/accepted_risk,
+// in_progress → open/resolved/accepted_risk, resolved → open (reopen),
+// accepted_risk → open/in_progress.
+export const mitigationStatusEnum = pgEnum("mitigation_status", [
+  "open",
+  "in_progress",
+  "resolved",
+  "accepted_risk",
+]);
+
+export const mitigationSeverityEnum = pgEnum("mitigation_severity", [
+  "critical",
+  "high",
+  "medium",
+  "low",
+]);
+
+export const securityMitigations = pgTable(
+  "security_mitigations",
+  {
+    id: serial("id").primaryKey(),
+    title: varchar("title", { length: 200 }).notNull(),
+    description: text("description").notNull(),
+    severity: mitigationSeverityEnum("severity").notNull(),
+    status: mitigationStatusEnum("status").default("open").notNull(),
+    ownerUserId: integer("ownerUserId"),
+    linkedFindingRef: varchar("linkedFindingRef", { length: 128 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+    resolvedAt: timestamp("resolvedAt"),
+  },
+  t => ({
+    statusIdx: index("security_mitigations_status_idx").on(t.status),
+    severityIdx: index("security_mitigations_severity_idx").on(t.severity),
+  })
+);
+
+export type SecurityMitigation = typeof securityMitigations.$inferSelect;
+export type InsertSecurityMitigation = typeof securityMitigations.$inferInsert;
