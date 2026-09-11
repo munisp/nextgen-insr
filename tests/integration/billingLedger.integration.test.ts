@@ -253,9 +253,11 @@ describe("billingLedger (F-12 wave-3, real PG)", () => {
     await expect(caller.securityAudit.getPolicies({})).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
     });
-    await expect(caller.securityAudit.getMitigations({})).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
+    // B3 (zero-undelivered-scope): getMitigations is now DELIVERED — it reads
+    // the real security_mitigations tracker table and returns rows instead of
+    // failing loud. The remaining procedures above stay NOT_IMPLEMENTED.
+    const mitigations = await caller.securityAudit.getMitigations({});
+    expect(Array.isArray(mitigations)).toBe(true);
     await expect(
       caller.securityAudit.runSecurityScan({})
     ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });

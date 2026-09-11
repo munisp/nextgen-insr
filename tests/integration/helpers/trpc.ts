@@ -41,6 +41,7 @@ import { dbSchemaPushRouter } from "../../../server/routers/dbSchemaPush";
 import { securityAuditRouter } from "../../../server/routers/securityAudit";
 import { actuarialEngineRouter } from "../../../server/routers/actuarialEngine";
 import { analyticsDashboardRouter } from "../../../server/routers/analyticsDashboard";
+import { agentFloatForecastingRouter } from "../../../server/routers/agentFloatForecasting";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -80,6 +81,8 @@ export const integrationRouter = router({
   actuarialEngine: actuarialEngineRouter,
   // F-12 (wave-5, B16): real-aggregate analytics surfaces.
   analyticsDashboard: analyticsDashboardRouter,
+  // B17 (zero-undelivered-scope): real trailing-average float forecasting.
+  agentFloatForecasting: agentFloatForecastingRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

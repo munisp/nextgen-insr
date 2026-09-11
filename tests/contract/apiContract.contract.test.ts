@@ -156,10 +156,16 @@ describe("CONTRACT — real server, real middleware chain, real DB", () => {
       expect(err.data.path).toBe("transactions.statsByType");
     });
 
-    it("analyticsDashboard.kpiSummary stub answers 501 NOT_IMPLEMENTED", async () => {
-      const raw = await rawTrpcGet("analyticsDashboard.kpiSummary", undefined, adminCookie);
+    it("securityAudit.getFileIntegrity (still undelivered) answers 501 NOT_IMPLEMENTED", async () => {
+      // Sentinel target retargeted (F-12 wave-5): the original sentinel,
+      // analyticsDashboard.kpiSummary, is now DELIVERED (real aggregates,
+      // B16). securityAudit.getFileIntegrity remains genuinely undelivered
+      // (no FIM store) and fails loud — the contract this test guards.
+      // getFileIntegrity takes an (all-optional) list input — {} so input
+      // validation passes and the 501 comes from the resolver itself.
+      const raw = await rawTrpcGet("securityAudit.getFileIntegrity", {}, adminCookie);
       const err = expectErrorEnvelope(raw, 501, "NOT_IMPLEMENTED");
-      expect(err.message).toMatch(/not implemented/i);
+      expect(err.message).toMatch(/not (implemented|delivered)/i);
     });
 
     it("agentClusterAnalytics.getStats stub answers 501 NOT_IMPLEMENTED", async () => {
@@ -183,7 +189,7 @@ describe("CONTRACT — real server, real middleware chain, real DB", () => {
     });
 
     it("stubs are auth-gated first: anonymous call answers 401, not 501", async () => {
-      const raw = await rawTrpcGet("analyticsDashboard.kpiSummary");
+      const raw = await rawTrpcGet("securityAudit.getFileIntegrity", {});
       expectErrorEnvelope(raw, 401, "UNAUTHORIZED");
     });
 

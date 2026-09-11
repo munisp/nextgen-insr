@@ -5,15 +5,23 @@
 // concepts requested. Remediation:
 //   - getAuditChain is WIRED to the real tamper-evident audit_log hash chain
 //     (F-08, server/lib/auditChain.ts).
-//   - All other procedures have NO delivered data source (no DDoS telemetry,
-//     no backup catalog, no file-integrity store, no PBAC policy table, no
-//     mitigation tracker) and now FAIL LOUD with NOT_IMPLEMENTED instead of
+//   - B3 (zero-undelivered-scope): the mitigation tracker is now REAL —
+//     security_mitigations table + list/create/status-transition/stats
+//     procedures below.
+//   - The remaining procedures have NO delivered data source (no DDoS
+//     telemetry, no backup catalog, no file-integrity store, no PBAC policy
+//     table) and now FAIL LOUD with NOT_IMPLEMENTED instead of
 //     returning agent-registry rows. Runtime-honest beats stub-honest.
 import { TRPCError } from "@trpc/server";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import {
+  securityMitigations,
+  type SecurityMitigation,
+} from "../../drizzle/schema.additions";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
+import { getDb, writeAuditLog } from "../db";
 import { verifyAuditChain } from "../lib/auditChain";
 
 const notDelivered = (name: string, detail: string) =>
@@ -65,11 +73,226 @@ const runSecurityScan = protectedProcedure
     );
   });
 
-const getMitigations = protectedProcedure.input(listInput).query(() => {
-  throw notDelivered(
-    "getMitigations",
-    "no mitigation-tracking table exists in the runtime schema"
-  );
+// ── B3 (F-11 Class-2): real mitigation tracker ──────────────────────────────
+// Store: security_mitigations (migration 0056, drizzle/schema.additions.ts).
+
+const mitigationStatusEnum = z.enum([
+  "open",
+  "in_progress",
+  "resolved",
+  "accepted_risk",
+]);
+const mitigationSeverityEnum = z.enum(["critical", "high", "medium", "low"]);
+
+type MitigationStatus = z.infer<typeof mitigationStatusEnum>;
+
+/**
+ * Valid status transitions. Anything outside this set fails loud
+ * (BAD_REQUEST) — a tracker that silently accepts resolved→accepted_risk
+ * (or similar jumps) is not an audit-grade workflow.
+ */
+const VALID_TRANSITIONS: Record<MitigationStatus, readonly MitigationStatus[]> =
+  {
+    open: ["in_progress", "resolved", "accepted_risk"],
+    in_progress: ["open", "resolved", "accepted_risk"],
+    resolved: ["open"], // reopen only
+    accepted_risk: ["open", "in_progress"],
+  };
+
+async function requireDb() {
+  const db = await getDb();
+  if (!db) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "securityAudit: database unavailable",
+    });
+  }
+  return db;
+}
+
+async function queryMitigations(filters: {
+  id?: number;
+  status?: MitigationStatus;
+  severity?: z.infer<typeof mitigationSeverityEnum>;
+  page?: number;
+  limit?: number;
+}): Promise<SecurityMitigation[]> {
+  const db = await requireDb();
+  const conditions = [
+    filters.id != null ? eq(securityMitigations.id, filters.id) : undefined,
+    filters.status != null
+      ? eq(securityMitigations.status, filters.status)
+      : undefined,
+    filters.severity != null
+      ? eq(securityMitigations.severity, filters.severity)
+      : undefined,
+  ].filter((c): c is NonNullable<typeof c> => c != null);
+  const limit = Math.min(Math.max(filters.limit ?? 100, 1), 500);
+  const page = Math.max(filters.page ?? 1, 1);
+  return db
+    .select()
+    .from(securityMitigations)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(securityMitigations.createdAt), desc(securityMitigations.id))
+    .limit(limit)
+    .offset((page - 1) * limit);
+}
+
+const getMitigations = protectedProcedure
+  .input(listInput)
+  .query(async ({ input }) => {
+    // REAL: rows from the security_mitigations tracker table (B3).
+    return queryMitigations({
+      id: input.id,
+      page: input.page,
+      limit: input.limit,
+    });
+  });
+
+const listMitigations = protectedProcedure
+  .input(
+    z.object({
+      status: mitigationStatusEnum.optional(),
+      severity: mitigationSeverityEnum.optional(),
+      page: z.number().optional(),
+      limit: z.number().optional(),
+    })
+  )
+  .query(async ({ input }) => {
+    const data = await queryMitigations(input);
+    const db = await requireDb();
+    const conditions = [
+      input.status != null
+        ? eq(securityMitigations.status, input.status)
+        : undefined,
+      input.severity != null
+        ? eq(securityMitigations.severity, input.severity)
+        : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c != null);
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(securityMitigations)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+    return { data, total: Number(total) };
+  });
+
+const createMitigation = adminProcedure
+  .input(
+    z.object({
+      title: z.string().min(1).max(200),
+      description: z.string().min(1),
+      severity: mitigationSeverityEnum,
+      ownerUserId: z.number().int().positive().optional(),
+      linkedFindingRef: z.string().max(128).optional(),
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    const db = await requireDb();
+    const [row] = await db
+      .insert(securityMitigations)
+      .values({
+        title: input.title,
+        description: input.description,
+        severity: input.severity,
+        status: "open",
+        ownerUserId: input.ownerUserId ?? null,
+        linkedFindingRef: input.linkedFindingRef ?? null,
+      })
+      .returning();
+    await writeAuditLog({
+      action: "SECURITY_MITIGATION_CREATED",
+      resource: "security_mitigations",
+      resourceId: String(row.id),
+      metadata: {
+        title: row.title,
+        severity: row.severity,
+        createdBy: ctx.user?.id ?? null,
+      },
+    });
+    return row;
+  });
+
+const updateMitigationStatus = adminProcedure
+  .input(
+    z.object({
+      id: z.number().int().positive(),
+      status: mitigationStatusEnum,
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    const db = await requireDb();
+    const [existing] = await db
+      .select()
+      .from(securityMitigations)
+      .where(eq(securityMitigations.id, input.id))
+      .limit(1);
+    if (!existing) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `updateMitigationStatus: mitigation ${input.id} not found`,
+      });
+    }
+    const from = existing.status as MitigationStatus;
+    const to = input.status;
+    if (from !== to && !VALID_TRANSITIONS[from].includes(to)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          `updateMitigationStatus: invalid transition ${from} → ${to}. ` +
+          `Valid transitions from '${from}': ${VALID_TRANSITIONS[from].join(", ")}`,
+      });
+    }
+    const now = new Date();
+    const [row] = await db
+      .update(securityMitigations)
+      .set({
+        status: to,
+        updatedAt: now,
+        // resolvedAt is set on entry into 'resolved' and cleared on reopen.
+        resolvedAt:
+          to === "resolved" ? now : from === "resolved" ? null : existing.resolvedAt,
+      })
+      .where(eq(securityMitigations.id, input.id))
+      .returning();
+    await writeAuditLog({
+      action: "SECURITY_MITIGATION_STATUS_CHANGED",
+      resource: "security_mitigations",
+      resourceId: String(row.id),
+      metadata: { from, to, changedBy: ctx.user?.id ?? null },
+    });
+    return row;
+  });
+
+const getMitigationStats = protectedProcedure.query(async () => {
+  const db = await requireDb();
+  const [row] = await db
+    .select({
+      total: count(),
+      open: sql<number>`count(*) filter (where ${securityMitigations.status} = 'open')::int`,
+      inProgress: sql<number>`count(*) filter (where ${securityMitigations.status} = 'in_progress')::int`,
+      resolved: sql<number>`count(*) filter (where ${securityMitigations.status} = 'resolved')::int`,
+      acceptedRisk: sql<number>`count(*) filter (where ${securityMitigations.status} = 'accepted_risk')::int`,
+      critical: sql<number>`count(*) filter (where ${securityMitigations.severity} = 'critical')::int`,
+      high: sql<number>`count(*) filter (where ${securityMitigations.severity} = 'high')::int`,
+      medium: sql<number>`count(*) filter (where ${securityMitigations.severity} = 'medium')::int`,
+      low: sql<number>`count(*) filter (where ${securityMitigations.severity} = 'low')::int`,
+    })
+    .from(securityMitigations);
+  return {
+    total: Number(row?.total ?? 0),
+    byStatus: {
+      open: Number(row?.open ?? 0),
+      in_progress: Number(row?.inProgress ?? 0),
+      resolved: Number(row?.resolved ?? 0),
+      accepted_risk: Number(row?.acceptedRisk ?? 0),
+    },
+    bySeverity: {
+      critical: Number(row?.critical ?? 0),
+      high: Number(row?.high ?? 0),
+      medium: Number(row?.medium ?? 0),
+      low: Number(row?.low ?? 0),
+    },
+  };
 });
 
 const getFileIntegrity = protectedProcedure.input(listInput).query(() => {
@@ -129,6 +352,10 @@ export const securityAuditRouter = router({
   getPolicies,
   runSecurityScan,
   getMitigations,
+  listMitigations,
+  createMitigation,
+  updateMitigationStatus,
+  getMitigationStats,
   getFileIntegrity,
   getBackupStatus,
   getDDoSStatus,

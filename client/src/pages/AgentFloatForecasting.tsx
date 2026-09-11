@@ -59,12 +59,17 @@ export default function AgentFloatForecasting() {
   const [confirmStep, setConfirmStep] = useState(false);
   const [successAgent, setSuccessAgent] = useState<AgentForecast | null>(null);
 
-  // @ts-ignore Sprint 85
   const stats = trpc.agentFloatForecasting.getStats.useQuery();
   // F-12 (S87-02): getStats delivers real aggregates (totalFloat, stockoutRisk,
-  // agentsMonitored from agents.premiumReserve). No forecasting-model telemetry
-  // tables exist yet, so model/prediction fields render their honest empty
-  // state instead of a phantom shape.
+  // agentsMonitored from agents.premiumReserve).
+  // B17: getForecast now delivers a REAL trailing-average projection
+  // (method + window in the response). It is NOT an ML model — model-telemetry
+  // fields (accuracy/MAPE, retraining) have no data source and stay in their
+  // honest empty state; only method/dataPoints are wired from the real
+  // response.
+  const forecast = trpc.agentFloatForecasting.getForecast.useQuery({
+    days: parseInt(selectedPeriod) || 7,
+  });
   const model: Partial<{
     predictedDemand7d: number;
     avgAccuracy: number;
@@ -73,13 +78,15 @@ export default function AgentFloatForecasting() {
     lastRetrained: string;
     nextRetrain: string;
     replenishmentHistory: Array<{ date: string; amount: number }>;
-  }> = {};
-  // @ts-ignore Sprint 85
-  const forecast = trpc.agentFloatForecasting.getForecast.useQuery({
-    days: parseInt(selectedPeriod) || 7,
-  });
+  }> = {
+    ...(forecast.data?.method != null
+      ? { modelType: forecast.data.method }
+      : {}),
+    ...(forecast.data?.dataPoints != null
+      ? { trainingDataPoints: forecast.data.dataPoints }
+      : {}),
+  };
   const triggerReplenishment =
-    // @ts-ignore Sprint 85
     trpc.agentFloatForecasting.triggerReplenishment.useMutation({
       onSuccess: () => {
         setConfirmStep(false);
@@ -127,7 +134,10 @@ export default function AgentFloatForecasting() {
           <div>
             <h1 className="text-2xl font-bold">Agent Float Forecasting</h1>
             <p className="text-muted-foreground">
-              ML-powered float prediction and auto-replenishment
+              Trailing-average float projection and replenishment
+              {forecast.data?.windowDays != null
+                ? ` (method: ${forecast.data.method}, window: ${forecast.data.windowDays}d)`
+                : ""}
             </p>
           </div>
           <div className="flex gap-2">
@@ -359,13 +369,11 @@ export default function AgentFloatForecasting() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">
-                Prediction Model Insights
-              </CardTitle>
+              <CardTitle className="text-lg">Forecast Method</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">Training Data Points</span>
+                <span className="text-sm">Window Data Points</span>
                 <span className="font-medium">
                   {model.trainingDataPoints ?? "—"}
                 </span>
@@ -373,11 +381,11 @@ export default function AgentFloatForecasting() {
               <div className="flex justify-between items-center py-2 border-b">
                 <span className="text-sm">Features Used</span>
                 <span className="font-medium">
-                  Transaction volume, day-of-week, location, seasonality
+                  Trailing daily net flow (Cash Out − Cash In)
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b">
-                <span className="text-sm">Model Type</span>
+                <span className="text-sm">Method</span>
                 <span className="font-medium">
                   {model.modelType ?? "—"}
                 </span>
