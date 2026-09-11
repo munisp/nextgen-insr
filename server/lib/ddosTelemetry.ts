@@ -147,9 +147,10 @@ function defaultPersist(
       if (rows.length > 0) await db.insert(ddosRateWindows).values(rows);
       if (events.length > 0) await db.insert(ddosThresholdEvents).values(events);
     } catch (err) {
-      logger.warn("ddosTelemetry: persist failed (dropped window)", {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        "ddosTelemetry: persist failed (dropped window)"
+      );
     }
   })();
 }
