@@ -40,6 +40,7 @@ import { billingLedgerRouter } from "../../../server/routers/billingLedger";
 import { dbSchemaPushRouter } from "../../../server/routers/dbSchemaPush";
 import { securityAuditRouter } from "../../../server/routers/securityAudit";
 import { actuarialEngineRouter } from "../../../server/routers/actuarialEngine";
+import { agentFloatForecastingRouter } from "../../../server/routers/agentFloatForecasting";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -77,6 +78,8 @@ export const integrationRouter = router({
   securityAudit: securityAuditRouter,
   // F-11: actuarial pricing engine (admin-gated, advisory, read-only).
   actuarialEngine: actuarialEngineRouter,
+  // B17 (zero-undelivered-scope): real trailing-average float forecasting.
+  agentFloatForecasting: agentFloatForecastingRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;
