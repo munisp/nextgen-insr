@@ -4273,6 +4273,10 @@ export const platformBillingLedger = pgTable(
     carrier: varchar("carrier", { length: 32 }),
     tigerBeetleTransferId: varchar("tigerbeetle_transfer_id", { length: 64 }),
     kafkaOffset: varchar("kafka_offset", { length: 64 }),
+    // F-12 (wave-5, B15): tenant attribution — stamped server-side from the
+    // agent's tenant (agents.tenantId) at recordSplit time; NULL on
+    // pre-scoping history (migration 0055, additive).
+    tenantId: integer("tenant_id"),
     processedAt: timestamp("processed_at").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -4287,6 +4291,7 @@ export const platformBillingLedger = pgTable(
     processedAtIdx: index("pbl_processed_at_idx").on(t.processedAt),
     billingModelIdx: index("pbl_billing_model_idx").on(t.billingModel),
     regionIdx: index("pbl_region_idx").on(t.region),
+    tenantIdIdx: index("pbl_tenant_id_idx").on(t.tenantId),
   })
 );
 export type PlatformBillingLedgerEntry =

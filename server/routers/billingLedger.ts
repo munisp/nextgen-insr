@@ -14,9 +14,11 @@ import { eq, and, desc, gte, lte, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 import {
+  agents,
   platformBillingLedger,
   tenantBillingConfig,
 } from "../../drizzle/schema";
+import type { TrpcContext } from "../_core/context";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -32,6 +34,63 @@ async function requireDb() {
 }
 
 const num = (v: unknown) => Number(v ?? 0);
+
+/**
+ * F-12 (wave-5, B15): tenant authorization scope, derived from the SESSION
+ * (never from client-supplied ids).
+ *
+ * Semantics:
+ *  - role=admin            -> platform scope: sees all tenants; may narrow
+ *                             to any tenantId explicitly requested.
+ *  - non-admin             -> tenant scope: the caller's tenantId is read
+ *                             from the session user record
+ *                             (users.tenantId — session-scoping precedent:
+ *                             customerWalletSystem.resolveSessionCustomer).
+ *                             Requesting any other tenantId is FORBIDDEN.
+ *  - non-admin without a tenantId on their session user -> FORBIDDEN with
+ *    the exact reason (users.tenantId IS NULL — no tenant membership). The
+ *    tenant_users membership table also exists, but the canonical
+ *    per-session assignment used across the schema (users/agents/
+ *    transactions .tenantId, P0-B tenant isolation) is users.tenantId; a
+ *    user with no users.tenantId is platform-level staff and has no
+ *    tenant-scoped billing view.
+ */
+type TenantScope =
+  | { kind: "platform" }
+  | { kind: "tenant"; tenantId: number };
+
+function resolveBillingTenantScope(ctx: TrpcContext): TenantScope {
+  const user = ctx.user!;
+  if (user.role === "admin") return { kind: "platform" };
+  if (user.tenantId != null) return { kind: "tenant", tenantId: user.tenantId };
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message:
+      "tenant-scoped billing ledger: session user has no tenant membership (users.tenantId IS NULL) — only platform admins can view unscoped billing data",
+  });
+}
+
+/**
+ * Resolve the effective tenant filter for a scoped procedure. A requested
+ * tenantId is honored only for platform admins; a tenant caller requesting
+ * a foreign tenant is rejected loudly.
+ */
+function effectiveTenantFilter(
+  scope: TenantScope,
+  requestedTenantId: number | undefined
+): number | undefined {
+  if (scope.kind === "platform") return requestedTenantId;
+  if (
+    requestedTenantId !== undefined &&
+    requestedTenantId !== scope.tenantId
+  ) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `tenant-scoped billing ledger: caller belongs to tenant ${scope.tenantId}, cannot query tenant ${requestedTenantId}`,
+    });
+  }
+  return scope.tenantId;
+}
 
 export const billingLedgerRouter = router({
   /**
@@ -64,10 +123,19 @@ export const billingLedgerRouter = router({
       const db = await requireDb();
       const platformNetFee =
         input.platformShare - input.switchFee - input.aggregatorFee;
+      // F-12 (wave-5, B15): stamp tenant attribution SERVER-SIDE from the
+      // agent's tenant (agents.tenantId). Tenant id is never accepted from
+      // the client; unknown agents record NULL (platform-level row).
+      const [agentRow] = await db
+        .select({ tenantId: agents.tenantId })
+        .from(agents)
+        .where(eq(agents.id, input.agentId))
+        .limit(1);
       const [row] = await db
         .insert(platformBillingLedger)
         .values({
           transactionId: input.transactionId,
+          tenantId: agentRow?.tenantId ?? null,
           transactionRef: input.transactionRef,
           transactionType: input.transactionType,
           agentId: input.agentId,
@@ -116,18 +184,20 @@ export const billingLedgerRouter = router({
         pageSize: z.number().default(50),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
-      if (input.tenantId !== undefined) {
-        // platform_billing_ledger has no tenant attribution column — a
-        // tenant-scoped query would silently return platform-wide data.
-        throw new TRPCError({
-          code: "NOT_IMPLEMENTED",
-          message:
-            "query: tenant-scoped filtering is not delivered — platform_billing_ledger has no tenant_id column",
-        });
-      }
+      // F-12 (wave-5, B15): real tenant scoping on
+      // platform_billing_ledger.tenantId (migration 0055). Platform admins
+      // see all tenants or any requested one; tenant callers are forced to
+      // their session tenant. Pre-0055 rows have tenant_id NULL and are
+      // visible only in platform scope.
+      const tenantFilter = effectiveTenantFilter(
+        resolveBillingTenantScope(ctx),
+        input.tenantId
+      );
       const conditions = [];
+      if (tenantFilter !== undefined)
+        conditions.push(eq(platformBillingLedger.tenantId, tenantFilter));
       if (input.agentId !== undefined)
         conditions.push(eq(platformBillingLedger.agentId, input.agentId));
       if (input.billingModel)
@@ -173,16 +243,16 @@ export const billingLedgerRouter = router({
         groupBy: z.string().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
-      if (input.tenantId !== undefined) {
-        throw new TRPCError({
-          code: "NOT_IMPLEMENTED",
-          message:
-            "aggregateRevenue: tenant-scoped aggregation is not delivered — platform_billing_ledger has no tenant_id column",
-        });
-      }
+      // F-12 (wave-5, B15): tenant-scoped aggregation (see query).
+      const tenantFilter = effectiveTenantFilter(
+        resolveBillingTenantScope(ctx),
+        input.tenantId
+      );
       const conditions = [];
+      if (tenantFilter !== undefined)
+        conditions.push(eq(platformBillingLedger.tenantId, tenantFilter));
       if (input.dateFrom)
         conditions.push(gte(platformBillingLedger.createdAt, new Date(input.dateFrom)));
       if (input.dateTo)
@@ -237,7 +307,7 @@ export const billingLedgerRouter = router({
         tenantId: z.number().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
       if (input.clientId !== undefined && input.tenantId === undefined) {
         // tenant_billing_config is keyed by tenant_id; there is no delivered
@@ -248,7 +318,11 @@ export const billingLedgerRouter = router({
             "getClientBillingConfig: client-keyed lookup is not delivered — tenant_billing_config is keyed by tenant_id",
         });
       }
-      const tenantId = input.tenantId ?? 1;
+      // F-12 (wave-5, B15): tenant callers can only read their OWN config
+      // (session-derived tenant); platform admins may read any. The
+      // historical default of tenant 1 is retained for platform admins only.
+      const scope = resolveBillingTenantScope(ctx);
+      const tenantId = effectiveTenantFilter(scope, input.tenantId) ?? 1;
       const [row] = await db
         .select()
         .from(tenantBillingConfig)
@@ -260,15 +334,17 @@ export const billingLedgerRouter = router({
 
   getLiveSplitMetrics: protectedProcedure
     .input(z.object({ tenantId: z.number().optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await requireDb();
-      if (input?.tenantId !== undefined) {
-        throw new TRPCError({
-          code: "NOT_IMPLEMENTED",
-          message:
-            "getLiveSplitMetrics: tenant-scoped metrics are not delivered — platform_billing_ledger has no tenant_id column",
-        });
-      }
+      // F-12 (wave-5, B15): tenant-scoped live metrics (see query).
+      const tenantFilter = effectiveTenantFilter(
+        resolveBillingTenantScope(ctx),
+        input?.tenantId
+      );
+      const tenantCond =
+        tenantFilter !== undefined
+          ? eq(platformBillingLedger.tenantId, tenantFilter)
+          : undefined;
       const sums = {
         grossFees: sql<string>`COALESCE(SUM(CAST(gross_fee AS NUMERIC)), 0)`,
         platformShare: sql<string>`COALESCE(SUM(CAST(platform_revenue AS NUMERIC)), 0)`,
@@ -278,11 +354,21 @@ export const billingLedgerRouter = router({
       const [today] = await db
         .select(sums)
         .from(platformBillingLedger)
-        .where(gte(platformBillingLedger.createdAt, sql`date_trunc('day', now())`));
+        .where(
+          and(
+            gte(platformBillingLedger.createdAt, sql`date_trunc('day', now())`),
+            tenantCond
+          )
+        );
       const [month] = await db
         .select(sums)
         .from(platformBillingLedger)
-        .where(gte(platformBillingLedger.createdAt, sql`date_trunc('month', now())`));
+        .where(
+          and(
+            gte(platformBillingLedger.createdAt, sql`date_trunc('month', now())`),
+            tenantCond
+          )
+        );
       const map = (r: typeof today | undefined) => ({
         grossFees: num(r?.grossFees),
         platformShare: num(r?.platformShare),
