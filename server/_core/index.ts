@@ -37,6 +37,7 @@ import cron from "node-cron";
 import { RedisStore } from "rate-limit-redis";
 
 import { logger, requestLoggingMiddleware } from "./logger";
+import { ddosTelemetryMiddleware } from "../lib/ddosTelemetry";
 import { registerLakehouseCron } from "../lakehouseCron";
 import { registry, httpRequestDurationMs } from "../metrics";
 import { createContext } from "./context";
@@ -134,6 +135,14 @@ export async function createApp(): Promise<{ app: Express; server: Server }> {
 
   // Trust reverse proxy (nginx, Cloudflare, etc.) for accurate IP detection
   app.set("trust proxy", 1);
+
+  // ── B6: DDoS self-telemetry (zero-undelivered-scope, Wave 2d) ─────────────
+  // Counts every request per client key per 60s window (in-memory) and
+  // persists finished windows to ddos_rate_windows — registered FIRST (right
+  // after trust-proxy so req.ip is accurate) so even rate-limited 429s are
+  // counted; that rejected traffic is exactly what the telemetry exists to
+  // see. Capture is fire-and-forget and can never block/fail a request.
+  app.use(ddosTelemetryMiddleware);
 
   // ── CSP Nonce middleware (must run BEFORE helmet so nonce is available) ────────
   // Generates a fresh per-request nonce and attaches it to res.locals.
