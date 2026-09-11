@@ -43,6 +43,8 @@ import { actuarialEngineRouter } from "../../../server/routers/actuarialEngine";
 import { analyticsDashboardRouter } from "../../../server/routers/analyticsDashboard";
 import { agentFloatForecastingRouter } from "../../../server/routers/agentFloatForecasting";
 import { weeklyReportsRouter } from "../../../server/routers/weeklyReports";
+import { ussdAnalyticsRouter } from "../../../server/routers/ussdAnalytics";
+import { complianceChatbotRouter } from "../../../server/routers/complianceChatbot";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -86,6 +88,9 @@ export const integrationRouter = router({
   agentFloatForecasting: agentFloatForecastingRouter,
   // B7: weekly report document engine — same mount path as production.
   weeklyReports: weeklyReportsRouter,
+  // B12 + B13 (wave-2c): same mount paths as production.
+  ussdAnalytics: ussdAnalyticsRouter,
+  complianceChatbot: complianceChatbotRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

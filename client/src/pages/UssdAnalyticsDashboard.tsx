@@ -1,42 +1,49 @@
 /**
- * UssdAnalyticsDashboard — Role-scoped KPI dashboard with real-time data and Recharts charts.
- * Wired to tRPC ussdAnalytics?.getSummary?.useQuery?.() procedure.
+ * UssdAnalyticsDashboard — B12 (wave-2c): wired to the REAL ussdAnalytics
+ * procedures. Every number comes from ussd_session_events rows captured at
+ * ussdGateway.processInput. When no sessions have been recorded the backend
+ * fails loud (NO_SESSIONS_YET) and this page shows that honest empty state —
+ * no Math.random trends, no painted zeros. Metrics the telemetry does not
+ * capture (e.g. failure counts) are shown as "—", never invented.
  */
 import { trpc } from "@/_core/trpc";
 import { KpiCard } from "@/components/insurance/KpiCard";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
 import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  BarChart, Bar, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from "recharts";
 import { Activity, BarChart2, DollarSign, Users, CheckCircle, AlertTriangle } from "lucide-react";
-
-
-const COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6", "#ec4899"];
 
 export default function UssdAnalyticsDashboard() {
   const isMobile = useIsMobile();
   const [, navigate] = useLocation();
-  const { data, isLoading } = (trpc as any).ussdAnalytics?.getSummary?.useQuery?.()?.useQuery?.({}) ?? { data: null, isLoading: false };
-  const kpi = data ?? {};
+  const dashboard = trpc.ussdAnalytics.getDashboard.useQuery(
+    { days: 7 },
+    { retry: false }
+  );
+  const heatmap = trpc.ussdAnalytics.getMenuHeatmap.useQuery(undefined, {
+    retry: false,
+  });
+  const kpi = dashboard.data;
+  const noSessions =
+    dashboard.error?.message?.includes("NO_SESSIONS_YET") ?? false;
 
   const cards = [
-    { title: "USSD Sessions Today", value: kpi.sessionsToday ?? "—", icon: Activity, trend: "up" as const, trendValue: "↑ 12%", status: "good" as const, href: "/ussd-analytics", accent: "var(--insurance-primary)" },
-    { title: "Completion Rate", value: kpi.completionRate ? kpi.completionRate+"%" : "—", icon: CheckCircle, trend: "up" as const, trendValue: "↑ 3%", status: "good" as const, href: "/ussd-analytics", accent: "var(--risk-low)" },
-    { title: "Premium Collected (₦)", value: kpi.premiumCollected ? Number(kpi.premiumCollected).toLocaleString() : "—", icon: DollarSign, trend: "up" as const, trendValue: "↑ 8%", status: "good" as const, href: "/ussd-analytics", accent: "var(--risk-low)" },
-    { title: "Failed Sessions", value: kpi.failedSessions ?? "—", icon: AlertTriangle, trend: "down" as const, trendValue: "↓ 2%", status: "warning" as const, href: "/ussd-analytics", accent: "var(--risk-medium)" },
+    { title: "USSD Sessions Today", value: kpi ? kpi.sessionsToday : "—", icon: Activity, trend: "up" as const, trendValue: "", status: "good" as const, href: "/ussd-analytics", accent: "var(--insurance-primary)" },
+    { title: "Completion Rate (7d)", value: kpi && kpi.completionRate != null ? kpi.completionRate + "%" : "—", icon: CheckCircle, trend: "up" as const, trendValue: "", status: "good" as const, href: "/ussd-analytics", accent: "var(--risk-low)" },
+    { title: "Events (7d)", value: kpi ? kpi.eventsInWindow : "—", icon: DollarSign, trend: "up" as const, trendValue: "", status: "good" as const, href: "/ussd-analytics", accent: "var(--risk-low)" },
+    { title: "Avg Session (s)", value: kpi && kpi.avgSessionDurationSeconds != null ? kpi.avgSessionDurationSeconds : "—", icon: AlertTriangle, trend: "down" as const, trendValue: "", status: "warning" as const, href: "/ussd-analytics", accent: "var(--risk-medium)" },
   ];
 
-  const sessionTrend = Array.from({length:7},(_,i)=>{
-    const d = new Date(Date.now()-(6-i)*86400000);
-    return { day: d.toLocaleDateString("en-NG",{weekday:"short"}), sessions: Math.max(0,Number(kpi.sessionsToday??50)*(0.7+Math.random()*0.6)) };
-  });
-  const outcomes = [
-    { name: "Completed", value: Math.floor(Number(kpi.sessionsToday??100)*Number(kpi.completionRate??70)/100) },
-    { name: "Abandoned", value: Math.floor(Number(kpi.sessionsToday??100)*(1-Number(kpi.completionRate??70)/100)*0.7) },
-    { name: "Failed", value: Number(kpi.failedSessions??0) },
-  ].filter(d=>d.value>0);
+  // Real per-day trend from the backend; no synthetic jitter.
+  const sessionTrend = (kpi?.dailyTrend ?? []).map(d => ({
+    day: new Date(d.day + "T00:00:00Z").toLocaleDateString("en-NG", { weekday: "short" }),
+    sessions: d.sessions,
+  }));
+
+  const menuBars = (heatmap.data?.menuPaths ?? []).slice(0, 10);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--page-bg)", paddingBottom: isMobile ? "calc(4rem + var(--safe-area-bottom))" : "2rem" }}>
@@ -49,43 +56,64 @@ export default function UssdAnalyticsDashboard() {
           </span>
           <div>
             <h1 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>USSD Analytics Dashboard</h1>
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Sessions · Conversions · Revenue</p>
+            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Sessions · Conversions · Menu Paths</p>
           </div>
         </div>
       </div>
       <div className="px-4 pt-4 space-y-6">
+        {(noSessions || (dashboard.isError && !noSessions)) && (
+          <div className="rounded-xl p-4 text-sm" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "var(--text-secondary)" }}>
+            {noSessions
+              ? "No USSD sessions recorded yet — analytics appear once real sessions flow through the USSD gateway."
+              : `USSD analytics unavailable: ${dashboard.error?.message ?? "unknown error"}`}
+          </div>
+        )}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-secondary)" }}>Key Metrics</h2>
           <div className={`grid gap-3 ${isMobile ? "grid-cols-2" : "grid-cols-4"}`}>
             {cards.map((c) => (
               <KpiCard key={c.title} title={c.title} value={c.value} icon={c.icon}
                 trend={c.trend} trendValue={c.trendValue} status={c.status}
-                accentColor={c.accent} loading={isLoading} onClick={() => navigate(c.href)} />
+                accentColor={c.accent} loading={dashboard.isLoading} onClick={() => navigate(c.href)} />
             ))}
           </div>
         </section>
         <div className={`grid gap-4 ${isMobile ? "grid-cols-1" : "grid-cols-2"}`}>
           <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
             <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>USSD Session Trend (7 Days)</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={sessionTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)"/>
-                <XAxis dataKey="day" tick={{fontSize:11,fill:"var(--text-secondary)"}}/>
-                <YAxis tick={{fontSize:11,fill:"var(--text-secondary)"}}/>
-                <Tooltip/>
-                <Area type="monotone" dataKey="sessions" stroke="#6366f1" fill="#6366f120" strokeWidth={2} name="Sessions"/>
-              </AreaChart>
-            </ResponsiveContainer>
+            {sessionTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={sessionTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)"/>
+                  <XAxis dataKey="day" tick={{fontSize:11,fill:"var(--text-secondary)"}}/>
+                  <YAxis tick={{fontSize:11,fill:"var(--text-secondary)"}} allowDecimals={false}/>
+                  <Tooltip/>
+                  <Area type="monotone" dataKey="sessions" stroke="#6366f1" fill="#6366f120" strokeWidth={2} name="Sessions"/>
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-xs py-10 text-center" style={{ color: "var(--text-secondary)" }}>
+                {dashboard.isLoading ? "Loading…" : "No session trend data yet."}
+              </p>
+            )}
           </div>
           <div className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Session Outcomes</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={outcomes.length>0?outcomes:[{name:"No data",value:1}]} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({name,value})=>`${name}: ${value}`}>
-                  {(outcomes.length>0?outcomes:[{name:"No data",value:1}]).map((_,i)=><Cell key={i} fill={["#22c55e","#f59e0b","#ef4444"][i%3]}/>)}
-                </Pie><Tooltip/>
-              </PieChart>
-            </ResponsiveContainer>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Menu Path Heatmap</h3>
+            {menuBars.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={menuBars}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)"/>
+                  <XAxis dataKey="menuPath" tick={{fontSize:11,fill:"var(--text-secondary)"}}/>
+                  <YAxis tick={{fontSize:11,fill:"var(--text-secondary)"}} allowDecimals={false}/>
+                  <Tooltip/>
+                  <Bar dataKey="hits" fill="#8b5cf6" name="Hits"/>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-xs py-10 text-center" style={{ color: "var(--text-secondary)" }}>
+                {heatmap.isLoading ? "Loading…" : "No menu-path data yet."}
+              </p>
+            )}
           </div>
         </div>
         <section>

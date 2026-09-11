@@ -3,6 +3,8 @@ import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
 import { auditLog, transactions } from "../../drizzle/schema";
+import { ussdSessionEvents } from "../../drizzle/schema.additions";
+import { logger } from "../_core/logger";
 import { publicProcedure, protectedProcedure, router } from "../_core/trpc";
 import {
   createSession,
@@ -137,6 +139,37 @@ export const ussdGatewayRouter = router({
           code: "PRECONDITION_FAILED",
           message: `USSD gateway unavailable: ${result.error ?? "no response"}`,
         });
+      }
+      // B12: real telemetry capture — one ussd_session_events row per telco
+      // callback. menu_path is the cumulative input path within the session,
+      // reconstructed from prior events of this session. Capture is
+      // best-effort: a telemetry failure must not break the live USSD
+      // session, so insert errors are logged (never swallowed silently).
+      try {
+        const database = await getDb();
+        if (database) {
+          const prior = await database
+            .select({ userInput: ussdSessionEvents.userInput })
+            .from(ussdSessionEvents)
+            .where(eq(ussdSessionEvents.sessionId, sessionId))
+            .orderBy(ussdSessionEvents.id);
+          const menuPath = [...prior.map(p => p.userInput), input.input]
+            .filter(s => s != null && s !== "")
+            .join(">");
+          await database.insert(ussdSessionEvents).values({
+            sessionId,
+            phoneNumber: input.phoneNumber,
+            agentId: input.agentId,
+            userInput: input.input,
+            menuPath,
+            gatewayResponse: result.data.response,
+            endSession: result.data.endSession ?? false,
+          });
+        } else {
+          logger.warn({ sessionId }, "[ussd] telemetry skipped — no database");
+        }
+      } catch (err) {
+        logger.warn({ err, sessionId }, "[ussd] telemetry capture failed");
       }
       return {
         text: result.data.response,
