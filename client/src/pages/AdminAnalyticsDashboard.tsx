@@ -41,9 +41,13 @@ function ChangeIndicator({ value }: { value: number }) {
 }
 
 function KPICards() {
-  // F-12 (wave-4b): kpiSummary is fail-loud NOT_IMPLEMENTED — the cards bind
-  // the REAL getOverview aggregates; source-less cards render "—".
+  // F-12 (wave-5, B16): cards bind the REAL getOverview + kpiSummary
+  // aggregates; the one source-less card (avg response time — no APM
+  // telemetry source in the schema) still renders "—".
   const { data: kpi } = trpc.analyticsDashboard.getOverview.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
+  const { data: summary } = trpc.analyticsDashboard.kpiSummary.useQuery(undefined, {
     refetchInterval: 30000,
   });
   if (!kpi) {
@@ -65,10 +69,20 @@ function KPICards() {
     { label: "Total Volume", value: formatCurrency(kpi.totalVolume) },
     { label: "Total Agents", value: formatNumber(kpi.totalAgents) },
     { label: "Saved Dashboards", value: formatNumber(kpi.totalDashboards) },
-    { label: "Commission Earned", value: "—" },
-    { label: "Fraud Detection", value: "—" },
+    {
+      label: "Fees Collected",
+      value: summary ? formatCurrency(summary.totalFees) : "—",
+    },
+    {
+      label: "Open Fraud Alerts",
+      value: summary ? formatNumber(summary.openFraudAlerts) : "—",
+    },
+    // No APM/latency telemetry source exists in the schema — honest "—".
     { label: "Avg Response Time", value: "—" },
-    { label: "KYC Approval Rate", value: "—" },
+    {
+      label: "KYC Approval Rate",
+      value: summary ? `${(summary.kycApprovalRate * 100).toFixed(1)}%` : "—",
+    },
   ];
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -87,11 +101,49 @@ function KPICards() {
   );
 }
 
+// F-12 (wave-5, B16): every section below renders REAL server aggregates.
+// Loading renders a pulse; a query error renders the loud "unavailable"
+// badge; data renders the real numbers (honest zeros included).
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between py-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium">{value}</span>
+    </div>
+  );
+}
+
+function SectionBody({
+  isLoading,
+  isError,
+  children,
+}: {
+  isLoading: boolean;
+  isError: boolean;
+  children: React.ReactNode;
+}) {
+  if (isError) {
+    return (
+      <div className="text-center text-muted-foreground py-8">
+        — this analytics surface errored (see server logs)
+      </div>
+    );
+  }
+  if (isLoading) {
+    return <div className="h-24 animate-pulse bg-muted rounded" />;
+  }
+  return <div className="divide-y divide-muted/40">{children}</div>;
+}
+
 function TransactionVolumeChart() {
-  // F-12 (wave-4b): analyticsDashboard.transactionVolume is fail-loud NOT_IMPLEMENTED —
-  // the query stays wired (a loud error surfaces if the surface is ever
-  // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.transactionVolume.useQuery({});
+  const { data, isLoading, isError } =
+    trpc.analyticsDashboard.transactionVolume.useQuery({});
+  const rows = data?.data ?? [];
+  const totalVolume = rows.reduce(
+    (acc: number, r: { amount?: string | number }) => acc + Number(r.amount ?? 0),
+    0
+  );
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -101,19 +153,18 @@ function TransactionVolumeChart() {
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-center text-muted-foreground py-8">
-          — this analytics surface is not delivered on this platform
-        </div>
+        <SectionBody isLoading={isLoading} isError={isError}>
+          <Metric label="Recent transactions" value={formatNumber(rows.length)} />
+          <Metric label="Combined amount" value={formatCurrency(totalVolume)} />
+        </SectionBody>
       </CardContent>
     </Card>
   );
 }
 
 function OnboardingFunnel() {
-  // F-12 (wave-4b): analyticsDashboard.agentOnboardingFunnel is fail-loud NOT_IMPLEMENTED —
-  // the query stays wired (a loud error surfaces if the surface is ever
-  // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.agentOnboardingFunnel.useQuery();
+  const { data, isLoading, isError } =
+    trpc.analyticsDashboard.agentOnboardingFunnel.useQuery();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -123,19 +174,24 @@ function OnboardingFunnel() {
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-center text-muted-foreground py-8">
-          — this analytics surface is not delivered on this platform
-        </div>
+        <SectionBody isLoading={isLoading} isError={isError}>
+          <Metric label="Sessions started" value={formatNumber(data?.total ?? 0)} />
+          <Metric label="Approved / completed" value={formatNumber(data?.approved ?? 0)} />
+          <Metric label="Rejected" value={formatNumber(data?.rejected ?? 0)} />
+          <Metric label="Pending" value={formatNumber(data?.pending ?? 0)} />
+          <Metric
+            label="Completion rate"
+            value={`${((data?.completionRate ?? 0) * 100).toFixed(1)}%`}
+          />
+        </SectionBody>
       </CardContent>
     </Card>
   );
 }
 
 function FraudDetectionChart() {
-  // F-12 (wave-4b): analyticsDashboard.fraudDetectionRates is fail-loud NOT_IMPLEMENTED —
-  // the query stays wired (a loud error surfaces if the surface is ever
-  // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.fraudDetectionRates.useQuery();
+  const { data, isLoading, isError } =
+    trpc.analyticsDashboard.fraudDetectionRates.useQuery();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -145,19 +201,32 @@ function FraudDetectionChart() {
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-center text-muted-foreground py-8">
-          — this analytics surface is not delivered on this platform
-        </div>
+        <SectionBody isLoading={isLoading} isError={isError}>
+          <Metric label="Total alerts" value={formatNumber(data?.totalAlerts ?? 0)} />
+          {(data?.bySeverity ?? []).map((s) => (
+            <Metric
+              key={s.severity}
+              label={`Severity: ${s.severity}`}
+              value={formatNumber(s.count)}
+            />
+          ))}
+          <Metric
+            label="Velocity breach rate"
+            value={`${((data?.velocityBreachRate ?? 0) * 100).toFixed(2)}%`}
+          />
+          <Metric
+            label="Avg fraud score"
+            value={(data?.averageFraudScore ?? 0).toFixed(2)}
+          />
+        </SectionBody>
       </CardContent>
     </Card>
   );
 }
 
 function RevenueBreakdown() {
-  // F-12 (wave-4b): analyticsDashboard.revenueBreakdown is fail-loud NOT_IMPLEMENTED —
-  // the query stays wired (a loud error surfaces if the surface is ever
-  // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.revenueBreakdown.useQuery();
+  const { data, isLoading, isError } =
+    trpc.analyticsDashboard.revenueBreakdown.useQuery();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -167,19 +236,28 @@ function RevenueBreakdown() {
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-center text-muted-foreground py-8">
-          — this analytics surface is not delivered on this platform
-        </div>
+        <SectionBody isLoading={isLoading} isError={isError}>
+          {(data?.byType ?? []).map((t) => (
+            <Metric
+              key={t.type}
+              label={t.type}
+              value={`${formatCurrency(t.fees)} fees / ${formatNumber(t.count)} tx`}
+            />
+          ))}
+          <Metric label="Total fees" value={formatCurrency(data?.totalFees ?? 0)} />
+          <Metric
+            label="Total commission"
+            value={formatCurrency(data?.totalCommission ?? 0)}
+          />
+        </SectionBody>
       </CardContent>
     </Card>
   );
 }
 
 function GeographicDistribution() {
-  // F-12 (wave-4b): analyticsDashboard.geographicDistribution is fail-loud NOT_IMPLEMENTED —
-  // the query stays wired (a loud error surfaces if the surface is ever
-  // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.geographicDistribution.useQuery();
+  const { data, isLoading, isError } =
+    trpc.analyticsDashboard.geographicDistribution.useQuery();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -189,19 +267,23 @@ function GeographicDistribution() {
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-center text-muted-foreground py-8">
-          — this analytics surface is not delivered on this platform
-        </div>
+        <SectionBody isLoading={isLoading} isError={isError}>
+          {(data?.byLocation ?? []).slice(0, 10).map((l) => (
+            <Metric
+              key={l.location}
+              label={l.location}
+              value={`${formatNumber(l.agentCount)} agents / ${formatCurrency(l.volume)}`}
+            />
+          ))}
+        </SectionBody>
       </CardContent>
     </Card>
   );
 }
 
 function SettlementTrend() {
-  // F-12 (wave-4b): analyticsDashboard.settlementTrend is fail-loud NOT_IMPLEMENTED —
-  // the query stays wired (a loud error surfaces if the surface is ever
-  // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.settlementTrend.useQuery();
+  const { data, isLoading, isError } =
+    trpc.analyticsDashboard.settlementTrend.useQuery({});
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -211,19 +293,27 @@ function SettlementTrend() {
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-center text-muted-foreground py-8">
-          — this analytics surface is not delivered on this platform
-        </div>
+        <SectionBody isLoading={isLoading} isError={isError}>
+          {(data?.days ?? []).slice(0, 10).map((d) => (
+            <Metric
+              key={d.date}
+              label={d.date}
+              value={`${formatCurrency(d.actualAmount)} / ${formatCurrency(d.expectedAmount)} exp${
+                d.discrepancy !== 0
+                  ? ` (${formatCurrency(d.discrepancy)} disc)`
+                  : ""
+              }`}
+            />
+          ))}
+        </SectionBody>
       </CardContent>
     </Card>
   );
 }
 
 function KYCApprovalTrend() {
-  // F-12 (wave-4b): analyticsDashboard.kycApprovalTrend is fail-loud NOT_IMPLEMENTED —
-  // the query stays wired (a loud error surfaces if the surface is ever
-  // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.kycApprovalTrend.useQuery();
+  const { data, isLoading, isError } =
+    trpc.analyticsDashboard.kycApprovalTrend.useQuery({});
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -233,19 +323,22 @@ function KYCApprovalTrend() {
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-center text-muted-foreground py-8">
-          — this analytics surface is not delivered on this platform
-        </div>
+        <SectionBody isLoading={isLoading} isError={isError}>
+          {(data?.days ?? []).map((d) => (
+            <Metric
+              key={d.day}
+              label={d.day.slice(0, 10)}
+              value={`${formatNumber(d.approved)}/${formatNumber(d.total)} (${(d.approvalRate * 100).toFixed(0)}%)`}
+            />
+          ))}
+        </SectionBody>
       </CardContent>
     </Card>
   );
 }
 
 function TopAgentsLeaderboard() {
-  // F-12 (wave-4b): analyticsDashboard.topAgents is fail-loud NOT_IMPLEMENTED —
-  // the query stays wired (a loud error surfaces if the surface is ever
-  // delivered) and this section renders an honest unavailable state.
-  const { isError } = trpc.analyticsDashboard.topAgents.useQuery();
+  const { data, isLoading, isError } = trpc.analyticsDashboard.topAgents.useQuery();
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -255,9 +348,15 @@ function TopAgentsLeaderboard() {
         )}
       </CardHeader>
       <CardContent>
-        <div className="text-center text-muted-foreground py-8">
-          — this analytics surface is not delivered on this platform
-        </div>
+        <SectionBody isLoading={isLoading} isError={isError}>
+          {(data?.agents ?? []).map((a, i) => (
+            <Metric
+              key={a.agentId}
+              label={`${i + 1}. ${a.name} (${a.tier})`}
+              value={`${formatCurrency(a.volume)} / ${formatNumber(a.transactionCount)} tx`}
+            />
+          ))}
+        </SectionBody>
       </CardContent>
     </Card>
   );

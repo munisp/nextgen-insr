@@ -40,6 +40,7 @@ import { billingLedgerRouter } from "../../../server/routers/billingLedger";
 import { dbSchemaPushRouter } from "../../../server/routers/dbSchemaPush";
 import { securityAuditRouter } from "../../../server/routers/securityAudit";
 import { actuarialEngineRouter } from "../../../server/routers/actuarialEngine";
+import { analyticsDashboardRouter } from "../../../server/routers/analyticsDashboard";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -77,6 +78,8 @@ export const integrationRouter = router({
   securityAudit: securityAuditRouter,
   // F-11: actuarial pricing engine (admin-gated, advisory, read-only).
   actuarialEngine: actuarialEngineRouter,
+  // F-12 (wave-5, B16): real-aggregate analytics surfaces.
+  analyticsDashboard: analyticsDashboardRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;
