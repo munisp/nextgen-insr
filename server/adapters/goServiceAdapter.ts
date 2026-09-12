@@ -91,7 +91,8 @@ const SERVICE_REGISTRY: Record<string, ServiceConfig> = {
     baseUrl: process.env.USSD_GATEWAY_URL || "http://localhost:8088",
     timeout: 10000,
     retries: 2,
-    healthPath: "/api/health",
+    // service registers GET /health (services/go/ussd-gateway/cmd/main.go:134)
+    healthPath: "/health",
   },
   "ussd-tx-processor": {
     name: "ussd-tx-processor",

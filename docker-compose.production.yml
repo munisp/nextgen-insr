@@ -413,7 +413,7 @@ services:
       TIGERBEETLE_ADDRESS: tigerbeetle:3001
       TEMPORAL_ADDRESS: temporal:7233
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       <<: *hc-defaults
 
   # ── Go OTA Firmware Service ───────────────────────────────────────────────
