@@ -209,8 +209,11 @@ export const complianceChatbotRouter = router({
           title: chatSessions.title,
           createdAt: chatSessions.createdAt,
           lastActivityAt: chatSessions.lastActivityAt,
-          messageCount: sql<string>`(SELECT COUNT(*) FROM ${chatMessages} WHERE ${chatMessages.sessionId} = ${chatSessions.id})`,
-          preview: sql<string | null>`(SELECT ${chatMessages.content} FROM ${chatMessages} WHERE ${chatMessages.sessionId} = ${chatSessions.id} ORDER BY ${chatMessages.id} ASC LIMIT 1)`,
+          // Explicit alias: drizzle renders ${chatMessages.sessionId}
+          // unqualified inside raw sql, which PG rejects (42703) in a
+          // correlated subquery — qualify via the cm alias.
+          messageCount: sql<string>`(SELECT COUNT(*) FROM "chat_messages" cm WHERE cm."session_id" = "chat_sessions"."id")`,
+          preview: sql<string | null>`(SELECT cm."content" FROM "chat_messages" cm WHERE cm."session_id" = "chat_sessions"."id" ORDER BY cm."id" ASC LIMIT 1)`,
         })
         .from(chatSessions)
         .where(scope)
