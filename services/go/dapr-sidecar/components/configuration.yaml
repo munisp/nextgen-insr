@@ -1,0 +1,20 @@
+# Dapr platform Configuration — identical semantics to the W4 chart's
+# config.config.yaml (k8s/charts/dapr/values.yaml): tracing to the jaeger
+# collector, metrics on, mTLS on, trust domain insurance-platform.
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: insurance-config
+  namespace: insurance-platform
+spec:
+  tracing:
+    samplingRate: "1"
+    zipkin:
+      endpointAddress: http://jaeger-collector.monitoring.svc.cluster.local:9411/api/v2/spans
+  metric:
+    enabled: true
+  mtls:
+    enabled: true
+  accessControl:
+    defaultAction: allow
+    trustDomain: "insurance-platform"
