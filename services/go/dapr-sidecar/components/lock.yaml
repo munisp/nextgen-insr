@@ -1,0 +1,20 @@
+# Dapr distributed-lock component backing DaprSidecar.AcquireLock
+# (/v1.0-alpha1/lock/lockstore). Redis-backed, same Redis instance and
+# secret layout as the statestore component (k8s/charts/dapr values).
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: lockstore
+  namespace: insurance-platform
+spec:
+  type: lock.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: redis-cluster.middleware.svc.cluster.local:6379
+    - name: redisPassword
+      secretKeyRef:
+        name: redis-credentials
+        key: password
+    - name: enableTLS
+      value: "false"

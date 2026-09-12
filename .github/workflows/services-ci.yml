@@ -36,6 +36,33 @@ jobs:
           cd services/go/${{ matrix.service }}
           go vet ./...
 
+  go-root-services:
+    # Root-layout Go services (main.go at service root, stdlib-only): build,
+    # vet, and run their real unit tests.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - pbac-engine
+          - dapr-sidecar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Build ${{ matrix.service }}
+        run: |
+          cd services/go/${{ matrix.service }}
+          go build -o /tmp/${{ matrix.service }} .
+      - name: Vet
+        run: |
+          cd services/go/${{ matrix.service }}
+          go vet ./...
+      - name: Test ${{ matrix.service }}
+        run: |
+          cd services/go/${{ matrix.service }}
+          go test ./...
+
   python-services:
     runs-on: ubuntu-latest
     strategy:
@@ -68,6 +95,28 @@ jobs:
         run: |
           cd services/rust/realtime-events
           cargo check
+      - name: Build and test ddos-shield
+        run: |
+          cd services/rust/ddos-shield
+          cargo check
+          cargo test
+
+  mojaloop-connector:
+    # Stdlib-only Python service: compile-check plus its real unittest suite.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile check
+        run: |
+          cd services/python/mojaloop-connector
+          python -m py_compile main.py test_main.py
+      - name: Unit tests
+        run: |
+          cd services/python/mojaloop-connector
+          python -m unittest test_main -v
 
   typescript-services:
     runs-on: ubuntu-latest

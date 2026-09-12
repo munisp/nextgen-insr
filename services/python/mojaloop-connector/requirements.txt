@@ -1,0 +1,2 @@
+# mojaloop-connector is deliberately stdlib-only (http.server): no runtime
+# dependencies. This file exists so container/CI dependency steps are explicit.
