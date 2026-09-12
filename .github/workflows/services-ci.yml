@@ -42,14 +42,21 @@ jobs:
           go vet ./...
 
   go-root-services:
-    # Root-layout Go services (main.go at service root, stdlib-only): build,
-    # vet, and run their real unit tests.
+    # Root-layout Go services (main.go at service root): build, vet, and run
+    # their real unit tests. W5b: pbac-engine, dapr-sidecar. W5d (F-11/A1):
+    # connectivity + platform services (sprint73/sprint86 contract layout).
     runs-on: ubuntu-latest
     strategy:
       matrix:
         service:
           - pbac-engine
           - dapr-sidecar
+          - connectivity-resilience
+          - connection-multiplexer
+          - bandwidth-optimizer
+          - opensearch-analytics
+          - apisix-gateway
+          - ussd-gateway
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -123,6 +130,29 @@ jobs:
           cd services/python/mojaloop-connector
           python -m unittest test_main -v
 
+  # W5d (F-11/A1): connectivity + resilience Rust services
+  rust-services-w5d:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - bandwidth-optimizer
+          - offline-ledger
+          - adaptive-compression
+          - transaction-queue
+          - ransomware-guard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check ${{ matrix.service }}
+        run: |
+          cd services/rust/${{ matrix.service }}
+          cargo check
+      - name: Test ${{ matrix.service }}
+        run: |
+          cd services/rust/${{ matrix.service }}
+          cargo test
+
   typescript-services:
     runs-on: ubuntu-latest
     steps:
@@ -136,9 +166,36 @@ jobs:
           npm install
           npx tsc --noEmit --skipLibCheck || true
 
+  # W5d (F-11/A1): python connectivity/cache/security services use
+  # root-layout main.py (sprint73/sprint86 contract), not app/
+  python-services-w5d:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - redis-cache-layer
+          - security-scanner
+          - network-quality-predictor
+          - sms-transaction-bridge
+          - connectivity-analytics
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          cd services/python/${{ matrix.service }}
+          pip install -r requirements.txt
+      - name: Lint
+        run: |
+          pip install ruff
+          cd services/python/${{ matrix.service }}
+          ruff check . --ignore E501
+
   docker-build:
     runs-on: ubuntu-latest
-    needs: [go-services, python-services]
+    needs: [go-services, go-root-services, python-services, python-services-w5d]
     strategy:
       matrix:
         include:
@@ -150,6 +207,14 @@ jobs:
             name: kyc-verification
           - path: services/python/claims-adjudication
             name: claims-adjudication
+          - path: services/go/connectivity-resilience
+            name: connectivity-resilience
+          - path: services/go/opensearch-analytics
+            name: opensearch-analytics
+          - path: services/rust/transaction-queue
+            name: transaction-queue
+          - path: services/rust/ransomware-guard
+            name: ransomware-guard
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image

@@ -170,12 +170,38 @@ export const securityHardeningRouter = router({
     });
   }),
   getRansomwareGuardStatus: protectedProcedure.query(async () => {
-    // F-12 (full sweep): claims the guard is enabled with 0 threats — no
-    // guard exists; a false safety claim. Fail loud.
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message: "getRansomwareGuardStatus: no ransomware guard is delivered",
-    });
+    // W5d (F-11/A1): ransomware-guard service is now DELIVERED
+    // (services/rust/ransomware-guard). This query proxies its real /status:
+    // measured entropy-scan counts, watcher burst state and immutable-backup
+    // snapshot list. Without RANSOMWARE_GUARD_URL configured the guard is
+    // genuinely undeployed and we still fail loud — never a fabricated
+    // "enabled, 0 threats".
+    const guardUrl = process.env.RANSOMWARE_GUARD_URL;
+    if (!guardUrl) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "getRansomwareGuardStatus: RANSOMWARE_GUARD_URL not configured — ransomware guard not deployed in this environment",
+      });
+    }
+    let resp: Response;
+    try {
+      resp = await fetch(`${guardUrl.replace(/\/$/, "")}/status`, {
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (err) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `getRansomwareGuardStatus: ransomware guard unreachable at ${guardUrl}: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+    if (!resp.ok) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `getRansomwareGuardStatus: guard returned HTTP ${resp.status}`,
+      });
+    }
+    return (await resp.json()) as Record<string, unknown>;
   }),
   evaluatePolicy: protectedProcedure
     .input(
