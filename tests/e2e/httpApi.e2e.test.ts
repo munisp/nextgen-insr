@@ -320,13 +320,14 @@ describe("HTTP E2E — real server, real middleware chain, real DB", () => {
 
   // ── 8. NOT_IMPLEMENTED endpoint → truthful 501 ─────────────────────────────
   it("NOT_IMPLEMENTED procedure returns 501 with a truthful message", async () => {
-    // Sentinel target retargeted (F-12 wave-5): analyticsDashboard.kpiSummary
-    // is now DELIVERED (real aggregates, B16). securityAudit.getFileIntegrity
-    // remains genuinely undelivered (no FIM store) — same 501 + truthful
-    // message contract, assertion shape unchanged.
+    // Sentinel target retargeted again (W2d, B4): the previous sentinel,
+    // securityAudit.getFileIntegrity, is now DELIVERED (real FIM baseline +
+    // sha256 diff, migration 0060). agentClusterAnalytics.listClusters is
+    // not in the register's build waves and stays genuinely undelivered —
+    // same 501 + truthful message contract, assertion shape unchanged.
     const res = await trpcGet(
-      "securityAudit.getFileIntegrity",
-      {}, // all-optional list input — must validate so the 501 is the resolver's
+      "agentClusterAnalytics.listClusters",
+      {}, // no input validator — must validate so the 501 is the resolver's
       adminCookie
     );
     expect(res.status).toBe(501);

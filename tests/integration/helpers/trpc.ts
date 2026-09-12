@@ -43,6 +43,7 @@ import { actuarialEngineRouter } from "../../../server/routers/actuarialEngine";
 import { analyticsDashboardRouter } from "../../../server/routers/analyticsDashboard";
 import { agentFloatForecastingRouter } from "../../../server/routers/agentFloatForecasting";
 import { weeklyReportsRouter } from "../../../server/routers/weeklyReports";
+import { networkStatusDashboardRouter } from "../../../server/routers/networkStatusDashboard";
 import { ussdAnalyticsRouter } from "../../../server/routers/ussdAnalytics";
 import { complianceChatbotRouter } from "../../../server/routers/complianceChatbot";
 
@@ -88,6 +89,8 @@ export const integrationRouter = router({
   agentFloatForecasting: agentFloatForecastingRouter,
   // B7: weekly report document engine — same mount path as production.
   weeklyReports: weeklyReportsRouter,
+  // B14: carrier telemetry views — same mount path as production.
+  networkStatusDashboard: networkStatusDashboardRouter,
   // B12 + B13 (wave-2c): same mount paths as production.
   ussdAnalytics: ussdAnalyticsRouter,
   complianceChatbot: complianceChatbotRouter,

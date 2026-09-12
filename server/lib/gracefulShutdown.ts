@@ -22,6 +22,15 @@ export function setupGracefulShutdown(server: Server) {
       logger.info("[Shutdown] HTTP server closed");
     });
 
+    // 1b. Flush any open DDoS rate windows so the last partial window is
+    // persisted before the DB pool closes (fire-and-forget internally).
+    try {
+      const { flushDdosTelemetry } = await import("./ddosTelemetry");
+      flushDdosTelemetry();
+    } catch {
+      /* telemetry flush is best-effort */
+    }
+
     // 2. Close database connections
     try {
       const { getDb } = await import("../db");
