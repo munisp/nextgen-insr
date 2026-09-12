@@ -93,17 +93,12 @@ export default defineConfig({
       "server/sprint71-security.test.ts",
       "server/sprint79.test.ts",
       "server/sprint80.test.ts",
-      "server/sprint81.test.ts",
       "server/sprint83.test.ts",
       "server/sprint85.test.ts",
       "server/sprint86.test.ts",
-      "server/business-rules.test.ts",
-      "server/liveness-improvements.test.ts",
-      "server/liveness-noise-tolerance.test.ts",
-      // RE-ENABLED 2026-08-17 (W5a, A14): sprint35 — insuranceServiceFleet
-      // router moved to its asserted path server/routers/insuranceServiceFleet.ts
-      // (the same real router object previously misfiled as posTerminalFleet.ts;
-      // server/routers.ts registration updated). Verified 65/65.
+      // RE-ENABLED 2026-08-17: sprint35 (W5a, A14 — router moved to asserted
+      // path, 65/65) + business-rules & liveness-improvements &
+      // liveness-noise-tolerance (W5c, A6 — real services, green).
       // CAT-B assembled-stack dependency (require running server/gateway):
       "tests/integration/api.test.ts",
       "tests/integration/j02_policy_purchase.test.ts",

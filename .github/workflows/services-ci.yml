@@ -48,6 +48,8 @@ jobs:
     strategy:
       matrix:
         service:
+          - settlement-gateway
+          - telemetry-api-gateway
           - pbac-engine
           - dapr-sidecar
     steps:
@@ -91,6 +93,66 @@ jobs:
           cd services/python/${{ matrix.service }}
           ruff check app/ --ignore E501
 
+  python-root-services:
+    # Root-layout Python services (main.py / *_service.py at service root):
+    # install real deps, compile-check, and run their real unit tests.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: fraud-ml-service
+            main: main.py
+            test: test_main.py
+            install: true
+          - service: billing-analytics-pipeline
+            main: main.py
+            test: test_main.py
+            install: true
+          - service: invoice-generator
+            main: main.py
+            test: test_main.py
+            install: true
+          - service: billing-webhook-dispatcher
+            main: main.py
+            test: test_main.py
+            install: true
+          - service: billing-sla-monitor
+            main: main.py
+            test: test_main.py
+            install: true
+          - service: liveness-detection
+            main: liveness_service.py
+            test: test_noisy_cameras.py
+            install: true
+          - service: face-matching
+            main: face_matching_service.py
+            install: false  # heavy backends (deepface/tf-keras) are lazy-imported; service fails loud without them
+          - service: document-fraud-detection
+            main: fraud_detection_service.py
+            install: false  # opencv/Pillow lazy-imported; compile-check only
+          - service: paddle-ocr-service
+            main: paddle_ocr_service.py
+            install: false  # paddlepaddle lazy-imported; compile-check only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        if: matrix.install == true
+        run: |
+          cd services/python/${{ matrix.service }}
+          pip install -r requirements.txt
+      - name: Compile check
+        run: |
+          cd services/python/${{ matrix.service }}
+          python -m py_compile ${{ matrix.main }}
+      - name: Unit tests
+        if: matrix.test
+        run: |
+          cd services/python/${{ matrix.service }}
+          python -m unittest $(basename ${{ matrix.test }} .py) -v
+
   rust-services:
     runs-on: ubuntu-latest
     steps:
@@ -100,6 +162,16 @@ jobs:
         run: |
           cd services/rust/realtime-events
           cargo check
+      - name: Build and test billing-event-processor
+        run: |
+          cd services/rust/billing-event-processor
+          cargo check
+          cargo test
+      - name: Build and test fee-splitter-realtime
+        run: |
+          cd services/rust/fee-splitter-realtime
+          cargo check
+          cargo test
       - name: Build and test ddos-shield
         run: |
           cd services/rust/ddos-shield
