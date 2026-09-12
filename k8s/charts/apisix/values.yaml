@@ -6,6 +6,20 @@ image:
   tag: 3.9.0-debian
   pullPolicy: IfNotPresent
 fullnameOverride: ''
+
+# ── Admin API key ────────────────────────────────────────────────────────────
+# The APISIX admin key is NEVER stored in git. The chart reads it at container
+# start from an operator-created Kubernetes Secret (valueFrom secretKeyRef)
+# and substitutes the __APISIX_ADMIN_KEY__ placeholder in config.yaml before
+# APISIX boots. Create the secret once per namespace:
+#
+#   kubectl create secret generic apisix-admin-key \
+#     --from-literal=admin-key="$(openssl rand -hex 24)" \
+#     -n <namespace>
+adminKeySecret:
+  name: apisix-admin-key
+  key: admin-key
+
 service:
   type: ClusterIP
   ports:
@@ -16,19 +30,61 @@ service:
   - name: https
     port: 9443
 config:
-  config.yaml: "apisix:\n  node_listen: 9080\n  enable_admin: true\n  allow_admin:\n    - 0.0.0.0/0\n  admin_key:\n    - name:\
-    \ admin\n      key: edd1c9f034335f136f87ad84b625c8f1  # default dev key \u2014 override via values.secrets.APISIX_ADMIN_KEY\
-    \ in production\n      role: admin\ndeployment:\n  role: traditional\n  role_traditional:\n    config_provider: etcd\n\
-    \  etcd:\n    host:\n      - http://apisix-etcd:2379\n    prefix: /apisix\n    timeout: 30\nnginx_config:\n  error_log_level:\
-    \ warn\n  worker_processes: auto\nplugins:\n  - prometheus\n  - jwt-auth\n  - key-auth\n  - limit-req\n  - limit-count\n\
-    \  - cors\n  - ip-restriction\n  - request-validation\n"
+  # __APISIX_ADMIN_KEY__ is replaced with $APISIX_ADMIN_KEY (from the secret
+  # above) by the container entrypoint wrapper — no key material in this file.
+  config.yaml: |
+    apisix:
+      node_listen: 9080
+      enable_admin: true
+      allow_admin:
+        - 0.0.0.0/0
+      admin_key:
+        - name: admin
+          key: __APISIX_ADMIN_KEY__
+          role: admin
+    deployment:
+      role: traditional
+      role_traditional:
+        config_provider: etcd
+      etcd:
+        host:
+          - http://apisix-etcd:2379
+        prefix: /apisix
+        timeout: 30
+    nginx_config:
+      error_log_level: warn
+      worker_processes: auto
+    plugins:
+      - prometheus
+      - jwt-auth
+      - key-auth
+      - limit-req
+      - limit-count
+      - cors
+      - ip-restriction
+      - request-validation
 secrets:
-  APISIX_ADMIN_KEY: edd1c9f034335f136f87ad84b625c8f1
-env: []
+  # APISIX itself needs no chart-managed credentials; the admin key comes from
+  # the operator-created secret referenced by adminKeySecret above.
+  UNUSED: no-credentials-required
+env:
+- name: APISIX_ADMIN_KEY
+  valueFrom:
+    secretKeyRef:
+      name: '{{ .Values.adminKeySecret.name }}'
+      key: '{{ .Values.adminKeySecret.key }}'
+command:
+- /bin/sh
+- -c
+args:
+- |
+  set -e
+  sed "s/__APISIX_ADMIN_KEY__/${APISIX_ADMIN_KEY}/g" \
+    /etc/apisix-template/config.yaml > /usr/local/apisix/conf/config.yaml
+  exec /docker-entrypoint.sh docker-start
 volumeMounts:
 - name: config
-  mountPath: /usr/local/apisix/conf/config.yaml
-  subPath: config.yaml
+  mountPath: /etc/apisix-template
 volumes:
 - name: config
   configMap: true
