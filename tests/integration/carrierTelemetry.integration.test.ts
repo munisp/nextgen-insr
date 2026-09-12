@@ -36,6 +36,18 @@ const FILE = "carrierTelemetry";
 const NOW = Date.now();
 const H = 3_600_000;
 
+// SEED-SCOPING (day-boundary): getCarrierHeatmap groups by (carrier,
+// date_trunc('day', probedAt)), so the three summary probes MUST share one
+// UTC day or the known-answer cell count changes with the wall-clock hour
+// the suite happens to run at (seeds at NOW-2H fall on the previous UTC day
+// whenever NOW ∈ [00:00–02:00) UTC — observed as a 3-vs-2 cells failure in
+// shared-suite CI when total runtime shifted the wall clock; same genre as
+// the 'QR Payment' re-scope 9773f3e3). Anchoring to noon UTC today keeps all
+// seeds inside the days:1 window (±12h of now) AND on one calendar day.
+const NOON_UTC = new Date();
+NOON_UTC.setUTCHours(12, 0, 0, 0);
+const NOON = NOON_UTC.getTime();
+
 function probe(over: Partial<typeof simProbeLog.$inferInsert> & { carrier: string; terminalId: string }) {
   return {
     agentId: "AGT-CARRIER-TEST",
@@ -84,9 +96,9 @@ describe(`${FILE}: carrier telemetry views (B14)`, () => {
   it("getCarrierSummary returns hand-computed per-carrier aggregates", async () => {
     const db = (await getDb())!;
     await db.insert(simProbeLog).values([
-      probe({ carrier: "MTN", terminalId: "T1", latencyMs: 100, score: 80, probedAt: new Date(NOW - 2 * H) }),
-      probe({ carrier: "MTN", terminalId: "T1", latencyMs: 300, score: 60, probedAt: new Date(NOW - H) }),
-      probe({ carrier: "GLO", terminalId: "T2", latencyMs: 200, packetLossX10: 20, score: 70 }),
+      probe({ carrier: "MTN", terminalId: "T1", latencyMs: 100, score: 80, probedAt: new Date(NOON - 2 * H) }),
+      probe({ carrier: "MTN", terminalId: "T1", latencyMs: 300, score: 60, probedAt: new Date(NOON - H) }),
+      probe({ carrier: "GLO", terminalId: "T2", latencyMs: 200, packetLossX10: 20, score: 70, probedAt: new Date(NOON) }),
     ]);
     const admin = callerFor(adminUser);
     const res = await admin.networkStatusDashboard.getCarrierSummary({ days: 1 });
