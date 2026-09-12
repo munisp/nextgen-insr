@@ -8,7 +8,7 @@ import { UserPlus, Search, ArrowRight } from "lucide-react";
 
 // F-12 (S87-02): rewritten against the DELIVERED router surface. The previous
 // version called a phantom `advance` mutation and consumed a phantom
-// {agents, stageCounts} list shape behind @ts-nocheck/@ts-ignore. The real
+// {agents, stageCounts} list shape behind the ts-nocheck/ts-ignore directives. The real
 // router exposes list ({data, total} of agent_onboarding_progress rows),
 // getAnalytics ({byStep}), and advanceStep ({agentId, completedStep}).
 const STEP_KEYS = [

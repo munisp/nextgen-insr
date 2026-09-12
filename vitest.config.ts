@@ -91,12 +91,9 @@ export default defineConfig({
       // (53/53) and sprint65-final (37/37) — W3a artifacts
       // (docker-compose.production-final.yml, seed/smoke scripts, prometheus
       // config, k8s/deployment.yml) verified present and green on main.
-      "server/sprint79.test.ts",
       // RE-ENABLED 2026-09-12 (W3-residual, A8): sprint80 (27/27) — W3a
       // manifest k8s/sprint80-billing-services.yaml verified present and
       // green on main.
-      "server/sprint83.test.ts",
-      "server/sprint85.test.ts",
       // RE-ENABLED 2026-08-17: sprint35 (W5a, A14 — router moved to asserted
       // path, 65/65) + business-rules & liveness-improvements &
       // liveness-noise-tolerance (W5c, A6 — real services, green).

@@ -6,7 +6,7 @@ import { Search, TrendingUp, Award, Star } from "lucide-react";
 
 // F-12 (S87-02): rewritten against the DELIVERED agentPerformanceScorecard
 // router. The previous version consumed a phantom {agents, summary} shape
-// behind @ts-nocheck/@ts-ignore. Real shapes: list({page, limit, search}) →
+// behind the ts-nocheck/ts-ignore directives. Real shapes: list({page, limit, search}) →
 // {items, total, page, limit} of agent_performance_scores rows (agentId,
 // period, txVolume, txCount, commissionEarned, customerCount, disputeRate,
 // uptimePercent, overallScore, rank). Summary cards are computed client-side

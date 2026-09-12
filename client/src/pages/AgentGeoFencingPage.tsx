@@ -8,7 +8,7 @@ import { MapPin, Search, Shield } from "lucide-react";
 
 // F-12 (S87-02): rewritten against the DELIVERED router (registered as
 // `geofencing`, not `geoFencing`). The previous version hid the mismatch
-// behind @ts-nocheck + 7 @ts-ignore (4 of which were literal text rendered
+// behind the ts-nocheck directive + 7 ts-ignore comments (4 of which were literal text rendered
 // into the JSX) and consumed phantom fields (summary, region, agents,
 // violations). Real sources: geofencing.list ({zones, total} of
 // geofence_zones rows), geofencing.getStats ({totalZones, activeZones,
