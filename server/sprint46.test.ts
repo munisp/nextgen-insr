@@ -280,7 +280,17 @@ describe("Sprint 46: Data Integrity", () => {
     // file_integrity_baseline, network_alert_resolutions; migration 0060).
     // Honest-count drift, not a weakening — the gate still counts
     // information_schema at runtime.
-    expect(stats.totalTables).toBe(199);
+    // 2026-09-12: count updated 199 → 203 — W2a (zero-undelivered-scope
+    // B1+B2) added four REAL tables to drizzle/schema.additions.ts
+    // (pbac_policies, pbac_access_evaluations, security_scan_runs,
+    // security_scan_findings) via migration 0057. Union of the W2a+W2b+W2d
+    // deltas: 10 real wave tables (ddos_rate_windows,
+    // ddos_threshold_events, file_integrity_baseline,
+    // network_alert_resolutions, request_metrics, error_events,
+    // pbac_policies, pbac_access_evaluations, security_scan_runs,
+    // security_scan_findings). Honest-count drift, not a weakening — the
+    // gate still counts information_schema at runtime.
+    expect(stats.totalTables).toBe(203);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

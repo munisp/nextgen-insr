@@ -122,16 +122,33 @@ describe(`${FILE}: DDoS self-telemetry (B6)`, () => {
     // Counter against the REAL default persistence (fire-and-forget insert
     // into ddos_rate_windows / ddos_threshold_events on PGlite).
     const counter = new RateWindowCounter({ windowSeconds: 60, threshold: 5 });
-    const base = Date.now() - 120_000; // two minutes ago: windows fully closed
+    // WINDOW-PHASE DETERMINISM: the burst must land in ONE window. A raw
+    // Date.now()-120s has arbitrary phase; whenever (base mod 60s) > 53s
+    // the 7 one-second records straddle a window boundary, neither window
+    // reaches the breach threshold of 6, and the event row is NEVER created
+    // (observed as a waitFor timeout in full-suite CI where cumulative
+    // runtime shifts the wall-clock phase; smaller combinations passed by
+    // luck). Aligning base to a window start makes the burst deterministic
+    // under any suite load — this is the actual mechanism, not queue depth.
+    const base =
+      windowStartFor(new Date(Date.now() - 120_000), 60).getTime(); // aligned window, two minutes ago: fully closed
     const key = clientKeyFor("198.51.100.23");
     for (let i = 0; i < 7; i++) counter.record(key, new Date(base + i * 1000)); // breach in window W0
     counter.record(clientKeyFor("192.0.2.9"), new Date(base + 61_000)); // closes W0
     counter.flush(); // closes W1
     const db = (await getDb())!;
+    // The window rows and the breach event are persisted by INDEPENDENT
+    // fire-and-forget tasks (the event persists at the moment the breach is
+    // observed; each window persists when it closes). Under the merged
+    // suite's shared single-connection PGlite the event insert can still be
+    // queued behind other suites' traffic when only the window rows are
+    // awaited — observed as a 'no_anomalies' race in merged CI. Wait for
+    // BOTH real persists to land (never a sleep, never a stub).
     await waitFor(async () => {
       const rows = await db.select().from(ddosRateWindows);
-      return rows.length >= 2;
-    });
+      const evts = await db.select().from(ddosThresholdEvents);
+      return rows.length >= 2 && evts.length >= 1;
+    }, 30_000);
 
     const admin = callerFor(adminUser);
     const status = await admin.securityAudit.getDDoSStatus({});

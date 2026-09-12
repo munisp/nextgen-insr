@@ -21,8 +21,9 @@ export default function SecurityAuditDashboard() {
   const { data: mitigations } = trpc.securityAudit.getMitigations.useQuery({});
 
   // F-12 (wave-3): getAuditChain is REAL — it verifies the F-08 tamper-evident
-  // audit_log hash chain. getPolicies/getMitigations are fail-loud
-  // NOT_IMPLEMENTED (no delivered stores) and their cards stay empty.
+  // audit_log hash chain. getPolicies is REAL (B1, wave-2a): rows from the
+  // pbac_policies store seeded from the real Permify schema file; until an
+  // admin runs syncPbacPolicies it fails loud and the card shows "—".
   const d: Partial<Exclude<typeof data, null | undefined>> = data ?? {};
   const cards = [
     { title: "Audit Events", value: d.totalRows ?? "—", icon: Activity, trend: "up" as const, trendValue: "logged", status: "neutral" as const, href: "/audit-log", accent: "var(--insurance-primary)" },

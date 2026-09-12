@@ -27,6 +27,7 @@ paths = [
   '''^COMPREHENSIVE_ANALYSIS_REPORT\.md$''',        # documented dev vapid key
   '''^vitest\.config\.ts$''',                       # CI dummy values for requireEnv (non-production)
   '''^customer-portal-full/ci-init\.sql$''',          # seed rows labelled 'Test Sandbox Key' (sandbox creds, June 2026, reviewed — not production)
+  '''^tests/fixtures/.*\.golden$''',     # 2026-09-12 (W2a): REAL captured trivy scanner outputs from upstream aquasecurity/trivy v0.58.2 integration testdata (provenance in tests/integration/pbacScanner.integration.test.ts). trivy-secrets.json.golden contains trivy's own known-fake secret-detection fixtures (e.g. GITHUB_PAT=... dummy) which ANCHOR the scanner-parser known-answer tests — content must not be mangled. Path-scoped to *.golden fixtures only.
 ]
 
 
