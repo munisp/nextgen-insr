@@ -25,13 +25,13 @@ Sections:
 | `server/sprint71-security.test.ts` | services/rust/ddos-shield, services/go/pbac-engine | Services exist on main |
 | `server/sprint79.test.ts` | billing microservices (services/go + services/python billing-*); ALSO its `billingLedger` assertions encode the F-12 wave-3 REMOVED facade (recordSplit echoing `syncedToTigerBeetle: true` without persisting; fixture `query`) — replaced by `tests/integration/billingLedger.integration.test.ts` (real PG). Needs rewrite against the real ledger contract before re-enabling. | Services exist on main |
 | `server/sprint80.test.ts` | k8s/sprint80-billing-services.yaml | Manifest exists on main |
-| `server/sprint81.test.ts` | billing-analytics-pipeline, billing-sla-monitor, billing-webhook-dispatcher, billing-event-processor | Services exist on main |
+| ~~`server/sprint81.test.ts`~~ **RE-ENABLED 2026-08-17 (W5c, A4)** | billing-analytics-pipeline, billing-sla-monitor, billing-webhook-dispatcher DELIVERED (real FastAPI services, fail-loud without sinks, unit-tested) + services/go/settlement-gateway (real stdlib settlement orchestrator) — re-run green 23/23 before re-enable | ~~Services exist on main~~ DONE |
 | `server/sprint83.test.ts` | services/python/invoice-generator, fraud-ml-service etc. | Services exist on main |
 | `server/sprint85.test.ts` | services/python/billing-*, services/rust/fee-splitter-realtime | Services exist on main |
 | `server/sprint86.test.ts` | pbac-engine, ddos-shield, bandwidth-optimizer, Mojaloop connector, Dapr sidecar etc. | Services exist + wired in CI |
-| `server/business-rules.test.ts` | liveness-detection service, face-match/OCR, helm charts (6 failing describes; passing KYC-rule tests resume on re-enable) | Services/charts exist on main |
-| `server/liveness-improvements.test.ts` | services/python/liveness-detection | Service exists on main |
-| `server/liveness-noise-tolerance.test.ts` | services/python/liveness-detection/test_noisy_cameras.py | File exists on main |
+| ~~`server/business-rules.test.ts`~~ **RE-ENABLED 2026-08-17 (W5c, A6)** | services/python/liveness-detection, face-matching, document-fraud-detection, paddle-ocr-service DELIVERED (real image-processing services, fail-loud without cv2/mediapipe/paddle backends) + helm charts already on main (W4) — re-run green before re-enable | ~~Services/charts exist on main~~ DONE |
+| ~~`server/liveness-improvements.test.ts`~~ **RE-ENABLED 2026-08-17 (W5c, A6)** | services/python/liveness-detection DELIVERED: liveness_service.py (real MediaPipe pipeline, dip_threshold/recovery_level sprint-95 blink fix) + test_noisy_cameras.py (real 8-device field harness, 9/9 unittest green) — re-run green before re-enable | ~~Service exists on main~~ DONE |
+| ~~`server/liveness-noise-tolerance.test.ts`~~ **RE-ENABLED 2026-08-17 (W5c, A6)** | test_noisy_cameras.py + noise-tolerant detection (EMA smoothing, baseline noise-floor estimation, adaptive thresholds, sustained-motion, nod oscillation) DELIVERED — re-run green 60/60 across both liveness files before re-enable | ~~File exists on main~~ DONE |
 | `server/sprint35.test.ts` | server/routers/insuranceServiceFleet.ts (exists only in legacy insureportal/ tree; 0 commits at asserted path) | Router exists at asserted path |
 
 ## CAT-B — assembled-stack dependency

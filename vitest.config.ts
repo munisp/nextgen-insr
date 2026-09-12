@@ -93,13 +93,9 @@ export default defineConfig({
       "server/sprint71-security.test.ts",
       "server/sprint79.test.ts",
       "server/sprint80.test.ts",
-      "server/sprint81.test.ts",
       "server/sprint83.test.ts",
       "server/sprint85.test.ts",
       "server/sprint86.test.ts",
-      "server/business-rules.test.ts",
-      "server/liveness-improvements.test.ts",
-      "server/liveness-noise-tolerance.test.ts",
       "server/sprint35.test.ts",
       // CAT-B assembled-stack dependency (require running server/gateway):
       "tests/integration/api.test.ts",

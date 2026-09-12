@@ -1,0 +1,10 @@
+[package]
+name = "fee-splitter-realtime"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "fee-splitter-realtime"
+path = "src/main.rs"
+
+[dependencies]

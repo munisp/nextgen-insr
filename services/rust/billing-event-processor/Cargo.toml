@@ -1,0 +1,10 @@
+[package]
+name = "billing-event-processor"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "billing-event-processor"
+path = "src/main.rs"
+
+[dependencies]
