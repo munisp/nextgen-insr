@@ -788,3 +788,60 @@ export const networkAlertResolutions = pgTable(
 );
 export type NetworkAlertResolution = typeof networkAlertResolutions.$inferSelect;
 export type InsertNetworkAlertResolution = typeof networkAlertResolutions.$inferInsert;
+
+// ─── B8 + B9 (Zero-Undelivered-Scope wave 2): Observability telemetry ───────
+// request_metrics: one row per tRPC procedure call, recorded by the REAL
+// observability middleware (server/middleware/observabilityMiddleware.ts via
+// server/lib/telemetryStore.ts). Writes are batched and fire-and-forget:
+// they never block or fail the request, and no row is ever fabricated — the
+// apiLatency procedure reads only what actually landed here and fails loud
+// (NO_METRICS_YET) when the table is empty for the requested scope.
+export const requestMetrics = pgTable(
+  "request_metrics",
+  {
+    id: serial("id").primaryKey(),
+    // tRPC procedure path, e.g. "billingLedger.list" (route key).
+    path: varchar("path", { length: 255 }).notNull(),
+    // "query" | "mutation" | "subscription".
+    procedureType: varchar("procedure_type", { length: 16 }).notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    success: boolean("success").notNull(),
+    // tRPC error code when success = false (e.g. "NOT_FOUND"); NULL on success.
+    errorCode: varchar("error_code", { length: 64 }),
+    // Numeric users.id as string, or "anonymous" — never a fabricated id.
+    userId: varchar("user_id", { length: 64 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    pathCreatedIdx: index("rm_path_created_idx").on(t.path, t.createdAt),
+    createdIdx: index("rm_created_idx").on(t.createdAt),
+  })
+);
+export type RequestMetric = typeof requestMetrics.$inferSelect;
+export type InsertRequestMetric = typeof requestMetrics.$inferInsert;
+
+// error_events: grouped application-error occurrences captured by the same
+// middleware error path. One row per fingerprint (sha256 of
+// path + message + stack hash); repeat occurrences increment `count` and
+// advance lastSeen via a real upsert. Only genuine thrown errors are
+// recorded — never synthesized.
+export const errorEvents = pgTable(
+  "error_events",
+  {
+    id: serial("id").primaryKey(),
+    fingerprint: varchar("fingerprint", { length: 64 }).notNull().unique(),
+    message: text("message").notNull(),
+    // sha256 of the stack trace alone; NULL when the error carried no stack.
+    stackHash: varchar("stack_hash", { length: 64 }),
+    path: varchar("path", { length: 255 }).notNull(),
+    count: integer("count").default(1).notNull(),
+    firstSeen: timestamp("first_seen").defaultNow().notNull(),
+    lastSeen: timestamp("last_seen").defaultNow().notNull(),
+  },
+  t => ({
+    lastSeenIdx: index("ee_last_seen_idx").on(t.lastSeen),
+    pathIdx: index("ee_path_idx").on(t.path),
+  })
+);
+export type ErrorEvent = typeof errorEvents.$inferSelect;
+export type InsertErrorEvent = typeof errorEvents.$inferInsert;
