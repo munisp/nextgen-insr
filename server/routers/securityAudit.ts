@@ -11,10 +11,11 @@
 //   - B5 (zero-undelivered-scope): getBackupStatus / listBackupJobs are
 //     WIRED to the real backup_jobs catalog (migration 0054 +
 //     server/lib/backupCatalog.ts).
-//   - The remaining procedures have NO delivered data source (no DDoS
-//     telemetry, no file-integrity store) and FAIL LOUD with NOT_IMPLEMENTED
-//     instead of returning agent-registry rows. Runtime-honest beats
-//     stub-honest.
+//   - Runtime-honest beats stub-honest: procedures without a delivered
+//     data source FAIL LOUD instead of returning agent-registry rows.
+//   - B6/B4 (zero-undelivered-scope, wave-2d): getDDoSStatus and
+//     getFileIntegrity are REAL — server/lib/ddosTelemetry.ts and
+//     server/lib/fileIntegrity.ts (migration 0060).
 //   - B1 (zero-undelivered-scope, wave-2a): evaluateAccess / getPolicies are
 //     now REAL — Permify permissions/check via permifyCheckDetailed (fail-
 //     closed PRECONDITION_FAILED when Permify is unreachable, same
@@ -42,6 +43,13 @@ import {
   getLatestBackupJob,
   listBackupJobsPage,
 } from "../lib/backupCatalog";
+import { getDdosStatus } from "../lib/ddosTelemetry";
+import {
+  checkIntegrity,
+  FimConfigError,
+  FimNoBaselineError,
+  recordBaseline,
+} from "../lib/fileIntegrity";
 import {
   countPolicies,
   listAccessEvaluations,
@@ -505,12 +513,58 @@ const getMitigationStats = protectedProcedure.query(async () => {
   };
 });
 
-const getFileIntegrity = protectedProcedure.input(listInput).query(() => {
-  throw notDelivered(
-    "getFileIntegrity",
-    "no file-integrity monitoring store exists"
-  );
+// B4 (zero-undelivered-scope, Wave 2d): REAL file-integrity monitoring.
+// Diffs the server's live filesystem against the recorded sha256 baseline
+// (file_integrity_baseline, migration 0060) over the operator allowlist in
+// system_config['fim_monitored_paths']. Fails loud:
+//   - PRECONDITION_FAILED when the allowlist is unconfigured (with the exact
+//     config instructions), and
+//   - PRECONDITION_FAILED NO_BASELINE until recordFileBaseline has run.
+// Runtime constraint: the diff inspects the filesystem of the serving
+// process (deployed container image in production; checkout in CI).
+const getFileIntegrity = protectedProcedure.input(listInput).query(async () => {
+  const db = await getDb();
+  if (!db)
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "database unavailable",
+    });
+  try {
+    return await checkIntegrity(db);
+  } catch (err) {
+    if (err instanceof FimNoBaselineError || err instanceof FimConfigError) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: err.message });
+    }
+    throw err;
+  }
 });
+
+// Admin-only: record/refresh the sha256 baseline from the REAL filesystem.
+const recordFileBaseline = adminProcedure
+  .input(z.object({}).optional())
+  .mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db)
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "database unavailable",
+      });
+    try {
+      const scanned = await recordBaseline(db, {
+        baselinedBy: ctx.user?.email ?? String(ctx.user?.id ?? "admin"),
+      });
+      return {
+        success: true as const,
+        baselinedFiles: scanned.length,
+        paths: scanned.map(f => f.path),
+      };
+    } catch (err) {
+      if (err instanceof FimConfigError) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: err.message });
+      }
+      throw err;
+    }
+  });
 
 // B5: REAL — latest row from the backup_jobs catalog (migration 0054),
 // recorded by scripts/backup/pg_backup.sh / server/lib/backupCatalog.ts.
@@ -556,11 +610,31 @@ const listBackupJobs = protectedProcedure
     return { ...page, limit: input.limit, offset: input.offset };
   });
 
-const getDDoSStatus = protectedProcedure.input(listInput).query(() => {
-  throw notDelivered(
-    "getDDoSStatus",
-    "no DDoS telemetry source is delivered"
-  );
+// B6 (zero-undelivered-scope, Wave 2d): REAL DDoS self-telemetry. The
+// ddosTelemetryMiddleware (registered first in server/_core/index.ts) counts
+// requests per client key per 60s window and persists finished windows to
+// ddos_rate_windows (migration 0060); threshold breaches are recorded as
+// they are observed. This procedure reports ONLY rows really recorded:
+// instrumented-but-quiet -> {status:'no_anomalies', windowsObserved:N};
+// no windows ever persisted -> PRECONDITION_FAILED (capture not running).
+const getDDoSStatus = protectedProcedure.input(listInput).query(async () => {
+  const db = await getDb();
+  if (!db)
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "database unavailable",
+    });
+  try {
+    return await getDdosStatus(db);
+  } catch (err) {
+    if ((err as { code?: string }).code === "PRECONDITION_FAILED") {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: (err as Error).message,
+      });
+    }
+    throw err;
+  }
 });
 
 const getAuditChain = protectedProcedure
@@ -608,6 +682,7 @@ export const securityAuditRouter = router({
   updateMitigationStatus,
   getMitigationStats,
   getFileIntegrity,
+  recordFileBaseline,
   getBackupStatus,
   listBackupJobs,
   getDDoSStatus,

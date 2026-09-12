@@ -815,3 +815,86 @@ export const securityScanFindings = pgTable(
 export type SecurityScanFinding = typeof securityScanFindings.$inferSelect;
 export type InsertSecurityScanFinding =
   typeof securityScanFindings.$inferInsert;
+// ─── B6: DDoS self-telemetry (Wave 2d, migration 0060) ───────────────────────
+// One row per client key per finished rate window, persisted by
+// server/lib/ddosTelemetry.ts (in-process counting, fire-and-forget flush —
+// capture can never block or fail a request). clientKey is sha256(ip)[:32]:
+// stable per client without storing raw IPs at rest.
+export const ddosRateWindows = pgTable(
+  "ddos_rate_windows",
+  {
+    id: serial("id").primaryKey(),
+    windowStart: timestamp("window_start").notNull(),
+    windowSeconds: integer("window_seconds").notNull(),
+    clientKey: varchar("client_key", { length: 64 }).notNull(),
+    requestCount: integer("request_count").notNull(),
+    recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  },
+  t => ({
+    windowStartIdx: index("drw_window_start_idx").on(t.windowStart),
+    clientKeyIdx: index("drw_client_key_idx").on(t.clientKey),
+  })
+);
+export type DdosRateWindow = typeof ddosRateWindows.$inferSelect;
+export type InsertDdosRateWindow = typeof ddosRateWindows.$inferInsert;
+
+// Threshold-breach events, appended at the moment a client crosses the
+// configured per-window request threshold. Only genuinely observed breaches.
+export const ddosThresholdEvents = pgTable(
+  "ddos_threshold_events",
+  {
+    id: serial("id").primaryKey(),
+    clientKey: varchar("client_key", { length: 64 }).notNull(),
+    windowStart: timestamp("window_start").notNull(),
+    windowSeconds: integer("window_seconds").notNull(),
+    requestCount: integer("request_count").notNull(),
+    threshold: integer("threshold").notNull(),
+    detectedAt: timestamp("detected_at").defaultNow().notNull(),
+  },
+  t => ({
+    detectedAtIdx: index("dte_detected_at_idx").on(t.detectedAt),
+  })
+);
+export type DdosThresholdEvent = typeof ddosThresholdEvents.$inferSelect;
+export type InsertDdosThresholdEvent = typeof ddosThresholdEvents.$inferInsert;
+
+// ─── B4: File-integrity monitoring baseline (Wave 2d, migration 0060) ────────
+// Recorded by securityAudit.recordFileBaseline from the server's REAL
+// filesystem (server/lib/fileIntegrity.ts). Diffs in getFileIntegrity are
+// computed by re-hashing the live files and comparing — nothing is inferred.
+export const fileIntegrityBaseline = pgTable(
+  "file_integrity_baseline",
+  {
+    id: serial("id").primaryKey(),
+    path: text("path").notNull(),
+    sha256: varchar("sha256", { length: 64 }).notNull(),
+    fileSize: integer("file_size").notNull(),
+    baselinedAt: timestamp("baselined_at").defaultNow().notNull(),
+    baselinedBy: varchar("baselined_by", { length: 128 }),
+  },
+  t => ({
+    pathUnique: uniqueIndex("fib_path_unique").on(t.path),
+  })
+);
+export type FileIntegrityBaselineRow = typeof fileIntegrityBaseline.$inferSelect;
+export type InsertFileIntegrityBaseline = typeof fileIntegrityBaseline.$inferInsert;
+
+// ─── B14: Carrier alert resolutions (Wave 2d, migration 0060) ────────────────
+// Durable resolutions for the derived carrier alerts returned by
+// networkStatusDashboard.getAlerts (alerts themselves are computed at query
+// time from sim_probe_log; only the resolution decision is persisted).
+export const networkAlertResolutions = pgTable(
+  "network_alert_resolutions",
+  {
+    id: serial("id").primaryKey(),
+    alertKey: varchar("alert_key", { length: 255 }).notNull(),
+    resolution: text("resolution"),
+    resolvedBy: varchar("resolved_by", { length: 128 }),
+    resolvedAt: timestamp("resolved_at").defaultNow().notNull(),
+  },
+  t => ({
+    alertKeyIdx: index("nar_alert_key_idx").on(t.alertKey),
+  })
+);
+export type NetworkAlertResolution = typeof networkAlertResolutions.$inferSelect;
+export type InsertNetworkAlertResolution = typeof networkAlertResolutions.$inferInsert;

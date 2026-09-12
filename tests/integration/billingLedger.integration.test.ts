@@ -241,9 +241,23 @@ describe("billingLedger (F-12 wave-3, real PG)", () => {
 
   it("securityAudit stub-payload procedures now fail loud", async () => {
     const caller = callerFor(adminUser);
-    await expect(caller.securityAudit.getDDoSStatus({})).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
+    // B6 (zero-undelivered-scope, W2d): getDDoSStatus is now DELIVERED —
+    // real in-repo request-rate telemetry (ddosTelemetryMiddleware +
+    // ddos_rate_windows, migration 0060). Order-independent contract: it
+    // either returns the real status (windows recorded by
+    // ddosTelemetry.integration.test.ts first) or fails loud
+    // PRECONDITION_FAILED on an empty store. Never NOT_IMPLEMENTED again.
+    const ddos = await caller.securityAudit.getDDoSStatus({}).then(
+      r => ({ resolved: true as const, status: r.status }),
+      (e: { code?: string }) => ({ resolved: false as const, code: e.code })
+    );
+    if (ddos.resolved) {
+      expect(["no_anomalies", "threshold_breaches_observed"]).toContain(
+        ddos.status
+      );
+    } else {
+      expect(ddos.code).toBe("PRECONDITION_FAILED");
+    }
     // B5 (zero-undelivered-scope): getBackupStatus is now DELIVERED against
     // the real backup_jobs catalog — it must never again answer
     // NOT_IMPLEMENTED. Order-independent contract: it either returns a real
@@ -263,9 +277,19 @@ describe("billingLedger (F-12 wave-3, real PG)", () => {
     } else {
       expect(backupStatus.code).toBe("PRECONDITION_FAILED");
     }
-    await expect(caller.securityAudit.getFileIntegrity({})).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
+    // B4 (zero-undelivered-scope, W2d): getFileIntegrity is now DELIVERED —
+    // real sha256 baseline + filesystem diff (server/lib/fileIntegrity.ts,
+    // migration 0060). Order-independent contract: a real diff result or
+    // PRECONDITION_FAILED (NO_BASELINE / allowlist unconfigured).
+    const fim = await caller.securityAudit.getFileIntegrity({}).then(
+      r => ({ resolved: true as const, status: r.status }),
+      (e: { code?: string }) => ({ resolved: false as const, code: e.code })
+    );
+    if (fim.resolved) {
+      expect(["clean", "violations_detected"]).toContain(fim.status);
+    } else {
+      expect(fim.code).toBe("PRECONDITION_FAILED");
+    }
     await expect(caller.securityAudit.getPolicies({})).rejects.toMatchObject({
       code: "NOT_IMPLEMENTED",
     });

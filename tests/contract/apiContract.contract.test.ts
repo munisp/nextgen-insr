@@ -156,14 +156,13 @@ describe("CONTRACT — real server, real middleware chain, real DB", () => {
       expect(err.data.path).toBe("transactions.statsByType");
     });
 
-    it("securityAudit.getFileIntegrity (still undelivered) answers 501 NOT_IMPLEMENTED", async () => {
-      // Sentinel target retargeted (F-12 wave-5): the original sentinel,
-      // analyticsDashboard.kpiSummary, is now DELIVERED (real aggregates,
-      // B16). securityAudit.getFileIntegrity remains genuinely undelivered
-      // (no FIM store) and fails loud — the contract this test guards.
-      // getFileIntegrity takes an (all-optional) list input — {} so input
-      // validation passes and the 501 comes from the resolver itself.
-      const raw = await rawTrpcGet("securityAudit.getFileIntegrity", {}, adminCookie);
+    it("agentClusterAnalytics.listClusters (still undelivered) answers 501 NOT_IMPLEMENTED", async () => {
+      // Sentinel target retargeted again (W2d, B4): the previous sentinel,
+      // securityAudit.getFileIntegrity, is now DELIVERED (real FIM baseline
+      // + sha256 diff, migration 0060). agentClusterAnalytics is not in the
+      // undelivered-scope register's build waves, so its stubs stay
+      // genuinely undelivered and fail loud — the contract this test guards.
+      const raw = await rawTrpcGet("agentClusterAnalytics.listClusters", {}, adminCookie);
       const err = expectErrorEnvelope(raw, 501, "NOT_IMPLEMENTED");
       expect(err.message).toMatch(/not (implemented|delivered)/i);
     });
