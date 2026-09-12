@@ -617,6 +617,28 @@ const CbdcIntegrationGateway = lazy(
 const DecentralizedIdentityManager = lazy(
   () => import("./pages/DecentralizedIdentityManager")
 );
+// ── Innovation journey pages (J21–J28) — thin pages wired to the real
+// innovation routers in server/routers/innovationRouters.ts ──
+const TelematicsDashboard = lazy(() => import("./pages/TelematicsDashboard"));
+const CvClaimsAssessment = lazy(() => import("./pages/CvClaimsAssessment"));
+const FraudNetworkExplorer = lazy(() => import("./pages/FraudNetworkExplorer"));
+const WellnessDashboard = lazy(() => import("./pages/WellnessDashboard"));
+const NhiaEnrollment = lazy(() => import("./pages/NhiaEnrollment"));
+const InsuranceComparison = lazy(() => import("./pages/InsuranceComparison"));
+const P2pPools = lazy(() => import("./pages/P2pPools"));
+const VoiceClaims = lazy(() => import("./pages/VoiceClaims"));
+const ParametricTriggers = lazy(() => import("./pages/ParametricTriggers"));
+const GroupInsurance = lazy(() => import("./pages/GroupInsurance"));
+const BancassuranceReferrals = lazy(() => import("./pages/BancassuranceReferrals"));
+const OpenInsuranceConsent = lazy(() => import("./pages/OpenInsuranceConsent"));
+const ClimateRiskExplorer = lazy(() => import("./pages/ClimateRiskExplorer"));
+const RenewalPrediction = lazy(() => import("./pages/RenewalPrediction"));
+const SloMonitor = lazy(() => import("./pages/SloMonitor"));
+const EmbeddedInsurance = lazy(() => import("./pages/EmbeddedInsurance"));
+const AiUnderwritingCopilot = lazy(() => import("./pages/AiUnderwritingCopilot"));
+const RegulatorySandboxDashboard = lazy(() => import("./pages/RegulatorySandboxDashboard"));
+const CarbonCreditTracker = lazy(() => import("./pages/CarbonCreditTracker"));
+const InnovationHub = lazy(() => import("./pages/InnovationHub"));
 const PlatformMaturityScorecard = lazy(
   () => import("./pages/PlatformMaturityScorecard")
 );
@@ -2321,28 +2343,6 @@ export default function App() {
   const { shortcuts, helpOpen, setHelpOpen } = useKeyboardShortcuts();
 const InsuranceJourneyDashboard = lazy(() => import("./pages/InsuranceJourneyDashboard"));
 const WorkflowMonitorDashboard = lazy(() => import("./pages/WorkflowMonitorDashboard"));
-const InnovationHub = lazy(() => import("./pages/InnovationHub"));
-// ── Innovation journey pages (J21–J28) — thin pages wired to the real
-// innovation routers in server/routers/innovationRouters.ts ──
-const TelematicsDashboard = lazy(() => import("./pages/TelematicsDashboard"));
-const CvClaimsAssessment = lazy(() => import("./pages/CvClaimsAssessment"));
-const FraudNetworkExplorer = lazy(() => import("./pages/FraudNetworkExplorer"));
-const WellnessDashboard = lazy(() => import("./pages/WellnessDashboard"));
-const NhiaEnrollment = lazy(() => import("./pages/NhiaEnrollment"));
-const InsuranceComparison = lazy(() => import("./pages/InsuranceComparison"));
-const P2pPools = lazy(() => import("./pages/P2pPools"));
-const VoiceClaims = lazy(() => import("./pages/VoiceClaims"));
-const ParametricTriggers = lazy(() => import("./pages/ParametricTriggers"));
-const GroupInsurance = lazy(() => import("./pages/GroupInsurance"));
-const BancassuranceReferrals = lazy(() => import("./pages/BancassuranceReferrals"));
-const OpenInsuranceConsent = lazy(() => import("./pages/OpenInsuranceConsent"));
-const ClimateRiskExplorer = lazy(() => import("./pages/ClimateRiskExplorer"));
-const RenewalPrediction = lazy(() => import("./pages/RenewalPrediction"));
-const SloMonitor = lazy(() => import("./pages/SloMonitor"));
-const EmbeddedInsurance = lazy(() => import("./pages/EmbeddedInsurance"));
-const AiUnderwritingCopilot = lazy(() => import("./pages/AiUnderwritingCopilot"));
-const RegulatorySandboxDashboard = lazy(() => import("./pages/RegulatorySandboxDashboard"));
-const CarbonCreditTracker = lazy(() => import("./pages/CarbonCreditTracker"));
 
   return (
     <ErrorBoundary>
