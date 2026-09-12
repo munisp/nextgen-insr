@@ -22,6 +22,7 @@ jobs:
           - agent-gamification
           - regulatory-reporting
           - comparison-engine
+          - billing-provisioning-workflow
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -30,7 +31,11 @@ jobs:
       - name: Build ${{ matrix.service }}
         run: |
           cd services/go/${{ matrix.service }}
-          go build -o /tmp/${{ matrix.service }} ./cmd/
+          if [ -d cmd ]; then
+            go build -o /tmp/${{ matrix.service }} ./cmd/
+          else
+            go build -o /tmp/${{ matrix.service }} .
+          fi
       - name: Vet
         run: |
           cd services/go/${{ matrix.service }}
@@ -90,6 +95,8 @@ jobs:
         include:
           - path: services/go/payment-gateway
             name: payment-gateway
+          - path: services/go/billing-provisioning-workflow
+            name: billing-provisioning-workflow
           - path: services/python/kyc-verification
             name: kyc-verification
           - path: services/python/claims-adjudication
