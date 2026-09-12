@@ -87,15 +87,20 @@ export default defineConfig({
       // ═══ QUARANTINED (2026-08-16, assurance-lead approved, tests/QUARANTINE.md) ═══
       // Do NOT add entries without per-file assurance-lead approval.
       // CAT-A undelivered-scope (zero commits in git history, API-verified):
-      "server/sprint73-resilience.test.ts",
-      "server/lib/__tests__/sprint62-production.test.ts",
-      "server/lib/__tests__/sprint65-final.test.ts",
-      "server/sprint71-security.test.ts",
-      "server/sprint80.test.ts",
-      "server/sprint86.test.ts",
+      // RE-ENABLED 2026-09-12 (W3-residual, A9/A8): sprint62-production
+      // (53/53) and sprint65-final (37/37) — W3a artifacts
+      // (docker-compose.production-final.yml, seed/smoke scripts, prometheus
+      // config, k8s/deployment.yml) verified present and green on main.
+      // RE-ENABLED 2026-09-12 (W3-residual, A8): sprint80 (27/27) — W3a
+      // manifest k8s/sprint80-billing-services.yaml verified present and
+      // green on main.
       // RE-ENABLED 2026-08-17: sprint35 (W5a, A14 — router moved to asserted
       // path, 65/65) + business-rules & liveness-improvements &
       // liveness-noise-tolerance (W5c, A6 — real services, green).
+      // RE-ENABLED 2026-09-12: sprint73-resilience (90/90), sprint71-security
+      // (54/54), sprint86 (24/24), sprint95 (31/31) — A1/A2/A3 services all
+      // delivered on main (W5b #179, W5c #181, W5d #182); verified green via
+      // temp-wrapper run on main @8e638e3 before lifting (tests/QUARANTINE.md).
       // CAT-B assembled-stack dependency (require running server/gateway):
       "tests/integration/api.test.ts",
       "tests/integration/j02_policy_purchase.test.ts",
@@ -144,11 +149,11 @@ export default defineConfig({
       "server/middleware-integration.test.ts",
       "server/db-performance.test.ts",
       "server/observability-middleware.test.ts",
-      // sprint95: OPEN-DEFECT findings FIXED 2026-08-17 (auditCompliance
-      // adminProcedure false-positive, InnovationHub dead coming_soon label) —
-      // still excluded ONLY for the CAT-A services/go/connectivity-resilience
-      // service (undelivered scope).
-      "server/sprint95.test.ts",
+      // sprint95: RE-ENABLED 2026-09-12 — OPEN-DEFECT findings were FIXED
+      // 2026-08-17 (auditCompliance adminProcedure false-positive,
+      // InnovationHub dead coming_soon label) and the last CAT-A blocker
+      // (services/go/connectivity-resilience) was delivered by W5d (#182);
+      // verified 31/31 green via temp-wrapper run on main @8e638e3.
       // RE-ENABLED 2026-08-17 (F-12): gap-fixes — listDisputes now joins
       // transactions for real customerName; CommissionEngine 9-tier default
       // structure (CT-001..CT-009/CS-001..CS-005) tops up idempotently.
