@@ -128,10 +128,18 @@ describe(`${FILE}: DDoS self-telemetry (B6)`, () => {
     counter.record(clientKeyFor("192.0.2.9"), new Date(base + 61_000)); // closes W0
     counter.flush(); // closes W1
     const db = (await getDb())!;
+    // The window rows and the breach event are persisted by INDEPENDENT
+    // fire-and-forget tasks (the event persists at the moment the breach is
+    // observed; each window persists when it closes). Under the merged
+    // suite's shared single-connection PGlite the event insert can still be
+    // queued behind other suites' traffic when only the window rows are
+    // awaited — observed as a 'no_anomalies' race in merged CI. Wait for
+    // BOTH real persists to land (never a sleep, never a stub).
     await waitFor(async () => {
       const rows = await db.select().from(ddosRateWindows);
-      return rows.length >= 2;
-    });
+      const evts = await db.select().from(ddosThresholdEvents);
+      return rows.length >= 2 && evts.length >= 1;
+    }, 30_000);
 
     const admin = callerFor(adminUser);
     const status = await admin.securityAudit.getDDoSStatus({});
