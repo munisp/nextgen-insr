@@ -210,9 +210,10 @@ async fn deliver(processor_url: &str, tx: &QueuedTransaction) -> Result<(), Stri
         .send()
         .await
         .map_err(|e| format!("processor unreachable: {e}"))?;
-    if !resp.status().is_success() {
+    let status = resp.status();
+    if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("processor returned {}: {}", resp.status(), &body[..body.len().min(256)]));
+        return Err(format!("processor returned {}: {}", status, &body[..body.len().min(256)]));
     }
     Ok(())
 }

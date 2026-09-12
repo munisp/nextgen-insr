@@ -35,8 +35,13 @@ describe("Sprint 95: Router Implementation", () => {
   // 2026-08-16 drift fix (lead-approved): verified live count via git tree = 465
   // router .ts files (auditCompliance/gdprDashboard/provider/commissionPayouts/
   // premiumTopUp etc. legitimately added since the 424 expectation was written).
-  it("should have 465 router files", () => {
-    expect(routerFiles.length).toBe(465);
+  // 2026-09-12 drift fix (lead-approved, W5d): verified live count via git tree
+  // = 466 — the 466th file is server/routers/actuarialEngine.ts, a real tRPC
+  // router added by 29a27686 (PR #162, actuarial pricing engine v1), verified
+  // legitimate (router({...}) present, registered as actuarialEngine in
+  // server/routers.ts).
+  it("should have 466 router files", () => {
+    expect(routerFiles.length).toBe(466);
   });
 
   it("should have zero empty routers (router({}))", () => {

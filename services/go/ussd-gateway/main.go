@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -16,13 +19,14 @@ import (
 
 // USSDSession represents an active USSD session
 type USSDSession struct {
-	SessionID   string            `json:"sessionId"`
-	PhoneNumber string            `json:"phoneNumber"`
-	ServiceCode string            `json:"serviceCode"`
-	Text        string            `json:"text"`
-	State       string            `json:"state"`
-	Data        map[string]string `json:"data"`
-	CreatedAt   time.Time         `json:"createdAt"`
+	SessionID    string            `json:"sessionId"`
+	PhoneNumber  string            `json:"phoneNumber"`
+	ServiceCode  string            `json:"serviceCode"`
+	Text         string            `json:"text"`
+	State        string            `json:"state"`
+	Data         map[string]string `json:"data"`
+	CreatedAt    time.Time         `json:"createdAt"`
+	LastActivity time.Time         `json:"lastActivity"`
 }
 
 // Menu represents a USSD menu structure
@@ -58,6 +62,27 @@ var registry = &sessionRegistry{
 // activeWindow is how long since the last interaction a session counts as active.
 const activeWindow = 3 * time.Minute
 
+// sessionTimeout is when an idle session is expired by cleanup.
+const sessionTimeout = activeWindow
+
+// expireStaleSessions deletes sessions idle past sessionTimeout. Runs both
+// opportunistically (inside record) and on a background ticker, so a session
+// that the telco abandons without "END" is always expired eventually.
+func (r *sessionRegistry) expireStaleSessions() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cutoff := time.Now().Add(-sessionTimeout)
+	expired := 0
+	for id, sess := range r.sessions {
+		lastSeen, err := time.Parse(time.RFC3339, sess.Data["last_seen"])
+		if (err != nil && sess.LastActivity.Before(cutoff)) || (err == nil && lastSeen.Before(cutoff)) {
+			delete(r.sessions, id)
+			expired++
+		}
+	}
+	return expired
+}
+
 func (r *sessionRegistry) record(sessionID, phoneNumber, serviceCode, text string, completed bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -89,9 +114,10 @@ func (r *sessionRegistry) record(sessionID, phoneNumber, serviceCode, text strin
 			r.flows["contact_support"]++
 		}
 	}
-	// opportunistic cleanup of stale sessions
+	// opportunistic session cleanup: expire stale sessions under memory pressure
 	if len(r.sessions) > 10000 {
-		cutoff := time.Now().Add(-activeWindow)
+		// inline expire (lock already held — same rules as expireStaleSessions)
+		cutoff := time.Now().Add(-sessionTimeout)
 		for id, sess := range r.sessions {
 			lastSeen, err := time.Parse(time.RFC3339, sess.Data["last_seen"])
 			if err != nil || lastSeen.Before(cutoff) {
@@ -143,6 +169,17 @@ func main() {
 	}
 
 	srv := &http.Server{Addr: ":" + port, Handler: router, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second}
+
+	// background session cleanup: expire idle sessions every minute
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n := registry.expireStaleSessions(); n > 0 {
+				log.Printf("session cleanup: expired %d idle sessions (timeout %s)", n, sessionTimeout)
+			}
+		}
+	}()
 
 	go func() {
 		log.Printf("ussd-gateway service starting on :%s", port)
@@ -236,10 +273,38 @@ func processUSSD(sessionID, phoneNumber, serviceCode, text string) string {
 4. Travel (from ₦5,000/trip)
 5. Property (from ₦20,000/yr)`
 
+	// Wallet transaction flows (cash_in, cash_out, balance, transfer).
+	// Every operation is a REAL call to the platform wallet API
+	// (WALLET_API_URL); without it, each flow fails loud instead of
+	// inventing balances or confirmations.
 	case text == "5":
-		// FAIL-LOUD: this gateway has no connection to the wallet/ledger
-		// backend. It must never answer with a fabricated balance.
-		return "END Wallet balance lookup is temporarily unavailable via USSD.\nPlease check the InsurePortal app or call 0800-INSURE."
+		return `CON Wallet Transactions:
+1. Cash In (cash_in)
+2. Cash Out (cash_out)
+3. Balance Enquiry (balance)
+4. Transfer (transfer)
+0. Back`
+
+	case text == "5*1":
+		return "CON Cash In\nEnter amount (NGN):"
+	case len(text) > 4 && text[:4] == "5*1*":
+		return walletTx(phoneNumber, "cash_in", text[4:], "")
+
+	case text == "5*2":
+		return "CON Cash Out\nEnter amount (NGN):"
+	case len(text) > 4 && text[:4] == "5*2*":
+		return walletTx(phoneNumber, "cash_out", text[4:], "")
+
+	case text == "5*3":
+		return walletTx(phoneNumber, "balance", "", "")
+
+	case text == "5*4":
+		return "CON Transfer\nEnter recipient phone number:"
+	case len(text) > 4 && text[:4] == "5*4*" && countFields(text) == 3:
+		return "CON Transfer to " + lastField(text) + "\nEnter amount (NGN):"
+	case len(text) > 4 && text[:4] == "5*4*" && countFields(text) == 4:
+		parts := splitFields(text)
+		return walletTx(phoneNumber, "transfer", parts[3], parts[2])
 
 	case text == "6":
 		return "END Contact InsurePortal Support:\nPhone: 0800-INSURE (0800-467873)\nWhatsApp: +234 800 123 4567\nEmail: support@insureportal.ng"
@@ -274,6 +339,61 @@ Vehicle value (₦):
 	default:
 		return "END Invalid option. Please try again.\nDial " + serviceCode + " to start over."
 	}
+}
+
+// walletTx executes a real wallet operation against the platform wallet API.
+// FAIL-LOUD: without WALLET_API_URL, or when the API errors, the user gets an
+// honest failure message — no balance, confirmation or reference is invented.
+func walletTx(phoneNumber, op, amountStr, recipient string) string {
+	opLabel := map[string]string{"cash_in": "cash-in", "cash_out": "cash-out", "balance": "balance enquiry", "transfer": "transfer"}[op]
+	if opLabel == "" {
+		opLabel = op
+	}
+	base := strings.TrimRight(os.Getenv("WALLET_API_URL"), "/")
+	if base == "" {
+		return "END Wallet service is temporarily unavailable via USSD.\nNo " + opLabel + " was performed.\nPlease use the InsurePortal app or call 0800-INSURE."
+	}
+	payload := map[string]string{"phoneNumber": phoneNumber, "operation": op}
+	if amountStr != "" {
+		amount, err := strconv.ParseFloat(amountStr, 64)
+		if err != nil || amount <= 0 {
+			return "END Invalid amount. Transaction cancelled."
+		}
+		payload["amount"] = strconv.FormatFloat(amount, 'f', 2, 64)
+	}
+	if recipient != "" {
+		payload["recipient"] = recipient
+	}
+	body, _ := json.Marshal(payload)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(base+"/api/v1/wallet/ussd", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return "END Wallet service unreachable. No " + opLabel + " was performed.\nPlease try again later or call 0800-INSURE."
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Balance   string `json:"balance"`
+		Reference string `json:"reference"`
+		Message   string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || resp.StatusCode/100 != 2 {
+		return "END " + opLabel + " failed (wallet API error " + strconv.Itoa(resp.StatusCode) + ").\nNo transaction was performed."
+	}
+	switch op {
+	case "balance":
+		return "END Wallet Balance: NGN " + result.Balance
+	case "transfer":
+		return "END Transfer of NGN " + payload["amount"] + " to " + recipient + " successful.\nRef: " + result.Reference
+	default:
+		return "END " + op + " of NGN " + payload["amount"] + " successful.\nRef: " + result.Reference
+	}
+}
+
+func splitFields(text string) []string { return strings.Split(text, "*") }
+func countFields(text string) int      { return len(splitFields(text)) }
+func lastField(text string) string {
+	f := splitFields(text)
+	return f[len(f)-1]
 }
 
 func listActiveSessions(c *gin.Context) {
