@@ -96,21 +96,27 @@ jobs:
           - service: fraud-ml-service
             main: main.py
             test: test_main.py
+            install: true
           - service: billing-analytics-pipeline
             main: main.py
             test: test_main.py
+            install: true
           - service: invoice-generator
             main: main.py
             test: test_main.py
+            install: true
           - service: billing-webhook-dispatcher
             main: main.py
             test: test_main.py
+            install: true
           - service: billing-sla-monitor
             main: main.py
             test: test_main.py
+            install: true
           - service: liveness-detection
             main: liveness_service.py
             test: test_noisy_cameras.py
+            install: true
           - service: face-matching
             main: face_matching_service.py
             install: false  # heavy backends (deepface/tf-keras) are lazy-imported; service fails loud without them
@@ -126,7 +132,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install deps
-        if: matrix.install != false
+        if: matrix.install == true
         run: |
           cd services/python/${{ matrix.service }}
           pip install -r requirements.txt
