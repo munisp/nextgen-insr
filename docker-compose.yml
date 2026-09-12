@@ -371,6 +371,23 @@ services:
     networks:
       - insureportal
 
+  # ── Tenant Billing Provisioning Workflow sidecar (Go) ─────────────────────
+  insureportal-billing-provisioning:
+    build:
+      context: ./services/go/billing-provisioning-workflow
+      dockerfile: Dockerfile
+    container_name: insureportal-billing-provisioning
+    restart: unless-stopped
+    environment:
+      PORT: "8105"
+      POSTGRES_DSN: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+    depends_on:
+      - postgres
+    ports:
+      - "8105:8105"
+    networks:
+      - insureportal
+
   # ── Fraud Gate (Rust) ─────────────────────────────────────────────────────
   insureportal-fraud-gate:
     build:

@@ -96,7 +96,9 @@ export default defineConfig({
       "server/sprint83.test.ts",
       "server/sprint85.test.ts",
       "server/sprint86.test.ts",
-      "server/sprint35.test.ts",
+      // RE-ENABLED 2026-08-17: sprint35 (W5a, A14 — router moved to asserted
+      // path, 65/65) + business-rules & liveness-improvements &
+      // liveness-noise-tolerance (W5c, A6 — real services, green).
       // CAT-B assembled-stack dependency (require running server/gateway):
       "tests/integration/api.test.ts",
       "tests/integration/j02_policy_purchase.test.ts",
@@ -105,11 +107,12 @@ export default defineConfig({
       // be re-enabled as fixes land; tracked as F-12 sub-items):
       // RE-ENABLED 2026-08-17 (F-12 wave 2): sprint37/39/40/41 — getStats
       // implemented on real data for all 15 gap routers (verified 258/258).
-      // sprint82: 8 billing provisioning activities + BillingProvisioningWorkflow
-      // implemented against the real billing tables (verified 24/25) — still
-      // excluded ONLY for the CAT-A services/go/billing-provisioning-workflow
-      // sidecar (undelivered scope).
-      "server/sprint82.test.ts",
+      // RE-ENABLED 2026-08-17 (W5a, A5): sprint82 — the CAT-A Go sidecar
+      // services/go/billing-provisioning-workflow/main.go is now delivered as a
+      // REAL service (stdlib + lib/pq, fail-loud PG connect, mirrors
+      // BillingProvisioningWorkflow's 7 steps + reverse-order compensation
+      // against the same billing tables; wired in docker-compose and
+      // services-ci.yml). Verified 25/25 (file total 90/90 with sprint35).
       // RE-ENABLED 2026-08-17 (F-12): sprint93 — networkQualityHeatmap
       // getRegionMetrics/getEvents/getRegionDetail implemented (real data).
       "server/sprint87.test.ts",

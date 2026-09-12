@@ -1,0 +1,17 @@
+# Dapr pub/sub component — mirrors k8s/charts/dapr (W4): name "pubsub",
+# type pubsub.kafka, brokers kafka:9092, consumer group insurance-platform.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: insurance-platform
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+    - name: brokers
+      value: kafka:9092
+    - name: authType
+      value: none
+    - name: consumerGroup
+      value: insurance-platform

@@ -379,7 +379,7 @@ import { pnlReportRouter } from "./routers/pnlReport";
 import { pnlReportsRouter } from "./routers/pnlReportsCrud";
 import { posDisputeRouter } from "./routers/posDispute";
 import { posServiceUpdateRouter } from "./routers/posServiceUpdate";
-import { insuranceServiceFleetRouter } from "./routers/posTerminalFleet";
+import { insuranceServiceFleetRouter } from "./routers/insuranceServiceFleet";
 import { predictiveAgentChurnRouter } from "./routers/predictiveAgentChurn";
 import { premiumTopUpRouter } from "./routers/premiumTopUp";
 import { productionFeaturesRouter } from "./routers/productionFeatures";

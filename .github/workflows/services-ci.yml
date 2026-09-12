@@ -22,6 +22,7 @@ jobs:
           - agent-gamification
           - regulatory-reporting
           - comparison-engine
+          - billing-provisioning-workflow
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -30,7 +31,11 @@ jobs:
       - name: Build ${{ matrix.service }}
         run: |
           cd services/go/${{ matrix.service }}
-          go build -o /tmp/${{ matrix.service }} ./cmd/
+          if [ -d cmd ]; then
+            go build -o /tmp/${{ matrix.service }} ./cmd/
+          else
+            go build -o /tmp/${{ matrix.service }} .
+          fi
       - name: Vet
         run: |
           cd services/go/${{ matrix.service }}
@@ -45,6 +50,8 @@ jobs:
         service:
           - settlement-gateway
           - telemetry-api-gateway
+          - pbac-engine
+          - dapr-sidecar
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -165,6 +172,28 @@ jobs:
           cd services/rust/fee-splitter-realtime
           cargo check
           cargo test
+      - name: Build and test ddos-shield
+        run: |
+          cd services/rust/ddos-shield
+          cargo check
+          cargo test
+
+  mojaloop-connector:
+    # Stdlib-only Python service: compile-check plus its real unittest suite.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile check
+        run: |
+          cd services/python/mojaloop-connector
+          python -m py_compile main.py test_main.py
+      - name: Unit tests
+        run: |
+          cd services/python/mojaloop-connector
+          python -m unittest test_main -v
 
   typescript-services:
     runs-on: ubuntu-latest
@@ -187,6 +216,8 @@ jobs:
         include:
           - path: services/go/payment-gateway
             name: payment-gateway
+          - path: services/go/billing-provisioning-workflow
+            name: billing-provisioning-workflow
           - path: services/python/kyc-verification
             name: kyc-verification
           - path: services/python/claims-adjudication
