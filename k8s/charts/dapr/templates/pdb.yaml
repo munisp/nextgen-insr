@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dapr.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "dapr.selectorLabels" . | nindent 6 }}

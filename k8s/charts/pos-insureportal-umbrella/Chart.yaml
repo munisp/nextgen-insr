@@ -1,0 +1,63 @@
+apiVersion: v2
+name: pos-insureportal-umbrella
+description: Umbrella chart deploying the complete POS InsurePortal middleware stack
+  (PostgreSQL, Redis, Kafka, TigerBeetle, Temporal, Keycloak, Permify, APISIX, OpenSearch,
+  Dapr, Fluvio, Mojaloop, Lakehouse) into a single namespace.
+type: application
+version: 1.0.0
+appVersion: 1.0.0
+dependencies:
+- name: postgresql
+  version: 1.0.0
+  repository: file://../postgresql
+  condition: postgresql.enabled
+- name: redis
+  version: 1.0.0
+  repository: file://../redis
+  condition: redis.enabled
+- name: kafka
+  version: 1.0.0
+  repository: file://../kafka
+  condition: kafka.enabled
+- name: tigerbeetle
+  version: 1.0.0
+  repository: file://../tigerbeetle
+  condition: tigerbeetle.enabled
+- name: opensearch
+  version: 1.0.0
+  repository: file://../opensearch
+  condition: opensearch.enabled
+- name: fluvio
+  version: 1.0.0
+  repository: file://../fluvio
+  condition: fluvio.enabled
+- name: temporal
+  version: 1.0.0
+  repository: file://../temporal
+  condition: temporal.enabled
+- name: keycloak
+  version: 1.0.0
+  repository: file://../keycloak
+  condition: keycloak.enabled
+- name: permify
+  version: 1.0.0
+  repository: file://../permify
+  condition: permify.enabled
+- name: apisix
+  version: 1.0.0
+  repository: file://../apisix
+  condition: apisix.enabled
+- name: dapr
+  version: 1.0.0
+  repository: file://../dapr
+  condition: dapr.enabled
+- name: mojaloop
+  version: 1.0.0
+  repository: file://../mojaloop
+  condition: mojaloop.enabled
+- name: lakehouse
+  version: 1.0.0
+  repository: file://../lakehouse
+  condition: lakehouse.enabled
+maintainers:
+- name: InsurePortal Platform Team

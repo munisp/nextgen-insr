@@ -1,0 +1,14 @@
+apiVersion: v2
+name: dapr
+description: "Dapr placement service + platform Configuration/Component CRDs (Redis\
+  \ statestore, Kafka pubsub) \u2014 sidecar building blocks for the microservices\
+  \ (k8s/middleware/dapr.yaml, compose daprio/dapr:1.13.0)."
+type: application
+version: 1.0.0
+appVersion: 1.13.0
+keywords:
+- pos-insureportal
+- middleware
+- dapr
+maintainers:
+- name: InsurePortal Platform Team

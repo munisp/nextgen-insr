@@ -1,0 +1,57 @@
+# Default values for the tigerbeetle chart.
+# Mirrors docker-compose.yml / k8s/middleware configuration.
+replicaCount: 3
+image:
+  repository: ghcr.io/tigerbeetle/tigerbeetle
+  tag: 0.16.41
+  pullPolicy: IfNotPresent
+fullnameOverride: ''
+service:
+  type: ClusterIP
+  ports:
+  - name: client
+    port: 3000
+config:
+  LOG_LEVEL: info
+secrets:
+  UNUSED: no-credentials-required
+command:
+- /bin/sh
+- -c
+args:
+- if [ ! -f /var/lib/tigerbeetle/0_0.tigerbeetle ]; then tigerbeetle format --cluster=0 --replica=$((${HOSTNAME##*-})) --replica-count=3
+  /var/lib/tigerbeetle/0_0.tigerbeetle; fi; exec tigerbeetle start --addresses=tigerbeetle-0.tigerbeetle-headless:3000,tigerbeetle-1.tigerbeetle-headless:3000,tigerbeetle-2.tigerbeetle-headless:3000
+  /var/lib/tigerbeetle/0_0.tigerbeetle
+env: []
+volumeMounts: []
+volumes: []
+persistence:
+  enabled: true
+  size: 100Gi
+  storageClass: cinder-high-iops
+  accessModes:
+  - ReadWriteOnce
+  mountPath: /var/lib/tigerbeetle
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30
+probes:
+  liveness:
+    tcpSocket:
+      port: 3000
+    initialDelaySeconds: 60
+    periodSeconds: 10
+  readiness:
+    tcpSocket:
+      port: 3000
+    initialDelaySeconds: 30
+    periodSeconds: 5
+resources:
+  requests:
+    memory: 8Gi
+    cpu: '4'
+  limits:
+    memory: 16Gi
+    cpu: '8'
+pdb:
+  minAvailable: 2

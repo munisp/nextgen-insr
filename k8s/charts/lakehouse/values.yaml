@@ -1,0 +1,76 @@
+# Default values for the lakehouse chart.
+# Mirrors docker-compose.yml / k8s/middleware configuration.
+replicaCount: 1
+image:
+  repository: minio/minio
+  tag: RELEASE.2024-01-16T16-07-38Z
+  pullPolicy: IfNotPresent
+fullnameOverride: ''
+service:
+  type: ClusterIP
+  ports:
+  - name: s3
+    port: 9000
+  - name: console
+    port: 9001
+config:
+  MINIO_REGION: us-east-1
+  MINIO_BROWSER: 'on'
+secrets:
+  MINIO_ROOT_USER: minioadmin
+  MINIO_ROOT_PASSWORD: minioadmin
+  MINIO_ACCESS_KEY: minioadmin
+  MINIO_SECRET_KEY: minioadmin
+configAsEnv: true
+command:
+- server
+- /data
+- --console-address
+- :9001
+env: []
+volumeMounts: []
+volumes: []
+persistence:
+  enabled: true
+  size: 50Gi
+  storageClass: cinder-ssd
+  accessModes:
+  - ReadWriteOnce
+  mountPath: /data
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30
+probes:
+  liveness:
+    httpGet:
+      path: /minio/health/live
+      port: 9000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    httpGet:
+      path: /minio/health/ready
+      port: 9000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 2Gi
+    cpu: '1'
+pdb:
+  minAvailable: 1
+trino:
+  replicaCount: 1
+  image:
+    repository: trinodb/trino
+    tag: '440'
+  resources:
+    requests:
+      memory: 1Gi
+      cpu: 500m
+    limits:
+      memory: 4Gi
+      cpu: '2'

@@ -1,0 +1,83 @@
+# Default values for the kafka chart.
+# Mirrors docker-compose.yml / k8s/middleware configuration.
+replicaCount: 3
+image:
+  repository: confluentinc/cp-kafka
+  tag: 7.6.0
+  pullPolicy: IfNotPresent
+fullnameOverride: ''
+service:
+  type: ClusterIP
+  ports:
+  - name: plain
+    port: 9092
+  - name: controller
+    port: 9093
+  - name: jmx
+    port: 9101
+config:
+  CLUSTER_ID: insureportal-kafka-cluster-1
+  KAFKA_PROCESS_ROLES: broker,controller
+  KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 0@kafka-0.kafka-headless:9093,1@kafka-1.kafka-headless:9093,2@kafka-2.kafka-headless:9093
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '3'
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: '3'
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: '2'
+  KAFKA_DEFAULT_REPLICATION_FACTOR: '3'
+  KAFKA_MIN_INSYNC_REPLICAS: '2'
+  KAFKA_LOG_RETENTION_HOURS: '168'
+  KAFKA_LOG_SEGMENT_BYTES: '1073741824'
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: '0'
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+  KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+secrets:
+  KAFKA_JMX_PASSWORD: change-me-jmx
+configAsEnv: true
+command:
+- /bin/sh
+- -c
+args:
+- export KAFKA_NODE_ID=${HOSTNAME##*-}; exec /etc/confluent/docker/run
+env:
+- name: MY_POD_NAME
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+- name: KAFKA_ADVERTISED_LISTENERS
+  value: PLAINTEXT://$(MY_POD_NAME).kafka-headless:9092
+volumeMounts: []
+volumes: []
+persistence:
+  enabled: true
+  size: 100Gi
+  storageClass: cinder-ssd
+  accessModes:
+  - ReadWriteOnce
+  mountPath: /var/lib/kafka/data
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30
+probes:
+  liveness:
+    exec:
+      command:
+      - kafka-broker-api-versions
+      - --bootstrap-server
+      - localhost:9092
+    initialDelaySeconds: 60
+    periodSeconds: 10
+  readiness:
+    tcpSocket:
+      port: 9092
+    initialDelaySeconds: 30
+    periodSeconds: 5
+resources:
+  requests:
+    memory: 4Gi
+    cpu: '1'
+  limits:
+    memory: 8Gi
+    cpu: '2'
+pdb:
+  minAvailable: 2

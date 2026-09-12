@@ -1,0 +1,66 @@
+name: Helm Charts
+
+# Lints and renders every chart under k8s/charts/ (A7 middleware stack).
+# Re-enable evidence for tests/server/helm-charts.test.ts quarantine entry:
+# the asserted charts exist AND are wired into CI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'k8s/charts/**'
+      - '.github/workflows/helm-charts.yml'
+  pull_request:
+    paths:
+      - 'k8s/charts/**'
+      - '.github/workflows/helm-charts.yml'
+
+env:
+  HELM_VERSION: 'v3.14.4'
+
+jobs:
+  lint-and-render:
+    name: helm lint + helm template (all 14 charts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: helm lint component charts
+        run: |
+          set -e
+          for chart in apisix dapr fluvio kafka keycloak lakehouse mojaloop \
+                       opensearch permify postgresql redis temporal tigerbeetle; do
+            echo "=== helm lint k8s/charts/$chart"
+            helm lint "k8s/charts/$chart"
+          done
+
+      - name: helm template component charts
+        run: |
+          set -e
+          for chart in apisix dapr fluvio kafka keycloak lakehouse mojaloop \
+                       opensearch permify postgresql redis temporal tigerbeetle; do
+            echo "=== helm template k8s/charts/$chart"
+            helm template ci "k8s/charts/$chart" --namespace middleware \
+              | grep -q '^kind: '
+          done
+
+      - name: Build umbrella dependencies
+        run: helm dependency build k8s/charts/pos-insureportal-umbrella
+
+      - name: helm lint umbrella chart
+        run: helm lint k8s/charts/pos-insureportal-umbrella
+
+      - name: helm template umbrella chart (default + production values)
+        run: |
+          set -e
+          helm template pos k8s/charts/pos-insureportal-umbrella \
+            --namespace insurance-platform | grep -q '^kind: Namespace'
+          helm template pos k8s/charts/pos-insureportal-umbrella \
+            -f k8s/charts/pos-insureportal-umbrella/values-production.yaml \
+            --namespace insurance-platform-prod | grep -q '^kind: Namespace'

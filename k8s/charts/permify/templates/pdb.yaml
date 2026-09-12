@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "permify.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "permify.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "permify.selectorLabels" . | nindent 6 }}

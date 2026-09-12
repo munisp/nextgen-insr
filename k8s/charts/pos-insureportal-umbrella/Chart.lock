@@ -1,0 +1,42 @@
+dependencies:
+- name: postgresql
+  repository: file://../postgresql
+  version: 1.0.0
+- name: redis
+  repository: file://../redis
+  version: 1.0.0
+- name: kafka
+  repository: file://../kafka
+  version: 1.0.0
+- name: tigerbeetle
+  repository: file://../tigerbeetle
+  version: 1.0.0
+- name: opensearch
+  repository: file://../opensearch
+  version: 1.0.0
+- name: fluvio
+  repository: file://../fluvio
+  version: 1.0.0
+- name: temporal
+  repository: file://../temporal
+  version: 1.0.0
+- name: keycloak
+  repository: file://../keycloak
+  version: 1.0.0
+- name: permify
+  repository: file://../permify
+  version: 1.0.0
+- name: apisix
+  repository: file://../apisix
+  version: 1.0.0
+- name: dapr
+  repository: file://../dapr
+  version: 1.0.0
+- name: mojaloop
+  repository: file://../mojaloop
+  version: 1.0.0
+- name: lakehouse
+  repository: file://../lakehouse
+  version: 1.0.0
+digest: sha256:a1deefa7b2f70044c03f29590a3cfa1d6d7625b5d06cdfab3d80343b0382411c
+generated: "2026-09-12T14:32:01.984994266+08:00"

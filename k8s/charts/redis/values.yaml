@@ -1,0 +1,97 @@
+# Default values for the redis chart.
+# Mirrors docker-compose.yml / k8s/middleware configuration.
+replicaCount: 6
+image:
+  repository: redis
+  tag: 7.2-alpine
+  pullPolicy: IfNotPresent
+fullnameOverride: ''
+service:
+  type: ClusterIP
+  ports:
+  - name: client
+    port: 6379
+  - name: gossip
+    port: 16379
+config:
+  redis.conf: 'bind 0.0.0.0
+
+    port 6379
+
+    dir /data
+
+    maxmemory 768mb
+
+    maxmemory-policy allkeys-lru
+
+    appendfsync everysec
+
+    '
+secrets:
+  REDIS_PASSWORD: insureportal_dev
+command:
+- redis-server
+args:
+- /conf/redis.conf
+- --cluster-enabled
+- 'yes'
+- --cluster-config-file
+- /data/nodes.conf
+- --cluster-node-timeout
+- '5000'
+- --appendonly
+- 'yes'
+- --requirepass
+- $(REDIS_PASSWORD)
+- --masterauth
+- $(REDIS_PASSWORD)
+env:
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: '{{ include "redis.fullname" . }}'
+      key: REDIS_PASSWORD
+volumeMounts:
+- name: conf
+  mountPath: /conf
+volumes:
+- name: conf
+  configMap: true
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClass: cinder-ssd
+  accessModes:
+  - ReadWriteOnce
+  mountPath: /data
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30
+probes:
+  liveness:
+    exec:
+      command:
+      - redis-cli
+      - -a
+      - $(REDIS_PASSWORD)
+      - ping
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    exec:
+      command:
+      - redis-cli
+      - -a
+      - $(REDIS_PASSWORD)
+      - ping
+    initialDelaySeconds: 5
+    periodSeconds: 5
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 1Gi
+    cpu: 500m
+pdb:
+  minAvailable: 3
