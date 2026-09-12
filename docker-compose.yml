@@ -511,6 +511,196 @@ services:
     networks:
       - insureportal
 
+  # ══════════════════════════════════════════════════════════════════════════
+  # Innovation journey services (J21–J28) — these DNS names + ports are the
+  # exact defaults resolved by server/routers/innovationRouters.ts (SVC map).
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── Telematics Engine (Go) — UBI driving-score service ────────────────────
+  telematics-engine:
+    build:
+      context: ./services/go/telematics-engine
+      dockerfile: Dockerfile
+    container_name: telematics-engine
+    restart: unless-stopped
+    environment:
+      PORT: "8097"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8097/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "8097:8097"
+    networks:
+      - insureportal
+
+  # ── CV Claims Adjuster (Python) — photo damage assessment ─────────────────
+  cv-claims-adjuster:
+    build:
+      context: ./services/python/cv-claims-adjuster
+      dockerfile: Dockerfile
+    container_name: cv-claims-adjuster
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8099/health', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "8099:8099"
+    networks:
+      - insureportal
+
+  # ── Fraud Network Graph (Python) — entity relationship risk graph ─────────
+  fraud-network-graph:
+    build:
+      context: ./services/python/fraud-network-graph
+      dockerfile: Dockerfile
+    container_name: fraud-network-graph
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      # host 8100 is payment-gateway; graph publishes on 18100
+      - "18100:8100"
+    networks:
+      - insureportal
+
+  # ── Health Wearables (Python) — wellness readings / rewards ───────────────
+  health-wearables:
+    build:
+      context: ./services/python/health-wearables
+      dockerfile: Dockerfile
+    container_name: health-wearables
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8101/health', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      # host 8101 is float-reconciler; wearables publishes on 18101
+      - "18101:8101"
+    networks:
+      - insureportal
+
+  # ── NHIA Integration (Go) — national health insurance claims ──────────────
+  nhia-integration:
+    build:
+      context: ./services/go/nhia-integration
+      dockerfile: Dockerfile
+    container_name: nhia-integration
+    restart: unless-stopped
+    environment:
+      PORT: "8102"
+      DATABASE_URL: postgres://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8102/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "18102:8102"
+    networks:
+      - insureportal
+
+  # ── Comparison Engine (Go) — multi-insurer quote comparison ───────────────
+  comparison-engine:
+    build:
+      context: ./services/go/comparison-engine
+      dockerfile: Dockerfile
+    container_name: comparison-engine
+    restart: unless-stopped
+    environment:
+      PORT: "8103"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8103/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "18103:8103"
+    networks:
+      - insureportal
+
+  # ── P2P Pools (Go) — peer-to-peer risk pooling ────────────────────────────
+  # NOTE: this service starts without persistence/ledger integration and its
+  # mutating endpoints FAIL LOUDLY (see services/go/p2p-pools/cmd/main.go);
+  # the authoritative P2P money path is the tRPC p2pPoolsRouter (TigerBeetle).
+  p2p-pools:
+    build:
+      context: ./services/go/p2p-pools
+      dockerfile: Dockerfile
+    container_name: p2p-pools
+    restart: unless-stopped
+    environment:
+      PORT: "8104"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8104/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "18104:8104"
+    networks:
+      - insureportal
+
+  # ── Voice Transcription (Python) — voice-first claims intake ──────────────
+  voice-transcription:
+    build:
+      context: ./services/python/voice-transcription
+      dockerfile: Dockerfile
+    container_name: voice-transcription
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8105/health', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "18105:8105"
+    networks:
+      - insureportal
+
+  # ── DID Identity (Rust) — decentralized identifiers & VCs ─────────────────
+  rust-did-identity:
+    build:
+      context: ./services/rust/did-identity
+      dockerfile: Dockerfile
+    container_name: rust-did-identity
+    restart: unless-stopped
+    environment:
+      PORT: "8106"
+    ports:
+      - "18106:8106"
+    networks:
+      - insureportal
+
   # ── Main InsurePortal API (TypeScript/tRPC) ────────────────────────────────
   insureportal-api:
     build:
@@ -551,6 +741,10 @@ services:
       KYC_SERVICE_URL: http://insureportal-kyc:8001
       ACTUARIAL_URL: http://insureportal-actuarial:8002
       PAYMENT_GATEWAY_URL: http://insureportal-payment-gateway:8100
+      # Journey activity ingestToLakehouse posts to this ingest API — the
+      # lakehouse-mojaloop sidecar (docker-compose.sprint42.yml), NOT MinIO's
+      # S3 endpoint. Bring the stack up with -f docker-compose.sprint42.yml.
+      LAKEHOUSE_URL: http://lakehouse-mojaloop:8090
     depends_on:
       postgres:
         condition: service_healthy

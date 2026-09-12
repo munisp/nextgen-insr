@@ -1,0 +1,20 @@
+; PgBouncer userlist — referenced by auth_file in pgbouncer.ini
+;
+; Format per line:  "<username>" "<SCRAM-SHA-256 verifier or md5 hash>"
+;
+; SECURITY: real SCRAM verifiers are deployment secrets and MUST NOT be
+; committed to git. Generate them at deploy time from the live database:
+;
+;   psql -h postgres -U postgres -d insureportal -Atc \
+;     "SELECT '\"' || usename || '\" \"' || passwd || '\"' FROM pg_shadow \
+;      WHERE usename IN ('insureportal','insureportal_admin','insureportal_monitor');" \
+;     > /etc/pgbouncer/userlist.txt
+;
+; auth_query (pgbouncer.ini) lets PgBouncer look up any user NOT listed here
+; directly from pg_shadow via the auth_user (insureportal), so this file only
+; needs entries for the auth_user itself plus admin/stats users.
+;
+; Placeholder entries below are inert — replace before starting PgBouncer.
+"insureportal" "SCRAM-SHA-256$REPLACE_AT_DEPLOY:4096$STOREDKEY==:SERVERKEY=="
+"insureportal_admin" "SCRAM-SHA-256$REPLACE_AT_DEPLOY:4096$STOREDKEY==:SERVERKEY=="
+"insureportal_monitor" "SCRAM-SHA-256$REPLACE_AT_DEPLOY:4096$STOREDKEY==:SERVERKEY=="

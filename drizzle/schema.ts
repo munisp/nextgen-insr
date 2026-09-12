@@ -4847,6 +4847,13 @@ export const insuranceProducts = pgTable(
 export type InsuranceProduct = typeof insuranceProducts.$inferSelect;
 export type InsertInsuranceProduct = typeof insuranceProducts.$inferInsert;
 
+// insurance_services: the tenant-isolated insurance service catalogue is
+// delivered as `insuranceProducts` above (tenantId column + ip_tenant_idx
+// tenant index). `insuranceServices` is its canonical alias — the same export
+// also lives in schema.additions.ts; it is repeated here so the alias resolves
+// from drizzle/schema directly (restBridge imports it from this module).
+export { insuranceProducts as insuranceServices };
+
 // ─── Policies ─────────────────────────────────────────────────────────────────
 export const policies = pgTable(
   "policies",

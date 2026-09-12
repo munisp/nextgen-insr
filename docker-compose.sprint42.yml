@@ -1,0 +1,155 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# InsurePortal — Sprint 42 Observability & Lakehouse Stack
+#
+# Brings up the analytics lakehouse (MinIO object store + Hive Metastore +
+# Trino query engine) together with the lakehouse-mojaloop sidecar
+# (lakehouse-mojaloop/main.py) which:
+#   * serves POST /ingest/<dataset> — the real endpoint the journey activity
+#     `ingestToLakehouse` (server/journey-activities.ts) posts to via
+#     LAKEHOUSE_URL (server/_core/env.ts);
+#   * observes the Mojaloop settlement rail when MOJALOOP_HUB_URL is set and
+#     lands genuine connectivity observations in the lakehouse — never
+#     fabricated transfer events.
+#
+# Usage (from repo root):
+#   docker compose -f docker-compose.yml -f docker-compose.sprint42.yml up -d
+#
+# The full Trino/Iceberg variant lives in infra/lakehouse/docker-compose.yml;
+# this file keeps the sprint-42 scope: object store + ingest sidecar + Trino
+# for ad-hoc analytics over the landed JSON snapshots.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  # ── MinIO — S3-compatible lakehouse object store ─────────────────────────────
+  # Buckets match server/lakehouse.ts BUCKETS: insureportal-transactions,
+  # insureportal-settlements, insureportal-fraud-events, insureportal-agent-metrics
+  # (+ insureportal-mojaloop-events / insureportal-journey-events created on demand).
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: insureportal-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - insureportal
+
+  # ── Lakehouse ⇄ Mojaloop sidecar (Python, stdlib-only) ──────────────────────
+  lakehouse-mojaloop:
+    build:
+      context: ./lakehouse-mojaloop
+      dockerfile: Dockerfile
+    container_name: insureportal-lakehouse-mojaloop
+    restart: unless-stopped
+    environment:
+      PORT: "8090"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      # Mojaloop is OPTIONAL: leave MOJALOOP_HUB_URL empty and the sidecar
+      # logs that settlement-rail observation is disabled (honest no-op).
+      MOJALOOP_HUB_URL: ${MOJALOOP_HUB_URL:-}
+      MOJALOOP_DFSP_ID: ${MOJALOOP_DFSP_ID:-insurance-portal-dfsp}
+      MOJALOOP_PROBE_INTERVAL_SECONDS: "60"
+    depends_on:
+      minio:
+        condition: service_healthy
+    ports:
+      # host 8090 is the fraud-gate in docker-compose.yml — sidecar publishes on 18090
+      - "18090:8090"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - insureportal
+
+  # ── Hive Metastore (Iceberg catalog for Trino) ───────────────────────────────
+  metastore-db:
+    image: postgres:16-alpine
+    container_name: insureportal-metastore-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: ${HIVE_METASTORE_PASSWORD:-hive_password}
+      POSTGRES_DB: metastore
+    volumes:
+      - metastore_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - insureportal
+
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: insureportal-hive-metastore
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://metastore-db:5432/metastore
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=${HIVE_METASTORE_PASSWORD:-hive_password}
+    ports:
+      - "9083:9083"
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+    volumes:
+      - warehouse:/user/hive/warehouse
+    healthcheck:
+      test: ["CMD", "bash", "-c", "cat < /dev/null > /dev/tcp/localhost/9083"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - insureportal
+
+  # ── Trino — SQL over the lakehouse snapshots ────────────────────────────────
+  trino:
+    image: trinodb/trino:440
+    container_name: insureportal-trino
+    restart: unless-stopped
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./infra/lakehouse/trino/catalog:/etc/trino/catalog:ro
+      - ./infra/lakehouse/trino/config.properties:/etc/trino/config.properties:ro
+      - warehouse:/user/hive/warehouse
+    depends_on:
+      hive-metastore:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - insureportal
+
+volumes:
+  minio_data:
+  metastore_data:
+  warehouse:
+
+networks:
+  insureportal:
+    driver: bridge

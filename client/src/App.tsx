@@ -617,6 +617,28 @@ const CbdcIntegrationGateway = lazy(
 const DecentralizedIdentityManager = lazy(
   () => import("./pages/DecentralizedIdentityManager")
 );
+// ── Innovation journey pages (J21–J28) — thin pages wired to the real
+// innovation routers in server/routers/innovationRouters.ts ──
+const TelematicsDashboard = lazy(() => import("./pages/TelematicsDashboard"));
+const CvClaimsAssessment = lazy(() => import("./pages/CvClaimsAssessment"));
+const FraudNetworkExplorer = lazy(() => import("./pages/FraudNetworkExplorer"));
+const WellnessDashboard = lazy(() => import("./pages/WellnessDashboard"));
+const NhiaEnrollment = lazy(() => import("./pages/NhiaEnrollment"));
+const InsuranceComparison = lazy(() => import("./pages/InsuranceComparison"));
+const P2pPools = lazy(() => import("./pages/P2pPools"));
+const VoiceClaims = lazy(() => import("./pages/VoiceClaims"));
+const ParametricTriggers = lazy(() => import("./pages/ParametricTriggers"));
+const GroupInsurance = lazy(() => import("./pages/GroupInsurance"));
+const BancassuranceReferrals = lazy(() => import("./pages/BancassuranceReferrals"));
+const OpenInsuranceConsent = lazy(() => import("./pages/OpenInsuranceConsent"));
+const ClimateRiskExplorer = lazy(() => import("./pages/ClimateRiskExplorer"));
+const RenewalPrediction = lazy(() => import("./pages/RenewalPrediction"));
+const SloMonitor = lazy(() => import("./pages/SloMonitor"));
+const EmbeddedInsurance = lazy(() => import("./pages/EmbeddedInsurance"));
+const AiUnderwritingCopilot = lazy(() => import("./pages/AiUnderwritingCopilot"));
+const RegulatorySandboxDashboard = lazy(() => import("./pages/RegulatorySandboxDashboard"));
+const CarbonCreditTracker = lazy(() => import("./pages/CarbonCreditTracker"));
+const InnovationHub = lazy(() => import("./pages/InnovationHub"));
 const PlatformMaturityScorecard = lazy(
   () => import("./pages/PlatformMaturityScorecard")
 );
@@ -2224,6 +2246,73 @@ function AuthenticatedApp() {
         <Route path="/insurance/policy-quotes">
           <Suspense fallback={<SkeletonDashboard />}><InsurancePolicyQuoteManager /></Suspense>
         </Route>
+        {/* ── Innovation journey routes (InnovationHub tiles land here) ── */}
+        <Route path="/insurance/parametric">
+          <Suspense fallback={<SkeletonDashboard />}><ParametricTriggers /></Suspense>
+        </Route>
+        <Route path="/insurance/cv-claims">
+          <Suspense fallback={<SkeletonDashboard />}><CvClaimsAssessment /></Suspense>
+        </Route>
+        <Route path="/insurance/fraud-network">
+          <Suspense fallback={<SkeletonDashboard />}><FraudNetworkExplorer /></Suspense>
+        </Route>
+        <Route path="/insurance/telematics">
+          <Suspense fallback={<SkeletonDashboard />}><TelematicsDashboard /></Suspense>
+        </Route>
+        <Route path="/insurance/embedded">
+          <Suspense fallback={<SkeletonDashboard />}><EmbeddedInsurance /></Suspense>
+        </Route>
+        <Route path="/insurance/voice-claims">
+          <Suspense fallback={<SkeletonDashboard />}><VoiceClaims /></Suspense>
+        </Route>
+        <Route path="/insurance/p2p-pools">
+          <Suspense fallback={<SkeletonDashboard />}><P2pPools /></Suspense>
+        </Route>
+        <Route path="/insurance/wellness">
+          <Suspense fallback={<SkeletonDashboard />}><WellnessDashboard /></Suspense>
+        </Route>
+        <Route path="/insurance/nhia">
+          <Suspense fallback={<SkeletonDashboard />}><NhiaEnrollment /></Suspense>
+        </Route>
+        <Route path="/insurance/comparison">
+          <Suspense fallback={<SkeletonDashboard />}><InsuranceComparison /></Suspense>
+        </Route>
+        <Route path="/insurance/group-insurance">
+          <Suspense fallback={<SkeletonDashboard />}><GroupInsurance /></Suspense>
+        </Route>
+        <Route path="/insurance/bancassurance">
+          <Suspense fallback={<SkeletonDashboard />}><BancassuranceReferrals /></Suspense>
+        </Route>
+        <Route path="/insurance/open-insurance">
+          <Suspense fallback={<SkeletonDashboard />}><OpenInsuranceConsent /></Suspense>
+        </Route>
+        <Route path="/insurance/climate-risk">
+          <Suspense fallback={<SkeletonDashboard />}><ClimateRiskExplorer /></Suspense>
+        </Route>
+        <Route path="/insurance/sandbox">
+          <Suspense fallback={<SkeletonDashboard />}><RegulatorySandboxDashboard /></Suspense>
+        </Route>
+        <Route path="/insurance/reinsurance-marketplace">
+          <Suspense fallback={<SkeletonDashboard />}><InsureMarketPage /></Suspense>
+        </Route>
+        <Route path="/insurance/did-identity">
+          <Suspense fallback={<SkeletonDashboard />}><DecentralizedIdentityManager /></Suspense>
+        </Route>
+        <Route path="/insurance/ai-underwriting">
+          <Suspense fallback={<SkeletonDashboard />}><AiUnderwritingCopilot /></Suspense>
+        </Route>
+        <Route path="/insurance/carbon-credit">
+          <Suspense fallback={<SkeletonDashboard />}><CarbonCreditTracker /></Suspense>
+        </Route>
+        <Route path="/insurance/predictive-renewal">
+          <Suspense fallback={<SkeletonDashboard />}><RenewalPrediction /></Suspense>
+        </Route>
+        <Route path="/insurance/slo-monitor">
+          <Suspense fallback={<SkeletonDashboard />}><SloMonitor /></Suspense>
+        </Route>
+        <Route path="/insurance/innovation-hub">
+          <Suspense fallback={<SkeletonDashboard />}><InnovationHub /></Suspense>
+        </Route>
         <Route path="/pos-firmware-ota">
           <Suspense fallback={<SkeletonDashboard />}><POSFirmwareOTA /></Suspense>
         </Route>
@@ -2254,7 +2343,6 @@ export default function App() {
   const { shortcuts, helpOpen, setHelpOpen } = useKeyboardShortcuts();
 const InsuranceJourneyDashboard = lazy(() => import("./pages/InsuranceJourneyDashboard"));
 const WorkflowMonitorDashboard = lazy(() => import("./pages/WorkflowMonitorDashboard"));
-const InnovationHub = lazy(() => import("./pages/InnovationHub"));
 
   return (
     <ErrorBoundary>
