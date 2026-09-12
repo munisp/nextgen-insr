@@ -705,6 +705,104 @@ export const backupJobs = pgTable(
 export type BackupJob = typeof backupJobs.$inferSelect;
 export type InsertBackupJob = typeof backupJobs.$inferInsert;
 
+// ─── B11: Heuristic Scorer Results ───────────────────────────────────────────
+// Persisted outputs of the in-repo statistical scorer
+// (server/lib/claimRiskScorer.ts). modelType is 'heuristic-v1' — a
+// transparent weighted formula over documented real features, NOT trained ML.
+// featureBreakdownJson carries feature values + per-feature weighted
+// contributions so every persisted score is auditable.
+export const mlScoreResults = pgTable(
+  "ml_score_results",
+  {
+    id: serial("id").primaryKey(),
+    // 'claim' | 'transaction'
+    subjectType: varchar("subject_type", { length: 32 }).notNull(),
+    subjectId: integer("subject_id").notNull(),
+    modelType: varchar("model_type", { length: 32 }).notNull(),
+    score: numeric("score", { precision: 6, scale: 5 }).notNull(),
+    // 'low' | 'medium' | 'high'
+    riskBand: varchar("risk_band", { length: 16 }).notNull(),
+    featureBreakdownJson: json("feature_breakdown_json").notNull(),
+    scoredBy: varchar("scored_by", { length: 64 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    subjectIdx: index("msr_subject_idx").on(t.subjectType, t.subjectId),
+    createdAtIdx: index("msr_created_at_idx").on(t.createdAt),
+  })
+);
+export type MlScoreResult = typeof mlScoreResults.$inferSelect;
+export type InsertMlScoreResult = typeof mlScoreResults.$inferInsert;
+
+// ─── B12: USSD Session Telemetry ─────────────────────────────────────────────
+// Real USSD telemetry captured at the production capture point
+// (ussdGateway.processInput). One row per telco callback interaction.
+// menuPath is the cumulative input path within the session (e.g. "1>2"),
+// reconstructed from prior events of the same session at capture time.
+export const ussdSessionEvents = pgTable(
+  "ussd_session_events",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: varchar("session_id", { length: 64 }).notNull(),
+    phoneNumber: varchar("phone_number", { length: 32 }),
+    agentId: varchar("agent_id", { length: 64 }),
+    userInput: varchar("user_input", { length: 256 }),
+    menuPath: varchar("menu_path", { length: 512 }),
+    gatewayResponse: text("gateway_response"),
+    endSession: boolean("end_session").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    sessionIdx: index("use_session_idx").on(t.sessionId),
+    createdAtIdx: index("use_created_at_idx").on(t.createdAt),
+  })
+);
+export type UssdSessionEvent = typeof ussdSessionEvents.$inferSelect;
+export type InsertUssdSessionEvent = typeof ussdSessionEvents.$inferInsert;
+
+// ─── B13: Compliance Chatbot Persistence ─────────────────────────────────────
+// Conversation store for the compliance chatbot. The user message is
+// persisted before the Ollama call and the assistant reply only after Ollama
+// actually produced it — a transcript never contains a fabricated reply.
+export const complianceChatSessions = pgTable(
+  "compliance_chat_sessions",
+  {
+    id: serial("id").primaryKey(),
+    sessionKey: varchar("session_key", { length: 64 }).notNull().unique(),
+    userId: integer("user_id"),
+    title: varchar("title", { length: 256 }),
+    purpose: varchar("purpose", { length: 64 })
+      .default("compliance")
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+  },
+  t => ({
+    userIdx: index("ccs_user_idx").on(t.userId),
+    lastActivityIdx: index("ccs_last_activity_idx").on(t.lastActivityAt),
+  })
+);
+export type ComplianceChatSession = typeof complianceChatSessions.$inferSelect;
+export type InsertComplianceChatSession = typeof complianceChatSessions.$inferInsert;
+
+export const complianceChatMessages = pgTable(
+  "compliance_chat_messages",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id").notNull(),
+    // 'user' | 'assistant' | 'system'
+    role: varchar("role", { length: 16 }).notNull(),
+    content: text("content").notNull(),
+    // Ollama model that produced the reply (NULL on user messages).
+    model: varchar("model", { length: 128 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    sessionIdx: index("ccm_session_idx").on(t.sessionId),
+  })
+);
+export type ComplianceChatMessage = typeof complianceChatMessages.$inferSelect;
+export type InsertComplianceChatMessage = typeof complianceChatMessages.$inferInsert;
 // ─── B1: PBAC Policy Store + Access-Evaluation Log ───────────────────────────
 // Real store behind securityAudit.getPolicies / syncPbacPolicies /
 // evaluateAccess. Rows are seeded from the REAL in-repo Permify schema

@@ -29,18 +29,44 @@ export default function ComplianceChatbotPage() {
   >("kyc");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // F-12 (wave-4b): the complianceChatbot router delivers only Sprint-87
-  // generic list/getById/getSummary over compliance report rows — the chatbot
-  // backend (sessions/messages/knowledge-base/compliance-checks) is NOT
-  // delivered. All actions fail loud; sections render honest states.
-  const loud = (action: string) => (_args?: unknown) =>
-    toast.error(`Compliance chatbot ${action} is not delivered on this deployment`);
-  const startSession = { mutate: loud("sessions"), isPending: false };
-  const sendMsg = { mutate: loud("messaging"), isPending: false };
-  const history: { data?: { messages?: Array<{ role: string; content: string; createdAt?: string | Date; sources?: Array<{ title: string; relevance: number }> }> }; refetch: () => void } = { refetch: () => {} };
-  const sessions: { data?: { sessions?: Array<{ id: string; title?: string; preview?: string; relevance?: string | number; lastActivity?: string | Date; createdAt?: string | Date; messageCount?: number }> } } = {};
-  const kbSearch: { data?: { results?: Array<{ id: string; title?: string; category?: string; excerpt?: string; score?: number }> } } = {};
-  const complianceCheck: { data?: { status?: string; details?: string; requirements?: Array<{ name: string; met: boolean }> } } = {};
+  // B13 (wave-2c): wired to the REAL complianceChatbot procedures — real
+  // Ollama chat with conversation persistence (chat_sessions/chat_messages).
+  // When Ollama is unreachable the backend fails loud
+  // ('ollama_unavailable …') and the page shows that honest state; no canned
+  // compliance answer is ever rendered.
+  const utils = trpc.useUtils();
+  const botStatus = trpc.complianceChatbot.status.useQuery(undefined, {
+    retry: false,
+  });
+  const startSession = trpc.complianceChatbot.startSession.useMutation({
+    onSuccess: data => {
+      setSessionId(data.sessionId);
+      setTab("chat");
+      utils.complianceChatbot.listSessions.invalidate();
+    },
+    onError: err => toast.error(`Could not start session: ${err.message}`),
+  });
+  const sendMsg = trpc.complianceChatbot.sendMessage.useMutation({
+    onSuccess: () => {
+      utils.complianceChatbot.getHistory.invalidate();
+      utils.complianceChatbot.listSessions.invalidate();
+    },
+    onError: err => toast.error(err.message),
+  });
+  const history = trpc.complianceChatbot.getHistory.useQuery(
+    { sessionId: sessionId ?? "" },
+    { enabled: !!sessionId, retry: false }
+  );
+  const sessions = trpc.complianceChatbot.listSessions.useQuery(undefined, {
+    retry: false,
+  });
+  const kbSearch = trpc.complianceChatbot.searchKnowledgeBase.useQuery(
+    { query: kbQuery || " " },
+    { enabled: false, retry: false }
+  );
+  const complianceCheck = trpc.complianceChatbot.quickComplianceCheck.useMutation({
+    onError: err => toast.error(err.message),
+  });
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -79,6 +105,17 @@ export default function ComplianceChatbotPage() {
             New Chat
           </Button>
         </div>
+
+        {botStatus.data && !botStatus.data.configured && (
+          <Card>
+            <CardContent className="py-3 text-sm text-muted-foreground">
+              Ollama is not configured on this deployment (OLLAMA_URL unset).
+              Chat sessions and history persist, but answers, classification,
+              and checks will report 'ollama_unavailable' until a real Ollama
+              endpoint is configured — no canned answers are shown.
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
@@ -131,20 +168,10 @@ export default function ComplianceChatbotPage() {
                         <p className="text-sm whitespace-pre-wrap">
                           {msg.content}
                         </p>
-                        {msg.sources && msg.sources.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-border/50">
-                            <p className="text-xs font-medium mb-1">Sources:</p>
-                            {msg.sources.map((s, j) => (
-                              <Badge
-                                key={j}
-                                variant="outline"
-                                className="mr-1 mb-1 text-xs"
-                              >
-                                <BookOpen className="h-2 w-2 mr-1" />
-                                {s.title} ({(s.relevance * 100).toFixed(0)}%)
-                              </Badge>
-                            ))}
-                          </div>
+                        {msg.role === "assistant" && msg.model && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            model: {msg.model}
+                          </p>
                         )}
                       </div>
                       {msg.role === "user" && (
@@ -226,24 +253,15 @@ export default function ComplianceChatbotPage() {
                     onChange={e => setKbQuery(e.target.value)}
                   />
                 </div>
-                {kbSearch.data?.results?.map(r => (
-                  <Card key={r.id} className="mb-3">
-                    <CardContent className="pt-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-medium text-sm">{r.title}</h4>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{r.category}</Badge>
-                          <Badge variant="secondary">
-                            {r.score != null ? `${(r.score * 100).toFixed(0)}% match` : "—"}
-                          </Badge>
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {r.excerpt ?? "—"}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
+                {/* Honest state: no knowledge-base store is delivered; the
+                    backend fails loud rather than searching an unrelated
+                    table. */}
+                <div className="text-sm text-muted-foreground py-6 text-center">
+                  <BookOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  {kbSearch.isError
+                    ? kbSearch.error.message
+                    : "A compliance knowledge-base store is not delivered on this deployment. Use the Chat tab (real Ollama answers) instead."}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -278,6 +296,18 @@ export default function ComplianceChatbotPage() {
                     </Button>
                   ))}
                 </div>
+                <Button
+                  size="sm"
+                  onClick={() => complianceCheck.mutate({ checkType })}
+                  disabled={complianceCheck.isPending}
+                >
+                  {complianceCheck.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Shield className="h-4 w-4 mr-2" />
+                  )}
+                  Run Check (Ollama)
+                </Button>
                 {complianceCheck.data && (
                   <Card>
                     <CardContent className="pt-4">
@@ -299,6 +329,9 @@ export default function ComplianceChatbotPage() {
                               ?.replace(/_/g, " ")
                               .toUpperCase() ?? "—"}
                           </Badge>
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            model: {complianceCheck.data.model}
+                          </span>
                         </div>
                       </div>
                       <p className="text-sm mb-3">

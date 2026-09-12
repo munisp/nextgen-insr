@@ -290,7 +290,19 @@ describe("Sprint 46: Data Integrity", () => {
     // pbac_policies, pbac_access_evaluations, security_scan_runs,
     // security_scan_findings). Honest-count drift, not a weakening — the
     // gate still counts information_schema at runtime.
-    expect(stats.totalTables).toBe(203);
+    // 2026-09-15: count updated 203 → 207 — W2c (zero-undelivered-scope
+    // B11+B12+B13) added four REAL tables to drizzle/schema.additions.ts
+    // (ml_score_results, ussd_session_events, compliance_chat_sessions,
+    // compliance_chat_messages) via migration 0059. Union of ALL wave
+    // deltas: 14 real wave tables (W2d: ddos_rate_windows,
+    // ddos_threshold_events, file_integrity_baseline,
+    // network_alert_resolutions; W2b: request_metrics, error_events;
+    // W2a: pbac_policies, pbac_access_evaluations, security_scan_runs,
+    // security_scan_findings; W2c: ml_score_results, ussd_session_events,
+    // compliance_chat_sessions, compliance_chat_messages). Honest-count
+    // drift, not a weakening — the gate still counts information_schema
+    // at runtime.
+    expect(stats.totalTables).toBe(207);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

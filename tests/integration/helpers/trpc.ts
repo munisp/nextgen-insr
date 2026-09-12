@@ -45,6 +45,8 @@ import { agentFloatForecastingRouter } from "../../../server/routers/agentFloatF
 import { weeklyReportsRouter } from "../../../server/routers/weeklyReports";
 import { systemHealthMonitorRouter } from "../../../server/routers/systemHealthMonitor";
 import { networkStatusDashboardRouter } from "../../../server/routers/networkStatusDashboard";
+import { ussdAnalyticsRouter } from "../../../server/routers/ussdAnalytics";
+import { complianceChatbotRouter } from "../../../server/routers/complianceChatbot";
 
 // Same mount paths as server/routers.ts (production appRouter).
 export const integrationRouter = router({
@@ -93,6 +95,9 @@ export const integrationRouter = router({
   // B8/B9/B10: observability telemetry surfaces — same mount path as
   // production (healthMonitor: systemHealthMonitorRouter in server/routers.ts).
   healthMonitor: systemHealthMonitorRouter,
+  // B12 + B13 (wave-2c): same mount paths as production.
+  ussdAnalytics: ussdAnalyticsRouter,
+  complianceChatbot: complianceChatbotRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;
