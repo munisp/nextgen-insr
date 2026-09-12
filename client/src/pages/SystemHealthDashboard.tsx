@@ -151,10 +151,10 @@ export default function SystemHealthDashboard() {
   const userActivityQ = trpc.healthMonitor.userActivity.useQuery(undefined,
     { refetchInterval: 60_000 }
   );
-  const latencyQ = trpc.healthMonitor.apiLatency.useQuery(undefined,
+  const latencyQ = trpc.healthMonitor.apiLatency.useQuery({ hours: 24 },
     { refetchInterval: 60_000 }
   );
-  const errorsQ = trpc.healthMonitor.errorTracking.useQuery(undefined,
+  const errorsQ = trpc.healthMonitor.errorTracking.useQuery({ limit: 20 },
     { refetchInterval: 60_000 }
   );
   const securityQ = trpc.healthMonitor.securityEvents.useQuery(undefined, {
@@ -162,9 +162,11 @@ export default function SystemHealthDashboard() {
   });
 
   // F-12 (wave-4b): overview is REAL host/process metrics (node:os). 24h
-  // transaction totals derive from the real transactionVolume buckets; the
-  // latency/users/errors procedures are fail-loud NOT_IMPLEMENTED and their
-  // sections render honest unavailable states below.
+  // transaction totals derive from the real transactionVolume buckets.
+  // B8/B9/B10 (wave-2): latency, errors and user activity are now REAL
+  // aggregates (request_metrics / error_events / users.lastSignedIn); before
+  // any traffic is recorded they fail loud with an honest cold-start message
+  // rendered below.
   const o = overviewQ.data;
   const tx24hCount = txVolumeQ.data?.hourly.reduce((a, h) => a + h.count, 0);
   const tx24hVolume = txVolumeQ.data?.hourly.reduce((a, h) => a + h.amount, 0);
@@ -239,30 +241,76 @@ export default function SystemHealthDashboard() {
             <Card className="bg-gray-900 border-gray-800">
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-400 mb-1">
-                  API Latency (p95)
+                  API Latency (p90)
                 </div>
-                <div className="text-2xl font-bold text-gray-500">—</div>
-                <div className="text-xs text-gray-500 mt-1">
-                  APM telemetry not delivered
-                </div>
+                {latencyQ.data ? (
+                  <>
+                    <div className="text-2xl font-bold text-white">
+                      {latencyQ.data.overall.p90Ms}ms
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {latencyQ.data.totalSamples.toLocaleString()} samples (
+                      {latencyQ.data.windowHours}h)
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-gray-500">—</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {latencyQ.error
+                        ? "no request metrics recorded yet"
+                        : "loading…"}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card className="bg-gray-900 border-gray-800">
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-400 mb-1">Active Users</div>
-                <div className="text-2xl font-bold text-gray-500">—</div>
-                <div className="text-xs text-gray-500 mt-1">
-                  session telemetry not delivered
-                </div>
+                <div className="text-xs text-gray-400 mb-1">Active Users (7d)</div>
+                {userActivityQ.data ? (
+                  <>
+                    <div className="text-2xl font-bold text-white">
+                      {userActivityQ.data.active7d.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      last-sign-in recency · {userActivityQ.data.totalUsers.toLocaleString()} total
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-gray-500">—</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {userActivityQ.error
+                        ? "no user activity recorded yet"
+                        : "loading…"}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card className="bg-gray-900 border-gray-800">
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-400 mb-1">Error Rate</div>
-                <div className="text-2xl font-bold text-gray-500">—</div>
-                <div className="text-xs text-gray-500 mt-1">
-                  error aggregation not delivered
-                </div>
+                <div className="text-xs text-gray-400 mb-1">Errors (grouped)</div>
+                {errorsQ.data ? (
+                  <>
+                    <div className="text-2xl font-bold text-white">
+                      {errorsQ.data.totalOccurrences.toLocaleString()}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {errorsQ.data.distinctFingerprints} distinct
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold text-gray-500">—</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {errorsQ.error
+                        ? "no error events recorded yet"
+                        : "loading…"}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card className="bg-gray-900 border-gray-800">
@@ -402,7 +450,7 @@ export default function SystemHealthDashboard() {
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-amber-500" />
-                    p95
+                    p90
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-red-500" />
@@ -412,9 +460,23 @@ export default function SystemHealthDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-center text-gray-500 py-8">
-                — API latency telemetry is not delivered on this platform
-              </div>
+              {latencyQ.data ? (
+                <BarChart
+                  data={latencyQ.data.routes.slice(0, 12).flatMap(r => [
+                    { label: `${r.path} p50`, value: r.p50Ms },
+                    { label: `${r.path} p90`, value: r.p90Ms },
+                    { label: `${r.path} p99`, value: r.p99Ms },
+                  ])}
+                  height={140}
+                  barColor="#3b82f6"
+                />
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  {latencyQ.error
+                    ? "— No request metrics recorded yet (honest cold start; the middleware records real traffic only)"
+                    : "Loading…"}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -425,9 +487,49 @@ export default function SystemHealthDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center text-gray-500 py-8">
-                — User-session telemetry is not delivered on this platform
-              </div>
+              {userActivityQ.data ? (
+                <>
+                  <div className="grid grid-cols-3 gap-3 mb-4 text-center">
+                    <div>
+                      <div className="text-xl font-bold text-white">
+                        {userActivityQ.data.active24h}
+                      </div>
+                      <div className="text-xs text-gray-500">active 24h</div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold text-white">
+                        {userActivityQ.data.active7d}
+                      </div>
+                      <div className="text-xs text-gray-500">active 7d</div>
+                    </div>
+                    <div>
+                      <div className="text-xl font-bold text-white">
+                        {userActivityQ.data.active30d}
+                      </div>
+                      <div className="text-xs text-gray-500">active 30d</div>
+                    </div>
+                  </div>
+                  {userActivityQ.data.dailyLastSignIns.length > 0 && (
+                    <BarChart
+                      data={userActivityQ.data.dailyLastSignIns.map(d => ({
+                        label: d.day.substring(5),
+                        value: d.users,
+                      }))}
+                      height={100}
+                      barColor="#22c55e"
+                    />
+                  )}
+                  <div className="text-xs text-gray-500 mt-3">
+                    Source: {userActivityQ.data.source}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  {userActivityQ.error
+                    ? "— No user activity recorded yet (honest cold start)"
+                    : "Loading…"}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -441,9 +543,49 @@ export default function SystemHealthDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center text-gray-500 py-8">
-                — Endpoint performance telemetry is not delivered on this platform
-              </div>
+              {latencyQ.data ? (
+                <div className="space-y-1 max-h-[260px] overflow-y-auto">
+                  <div className="grid grid-cols-12 gap-2 text-xs text-gray-500 pb-1 border-b border-gray-800">
+                    <span className="col-span-5">procedure</span>
+                    <span className="col-span-2 text-right">samples</span>
+                    <span className="col-span-1 text-right">p50</span>
+                    <span className="col-span-1 text-right">p90</span>
+                    <span className="col-span-1 text-right">p99</span>
+                    <span className="col-span-2 text-right">errors</span>
+                  </div>
+                  {latencyQ.data.routes.map(r => (
+                    <div
+                      key={r.path}
+                      className="grid grid-cols-12 gap-2 text-xs py-1"
+                    >
+                      <span className="col-span-5 text-gray-300 truncate">
+                        {r.path}
+                      </span>
+                      <span className="col-span-2 text-right text-gray-400">
+                        {r.sampleCount}
+                      </span>
+                      <span className="col-span-1 text-right text-blue-400">
+                        {r.p50Ms}
+                      </span>
+                      <span className="col-span-1 text-right text-amber-400">
+                        {r.p90Ms}
+                      </span>
+                      <span className="col-span-1 text-right text-red-400">
+                        {r.p99Ms}
+                      </span>
+                      <span className="col-span-2 text-right text-gray-400">
+                        {r.errorCount}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  {latencyQ.error
+                    ? "— No endpoint metrics recorded yet (honest cold start)"
+                    : "Loading…"}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -453,13 +595,43 @@ export default function SystemHealthDashboard() {
                 <CardTitle className="text-white text-lg">
                   Recent Errors
                 </CardTitle>
-
+                {errorsQ.data && (
+                  <Badge variant="outline" className="text-gray-300 border-gray-600">
+                    {errorsQ.data.distinctFingerprints} distinct
+                  </Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-center text-gray-500 py-8">
-                — Application error aggregation is not delivered on this platform
-              </div>
+              {errorsQ.data ? (
+                <div className="space-y-1 max-h-[260px] overflow-y-auto">
+                  {errorsQ.data.errors.map(e => (
+                    <div
+                      key={e.fingerprint}
+                      className="p-2 bg-gray-800/30 rounded text-xs"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-gray-300 font-medium truncate">
+                          {e.path}
+                        </span>
+                        <span className="text-red-400 shrink-0">
+                          ×{e.count}
+                        </span>
+                      </div>
+                      <div className="text-gray-500 truncate">{e.message}</div>
+                      <div className="text-gray-600">
+                        last seen {new Date(e.lastSeen).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  {errorsQ.error
+                    ? "— No application errors recorded yet (only genuine thrown errors are captured)"
+                    : "Loading…"}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

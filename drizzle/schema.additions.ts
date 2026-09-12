@@ -803,6 +803,116 @@ export const complianceChatMessages = pgTable(
 );
 export type ComplianceChatMessage = typeof complianceChatMessages.$inferSelect;
 export type InsertComplianceChatMessage = typeof complianceChatMessages.$inferInsert;
+// ─── B1: PBAC Policy Store + Access-Evaluation Log ───────────────────────────
+// Real store behind securityAudit.getPolicies / syncPbacPolicies /
+// evaluateAccess. Rows are seeded from the REAL in-repo Permify schema
+// (infra/permify/schema.perm) by server/lib/pbacPolicies.ts — one row per
+// entity action/permission declared in the schema file, with the DSL
+// expression preserved verbatim. getPolicies fails loud when the store is
+// empty (nothing synced yet) instead of inventing policies.
+export const pbacPolicies = pgTable(
+  "pbac_policies",
+  {
+    id: serial("id").primaryKey(),
+    entity: varchar("entity", { length: 128 }).notNull(),
+    permission: varchar("permission", { length: 128 }).notNull(),
+    name: varchar("name", { length: 256 }).notNull(),
+    description: text("description").notNull(),
+    expression: text("expression").notNull(),
+    permifySchemaVersion: varchar("permifySchemaVersion", {
+      length: 64,
+    }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    entityPermissionUidx: uniqueIndex(
+      "pbac_policies_entity_permission_uidx"
+    ).on(t.entity, t.permission),
+  })
+);
+export type PbacPolicy = typeof pbacPolicies.$inferSelect;
+export type InsertPbacPolicy = typeof pbacPolicies.$inferInsert;
+
+// Append-only log of real access evaluations performed through
+// securityAudit.evaluateAccess (B1). source records HOW the verdict was
+// reached: 'permify' (real Permify check) or 'permify_fail_open'
+// (PERMIFY_FAIL_OPEN=true insecure opt-in while Permify was unreachable).
+export const pbacAccessEvaluations = pgTable(
+  "pbac_access_evaluations",
+  {
+    id: serial("id").primaryKey(),
+    subjectType: varchar("subjectType", { length: 128 }).notNull(),
+    subjectId: varchar("subjectId", { length: 256 }).notNull(),
+    entityType: varchar("entityType", { length: 128 }).notNull(),
+    entityId: varchar("entityId", { length: 256 }).notNull(),
+    permission: varchar("permission", { length: 128 }).notNull(),
+    allowed: boolean("allowed").notNull(),
+    source: varchar("source", { length: 32 }).notNull(),
+    evaluatedBy: integer("evaluatedBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    createdIdx: index("pbac_access_evaluations_created_idx").on(t.createdAt),
+  })
+);
+export type PbacAccessEvaluation = typeof pbacAccessEvaluations.$inferSelect;
+export type InsertPbacAccessEvaluation =
+  typeof pbacAccessEvaluations.$inferInsert;
+
+// ─── B2: Security Scanner Run/Finding Store ──────────────────────────────────
+// Real store behind securityAudit.runSecurityScan / getSecurityScanHistory /
+// getSecurityScanFindings. Rows are written ONLY by real scanner executions
+// (server/lib/securityScanner.ts — trivy or semgrep at call time); severity
+// and identifiers are the scanner-reported values, never canned.
+export const securityScanRuns = pgTable(
+  "security_scan_runs",
+  {
+    id: serial("id").primaryKey(),
+    scanner: varchar("scanner", { length: 32 }).notNull(),
+    scannerVersion: varchar("scannerVersion", { length: 128 }).notNull(),
+    targetPath: text("targetPath").notNull(),
+    startedAt: timestamp("startedAt").notNull(),
+    finishedAt: timestamp("finishedAt"),
+    status: varchar("status", { length: 32 }).notNull(),
+    totalFindings: integer("totalFindings"),
+    severityCounts: json("severityCounts"),
+    error: text("error"),
+    triggeredBy: integer("triggeredBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    startedIdx: index("security_scan_runs_started_idx").on(t.startedAt),
+  })
+);
+export type SecurityScanRun = typeof securityScanRuns.$inferSelect;
+export type InsertSecurityScanRun = typeof securityScanRuns.$inferInsert;
+
+export const securityScanFindings = pgTable(
+  "security_scan_findings",
+  {
+    id: serial("id").primaryKey(),
+    runId: integer("runId")
+      .notNull()
+      .references(() => securityScanRuns.id),
+    ruleId: varchar("ruleId", { length: 256 }).notNull(),
+    title: text("title").notNull(),
+    severity: varchar("severity", { length: 16 }).notNull(),
+    findingType: varchar("findingType", { length: 32 }).notNull(),
+    target: text("target").notNull(),
+    packageName: varchar("packageName", { length: 256 }),
+    installedVersion: varchar("installedVersion", { length: 128 }),
+    fixedVersion: varchar("fixedVersion", { length: 128 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    runIdx: index("security_scan_findings_run_idx").on(t.runId),
+    severityIdx: index("security_scan_findings_severity_idx").on(t.severity),
+  })
+);
+export type SecurityScanFinding = typeof securityScanFindings.$inferSelect;
+export type InsertSecurityScanFinding =
+  typeof securityScanFindings.$inferInsert;
 // ─── B6: DDoS self-telemetry (Wave 2d, migration 0060) ───────────────────────
 // One row per client key per finished rate window, persisted by
 // server/lib/ddosTelemetry.ts (in-process counting, fire-and-forget flush —
@@ -886,3 +996,60 @@ export const networkAlertResolutions = pgTable(
 );
 export type NetworkAlertResolution = typeof networkAlertResolutions.$inferSelect;
 export type InsertNetworkAlertResolution = typeof networkAlertResolutions.$inferInsert;
+
+// ─── B8 + B9 (Zero-Undelivered-Scope wave 2): Observability telemetry ───────
+// request_metrics: one row per tRPC procedure call, recorded by the REAL
+// observability middleware (server/middleware/observabilityMiddleware.ts via
+// server/lib/telemetryStore.ts). Writes are batched and fire-and-forget:
+// they never block or fail the request, and no row is ever fabricated — the
+// apiLatency procedure reads only what actually landed here and fails loud
+// (NO_METRICS_YET) when the table is empty for the requested scope.
+export const requestMetrics = pgTable(
+  "request_metrics",
+  {
+    id: serial("id").primaryKey(),
+    // tRPC procedure path, e.g. "billingLedger.list" (route key).
+    path: varchar("path", { length: 255 }).notNull(),
+    // "query" | "mutation" | "subscription".
+    procedureType: varchar("procedure_type", { length: 16 }).notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    success: boolean("success").notNull(),
+    // tRPC error code when success = false (e.g. "NOT_FOUND"); NULL on success.
+    errorCode: varchar("error_code", { length: 64 }),
+    // Numeric users.id as string, or "anonymous" — never a fabricated id.
+    userId: varchar("user_id", { length: 64 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  t => ({
+    pathCreatedIdx: index("rm_path_created_idx").on(t.path, t.createdAt),
+    createdIdx: index("rm_created_idx").on(t.createdAt),
+  })
+);
+export type RequestMetric = typeof requestMetrics.$inferSelect;
+export type InsertRequestMetric = typeof requestMetrics.$inferInsert;
+
+// error_events: grouped application-error occurrences captured by the same
+// middleware error path. One row per fingerprint (sha256 of
+// path + message + stack hash); repeat occurrences increment `count` and
+// advance lastSeen via a real upsert. Only genuine thrown errors are
+// recorded — never synthesized.
+export const errorEvents = pgTable(
+  "error_events",
+  {
+    id: serial("id").primaryKey(),
+    fingerprint: varchar("fingerprint", { length: 64 }).notNull().unique(),
+    message: text("message").notNull(),
+    // sha256 of the stack trace alone; NULL when the error carried no stack.
+    stackHash: varchar("stack_hash", { length: 64 }),
+    path: varchar("path", { length: 255 }).notNull(),
+    count: integer("count").default(1).notNull(),
+    firstSeen: timestamp("first_seen").defaultNow().notNull(),
+    lastSeen: timestamp("last_seen").defaultNow().notNull(),
+  },
+  t => ({
+    lastSeenIdx: index("ee_last_seen_idx").on(t.lastSeen),
+    pathIdx: index("ee_path_idx").on(t.path),
+  })
+);
+export type ErrorEvent = typeof errorEvents.$inferSelect;
+export type InsertErrorEvent = typeof errorEvents.$inferInsert;

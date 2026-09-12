@@ -5,7 +5,8 @@ import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and, gte, lte, count } from "drizzle-orm";
 import { z } from "zod";
 
-import { auditLog, transactions } from "../../drizzle/schema";
+import { auditLog, transactions, users } from "../../drizzle/schema";
+import { errorEvents, requestMetrics } from "../../drizzle/schema.additions";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 
@@ -97,22 +98,141 @@ export const systemHealthMonitorRouter = router({
 
       return results;
     }),
-  // F-12 (wave-4b): was a zero-payload stub — no APM/request-timing source is
-  // delivered. Fail loud instead of returning empty telemetry.
-  apiLatency: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message: "apiLatency: no request-timing (APM) source is delivered on this platform",
-    });
-  }),
-  // F-12 (wave-4b): was a zero-payload stub — no application error-aggregation
-  // source is delivered. Fail loud instead of returning empty telemetry.
-  errorTracking: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message: "errorTracking: no application error-aggregation source is delivered on this platform",
-    });
-  }),
+  // B8 (zero-undelivered-scope wave-2): REAL APM latency percentiles from the
+  // request_metrics table, populated by the observability middleware's
+  // batched best-effort recorder (server/lib/telemetryStore.ts). Percentiles
+  // are nearest-rank over the sorted real durations per procedure path.
+  // Honest cold start: an empty scope fails loud NO_METRICS_YET — never zeros.
+  apiLatency: protectedProcedure
+    .input(
+      z.object({
+        hours: z.number().min(1).max(720).default(24),
+        path: z.string().max(255).optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "NO_METRICS_YET: request_metrics store unavailable (no database connection)",
+        });
+      }
+      const since = new Date(Date.now() - input.hours * 3_600_000);
+      const scope = input.path
+        ? and(gte(requestMetrics.createdAt, since), eq(requestMetrics.path, input.path))
+        : gte(requestMetrics.createdAt, since);
+      const rows = await database
+        .select({
+          path: requestMetrics.path,
+          durationMs: requestMetrics.durationMs,
+          success: requestMetrics.success,
+        })
+        .from(requestMetrics)
+        .where(scope)
+        .orderBy(requestMetrics.path, requestMetrics.durationMs)
+        .limit(100_000);
+      if (rows.length === 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: input.path
+            ? `NO_METRICS_YET: no request_metrics rows recorded for path '${input.path}' in the last ${input.hours}h — the middleware records real traffic only, cold start is honest`
+            : `NO_METRICS_YET: request_metrics is empty for the last ${input.hours}h — the middleware records real traffic only, cold start is honest`,
+        });
+      }
+      // Nearest-rank percentile over sorted real samples: rank = ceil(p/100*n).
+      const nearestRank = (sorted: number[], p: number): number => {
+        const rank = Math.max(1, Math.ceil((p / 100) * sorted.length));
+        return sorted[rank - 1];
+      };
+      const byPath = new Map<string, { durations: number[]; errors: number }>();
+      for (const r of rows) {
+        let bucket = byPath.get(r.path);
+        if (!bucket) {
+          bucket = { durations: [], errors: 0 };
+          byPath.set(r.path, bucket);
+        }
+        bucket.durations.push(r.durationMs); // rows arrive duration-sorted per path
+        if (!r.success) bucket.errors++;
+      }
+      const routes = Array.from(byPath.entries())
+        .map(([path, b]) => ({
+          path,
+          sampleCount: b.durations.length,
+          errorCount: b.errors,
+          p50Ms: nearestRank(b.durations, 50),
+          p90Ms: nearestRank(b.durations, 90),
+          p99Ms: nearestRank(b.durations, 99),
+          maxMs: b.durations[b.durations.length - 1],
+        }))
+        .sort((a, b) => b.sampleCount - a.sampleCount);
+      const all = rows.map(r => r.durationMs).sort((a, b) => a - b);
+      return {
+        windowHours: input.hours,
+        since: since.toISOString(),
+        totalSamples: rows.length,
+        overall: {
+          p50Ms: nearestRank(all, 50),
+          p90Ms: nearestRank(all, 90),
+          p99Ms: nearestRank(all, 99),
+        },
+        routes,
+      };
+    }),
+  // B9 (zero-undelivered-scope wave-2): REAL error aggregation from the
+  // error_events table — one row per fingerprint (path + message + stack
+  // hash), upserted by the middleware on genuine thrown errors only.
+  // Empty scope fails loud NO_ERROR_EVENTS_YET.
+  errorTracking: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        path: z.string().max(255).optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      const database = await getDb();
+      if (!database) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "NO_ERROR_EVENTS_YET: error_events store unavailable (no database connection)",
+        });
+      }
+      const grouped = await database
+        .select()
+        .from(errorEvents)
+        .where(input.path ? eq(errorEvents.path, input.path) : undefined)
+        .orderBy(desc(errorEvents.count), desc(errorEvents.lastSeen))
+        .limit(input.limit);
+      const [totals] = await database
+        .select({
+          totalOccurrences: sql<number>`COALESCE(SUM(${errorEvents.count}), 0)`,
+          distinctFingerprints: count(),
+        })
+        .from(errorEvents)
+        .where(input.path ? eq(errorEvents.path, input.path) : undefined);
+      if (!totals || Number(totals.distinctFingerprints) === 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: input.path
+            ? `NO_ERROR_EVENTS_YET: no error_events recorded for path '${input.path}' — only genuine thrown errors are captured`
+            : "NO_ERROR_EVENTS_YET: error_events is empty — only genuine thrown errors are captured, cold start is honest",
+        });
+      }
+      return {
+        totalOccurrences: Number(totals.totalOccurrences),
+        distinctFingerprints: Number(totals.distinctFingerprints),
+        errors: grouped.map(e => ({
+          fingerprint: e.fingerprint,
+          message: e.message,
+          stackHash: e.stackHash ?? null,
+          path: e.path,
+          count: e.count,
+          firstSeen: e.firstSeen instanceof Date ? e.firstSeen.toISOString() : String(e.firstSeen),
+          lastSeen: e.lastSeen instanceof Date ? e.lastSeen.toISOString() : String(e.lastSeen),
+        })),
+      };
+    }),
   // F-12 (wave-4b): was a zero-payload stub. Real host/process metrics from
   // node:os + fs.statfs — labelled host metrics, not fabricated APM telemetry.
   // activeConnections/requestsPerMin had no source and were dropped.
@@ -203,12 +323,64 @@ export const systemHealthMonitorRouter = router({
       byStatus: byStatus.map(t => ({ status: t.status, count: Number(t.count) })),
     };
   }),
-  // F-12 (wave-4b): no user-session/page-view source is delivered (audit_log
-  // tracks agent/admin actions, not user sessions) — fail loud, never zeros.
+  // B10 (zero-undelivered-scope wave-2): REAL user-activity analytics.
+  // SOURCE (documented, honest): the platform has NO sessions table — the
+  // runtime schema was verified at build time (drizzle/0050 is column-level
+  // only; no session store is delivered). We therefore aggregate
+  // users.lastSignedIn (same precedent as analyticsDashboard.activeUsers):
+  // recency buckets (24h/7d/30d actives = DAU/WAU/MAU-style) and per-UTC-day
+  // counts of users whose most recent sign-in fell on that day. These are
+  // last-sign-in recency metrics, NOT live session counts — the payload is
+  // labelled accordingly. Empty users table fails loud NO_USER_ACTIVITY_YET.
   userActivity: protectedProcedure.query(async () => {
-    throw new TRPCError({
-      code: "NOT_IMPLEMENTED",
-      message: "userActivity: no user-session telemetry source is delivered on this platform",
-    });
+    const database = await getDb();
+    if (!database) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "NO_USER_ACTIVITY_YET: users store unavailable (no database connection)",
+      });
+    }
+    const now = Date.now();
+    const [buckets] = await database
+      .select({
+        total: count(),
+        active24h: sql<number>`SUM(CASE WHEN ${users.lastSignedIn} >= ${new Date(now - 86_400_000)} THEN 1 ELSE 0 END)`,
+        active7d: sql<number>`SUM(CASE WHEN ${users.lastSignedIn} >= ${new Date(now - 7 * 86_400_000)} THEN 1 ELSE 0 END)`,
+        active30d: sql<number>`SUM(CASE WHEN ${users.lastSignedIn} >= ${new Date(now - 30 * 86_400_000)} THEN 1 ELSE 0 END)`,
+        new7d: sql<number>`SUM(CASE WHEN ${users.createdAt} >= ${new Date(now - 7 * 86_400_000)} THEN 1 ELSE 0 END)`,
+      })
+      .from(users);
+    const totalUsers = Number(buckets?.total ?? 0);
+    if (totalUsers === 0) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "NO_USER_ACTIVITY_YET: users table is empty — no sign-in activity to aggregate, cold start is honest",
+      });
+    }
+    // Per-UTC-day counts for the trailing 7 days (users whose LAST sign-in
+    // was that day — labelled last-sign-in counts, not daily session counts).
+    const perDay = await database
+      .select({
+        day: sql<string>`to_char(date_trunc('day', ${users.lastSignedIn}), 'YYYY-MM-DD')`,
+        activeUsers: count(),
+      })
+      .from(users)
+      .where(gte(users.lastSignedIn, new Date(now - 7 * 86_400_000)))
+      .groupBy(sql`date_trunc('day', ${users.lastSignedIn})`)
+      .orderBy(sql`date_trunc('day', ${users.lastSignedIn})`);
+    return {
+      source:
+        "users.lastSignedIn (no sessions table is delivered on this platform — recency of most recent sign-in, not live sessions)",
+      generatedAt: new Date(now).toISOString(),
+      totalUsers,
+      active24h: Number(buckets?.active24h ?? 0),
+      active7d: Number(buckets?.active7d ?? 0),
+      active30d: Number(buckets?.active30d ?? 0),
+      newUsers7d: Number(buckets?.new7d ?? 0),
+      dailyLastSignIns: perDay.map(d => ({
+        day: d.day,
+        users: Number(d.activeUsers),
+      })),
+    };
   }),
 });
