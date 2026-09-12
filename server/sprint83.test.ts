@@ -9,6 +9,19 @@
  * day the re-enable condition is met. Excluded from the default vitest run via
  * vitest.config.ts (config-level, auditable in one place).
  * ═══════════════════════════════════════════════════════════════════════════
+ * HONEST-CONTRACT REWRITE — 2026-09-12 (W5c-finisher): the "Service
+ * Completeness" Go assertion demanded `<svc>/main.go` at the ROOT of every
+ * Go service. That layout was never the delivered convention: the 23 legacy
+ * services (payment-gateway, float-reconciler, ...) use `cmd/main.go` and
+ * only newer services (pbac-engine, settlement-gateway, ...) use root
+ * `main.go`. Refusing to add 23 facade shim files, the assertion now encodes
+ * the REAL delivered convention: every Go service has an entrypoint at
+ * EITHER `cmd/main.go` (legacy layout) OR `main.go` (root layout). No
+ * behavioral expectation weakened — presence of a real Go entrypoint is
+ * still asserted for every service. Re-enable condition met on main: all
+ * other assertions (billingProduction/resilienceHardening routers, K8s
+ * manifest, middleware integration, Rust src/main.rs) run green 2026-09-12.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 // @ts-nocheck — Sprint 83 tests
 import { describe, it, expect } from "vitest";
@@ -200,7 +213,8 @@ describe("Sprint 83: K8s Manifests", () => {
 });
 
 describe("Sprint 83: Service Completeness", () => {
-  it("should have all Go services with main.go", () => {
+  it("should have all Go services with a real entrypoint (cmd/main.go or root main.go)", () => {
+    // HONEST-CONTRACT REWRITE 2026-09-12: accept the two delivered layouts.
     const fs = require("fs");
     const path = require("path");
     const goDir = require("path").resolve(__dirname, "../services/go");
@@ -210,8 +224,12 @@ describe("Sprint 83: Service Completeness", () => {
     });
 
     for (const dir of dirs) {
-      const mainPath = path.join(goDir, dir, "main.go");
-      expect(fs.existsSync(mainPath)).toBe(true);
+      const rootMain = path.join(goDir, dir, "main.go");
+      const cmdMain = path.join(goDir, dir, "cmd", "main.go");
+      expect(
+        fs.existsSync(rootMain) || fs.existsSync(cmdMain),
+        `services/go/${dir} must have cmd/main.go or main.go`
+      ).toBe(true);
     }
   });
 
