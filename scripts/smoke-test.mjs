@@ -8,7 +8,9 @@
  * reported and the process exits non-zero — no result is fabricated.
  *
  * Checks:
- *   1. GET  /health            → 200, JSON body with a `status` field
+ *   1. GET  /api/health        → 200, JSON body with a `status` field
+ *                                (real dependency-aware health route in
+ *                                server/_core/index.ts — checks db/redis/...)
  *   2. GET  /api/metrics       → 200, Prometheus text (contains process_/nodejs_)
  *   3. POST /api/trpc          → tRPC endpoint responds (any of 200/400/401 —
  *                                the batch endpoint answers unauthenticated
@@ -58,9 +60,10 @@ function assert(cond, msg) {
 async function main() {
   console.log(`Smoke-testing ${BASE_URL} (timeout ${TIMEOUT_MS}ms per request)\n`);
 
-  // 1. Deep health endpoint (server/_core/index.ts → lib/healthCheck.ts)
-  await check("GET /health returns 200 with structured status", async () => {
-    const res = await req("/health");
+  // 1. Real dependency-aware health endpoint (server/_core/index.ts:
+  //    app.get("/api/health") — runs live db/redis/minio/kafka/TB checks)
+  await check("GET /api/health returns 200 with structured status", async () => {
+    const res = await req("/api/health");
     assert(res.status === 200, `expected 200, got ${res.status}`);
     const body = await res.json();
     assert(body && typeof body === "object" && "status" in body,
@@ -106,7 +109,7 @@ async function main() {
 
   // 5. Security headers (present when traffic passes through config/nginx.conf)
   await check("security headers present on responses", async () => {
-    const res = await req("/health");
+    const res = await req("/api/health");
     const xcto = res.headers.get("x-content-type-options");
     assert(xcto === "nosniff",
       `X-Content-Type-Options missing or wrong (got "${xcto}") — is BASE_URL behind the production nginx?`);

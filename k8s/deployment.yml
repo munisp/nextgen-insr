@@ -107,11 +107,12 @@ spec:
             - name: NODE_OPTIONS
               value: "--max-old-space-size=4096 --max-semi-space-size=64 --gc-interval=100"
           # Real endpoints served by server/_core/index.ts:
-          #   GET /health        — liveness/readiness health handler
+          #   GET /api/health    — dependency-aware JSON health (db/redis/...)
+          #   GET /api/ready     — 200 only when all critical deps are reachable
           #   GET /api/metrics   — Prometheus text format (prom-client)
           livenessProbe:
             httpGet:
-              path: /health
+              path: /api/health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 15
@@ -119,7 +120,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /api/ready
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
