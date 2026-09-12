@@ -764,8 +764,8 @@ export type InsertUssdSessionEvent = typeof ussdSessionEvents.$inferInsert;
 // Conversation store for the compliance chatbot. The user message is
 // persisted before the Ollama call and the assistant reply only after Ollama
 // actually produced it — a transcript never contains a fabricated reply.
-export const chatSessions = pgTable(
-  "chat_sessions",
+export const complianceChatSessions = pgTable(
+  "compliance_chat_sessions",
   {
     id: serial("id").primaryKey(),
     sessionKey: varchar("session_key", { length: 64 }).notNull().unique(),
@@ -778,15 +778,15 @@ export const chatSessions = pgTable(
     lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
   },
   t => ({
-    userIdx: index("cs_user_idx").on(t.userId),
-    lastActivityIdx: index("cs_last_activity_idx").on(t.lastActivityAt),
+    userIdx: index("ccs_user_idx").on(t.userId),
+    lastActivityIdx: index("ccs_last_activity_idx").on(t.lastActivityAt),
   })
 );
-export type ChatSession = typeof chatSessions.$inferSelect;
-export type InsertChatSession = typeof chatSessions.$inferInsert;
+export type ComplianceChatSession = typeof complianceChatSessions.$inferSelect;
+export type InsertComplianceChatSession = typeof complianceChatSessions.$inferInsert;
 
-export const chatMessages = pgTable(
-  "chat_messages",
+export const complianceChatMessages = pgTable(
+  "compliance_chat_messages",
   {
     id: serial("id").primaryKey(),
     sessionId: integer("session_id").notNull(),
@@ -798,11 +798,11 @@ export const chatMessages = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   t => ({
-    sessionIdx: index("cm_session_idx").on(t.sessionId),
+    sessionIdx: index("ccm_session_idx").on(t.sessionId),
   })
 );
-export type ChatMessage = typeof chatMessages.$inferSelect;
-export type InsertChatMessage = typeof chatMessages.$inferInsert;
+export type ComplianceChatMessage = typeof complianceChatMessages.$inferSelect;
+export type InsertComplianceChatMessage = typeof complianceChatMessages.$inferInsert;
 // ─── B6: DDoS self-telemetry (Wave 2d, migration 0060) ───────────────────────
 // One row per client key per finished rate window, persisted by
 // server/lib/ddosTelemetry.ts (in-process counting, fire-and-forget flush —

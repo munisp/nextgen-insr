@@ -12,7 +12,10 @@ import { randomUUID } from "crypto";
 import { asc, desc, eq, count, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { chatMessages, chatSessions } from "../../drizzle/schema.additions";
+import {
+  complianceChatMessages,
+  complianceChatSessions,
+} from "../../drizzle/schema.additions";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { ollamaChat, ollamaStatus, type OllamaChatMessage } from "../lib/ollamaClient";
@@ -42,8 +45,8 @@ const NO_DB = () =>
 async function requireSession(database: NonNullable<Awaited<ReturnType<typeof getDb>>>, sessionKey: string) {
   const [session] = await database
     .select()
-    .from(chatSessions)
-    .where(eq(chatSessions.sessionKey, sessionKey))
+    .from(complianceChatSessions)
+    .where(eq(complianceChatSessions.sessionKey, sessionKey))
     .limit(1);
   if (!session) {
     throw new TRPCError({
@@ -83,7 +86,7 @@ export const complianceChatbotRouter = router({
       if (!database) throw NO_DB();
       const sessionKey = randomUUID();
       const [row] = await database
-        .insert(chatSessions)
+        .insert(complianceChatSessions)
         .values({
           sessionKey,
           userId: ctx.user?.id ?? null,
@@ -107,7 +110,7 @@ export const complianceChatbotRouter = router({
       const session = await requireSession(database, input.sessionId);
 
       // Persist the real user message first (survives even if Ollama is down).
-      await database.insert(chatMessages).values({
+      await database.insert(complianceChatMessages).values({
         sessionId: session.id,
         role: "user",
         content: input.message,
@@ -116,9 +119,9 @@ export const complianceChatbotRouter = router({
       // Real conversation context from the persisted transcript.
       const history = await database
         .select()
-        .from(chatMessages)
-        .where(eq(chatMessages.sessionId, session.id))
-        .orderBy(asc(chatMessages.id))
+        .from(complianceChatMessages)
+        .where(eq(complianceChatMessages.sessionId, session.id))
+        .orderBy(asc(complianceChatMessages.id))
         .limit(40);
       const ollamaMessages: OllamaChatMessage[] = [
         { role: "system", content: COMPLIANCE_SYSTEM_PROMPT },
@@ -134,7 +137,7 @@ export const complianceChatbotRouter = router({
       const reply = await ollamaChat(ollamaMessages);
 
       const [assistantRow] = await database
-        .insert(chatMessages)
+        .insert(complianceChatMessages)
         .values({
           sessionId: session.id,
           role: "assistant",
@@ -143,9 +146,9 @@ export const complianceChatbotRouter = router({
         })
         .returning();
       await database
-        .update(chatSessions)
+        .update(complianceChatSessions)
         .set({ lastActivityAt: new Date() })
-        .where(eq(chatSessions.id, session.id));
+        .where(eq(complianceChatSessions.id, session.id));
 
       return {
         sessionId: session.sessionKey,
@@ -168,9 +171,9 @@ export const complianceChatbotRouter = router({
       const session = await requireSession(database, input.sessionId);
       const rows = await database
         .select()
-        .from(chatMessages)
-        .where(eq(chatMessages.sessionId, session.id))
-        .orderBy(asc(chatMessages.id));
+        .from(complianceChatMessages)
+        .where(eq(complianceChatMessages.sessionId, session.id))
+        .orderBy(asc(complianceChatMessages.id));
       return {
         sessionId: session.sessionKey,
         messages: rows.map(m => ({
@@ -201,28 +204,28 @@ export const complianceChatbotRouter = router({
       const scope =
         ctx.user?.role === "admin"
           ? undefined
-          : eq(chatSessions.userId, ctx.user?.id ?? -1);
+          : eq(complianceChatSessions.userId, ctx.user?.id ?? -1);
       const rows = await database
         .select({
-          id: chatSessions.id,
-          sessionKey: chatSessions.sessionKey,
-          title: chatSessions.title,
-          createdAt: chatSessions.createdAt,
-          lastActivityAt: chatSessions.lastActivityAt,
-          // Explicit alias: drizzle renders ${chatMessages.sessionId}
+          id: complianceChatSessions.id,
+          sessionKey: complianceChatSessions.sessionKey,
+          title: complianceChatSessions.title,
+          createdAt: complianceChatSessions.createdAt,
+          lastActivityAt: complianceChatSessions.lastActivityAt,
+          // Explicit alias: drizzle renders ${complianceChatMessages.sessionId}
           // unqualified inside raw sql, which PG rejects (42703) in a
           // correlated subquery — qualify via the cm alias.
-          messageCount: sql<string>`(SELECT COUNT(*) FROM "chat_messages" cm WHERE cm."session_id" = "chat_sessions"."id")`,
-          preview: sql<string | null>`(SELECT cm."content" FROM "chat_messages" cm WHERE cm."session_id" = "chat_sessions"."id" ORDER BY cm."id" ASC LIMIT 1)`,
+          messageCount: sql<string>`(SELECT COUNT(*) FROM "compliance_chat_messages" cm WHERE cm."session_id" = "compliance_chat_sessions"."id")`,
+          preview: sql<string | null>`(SELECT cm."content" FROM "compliance_chat_messages" cm WHERE cm."session_id" = "compliance_chat_sessions"."id" ORDER BY cm."id" ASC LIMIT 1)`,
         })
-        .from(chatSessions)
+        .from(complianceChatSessions)
         .where(scope)
-        .orderBy(desc(chatSessions.lastActivityAt))
+        .orderBy(desc(complianceChatSessions.lastActivityAt))
         .limit(limit)
         .offset(offset);
       const [{ total }] = await database
         .select({ total: count() })
-        .from(chatSessions)
+        .from(complianceChatSessions)
         .where(scope);
       return {
         sessions: rows.map(r => ({

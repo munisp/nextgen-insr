@@ -15,7 +15,10 @@
 import { afterEach, beforeAll, afterAll, describe, it, vi } from "vitest";
 
 import { getDb } from "../../server/db";
-import { chatMessages, chatSessions } from "../../drizzle/schema.additions";
+import {
+  complianceChatMessages,
+  complianceChatSessions,
+} from "../../drizzle/schema.additions";
 import { eq } from "drizzle-orm";
 import {
   callerFor,
@@ -54,8 +57,8 @@ describe("complianceChatbot (B13) — integration", () => {
     const db = (await getDb())!;
     const [row] = await db
       .select()
-      .from(chatSessions)
-      .where(eq(chatSessions.sessionKey, sessionKey))
+      .from(complianceChatSessions)
+      .where(eq(complianceChatSessions.sessionKey, sessionKey))
       .limit(1);
     expect(row).toBeTruthy();
     expect(row.userId).toBe(regularUser.id);
@@ -215,13 +218,13 @@ describe("complianceChatbot (B13) — integration", () => {
       const db = (await getDb())!;
       const [session] = await db
         .select()
-        .from(chatSessions)
-        .where(eq(chatSessions.sessionKey, sessionKey))
+        .from(complianceChatSessions)
+        .where(eq(complianceChatSessions.sessionKey, sessionKey))
         .limit(1);
       const rows = await db
         .select()
-        .from(chatMessages)
-        .where(eq(chatMessages.sessionId, session.id));
+        .from(complianceChatMessages)
+        .where(eq(complianceChatMessages.sessionId, session.id));
       const assistant = rows.filter(r => r.role === "assistant");
       expect(assistant).toHaveLength(1);
       expect(assistant[0].content).toContain("SEAM-REPLY");

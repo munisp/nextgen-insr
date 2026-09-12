@@ -42,13 +42,13 @@ CREATE TABLE IF NOT EXISTS ussd_session_events (
 CREATE INDEX IF NOT EXISTS use_session_idx ON ussd_session_events(session_id);
 CREATE INDEX IF NOT EXISTS use_created_at_idx ON ussd_session_events(created_at);
 
--- chat_sessions / chat_messages: compliance chatbot conversation persistence.
+-- compliance_chat_sessions / compliance_chat_messages: compliance chatbot conversation persistence. (Named compliance_chat_* because schema.ts already delivers support-chat tables named chat_sessions/chat_messages.)
 -- Messages are inserted by complianceChatbot.sendMessage — the user message is
 -- persisted before the Ollama call and the assistant reply after it, so a
 -- session transcript never contains an assistant message that Ollama did not
 -- actually generate. model records the Ollama model that produced the reply
 -- (NULL on user messages).
-CREATE TABLE IF NOT EXISTS chat_sessions (
+CREATE TABLE IF NOT EXISTS compliance_chat_sessions (
   id SERIAL PRIMARY KEY,
   session_key VARCHAR(64) NOT NULL UNIQUE,
   user_id INTEGER,
@@ -58,10 +58,10 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   last_activity_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS cs_user_idx ON chat_sessions(user_id);
-CREATE INDEX IF NOT EXISTS cs_last_activity_idx ON chat_sessions(last_activity_at);
+CREATE INDEX IF NOT EXISTS ccs_user_idx ON compliance_chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS ccs_last_activity_idx ON compliance_chat_sessions(last_activity_at);
 
-CREATE TABLE IF NOT EXISTS chat_messages (
+CREATE TABLE IF NOT EXISTS compliance_chat_messages (
   id SERIAL PRIMARY KEY,
   session_id INTEGER NOT NULL,
   role VARCHAR(16) NOT NULL,                -- 'user' | 'assistant' | 'system'
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS cm_session_idx ON chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS ccm_session_idx ON compliance_chat_messages(session_id);
 
 -- Scorer weights (B11): the heuristic-v1 formula weights live in
 -- system_config so operators can re-tune them without a deploy. The scorer
