@@ -1,0 +1,54 @@
+# Dapr platform components (mirrors k8s/middleware/dapr.yaml).
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: statestore
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+    - name: redisHost
+      value: {{ .Values.components.statestore.redisHost }}
+    - name: redisPassword
+      secretKeyRef:
+        name: {{ .Values.components.statestore.redisPasswordSecret }}
+        key: {{ .Values.components.statestore.redisPasswordKey }}
+    - name: enableTLS
+      value: "false"
+    - name: actorStateStore
+      value: "true"
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+    - name: brokers
+      value: {{ .Values.components.pubsub.brokers }}
+    - name: authType
+      value: none
+    - name: consumerGroup
+      value: {{ .Values.components.pubsub.consumerGroup }}
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: insurance-secrets
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dapr.labels" . | nindent 4 }}
+spec:
+  type: secretstores.kubernetes
+  version: v1
+  metadata:
+    - name: defaultNamespace
+      value: {{ .Release.Namespace | quote }}

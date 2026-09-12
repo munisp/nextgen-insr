@@ -1,0 +1,14 @@
+apiVersion: v2
+name: postgresql
+description: 'PostgreSQL 16 HA (repmgr) primary/replica cluster for the InsurePortal
+  platform database (compose: postgres:16-alpine, DB/user insureportal; k8s/middleware:
+  bitnami/postgresql-repmgr:16).'
+type: application
+version: 1.0.0
+appVersion: 16.4.0
+keywords:
+- pos-insureportal
+- middleware
+- postgresql
+maintainers:
+- name: InsurePortal Platform Team

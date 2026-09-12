@@ -1,0 +1,57 @@
+# Default values for the mojaloop chart.
+# Mirrors docker-compose.yml / k8s/middleware configuration.
+replicaCount: 2
+image:
+  repository: mojaloop/account-lookup-service
+  tag: v15.3.0
+  pullPolicy: IfNotPresent
+fullnameOverride: ''
+service:
+  type: ClusterIP
+  ports:
+  - name: api
+    port: 4002
+  - name: admin
+    port: 4003
+config:
+  ALS_ENDPOINT: http://mojaloop:4002
+  CENTRAL_LEDGER_ENDPOINT: http://central-ledger.mojaloop.svc.cluster.local:3001
+  ORACLE_ENDPOINT: http://als-oracle.mojaloop.svc.cluster.local:4001
+  SWITCH_ENDPOINT: https://hub.mojaloop.example.internal
+  DFSP_ID: insureportal
+  HUB_PARTICIPANT_NAME: hub
+  CALLBACK_RESOURCE_PARTIES: parties
+  CACHE_ENABLED: 'true'
+  MOJALOOP_HUB_URL: ''
+  LOG_LEVEL: info
+secrets:
+  MOJALOOP_JWS_SIGNING_KEY: replace-with-dfsp-jws-private-key
+configAsEnv: true
+env: []
+volumeMounts: []
+volumes: []
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30
+probes:
+  liveness:
+    httpGet:
+      path: /health
+      port: 4002
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    httpGet:
+      path: /health
+      port: 4002
+    initialDelaySeconds: 10
+    periodSeconds: 5
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+  limits:
+    memory: 1Gi
+    cpu: 500m
+pdb:
+  minAvailable: 1

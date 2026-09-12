@@ -1,0 +1,14 @@
+apiVersion: v2
+name: fluvio
+description: "Fluvio streaming controller (SC) \u2014 lightweight event streaming\
+  \ used by the middleware event publishers (k8s/middleware/fluvio.yaml, compose infinyon/fluvio\
+  \ fluvio-run sc)."
+type: application
+version: 1.0.0
+appVersion: 0.11.11
+keywords:
+- pos-insureportal
+- middleware
+- fluvio
+maintainers:
+- name: InsurePortal Platform Team

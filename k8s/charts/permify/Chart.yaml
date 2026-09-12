@@ -1,0 +1,14 @@
+apiVersion: v2
+name: permify
+description: "Permify PBAC authorization service (gRPC 3478 / REST 3476) \u2014 permission\
+  \ checks for policies, claims and admin actions; server/_core/permify.ts targets\
+  \ PERMIFY_URL :3476 (compose ghcr.io/permify/permify)."
+type: application
+version: 1.0.0
+appVersion: 1.3.5
+keywords:
+- pos-insureportal
+- middleware
+- permify
+maintainers:
+- name: InsurePortal Platform Team

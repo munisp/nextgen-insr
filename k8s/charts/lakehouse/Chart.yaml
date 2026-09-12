@@ -1,0 +1,13 @@
+apiVersion: v2
+name: lakehouse
+description: 'Analytics lakehouse: MinIO S3 object store (buckets from server/lakehouse.ts)
+  + Trino query engine (docker-compose.sprint42.yml: minio RELEASE.2024-01-16, trinodb/trino:440).'
+type: application
+version: 1.0.0
+appVersion: '440'
+keywords:
+- pos-insureportal
+- middleware
+- lakehouse
+maintainers:
+- name: InsurePortal Platform Team

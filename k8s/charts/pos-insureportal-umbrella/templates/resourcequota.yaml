@@ -1,0 +1,16 @@
+# Aggregate resource guardrails for the platform stack.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ .Release.Name }}-quota
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: pos-insureportal
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  hard:
+    requests.cpu: {{ .Values.quota.requestsCpu | default "24" | quote }}
+    requests.memory: {{ .Values.quota.requestsMemory | default "64Gi" | quote }}
+    limits.cpu: {{ .Values.quota.limitsCpu | default "48" | quote }}
+    limits.memory: {{ .Values.quota.limitsMemory | default "128Gi" | quote }}
+    persistentvolumeclaims: {{ .Values.quota.pvcs | default 20 | quote }}

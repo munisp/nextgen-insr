@@ -1,0 +1,62 @@
+# Default values for the apisix chart.
+# Mirrors docker-compose.yml / k8s/middleware configuration.
+replicaCount: 2
+image:
+  repository: apache/apisix
+  tag: 3.9.0-debian
+  pullPolicy: IfNotPresent
+fullnameOverride: ''
+service:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 9080
+  - name: admin
+    port: 9180
+  - name: https
+    port: 9443
+config:
+  config.yaml: "apisix:\n  node_listen: 9080\n  enable_admin: true\n  allow_admin:\n    - 0.0.0.0/0\n  admin_key:\n    - name:\
+    \ admin\n      key: edd1c9f034335f136f87ad84b625c8f1  # default dev key \u2014 override via values.secrets.APISIX_ADMIN_KEY\
+    \ in production\n      role: admin\ndeployment:\n  role: traditional\n  role_traditional:\n    config_provider: etcd\n\
+    \  etcd:\n    host:\n      - http://apisix-etcd:2379\n    prefix: /apisix\n    timeout: 30\nnginx_config:\n  error_log_level:\
+    \ warn\n  worker_processes: auto\nplugins:\n  - prometheus\n  - jwt-auth\n  - key-auth\n  - limit-req\n  - limit-count\n\
+    \  - cors\n  - ip-restriction\n  - request-validation\n"
+secrets:
+  APISIX_ADMIN_KEY: edd1c9f034335f136f87ad84b625c8f1
+env: []
+volumeMounts:
+- name: config
+  mountPath: /usr/local/apisix/conf/config.yaml
+  subPath: config.yaml
+volumes:
+- name: config
+  configMap: true
+  items:
+  - key: config.yaml
+    path: config.yaml
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30
+probes:
+  liveness:
+    httpGet:
+      path: /apisix/status
+      port: 9080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    httpGet:
+      path: /apisix/status
+      port: 9080
+    initialDelaySeconds: 10
+    periodSeconds: 5
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 1Gi
+    cpu: '1'
+pdb:
+  minAvailable: 1

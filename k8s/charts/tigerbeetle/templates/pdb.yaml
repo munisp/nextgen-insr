@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "tigerbeetle.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tigerbeetle.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "tigerbeetle.selectorLabels" . | nindent 6 }}

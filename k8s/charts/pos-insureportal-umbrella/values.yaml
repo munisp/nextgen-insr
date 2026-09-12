@@ -1,0 +1,35 @@
+# Umbrella values — one section per subchart; set <chart>.enabled=false to opt out.
+global:
+  namespace: insurance-platform
+quota:
+  requestsCpu: '24'
+  requestsMemory: 64Gi
+  limitsCpu: '48'
+  limitsMemory: 128Gi
+  pvcs: 20
+postgresql:
+  enabled: true
+redis:
+  enabled: true
+kafka:
+  enabled: true
+tigerbeetle:
+  enabled: true
+opensearch:
+  enabled: true
+fluvio:
+  enabled: true
+temporal:
+  enabled: true
+keycloak:
+  enabled: true
+permify:
+  enabled: true
+apisix:
+  enabled: true
+dapr:
+  enabled: true
+mojaloop:
+  enabled: true
+lakehouse:
+  enabled: true

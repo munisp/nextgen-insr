@@ -1,0 +1,13 @@
+apiVersion: v2
+name: redis
+description: Redis 7.2 cluster (6 nodes, AOF persistence) used for caching, sessions
+  and the Dapr state store (k8s/middleware/redis.yaml, compose redis:7-alpine).
+type: application
+version: 1.0.0
+appVersion: '7.2'
+keywords:
+- pos-insureportal
+- middleware
+- redis
+maintainers:
+- name: InsurePortal Platform Team

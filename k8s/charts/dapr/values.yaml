@@ -1,0 +1,56 @@
+# Default values for the dapr chart.
+# Mirrors docker-compose.yml / k8s/middleware configuration.
+replicaCount: 3
+image:
+  repository: daprio/placement
+  tag: 1.13.0
+  pullPolicy: IfNotPresent
+fullnameOverride: ''
+service:
+  type: ClusterIP
+  ports:
+  - name: placement
+    port: 50006
+  - name: metrics
+    port: 9090
+config:
+  config.yaml: "apiVersion: dapr.io/v1alpha1\nkind: Configuration\nmetadata:\n  name: insurance-config\nspec:\n  tracing:\n\
+    \    samplingRate: \"1\"\n    zipkin:\n      endpointAddress: http://jaeger-collector.monitoring.svc.cluster.local:9411/api/v2/spans\n\
+    \  metric:\n    enabled: true\n  mtls:\n    enabled: true\n  accessControl:\n    defaultAction: allow\n    trustDomain:\
+    \ insurance-platform\n"
+secrets:
+  DAPR_API_TOKEN: change-me-dapr-token
+env: []
+volumeMounts: []
+volumes: []
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30
+probes:
+  liveness:
+    tcpSocket:
+      port: 50006
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readiness:
+    tcpSocket:
+      port: 50006
+    initialDelaySeconds: 10
+    periodSeconds: 5
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+pdb:
+  minAvailable: 2
+components:
+  statestore:
+    redisHost: redis:6379
+    redisPasswordSecret: redis
+    redisPasswordKey: REDIS_PASSWORD
+  pubsub:
+    brokers: kafka:9092
+    consumerGroup: insurance-platform

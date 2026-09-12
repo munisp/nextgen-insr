@@ -1,0 +1,13 @@
+apiVersion: v2
+name: keycloak
+description: "Keycloak 24 IAM \u2014 realm-based OIDC for the insurer portal and admin\
+  \ console, backed by the platform PostgreSQL (compose quay.io/keycloak/keycloak:24.0.4)."
+type: application
+version: 1.0.0
+appVersion: 24.0.4
+keywords:
+- pos-insureportal
+- middleware
+- keycloak
+maintainers:
+- name: InsurePortal Platform Team

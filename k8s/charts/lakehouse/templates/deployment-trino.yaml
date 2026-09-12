@@ -1,0 +1,46 @@
+# Trino coordinator — ad-hoc SQL over the lakehouse (trinodb/trino:440, docker-compose.sprint42.yml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lakehouse.fullname" . }}-trino
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lakehouse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: trino
+spec:
+  replicas: {{ .Values.trino.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "lakehouse.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: trino
+  template:
+    metadata:
+      labels:
+        {{- include "lakehouse.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: trino
+    spec:
+      serviceAccountName: {{ include "lakehouse.fullname" . }}
+      containers:
+        - name: trino
+          image: "{{ .Values.trino.image.repository }}:{{ .Values.trino.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: TRINO_DISCOVERY_URI
+              value: "http://localhost:8080"
+          resources:
+            {{- toYaml .Values.trino.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /v1/info
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /v1/info
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10

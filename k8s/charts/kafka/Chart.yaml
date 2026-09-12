@@ -1,0 +1,14 @@
+apiVersion: v2
+name: kafka
+description: "Apache Kafka 3.6 in KRaft mode (3 combined broker/controllers) for the\
+  \ insurance event bus \u2014 claims-events / policy-events / payment-events topics\
+  \ (k8s/middleware/kafka.yaml, compose confluentinc/cp-kafka:7.6.0)."
+type: application
+version: 1.0.0
+appVersion: 7.6.0
+keywords:
+- pos-insureportal
+- middleware
+- kafka
+maintainers:
+- name: InsurePortal Platform Team

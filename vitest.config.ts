@@ -88,7 +88,6 @@ export default defineConfig({
       // Do NOT add entries without per-file assurance-lead approval.
       // CAT-A undelivered-scope (zero commits in git history, API-verified):
       "server/sprint73-resilience.test.ts",
-      "server/helm-charts.test.ts",
       "server/lib/__tests__/sprint62-production.test.ts",
       "server/lib/__tests__/sprint65-final.test.ts",
       "server/sprint71-security.test.ts",
