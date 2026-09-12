@@ -87,10 +87,14 @@ export default defineConfig({
       // ═══ QUARANTINED (2026-08-16, assurance-lead approved, tests/QUARANTINE.md) ═══
       // Do NOT add entries without per-file assurance-lead approval.
       // CAT-A undelivered-scope (zero commits in git history, API-verified):
-      "server/lib/__tests__/sprint62-production.test.ts",
-      "server/lib/__tests__/sprint65-final.test.ts",
+      // RE-ENABLED 2026-09-12 (W3-residual, A9/A8): sprint62-production
+      // (53/53) and sprint65-final (37/37) — W3a artifacts
+      // (docker-compose.production-final.yml, seed/smoke scripts, prometheus
+      // config, k8s/deployment.yml) verified present and green on main.
       "server/sprint79.test.ts",
-      "server/sprint80.test.ts",
+      // RE-ENABLED 2026-09-12 (W3-residual, A8): sprint80 (27/27) — W3a
+      // manifest k8s/sprint80-billing-services.yaml verified present and
+      // green on main.
       "server/sprint83.test.ts",
       "server/sprint85.test.ts",
       // RE-ENABLED 2026-08-17: sprint35 (W5a, A14 — router moved to asserted
