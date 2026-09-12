@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.final.yml — InsurePortal final production stack (Sprint 65)
+#
+# Consolidated final deployment: the web monolith + its hard state
+# dependencies + the nginx gateway. This is the minimal always-on core of
+# docker-compose.production-final.yml (which additionally runs kafka,
+# tigerbeetle, prometheus and grafana). Use this file when observability and
+# streaming middleware run outside the compose host (e.g. managed services
+# or the k8s middleware namespace).
+#
+# Usage:
+#   docker compose -f docker-compose.final.yml up -d
+#   node scripts/seed-production-final.mjs && node scripts/smoke-test.mjs
+# ─────────────────────────────────────────────────────────────────────────────
+version: "3.9"
+
+networks:
+  insureportal-final-core:
+    name: insureportal-final-core
+    driver: bridge
+
+volumes:
+  postgres_core_data:
+  redis_core_data:
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: insureportal-core-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://posadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/posinsureportal
+      POSTGRES_URL: postgresql://posadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/posinsureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - insureportal-final-core
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: insureportal-core-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: posadmin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: posinsureportal
+    volumes:
+      - postgres_core_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U posadmin -d posinsureportal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - insureportal-final-core
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: insureportal-core-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    volumes:
+      - redis_core_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - insureportal-final-core
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: insureportal-core-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${TLS_CERTS_DIR:-./deploy/certs}:/etc/nginx/ssl:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - insureportal-final-core

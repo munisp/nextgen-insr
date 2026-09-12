@@ -1,0 +1,185 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ci-cd.yml — Continuous Integration & Delivery pipeline (Sprint 65 / item A10)
+#
+# Complements ci.yml (per-push quality gates) with the delivery stages:
+#   quality  → lint ratchet + typecheck + build (same commands as ci.yml)
+#   test     → vitest against real postgres/redis services
+#   image    → docker build of the root Dockerfile, pushed to the registry
+#              referenced by k8s/deployment.yml
+#   deploy   → rolling update of the insurance-platform namespace (main only)
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '22'
+  REGISTRY: registry.insurance.example.com
+  IMAGE: registry.insurance.example.com/insureportal-app
+
+jobs:
+  # ── Quality gates (mirrors ci.yml: eslint ratchet, typecheck, build) ───────
+  quality:
+    name: Lint, Typecheck & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint (ratchet gate)
+        run: node scripts/check-eslint-baseline.mjs
+
+      - name: TypeScript type check
+        run: pnpm exec tsc --noEmit
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
+
+      - name: Verify feature-claim manifest
+        run: node scripts/verify-claims.mjs
+
+      - name: Build frontend with Vite
+        run: pnpm build
+
+  # ── Tests against real middleware ──────────────────────────────────────────
+  test:
+    name: Vitest (postgres + redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: quality
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply database schema
+        run: pnpm exec drizzle-kit push --force
+        env:
+          POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
+
+      - name: Seed demo dataset
+        run: node seed.mjs
+        env:
+          POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
+
+      - name: Run vitest
+        env:
+          POSTGRES_URL: postgresql://postgres:test_password@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379
+        run: npx vitest run
+
+  # ── Container image (root Dockerfile → image used by k8s/deployment.yml) ───
+  image:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: test
+    # PRs build but never push
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Deploy to the insurance-platform namespace ─────────────────────────────
+  deploy:
+    name: Deploy (k8s rolling update)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: image
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure cluster credentials
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -f k8s/base/
+          kubectl apply -f k8s/deployment.yml
+
+      - name: Pin image to this commit
+        run: |
+          kubectl -n insurance-platform set image deployment/insureportal-app \
+            app=${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Wait for rollout
+        run: |
+          kubectl -n insurance-platform rollout status deployment/insureportal-app \
+            --timeout=300s
+
+      - name: Post-deploy smoke test
+        run: node scripts/smoke-test.mjs
+        env:
+          BASE_URL: ${{ secrets.SMOKE_BASE_URL }}

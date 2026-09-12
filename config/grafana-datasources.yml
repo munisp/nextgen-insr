@@ -1,0 +1,20 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# config/grafana-datasources.yml — Grafana datasource provisioning for the
+# production-final stack (Sprint 62 / item A9).
+#
+# Mounted by docker-compose.production-final.yml at
+# /etc/grafana/provisioning/datasources/datasources.yml.
+# Targets the prometheus service in the same compose network.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST

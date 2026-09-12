@@ -1,0 +1,1249 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# k8s/sprint80-billing-services.yaml — Sprint 80 billing engine microservices
+#
+# Ten Go billing services consumed by the Node platform via
+# server/adapters/goServiceAdapter.ts (e.g. billing-aggregator :8086/health).
+# Images follow the repo convention registry.insurance.example.com/<svc>:latest
+# (see k8s/services/core-platform-services.yaml). Middleware endpoints reuse the
+# cluster addresses from k8s/base/configmap.yaml.
+#
+# Layout:
+#   Namespace billing · ServiceAccount billing-svc · middleware ConfigMap ·
+#   10 Deployments (+Services, Dapr sidecars, liveness/readiness probes) ·
+#   3 HPAs (high-throughput services) · NetworkPolicy · PodDisruptionBudget
+#
+# Apply:
+#   kubectl apply -f k8s/sprint80-billing-services.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: billing
+  labels:
+    app.kubernetes.io/name: billing
+    app.kubernetes.io/part-of: unified-insurance-platform
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: billing-svc
+  namespace: billing
+  labels:
+    app.kubernetes.io/part-of: unified-insurance-platform
+---
+# Shared middleware wiring for all billing services. Values mirror
+# k8s/base/configmap.yaml cluster addresses.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-middleware-config
+  namespace: billing
+data:
+  POSTGRES_HOST: "postgresql-ha-pgpool.insurance-platform.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "insurance"
+  KAFKA_BROKERS: "insurance-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+  TEMPORAL_ADDRESS: "temporal-frontend.middleware.svc.cluster.local:7233"
+  TIGERBEETLE_ADDRESSES: "tigerbeetle.middleware.svc.cluster.local:3000"
+  OPENSEARCH_URL: "https://opensearch-cluster-master.middleware.svc.cluster.local:9200"
+  PERMIFY_URL: "http://permify.insurance-platform.svc.cluster.local:3476"
+  DAPR_HTTP_PORT: "3500"
+  DAPR_GRPC_PORT: "50001"
+  FLUVIO_ENDPOINT: "fluvio-sc.middleware.svc.cluster.local:9003"
+  LAKEHOUSE_S3_ENDPOINT: "http://iceberg-rest.middleware.svc.cluster.local:8181"
+  MOJALOOP_HUB_URL: "https://mojaloop-hub.middleware.svc.cluster.local"
+  APISIX_ADMIN_URL: "http://apisix-admin.middleware.svc.cluster.local:9180"
+  KEYCLOAK_URL: "http://keycloak.insurance-platform.svc.cluster.local:8080"
+  OPENAPPSEC_AGENT_URL: "http://openappsec-agent.middleware.svc.cluster.local:8085"
+  GO_ENV: "production"
+  LOG_LEVEL: "info"
+---
+# Aggregates tenant billing periods and revenue-share splits
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-aggregator
+  namespace: billing
+  labels:
+    app: billing-aggregator
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: billing-aggregator
+  template:
+    metadata:
+      labels:
+        app: billing-aggregator
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-aggregator"
+        dapr.io/app-port: "8086"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8086"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: billing-aggregator
+          image: registry.insurance.example.com/billing-aggregator:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8086
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-aggregator
+  namespace: billing
+  labels:
+    app: billing-aggregator
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: billing-aggregator
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Reconciles ledger vs payment-rail settlement
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-reconciliation-engine
+  namespace: billing
+  labels:
+    app: billing-reconciliation-engine
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: billing-reconciliation-engine
+  template:
+    metadata:
+      labels:
+        app: billing-reconciliation-engine
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-reconciliation-engine"
+        dapr.io/app-port: "8310"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8310"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: billing-reconciliation-engine
+          image: registry.insurance.example.com/billing-reconciliation-engine:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8310
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-reconciliation-engine
+  namespace: billing
+  labels:
+    app: billing-reconciliation-engine
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: billing-reconciliation-engine
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# SLA attainment reporting for tenant billing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sla-billing-reporter
+  namespace: billing
+  labels:
+    app: sla-billing-reporter
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: sla-billing-reporter
+  template:
+    metadata:
+      labels:
+        app: sla-billing-reporter
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "sla-billing-reporter"
+        dapr.io/app-port: "8311"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8311"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: sla-billing-reporter
+          image: registry.insurance.example.com/sla-billing-reporter:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8311
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sla-billing-reporter
+  namespace: billing
+  labels:
+    app: sla-billing-reporter
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: sla-billing-reporter
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Kafka/Fluvio stream processor for billing events
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-stream-processor
+  namespace: billing
+  labels:
+    app: billing-stream-processor
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: billing-stream-processor
+  template:
+    metadata:
+      labels:
+        app: billing-stream-processor
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-stream-processor"
+        dapr.io/app-port: "8312"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8312"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: billing-stream-processor
+          image: registry.insurance.example.com/billing-stream-processor:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8312
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-stream-processor
+  namespace: billing
+  labels:
+    app: billing-stream-processor
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: billing-stream-processor
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# TigerBeetle ledger integrity validation
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger-integrity-validator
+  namespace: billing
+  labels:
+    app: ledger-integrity-validator
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: ledger-integrity-validator
+  template:
+    metadata:
+      labels:
+        app: ledger-integrity-validator
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "ledger-integrity-validator"
+        dapr.io/app-port: "8313"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8313"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: ledger-integrity-validator
+          image: registry.insurance.example.com/ledger-integrity-validator:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8313
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-integrity-validator
+  namespace: billing
+  labels:
+    app: ledger-integrity-validator
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: ledger-integrity-validator
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Computes fee splits across platform/tenant/agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fee-split-calculator
+  namespace: billing
+  labels:
+    app: fee-split-calculator
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: fee-split-calculator
+  template:
+    metadata:
+      labels:
+        app: fee-split-calculator
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "fee-split-calculator"
+        dapr.io/app-port: "8314"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8314"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: fee-split-calculator
+          image: registry.insurance.example.com/fee-split-calculator:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8314
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fee-split-calculator
+  namespace: billing
+  labels:
+    app: fee-split-calculator
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: fee-split-calculator
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Consumes domain events into billing records
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-event-processor
+  namespace: billing
+  labels:
+    app: billing-event-processor
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: billing-event-processor
+  template:
+    metadata:
+      labels:
+        app: billing-event-processor
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-event-processor"
+        dapr.io/app-port: "8315"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8315"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: billing-event-processor
+          image: registry.insurance.example.com/billing-event-processor:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8315
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-event-processor
+  namespace: billing
+  labels:
+    app: billing-event-processor
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: billing-event-processor
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Detects billing anomalies and mis-postings
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-anomaly-detector
+  namespace: billing
+  labels:
+    app: billing-anomaly-detector
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: billing-anomaly-detector
+  template:
+    metadata:
+      labels:
+        app: billing-anomaly-detector
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "billing-anomaly-detector"
+        dapr.io/app-port: "8316"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8316"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: billing-anomaly-detector
+          image: registry.insurance.example.com/billing-anomaly-detector:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8316
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-anomaly-detector
+  namespace: billing
+  labels:
+    app: billing-anomaly-detector
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: billing-anomaly-detector
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Telco/carrier billing integration
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: carrier-billing
+  namespace: billing
+  labels:
+    app: carrier-billing
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: carrier-billing
+  template:
+    metadata:
+      labels:
+        app: carrier-billing
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "carrier-billing"
+        dapr.io/app-port: "8317"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8317"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: carrier-billing
+          image: registry.insurance.example.com/carrier-billing:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8317
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carrier-billing
+  namespace: billing
+  labels:
+    app: carrier-billing
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: carrier-billing
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Revenue forecasting for billing dashboards
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: revenue-forecaster
+  namespace: billing
+  labels:
+    app: revenue-forecaster
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: revenue-forecaster
+  template:
+    metadata:
+      labels:
+        app: revenue-forecaster
+        app.kubernetes.io/part-of: unified-insurance-platform
+        app.kubernetes.io/component: billing
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: "revenue-forecaster"
+        dapr.io/app-port: "8318"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8318"
+    spec:
+      serviceAccountName: billing-svc
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: revenue-forecaster
+          image: registry.insurance.example.com/revenue-forecaster:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8318
+          envFrom:
+            - configMapRef:
+                name: billing-middleware-config
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: revenue-forecaster
+  namespace: billing
+  labels:
+    app: revenue-forecaster
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: billing
+spec:
+  type: ClusterIP
+  selector:
+    app: revenue-forecaster
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# High-throughput services autoscale on CPU.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: billing-stream-processor-hpa
+  namespace: billing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: billing-stream-processor
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: billing-aggregator-hpa
+  namespace: billing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: billing-aggregator
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fee-split-calculator-hpa
+  namespace: billing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fee-split-calculator
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+# Default-deny ingress inside the billing namespace; only the platform
+# namespace (Node monolith / API gateway) may reach billing services.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-ingress-policy
+  namespace: billing
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: insurance-platform
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+    # Middleware namespaces (postgres/redis/kafka/tigerbeetle/temporal/...)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: middleware
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: insurance-platform
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: billing-services-pdb
+  namespace: billing
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: billing
