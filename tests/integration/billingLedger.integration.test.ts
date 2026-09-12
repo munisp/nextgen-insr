@@ -290,17 +290,53 @@ describe("billingLedger (F-12 wave-3, real PG)", () => {
     } else {
       expect(fim.code).toBe("PRECONDITION_FAILED");
     }
-    await expect(caller.securityAudit.getPolicies({})).rejects.toMatchObject({
-      code: "NOT_IMPLEMENTED",
-    });
+    // B1 (zero-undelivered-scope, W2a): getPolicies is now DELIVERED — it
+    // reads the real pbac_policies store (seeded by parsing the actual
+    // infra/permify/schema.perm via syncPbacPolicies). On this suite-shared
+    // database the store is EMPTY unless the pbacScanner suite synced it, so
+    // the honest contract is order-independent: real policy rows OR the
+    // fail-loud empty-store error naming the sync remedy (never the old
+    // NOT_IMPLEMENTED stub).
+    const policies = await caller.securityAudit.getPolicies({}).then(
+      r => ({ resolved: true as const, rows: r }),
+      (e: { code?: string; message?: string }) => ({
+        resolved: false as const,
+        code: e.code,
+        message: e.message ?? "",
+      })
+    );
+    if (policies.resolved) {
+      expect(Array.isArray(policies.rows)).toBe(true);
+    } else {
+      expect(policies.code).toBe("PRECONDITION_FAILED");
+      expect(policies.message).toMatch(/pbac_policies store is empty/);
+      expect(policies.message).toMatch(/syncPbacPolicies/);
+    }
     // B3 (zero-undelivered-scope): getMitigations is now DELIVERED — it reads
     // the real security_mitigations tracker table and returns rows instead of
     // failing loud. The remaining procedures above stay NOT_IMPLEMENTED.
     const mitigations = await caller.securityAudit.getMitigations({});
     expect(Array.isArray(mitigations)).toBe(true);
-    await expect(
-      caller.securityAudit.runSecurityScan({})
-    ).rejects.toMatchObject({ code: "NOT_IMPLEMENTED" });
+    // B2 (zero-undelivered-scope, W2a): runSecurityScan is now DELIVERED —
+    // real scanner probing at call time. CI has no trivy/semgrep binary, so
+    // the honest outcome here is the fail-loud probe report; a host WITH a
+    // scanner returns a real run summary instead. Never the old echoed
+    // {success:true} and never NOT_IMPLEMENTED.
+    const scan = await caller.securityAudit.runSecurityScan({}).then(
+      r => ({ resolved: true as const, summary: r }),
+      (e: { code?: string; message?: string }) => ({
+        resolved: false as const,
+        code: e.code,
+        message: e.message ?? "",
+      })
+    );
+    if (scan.resolved) {
+      expect(scan.summary.status).toBe("completed");
+      expect(scan.summary.totalFindings).toBeGreaterThanOrEqual(0);
+    } else {
+      expect(scan.code).toBe("PRECONDITION_FAILED");
+      expect(scan.message).toMatch(/no security scanner is available/);
+    }
   });
 
   it("dbSchemaPush.getHistory/getSummary report real journal state", async () => {

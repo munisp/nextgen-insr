@@ -95,8 +95,12 @@ describe(`${FILE}: PBAC viewer + security scanner (B1, B2)`, () => {
   it("parser extracts the real policies from the real schema file", () => {
     const { version, policies } = loadPermifySchema();
     expect(version).toBe("3.0.0");
-    // The real v3.0.0 schema declares well over a hundred actions.
-    expect(policies.length).toBeGreaterThan(100);
+    // The real v3.0.0 schema declares exactly 119 action statements across
+    // 15 entities (enumerated 2026-09-12 by running this parser over the
+    // file and printing every entity-action pair; 117 unique
+    // (entity, permission) pairs — two pairs are declared twice in the
+    // real file, see the sync test below).
+    expect(policies.length).toBe(119);
     const manageTenant = policies.find(
       p => p.entity === "tenant" && p.permission === "manage_tenant"
     );
@@ -113,16 +117,26 @@ describe(`${FILE}: PBAC viewer + security scanner (B1, B2)`, () => {
     const admin = callerFor(adminUser);
     const first = await admin.securityAudit.syncPbacPolicies();
     expect(first.schemaVersion).toBe("3.0.0");
-    expect(first.parsed).toBeGreaterThan(100);
-    expect(first.inserted).toBe(first.parsed);
-    expect(first.updated).toBe(0);
+    // Known answers derived 2026-09-12 by running the REAL parser over
+    // infra/permify/schema.perm v3.0.0 and enumerating the output: the file
+    // contains 119 action declarations across 15 entities, but TWO
+    // (entity, permission) pairs are declared TWICE in the real file —
+    // tenant.view_tenant (two different grant expressions) and agent.view
+    // ('supervisor' vs 'tenant.supervisor', textually different) — so the
+    // upsert store keys on 117 UNIQUE policies: first sync inserts 117 rows
+    // and updates 2 (the duplicate declarations), never dropping anything.
+    expect(first.parsed).toBe(119);
+    expect(first.inserted).toBe(117);
+    expect(first.updated).toBe(2);
 
     const second = await admin.securityAudit.syncPbacPolicies();
+    // Re-sync is idempotent: all 119 declarations now match existing rows.
     expect(second.inserted).toBe(0);
     expect(second.updated).toBe(second.parsed);
 
     const rows = await admin.securityAudit.getPolicies({ limit: 500 });
-    expect(rows.length).toBe(first.parsed);
+    // 117 unique (entity, permission) policies — the store key.
+    expect(rows.length).toBe(117);
     const claimAdjudicate = rows.find(
       r => r.entity === "claim" && r.permission === "adjudicate"
     );
