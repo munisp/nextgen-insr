@@ -1,0 +1,19 @@
+[package]
+name = "transaction-queue"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "transaction-queue"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = "4"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+log = "0.4"
+env_logger = "0.10"

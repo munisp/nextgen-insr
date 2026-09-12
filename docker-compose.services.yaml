@@ -219,5 +219,156 @@ services:
     image: daprio/dapr:1.12.0
     ports: ["3500:3500"]
 
+  # ══════════════════════════════════════════════════════════════════════════
+  # W5d (F-11/A1) — connectivity-resilience + platform hardening services
+  # ══════════════════════════════════════════════════════════════════════════
+
+  connectivity-resilience:
+    build: ./services/go/connectivity-resilience
+    ports: ["8085:8085"] # matches CONNECTIVITY_RESILIENCE_URL default
+    environment:
+      - PORT=8085
+      - CONNECTIVITY_QUEUE_FILE=/data/queue.json
+      - FORWARD_TARGET_URL=${FORWARD_TARGET_URL:-}
+      - MAX_RETRIES=8
+    volumes:
+      - connectivity-queue:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8085/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  connection-multiplexer:
+    build: ./services/go/connection-multiplexer
+    ports: ["8096:8096"]
+    environment:
+      - PORT=8096
+      - UPSTREAM_URL=${CONNECTION_MUX_UPSTREAM_URL:-}
+      - MAX_UPSTREAM_CONNECTIONS=32
+
+  bandwidth-optimizer-go:
+    build: ./services/go/bandwidth-optimizer
+    container_name: bandwidth-optimizer-go
+    ports: ["8097:8097"]
+    environment:
+      - PORT=8097
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8097/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  opensearch-analytics:
+    build: ./services/go/opensearch-analytics
+    ports: ["8093:8093"] # matches OPENSEARCH_ANALYTICS_URL default
+    environment:
+      - PORT=8093
+      - OPENSEARCH_URL=http://opensearch:9200
+      - OPENSEARCH_USER=${OPENSEARCH_USER:-}
+      - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD:-}
+    depends_on: [opensearch]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8093/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  apisix-gateway:
+    build: ./services/go/apisix-gateway
+    ports: ["8098:8098"]
+    environment:
+      - PORT=8098
+      - APISIX_ADMIN_URL=http://apisix:9180
+      - APISIX_ADMIN_KEY=${APISIX_ADMIN_KEY:-}
+    depends_on: [apisix]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8098/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  bandwidth-optimizer:
+    build: ./services/rust/bandwidth-optimizer
+    ports: ["8117:8107"] # host remapped: 8107 taken by regulatory-reporting
+    environment:
+      - PORT=8107
+
+  offline-ledger:
+    build: ./services/rust/offline-ledger
+    ports: ["8118:8108"] # host remapped: 8108 taken by comparison-engine
+    environment:
+      - PORT=8108
+      - LEDGER_FILE=/data/offline-ledger.json
+      - NODE_ID=${NODE_ID:-node-local}
+    volumes:
+      - offline-ledger-data:/data
+
+  adaptive-compression:
+    build: ./services/rust/adaptive-compression
+    ports: ["8119:8109"] # host remapped: 8109 taken by embedded-sdk
+    environment:
+      - PORT=8109
+
+  transaction-queue:
+    build: ./services/rust/transaction-queue
+    ports: ["8110:8110"]
+    environment:
+      - PORT=8110
+      - WAL_PATH=/data/transaction-queue.wal
+      - PROCESSOR_URL=${TRANSACTION_PROCESSOR_URL:-}
+    volumes:
+      - transaction-queue-wal:/data
+
+  ransomware-guard:
+    build: ./services/rust/ransomware-guard
+    ports: ["8111:8111"]
+    environment:
+      - PORT=8111
+      - WATCH_ROOT=/watch
+      - BACKUP_STORE=/backups
+      - BURST_THRESHOLD=100
+    volumes:
+      - watch-data:/watch
+      - ransomware-backups:/backups
+
+  redis-cache-layer:
+    build: ./services/python/redis-cache-layer
+    ports: ["8112:8112"]
+    environment:
+      - PORT=8112
+      - REDIS_URL=redis://redis:6379/12
+    depends_on: [redis]
+
+  security-scanner:
+    build: ./services/python/security-scanner
+    ports: ["8113:8113"]
+    environment:
+      - PORT=8113
+
+  network-quality-predictor:
+    build: ./services/python/network-quality-predictor
+    ports: ["8114:8114"]
+    environment:
+      - PORT=8114
+
+  sms-transaction-bridge:
+    build: ./services/python/sms-transaction-bridge
+    ports: ["8115:8115"]
+    environment:
+      - PORT=8115
+      - PLATFORM_API_URL=${PLATFORM_API_URL:-}
+
+  connectivity-analytics:
+    build: ./services/python/connectivity-analytics
+    ports: ["8116:8116"]
+    environment:
+      - PORT=8116
+
 volumes:
   pgdata:
+  connectivity-queue:
+  offline-ledger-data:
+  transaction-queue-wal:
+  watch-data:
+  ransomware-backups:

@@ -1,0 +1,19 @@
+[package]
+name = "adaptive-compression"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "adaptive-compression"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = "4"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flate2 = "1"
+zstd = "0.13"
+lz4_flex = "0.11"
+log = "0.4"
+env_logger = "0.10"
