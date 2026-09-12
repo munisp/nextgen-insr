@@ -1,0 +1,189 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# k8s/deployment.yml — InsurePortal core web application (Sprint 65, item A8)
+#
+# Deploys the monolith Node.js application built from the repository-root
+# Dockerfile (client Vite build + Express/tRPC server on PORT 3000).
+# Conventions follow k8s/base/configmap.yaml and k8s/services/*.
+#
+# Apply:
+#   kubectl apply -f k8s/deployment.yml
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insureportal-app
+  namespace: insurance-platform
+  labels:
+    app.kubernetes.io/name: insureportal-app
+    app.kubernetes.io/part-of: unified-insurance-platform
+    app.kubernetes.io/component: web
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: insureportal-app
+  template:
+    metadata:
+      labels:
+        app: insureportal-app
+        app.kubernetes.io/name: insureportal-app
+        app.kubernetes.io/part-of: unified-insurance-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: /api/metrics
+    spec:
+      serviceAccountName: insureportal-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: app
+          # Built from the repository-root Dockerfile via .github/workflows/ci-cd.yml
+          image: registry.insurance.example.com/insureportal-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: NODE_ENV
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: POSTGRES_DB
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: KAFKA_BROKERS
+            - name: TEMPORAL_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: TEMPORAL_ADDRESS
+            - name: TIGERBEETLE_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: TIGERBEETLE_ADDRESS
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureportal-secrets
+                  key: redis-url
+            - name: KEYCLOAK_URL
+              value: "http://keycloak.insurance-platform:8080"
+            - name: PERMIFY_URL
+              value: "http://permify.insurance-platform:3476"
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=4096 --max-semi-space-size=64 --gc-interval=100"
+          # Real endpoints served by server/_core/index.ts:
+          #   GET /health        — liveness/readiness health handler
+          #   GET /api/metrics   — Prometheus text format (prom-client)
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: insureportal-app
+  namespace: insurance-platform
+  labels:
+    app.kubernetes.io/name: insureportal-app
+    app.kubernetes.io/part-of: unified-insurance-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: insureportal-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: insureportal-app-pdb
+  namespace: insurance-platform
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: insureportal-app
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: insureportal-app-hpa
+  namespace: insurance-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: insureportal-app
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

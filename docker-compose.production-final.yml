@@ -1,0 +1,229 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.production-final.yml — InsurePortal production-final stack
+# (Sprint 62 F11 / item A9)
+#
+# Self-contained production stack: web monolith (repo-root Dockerfile, port
+# 3000) + core middleware + observability + nginx gateway. Service images and
+# versions match docker-compose.production.yml; the reverse proxy config is
+# config/nginx.conf and Prometheus scrapes config/prometheus.yml.
+#
+# Usage:
+#   docker compose -f docker-compose.production-final.yml up -d
+#   node scripts/seed-production-final.mjs     # seed reference data (idempotent)
+#   node scripts/smoke-test.mjs                # post-deploy smoke assertions
+# ─────────────────────────────────────────────────────────────────────────────
+version: "3.9"
+
+networks:
+  insureportal-final:
+    name: insureportal-final
+    driver: bridge
+
+volumes:
+  postgres_final_data:
+  redis_final_data:
+  kafka_final_data:
+  zookeeper_final_data:
+  zookeeper_final_log:
+  tigerbeetle_final_data:
+  prometheus_final_data:
+  grafana_final_data:
+
+x-restart-policy: &restart-policy
+  restart: unless-stopped
+
+services:
+  # ── Application ─────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: insureportal-final-web
+    <<: *restart-policy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://posadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/posinsureportal
+      POSTGRES_URL: postgresql://posadmin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/posinsureportal
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required}@redis:6379
+      KAFKA_BROKERS: kafka:29092
+      TIGERBEETLE_ADDRESSES: tigerbeetle:3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - insureportal-final
+
+  # ── Middleware ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: insureportal-final-postgres
+    <<: *restart-policy
+    environment:
+      POSTGRES_USER: posadmin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: posinsureportal
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_final_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U posadmin -d posinsureportal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - insureportal-final
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: insureportal-final-redis
+    <<: *restart-policy
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_final_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - insureportal-final
+
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+    container_name: insureportal-final-tigerbeetle
+    <<: *restart-policy
+    command: >
+      start --addresses=0.0.0.0:3000 --development /data/cluster_0.tigerbeetle
+    ports:
+      - "${TIGERBEETLE_PORT:-3001}:3000"
+    volumes:
+      - tigerbeetle_final_data:/data
+    networks:
+      - insureportal-final
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: insureportal-final-zookeeper
+    <<: *restart-policy
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_final_data:/var/lib/zookeeper/data
+      - zookeeper_final_log:/var/lib/zookeeper/log
+    networks:
+      - insureportal-final
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: insureportal-final-kafka
+    <<: *restart-policy
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - kafka_final_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - insureportal-final
+
+  # ── Observability ───────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: insureportal-final-prometheus
+    <<: *restart-policy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_final_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - insureportal-final
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: insureportal-final-grafana
+    <<: *restart-policy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./config/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - grafana_final_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - insureportal-final
+
+  # ── Gateway ─────────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: insureportal-final-nginx
+    <<: *restart-policy
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${TLS_CERTS_DIR:-./deploy/certs}:/etc/nginx/ssl:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - insureportal-final

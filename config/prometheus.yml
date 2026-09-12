@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# config/prometheus.yml — Prometheus scrape configuration for the
+# production-final stack (Sprint 62 / item A9, Sprint 65 / item A10).
+#
+# Mounted by docker-compose.production-final.yml at
+# /etc/prometheus/prometheus.yml. Scrape targets are the real services and
+# metrics paths exposed by that stack:
+#   web:3000/api/metrics  — Express/prom-client registry (server/_core/index.ts)
+# ─────────────────────────────────────────────────────────────────────────────
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  scrape_timeout: 10s
+  external_labels:
+    environment: production
+    stack: production-final
+    service: insureportal
+
+scrape_configs:
+  # ── InsurePortal web monolith (Node.js / Express) ──────────────────────────
+  # The application exposes prom-client metrics in Prometheus text format at
+  # GET /api/metrics (see server/_core/index.ts and server/metrics.ts).
+  - job_name: insureportal-web
+    metrics_path: /api/metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - web:3000
+        labels:
+          instance: insureportal-web-prod
+
+  # ── Prometheus self-monitoring ──────────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  # ── Grafana self-monitoring ─────────────────────────────────────────────────
+  - job_name: grafana
+    metrics_path: /metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - grafana:3000
+
+  # ── Redis exporter-less health (blackbox-style via up{}) ────────────────────
+  # Redis itself does not expose /metrics; container health is enforced by the
+  # compose healthcheck. If redis_exporter is added to the stack, uncomment:
+  # - job_name: redis
+  #   static_configs:
+  #     - targets:
+  #         - redis-exporter:9121
+
+  # ── Kubernetes discovery (when deployed via k8s/deployment.yml) ─────────────
+  # The web Deployment carries prometheus.io/scrape annotations; enable this
+  # job on clusters with the Prometheus kubernetes_sd role configured.
+  # - job_name: insureportal-k8s
+  #   kubernetes_sd_configs:
+  #     - role: pod
+  #       namespaces:
+  #         names:
+  #           - insurance-platform
+  #   relabel_configs:
+  #     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+  #       action: keep
+  #       regex: "true"
+  #     - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+  #       action: replace
+  #       target_label: __metrics_path__
