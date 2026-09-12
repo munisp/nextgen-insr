@@ -29,6 +29,9 @@ import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 
 import { systemConfig } from "../../drizzle/schema";
+import type { getDb } from "../db";
+
+type ScoringDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 
 export const MODEL_TYPE = "heuristic-v1" as const;
 export const WEIGHTS_CONFIG_KEY = "mlScoring.claimRisk.weights";
@@ -178,7 +181,7 @@ export function parseClaimRiskWeights(raw: string): ClaimRiskWeights {
  * scorer never falls back to embedded defaults.
  */
 export async function loadClaimRiskWeights(
-  db: NonNullable<Awaited<ReturnType<typeof import("../db").getDb>>>
+  db: ScoringDb
 ): Promise<ClaimRiskWeights> {
   const [row] = await db
     .select()
