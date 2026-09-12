@@ -1,0 +1,68 @@
+# Production overrides for the pos-insureportal-umbrella chart.
+# Usage: helm upgrade --install pos-insureportal ./pos-insureportal-umbrella -f values-production.yaml
+# environment: production
+global:
+  namespace: insurance-platform-prod
+'# environment': production
+postgresql:
+  enabled: true
+  replicaCount: 3
+  resources:
+    requests:
+      memory: 4Gi
+      cpu: '1'
+    limits:
+      memory: 8Gi
+      cpu: '4'
+  persistence:
+    enabled: true
+    size: 500Gi
+    storageClass: cinder-ssd
+    accessModes:
+    - ReadWriteOnce
+    mountPath: /bitnami/postgresql
+kafka:
+  enabled: true
+  replicaCount: 5
+tigerbeetle:
+  enabled: true
+  replicaCount: 3
+redis:
+  enabled: true
+  replicaCount: 6
+keycloak:
+  enabled: true
+  replicaCount: 3
+temporal:
+  enabled: true
+  replicaCount: 2
+permify:
+  enabled: true
+  replicaCount: 3
+apisix:
+  enabled: true
+  replicaCount: 3
+opensearch:
+  enabled: true
+  replicaCount: 3
+  config:
+    discovery.type: zen
+    OPENSEARCH_JAVA_OPTS: -Xms2g -Xmx2g
+dapr:
+  enabled: true
+  replicaCount: 3
+fluvio:
+  enabled: true
+  replicaCount: 1
+mojaloop:
+  enabled: true
+  replicaCount: 2
+lakehouse:
+  enabled: true
+  replicaCount: 2
+quota:
+  requestsCpu: '64'
+  requestsMemory: 256Gi
+  limitsCpu: '128'
+  limitsMemory: 512Gi
+  pvcs: 40

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: tigerbeetle
+description: "TigerBeetle financial ledger cluster (3 replicas) \u2014 the double-entry\
+  \ ledger backing commissions, payouts and premium flows (k8s/middleware/tigerbeetle.yaml)."
+type: application
+version: 1.0.0
+appVersion: 0.16.41
+keywords:
+- pos-insureportal
+- middleware
+- tigerbeetle
+maintainers:
+- name: InsurePortal Platform Team

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: opensearch
+description: OpenSearch 2.17 single-node search/analytics store for policy, claims
+  and fraud search (compose opensearchproject/opensearch:2.17.0).
+type: application
+version: 1.0.0
+appVersion: 2.17.0
+keywords:
+- pos-insureportal
+- middleware
+- opensearch
+maintainers:
+- name: InsurePortal Platform Team

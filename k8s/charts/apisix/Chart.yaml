@@ -1,0 +1,14 @@
+apiVersion: v2
+name: apisix
+description: "Apache APISIX 3.9 API gateway (standalone-etcd control plane) \u2014\
+  \ north-south traffic entry for the portal APIs (compose apache/apisix:3.9.0-debian\
+  \ + bitnami/etcd:3.5.12, config infra/apisix/config.yaml)."
+type: application
+version: 1.0.0
+appVersion: 3.9.0
+keywords:
+- pos-insureportal
+- middleware
+- apisix
+maintainers:
+- name: InsurePortal Platform Team

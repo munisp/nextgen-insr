@@ -1,0 +1,14 @@
+apiVersion: v2
+name: mojaloop
+description: Mojaloop account-lookup + quoting adapter for interoperable instant-payment
+  rails (DFSP connectivity; the lakehouse-mojaloop sidecar observes the hub via MOJALOOP_HUB_URL,
+  docker-compose.sprint42.yml).
+type: application
+version: 1.0.0
+appVersion: 15.3.0
+keywords:
+- pos-insureportal
+- middleware
+- mojaloop
+maintainers:
+- name: InsurePortal Platform Team

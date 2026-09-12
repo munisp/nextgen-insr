@@ -1,0 +1,80 @@
+# Default values for the temporal chart.
+# Mirrors docker-compose.yml / k8s/middleware configuration.
+replicaCount: 1
+image:
+  repository: temporalio/auto-setup
+  tag: 1.24.2
+  pullPolicy: IfNotPresent
+fullnameOverride: ''
+service:
+  type: ClusterIP
+  ports:
+  - name: frontend
+    port: 7233
+  - name: metrics
+    port: 9090
+config:
+  DB: postgresql
+  DB_PORT: '5432'
+  POSTGRES_SEEDS: postgresql
+  POSTGRES_USER: insureportal
+  DBNAME: temporal
+  VISIBILITY_DBNAME: temporal_visibility
+  DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+  ENABLE_ES: 'false'
+  TEMPORAL_ADDRESS: temporal:7233
+  TEMPORAL_CLI_ADDRESS: temporal:7233
+  TEMPORAL_UI_ENABLED: 'true'
+  SERVICES: frontend:history:matching:worker
+secrets:
+  POSTGRES_PASSWORD: insureportal_dev
+configAsEnv: true
+env:
+- name: POSTGRES_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: '{{ include "temporal.fullname" . }}'
+      key: POSTGRES_PASSWORD
+- name: POSTGRES_PWD
+  value: $(POSTGRES_PASSWORD)
+volumeMounts: []
+volumes: []
+podSecurityContext:
+  fsGroup: 1000
+terminationGracePeriodSeconds: 30
+probes:
+  liveness:
+    exec:
+      command:
+      - tctl
+      - --address
+      - localhost:7233
+      - cluster
+      - health
+    initialDelaySeconds: 60
+    periodSeconds: 10
+  readiness:
+    tcpSocket:
+      port: 7233
+    initialDelaySeconds: 30
+    periodSeconds: 10
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 2Gi
+    cpu: '1'
+pdb:
+  minAvailable: 1
+ui:
+  image:
+    repository: temporalio/ui
+    tag: 2.26.2
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 250m

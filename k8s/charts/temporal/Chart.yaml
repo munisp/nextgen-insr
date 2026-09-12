@@ -1,0 +1,14 @@
+apiVersion: v2
+name: temporal
+description: "Temporal workflow server (auto-setup, PostgreSQL persistence) + UI \u2014\
+  \ orchestrates billing-provisioning and claims workflows (compose temporalio/auto-setup:1.24.2\
+  \ + temporalio/ui:2.26.2)."
+type: application
+version: 1.0.0
+appVersion: 1.24.2
+keywords:
+- pos-insureportal
+- middleware
+- temporal
+maintainers:
+- name: InsurePortal Platform Team
