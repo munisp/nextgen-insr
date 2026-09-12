@@ -4,7 +4,8 @@
 FROM node:26-alpine AS builder
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@9 --activate
+# corepack is no longer bundled in Node 26 images; install the lockfile-matching pnpm explicitly
+RUN npm install -g pnpm@10.4.1
 
 WORKDIR /app
 
@@ -40,7 +41,8 @@ COPY --from=builder /app/pnpm-lock.yaml ./
 COPY --from=builder /app/patches ./patches
 
 # Install only production runtime dependencies
-RUN corepack enable && corepack prepare pnpm@9 --activate \
+# corepack is no longer bundled in Node 26 images; install the lockfile-matching pnpm explicitly
+RUN npm install -g pnpm@10.4.1 \
     && pnpm install --prod --frozen-lockfile \
     && pnpm store prune
 
