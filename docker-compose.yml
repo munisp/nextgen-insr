@@ -562,6 +562,9 @@ services:
     container_name: fraud-network-graph
     restart: unless-stopped
     environment:
+      # SVC default in innovationRouters.ts is http://fraud-network-graph:8100 —
+      # the Dockerfile CMD honors PORT (app itself binds uvicorn at runtime).
+      PORT: "8100"
       DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
     depends_on:
       postgres:
@@ -586,6 +589,9 @@ services:
     container_name: health-wearables
     restart: unless-stopped
     environment:
+      # SVC default in innovationRouters.ts is http://health-wearables:8101 —
+      # the Dockerfile CMD honors PORT (app itself binds uvicorn at runtime).
+      PORT: "8101"
       DATABASE_URL: postgresql://insureportal:${POSTGRES_PASSWORD:-insureportal_dev}@postgres:5432/insureportal
     depends_on:
       postgres:
@@ -696,6 +702,12 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8106"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8106/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     ports:
       - "18106:8106"
     networks:
