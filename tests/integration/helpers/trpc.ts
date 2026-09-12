@@ -43,6 +43,7 @@ import { actuarialEngineRouter } from "../../../server/routers/actuarialEngine";
 import { analyticsDashboardRouter } from "../../../server/routers/analyticsDashboard";
 import { agentFloatForecastingRouter } from "../../../server/routers/agentFloatForecasting";
 import { weeklyReportsRouter } from "../../../server/routers/weeklyReports";
+import { systemHealthMonitorRouter } from "../../../server/routers/systemHealthMonitor";
 import { networkStatusDashboardRouter } from "../../../server/routers/networkStatusDashboard";
 
 // Same mount paths as server/routers.ts (production appRouter).
@@ -89,6 +90,9 @@ export const integrationRouter = router({
   weeklyReports: weeklyReportsRouter,
   // B14: carrier telemetry views — same mount path as production.
   networkStatusDashboard: networkStatusDashboardRouter,
+  // B8/B9/B10: observability telemetry surfaces — same mount path as
+  // production (healthMonitor: systemHealthMonitorRouter in server/routers.ts).
+  healthMonitor: systemHealthMonitorRouter,
 });
 
 export type IntegrationRouter = typeof integrationRouter;

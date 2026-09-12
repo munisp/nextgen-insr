@@ -18,6 +18,7 @@ import type { TrpcContext } from "../_core/context";
 import { logger } from '../_core/logger';
 import { fluvioProduce } from "../fluvio";
 import { publishEvent, type KafkaTopic } from "../kafkaClient";
+import { recordErrorEvent, recordRequestMetric } from "../lib/telemetryStore";
 import { cacheSet, cacheGet } from "../redisClient";
 import { tbCreateTransfer } from "../tbClient";
 
@@ -147,9 +148,52 @@ export function createObservabilityMiddleware(t: any) {
       const userId = ctx.user ? String(ctx.user.id) : "anonymous";
       const requestId: string | undefined = ctx.requestId;
 
+      // Record one failure observation (emit + B8/B9 telemetry) for the real
+      // error object, regardless of how tRPC surfaced it (result.ok === false
+      // or a rejected next()).
+      const recordFailure = (error: unknown, durationMs: number): void => {
+        emitObservabilityEvent({
+          path,
+          type,
+          userId,
+          requestId,
+          startMs,
+          durationMs,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        }).catch(() => {});
+
+        // B8 + B9: real request metric + grouped error event from the actual
+        // thrown error. Both are fire-and-forget with honest-drop semantics.
+        try {
+          recordRequestMetric({
+            path,
+            procedureType: type,
+            durationMs,
+            success: false,
+            errorCode: error instanceof TRPCError ? error.code : "INTERNAL_SERVER_ERROR",
+            userId,
+          });
+          void recordErrorEvent({
+            path,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          }).catch(() => {});
+        } catch { /* telemetry must never break the request path */ }
+      };
+
       try {
         const result = await next({ ctx });
         const durationMs = Date.now() - startMs;
+
+        // tRPC surfaces resolver errors as { ok: false, error } — next() does
+        // NOT reject for downstream procedure failures. Inspect the marker so
+        // failures are never recorded as successes.
+        const outcome = result as { ok?: boolean; error?: unknown };
+        if (outcome && outcome.ok === false) {
+          recordFailure(outcome.error, durationMs);
+          return result; // tRPC propagates the error to the caller itself
+        }
 
         // Fire-and-forget: don't await, don't block the response
         emitObservabilityEvent({
@@ -162,21 +206,22 @@ export function createObservabilityMiddleware(t: any) {
           success: true,
         }).catch(() => {}); // swallow any unhandled rejection
 
+        // B8: in-repo APM — buffered, batched, best-effort (never blocks,
+        // never pretends to have written; see server/lib/telemetryStore.ts).
+        try {
+          recordRequestMetric({
+            path,
+            procedureType: type,
+            durationMs,
+            success: true,
+            userId,
+          });
+        } catch { /* telemetry must never break the request path */ }
+
         return result;
       } catch (error) {
         const durationMs = Date.now() - startMs;
-
-        emitObservabilityEvent({
-          path,
-          type,
-          userId,
-          requestId,
-          startMs,
-          durationMs,
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        }).catch(() => {});
-
+        recordFailure(error, durationMs);
         throw error; // re-throw to preserve tRPC error handling
       }
     }
