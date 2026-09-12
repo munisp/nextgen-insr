@@ -39,6 +39,7 @@
 2. The 2026-04-21 static scan reports zero findings but is ~5 months old; re-run the scanner that produced `security-audit-final-report.json` on release candidates.
 3. TLS certificates are operator-supplied (`/etc/nginx/ssl`); the HTTPS server block ships disabled until real certificates are mounted — HSTS therefore has no effect until TLS is enabled.
 4. This report is automated tooling + configuration review, not a manual penetration test.
+5. CI/CD delivery credentials (2026-09-12 fix-back): `ci-cd.yml` image build runs unconditionally (real Dockerfile validation), but image push, k8s deploy, and post-deploy smoke are gated on repo variable `DEPLOY_ENABLED=true` plus secrets `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`, `KUBE_CONFIG`, `SMOKE_BASE_URL` — all skip loudly until an operator configures them.
 
 ## 5. Verdict
 

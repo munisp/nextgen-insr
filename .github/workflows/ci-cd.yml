@@ -4,9 +4,28 @@
 # Complements ci.yml (per-push quality gates) with the delivery stages:
 #   quality  → lint ratchet + typecheck + build (same commands as ci.yml)
 #   test     → vitest against real postgres/redis services
-#   image    → docker build of the root Dockerfile, pushed to the registry
-#              referenced by k8s/deployment.yml
-#   deploy   → rolling update of the insurance-platform namespace (main only)
+#   image    → REAL docker build of the root Dockerfile on EVERY run (genuine
+#              signal: validates the Dockerfile + full build). The registry
+#              PUSH is additionally gated on the operator opt-in below.
+#   deploy   → rolling update of the insurance-platform namespace (gated)
+#
+# ── OPERATOR OPT-IN GATE (fail-loud-until-configured) ────────────────────────
+# Image push and deploy are DISABLED by default and skip with a loud notice
+# until an operator sets the repository variable:
+#
+#   Settings → Secrets and variables → Actions → Variables:
+#     DEPLOY_ENABLED = "true"        (gates image push, deploy, smoke test)
+#   Settings → Secrets and variables → Actions → Secrets:
+#     REGISTRY_USERNAME              (docker login user for $REGISTRY)
+#     REGISTRY_PASSWORD              (docker login password/token)
+#     KUBE_CONFIG                    (base64-encoded kubeconfig for the
+#                                     insurance-platform cluster)
+#     SMOKE_BASE_URL                 (public base URL for post-deploy smoke)
+#
+# The image BUILD is never gated: `docker build` runs unconditionally and
+# fails the pipeline if the Dockerfile breaks. Nothing is fake-pushed and
+# nothing skips silently — each gated stage prints an explicit notice when
+# disabled.
 # ─────────────────────────────────────────────────────────────────────────────
 name: CI/CD Pipeline
 
@@ -113,44 +132,63 @@ jobs:
         run: npx vitest run
 
   # ── Container image (root Dockerfile → image used by k8s/deployment.yml) ───
+  # BUILD is unconditional (real signal: validates the Dockerfile every run).
+  # PUSH is gated on the operator opt-in vars.DEPLOY_ENABLED == 'true'.
   image:
     name: Build & Push Image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: test
-    # PRs build but never push
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
+      - name: Build image (always — validates the root Dockerfile)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Log in to registry
-        if: github.event_name != 'pull_request'
+        if: vars.DEPLOY_ENABLED == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Build (and push on main)
+      - name: Push image (operator-gated)
+        if: vars.DEPLOY_ENABLED == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: NOTICE — image push disabled
+        if: vars.DEPLOY_ENABLED != 'true'
+        run: |
+          echo "::notice title=Deploy disabled::Image BUILT successfully but NOT pushed. To enable push+deploy, set repository variable DEPLOY_ENABLED=true and configure secrets REGISTRY_USERNAME, REGISTRY_PASSWORD, KUBE_CONFIG, SMOKE_BASE_URL (see workflow header)."
+          echo "image_push=disabled (DEPLOY_ENABLED != true)" >> $GITHUB_STEP_SUMMARY
+
   # ── Deploy to the insurance-platform namespace ─────────────────────────────
+  # Gated on the same operator opt-in; skips loudly when disabled.
   deploy:
     name: Deploy (k8s rolling update)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: image
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: vars.DEPLOY_ENABLED == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v4
@@ -183,3 +221,15 @@ jobs:
         run: node scripts/smoke-test.mjs
         env:
           BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
+
+  # ── Loud skip notice — deploy never fails or skips silently ───────────────
+  deploy-disabled-notice:
+    name: NOTICE — deploy disabled
+    runs-on: ubuntu-latest
+    needs: image
+    if: vars.DEPLOY_ENABLED != 'true'
+    steps:
+      - name: Explain why deploy did not run
+        run: |
+          echo "::notice title=Deploy disabled::Rolling deploy and post-deploy smoke test were SKIPPED by operator gate. Set repository variable DEPLOY_ENABLED=true and configure secrets REGISTRY_USERNAME, REGISTRY_PASSWORD, KUBE_CONFIG, SMOKE_BASE_URL to enable (see workflow header)."
+          echo "deploy=disabled (DEPLOY_ENABLED != true) — quality, tests, and image build all ran and passed." >> $GITHUB_STEP_SUMMARY
