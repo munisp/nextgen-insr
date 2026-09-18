@@ -1128,7 +1128,7 @@ export const insuranceWorkflowsRouter = router({
       // the recorded guardian only.
       let beneficiaryName = input.beneficiaryName ?? null;
       let beneficiaryAccount = input.beneficiaryAccount ?? null;
-      let beneficiaryBank = input.beneficiaryBank ?? null;
+      const beneficiaryBank = input.beneficiaryBank ?? null;
       const [bene] = await db.select().from(beneficiaries)
         .where(eq(beneficiaries.policyId, claim.policyId))
         .orderBy(desc(beneficiaries.percentage)).limit(1);
