@@ -5529,23 +5529,6 @@ export const policyLifecycleStates = pgTable(
     waitingPeriodResetAt: timestamp("waitingPeriodResetAt"),
     arrearsAmount: numeric("arrearsAmount", { precision: 18, scale: 2 }).default("0").notNull(),
     lastSweptAt: timestamp("lastSweptAt"),
-
-// ─── Audit wave F1 (payments) — append-only additions ────────────────────────
-
-// PAY-3: durable idempotency registry for TigerBeetle transfers. The
-// tb-sidecar is a transparent proxy (no dedup), so retry-after-timeout safety
-// is established client-side: ref → payloadHash + deterministic transferId +
-// outcome. See server/tbClient.ts.
-export const tbTransferRegistry = pgTable(
-  "tb_transfer_registry",
-  {
-    ref: varchar("ref", { length: 128 }).primaryKey(),
-    payloadHash: varchar("payloadHash", { length: 64 }).notNull(),
-    transferId: varchar("transferId", { length: 128 }),
-    // indeterminate = attempt timed out (commit state unknown);
-    // committed = upstream confirmed.
-    status: varchar("status", { length: 16 }).default("indeterminate").notNull(),
-    response: text("response"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   },
@@ -5580,6 +5563,26 @@ export const claimAppeals = pgTable(
 export type ClaimAppeal = typeof claimAppeals.$inferSelect;
 export type InsertClaimAppeal = typeof claimAppeals.$inferInsert;
 
+// ─── Audit wave F1 (payments) — append-only additions ────────────────────────
+
+// PAY-3: durable idempotency registry for TigerBeetle transfers. The
+// tb-sidecar is a transparent proxy (no dedup), so retry-after-timeout safety
+// is established client-side: ref → payloadHash + deterministic transferId +
+// outcome. See server/tbClient.ts.
+export const tbTransferRegistry = pgTable(
+  "tb_transfer_registry",
+  {
+    ref: varchar("ref", { length: 128 }).primaryKey(),
+    payloadHash: varchar("payloadHash", { length: 64 }).notNull(),
+    transferId: varchar("transferId", { length: 128 }),
+    // indeterminate = attempt timed out (commit state unknown);
+    // committed = upstream confirmed.
+    status: varchar("status", { length: 16 }).default("indeterminate").notNull(),
+    response: text("response"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
     statusIdx: index("tbreg_status_idx").on(t.status),
   })
 );
