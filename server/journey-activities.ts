@@ -37,6 +37,7 @@ import {
   posTerminals, idempotencyRecords,
 } from "../drizzle/schema";
 import { premiums, claimsPayments, commissions } from "../drizzle/schema.additions";
+import { validateIncidentWindow, validateWaitingPeriod } from "./lib/policyLifecycle";
 import { acquireLock, releaseLock, getRedisClient } from "./lib/redisClient";
 
 // ─── Helper: get DB instance ─────────────────────────────────────────────────
@@ -549,7 +550,17 @@ export async function fileClaim(input: {
   const d = await db();
   const [policy] = await d.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
   if (!policy) throw new Error(`Policy ${input.policyId} not found`);
-  if (!["active", "bound"].includes(policy.status ?? "")) throw new Error(`Policy ${input.policyId} is not active (status: ${policy.status})`);
+  // INS-25: 'bound' (never paid) policies cannot file claims — coverage starts
+  // only once payPremium activates the policy.
+  if (policy.status !== "active") throw new Error(`Policy ${input.policyId} is not active (status: ${policy.status})`);
+
+  // INS-2/23: the journey path enforces the SAME incident-window and
+  // waiting-period rules as the direct fileClaim path.
+  const incidentDate = new Date(input.incidentDate);
+  const windowError = validateIncidentWindow(policy, incidentDate);
+  if (windowError) throw new Error(`Policy ${input.policyId}: ${windowError}`);
+  const waitingError = await validateWaitingPeriod(d as never, policy, incidentDate);
+  if (waitingError) throw new Error(`Policy ${input.policyId}: ${waitingError}`);
 
   const claimNumber = `CLM-${Date.now().toString(36).toUpperCase()}`;
   const [claim] = await d.insert(claims).values({
@@ -557,7 +568,7 @@ export async function fileClaim(input: {
     policyId: input.policyId,
     claimantId: input.customerId,
     claimType: input.claimType,
-    incidentDate: new Date(input.incidentDate),
+    incidentDate,
     claimedAmount: String(input.claimedAmount),
     incidentDescription: input.description,
     status: "submitted",

@@ -44,11 +44,24 @@ import {
   fluvioEventLog,
   tigerBeetleSyncLog,
   auditLog,
+  policyLifecycleStates,
+  claimAppeals,
+  commissionClawbacks,
 } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
 import { financialProcedure } from "../_core/permifyMiddleware";
 import { publishInsuranceEvent } from "../daprClient";
 import { getDb, withClientTransaction } from "../db";
+import {
+  APPEAL_SLA_DAYS,
+  COOLING_OFF_DAYS,
+  getOrInitLifecycle,
+  isInGracePeriod,
+  sweepPolicyLifecycle,
+  validateIncidentWindow,
+  validateReinstatement,
+  validateWaitingPeriod,
+} from "../lib/policyLifecycle";
 import { assertTenantOwnership } from "../middleware/tenantIsolation";
 import { tbCreateTransfer, withTbCompensation } from "../tbClient";
 import { getTemporalClient } from "../temporal";
@@ -76,6 +89,26 @@ export const ADJUDICATABLE_FROM_STATUSES = [
 export const SETTLEABLE_CLAIM_STATUSES = [
   "approved",
   "partially_approved",
+] as const;
+
+/**
+ * Assignment (CA-1) is only reachable from pre-decision states (INS-7):
+ * decided/terminal claims (approved/paid/closed/...) must never regress to
+ * under_review via a reassignment.
+ */
+export const ASSIGNABLE_FROM_STATUSES = [
+  "submitted",
+  "under_review",
+  "investigation",
+  "appealed",
+  "escalated",
+] as const;
+
+/** Statuses from which a policy may be cancelled (INS-12). */
+export const CANCELLABLE_POLICY_STATUSES = [
+  "bound",
+  "active",
+  "lapsed",
 ] as const;
 
 // ─── Helper: Emit audit log entry ─────────────────────────────────────────────
@@ -253,7 +286,58 @@ export const insuranceWorkflowsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      const paymentRef = `PAY-${Date.now()}-${input.policyId}`;
+      const [policy] = await db.select().from(policies)
+        .where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      if (!["bound", "active"].includes(policy.status ?? "")) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Policy status '${policy.status}' does not allow premium payment` });
+      }
+      if (!Number.isFinite(input.amount) || input.amount <= 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "amount must be a positive number" });
+      }
+
+      // INS-10: validate the amount against the premium due. Underpayment is
+      // recorded on the partial-payment ledger but must NOT activate the
+      // policy; overpayment beyond the annual premium is refused (fail-closed
+      // for funds) rather than silently kept.
+      const premiumDue = Number(policy.annualPremium ?? 0);
+      const priorPaidRows = await db.select({ total: sum(premiumPayments.amount) })
+        .from(premiumPayments)
+        .where(and(eq(premiumPayments.policyId, input.policyId), inArray(premiumPayments.status, ["completed", "partial"])));
+      const alreadyPaid = Number(priorPaidRows[0]?.total ?? 0);
+      const outstanding = Math.max(0, premiumDue - alreadyPaid);
+
+      // INS-10: deterministic, idempotent payment reference — a client retry
+      // converges on the same ref instead of minting a duplicate transfer.
+      // Partial payments key on the amount so distinct instalments each get
+      // their own ledger row while a retried instalment replays. The replay
+      // check runs BEFORE the fully-paid guard so a legitimate retry of the
+      // final payment replays instead of erroring.
+      const baseRef = `PAY-${input.policyId}-PREMIUM`;
+      const isPartial = outstanding > 0 && input.amount < outstanding && policy.status === "bound";
+      const paymentRef = isPartial ? `${baseRef}-PARTIAL-${Math.round(input.amount * 100)}` : baseRef;
+      const existing = await db.select().from(premiumPayments)
+        .where(eq(premiumPayments.paymentReference, paymentRef)).limit(1);
+      if (existing.length > 0) {
+        const prev = existing[0]!;
+        if (Number(prev.amount) !== input.amount) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Payment reference already used with a different amount; refusing to re-execute",
+          });
+        }
+        return { payment: prev, tigerBeetleRef: prev.tigerBeetleRef, idempotent: true, partial: isPartial, outstandingPremium: outstanding };
+      }
+
+      if (outstanding <= 0) {
+        throw new TRPCError({ code: "CONFLICT", message: "Premium already paid in full" });
+      }
+      if (input.amount > outstanding) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `amount ${input.amount} exceeds outstanding premium ${outstanding} (annualPremium ${premiumDue}, already paid ${alreadyPaid})`,
+        });
+      }
 
       // Submit to TigerBeetle for atomic ledger entry
       const tbResult = await tbCreateTransfer({
@@ -272,25 +356,28 @@ export const insuranceWorkflowsRouter = router({
         paymentDate: new Date(),
         paymentMethod: input.paymentMethod,
         channel: input.channel ?? "web",
-        status: tbResult ? "completed" : "pending",
+        status: tbResult ? (isPartial ? "partial" : "completed") : "pending",
         tigerBeetleRef: tbResult?.id ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
       }).returning();
 
-      // Activate policy if first payment
-      await db.update(policies)
-        .set({ status: "active", updatedAt: new Date() })
-        .where(and(eq(policies.id, input.policyId), eq(policies.status, "bound")));
+      // Activate policy only when the premium is fully covered (INS-10:
+      // underpayment stays on the partial-payment ledger, no activation).
+      if (!isPartial) {
+        await db.update(policies)
+          .set({ status: "active", updatedAt: new Date() })
+          .where(and(eq(policies.id, input.policyId), eq(policies.status, "bound")));
+      }
 
       await emitFluvioEvent(db, "payment-events", {
-        eventType: "payment.premium_paid",
+        eventType: isPartial ? "payment.premium_partial" : "payment.premium_paid",
         policyId: input.policyId,
         amount: input.amount,
         paymentRef,
       });
 
-      return { payment, tigerBeetleRef: tbResult?.id };
+      return { payment, tigerBeetleRef: tbResult?.id, partial: isPartial, outstandingPremium: outstanding };
     }),
 
   /** PH-4: File a claim */
@@ -314,6 +401,51 @@ export const insuranceWorkflowsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Policy is not active" });
       }
 
+      // INS-1/2: re-check the policy period — an active policy past endDate +
+      // grace lapses on the spot (fail-closed, no sweeper dependency), and the
+      // incident must fall inside [startDate, min(endDate, now)].
+      const incidentDate = new Date(input.incidentDate);
+      const lifecycle = await getOrInitLifecycle(db, input.policyId);
+      const windowError = validateIncidentWindow(policy[0], incidentDate);
+      if (windowError) throw new TRPCError({ code: "BAD_REQUEST", message: windowError });
+      const waitingError = await validateWaitingPeriod(db, policy[0], incidentDate);
+      if (waitingError) throw new TRPCError({ code: "BAD_REQUEST", message: waitingError });
+      if (policy[0].endDate) {
+        const graceDays = lifecycle.gracePeriodDays ?? 30;
+        if (Date.now() > policy[0].endDate.getTime() + graceDays * 86_400_000) {
+          await db.update(policies).set({ status: "lapsed", updatedAt: new Date() })
+            .where(and(eq(policies.id, input.policyId), eq(policies.status, "active")));
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Policy period has ended (policy lapsed)" });
+        }
+      }
+
+      // INS-8: claims filed inside the grace window are placed on hold; the
+      // recorded arrears are offset at settlement.
+      const graceHold = isInGracePeriod(policy[0], lifecycle);
+      const arrearsAtFiling = graceHold ? Number(lifecycle.arrearsAmount ?? 0) : 0;
+
+      // INS-4: duplicate-claim dedup — exact (policyId, incidentDate,
+      // claimType) plus a fuzzy match on claimedAmount within ±1%. Rejected /
+      // closed claims release the key so a legitimate re-file is not blocked.
+      const duplicates = await db.select({
+        id: claims.id,
+        claimNumber: claims.claimNumber,
+        claimedAmount: claims.claimedAmount,
+      }).from(claims).where(and(
+        eq(claims.policyId, input.policyId),
+        eq(claims.incidentDate, incidentDate),
+        eq(claims.claimType, input.claimType),
+        inArray(claims.status, ["submitted", "under_review", "investigation", "approved", "partially_approved", "paid", "appealed", "escalated"]),
+      )).limit(5);
+      const fuzzy = duplicates.find(d =>
+        Math.abs(Number(d.claimedAmount) - input.claimedAmount) <= Math.max(0.01 * input.claimedAmount, 0.01));
+      if (fuzzy) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Duplicate claim: ${fuzzy.claimNumber} already covers policy ${input.policyId} for incident ${incidentDate.toISOString()} (${input.claimType})`,
+        });
+      }
+
       const claimNumber = `CLM-${Date.now()}-${input.policyId}`;
       const [claim] = await db.insert(claims).values({
         claimNumber,
@@ -321,7 +453,8 @@ export const insuranceWorkflowsRouter = router({
         claimantId: policy[0].customerId,
         status: "submitted",
         claimType: input.claimType,
-        incidentDate: new Date(input.incidentDate),
+        incidentDate,
+        metadata: graceHold ? { graceHold: true, arrearsAtFiling } : null,
         reportedDate: new Date(),
         claimedAmount: String(input.claimedAmount),
         incidentDescription: input.incidentDescription,
@@ -357,6 +490,18 @@ export const insuranceWorkflowsRouter = router({
       const [policy] = await db.select().from(policies)
         .where(eq(policies.id, input.policyId)).limit(1);
       if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      // INS-11: only live policies can be renewed — never cancelled/expired ones.
+      if (!["active", "bound"].includes(policy.status ?? "")) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Policy status '${policy.status}' cannot be renewed` });
+      }
+
+      // INS-11: duplicate-renewal guard — one open renewal per policy.
+      const existing = await db.select({ id: policyRenewals.id }).from(policyRenewals)
+        .where(and(eq(policyRenewals.originalPolicyId, input.policyId), eq(policyRenewals.status, "pending")))
+        .limit(1);
+      if (existing.length > 0) {
+        throw new TRPCError({ code: "CONFLICT", message: `An open renewal already exists for policy ${input.policyId}` });
+      }
 
       const [renewal] = await db.insert(policyRenewals).values({
         originalPolicyId: input.policyId,
@@ -372,35 +517,212 @@ export const insuranceWorkflowsRouter = router({
       return { renewal };
     }),
 
-  /** PH-6: Cancel a policy */
-  cancelPolicy: financialProcedure
+  /** PH-5b: Pay for a pending renewal and atomically roll the policy term (INS-11) */
+  payRenewal: protectedProcedure
     .input(z.object({
-      policyId: z.number(),
-      reason: z.string(),
-      effectiveDate: z.string().optional(),
+      renewalId: z.number().int().positive(),
+      amount: z.number().positive(),
+      paymentMethod: z.string(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
 
-      await db.update(policies).set({
+      const [renewal] = await db.select().from(policyRenewals)
+        .where(eq(policyRenewals.id, input.renewalId)).limit(1);
+      if (!renewal) throw new TRPCError({ code: "NOT_FOUND", message: "Renewal not found" });
+      if (renewal.status !== "pending") {
+        // Idempotent replay: a completed renewal returns its durable state.
+        if (renewal.status === "completed") return { renewal, idempotent: true };
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Renewal status '${renewal.status}' cannot be paid` });
+      }
+
+      const [policy] = await db.select().from(policies)
+        .where(eq(policies.id, renewal.originalPolicyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      if (!["active", "bound", "lapsed"].includes(policy.status ?? "")) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Policy status '${policy.status}' cannot be renewed` });
+      }
+      const premiumDue = Number(renewal.renewalPremium ?? policy.annualPremium ?? 0);
+      if (input.amount < premiumDue) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Renewal payment ${input.amount} is below renewal premium ${premiumDue}` });
+      }
+
+      const paymentRef = `PAY-RENEWAL-${input.renewalId}`;
+      const tbResult = await tbCreateTransfer({
+        debitAccountId: `customer-${policy.customerId}`,
+        creditAccountId: "insurer-premium-pool",
+        amount: Math.round(input.amount * 100),
+        ref: paymentRef,
+        txType: "premium_payment",
+      });
+
+      // Atomic term roll: new start = old endDate (no coverage gap/overlap),
+      // one idempotent payment row, and the renewal completed — all-or-nothing.
+      const oldEnd = policy.endDate ?? new Date();
+      const newEnd = new Date(oldEnd);
+      newEnd.setFullYear(newEnd.getFullYear() + 1);
+      await db.transaction(async (tx) => {
+        await tx.insert(premiumPayments).values({
+          policyId: policy.id,
+          paymentReference: paymentRef,
+          amount: String(input.amount),
+          currency: "NGN",
+          paymentDate: new Date(),
+          paymentMethod: input.paymentMethod,
+          channel: "web",
+          status: tbResult ? "completed" : "pending",
+          tigerBeetleRef: tbResult?.id ?? null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        const rolled = await tx.update(policies).set({
+          status: "active",
+          startDate: oldEnd,
+          endDate: newEnd,
+          renewalDate: newEnd,
+          updatedAt: new Date(),
+        }).where(and(eq(policies.id, policy.id), inArray(policies.status, ["active", "bound", "lapsed"])))
+          .returning({ id: policies.id });
+        if (rolled.length === 0) {
+          throw new TRPCError({ code: "CONFLICT", message: `Policy ${policy.id} is no longer renewable (concurrent status change)` });
+        }
+        await tx.update(policyRenewals).set({
+          status: "completed",
+          completedAt: new Date(),
+          renewedPolicyId: policy.id,
+          updatedAt: new Date(),
+        }).where(and(eq(policyRenewals.id, input.renewalId), eq(policyRenewals.status, "pending")));
+        // A renewed lapsed policy restarts clean: arrears settled by the
+        // renewal payment, lifecycle row reset for the new term.
+        await tx.insert(policyLifecycleStates).values({ policyId: policy.id })
+          .onConflictDoUpdate({
+            target: policyLifecycleStates.policyId,
+            set: { lapsedAt: null, expiredAt: null, arrearsAmount: "0", updatedAt: new Date() },
+          });
+      });
+
+      await emitFluvioEvent(db, "policy-events", {
+        eventType: "policy.renewed", policyId: policy.id, renewalId: input.renewalId,
+        newStartDate: oldEnd.toISOString(), newEndDate: newEnd.toISOString(),
+      });
+      await emitAuditLog(db, "POLICY_RENEWED", "policy", policy.id, ctx.user?.id, { renewalId: input.renewalId });
+      return { success: true, newStartDate: oldEnd, newEndDate: newEnd, tigerBeetleRef: tbResult?.id ?? null };
+    }),
+
+  /** PH-6: Cancel a policy */
+  cancelPolicy: financialProcedure
+    .input(z.object({
+      policyId: z.number(),
+      reason: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [policy] = await db.select().from(policies)
+        .where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+
+      // INS-12: ownership check — the policyholder (or an admin) cancels; a
+      // third party cannot cancel someone else's cover.
+      const isOwner = ctx.user?.id != null && policy.customerId === ctx.user.id;
+      const isAdmin = (ctx.user as { role?: string } | undefined)?.role === "admin";
+      if (!isOwner && !isAdmin) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the policyholder or an admin can cancel this policy" });
+      }
+
+      // INS-12: open-claims hold — a policy with claims still in flight cannot
+      // be cancelled out from under its adjudication.
+      const openClaims = await db.select({ id: claims.id }).from(claims)
+        .where(and(
+          eq(claims.policyId, input.policyId),
+          inArray(claims.status, ["submitted", "under_review", "investigation", "approved", "partially_approved", "appealed", "escalated"]),
+        )).limit(1);
+      if (openClaims.length > 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Policy has open claim(s) (e.g. claim ${openClaims[0]!.id}); resolve them before cancellation`,
+        });
+      }
+
+      // INS-12: server-side effective date (never caller-supplied/backdatable).
+      const effectiveDate = new Date();
+
+      // INS-12: state guard applied atomically FIRST — only bound/active/
+      // lapsed policies can transition to cancelled, and a concurrent cancel
+      // loses the race BEFORE any refund money can move (fail-closed for
+      // funds: a lost race can never double-refund).
+      const cancelled = await db.update(policies).set({
         status: "cancelled",
-        cancellationDate: input.effectiveDate ? new Date(input.effectiveDate) : new Date(),
+        cancellationDate: effectiveDate,
         cancellationReason: input.reason,
-        updatedAt: new Date(),
-      }).where(eq(policies.id, input.policyId));
+        updatedAt: effectiveDate,
+      }).where(and(
+        eq(policies.id, input.policyId),
+        inArray(policies.status, [...CANCELLABLE_POLICY_STATUSES]),
+      )).returning({ id: policies.id });
+      if (cancelled.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Policy ${input.policyId} cannot be cancelled from status '${policy.status}'`,
+        });
+      }
+
+      // INS-12/13: cooling-off refund — within COOLING_OFF_DAYS of inception a
+      // cancellation refunds the premium actually paid, via a REAL TigerBeetle
+      // reversal (fail-closed: the sidecar throws on outage). Outside the
+      // window no refund is computed here.
+      const paidRows = await db.select({ total: sum(premiumPayments.amount) })
+        .from(premiumPayments)
+        .where(and(eq(premiumPayments.policyId, input.policyId), eq(premiumPayments.status, "completed")));
+      const totalPaid = Number(paidRows[0]?.total ?? 0);
+      const withinCoolingOff = policy.startDate != null &&
+        effectiveDate.getTime() <= policy.startDate.getTime() + COOLING_OFF_DAYS * 86_400_000;
+      const refundAmount = withinCoolingOff ? totalPaid : 0;
+      let refundTbRef: string | null = null;
+      if (refundAmount > 0) {
+        const tbResult = await tbCreateTransfer({
+          debitAccountId: "insurer-premium-pool",
+          creditAccountId: `customer-${policy.customerId}`,
+          amount: Math.round(refundAmount * 100),
+          ref: `REFUND-COOLOFF-${input.policyId}`,
+          txType: "premium_refund",
+        });
+        refundTbRef = tbResult?.id ?? null;
+      }
+
+      // INS-12: commission clawback trigger — cancelling with a cooling-off
+      // refund claws back the selling agent's commission.
+      if (policy.agentId != null && refundAmount > 0) {
+        try {
+          await db.insert(commissionClawbacks).values({
+            reversalRequestId: input.policyId,
+            agentId: policy.agentId,
+            originalCommission: String(refundAmount),
+            clawbackAmount: String(refundAmount),
+            cascadeLevel: "agent",
+            status: "pending",
+          } as never);
+        } catch {
+          // Non-blocking: clawback machinery is reviewed via commissionClawback router.
+        }
+      }
 
       await db.insert(policyWorkflowEvents).values({
         policyId: input.policyId,
         eventType: "policy.cancelled",
-        fromStatus: "active",
+        fromStatus: policy.status,
         toStatus: "cancelled",
         triggeredBy: ctx.user?.id ?? undefined,
-        payload: { reason: input.reason },
+        payload: { reason: input.reason, effectiveDate: effectiveDate.toISOString(), refundAmount, coolingOff: withinCoolingOff },
       });
 
       await emitFluvioEvent(db, "policy-events", { eventType: "policy.cancelled", policyId: input.policyId, reason: input.reason });
-      return { success: true };
+      await emitAuditLog(db, "POLICY_CANCELLED", "policy", input.policyId, ctx.user?.id, {
+        reason: input.reason, refundAmount, coolingOff: withinCoolingOff, refundTbRef,
+      });
+      return { success: true, effectiveDate, coolingOff: withinCoolingOff, refundAmount, refundTbRef };
     }),
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -567,11 +889,23 @@ export const insuranceWorkflowsRouter = router({
       if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
       const fromStatus = claim.status;
 
-      await db.update(claims).set({
+      // INS-7: FROM-state guard applied atomically — assignment can never
+      // regress a decided/terminal claim (approved/paid/closed/...) back to
+      // under_review, and two concurrent assignments cannot both win.
+      const assigned = await db.update(claims).set({
         assignedAdjusterId: input.adjusterId,
         status: "under_review",
         updatedAt: new Date(),
-      }).where(eq(claims.id, input.claimId));
+      }).where(and(
+        eq(claims.id, input.claimId),
+        inArray(claims.status, [...ASSIGNABLE_FROM_STATUSES]),
+      )).returning({ id: claims.id });
+      if (assigned.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Claim ${input.claimId} cannot be assigned from status '${fromStatus}'`,
+        });
+      }
 
       await db.insert(claimWorkflowEvents).values({
         claimId: input.claimId,
@@ -625,6 +959,27 @@ export const insuranceWorkflowsRouter = router({
       if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
       const fromStatus = claim.status;
 
+      // INS-3: adjudication caps — an approval can never exceed what was
+      // claimed, nor the policy's sum insured.
+      if (input.decision !== "rejected") {
+        const claimedAmount = Number(claim.claimedAmount);
+        if (input.approvedAmount! > claimedAmount) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `approvedAmount ${input.approvedAmount} exceeds claimedAmount ${claimedAmount}`,
+          });
+        }
+        const [policy] = await db.select({ sumInsured: policies.sumInsured })
+          .from(policies).where(eq(policies.id, claim.policyId)).limit(1);
+        const sumInsured = Number(policy?.sumInsured ?? NaN);
+        if (Number.isFinite(sumInsured) && input.approvedAmount! > sumInsured) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `approvedAmount ${input.approvedAmount} exceeds policy sum insured ${sumInsured}`,
+          });
+        }
+      }
+
       // F11-1: expected-state guard, applied ATOMICALLY in the UPDATE so a
       // concurrent adjudication cannot both win; a claim in a decided/terminal
       // state (approved/partially_approved/rejected/paid/closed) cannot be
@@ -664,6 +1019,69 @@ export const insuranceWorkflowsRouter = router({
       });
 
       return { success: true };
+    }),
+
+  /** CA-2b: Appeal a rejected claim (INS-5) — rejected→appealed, SLA, re-adjudication queue */
+  appealClaim: protectedProcedure
+    .input(z.object({
+      claimId: z.number().int().positive(),
+      reason: z.string().min(10),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [claim] = await db.select().from(claims).where(eq(claims.id, input.claimId)).limit(1);
+      if (!claim) throw new TRPCError({ code: "NOT_FOUND", message: "Claim not found" });
+
+      // Only the claimant (or an admin) may appeal, and only a REJECTED claim
+      // can enter the appeal path — the state guard is applied atomically.
+      const isClaimant = ctx.user?.id != null && claim.claimantId === ctx.user.id;
+      const isAdmin = (ctx.user as { role?: string } | undefined)?.role === "admin";
+      if (!isClaimant && !isAdmin) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the claimant or an admin can appeal this claim" });
+      }
+
+      const slaDeadline = new Date(Date.now() + APPEAL_SLA_DAYS * 86_400_000);
+      const flipped = await db.update(claims).set({
+        status: "appealed",
+        updatedAt: new Date(),
+      }).where(and(eq(claims.id, input.claimId), eq(claims.status, "rejected")))
+        .returning({ id: claims.id });
+      if (flipped.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Claim ${input.claimId} cannot be appealed from status '${claim.status}' (only 'rejected')`,
+        });
+      }
+
+      // One open appeal per claim (claim_appeals.claimId is UNIQUE) — a
+      // concurrent second appeal replays instead of double-queueing.
+      const [appeal] = await db.insert(claimAppeals).values({
+        claimId: input.claimId,
+        appellantId: ctx.user?.id ?? claim.claimantId,
+        reason: input.reason,
+        status: "open",
+        slaDeadline,
+      }).onConflictDoNothing({ target: claimAppeals.claimId }).returning();
+
+      // Re-adjudication queue: appealed is in ADJUDICATABLE_FROM_STATUSES, so
+      // the claim is immediately re-adjudicable; record the queue event.
+      await db.insert(claimWorkflowEvents).values({
+        claimId: input.claimId,
+        eventType: "claim.appealed",
+        fromStatus: "rejected",
+        toStatus: "appealed",
+        triggeredBy: ctx.user?.id ?? undefined,
+        payload: { reason: input.reason, slaDeadline: slaDeadline.toISOString(), queue: "appeals" },
+      });
+
+      await emitFluvioEvent(db, "claims-events", {
+        eventType: "claim.appealed", claimId: input.claimId, slaDeadline: slaDeadline.toISOString(),
+      });
+      await emitAuditLog(db, "CLAIM_APPEALED", "claim", input.claimId, ctx.user?.id, { reason: input.reason });
+
+      return { success: true, appeal: appeal ?? null, slaDeadline, queue: "appeals" };
     }),
 
   /** CA-3: Process claim settlement payment via TigerBeetle */
@@ -706,6 +1124,43 @@ export const insuranceWorkflowsRouter = router({
         });
       }
 
+      // INS-13: the payout beneficiary resolves from the beneficiaries table,
+      // never from caller-supplied free text. A minor beneficiary pays out to
+      // the recorded guardian only.
+      let beneficiaryName = input.beneficiaryName ?? null;
+      let beneficiaryAccount = input.beneficiaryAccount ?? null;
+      const beneficiaryBank = input.beneficiaryBank ?? null;
+      const [bene] = await db.select().from(beneficiaries)
+        .where(eq(beneficiaries.policyId, claim.policyId))
+        .orderBy(desc(beneficiaries.percentage)).limit(1);
+      if (bene) {
+        if (bene.isMinor && !bene.guardianName) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Beneficiary is a minor with no guardian on record — assign a guardian before settlement",
+          });
+        }
+        beneficiaryName = bene.isMinor ? (bene.guardianName ?? null) : bene.name;
+        if (beneficiaryAccount == null) beneficiaryAccount = bene.nationalId ?? null;
+        if (input.beneficiaryName && input.beneficiaryName !== beneficiaryName) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `beneficiaryName '${input.beneficiaryName}' does not match the recorded beneficiary for policy ${claim.policyId}`,
+          });
+        }
+      }
+
+      // INS-8: grace-hold claims settle net of the arrears recorded at filing.
+      const claimMeta = (claim.metadata ?? {}) as { graceHold?: boolean; arrearsAtFiling?: number };
+      const arrearsOffset = claimMeta.graceHold ? Number(claimMeta.arrearsAtFiling ?? 0) : 0;
+      const payoutAmount = Math.max(0, approvedAmount - arrearsOffset);
+      if (claimMeta.graceHold && payoutAmount <= 0) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `Approved amount ${approvedAmount} is fully consumed by premium arrears ${arrearsOffset} — nothing to settle`,
+        });
+      }
+
       // Deterministic ref (no Date.now()): a retried settlement for the same
       // claim converges on the same reference.
       const payRef = input.paymentRef ?? `CLM-SETTLE-${input.claimId}`;
@@ -722,7 +1177,7 @@ export const insuranceWorkflowsRouter = router({
         const tbReq = {
           debitAccountId: "insurer-claims-pool",
           creditAccountId: `claimant-${claim.claimantId}`,
-          amount: Math.round(approvedAmount * 100),
+          amount: Math.round(payoutAmount * 100),
           ledger: 4000,
           code: 800,
           ref: payRef,
@@ -750,11 +1205,11 @@ export const insuranceWorkflowsRouter = router({
             [
               input.claimId,
               payRef,
-              String(approvedAmount),
+              String(payoutAmount),
               input.paymentMethod,
-              input.beneficiaryName ?? null,
-              input.beneficiaryAccount ?? null,
-              input.beneficiaryBank ?? null,
+              beneficiaryName,
+              beneficiaryAccount,
+              beneficiaryBank,
               tbResult?.id ?? null,
               ctx.user?.id ?? null,
             ]
@@ -773,7 +1228,7 @@ export const insuranceWorkflowsRouter = router({
                 SET status = 'paid', "paidAmount" = $1, "settlementDate" = now(), "updatedAt" = now()
               WHERE id = $2 AND status IN ('approved', 'partially_approved')
               RETURNING id`,
-            [String(approvedAmount), input.claimId]
+            [String(payoutAmount), input.claimId]
           );
           if ((flip.rowCount ?? 0) === 0) {
             // Claim moved out of a settleable state between our read and the
@@ -783,6 +1238,15 @@ export const insuranceWorkflowsRouter = router({
               message: `Claim ${input.claimId} is no longer in a settleable state (concurrent status change)`,
             });
           }
+          if (arrearsOffset > 0) {
+            // INS-8: arrears offset consumed — clear the grace arrears ledger.
+            await client.query(
+              `UPDATE policy_lifecycle_states
+                  SET "arrearsAmount" = 0, "updatedAt" = now()
+                WHERE "policyId" = $1`,
+              [claim.policyId]
+            );
+          }
           return { payment: ins.rows[0], replayed: false };
         }));
 
@@ -790,13 +1254,14 @@ export const insuranceWorkflowsRouter = router({
           await emitFluvioEvent(db, "payment-events", {
             eventType: "payment.claim_settled",
             claimId: input.claimId,
-            amount: approvedAmount,
+            amount: payoutAmount,
+            arrearsOffset,
             paymentRef: payRef,
             tigerBeetleRef: tbResult?.id,
           });
 
           await emitAuditLog(db, "CLAIM_SETTLED", "claim", input.claimId, ctx.user?.id, {
-            amount: approvedAmount, paymentRef: payRef, tbTransferId: tbResult?.id ?? null,
+            amount: payoutAmount, arrearsOffset, paymentRef: payRef, tbTransferId: tbResult?.id ?? null,
           });
         }
 
@@ -806,6 +1271,211 @@ export const insuranceWorkflowsRouter = router({
       }
     }),
 
+
+  /** CA-4: Policy lifecycle sweeper (INS-1) — cron/Temporal-scheduled lapse/expiry transitions */
+  sweepPolicyLifecycle: protectedProcedure
+    .input(z.object({ dryRun: z.boolean().optional() }).optional())
+    .mutation(async ({ ctx }) => {
+      if ((ctx.user as { role?: string } | undefined)?.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can run the policy lifecycle sweeper" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const result = await sweepPolicyLifecycle(db);
+      await emitAuditLog(db, "POLICY_LIFECYCLE_SWEEP", "policy", 0, ctx.user?.id, result);
+      await emitFluvioEvent(db, "policy-events", { eventType: "policy.lifecycle_sweep", ...result });
+      return result;
+    }),
+
+  /** PH-7: Reinstate a lapsed policy (INS-9) — arrears, max lapse window, waiting-period reset */
+  reinstatePolicy: protectedProcedure
+    .input(z.object({
+      policyId: z.number(),
+      amount: z.number().positive(),
+      paymentMethod: z.string(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const [policy] = await db.select().from(policies)
+        .where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      const isOwner = ctx.user?.id != null && policy.customerId === ctx.user.id;
+      const isAdmin = (ctx.user as { role?: string } | undefined)?.role === "admin";
+      if (!isOwner && !isAdmin) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the policyholder or an admin can reinstate this policy" });
+      }
+
+      const lifecycle = await getOrInitLifecycle(db, input.policyId);
+      const error = validateReinstatement(policy, lifecycle, input.amount);
+      if (error) throw new TRPCError({ code: "PRECONDITION_FAILED", message: error });
+
+      const paymentRef = `PAY-REINSTATE-${input.policyId}`;
+      const tbResult = await tbCreateTransfer({
+        debitAccountId: `customer-${policy.customerId}`,
+        creditAccountId: "insurer-premium-pool",
+        amount: Math.round(input.amount * 100),
+        ref: paymentRef,
+        txType: "premium_payment",
+      });
+
+      const now = new Date();
+      await db.transaction(async (tx) => {
+        await tx.insert(premiumPayments).values({
+          policyId: input.policyId,
+          paymentReference: paymentRef,
+          amount: String(input.amount),
+          currency: "NGN",
+          paymentDate: now,
+          paymentMethod: input.paymentMethod,
+          channel: "web",
+          status: tbResult ? "completed" : "pending",
+          tigerBeetleRef: tbResult?.id ?? null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        // Atomic state guard: lapsed → active only.
+        const reinstated = await tx.update(policies)
+          .set({ status: "active", updatedAt: now })
+          .where(and(eq(policies.id, input.policyId), eq(policies.status, "lapsed")))
+          .returning({ id: policies.id });
+        if (reinstated.length === 0) {
+          throw new TRPCError({ code: "CONFLICT", message: `Policy ${input.policyId} is no longer lapsed (concurrent status change)` });
+        }
+        // INS-9: arrears cleared; waiting period RESTARTS from reinstatement
+        // (fresh evidence-of-insurability semantics).
+        await tx.update(policyLifecycleStates).set({
+          arrearsAmount: "0",
+          lapsedAt: null,
+          reinstatedAt: now,
+          waitingPeriodResetAt: now,
+          updatedAt: now,
+        }).where(eq(policyLifecycleStates.policyId, input.policyId));
+      });
+
+      await db.insert(policyWorkflowEvents).values({
+        policyId: input.policyId,
+        eventType: "policy.reinstated",
+        fromStatus: "lapsed",
+        toStatus: "active",
+        triggeredBy: ctx.user?.id ?? undefined,
+        payload: { amount: input.amount, waitingPeriodResetAt: now.toISOString() },
+      });
+      await emitFluvioEvent(db, "policy-events", { eventType: "policy.reinstated", policyId: input.policyId });
+      await emitAuditLog(db, "POLICY_REINSTATED", "policy", input.policyId, ctx.user?.id, { amount: input.amount });
+      return { success: true, waitingPeriodResetAt: now, tigerBeetleRef: tbResult?.id ?? null };
+    }),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BENEFICIARY LIFECYCLE (INS-13)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** BEN-1: Add or update a beneficiary; percentage-sum<=100 enforced; minor needs guardian */
+  upsertBeneficiary: protectedProcedure
+    .input(z.object({
+      policyId: z.number(),
+      name: z.string().min(1),
+      relationship: z.string().min(1),
+      percentage: z.number().positive().max(100),
+      dateOfBirth: z.string().optional(),
+      isMinor: z.boolean().optional(),
+      guardianName: z.string().optional(),
+      nationalId: z.string().optional(),
+      beneficiaryId: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const [policy] = await db.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      const isOwner = ctx.user?.id != null && policy.customerId === ctx.user.id;
+      const isAdmin = (ctx.user as { role?: string } | undefined)?.role === "admin";
+      if (!isOwner && !isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized for this policy" });
+
+      // Minor/guardian rule: a minor beneficiary MUST name a guardian.
+      const dob = input.dateOfBirth ? new Date(input.dateOfBirth) : null;
+      const isMinor = input.isMinor ?? (dob != null && Date.now() - dob.getTime() < 18 * 365.25 * 86_400_000);
+      if (isMinor && !input.guardianName) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "A minor beneficiary requires a guardianName" });
+      }
+
+      // Percentage-sum validation across the policy's beneficiaries
+      // (excluding the row being replaced): the total may never exceed 100%.
+      const existing = await db.select({ id: beneficiaries.id, percentage: beneficiaries.percentage })
+        .from(beneficiaries).where(eq(beneficiaries.policyId, input.policyId));
+      const otherTotal = existing
+        .filter(b => b.id !== input.beneficiaryId)
+        .reduce((acc, b) => acc + Number(b.percentage), 0);
+      const newTotal = Math.round((otherTotal + input.percentage) * 100) / 100;
+      if (newTotal > 100) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Beneficiary percentages would total ${newTotal}% (> 100%)` });
+      }
+
+      let row;
+      if (input.beneficiaryId != null) {
+        const updated = await db.update(beneficiaries).set({
+          name: input.name,
+          relationship: input.relationship,
+          percentage: String(input.percentage),
+          dateOfBirth: dob,
+          isMinor,
+          guardianName: input.guardianName ?? null,
+          nationalId: input.nationalId ?? null,
+          updatedAt: new Date(),
+        }).where(and(eq(beneficiaries.id, input.beneficiaryId), eq(beneficiaries.policyId, input.policyId))).returning();
+        if (updated.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Beneficiary not found for this policy" });
+        row = updated[0];
+      } else {
+        [row] = await db.insert(beneficiaries).values({
+          policyId: input.policyId,
+          name: input.name,
+          relationship: input.relationship,
+          percentage: String(input.percentage),
+          dateOfBirth: dob,
+          isMinor,
+          guardianName: input.guardianName ?? null,
+          nationalId: input.nationalId ?? null,
+        }).returning();
+      }
+      await emitAuditLog(db, "BENEFICIARY_UPSERTED", "policy", input.policyId, ctx.user?.id, { beneficiaryId: row.id });
+      return { beneficiary: row };
+    }),
+
+  /** BEN-2: Remove a beneficiary */
+  removeBeneficiary: protectedProcedure
+    .input(z.object({ policyId: z.number(), beneficiaryId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const [policy] = await db.select().from(policies).where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      const isOwner = ctx.user?.id != null && policy.customerId === ctx.user.id;
+      const isAdmin = (ctx.user as { role?: string } | undefined)?.role === "admin";
+      if (!isOwner && !isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized for this policy" });
+      const deleted = await db.delete(beneficiaries)
+        .where(and(eq(beneficiaries.id, input.beneficiaryId), eq(beneficiaries.policyId, input.policyId)))
+        .returning({ id: beneficiaries.id });
+      if (deleted.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "Beneficiary not found for this policy" });
+      await emitAuditLog(db, "BENEFICIARY_REMOVED", "policy", input.policyId, ctx.user?.id, { beneficiaryId: input.beneficiaryId });
+      return { success: true };
+    }),
+
+  /** BEN-3: List beneficiaries for a policy */
+  listBeneficiaries: protectedProcedure
+    .input(z.object({ policyId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const [policy] = await db.select({ customerId: policies.customerId }).from(policies)
+        .where(eq(policies.id, input.policyId)).limit(1);
+      if (!policy) throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+      const isOwner = ctx.user?.id != null && policy.customerId === ctx.user.id;
+      const isAdmin = (ctx.user as { role?: string } | undefined)?.role === "admin";
+      if (!isOwner && !isAdmin) throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized for this policy" });
+      const items = await db.select().from(beneficiaries).where(eq(beneficiaries.policyId, input.policyId));
+      return { items };
+    }),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ACTUARY WORKFLOWS

@@ -6,7 +6,8 @@ import { TRPCError } from "@trpc/server";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import { z } from "zod";
 
-import { transactions, policies, auditLog } from "../../drizzle/schema";
+import { transactions, policies, policyLifecycleStates, auditLog } from "../../drizzle/schema";
+import { getOrInitLifecycle, validateReinstatement } from "../lib/policyLifecycle";
 import { premiums } from "../../drizzle/schema.additions";
 import { logger } from "../_core/logger";
 import { permifyCheck } from "../_core/permify";
@@ -142,9 +143,28 @@ export const premiumTopUpRouter = router({
             .where(eq(transactions.ref, input.reference))
             .returning();
 
-          // Activate lapsed policy
+          // INS-9: reactivate a lapsed policy ONLY via the reinstatement
+          // rules — payment must cover recorded arrears, the lapse must be
+          // inside the max reinstatement window, and the waiting period
+          // restarts at reinstatement. Fail-closed: a short payment keeps the
+          // premium on the ledger but leaves the policy lapsed (error before
+          // commit rolls back this transaction's PG effects; the TB leg keyed
+          // on the caller's reference replays idempotently).
           if (policy.status === "lapsed") {
-            await tx.update(policies).set({ status: "active", updatedAt: new Date() }).where(eq(policies.id, input.policyId));
+            const lifecycle = await getOrInitLifecycle(tx as never as Awaited<ReturnType<typeof getDb>> & object, input.policyId);
+            const reinstateError = validateReinstatement(policy, lifecycle, input.amountNGN);
+            if (reinstateError) {
+              throw new TRPCError({ code: "PRECONDITION_FAILED", message: reinstateError });
+            }
+            const now = new Date();
+            await tx.update(policies).set({ status: "active", updatedAt: now }).where(eq(policies.id, input.policyId));
+            await tx.update(policyLifecycleStates).set({
+              arrearsAmount: "0",
+              lapsedAt: null,
+              reinstatedAt: now,
+              waitingPeriodResetAt: now,
+              updatedAt: now,
+            }).where(eq(policyLifecycleStates.policyId, input.policyId));
           }
 
           return { replay: false, tx: linkedTx ?? reserved[0]!, premium: premiumRecord };

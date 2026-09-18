@@ -308,7 +308,17 @@ describe("Sprint 46: Data Integrity", () => {
     // payment_discrepancies (real reconciliation findings). Honest-count
     // drift, not a weakening — the gate still counts information_schema at
     // runtime.
-    expect(stats.totalTables).toBe(209);
+    // 2026-09-18: count updated 209 → 211 — audit wave F2 (insurance) added
+    // two REAL tables via migration 0063: policy_lifecycle_states (1:1
+    // grace/lapse/arrears extension of policies) and claim_appeals
+    // (rejected→appealed SLA records). Measured 211 from CI run 35344105394.
+    // Honest-count drift, not a weakening — the gate still counts
+    // information_schema at runtime.
+    // 2026-09-18: count updated 211 → 212 — audit wave F3 (auth) added one
+    // REAL table via migration 0066: impersonation_events (admin-leg audit
+    // records for resolveAgentScope). Count is measured from
+    // information_schema at runtime; honest-count drift, not a weakening.
+    expect(stats.totalTables).toBe(212);
     // F-12 (round 74): totalRows 2450000 and uptime "99.97%" were fixtures —
     // no DB-telemetry store is delivered, so the proc returns honest nulls.
     expect(stats.totalRows).toBeNull();

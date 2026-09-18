@@ -5512,6 +5512,56 @@ export type PermifyRelationshipCache = typeof permifyRelationshipCache.$inferSel
 // against real Postgres. No name collisions with this file (verified).
 export * from "./schema.additions";
 
+// ─── Wave F2 insurance audit fixes (append-only) ────────────────────────────
+// 1:1 lifecycle extension for `policies` (INS-1/8/9): lapse/expiry sweep state,
+// grace-period configuration, arrears ledger, and waiting-period reset on
+// reinstatement. Kept as an extension table so the base `policies` definition
+// stays untouched (append-only merge contract).
+export const policyLifecycleStates = pgTable(
+  "policy_lifecycle_states",
+  {
+    id: serial("id").primaryKey(),
+    policyId: integer("policyId").notNull().unique(),
+    gracePeriodDays: integer("gracePeriodDays").default(30).notNull(),
+    lapsedAt: timestamp("lapsedAt"),
+    expiredAt: timestamp("expiredAt"),
+    reinstatedAt: timestamp("reinstatedAt"),
+    waitingPeriodResetAt: timestamp("waitingPeriodResetAt"),
+    arrearsAmount: numeric("arrearsAmount", { precision: 18, scale: 2 }).default("0").notNull(),
+    lastSweptAt: timestamp("lastSweptAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    policyIdx: uniqueIndex("pls_policy_idx").on(t.policyId),
+  })
+);
+export type PolicyLifecycleState = typeof policyLifecycleStates.$inferSelect;
+export type InsertPolicyLifecycleState = typeof policyLifecycleStates.$inferInsert;
+
+// Claim appeal / dispute record (INS-5): rejected→appealed transition with an
+// SLA deadline and a re-adjudication queue marker.
+export const claimAppeals = pgTable(
+  "claim_appeals",
+  {
+    id: serial("id").primaryKey(),
+    claimId: integer("claimId").notNull().unique(),
+    appellantId: integer("appellantId").notNull(),
+    reason: text("reason").notNull(),
+    status: varchar("status", { length: 32 }).default("open").notNull(),
+    slaDeadline: timestamp("slaDeadline").notNull(),
+    resolution: text("resolution"),
+    resolvedAt: timestamp("resolvedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  },
+  t => ({
+    claimIdx: uniqueIndex("ca_claim_idx").on(t.claimId),
+    statusIdx: index("ca_status_idx").on(t.status),
+  })
+);
+export type ClaimAppeal = typeof claimAppeals.$inferSelect;
+export type InsertClaimAppeal = typeof claimAppeals.$inferInsert;
 
 // ─── Audit wave F1 (payments) — append-only additions ────────────────────────
 
