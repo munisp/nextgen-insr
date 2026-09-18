@@ -528,13 +528,22 @@ export async function createInsurancePolicy(input: {
   // — a classic TOCTOU double-spend of one quote.
   const policy = await d.transaction(async (tx) => {
     if (input.quoteId != null) {
+      // H2, 2026-02 (defense-in-depth): the guarded claim is ALSO bound to
+      // the consuming customer — even if every upstream ownership check
+      // regressed, a quote can never be flipped by a different customer.
       const claimed = await tx
         .update(policyQuotes)
         .set({ status: "converted", updatedAt: new Date() })
-        .where(and(eq(policyQuotes.id, input.quoteId), eq(policyQuotes.status, "pending")))
+        .where(
+          and(
+            eq(policyQuotes.id, input.quoteId),
+            eq(policyQuotes.customerId, input.customerId),
+            eq(policyQuotes.status, "pending")
+          )
+        )
         .returning({ id: policyQuotes.id });
       if (!claimed[0]) {
-        throw new Error(`QUOTE_CONSUMED: quote ${input.quoteId} is no longer pending — concurrent or duplicate use rejected`);
+        throw new Error(`QUOTE_CONSUMED: quote ${input.quoteId} is no longer pending for this customer — concurrent, duplicate, or cross-customer use rejected`);
       }
     }
     const [p] = await tx.insert(policies).values({

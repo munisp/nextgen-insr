@@ -10,8 +10,9 @@ import {
   loyaltyAccounts,
   loyaltyTransactions,
 } from "../../drizzle/insurance-extended-schema";
+import { customers } from "../../drizzle/schema";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb, writeAuditLog } from "../db";
 
 export const promotionsRouter = router({
   // ─── Coupon Management ───────────────────────────────────────────────────
@@ -157,13 +158,52 @@ export const promotionsRouter = router({
     .input(
       z.object({
         code: z.string(),
-        customerId: z.number(),
+        /**
+         * DEPRECATED as a trust input (H2, 2026-02): the redeeming customer
+         * is ALWAYS derived from the authenticated session. Supplying a
+         * customerId that differs from the caller's own customer profile is
+         * FORBIDDEN — except for staff/admin on-behalf redemption (audited).
+         */
+        customerId: z.number().optional(),
         orderId: z.number().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const database = await getDb();
       if (!database) throw new Error("Database unavailable");
+
+      // H2: identity spoofing fix — never trust a client-supplied customerId.
+      const [callerCustomer] = await database
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.keycloakSub, String(ctx.user.id)))
+        .limit(1);
+      const isStaff = ctx.user.role === "admin";
+      let customerId: number;
+      if (input.customerId != null && callerCustomer?.id !== input.customerId) {
+        // On-behalf redemption is a STAFF capability, and it is audited.
+        if (!isStaff) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Cannot redeem a coupon for a different customer",
+          });
+        }
+        customerId = input.customerId;
+        await writeAuditLog({
+          action: "COUPON_REDEEM_ON_BEHALF",
+          resource: "coupon_redemptions",
+          resourceId: String(input.customerId),
+          metadata: { code: input.code, staffUser: String(ctx.user.id) },
+        });
+      } else {
+        if (!callerCustomer) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "No customer profile for the authenticated account",
+          });
+        }
+        customerId = callerCustomer.id;
+      }
 
       return await database.transaction(async tx => {
         const [promo] = await tx
@@ -185,7 +225,7 @@ export const promotionsRouter = router({
         // Serialize concurrent redemptions by this customer for this promo
         // (advisory xact lock — released automatically at commit/rollback).
         await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(${promo.id}, ${input.customerId})`
+          sql`SELECT pg_advisory_xact_lock(${promo.id}, ${customerId})`
         );
 
         // Per-customer limit, re-read UNDER the lock — no TOCTOU window.
@@ -196,7 +236,7 @@ export const promotionsRouter = router({
           .where(
             and(
               eq(couponRedemptions.promoId, promo.id),
-              eq(couponRedemptions.customerId, input.customerId)
+              eq(couponRedemptions.customerId, customerId)
             )
           );
         if ((customerUses?.n ?? 0) >= perCustomerLimit) {
@@ -227,7 +267,7 @@ export const promotionsRouter = router({
 
         await tx.insert(couponRedemptions).values({
           promoId: promo.id,
-          customerId: input.customerId,
+          customerId,
           orderId: input.orderId ?? null,
         });
         return { success: true };

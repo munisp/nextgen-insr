@@ -109,38 +109,54 @@ describe("Sprint 88 — Go Service Wiring, Integration Tests, Real-Time Dashboar
     }
   });
 
-  describe("S88-18: Real-Time WebSocket Streaming", () => {
-    it("realtimeStreaming module exists with Socket.IO integration", () => {
+  // H2, 2026-02 (honest-contract update): the realtimeStreaming module was
+  // DELETED — it was a dead, unwired, UNAUTHENTICATED /settlement socket
+  // broadcaster (referenced only by this test; an independent verifier
+  // confirmed initRealtimeStreaming is never called). These are now NEGATIVE
+  // tests: they pin the absence of the unauthenticated broadcaster, not its
+  // presence. The live, authenticated notifications namespace remains in
+  // server/lib/realtimeNotifications.ts (H-wave: JWT required, staff-gated
+  // channels).
+  describe("S88-18: Real-Time WebSocket Streaming (deleted broadcaster — negative tests)", () => {
+    it("the unauthenticated realtimeStreaming broadcaster is REMOVED", () => {
       const filePath = path.join(ROOT, "server/websocket/realtimeStreaming.ts");
-      expect(fs.existsSync(filePath)).toBe(true);
-      const content = fs.readFileSync(filePath, "utf-8");
-      expect(content).toContain("initRealtimeStreaming");
-      expect(content).toContain("/settlement");
-      expect(content).toContain("/notifications");
-      expect(content).toContain("transaction:new");
-      expect(content).toContain("reconciliation:update");
-      expect(content).toContain("service:health");
+      expect(fs.existsSync(filePath)).toBe(false);
     });
 
-    it("streams live transactions from DB (not mock)", () => {
-      const content = fs.readFileSync(
-        path.join(ROOT, "server/websocket/realtimeStreaming.ts"),
-        "utf-8"
-      );
-      expect(content).toContain("getDb");
-      expect(content).toContain("transactions");
-      expect(content).toContain("TransactionEvent");
+    it("no production server module wires the deleted broadcaster", () => {
+      // Scan production server sources (excluding tests) for any import of
+      // the deleted module — must be ZERO.
+      const offenders: string[] = [];
+      const walk = (dir: string) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+            walk(full);
+          } else if (
+            entry.name.endsWith(".ts") &&
+            !entry.name.includes(".test.")
+          ) {
+            const content = fs.readFileSync(full, "utf-8");
+            if (content.includes("websocket/realtimeStreaming") || content.includes("initRealtimeStreaming")) {
+              offenders.push(full);
+            }
+          }
+        }
+      };
+      walk(path.join(ROOT, "server"));
+      expect(offenders).toEqual([]);
     });
 
-    it("broadcasts Go service health every 30s", () => {
+    it("the LIVE notifications namespace requires authentication", () => {
       const content = fs.readFileSync(
-        path.join(ROOT, "server/websocket/realtimeStreaming.ts"),
+        path.join(ROOT, "server/lib/realtimeNotifications.ts"),
         "utf-8"
       );
-      expect(content).toContain("30_000");
-      expect(content).toContain("GO_SERVICES");
-      expect(content).toContain("workflow-orchestrator");
-      expect(content).toContain("fluvio-streaming");
+      // H-wave semantics: unauthenticated connections are rejected outright.
+      expect(content).toContain("authentication required");
+      // And global fraud/settlement feeds are staff-gated.
+      expect(content).toContain("STAFF_ONLY_CHANNELS");
     });
   });
 
