@@ -305,22 +305,15 @@ export const insuranceWorkflowsRouter = router({
         .where(and(eq(premiumPayments.policyId, input.policyId), inArray(premiumPayments.status, ["completed", "partial"])));
       const alreadyPaid = Number(priorPaidRows[0]?.total ?? 0);
       const outstanding = Math.max(0, premiumDue - alreadyPaid);
-      if (outstanding <= 0) {
-        throw new TRPCError({ code: "CONFLICT", message: "Premium already paid in full" });
-      }
-      const isPartial = input.amount < outstanding && policy.status === "bound";
-      if (input.amount > outstanding) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `amount ${input.amount} exceeds outstanding premium ${outstanding} (annualPremium ${premiumDue}, already paid ${alreadyPaid})`,
-        });
-      }
 
       // INS-10: deterministic, idempotent payment reference — a client retry
       // converges on the same ref instead of minting a duplicate transfer.
       // Partial payments key on the amount so distinct instalments each get
-      // their own ledger row while a retried instalment replays.
+      // their own ledger row while a retried instalment replays. The replay
+      // check runs BEFORE the fully-paid guard so a legitimate retry of the
+      // final payment replays instead of erroring.
       const baseRef = `PAY-${input.policyId}-PREMIUM`;
+      const isPartial = outstanding > 0 && input.amount < outstanding && policy.status === "bound";
       const paymentRef = isPartial ? `${baseRef}-PARTIAL-${Math.round(input.amount * 100)}` : baseRef;
       const existing = await db.select().from(premiumPayments)
         .where(eq(premiumPayments.paymentReference, paymentRef)).limit(1);
@@ -333,6 +326,16 @@ export const insuranceWorkflowsRouter = router({
           });
         }
         return { payment: prev, tigerBeetleRef: prev.tigerBeetleRef, idempotent: true, partial: isPartial, outstandingPremium: outstanding };
+      }
+
+      if (outstanding <= 0) {
+        throw new TRPCError({ code: "CONFLICT", message: "Premium already paid in full" });
+      }
+      if (input.amount > outstanding) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `amount ${input.amount} exceeds outstanding premium ${outstanding} (annualPremium ${premiumDue}, already paid ${alreadyPaid})`,
+        });
       }
 
       // Submit to TigerBeetle for atomic ledger entry
@@ -645,6 +648,26 @@ export const insuranceWorkflowsRouter = router({
       // INS-12: server-side effective date (never caller-supplied/backdatable).
       const effectiveDate = new Date();
 
+      // INS-12: state guard applied atomically FIRST — only bound/active/
+      // lapsed policies can transition to cancelled, and a concurrent cancel
+      // loses the race BEFORE any refund money can move (fail-closed for
+      // funds: a lost race can never double-refund).
+      const cancelled = await db.update(policies).set({
+        status: "cancelled",
+        cancellationDate: effectiveDate,
+        cancellationReason: input.reason,
+        updatedAt: effectiveDate,
+      }).where(and(
+        eq(policies.id, input.policyId),
+        inArray(policies.status, [...CANCELLABLE_POLICY_STATUSES]),
+      )).returning({ id: policies.id });
+      if (cancelled.length === 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: `Policy ${input.policyId} cannot be cancelled from status '${policy.status}'`,
+        });
+      }
+
       // INS-12/13: cooling-off refund — within COOLING_OFF_DAYS of inception a
       // cancellation refunds the premium actually paid, via a REAL TigerBeetle
       // reversal (fail-closed: the sidecar throws on outage). Outside the
@@ -666,25 +689,6 @@ export const insuranceWorkflowsRouter = router({
           txType: "premium_refund",
         });
         refundTbRef = tbResult?.id ?? null;
-      }
-
-      // INS-12: state guard applied atomically — only bound/active/lapsed
-      // policies can transition to cancelled; a concurrent cancel/renewal
-      // loses the race instead of double-cancelling.
-      const cancelled = await db.update(policies).set({
-        status: "cancelled",
-        cancellationDate: effectiveDate,
-        cancellationReason: input.reason,
-        updatedAt: effectiveDate,
-      }).where(and(
-        eq(policies.id, input.policyId),
-        inArray(policies.status, [...CANCELLABLE_POLICY_STATUSES]),
-      )).returning({ id: policies.id });
-      if (cancelled.length === 0) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: `Policy ${input.policyId} cannot be cancelled from status '${policy.status}'`,
-        });
       }
 
       // INS-12: commission clawback trigger — cancelling with a cooling-off
