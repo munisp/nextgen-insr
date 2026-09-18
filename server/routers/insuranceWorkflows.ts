@@ -428,7 +428,8 @@ export const insuranceWorkflowsRouter = router({
       const arrearsAtFiling = graceHold ? Number(lifecycle.arrearsAmount ?? 0) : 0;
 
       // AB-7: IDOR guard — the caller must OWN the policy (or be staff).
-      const isStaff = ctx.user?.role === "admin" || ctx.user?.role === "adjuster" || ctx.user?.role === "supervisor";
+      // Staff roles per keycloak.ts mapKeycloakRole: "admin" | "supervisor".
+      const isStaff = ctx.user?.role === "admin" || ctx.user?.role === "supervisor";
       if (!isStaff && policy[0].customerId !== ctx.user?.id) {
         throw new TRPCError({ code: "FORBIDDEN", message: "You can only file claims against your own policies" });
       }

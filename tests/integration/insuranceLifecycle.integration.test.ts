@@ -156,10 +156,22 @@ describe("INS-3 adjudication caps", () => {
     await expectTrpcError(caller.insuranceWorkflows.adjudicateClaim({
       claimId: claim.id, decision: "approved", approvedAmount: 5001,
     }), "BAD_REQUEST");
-    const { claim: big } = await caller.insuranceWorkflows.fileClaim({
-      policyId: p.id, claimType: "disability", incidentDate: iso(NOW - 11 * DAY),
-      claimedAmount: 50000, incidentDescription: "cap test claim two",
-    });
+    // 2026-09-18 (F5/AB-7): fileClaim now rejects claimedAmount > sumInsured
+    // at filing time (server-side schedule validation), so the over-sum-
+    // insured fixture is seeded directly — the F2 adjudication cap on
+    // approvedAmount > sumInsured is still the assertion under test.
+    const db0 = (await getDb())!;
+    const [big] = await db0.insert(claims).values({
+      claimNumber: `CLM-CAP-SEED-${Date.now()}`,
+      policyId: p.id,
+      claimantId: p.customerId,
+      status: "submitted",
+      claimType: "disability",
+      incidentDate: new Date(NOW - 11 * DAY),
+      reportedDate: new Date(),
+      claimedAmount: "50000",
+      incidentDescription: "cap test claim two (seeded)",
+    }).returning();
     await expectTrpcError(caller.insuranceWorkflows.adjudicateClaim({
       claimId: big.id, decision: "approved", approvedAmount: 25000,
     }), "BAD_REQUEST");
