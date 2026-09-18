@@ -65,6 +65,23 @@ const REMITA_API_KEY = process.env.REMITA_API_KEY ?? "placeholder";
 const PAYSTACK_BASE = "https://api.paystack.co";
 const FLUTTERWAVE_BASE = "https://api.flutterwave.com/v3";
 
+/**
+ * verifyPaystackSignature — constant-time HMAC-SHA512 verification of a
+ * Paystack webhook. Fail-closed: empty secret/signature → false.
+ * Mirrors services/go/payment-gateway verifyPaystackWebhook.
+ */
+export function verifyPaystackSignature(
+  rawBody: string,
+  signature: string,
+  secret: string
+): boolean {
+  if (!secret || !signature) return false;
+  const expected = crypto.createHmac("sha512", secret).update(rawBody, "utf8").digest("hex");
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(signature, "utf8");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 // ── Nigerian Banks (for account lookup) ──────────────────────────────────────
 const NIGERIAN_BANKS = [
   { code: "044", name: "Access Bank" },
@@ -565,22 +582,35 @@ export const nigeriaPaymentRailsRouter = router({
         event: z.string(),
         data: z.record(z.string(), z.unknown()),
         signature: z.string().optional(),
+        // Raw request body as received — Paystack signs the RAW bytes, not a
+        // re-serialized JSON object, so verification requires the exact body.
+        rawBody: z.string().optional(),
       })
     )
     .mutation(async ({ input }) => {
-      // Verify webhook signature
-      if (input.signature && PAYSTACK_SECRET_KEY !== "sk_test_placeholder") {
-        const hash = crypto
-          .createHmac("sha512", PAYSTACK_SECRET_KEY)
-          .update(JSON.stringify(input.data))
-          .digest("hex");
-        if (hash !== input.signature) {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid webhook signature" });
-        }
+      // NG-18: fail-closed HMAC verification, ALWAYS. Mirrors
+      // services/go/payment-gateway: no secret configured → 503; missing or
+      // mismatched signature → 401. No skip path.
+      if (!PAYSTACK_SECRET_KEY || PAYSTACK_SECRET_KEY === "sk_test_placeholder") {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Paystack webhook not configured (PAYSTACK_SECRET_KEY missing); refusing to process",
+        });
+      }
+      if (!input.signature) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Missing webhook signature" });
+      }
+      const signedPayload = input.rawBody ?? JSON.stringify(input.data);
+      if (!verifyPaystackSignature(signedPayload, input.signature, PAYSTACK_SECRET_KEY)) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid webhook signature" });
       }
 
       const db = await getDb();
-      if (!db) return { received: true };
+      if (!db) {
+        // Fail-closed: without persistence we cannot record the payment and
+        // must NOT ack the webhook (Paystack will retry).
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+      }
 
       if (input.event === "charge.success") {
         const data = input.data as {
@@ -593,16 +623,19 @@ export const nigeriaPaymentRailsRouter = router({
 
         const policyId = data.metadata?.policy_id;
         if (policyId) {
+          // NG-19: the column is paymentReference (notNull + unique); the
+          // previous `transactionRef` field does not exist on the schema, so
+          // every confirmation threw or silently failed.
           await db.insert(premiumPayments).values({
             policyId,
+            paymentReference: data.reference,
             amount: String(data.amount / 100),
             currency: data.currency,
             paymentMethod: "paystack",
-            transactionRef: data.reference,
             status: "completed",
-            paidAt: new Date(data.paid_at),
-            metadata: data as unknown as Record<string, unknown>,
-          } as any).onConflictDoNothing();
+            paymentDate: data.paid_at ? new Date(data.paid_at) : new Date(),
+            gatewayRef: data.reference,
+          }).onConflictDoNothing();
 
           logger.info(
             { policyId, reference: data.reference, amount: data.amount / 100 },

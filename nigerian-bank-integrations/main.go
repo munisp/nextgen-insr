@@ -27,6 +27,7 @@ type Server struct {
 	Postgres *db.Postgres
 	Redis    *db.RedisCache
 	Logger   *zap.SugaredLogger
+	NIBSS    *nibssClient
 	reqCount atomic.Int64
 }
 
@@ -65,10 +66,10 @@ var supportedBanks = []db.BankDB{
 func main() {
 	cfg := config.NewConfig()
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 	sugar := logger.Sugar()
 
-	srv := &Server{Config: cfg, Logger: sugar}
+	srv := &Server{Config: cfg, Logger: sugar, NIBSS: newNIBSSClient(cfg.Bank)}
 	ctx := context.Background()
 
 	var err error
@@ -137,8 +138,8 @@ func main() {
 	sugar.Infof("Shutting down...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownGrace)
 	defer cancel()
-	httpServer.Shutdown(shutdownCtx)
-	srv.Redis.Close()
+	_ = httpServer.Shutdown(shutdownCtx)
+	_ = srv.Redis.Close()
 	srv.Postgres.Close()
 	sugar.Infof("Server exited")
 }
@@ -154,7 +155,7 @@ func (s *Server) instrumentMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"service":  "nigerian-bank-integrations",
 		"status":   "healthy",
 		"version":  "1.0.0",
@@ -183,13 +184,13 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleListBanks returns all supported Nigerian banks
 func (s *Server) handleListBanks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"banks": supportedBanks,
 		"total": len(supportedBanks),
 		"nip_enabled": func() int {
@@ -272,7 +273,7 @@ func (s *Server) handleVerifyAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"success":        true,
 		"account_number": req.AccountNumber,
 		"bank_code":      req.BankCode,
@@ -292,7 +293,7 @@ func (s *Server) handleGetVerification(w http.ResponseWriter, r *http.Request) {
 
 	if cached, err := s.Redis.GetCachedVerification(r.Context(), accountNumber+"_"+bankCode); err == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
+		_ = json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
 		return
 	}
 
@@ -345,9 +346,9 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 	// Calculate fee
 	fee := math.Round(req.Amount*s.Config.Bank.DefaultFeePercent*100) / 100
 
-	// Generate reference
+	// Generate reference — crypto-random, collision-safe (NG-7).
 	if req.Reference == "" {
-		req.Reference = fmt.Sprintf("NIP-%d", time.Now().UnixNano()%1000000000)
+		req.Reference = generateTransferReference()
 	}
 	if req.Currency == "" {
 		req.Currency = "NGN"
@@ -358,6 +359,24 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 		settlementPeriod = "T+1"
 	}
 
+	// NG-7: fail LOUD when no real NIBSS adapter is configured instead of
+	// storing a fake "success" transfer.
+	if s.NIBSS == nil || !s.NIBSS.configured() {
+		writeError(w, "NIBSS adapter not configured (NIBSS_BASE_URL missing); transfer cannot be processed", http.StatusPreconditionFailed)
+		return
+	}
+
+	// Name enquiry BEFORE any debit — never fall back to "Account Holder".
+	destName, destBank, err := s.NIBSS.NameEnquiry(r.Context(), req.DestinationAccount, req.DestinationBankCode)
+	if err != nil {
+		s.Logger.Errorf("name enquiry failed: %v", err)
+		writeError(w, "destination account could not be verified (name enquiry failed); no funds moved", http.StatusBadGateway)
+		return
+	}
+	if destBank == "" {
+		destBank = "Unknown"
+	}
+
 	transfer := &db.TransferDB{
 		ID:                  fmt.Sprintf("txn_%d", time.Now().UnixNano()),
 		Reference:           req.Reference,
@@ -365,14 +384,14 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 		SourceBankCode:      req.SourceBankCode,
 		DestinationAccount:  req.DestinationAccount,
 		DestinationBankCode: req.DestinationBankCode,
-		DestinationBank:     "Unknown",
-		DestinationName:     "Account Holder",
+		DestinationBank:     destBank,
+		DestinationName:     destName,
 		Amount:              req.Amount,
 		Currency:            req.Currency,
 		Fee:                 fee,
 		Description:         req.Description,
 		Channel:             channel,
-		Status:              "success",
+		Status:              "pending",
 		TxnDate:             time.Now().Format(time.RFC3339),
 		CallbackURL:         req.CallbackURL,
 		Metadata:            "{}",
@@ -380,12 +399,65 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 		UpdatedAt:           time.Now().Format(time.RFC3339),
 	}
 
-	// Store in DB
+	// Store in DB — reference is the idempotency key. On conflict, bind-check
+	// amount/destination: identical retry returns the existing record; a
+	// mismatched reuse is rejected (NG-7 amount binding).
 	if err := s.Postgres.InsertTransfer(r.Context(), transfer); err != nil {
+		if err == db.ErrTransferExists {
+			existing, gerr := s.Postgres.GetTransfer(r.Context(), req.Reference)
+			if gerr != nil {
+				writeError(w, "failed to load existing transfer", http.StatusInternalServerError)
+				return
+			}
+			if existing.Amount != req.Amount || existing.DestinationAccount != req.DestinationAccount ||
+				existing.DestinationBankCode != req.DestinationBankCode {
+				writeError(w, "reference already used with different transfer details", http.StatusConflict)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+				"reference": existing.Reference, "status": existing.Status, "duplicate": true,
+			}})
+			return
+		}
 		s.Logger.Errorf("Failed to insert transfer: %v", err)
 		writeError(w, "failed to process transfer", http.StatusInternalServerError)
 		return
 	}
+
+	// Submit the REAL NIP transfer. Timeout/5xx is ambiguous: the transfer may
+	// have happened upstream — re-query before deciding, never blind-retry.
+	status, terr := s.NIBSS.NIPTransfer(r.Context(), map[string]interface{}{
+		"reference":             req.Reference,
+		"source_account":        req.SourceAccount,
+		"source_bank_code":      req.SourceBankCode,
+		"destination_account":   req.DestinationAccount,
+		"destination_bank_code": req.DestinationBankCode,
+		"destination_name":      destName,
+		"amount":                req.Amount,
+		"currency":              req.Currency,
+		"fee":                   fee,
+		"narration":             req.Description,
+		"channel":               channel,
+	})
+	if terr != nil {
+		s.Logger.Warnf("NIP transfer ambiguous (%v); re-querying before reporting", terr)
+		rqStatus, rqErr := s.NIBSS.RequeryTransfer(r.Context(), req.Reference)
+		if rqErr != nil || rqStatus == "" {
+			// Truly unknown: leave pending, mark for background reconciliation.
+			_ = s.Postgres.UpdateTransferStatus(r.Context(), req.Reference, "pending_requery")
+			writeError(w, "transfer status unknown after timeout; reference is safe to re-query but MUST NOT be retried blindly", http.StatusGatewayTimeout)
+			return
+		}
+		status = rqStatus
+	}
+	if err := s.Postgres.UpdateTransferStatus(r.Context(), req.Reference, status); err != nil {
+		s.Logger.Errorf("failed to persist transfer status: %v", err)
+		writeError(w, "failed to persist transfer status", http.StatusInternalServerError)
+		return
+	}
+	transfer.Status = status
 
 	// Cache the transfer
 	data, _ := json.Marshal(transfer)
@@ -406,11 +478,11 @@ func (s *Server) handleInitiateTransfer(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(Response{
+	_ = json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
 			"reference":        req.Reference,
-			"status":           "success",
+			"status":           status,
 			"channel":          channel,
 			"destination_bank": transfer.DestinationBank,
 			"destination_name": transfer.DestinationName,
@@ -429,7 +501,7 @@ func (s *Server) handleGetTransfer(w http.ResponseWriter, r *http.Request) {
 
 	if cached, err := s.Redis.GetCachedTransfer(r.Context(), reference); err == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
+		_ = json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
 		return
 	}
 
@@ -440,10 +512,13 @@ func (s *Server) handleGetTransfer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: transfer})
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: transfer})
 }
 
-// handleApproveTransfer approves a pending transfer (dual-control)
+// handleApproveTransfer approves a pending transfer (dual-control).
+// NG-8: state-machine guard — only pending/pending_requery/pending_approval
+// can transition to success, atomically; terminal states (failed, reversed,
+// success) are rejected. approver identity is mandatory.
 func (s *Server) handleApproveTransfer(w http.ResponseWriter, r *http.Request) {
 	reference := chi.URLParam(r, "reference")
 
@@ -454,6 +529,10 @@ func (s *Server) handleApproveTransfer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if req.ApprovedBy == "" {
+		writeError(w, "approved_by is required (maker-checker identity)", http.StatusBadRequest)
+		return
+	}
 
 	transfer, err := s.Postgres.GetTransfer(r.Context(), reference)
 	if err != nil {
@@ -461,15 +540,21 @@ func (s *Server) handleApproveTransfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Postgres.UpdateTransferStatus(r.Context(), reference, "success"); err != nil {
+	allowedFrom := []string{"pending", "pending_requery", "pending_approval"}
+	ok, err := s.Postgres.UpdateTransferStatusConditional(r.Context(), reference, allowedFrom, "success", req.ApprovedBy)
+	if err != nil {
 		writeError(w, "failed to approve transfer", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		writeError(w, fmt.Sprintf("transfer in state %q cannot be approved", transfer.Status), http.StatusConflict)
 		return
 	}
 
 	_ = s.Redis.InvalidateTransfer(r.Context(), reference)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"reference":   reference,
 		"previous":    transfer.Status,
 		"new_status":  "success",
@@ -484,13 +569,13 @@ func (s *Server) handleListTransfers(w http.ResponseWriter, r *http.Request) {
 	limit := 20
 	offset := 0
 	if l := r.URL.Query().Get("limit"); l != "" {
-		fmt.Sscanf(l, "%d", &limit)
+		_, _ = fmt.Sscanf(l, "%d", &limit)
 		if limit > 100 {
 			limit = 100
 		}
 	}
 	if o := r.URL.Query().Get("offset"); o != "" {
-		fmt.Sscanf(o, "%d", &offset)
+		_, _ = fmt.Sscanf(o, "%d", &offset)
 	}
 
 	transfers, err := s.Postgres.ListTransfers(r.Context(), status, limit, offset)
@@ -500,7 +585,7 @@ func (s *Server) handleListTransfers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"transfers": transfers,
 		"total":     len(transfers),
 		"limit":     limit,
@@ -549,7 +634,7 @@ func (s *Server) handleCreateReconciliation(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"report_id":       report.ID,
 		"date":            req.Date,
 		"total_txn_count": req.TotalTxnCount,
@@ -568,7 +653,7 @@ func (s *Server) handleGetReconciliation(w http.ResponseWriter, r *http.Request)
 
 	if cached, err := s.Redis.GetCachedSettlement(r.Context(), date); err == nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
+		_ = json.NewEncoder(w).Encode(Response{Success: true, Data: json.RawMessage(cached)})
 		return
 	}
 
@@ -579,7 +664,7 @@ func (s *Server) handleGetReconciliation(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: report})
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: report})
 }
 
 // handleProcessCallbacks processes pending callback events from banks
@@ -616,7 +701,7 @@ func (s *Server) handleProcessCallbacks(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(Response{Success: true, Data: map[string]interface{}{
 		"processed":    processed,
 		"total":        len(events),
 		"processed_at": time.Now().Format(time.RFC3339),
@@ -642,7 +727,7 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(Response{
+	_ = json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
 			"endpoint_url": req.EndpointURL,
@@ -680,7 +765,7 @@ func validateNUBANChecksum(accountNum string) bool {
 func writeError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(Response{Success: false, Error: msg})
+	_ = json.NewEncoder(w).Encode(Response{Success: false, Error: msg})
 }
 
 // validateQueryParam returns a query parameter value, rejecting over-long input.

@@ -137,18 +137,41 @@ func (p *Postgres) RunMigrations(ctx context.Context) error {
 
 // InsertTransfer creates a transfer record
 func (p *Postgres) InsertTransfer(ctx context.Context, t *TransferDB) error {
-	_, err := p.Pool.Exec(ctx, `
+	cmd, err := p.Pool.Exec(ctx, `
 		INSERT INTO transfers (id, reference, source_account, source_bank_code,
 			destination_account, destination_bank_code, destination_bank, destination_name,
 			amount, currency, fee, description, channel, status, approved_by, txn_date,
 			failed_reason, callback_url, metadata)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-		ON CONFLICT (reference) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (reference) DO NOTHING
 	`, t.ID, t.Reference, t.SourceAccount, t.SourceBankCode,
 		t.DestinationAccount, t.DestinationBankCode, t.DestinationBank, t.DestinationName,
 		t.Amount, t.Currency, t.Fee, t.Description, t.Channel, t.Status, t.ApprovedBy,
 		t.TxnDate, t.FailedReason, t.CallbackURL, t.Metadata)
-	return fmt.Errorf("insert transfer: %w", err)
+	if err != nil {
+		return fmt.Errorf("insert transfer: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return ErrTransferExists
+	}
+	return nil
+}
+
+// ErrTransferExists is returned when a transfer reference is already used
+// (idempotency: the caller must fetch and compare the existing record).
+var ErrTransferExists = fmt.Errorf("transfer reference already exists")
+
+// UpdateTransferStatusConditional atomically transitions a transfer from one
+// of the allowed source states to `to` (NG-8 state-machine guard). Returns
+// false when no row matched (already terminal / wrong state).
+func (p *Postgres) UpdateTransferStatusConditional(ctx context.Context, reference string, from []string, to, approvedBy string) (bool, error) {
+	query := `UPDATE transfers SET status = $1, approved_by = NULLIF($2, ''), updated_at = NOW()
+		WHERE reference = $3 AND status = ANY($4)`
+	cmd, err := p.Pool.Exec(ctx, query, to, approvedBy, reference, from)
+	if err != nil {
+		return false, fmt.Errorf("conditional status update: %w", err)
+	}
+	return cmd.RowsAffected() == 1, nil
 }
 
 // GetTransfer retrieves a transfer by reference
@@ -177,8 +200,10 @@ func (p *Postgres) GetTransfer(ctx context.Context, reference string) (*Transfer
 // UpdateTransferStatus updates a transfer's status
 func (p *Postgres) UpdateTransferStatus(ctx context.Context, reference, status string) error {
 	query := `UPDATE transfers SET status = $1, updated_at = NOW() WHERE reference = $2`
-	_, err := p.Pool.Exec(ctx, query, status, reference)
-	return fmt.Errorf("update transfer status: %w", err)
+	if _, err := p.Pool.Exec(ctx, query, status, reference); err != nil {
+		return fmt.Errorf("update transfer status: %w", err)
+	}
+	return nil
 }
 
 // ListTransfers retrieves transfers with filtering
@@ -237,7 +262,10 @@ func (p *Postgres) UpsertAccountVerification(ctx context.Context, v *Verificatio
 			updated_at = NOW()
 	`, v.ID, v.AccountNumber, v.BankCode, v.BankName, v.AccountName,
 		v.Status, v.AccountType, v.Branch, v.VerifiedAt, v.ExpiryAt)
-	return fmt.Errorf("upsert verification: %w", err)
+	if err != nil {
+		return fmt.Errorf("upsert verification: %w", err)
+	}
+	return nil
 }
 
 // InsertCallbackEvent stores a callback event
@@ -248,7 +276,10 @@ func (p *Postgres) InsertCallbackEvent(ctx context.Context, event *CallbackEvent
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 	`, event.ID, event.EventType, event.Reference, event.TxnID, event.Amount,
 		event.Status, event.BankCode, event.BankRef, event.Timestamp, event.Payload, event.Processed)
-	return fmt.Errorf("insert callback: %w", err)
+	if err != nil {
+		return fmt.Errorf("insert callback: %w", err)
+	}
+	return nil
 }
 
 // GetUnprocessedCallbacks retrieves unprocessed callback events
@@ -285,7 +316,10 @@ func (p *Postgres) GetUnprocessedCallbacks(ctx context.Context, limit int) ([]*C
 // MarkCallbackProcessed marks a callback as processed
 func (p *Postgres) MarkCallbackProcessed(ctx context.Context, id string, processedAt string) error {
 	_, err := p.Pool.Exec(ctx, `UPDATE callback_events SET processed = true, processed_at = $1 WHERE id = $2`, processedAt, id)
-	return fmt.Errorf("mark callback processed: %w", err)
+	if err != nil {
+		return fmt.Errorf("mark callback processed: %w", err)
+	}
+	return nil
 }
 
 // UpsertSettlementReport creates or updates a settlement report
@@ -306,7 +340,10 @@ func (p *Postgres) UpsertSettlementReport(ctx context.Context, r *SettlementDB) 
 			status = EXCLUDED.status
 	`, r.Date, r.TotalTxnCount, r.TotalTxnValue, r.SuccessCount, r.FailedCount,
 		r.TotalFees, r.NetAmount, string(channels), r.Status)
-	return fmt.Errorf("upsert settlement: %w", err)
+	if err != nil {
+		return fmt.Errorf("upsert settlement: %w", err)
+	}
+	return nil
 }
 
 // GetSettlementByDate retrieves a settlement report
@@ -336,7 +373,10 @@ func (p *Postgres) InsertVerification(ctx context.Context, v *VerificationDB) er
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 	`, v.ID, v.AccountNumber, v.BankCode, v.BankName, v.AccountName,
 		v.Status, v.AccountType, v.Branch, v.VerifiedAt, v.ExpiryAt)
-	return fmt.Errorf("insert verification: %w", err)
+	if err != nil {
+		return fmt.Errorf("insert verification: %w", err)
+	}
+	return nil
 }
 
 // GetVerification retrieves a recent verification

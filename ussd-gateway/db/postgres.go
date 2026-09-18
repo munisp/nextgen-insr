@@ -104,6 +104,26 @@ func (ps *PostgresStore) runMigrations() error {
 		)`,
 
 		`CREATE INDEX IF NOT EXISTS idx_session_expires ON session_states(expires_at)`,
+
+		// F4 audit (nigeria.md NG-1/2/4 + PIN identity): idempotent
+		// transactions, PIN columns on agents, phone rebind audit.
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS idempotency_key TEXT`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_txn_idempotency ON transactions(idempotency_key) WHERE idempotency_key IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_txn_phone_pending ON transactions(phone_number, status) WHERE status = 'pending'`,
+		`ALTER TABLE agent_accounts ADD COLUMN IF NOT EXISTS pin_hash TEXT`,
+		`ALTER TABLE agent_accounts ADD COLUMN IF NOT EXISTS pin_failed_attempts INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE agent_accounts ADD COLUMN IF NOT EXISTS pin_locked_until TIMESTAMPTZ`,
+		`ALTER TABLE agent_accounts ADD COLUMN IF NOT EXISTS phone_bound_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+		`CREATE INDEX IF NOT EXISTS idx_session_phone ON session_states(phone_number)`,
+		`CREATE TABLE IF NOT EXISTS phone_rebind_audit (
+			id          TEXT PRIMARY KEY,
+			agent_id    TEXT NOT NULL,
+			old_phone   TEXT NOT NULL,
+			new_phone   TEXT NOT NULL,
+			verified_by TEXT NOT NULL,
+			created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rebind_agent ON phone_rebind_audit(agent_id)`,
 	}
 
 	for _, migration := range migrations {
@@ -393,4 +413,197 @@ func (ps *PostgresStore) CleanupExpiredSessions(ctx context.Context) (int, error
 	}
 	affected, _ := result.RowsAffected()
 	return int(affected), nil
+}
+
+// ---------------------------------------------------------------------------
+// F4 audit additions: idempotent transactions, atomic float deduction, PIN
+// identity, phone rebind, session resume.
+// ---------------------------------------------------------------------------
+
+// ErrInsufficientFloat is returned when an atomic float deduction fails the
+// balance precondition (fail-closed: no deduction happened).
+var ErrInsufficientFloat = fmt.Errorf("insufficient float balance")
+
+// CreateTransactionIdempotent inserts a transaction bound to an idempotency
+// key. If a row with the same key already exists (telco callback redelivery),
+// the EXISTING row is returned instead of creating a duplicate.
+func (ps *PostgresStore) CreateTransactionIdempotent(ctx context.Context, txn *models.TransactionRecord, idempotencyKey string) (*models.TransactionRecord, bool, error) {
+	if txn.ID == "" {
+		txn.ID = generateID()
+	}
+	if txn.Reference == "" {
+		txn.Reference = "TXN-" + generateID()[:12]
+	}
+	if txn.Status == "" {
+		txn.Status = "pending"
+	}
+	txn.CreatedAt = time.Now().UTC()
+
+	query := `INSERT INTO transactions
+		(id, session_id, phone_number, type, product_id, amount, status, reference, created_at, idempotency_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (idempotency_key) DO NOTHING
+		RETURNING id`
+	var id string
+	err := ps.db.QueryRowContext(ctx, query,
+		txn.ID, txn.SessionID, txn.PhoneNumber, txn.Type,
+		txn.ProductID, txn.Amount, txn.Status, txn.Reference, txn.CreatedAt, idempotencyKey,
+	).Scan(&id)
+	if err == nil {
+		return txn, false, nil
+	}
+	if err != sql.ErrNoRows {
+		return nil, false, fmt.Errorf("postgres: create transaction idempotent: %w", err)
+	}
+	// Conflict: fetch the existing row.
+	var existing models.TransactionRecord
+	row := ps.db.QueryRowContext(ctx,
+		`SELECT id, session_id, phone_number, type, product_id, amount, status, reference, created_at
+		 FROM transactions WHERE idempotency_key = $1`, idempotencyKey)
+	if err := row.Scan(&existing.ID, &existing.SessionID, &existing.PhoneNumber, &existing.Type,
+		&existing.ProductID, &existing.Amount, &existing.Status, &existing.Reference, &existing.CreatedAt); err != nil {
+		return nil, false, fmt.Errorf("postgres: fetch idempotent transaction: %w", err)
+	}
+	return &existing, true, nil
+}
+
+// DeductAgentBalance atomically deducts amount from the agent's float balance
+// using a conditional UPDATE (check-and-set in one statement). Returns the new
+// balance. ErrInsufficientFloat when the precondition fails — no row changed.
+func (ps *PostgresStore) DeductAgentBalance(ctx context.Context, id string, amount float64) (float64, error) {
+	if amount <= 0 {
+		return 0, fmt.Errorf("deduction amount must be positive")
+	}
+	var newBalance float64
+	err := ps.db.QueryRowContext(ctx,
+		`UPDATE agent_accounts SET float_balance = float_balance - $1, updated_at = NOW()
+		 WHERE id = $2 AND float_balance >= $1
+		 RETURNING float_balance`, amount, id).Scan(&newBalance)
+	if err == sql.ErrNoRows {
+		return 0, ErrInsufficientFloat
+	}
+	if err != nil {
+		return 0, fmt.Errorf("postgres: deduct agent balance: %w", err)
+	}
+	return newBalance, nil
+}
+
+// GetLatestPendingTransactionByPhone returns the most recent pending
+// transaction for a phone number (used for session-drop recovery).
+func (ps *PostgresStore) GetLatestPendingTransactionByPhone(ctx context.Context, phone string) (*models.TransactionRecord, error) {
+	var t models.TransactionRecord
+	row := ps.db.QueryRowContext(ctx,
+		`SELECT id, session_id, phone_number, type, product_id, amount, status, reference, created_at
+		 FROM transactions WHERE phone_number = $1 AND status = 'pending'
+		 ORDER BY created_at DESC LIMIT 1`, phone)
+	err := row.Scan(&t.ID, &t.SessionID, &t.PhoneNumber, &t.Type, &t.ProductID,
+		&t.Amount, &t.Status, &t.Reference, &t.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("postgres: pending transaction lookup: %w", err)
+	}
+	return &t, nil
+}
+
+// GetLatestSessionByPhone returns the most recent non-expired session for a
+// phone number (used to resume a dropped USSD session under a new SessionID).
+func (ps *PostgresStore) GetLatestSessionByPhone(ctx context.Context, phone string) (*models.SessionData, error) {
+	var session models.SessionData
+	var dataMap map[string]interface{}
+	row := ps.db.QueryRowContext(ctx,
+		`SELECT session_id, phone_number, state, data, expires_at
+		 FROM session_states WHERE phone_number = $1 AND expires_at > NOW()
+		 ORDER BY expires_at DESC LIMIT 1`, phone)
+	err := row.Scan(&session.SessionID, &session.PhoneNumber, &session.State, &dataMap, &session.ExpiresAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("postgres: session by phone: %w", err)
+	}
+	session.Data = dataMap
+	return &session, nil
+}
+
+// --- PIN identity ---
+
+// AgentPINState is the PIN verification state of an agent.
+type AgentPINState struct {
+	PINHash        string
+	FailedAttempts int
+	LockedUntil    *time.Time
+	PhoneBoundAt   time.Time
+}
+
+// GetAgentPINState returns PIN + phone-binding state for an agent.
+func (ps *PostgresStore) GetAgentPINState(ctx context.Context, id string) (*AgentPINState, error) {
+	var st AgentPINState
+	var pinHash sql.NullString
+	row := ps.db.QueryRowContext(ctx,
+		`SELECT pin_hash, pin_failed_attempts, pin_locked_until, phone_bound_at
+		 FROM agent_accounts WHERE id = $1`, id)
+	if err := row.Scan(&pinHash, &st.FailedAttempts, &st.LockedUntil, &st.PhoneBoundAt); err != nil {
+		return nil, fmt.Errorf("postgres: agent pin state: %w", err)
+	}
+	st.PINHash = pinHash.String
+	return &st, nil
+}
+
+// SetAgentPIN stores the PIN hash and clears failure counters.
+func (ps *PostgresStore) SetAgentPIN(ctx context.Context, id, pinHash string) error {
+	_, err := ps.db.ExecContext(ctx,
+		`UPDATE agent_accounts SET pin_hash = $1, pin_failed_attempts = 0, pin_locked_until = NULL, updated_at = NOW()
+		 WHERE id = $2`, pinHash, id)
+	return err
+}
+
+// RecordPINFailure increments the failure counter; when it reaches
+// maxAttempts the account is locked until now+lockDuration. Returns locked.
+func (ps *PostgresStore) RecordPINFailure(ctx context.Context, id string, maxAttempts int, lockDuration time.Duration) (bool, error) {
+	var locked bool
+	err := ps.db.QueryRowContext(ctx,
+		`UPDATE agent_accounts SET
+			pin_failed_attempts = pin_failed_attempts + 1,
+			pin_locked_until = CASE WHEN pin_failed_attempts + 1 >= $2
+				THEN NOW() + ($3::int * INTERVAL '1 second') ELSE pin_locked_until END,
+			updated_at = NOW()
+		 WHERE id = $1
+		 RETURNING (pin_locked_until IS NOT NULL AND pin_locked_until > NOW())`, id, maxAttempts, int(lockDuration.Seconds())).Scan(&locked)
+	return locked, err
+}
+
+// ResetPINFailures clears the PIN failure counter and lock.
+func (ps *PostgresStore) ResetPINFailures(ctx context.Context, id string) error {
+	_, err := ps.db.ExecContext(ctx,
+		`UPDATE agent_accounts SET pin_failed_attempts = 0, pin_locked_until = NULL, updated_at = NOW() WHERE id = $1`, id)
+	return err
+}
+
+// RebindAgentPhone changes the agent's bound phone number (SIM swap / number
+// change). Resets phone_bound_at so the cooling period restarts, and records
+// an audit row. Fails if the new phone is already bound to another agent.
+func (ps *PostgresStore) RebindAgentPhone(ctx context.Context, agentID, oldPhone, newPhone, verifiedBy string) error {
+	tx, err := ps.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx,
+		`UPDATE agent_accounts SET phone_number = $1, phone_bound_at = NOW(), updated_at = NOW()
+		 WHERE id = $2 AND phone_number = $3`, newPhone, agentID, oldPhone)
+	if err != nil {
+		return fmt.Errorf("postgres: rebind phone: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("postgres: rebind phone: agent/phone mismatch")
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO phone_rebind_audit (id, agent_id, old_phone, new_phone, verified_by)
+		 VALUES ($1, $2, $3, $4, $5)`, generateID(), agentID, oldPhone, newPhone, verifiedBy); err != nil {
+		return fmt.Errorf("postgres: rebind audit: %w", err)
+	}
+	return tx.Commit()
 }

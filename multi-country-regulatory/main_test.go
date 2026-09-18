@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +57,47 @@ func TestValidateIntParam(t *testing.T) {
 				t.Errorf("got %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+// --- F4 audit test (NG-21) ---
+
+func TestComplianceCheckCurrencyMismatch(t *testing.T) {
+	body := `{"country":"NG","capital":9000000000,"currency":"USD","has_license":true,"data_local":true}`
+	req := httptest.NewRequest(http.MethodPost, "/compliance/check", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleComplianceCheck(rec, req)
+	var out struct {
+		Compliant bool     `json:"compliant"`
+		Issues    []string `json:"issues"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Compliant {
+		t.Fatal("USD-denominated product in NAICOM jurisdiction must NOT be compliant")
+	}
+	found := false
+	for _, i := range out.Issues {
+		if strings.Contains(i, "Currency mismatch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected currency mismatch issue, got %v", out.Issues)
+	}
+
+	// Matching currency passes the currency check.
+	body = `{"country":"NG","capital":9000000000,"currency":"NGN","has_license":true,"data_local":true}`
+	req = httptest.NewRequest(http.MethodPost, "/compliance/check", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	handleComplianceCheck(rec, req)
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range out.Issues {
+		if strings.Contains(i, "Currency mismatch") {
+			t.Fatalf("NGN product in Nigeria must not flag currency: %v", out.Issues)
+		}
 	}
 }

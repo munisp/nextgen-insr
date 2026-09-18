@@ -5660,3 +5660,102 @@ export const impersonationEvents = pgTable(
 );
 export type ImpersonationEvent = typeof impersonationEvents.$inferSelect;
 export type InsertImpersonationEvent = typeof impersonationEvents.$inferInsert;
+// ─── F4 audit (NG-16): Offline POS session ledger, sync records, conflict queue ───
+// Append-only definitions. An offline session is a REAL server-side row (a
+// dropped session is detectable); synced records preserve BOTH versions on
+// conflict and route to a resolution queue instead of silent server_wins.
+export const offlineSessions = pgTable(
+  "offline_sessions",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: varchar("sessionId", { length: 64 }).notNull().unique(),
+    agentId: integer("agentId").notNull(),
+    reason: varchar("reason", { length: 32 }).notNull(),
+    status: varchar("status", { length: 24 }).default("active").notNull(), // active | ended | expired
+    floatSnapshot: numeric("floatSnapshot", { precision: 18, scale: 2 }),
+    clientReportedCount: integer("clientReportedCount"),
+    clientReportedAmount: numeric("clientReportedAmount", { precision: 18, scale: 2 }),
+    serverCount: integer("serverCount"),
+    serverAmount: numeric("serverAmount", { precision: 18, scale: 2 }),
+    totalsMismatch: boolean("totalsMismatch").default(false).notNull(),
+    startedAt: timestamp("startedAt").defaultNow().notNull(),
+    endedAt: timestamp("endedAt"),
+  },
+  t => ({
+    agentIdx: index("ofs_agent_idx").on(t.agentId),
+    statusIdx: index("ofs_status_idx").on(t.status),
+  })
+);
+export type OfflineSession = typeof offlineSessions.$inferSelect;
+
+export const offlineSyncRecords = pgTable(
+  "offline_sync_records",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: varchar("sessionId", { length: 64 }).notNull(),
+    agentId: integer("agentId").notNull(),
+    // Client-generated natural key — idempotent sync push (retry-safe).
+    clientRecordId: varchar("clientRecordId", { length: 128 }).notNull(),
+    entityType: varchar("entityType", { length: 32 }).notNull(),
+    entityId: varchar("entityId", { length: 128 }).notNull(),
+    amount: numeric("amount", { precision: 18, scale: 2 }).default("0").notNull(),
+    payload: jsonb("payload").notNull(),
+    payloadHash: varchar("payloadHash", { length: 64 }).notNull(),
+    status: varchar("status", { length: 24 }).default("applied").notNull(), // applied | conflict
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    sessionIdx: index("osr_session_idx").on(t.sessionId),
+    entityIdx: index("osr_entity_idx").on(t.entityType, t.entityId),
+    clientRecordUq: uniqueIndex("osr_client_record_uq").on(t.sessionId, t.clientRecordId),
+  })
+);
+export type OfflineSyncRecord = typeof offlineSyncRecords.$inferSelect;
+
+// Conflict resolution queue: BOTH versions preserved; no silent server_wins.
+export const offlineSyncConflicts = pgTable(
+  "offline_sync_conflicts",
+  {
+    id: serial("id").primaryKey(),
+    entityType: varchar("entityType", { length: 32 }).notNull(),
+    entityId: varchar("entityId", { length: 128 }).notNull(),
+    sessionId: varchar("sessionId", { length: 64 }).notNull(),
+    agentId: integer("agentId").notNull(),
+    localVersion: jsonb("localVersion").notNull(),
+    serverVersion: jsonb("serverVersion").notNull(),
+    resolution: varchar("resolution", { length: 32 }), // null = pending; keep_local | keep_server | merged
+    resolvedBy: varchar("resolvedBy", { length: 128 }),
+    resolvedAt: timestamp("resolvedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => ({
+    pendingIdx: index("osc_pending_idx").on(t.resolution),
+    entityIdx: index("osc_entity_idx").on(t.entityType, t.entityId),
+  })
+);
+export type OfflineSyncConflict = typeof offlineSyncConflicts.$inferSelect;
+
+// ─── F4 audit (NG-5/6): durable SMS delivery log (migration 0069) ───────────
+// Raw-SQL migration 0069 existed without this pgTable definition, so
+// drizzle-kit push never materialized it (CI measured 216, not 217).
+export const smsMessages = pgTable(
+  "sms_messages",
+  {
+    id: serial("id").primaryKey(),
+    recipient: varchar("recipient", { length: 32 }).notNull(),
+    body: text("body").notNull(),
+    provider: varchar("provider", { length: 32 }),
+    messageId: varchar("message_id", { length: 128 }),
+    status: varchar("status", { length: 16 }).default("queued").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    nextRetryAt: timestamp("next_retry_at"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  t => ({
+    retryIdx: index("sms_msg_retry_idx").on(t.status, t.nextRetryAt),
+    providerIdIdx: index("sms_msg_provider_id_idx").on(t.provider, t.messageId),
+  })
+);
+export type SmsMessage = typeof smsMessages.$inferSelect;

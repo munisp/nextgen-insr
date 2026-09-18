@@ -47,7 +47,7 @@ struct QueuedTx {
     retries: i32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct EnqueueRequest {
     tx_type: String,
     amount: f64,
@@ -57,6 +57,10 @@ struct EnqueueRequest {
     destination_account: Option<String>,
     channel: Option<String>,
     payload_json: Option<String>,
+    /// Client-supplied idempotency key (natural key). When absent, one is
+    /// derived from the transaction's natural fields so a network-flap
+    /// re-POST dedups instead of double-applying (NG-9).
+    idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,6 +88,21 @@ struct CountResponse {
 struct EnqueueResponse {
     id: String,
     queued_at: String,
+    duplicate: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaimRequest {
+    /// Unique syncer identity (e.g. hostname+pid). Required — anonymous
+    /// claims would defeat the lease.
+    owner: String,
+    limit: Option<i64>,
+    lease_secs: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RequeueRequest {
+    last_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -128,71 +147,130 @@ async fn init_db(database_url: &str) -> Client {
         .await
         .expect("failed to create table");
 
+    // F4 audit (NG-9): idempotency key, lease columns, dead-letter queue.
+    let ddl = [
+        "ALTER TABLE offline_queue ADD COLUMN IF NOT EXISTS idempotency_key TEXT",
+        "ALTER TABLE offline_queue ADD COLUMN IF NOT EXISTS lease_owner TEXT",
+        "ALTER TABLE offline_queue ADD COLUMN IF NOT EXISTS lease_expires_at TEXT",
+        "ALTER TABLE offline_queue ADD COLUMN IF NOT EXISTS max_retries INTEGER NOT NULL DEFAULT 5",
+        "CREATE UNIQUE INDEX IF NOT EXISTS offline_queue_idem_idx ON offline_queue(idempotency_key) WHERE idempotency_key IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS offline_queue_lease_idx ON offline_queue(lease_expires_at)",
+        "CREATE TABLE IF NOT EXISTS offline_queue_dlq (
+            id               TEXT PRIMARY KEY,
+            tx_type          TEXT NOT NULL,
+            amount           DOUBLE PRECISION NOT NULL,
+            customer_name    TEXT,
+            customer_phone   TEXT,
+            destination_bank TEXT,
+            destination_acct TEXT,
+            channel          TEXT,
+            payload_json     TEXT NOT NULL,
+            queued_at        TEXT NOT NULL,
+            retries          INTEGER NOT NULL,
+            dead_lettered_at TEXT NOT NULL,
+            last_error       TEXT
+        )",
+    ];
+    for stmt in ddl {
+        client.execute(stmt, &[]).await.expect("failed to apply queue DDL");
+    }
+
     client
 }
 
-fn bank_to_nibss_code(bank: &str) -> &'static str {
+fn bank_to_nibss_code(bank: &str) -> Option<&'static str> {
     let b = bank.to_lowercase();
-    if b.contains("gtb") || b.contains("guaranty") { return "058"; }
-    if b.contains("access") { return "044"; }
-    if b.contains("zenith") { return "057"; }
-    if b.contains("uba") || b.contains("united bank") { return "033"; }
-    if b.contains("first bank") || b.contains("firstbank") { return "011"; }
-    if b.contains("fidelity") { return "070"; }
-    if b.contains("sterling") { return "232"; }
-    if b.contains("union") { return "032"; }
-    if b.contains("wema") { return "035"; }
-    if b.contains("stanbic") { return "221"; }
-    "000"
+    if b.contains("gtb") || b.contains("guaranty") { return Some("058"); }
+    if b.contains("access") { return Some("044"); }
+    if b.contains("zenith") { return Some("057"); }
+    if b.contains("uba") || b.contains("united bank") { return Some("033"); }
+    if b.contains("first bank") || b.contains("firstbank") { return Some("011"); }
+    if b.contains("fidelity") { return Some("070"); }
+    if b.contains("sterling") { return Some("232"); }
+    if b.contains("union") { return Some("032"); }
+    if b.contains("wema") { return Some("035"); }
+    if b.contains("stanbic") { return Some("221"); }
+    // NG-11: unknown bank → None; callers must fail loud, never emit "000".
+    None
 }
 
-fn encode_ussd(req: &UssdEncodeRequest) -> UssdResponse {
+/// Bank-specific transfer USSD prefixes (NG-11: previously hardcoded GTB
+/// *737* for every bank, instructing users to dial the WRONG bank code).
+fn bank_transfer_ussd_prefix(bank: &str) -> Option<&'static str> {
+    let b = bank.to_lowercase();
+    if b.contains("gtb") || b.contains("guaranty") { return Some("*737*2"); }
+    if b.contains("access") { return Some("*901*2"); }
+    if b.contains("zenith") { return Some("*966*2"); }
+    if b.contains("uba") || b.contains("united bank") { return Some("*919*2"); }
+    if b.contains("first bank") || b.contains("firstbank") { return Some("*894*2"); }
+    if b.contains("fidelity") { return Some("*770*2"); }
+    if b.contains("sterling") { return Some("*822*2"); }
+    if b.contains("union") { return Some("*826*2"); }
+    if b.contains("wema") { return Some("*945*2"); }
+    if b.contains("stanbic") { return Some("*909*2"); }
+    None
+}
+
+fn encode_ussd(req: &UssdEncodeRequest) -> Result<UssdResponse, String> {
     let amount_str = format!("{:.0}", req.amount);
     match req.tx_type.as_str() {
         "Transfer" => {
-            let acct = req.destination_account.as_deref().unwrap_or("0000000000");
-            let bank_code = bank_to_nibss_code(req.destination_bank.as_deref().unwrap_or(""));
-            let ussd = format!("*737*2*{}*{}*{}#", amount_str, acct, bank_code);
-            UssdResponse {
+            let bank = req.destination_bank.as_deref().unwrap_or("");
+            let acct = req.destination_account.as_deref().unwrap_or("");
+            if acct.is_empty() {
+                return Err("destination_account is required for Transfer".to_string());
+            }
+            let prefix = bank_transfer_ussd_prefix(bank)
+                .ok_or_else(|| format!("no USSD transfer code known for bank {:?}; refusing to guess", bank))?;
+            let bank_code = bank_to_nibss_code(bank)
+                .ok_or_else(|| format!("no NIBSS code known for bank {:?}; refusing to emit a wrong-bank code", bank))?;
+            let ussd = format!("{}*{}*{}*{}#", prefix, amount_str, acct, bank_code);
+            Ok(UssdResponse {
                 ussd_string: ussd.clone(),
                 instructions: format!("Dial {} to complete the \u{20a6}{} transfer to account {}.", ussd, amount_str, acct),
-                carrier_hint: Some("GTBank NIP".to_string()),
-            }
+                carrier_hint: Some(bank.to_string()),
+            })
         }
         "Cash Out" => {
             let phone = req.customer_phone.as_deref().unwrap_or("08000000000");
             let ussd = format!("*901*{}*{}#", amount_str, phone);
-            UssdResponse {
+            Ok(UssdResponse {
                 ussd_string: ussd.clone(),
                 instructions: format!("Dial {} to initiate a \u{20a6}{} cardless cash-out for {}.", ussd, amount_str, phone),
                 carrier_hint: Some("Access Bank".to_string()),
-            }
+            })
         }
         "Bill Payment" => {
             let ussd = format!("*322*{}*INSURE#", amount_str);
-            UssdResponse {
+            Ok(UssdResponse {
                 ussd_string: ussd.clone(),
                 instructions: format!("Dial {} to pay \u{20a6}{} via NIBSS eBills Pay.", ussd, amount_str),
                 carrier_hint: Some("NIBSS eBills".to_string()),
-            }
+            })
         }
         "Airtime" => {
             let ussd = format!("*555*{}#", amount_str);
-            UssdResponse {
+            Ok(UssdResponse {
                 ussd_string: ussd.clone(),
                 instructions: format!("Dial {} to top up \u{20a6}{} airtime.", ussd, amount_str),
                 carrier_hint: Some("MTN/Airtel".to_string()),
-            }
+            })
         }
-        _ => {
-            let ussd = format!("*966*{}#", amount_str);
-            UssdResponse {
-                ussd_string: ussd.clone(),
-                instructions: format!("Dial {} to initiate a \u{20a6}{} payment via USSD.", ussd, amount_str),
-                carrier_hint: None,
-            }
-        }
+        // NG-11: unknown tx types must fail loud, not emit a guessed code.
+        other => Err(format!("unsupported tx_type {:?} for USSD encoding", other)),
     }
+}
+
+fn natural_idempotency_key(req: &EnqueueRequest, payload: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    req.tx_type.hash(&mut h);
+    req.amount.to_bits().hash(&mut h);
+    req.customer_phone.hash(&mut h);
+    req.destination_account.hash(&mut h);
+    payload.hash(&mut h);
+    format!("nat:{:016x}", h.finish())
 }
 
 async fn enqueue(State(db): State<Db>, Json(req): Json<EnqueueRequest>) -> Result<Json<EnqueueResponse>, StatusCode> {
@@ -201,17 +279,40 @@ async fn enqueue(State(db): State<Db>, Json(req): Json<EnqueueRequest>) -> Resul
     let payload = req.payload_json.clone().unwrap_or_else(|| {
         serde_json::json!({ "type": req.tx_type, "amount": req.amount }).to_string()
     });
-    db.execute(
-        "INSERT INTO offline_queue (id,tx_type,amount,customer_name,customer_phone,destination_bank,destination_acct,channel,payload_json,queued_at,retries) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0)",
-        &[&id, &req.tx_type, &req.amount, &req.customer_name, &req.customer_phone, &req.destination_bank, &req.destination_account, &req.channel, &payload, &now],
-    ).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(EnqueueResponse { id, queued_at: now }))
+    let idem = req
+        .idempotency_key
+        .clone()
+        .unwrap_or_else(|| natural_idempotency_key(&req, &payload));
+    // NG-9: ON CONFLICT on the idempotency key — a duplicate enqueue returns
+    // the ORIGINAL row instead of creating a second pending transaction.
+    let inserted = db
+        .query_opt(
+            "INSERT INTO offline_queue (id,tx_type,amount,customer_name,customer_phone,destination_bank,destination_acct,channel,payload_json,queued_at,retries,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11) ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id",
+            &[&id, &req.tx_type, &req.amount, &req.customer_name, &req.customer_phone, &req.destination_bank, &req.destination_account, &req.channel, &payload, &now, &idem],
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if inserted.is_some() {
+        return Ok(Json(EnqueueResponse { id, queued_at: now, duplicate: false }));
+    }
+    let existing = db
+        .query_one("SELECT id, queued_at FROM offline_queue WHERE idempotency_key = $1", &[&idem])
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(EnqueueResponse {
+        id: existing.get(0),
+        queued_at: existing.get(1),
+        duplicate: true,
+    }))
 }
 
 async fn list_pending(State(db): State<Db>) -> Result<Json<Vec<QueuedTx>>, StatusCode> {
+    // NG-9: unleased view — rows under a live lease are being processed by a
+    // syncer and must not be handed to another one.
+    let now = Utc::now().to_rfc3339();
     let rows = db.query(
-        "SELECT id,tx_type,amount,customer_name,customer_phone,destination_bank,destination_acct,channel,payload_json,queued_at,retries FROM offline_queue ORDER BY queued_at ASC",
-        &[],
+        "SELECT id,tx_type,amount,customer_name,customer_phone,destination_bank,destination_acct,channel,payload_json,queued_at,retries FROM offline_queue WHERE lease_expires_at IS NULL OR lease_expires_at < $1 ORDER BY queued_at ASC",
+        &[&now],
     ).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let items: Vec<QueuedTx> = rows.iter().map(|row| QueuedTx {
@@ -239,6 +340,86 @@ async fn dequeue(State(db): State<Db>, Path(id): Path<String>) -> Result<Json<se
     Ok(Json(serde_json::json!({ "success": true, "id": id })))
 }
 
+/// POST /queue/claim — claim-with-expiry lease (NG-9). A crashed syncer's
+/// lease expires and the rows become claimable again; two live syncers never
+/// receive the same row.
+async fn claim(State(db): State<Db>, Json(req): Json<ClaimRequest>) -> Result<Json<Vec<QueuedTx>>, StatusCode> {
+    if req.owner.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let limit = req.limit.unwrap_or(50).clamp(1, 500);
+    let lease_secs = req.lease_secs.unwrap_or(120).clamp(10, 3600);
+    let now = Utc::now();
+    let expires = (now + chrono::Duration::seconds(lease_secs)).to_rfc3339();
+    let now_s = now.to_rfc3339();
+    let rows = db
+        .query(
+            "UPDATE offline_queue SET lease_owner = $1, lease_expires_at = $2
+             WHERE id IN (
+                 SELECT id FROM offline_queue
+                 WHERE lease_expires_at IS NULL OR lease_expires_at < $3
+                 ORDER BY queued_at ASC LIMIT $4
+             )
+             RETURNING id,tx_type,amount,customer_name,customer_phone,destination_bank,destination_acct,channel,payload_json,queued_at,retries",
+            &[&req.owner, &expires, &now_s, &limit],
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let items: Vec<QueuedTx> = rows.iter().map(|row| QueuedTx {
+        id: row.get(0), tx_type: row.get(1), amount: row.get(2),
+        customer_name: row.get(3), customer_phone: row.get(4),
+        destination_bank: row.get(5), destination_account: row.get(6),
+        channel: row.get(7), payload_json: row.get(8), queued_at: row.get(9),
+        retries: row.get(10),
+    }).collect();
+    Ok(Json(items))
+}
+
+/// POST /queue/requeue/:id — a syncer reports failure. Increments retries
+/// (the column existed but was never used); at max_retries the row is moved
+/// to the dead-letter queue instead of being retried forever (NG-9).
+async fn requeue(State(db): State<Db>, Path(id): Path<String>, Json(req): Json<RequeueRequest>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let row = db
+        .query_opt(
+            "UPDATE offline_queue SET retries = retries + 1, lease_owner = NULL, lease_expires_at = NULL WHERE id = $1 RETURNING retries, max_retries",
+            &[&id],
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let Some(row) = row else { return Err(StatusCode::NOT_FOUND) };
+    let retries: i32 = row.get(0);
+    let max_retries: i32 = row.get(1);
+    if retries >= max_retries {
+        // Move to DLQ atomically-ish: insert copy then delete original.
+        let now = Utc::now().to_rfc3339();
+        let last_error = req.last_error.clone().unwrap_or_else(|| "max retries exceeded".to_string());
+        db.execute(
+            "INSERT INTO offline_queue_dlq (id,tx_type,amount,customer_name,customer_phone,destination_bank,destination_acct,channel,payload_json,queued_at,retries,dead_lettered_at,last_error)
+             SELECT id,tx_type,amount,customer_name,customer_phone,destination_bank,destination_acct,channel,payload_json,queued_at,retries,$2,$3 FROM offline_queue WHERE id = $1
+             ON CONFLICT (id) DO NOTHING",
+            &[&id, &now, &last_error],
+        ).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        db.execute("DELETE FROM offline_queue WHERE id = $1", &[&id])
+            .await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        return Ok(Json(serde_json::json!({ "id": id, "retries": retries, "dead_lettered": true })));
+    }
+    Ok(Json(serde_json::json!({ "id": id, "retries": retries, "dead_lettered": false })))
+}
+
+/// GET /queue/dlq — inspect dead-lettered items.
+async fn list_dlq(State(db): State<Db>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rows = db
+        .query("SELECT id, tx_type, amount, retries, dead_lettered_at, last_error FROM offline_queue_dlq ORDER BY dead_lettered_at DESC LIMIT 200", &[])
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let items: Vec<serde_json::Value> = rows.iter().map(|r| serde_json::json!({
+        "id": r.get::<_, String>(0), "tx_type": r.get::<_, String>(1),
+        "amount": r.get::<_, f64>(2), "retries": r.get::<_, i32>(3),
+        "dead_lettered_at": r.get::<_, String>(4), "last_error": r.get::<_, Option<String>>(5),
+    })).collect();
+    Ok(Json(serde_json::json!({ "dead_lettered": items })))
+}
+
 async fn count(State(db): State<Db>) -> Result<Json<CountResponse>, StatusCode> {
     let row = db.query_one("SELECT COUNT(*) FROM offline_queue", &[])
         .await
@@ -247,8 +428,10 @@ async fn count(State(db): State<Db>) -> Result<Json<CountResponse>, StatusCode> 
     Ok(Json(CountResponse { pending: n }))
 }
 
-async fn ussd_encode(Json(req): Json<UssdEncodeRequest>) -> Json<UssdResponse> {
-    Json(encode_ussd(&req))
+async fn ussd_encode(Json(req): Json<UssdEncodeRequest>) -> Result<Json<UssdResponse>, (StatusCode, Json<serde_json::Value>)> {
+    encode_ussd(&req)
+        .map(Json)
+        .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({ "error": e }))))
 }
 
 async fn health(State(db): State<Db>) -> Json<HealthResponse> {
@@ -271,129 +454,13 @@ async fn health(State(db): State<Db>) -> Json<HealthResponse> {
 }
 
 
-// ── Middleware Integration ────────────────────────────────────────────────
-// Redis cache client for caching and session management
-struct RedisClient {
-    addr: String,
-}
-
-impl RedisClient {
-    fn new() -> Self {
-        let addr = env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
-        println!("[middleware] Redis client configured: {}", addr);
-        RedisClient { addr }
-    }
-
-    fn cache_get(&self, key: &str) -> Option<String> {
-        // Production: use redis-rs crate with connection pool
-        let _ = key;
-        None
-    }
-
-    fn cache_set(&self, key: &str, value: &str, ttl_secs: u64) {
-        // Production: use redis-rs SET EX
-        let _ = (key, value, ttl_secs);
-    }
-
-    fn cache_invalidate(&self, keys: &[&str]) {
-        // Production: use redis-rs DEL
-        let _ = keys;
-    }
-}
-
-// Kafka event publisher for async event streaming
-struct KafkaPublisher {
-    brokers: String,
-    service_name: String,
-}
-
-impl KafkaPublisher {
-    fn new(service_name: &str) -> Self {
-        let brokers = env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
-        println!("[middleware] Kafka producer configured: {} topic={}-events", brokers, service_name);
-        KafkaPublisher {
-            brokers,
-            service_name: service_name.to_string(),
-        }
-    }
-
-    fn publish_event(&self, event_type: &str, key: &str, payload: &str) {
-        // Production: use rdkafka crate with producer
-        println!(
-            "[kafka] event={} key={} source={} size={}",
-            event_type, key, self.service_name, payload.len()
-        );
-    }
-}
-
-// OpenSearch structured logger for centralized logging
-struct OpenSearchLogger {
-    url: String,
-    service_name: String,
-}
-
-impl OpenSearchLogger {
-    fn new(service_name: &str) -> Self {
-        let url = env::var("OPENSEARCH_URL").unwrap_or_else(|_| "http://localhost:9200".to_string());
-        println!("[middleware] OpenSearch logger configured: {}", url);
-        OpenSearchLogger {
-            url,
-            service_name: service_name.to_string(),
-        }
-    }
-
-    fn index_log(&self, level: &str, message: &str) {
-        // Production: use opensearch-rs crate
-        println!(
-            "[opensearch] service={} level={} msg={}",
-            self.service_name, level, message
-        );
-    }
-}
-
-// Keycloak JWT auth extractor (middleware tower layer)
-fn validate_jwt_token(auth_header: &str) -> Result<(String, String, Vec<String>), String> {
-    // Dev bypass
-    if env::var("DEV_AUTH_BYPASS").unwrap_or_default() == "true" {
-        return Ok(("dev-user".to_string(), "default".to_string(), vec!["admin".to_string(), "user".to_string()]));
-    }
-
-    if !auth_header.starts_with("Bearer ") {
-        return Err("missing bearer token".to_string());
-    }
-
-    // In production: validate JWT against Keycloak JWKS endpoint using jsonwebtoken crate
-    // For now: extract user from headers (validation handled by APISIX gateway)
-    Ok(("unknown".to_string(), "default".to_string(), vec!["user".to_string()]))
-}
-
-// Permify authorization check
-async fn permify_check(entity_type: &str, entity_id: &str, permission: &str, user_id: &str) -> bool {
-    let permify_addr = env::var("PERMIFY_ADDR").unwrap_or_default();
-    if permify_addr.is_empty() {
-        return true; // Permissive when Permify is not configured
-    }
-    // Production: use reqwest to POST to Permify /v1/tenants/{tenant}/permissions/check
-    let _ = (entity_type, entity_id, permission, user_id);
-    true // Fail open
-}
-
-// Initialize all middleware clients
-struct MiddlewareClients {
-    redis: RedisClient,
-    kafka: KafkaPublisher,
-    opensearch: OpenSearchLogger,
-}
-
-impl MiddlewareClients {
-    fn new(service_name: &str) -> Self {
-        MiddlewareClients {
-            redis: RedisClient::new(),
-            kafka: KafkaPublisher::new(service_name),
-            opensearch: OpenSearchLogger::new(service_name),
-        }
-    }
-}
+// NG-10: the previous Redis/Kafka/OpenSearch/JWT/Permify "middleware" was
+// dead code that pretended to provide caching, eventing, auth and authz while
+// failing OPEN. It has been REMOVED rather than left to mislead: this service
+// now has no fake security layer. Authentication/authorization are enforced
+// at the API gateway (APISIX + Keycloak) in front of this service; internal
+// eventing, when needed, must be added as a REAL client with error returns,
+// never a println stub.
 
 #[tokio::main]
 async fn main() {
@@ -404,12 +471,13 @@ async fn main() {
     let client = init_db(&database_url).await;
     let db: Db = Arc::new(client);
 
-    let _middleware = MiddlewareClients::new("offline-queue");
-
     let app = Router::new()
         .route("/queue/enqueue",     post(enqueue))
         .route("/queue/pending",     get(list_pending))
         .route("/queue/dequeue/:id", post(dequeue))
+        .route("/queue/claim",       post(claim))
+        .route("/queue/requeue/:id", post(requeue))
+        .route("/queue/dlq",         get(list_dlq))
         .route("/queue/count",       get(count))
         .route("/ussd/encode",       post(ussd_encode))
         .route("/health",            get(health))
@@ -433,14 +501,64 @@ async fn main() {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_service_initialization() {
-        assert!(true, "Service module loads correctly");
+    // --- F4 audit tests (NG-9, NG-11) ---
+
+    fn req(tx_type: &str, amount: f64, bank: Option<&str>, acct: Option<&str>, phone: Option<&str>) -> UssdEncodeRequest {
+        UssdEncodeRequest {
+            tx_type: tx_type.to_string(),
+            amount,
+            destination_account: acct.map(String::from),
+            destination_bank: bank.map(String::from),
+            customer_phone: phone.map(String::from),
+        }
     }
 
     #[test]
-    fn test_configuration_defaults() {
-        assert!(true, "Default config is valid");
+    fn test_encode_ussd_transfer_uses_bank_specific_code() {
+        let r = encode_ussd(&req("Transfer", 5000.0, Some("GTBank"), Some("0123456789"), None)).unwrap();
+        assert!(r.ussd_string.starts_with("*737*2*5000*0123456789*058"), "{}", r.ussd_string);
+        let r = encode_ussd(&req("Transfer", 5000.0, Some("Zenith Bank"), Some("0123456789"), None)).unwrap();
+        assert!(r.ussd_string.starts_with("*966*2*5000*0123456789*057"), "{}", r.ussd_string);
+    }
+
+    #[test]
+    fn test_encode_ussd_unknown_bank_fails_closed() {
+        // NG-11: no "000" fake code, no GTB code for non-GTB banks.
+        let err = encode_ussd(&req("Transfer", 100.0, Some("Obscure Rural Bank"), Some("0123456789"), None));
+        assert!(err.is_err(), "unknown bank must fail, got {:?}", err.ok());
+        let err = encode_ussd(&req("Transfer", 100.0, None, Some("0123456789"), None));
+        assert!(err.is_err(), "missing bank must fail");
+        let err = encode_ussd(&req("Transfer", 100.0, Some("GTBank"), None, None));
+        assert!(err.is_err(), "missing account must fail");
+    }
+
+    #[test]
+    fn test_encode_ussd_unknown_tx_type_fails_closed() {
+        let err = encode_ussd(&req("Wire", 10.0, None, None, None));
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_bank_to_nibss_code_none_for_unknown() {
+        assert_eq!(bank_to_nibss_code("gtb"), Some("058"));
+        assert_eq!(bank_to_nibss_code("no such bank"), None);
+    }
+
+    #[test]
+    fn test_natural_idempotency_key_stable_and_distinct() {
+        let base = EnqueueRequest {
+            tx_type: "Transfer".into(), amount: 100.0,
+            customer_name: None, customer_phone: Some("0801".into()),
+            destination_bank: Some("GTB".into()), destination_account: Some("0123".into()),
+            channel: None, payload_json: None, idempotency_key: None,
+        };
+        let k1 = natural_idempotency_key(&base, "{\"a\":1}");
+        let k2 = natural_idempotency_key(&base, "{\"a\":1}");
+        assert_eq!(k1, k2, "same natural key must dedup");
+        let mut changed = base.clone();
+        changed.amount = 200.0;
+        let k3 = natural_idempotency_key(&changed, "{\"a\":1}");
+        assert_ne!(k1, k3, "different amount must not dedup");
     }
 
     #[test]

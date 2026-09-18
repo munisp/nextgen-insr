@@ -75,6 +75,13 @@ type BankConfig struct {
 	CallbackTimeout   time.Duration
 	RetryAttempts     int
 	RetryDelay        time.Duration
+	// NIBSSBaseURL points at the real NIBSS NIP adapter endpoint. When empty,
+	// transfer initiation fails LOUD (HTTP 412) instead of faking success.
+	NIBSSBaseURL string
+	// NIBSSAPIKey authenticates against the NIBSS adapter (if required).
+	NIBSSAPIKey string
+	// NIBSSTimeout bounds each NIBSS call.
+	NIBSSTimeout time.Duration
 }
 
 // NewConfig loads configuration from environment variables
@@ -131,6 +138,9 @@ func NewConfig() *Config {
 			CallbackTimeout:   durationEnvOrDefault("CALLBACK_TIMEOUT", 30*time.Second),
 			RetryAttempts:     intOr("RETRY_ATTEMPTS", 3),
 			RetryDelay:        durationEnvOrDefault("RETRY_DELAY", 5*time.Second),
+			NIBSSBaseURL:      envOr("NIBSS_BASE_URL", ""),
+			NIBSSAPIKey:       envOr("NIBSS_API_KEY", ""),
+			NIBSSTimeout:      durationEnvOrDefault("NIBSS_TIMEOUT", 30*time.Second),
 		},
 	}
 }
