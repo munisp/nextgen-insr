@@ -223,12 +223,13 @@ export async function J02_PolicyPurchaseWorkflow(input: J02_PolicyPurchaseInput)
   // created) + refund premium (G2 #6: no more paid-but-uncertificated
   // partial records).
   let policy;
+  let certificate;
   try {
     currentStep = "create_policy";
     policy = await acts.createInsurancePolicy({ quoteId: input.quoteId, customerId: input.customerId, agentId: input.agentId, productId, sumInsured, premiumAmount, durationMonths, coverageStartDate: new Date().toISOString(), paymentRef: input.paymentRef, beneficiaryName: input.beneficiaryName });
 
     currentStep = "issue_certificate";
-    var certificate = await acts.issuePolicyCertificate({ policyId: policy.policyId, customerId: input.customerId });
+    certificate = await acts.issuePolicyCertificate({ policyId: policy.policyId, customerId: input.customerId });
 
     currentStep = "credit_commission";
     if (input.agentId) {
