@@ -21,10 +21,13 @@
  *   - Cross-tenant access is denied at the Permify level
  *   - Platform admins (role=admin) can access all tenants for support
  *
- * Failure Mode:
- *   - Permify unavailable → FAIL-CLOSED for financial journeys (J02, J03, J08, J09, J17)
- *   - Permify unavailable → FAIL-OPEN for read-only journeys (J16, J20)
+ * Failure Mode (AUTH-12 — fail-closed everywhere):
+ *   - Permify unavailable → FAIL-CLOSED for ALL journeys. An authorization
+ *     outage is never an authz bypass; journeys retry when Permify recovers.
+ *   - Unknown journey (no permission mapping) → DENIED.
  *   - Circuit breaker: 5 failures → 30s open → half-open probe
+ *   - The `failClosed` field below is retained for schema compatibility but
+ *     every journey is now fail-closed.
  */
 
 import { ApplicationFailure } from "@temporalio/workflow";
@@ -89,7 +92,7 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J01_CustomerOnboardingWorkflow: {
     entityType: "tenant",
     permission: "create_customer",
-    failClosed: false, // onboarding can proceed if Permify is down
+    failClosed: true, // AUTH-12: fail-closed — outage must not bypass authz
     description: "Create new customer in tenant",
   },
   J02_PolicyPurchaseWorkflow: {
@@ -107,13 +110,13 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J04_AgentOnboardingWorkflow: {
     entityType: "tenant",
     permission: "create_agent",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "Onboard new agent to tenant",
   },
   J05_AgentDailyOpsWorkflow: {
     entityType: "tenant",
     permission: "agent_operations",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "Agent daily operations (airtime, bills, cash)",
   },
   J06_PolicyRenewalWorkflow: {
@@ -125,7 +128,7 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J07_FraudResponseWorkflow: {
     entityType: "fraud_alert",
     permission: "resolve",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "Fraud detection and account freeze",
   },
   J08_CommissionPayoutWorkflow: {
@@ -143,31 +146,31 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J10_ClaimDisputeWorkflow: {
     entityType: "claim",
     permission: "view",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "Claim dispute and escalation",
   },
   J11_BrokerPolicyManagementWorkflow: {
     entityType: "policy",
     permission: "view",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "Broker multi-policy management",
   },
   J12_ActuaryIfrs17Workflow: {
     entityType: "audit_log",
     permission: "view",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "IFRS17 actuarial reserve computation",
   },
   J13_ComplianceMonitoringWorkflow: {
     entityType: "audit_log",
     permission: "export",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "AML/compliance monitoring and SAR filing",
   },
   J14_PosTerminalLifecycleWorkflow: {
     entityType: "tenant",
     permission: "manage_terminals",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "POS terminal lifecycle management",
   },
   J15_ReinsuranceCessionWorkflow: {
@@ -179,7 +182,7 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J16_CustomerSelfServiceWorkflow: {
     entityType: "policy",
     permission: "view",
-    failClosed: false, // read-only — fail open
+    failClosed: true, // AUTH-12: fail-closed
     description: "Customer self-service portal",
   },
   J17_BulkPremiumPaymentWorkflow: {
@@ -191,19 +194,19 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J18_AgentFloatReconciliationWorkflow: {
     entityType: "billing_ledger",
     permission: "reconcile",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "Agent float EOD reconciliation",
   },
   J19_UnderwritingDecisionWorkflow: {
     entityType: "policy",
     permission: "edit",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "Underwriting risk assessment and decision",
   },
   J20_PlatformHealthMonitoringWorkflow: {
     entityType: "audit_log",
     permission: "view",
-    failClosed: false, // read-only — fail open
+    failClosed: true, // AUTH-12: fail-closed
     description: "Platform health and SLA monitoring",
   },
   J21_ParametricTriggerWorkflow: {
@@ -215,7 +218,7 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J22_UBIMonthlyAdjustmentWorkflow: {
     entityType: "policy",
     permission: "edit",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "UBI monthly premium adjustment",
   },
   J23_P2PPoolLifecycleWorkflow: {
@@ -227,7 +230,7 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J24_WellnessRewardsWorkflow: {
     entityType: "policy",
     permission: "edit",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "Wellness rewards and premium discount",
   },
   J25_NHIAClaimsWorkflow: {
@@ -239,7 +242,7 @@ export const JOURNEY_PERMISSIONS: Record<string, {
   J26_PredictiveRenewalWorkflow: {
     entityType: "policy",
     permission: "renew",
-    failClosed: false,
+    failClosed: true, // AUTH-12: fail-closed
     description: "AI-predicted policy renewal",
   },
   J27_EmbeddedInsuranceWorkflow: {
@@ -276,21 +279,24 @@ export async function assertTenantAccess(
 
   const perm = JOURNEY_PERMISSIONS[journeyName];
   if (!perm) {
-    logger.warn({ journeyName }, "[TenantGuard] Unknown journey — allowing (no permission mapping)");
-    return;
+    // AUTH-12: unknown journeys are DENIED (fail-closed) — an unmapped
+    // workflow must not silently bypass tenant authorization.
+    logger.error({ journeyName }, "[TenantGuard] Unknown journey — denying (no permission mapping)");
+    throw ApplicationFailure.create({
+      message: `[TenantGuard] Unknown journey '${journeyName}' has no permission mapping — access denied (fail-closed)`,
+      type: "AUTHORIZATION_DENIED",
+      nonRetryable: true,
+    });
   }
 
-  // Circuit breaker check
+  // Circuit breaker check (AUTH-12: ALL journeys fail closed when Permify is
+  // unavailable — an outage is never an authorization bypass).
   if (isCbOpen()) {
-    if (perm.failClosed) {
-      throw ApplicationFailure.create({
-        message: `[TenantGuard] Permify circuit breaker open — denying access to ${journeyName} (fail-closed)`,
-        type: "AUTHORIZATION_DENIED",
-        nonRetryable: true,
-      });
-    }
-    logger.warn({ journeyName }, "[TenantGuard] Permify circuit breaker open — allowing (fail-open)");
-    return;
+    throw ApplicationFailure.create({
+      message: `[TenantGuard] Permify circuit breaker open — denying access to ${journeyName} (fail-closed)`,
+      type: "AUTHORIZATION_DENIED",
+      nonRetryable: true,
+    });
   }
 
   try {
@@ -312,14 +318,11 @@ export async function assertTenantAccess(
     if (!res.ok) {
       cbFailures++;
       if (cbFailures >= CB_THRESHOLD && cbOpenedAt === 0) cbOpenedAt = Date.now();
-      if (perm.failClosed) {
-        throw ApplicationFailure.create({
-          message: `[TenantGuard] Permify returned ${res.status} — denying access to ${journeyName}`,
-          type: "AUTHORIZATION_DENIED",
-          nonRetryable: true,
-        });
-      }
-      return; // fail-open
+      throw ApplicationFailure.create({
+        message: `[TenantGuard] Permify returned ${res.status} — denying access to ${journeyName} (fail-closed)`,
+        type: "AUTHORIZATION_DENIED",
+        nonRetryable: true,
+      });
     }
 
     const data = await res.json() as { can: string };
@@ -347,16 +350,12 @@ export async function assertTenantAccess(
     cbFailures++;
     if (cbFailures >= CB_THRESHOLD && cbOpenedAt === 0) cbOpenedAt = Date.now();
 
-    if (perm.failClosed) {
-      throw ApplicationFailure.create({
-        message: `[TenantGuard] Permify unavailable — denying access to ${journeyName} (fail-closed): ${(err as Error).message}`,
-        type: "AUTHORIZATION_DENIED",
-        nonRetryable: true,
-      });
-    }
-
-    logger.warn({ journeyName, err: (err as Error).message },
-      "[TenantGuard] Permify unavailable — allowing (fail-open)");
+    // AUTH-12: fail-closed for ALL journeys — Permify unavailability denies.
+    throw ApplicationFailure.create({
+      message: `[TenantGuard] Permify unavailable — denying access to ${journeyName} (fail-closed): ${(err as Error).message}`,
+      type: "AUTHORIZATION_DENIED",
+      nonRetryable: true,
+    });
   }
 }
 
@@ -376,9 +375,15 @@ export async function assertResourceBelongsToTenant(
   if (ctx.userRole === "admin" || ctx.userRole === "super_admin") return;
   if (!resourceId || resourceId === "*") return;
 
+  // AUTH-12: fail-closed — an unreachable policy engine denies the resource
+  // check instead of silently allowing cross-tenant access.
   if (isCbOpen()) {
-    logger.warn({ resourceType, resourceId }, "[TenantGuard] CB open — skipping resource check");
-    return;
+    logger.warn({ resourceType, resourceId }, "[TenantGuard] CB open — denying resource check (fail-closed)");
+    throw ApplicationFailure.create({
+      message: `[TenantGuard] Permify circuit breaker open — denying access to ${resourceType}:${resourceId} (fail-closed)`,
+      type: "CROSS_TENANT_ACCESS_DENIED",
+      nonRetryable: true,
+    });
   }
 
   try {
@@ -397,7 +402,15 @@ export async function assertResourceBelongsToTenant(
       }
     );
 
-    if (!res.ok) { cbFailures++; return; }
+    if (!res.ok) {
+      cbFailures++;
+      if (cbFailures >= CB_THRESHOLD && cbOpenedAt === 0) cbOpenedAt = Date.now();
+      throw ApplicationFailure.create({
+        message: `[TenantGuard] Permify returned ${res.status} — denying access to ${resourceType}:${resourceId} (fail-closed)`,
+        type: "CROSS_TENANT_ACCESS_DENIED",
+        nonRetryable: true,
+      });
+    }
 
     const data = await res.json() as { can: string };
     cbFailures = 0; cbOpenedAt = 0;
@@ -412,9 +425,13 @@ export async function assertResourceBelongsToTenant(
   } catch (err) {
     if (err instanceof ApplicationFailure) throw err;
     cbFailures++;
-    // Fail-open for resource checks (primary guard is assertTenantAccess)
-    logger.warn({ resourceType, resourceId, err: (err as Error).message },
-      "[TenantGuard] Resource check failed — allowing (fail-open)");
+    if (cbFailures >= CB_THRESHOLD && cbOpenedAt === 0) cbOpenedAt = Date.now();
+    // AUTH-12: fail-closed for resource checks too.
+    throw ApplicationFailure.create({
+      message: `[TenantGuard] Resource check failed — denying access to ${resourceType}:${resourceId} (fail-closed): ${(err as Error).message}`,
+      type: "CROSS_TENANT_ACCESS_DENIED",
+      nonRetryable: true,
+    });
   }
 }
 

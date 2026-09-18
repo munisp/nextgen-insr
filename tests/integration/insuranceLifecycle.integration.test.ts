@@ -40,6 +40,16 @@ const FILE = "insuranceLifecycle";
 const CUST = 980001;
 const OWNER = 91002; // regularUser.id — policyholder identity for ownership-guarded paths
 
+// 2026-09-18 (F3 fail-closed financial RBAC, AUTH-17): insuranceWorkflows.cancelPolicy
+// is now a financialProcedure ("refund"-class op) — the default "user" role is
+// DENIED at authz, which would short-circuit BEFORE the ownership/open-claim
+// guards this suite exists to exercise. ownerUser therefore carries
+// "super_admin" (a role the permify map authorizes for "refund") while keeping
+// regularUser.id so the OWNERSHIP semantics are unchanged: isOwner still
+// drives the owner leg, and the non-owner call below still fails FORBIDDEN on
+// ownership (super_admin is NOT the `role === "admin"` bypass in cancelPolicy).
+const ownerUser = { ...regularUser, role: "super_admin" } as const;
+
 const NOW = Date.now();
 const DAY = 86_400_000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -388,10 +398,10 @@ describe("INS-12 cancel guards + cooling-off refund", () => {
     const p = await seedPolicy({ policyNumber: "F2-CXL-1", customerId: OWNER });
     const other = await seedPolicy({ policyNumber: "F2-CXL-2", customerId: CUST });
     await expectTrpcError(
-      callerFor(regularUser).insuranceWorkflows.cancelPolicy({ policyId: other.id, reason: "not mine" }),
+      callerFor(ownerUser).insuranceWorkflows.cancelPolicy({ policyId: other.id, reason: "not mine" }),
       "FORBIDDEN"
     );
-    const caller = callerFor(regularUser);
+    const caller = callerFor(ownerUser);
     await callerFor(adminUser).insuranceWorkflows.fileClaim({
       policyId: p.id, claimType: "death", incidentDate: iso(NOW - 9 * DAY),
       claimedAmount: 1000, incidentDescription: "open claim blocks cancel",
@@ -412,7 +422,7 @@ describe("INS-12 cancel guards + cooling-off refund", () => {
     await callerFor(adminUser).insuranceWorkflows.payPremium({
       policyId: p.id, amount: 10000, paymentMethod: "card",
     });
-    const res = await callerFor(regularUser).insuranceWorkflows.cancelPolicy({
+    const res = await callerFor(ownerUser).insuranceWorkflows.cancelPolicy({
       policyId: p.id, reason: "cooling-off",
     });
     expect(res.coolingOff).toBe(true);
@@ -424,7 +434,7 @@ describe("INS-12 cancel guards + cooling-off refund", () => {
     expect(clawbacks.length).toBeGreaterThanOrEqual(1);
     // Double cancel loses the state guard.
     await expectTrpcError(
-      callerFor(regularUser).insuranceWorkflows.cancelPolicy({ policyId: p.id, reason: "again" }),
+      callerFor(ownerUser).insuranceWorkflows.cancelPolicy({ policyId: p.id, reason: "again" }),
       "CONFLICT"
     );
   });

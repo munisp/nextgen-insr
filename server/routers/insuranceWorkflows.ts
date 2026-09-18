@@ -49,6 +49,7 @@ import {
   commissionClawbacks,
 } from "../../drizzle/schema";
 import { router, protectedProcedure } from "../_core/trpc";
+import { financialProcedure } from "../_core/permifyMiddleware";
 import { publishInsuranceEvent } from "../daprClient";
 import { getDb, withClientTransaction } from "../db";
 import {
@@ -203,7 +204,7 @@ export const insuranceWorkflowsRouter = router({
     }),
 
   /** PH-2: Bind a policy (convert quote to active policy) */
-  bindPolicy: protectedProcedure
+  bindPolicy: financialProcedure
     .input(z.object({
       quoteRef: z.string(),
       productId: z.number(),
@@ -274,7 +275,7 @@ export const insuranceWorkflowsRouter = router({
     }),
 
   /** PH-3: Pay premium via TigerBeetle */
-  payPremium: protectedProcedure
+  payPremium: financialProcedure
     .input(z.object({
       policyId: z.number(),
       amount: z.number(),
@@ -610,7 +611,7 @@ export const insuranceWorkflowsRouter = router({
     }),
 
   /** PH-6: Cancel a policy */
-  cancelPolicy: protectedProcedure
+  cancelPolicy: financialProcedure
     .input(z.object({
       policyId: z.number(),
       reason: z.string(),
@@ -919,7 +920,7 @@ export const insuranceWorkflowsRouter = router({
     }),
 
   /** CA-2: Adjudicate claim (approve/reject/partial) */
-  adjudicateClaim: protectedProcedure
+  adjudicateClaim: financialProcedure
     .input(z.object({
       claimId: z.number().int().positive(),
       decision: z.enum(["approved", "partially_approved", "rejected"]),
@@ -1084,7 +1085,7 @@ export const insuranceWorkflowsRouter = router({
     }),
 
   /** CA-3: Process claim settlement payment via TigerBeetle */
-  settleClaimPayment: protectedProcedure
+  settleClaimPayment: financialProcedure
     .input(z.object({
       claimId: z.number().int().positive(),
       paymentMethod: z.string().min(1),
@@ -1643,7 +1644,7 @@ export const insuranceWorkflowsRouter = router({
     }),
 
   /** RI-2: Cede a policy to reinsurance treaty */
-  cedePolicyToTreaty: protectedProcedure
+  cedePolicyToTreaty: financialProcedure
     .input(z.object({
       treatyId: z.number(),
       policyId: z.number(),

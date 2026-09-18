@@ -5,8 +5,10 @@ import type { Request } from "express";
 import { jwtVerify } from "jose";
 
 import type { Agent } from "../../drizzle/schema";
-import { getAgentById } from "../db";
+import { impersonationEvents } from "../../drizzle/schema";
+import { getAgentById, getDb } from "../db";
 import { getJwtSecret } from "../lib/envValidation";
+import { logger } from "../_core/logger";
 import {
   blacklistToken,
   isTokenBlacklisted,
@@ -32,13 +34,26 @@ export function hashSessionToken(token: string): string {
 }
 
 /**
- * Session-revocation checks are fail-CLOSED in production: if the revocation
- * store is unreachable the session is treated as revoked rather than letting
- * a killed session stay valid (F6-1). Outside production the helpers fail
- * open so dev/test environments without Redis keep working (logged).
+ * Session-revocation checks are fail-CLOSED by default in EVERY environment
+ * (AUTH-16): if the revocation store is unreachable the session is treated as
+ * revoked rather than letting a killed session stay valid (F6-1). The ONLY
+ * fail-open leg is an explicit, non-production demo flag that defaults OFF —
+ * mirroring the F6-8 chat demo-flag pattern. Staging deployments with
+ * NODE_ENV!=production no longer silently accept revoked tokens when Redis is
+ * down.
  */
-const revocationFailClosed = (): boolean =>
-  process.env.NODE_ENV === "production";
+export function revocationFailClosed(): boolean {
+  if (
+    process.env.AUTH_REVOCATION_FAIL_OPEN_DEMO === "true" &&
+    process.env.NODE_ENV !== "production"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Alias used by the Socket.IO namespaces (same policy). */
+export const socketRevocationFailClosed = revocationFailClosed;
 
 /**
  * Verify an agent_session JWT and enforce the revocation lists:
@@ -116,6 +131,57 @@ export type AgentScopeResult =
   | { ok: false; code: "FORBIDDEN" | "BAD_REQUEST"; message: string };
 
 /**
+ * AUTH-19: audit trail for admin impersonation. Every admin-acting-as-agent
+ * scope resolution is persisted to impersonation_events. Fire-and-forget for
+ * request latency, but write failures are logged at error level.
+ */
+async function logImpersonationEvent(
+  req: Request,
+  targetAgentId: number
+): Promise<void> {
+  let adminSub: string | null = null;
+  try {
+    const cookie = req.headers.cookie ?? "";
+    const match = cookie.match(/kc_session=([^;]+)/);
+    if (match) {
+      const secret = new TextEncoder().encode(getJwtSecret());
+      const { payload } = await jwtVerify(match[1], secret);
+      adminSub = typeof payload.sub === "string" ? payload.sub : null;
+    }
+  } catch {
+    /* identity best-effort; the event is still recorded */
+  }
+  try {
+    const db = await getDb();
+    if (!db) {
+      logger.error(
+        { targetAgentId, adminSub },
+        "[Impersonation] DB unavailable — audit event NOT persisted"
+      );
+      return;
+    }
+    await db.insert(impersonationEvents).values({
+      adminUserId: 0, // platform user PK not resolved here; adminSub is the stable identity
+      adminSub,
+      targetAgentId,
+      action: "admin_agent_scope",
+      path: (req as { originalUrl?: string }).originalUrl ?? req.url ?? null,
+      ipAddress:
+        (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ??
+        req.socket?.remoteAddress ??
+        null,
+      userAgent: (req.headers["user-agent"] as string | undefined) ?? null,
+      metadata: null,
+    });
+  } catch (err) {
+    logger.error(
+      { err: String(err), targetAgentId, adminSub },
+      "[Impersonation] Failed to persist audit event"
+    );
+  }
+}
+
+/**
  * F7-1: resolve which agent record the caller may act on, using session
  * identity ONLY — never caller-supplied identity alone.
  *  - An agent_session holder acts ONLY on their own record; a body agentId
@@ -148,6 +214,9 @@ export async function resolveAgentScope(
         message: "agentId is required for admin-initiated changes",
       };
     }
+    // AUTH-19: admin acting on an arbitrary agent is an impersonation-class
+    // action — record it in the audit trail (fire-and-forget).
+    void logImpersonationEvent(req, inputAgentId);
     return { ok: true, agentId: inputAgentId };
   }
   return {

@@ -14,6 +14,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── PBAC Enforcement Tests ──────────────────────────────────────────────────
 describe("PBAC Enforcement", () => {
+  beforeEach(() => {
+    process.env.PBAC_LOCAL_RBAC_FALLBACK_DEMO = "true";
+    return () => {
+      delete process.env.PBAC_LOCAL_RBAC_FALLBACK_DEMO;
+    };
+  });
+
+  it("fails closed when the policy engine is unreachable and no demo flag", async () => {
+    delete process.env.PBAC_LOCAL_RBAC_FALLBACK_DEMO;
+    const { authorize } = await import("./middleware/pbacEnforcement");
+    const decision = await authorize(
+      { userId: 900, role: "super_admin", timestamp: Date.now() },
+      "manage_users"
+    );
+    expect(decision.allowed).toBe(false);
+    expect(decision.policy).toBe("fail_closed");
+  });
+
   it("should grant super_admin all permissions", async () => {
     const { authorize } = await import("./middleware/pbacEnforcement");
     const decision = await authorize(
@@ -335,19 +353,25 @@ describe("Mock Replacements", () => {
   });
 
   it("should check permissions via PBAC", async () => {
-    const { checkPermission } = await import("./middleware/mockReplacements");
-    const allowed = await checkPermission({
-      userId: 1,
-      role: "admin",
-      permission: "manage_users",
-    });
-    expect(allowed).toBe(true);
-    const denied = await checkPermission({
-      userId: 2,
-      role: "viewer",
-      permission: "delete",
-    });
-    expect(denied).toBe(false);
+    // AUTH-18: local-RBAC fallback requires the explicit non-prod demo flag.
+    process.env.PBAC_LOCAL_RBAC_FALLBACK_DEMO = "true";
+    try {
+      const { checkPermission } = await import("./middleware/mockReplacements");
+      const allowed = await checkPermission({
+        userId: 1,
+        role: "admin",
+        permission: "manage_users",
+      });
+      expect(allowed).toBe(true);
+      const denied = await checkPermission({
+        userId: 2,
+        role: "viewer",
+        permission: "delete",
+      });
+      expect(denied).toBe(false);
+    } finally {
+      delete process.env.PBAC_LOCAL_RBAC_FALLBACK_DEMO;
+    }
   });
 });
 
