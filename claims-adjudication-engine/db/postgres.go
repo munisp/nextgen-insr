@@ -203,6 +203,20 @@ func (r *ClaimsRepository) runMigrations(ctx context.Context) error {
 			checksum: "evidence_table_v1",
 		},
 		{
+			name: "002b_create_policy_coverage_table",
+			sql: `
+			CREATE TABLE IF NOT EXISTS policy_coverage (
+				policy_id UUID PRIMARY KEY,
+				sum_insured NUMERIC(15,2) NOT NULL CHECK (sum_insured >= 0),
+				reserved_amount NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (reserved_amount >= 0),
+				currency VARCHAR(3) NOT NULL DEFAULT 'NGN',
+				updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+				CONSTRAINT chk_reserved_lte_sum CHECK (reserved_amount <= sum_insured)
+			);
+			`,
+			checksum: "policy_coverage_v1",
+		},
+		{
 			name: "003_create_adjudication_history_table",
 			sql: `
 			CREATE TABLE IF NOT EXISTS adjudication_history (
@@ -326,6 +340,64 @@ func (r *ClaimsRepository) CreateClaim(ctx context.Context, claim *models.Claim)
 		return fmt.Errorf("failed to create claim: %w", err)
 	}
 
+	return nil
+}
+
+// ─── Coverage Reservation (AB-6: atomic check-and-decrement) ────────────────
+//
+// ErrCoverageExhausted is returned when the policy's remaining coverage cannot
+// absorb the claim amount; ErrCoverageNotFound when no coverage record exists
+// for the policy (fail-closed: unknown coverage is never treated as unlimited).
+var (
+	ErrCoverageExhausted = fmt.Errorf("policy coverage exhausted")
+	ErrCoverageNotFound  = fmt.Errorf("no coverage record for policy")
+)
+
+// ReserveCoverage atomically checks aggregate claims against the policy's sum
+// insured and reserves the claim amount in a single UPDATE ... WHERE guard.
+// Two parallel claims against the same policy cannot both succeed beyond the
+// sum insured — the row-level lock + conditional UPDATE serializes them.
+func (r *ClaimsRepository) ReserveCoverage(ctx context.Context, policyID string, amount float64) error {
+	if amount <= 0 {
+		return fmt.Errorf("reserve amount must be positive")
+	}
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE policy_coverage
+		SET reserved_amount = reserved_amount + $2, updated_at = NOW()
+		WHERE policy_id = $1 AND reserved_amount + $2 <= sum_insured
+	`, policyID, amount)
+	if err != nil {
+		return fmt.Errorf("coverage reservation failed: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("coverage reservation failed: %w", err)
+	}
+	if affected == 0 {
+		var exists int
+		if err := r.db.QueryRowContext(ctx,
+			`SELECT 1 FROM policy_coverage WHERE policy_id = $1`, policyID).Scan(&exists); err != nil {
+			return ErrCoverageNotFound
+		}
+		return ErrCoverageExhausted
+	}
+	return nil
+}
+
+// ReleaseCoverage returns a previously reserved amount (e.g. claim denied or
+// payout reversed). Never drives reserved_amount below zero.
+func (r *ClaimsRepository) ReleaseCoverage(ctx context.Context, policyID string, amount float64) error {
+	if amount <= 0 {
+		return fmt.Errorf("release amount must be positive")
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE policy_coverage
+		SET reserved_amount = GREATEST(reserved_amount - $2, 0), updated_at = NOW()
+		WHERE policy_id = $1
+	`, policyID, amount)
+	if err != nil {
+		return fmt.Errorf("coverage release failed: %w", err)
+	}
 	return nil
 }
 
