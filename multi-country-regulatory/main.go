@@ -565,6 +565,7 @@ func handleComplianceCheck(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Country      string  `json:"country"`
 		Capital      float64 `json:"capital"`
+		Currency     string  `json:"currency"` // NG-21: policy/product currency
 		HasLicense   bool    `json:"has_license"`
 		DataLocal    bool    `json:"data_local"`
 		LocalPartner bool    `json:"local_partner"`
@@ -579,6 +580,12 @@ func handleComplianceCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	issues := []string{}
+	// NG-21: cross-field validation — the product/policy currency must match
+	// the jurisdiction regulator's currency (NGN for NAICOM, GHS for NIC...).
+	// A mismatch is a compliance failure, not a silent pass.
+	if req.Currency != "" && req.Currency != reg.Currency {
+		issues = append(issues, fmt.Sprintf("Currency mismatch: product denominated in %s but %s regulates in %s", req.Currency, reg.Regulator, reg.Currency))
+	}
 	if req.Capital < reg.MinCapital {
 		issues = append(issues, fmt.Sprintf("Capital %.0f below minimum %.0f %s", req.Capital, reg.MinCapital, reg.Currency))
 	}

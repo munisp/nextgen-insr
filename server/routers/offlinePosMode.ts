@@ -8,7 +8,14 @@ import { TRPCError } from "@trpc/server";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { agents, platformSettings } from "../../drizzle/schema";
+import {
+  agents,
+  offlineSessions,
+  offlineSyncConflicts,
+  offlineSyncRecords,
+  platformSettings,
+} from "../../drizzle/schema";
+import crypto from "crypto";
 import { logger } from '../_core/logger';
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb, writeAuditLog } from "../db";
@@ -126,6 +133,16 @@ export const offlinePosModeRouter = router({
         const floatSnapshot = Number(agentRows[0].premiumReserve);
         const sessionId = `OFS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
+        // NG-16: server-side session ledger — a dropped offline session is
+        // now detectable (previously sessions existed only as audit logs).
+        await db.insert(offlineSessions).values({
+          sessionId,
+          agentId: session.id,
+          reason: input.reason,
+          status: "active",
+          floatSnapshot: String(floatSnapshot),
+        });
+
         await writeAuditLog({
           agentId: session.id,
           action: "OFFLINE_SESSION_STARTED",
@@ -174,23 +191,74 @@ export const offlinePosModeRouter = router({
             message: "Agent session required",
           });
 
+        // NG-16: recompute totals SERVER-SIDE from the synced record ledger;
+        // client-reported numbers are informational only and any mismatch is
+        // flagged on the session row (never silently trusted).
+        const db = (await getDb())!;
+        if (!db)
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "DB unavailable",
+          });
+
+        const sessRows = await db
+          .select()
+          .from(offlineSessions)
+          .where(eq(offlineSessions.sessionId, input.sessionId))
+          .limit(1);
+        if (!sessRows[0])
+          throw new TRPCError({ code: "NOT_FOUND", message: "offline session not found" });
+        if (sessRows[0].agentId !== session.id)
+          throw new TRPCError({ code: "FORBIDDEN", message: "session belongs to another agent" });
+        if (sessRows[0].status !== "active")
+          throw new TRPCError({ code: "CONFLICT", message: `session already ${sessRows[0].status}` });
+
+        const recs = await db
+          .select({ amount: offlineSyncRecords.amount, status: offlineSyncRecords.status })
+          .from(offlineSyncRecords)
+          .where(eq(offlineSyncRecords.sessionId, input.sessionId));
+        const serverCount = recs.length;
+        const serverAmount = recs.reduce((sum, r) => sum + Number(r.amount ?? 0), 0);
+        const totalsMismatch =
+          input.transactionsProcessed !== serverCount ||
+          Math.abs(input.totalAmountProcessed - serverAmount) > 0.005;
+
+        await db
+          .update(offlineSessions)
+          .set({
+            status: "ended",
+            endedAt: new Date(),
+            clientReportedCount: input.transactionsProcessed,
+            clientReportedAmount: String(input.totalAmountProcessed),
+            serverCount,
+            serverAmount: serverAmount.toFixed(2),
+            totalsMismatch,
+          })
+          .where(eq(offlineSessions.sessionId, input.sessionId));
+
         await writeAuditLog({
           agentId: session.id,
           action: "OFFLINE_SESSION_ENDED",
           resource: "offline_session",
           resourceId: input.sessionId,
-          status: "success",
+          status: totalsMismatch ? "flagged" : "success",
           metadata: {
             agentCode: session.agentId,
-            transactionsProcessed: input.transactionsProcessed,
-            totalAmountProcessed: input.totalAmountProcessed,
+            clientTransactionsProcessed: input.transactionsProcessed,
+            clientTotalAmountProcessed: input.totalAmountProcessed,
+            serverCount,
+            serverAmount,
+            totalsMismatch,
           },
         });
 
         return {
           sessionId: input.sessionId,
           endedAt: new Date().toISOString(),
-          syncRequired: input.transactionsProcessed > 0,
+          syncRequired: serverCount > 0,
+          serverCount,
+          serverAmount,
+          totalsMismatch,
         };
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -277,4 +345,174 @@ export const offlinePosModeRouter = router({
       totalOfflineTxns: 0,
     };
   }),
+
+  // ── NG-16: sync push with real conflict detection ─────────────────────────
+  // Idempotent per (sessionId, clientRecordId). Conflicts (same entity synced
+  // with a DIFFERENT payload, e.g. the same policy sold offline by two
+  // agents) preserve BOTH versions in offline_sync_conflicts for manual
+  // resolution — there is no silent server_wins.
+  syncPush: protectedProcedure
+    .input(
+      z.object({
+        sessionId: z.string(),
+        records: z
+          .array(
+            z.object({
+              clientRecordId: z.string().min(1).max(128),
+              entityType: z.string().min(1).max(32),
+              entityId: z.string().min(1).max(128),
+              amount: z.number().min(0).default(0),
+              payload: z.record(z.string(), z.unknown()),
+            })
+          )
+          .min(1)
+          .max(200),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+
+      const db = (await getDb())!;
+      if (!db)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+
+      const sessRows = await db
+        .select()
+        .from(offlineSessions)
+        .where(eq(offlineSessions.sessionId, input.sessionId))
+        .limit(1);
+      if (!sessRows[0] || sessRows[0].agentId !== session.id)
+        throw new TRPCError({ code: "NOT_FOUND", message: "offline session not found" });
+
+      let applied = 0;
+      let duplicates = 0;
+      const conflicts: Array<{ entityType: string; entityId: string }> = [];
+
+      for (const rec of input.records) {
+        const payloadHash = crypto
+          .createHash("sha256")
+          .update(JSON.stringify(rec.payload))
+          .digest("hex");
+
+        // Idempotent insert: retry of the same clientRecordId dedups.
+        const inserted = await db
+          .insert(offlineSyncRecords)
+          .values({
+            sessionId: input.sessionId,
+            agentId: session.id,
+            clientRecordId: rec.clientRecordId,
+            entityType: rec.entityType,
+            entityId: rec.entityId,
+            amount: String(rec.amount),
+            payload: rec.payload,
+            payloadHash,
+            status: "applied",
+          })
+          .onConflictDoNothing()
+          .returning({ id: offlineSyncRecords.id });
+        if (inserted.length === 0) {
+          duplicates++;
+          continue;
+        }
+
+        // Conflict detection: another record (any session/agent) already
+        // exists for the same entity with a DIFFERENT payload.
+        const existing = await db
+          .select()
+          .from(offlineSyncRecords)
+          .where(eq(offlineSyncRecords.entityType, rec.entityType))
+          .limit(200);
+        const clash = existing.find(
+          (r) =>
+            r.entityId === rec.entityId &&
+            r.payloadHash !== payloadHash &&
+            !(r.sessionId === input.sessionId && r.clientRecordId === rec.clientRecordId)
+        );
+        if (clash) {
+          await db
+            .update(offlineSyncRecords)
+            .set({ status: "conflict" })
+            .where(eq(offlineSyncRecords.id, inserted[0].id));
+          await db.insert(offlineSyncConflicts).values({
+            entityType: rec.entityType,
+            entityId: rec.entityId,
+            sessionId: input.sessionId,
+            agentId: session.id,
+            localVersion: rec.payload,
+            serverVersion: clash.payload as Record<string, unknown>,
+          });
+          conflicts.push({ entityType: rec.entityType, entityId: rec.entityId });
+          continue;
+        }
+        applied++;
+      }
+
+      await writeAuditLog({
+        agentId: session.id,
+        action: "OFFLINE_SYNC_PUSH",
+        resource: "offline_session",
+        resourceId: input.sessionId,
+        status: conflicts.length > 0 ? "conflict" : "success",
+        metadata: { applied, duplicates, conflicts: conflicts.length },
+      });
+
+      return { applied, duplicates, conflicts };
+    }),
+
+  // Pending conflict queue (both versions preserved).
+  listConflicts: protectedProcedure.query(async ({ ctx }) => {
+    const session = await getAgentFromCookie(ctx.req);
+    if (!session)
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+    const db = (await getDb())!;
+    if (!db) return { conflicts: [] };
+    const rows = await db
+      .select()
+      .from(offlineSyncConflicts)
+      .where(sql`${offlineSyncConflicts.resolution} IS NULL`)
+      .limit(200);
+    return { conflicts: rows };
+  }),
+
+  // Resolve a conflict explicitly; both versions remain stored.
+  resolveConflict: protectedProcedure
+    .input(
+      z.object({
+        conflictId: z.number().int().positive(),
+        resolution: z.enum(["keep_local", "keep_server", "merged"]),
+        mergedVersion: z.record(z.string(), z.unknown()).optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const session = await getAgentFromCookie(ctx.req);
+      if (!session)
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Agent session required" });
+      if (input.resolution === "merged" && !input.mergedVersion)
+        throw new TRPCError({ code: "BAD_REQUEST", message: "mergedVersion required for merged resolution" });
+      const db = (await getDb())!;
+      if (!db)
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB unavailable" });
+      const updated = await db
+        .update(offlineSyncConflicts)
+        .set({
+          resolution: input.resolution,
+          resolvedBy: String(session.id),
+          resolvedAt: new Date(),
+        })
+        .where(sql`${offlineSyncConflicts.id} = ${input.conflictId} AND ${offlineSyncConflicts.resolution} IS NULL`)
+        .returning({ id: offlineSyncConflicts.id });
+      if (updated.length === 0)
+        throw new TRPCError({ code: "CONFLICT", message: "conflict not found or already resolved" });
+      await writeAuditLog({
+        agentId: session.id,
+        action: "OFFLINE_CONFLICT_RESOLVED",
+        resource: "offline_sync_conflict",
+        resourceId: String(input.conflictId),
+        status: "success",
+        metadata: { resolution: input.resolution },
+      });
+      return { conflictId: input.conflictId, resolution: input.resolution };
+    }),
 });

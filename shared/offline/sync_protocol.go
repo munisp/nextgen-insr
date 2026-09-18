@@ -82,7 +82,7 @@ func DefaultOfflineConfig() *OfflineConfig {
 		RetryBackoffMs:   2000,
 		SyncIntervalMs:   30000,
 		MaxBatchSize:     50,
-		ConflictStrategy: "server_wins",
+		ConflictStrategy: "manual_review", // NG-16: conflicts are queued with BOTH versions preserved; never silently overwrite
 		CacheTTLSeconds:  86400,
 	}
 }

@@ -14,16 +14,14 @@ import { createHash } from "crypto";
 import type { Request, Response, NextFunction } from "express";
 
 import { logger } from '../_core/logger';
+import { getRedisClient } from "../lib/redisClient";
 
 // ─── Request Deduplication ───────────────────────────────────────────────────
-interface DedupeEntry {
-  hash: string;
-  response: any;
-  timestamp: number;
-}
-
-const dedupeStore = new Map<string, DedupeEntry>();
+// NG-17: the dedupe store is Redis-backed (durable across restarts and shared
+// across replicas) — the previous in-process Map was defeated by any restart
+// or second replica, double-applying duplicate POSTs during network flaps.
 const DEDUPE_WINDOW_MS = 30_000; // 30 seconds
+const DEDUPE_PREFIX = "dedupe:";
 
 function computeRequestHash(req: Request): string {
   const payload = JSON.stringify({
@@ -32,10 +30,10 @@ function computeRequestHash(req: Request): string {
     body: req.body,
     userId: (req as any).userId,
   });
-  return createHash("md5").update(payload).digest("hex");
+  return createHash("sha256").update(payload).digest("hex");
 }
 
-export function requestDeduplication(
+export async function requestDeduplication(
   req: Request,
   res: Response,
   next: NextFunction
@@ -45,33 +43,39 @@ export function requestDeduplication(
 
   const idempotencyKey = req.headers["x-idempotency-key"] as string;
   const hash = idempotencyKey || computeRequestHash(req);
-  const now = Date.now();
+  const key = DEDUPE_PREFIX + hash;
 
-  const existing = dedupeStore.get(hash);
-  if (existing && now - existing.timestamp < DEDUPE_WINDOW_MS) {
-    logger.info(
-      `[Dedupe] Returning cached response for ${req.method} ${req.path}`
-    );
-    return res.status(200).json(existing.response);
+  let existing: string | null = null;
+  try {
+    existing = await getRedisClient().get(key);
+  } catch (err) {
+    // Redis down: proceed to the handler WITHOUT dedup — endpoint-level
+    // idempotency (unique constraints / idempotency keys) is the correctness
+    // layer; this middleware is an optimization. Loudly logged.
+    logger.warn(`[Dedupe] Redis unavailable, dedup bypassed for ${req.method} ${req.path}: ${String(err)}`);
+    return next();
+  }
+  if (existing) {
+    logger.info(`[Dedupe] Returning cached response for ${req.method} ${req.path}`);
+    try {
+      return res.status(200).json(JSON.parse(existing));
+    } catch {
+      return res.status(200).send(existing);
+    }
   }
 
-  // Monkey-patch res.json to capture response
+  // Monkey-patch res.json to capture response; SET NX so a concurrent
+  // duplicate cannot overwrite an in-flight/committed response.
   const originalJson = res.json.bind(res);
   res.json = (body: any) => {
-    dedupeStore.set(hash, { hash, response: body, timestamp: now });
+    void getRedisClient()
+      .set(key, JSON.stringify(body), "PX", DEDUPE_WINDOW_MS, "NX")
+      .catch((err: unknown) => logger.warn(`[Dedupe] store failed: ${String(err)}`));
     return originalJson(body);
   };
 
   next();
 }
-
-// Cleanup stale entries
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of dedupeStore) {
-    if (now - entry.timestamp > DEDUPE_WINDOW_MS * 2) dedupeStore.delete(key);
-  }
-}, 60_000);
 
 // ─── Adaptive Compression ────────────────────────────────────────────────────
 export function adaptiveCompression(
